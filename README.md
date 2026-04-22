@@ -2,6 +2,12 @@
 
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.
 
+## Support fnec-rust
+
+If this project helps your work, please consider supporting ongoing development:
+
+https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC
+
 ## Goals
 
 - Primary compatibility target: 4nec2 input and workflow expectations

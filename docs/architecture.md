@@ -75,8 +75,18 @@ fnec-rust supports multiple NEC input dialects through a layered parser architec
 - xnec2c (KJ7LNW fork, https://github.com/KJ7LNW/xnec2c) is used as the authoritative NEC2 reference engine for:
   - Generating golden test corpus outputs against which fnec-rust numerical results are compared.
   - Algorithmic study of NEC2 numerical methods as implemented in C.
-- **License constraint**: xnec2c is GPL-3.0-only. fnec-rust is GPL-2.0-only. No code from xnec2c may be copied, translated, or adapted into fnec-rust source under any circumstances.
+- **Policy constraint**: xnec2c is GPL-3.0-only. fnec-rust is GPL-3.0-only (license-compatible). Despite this, no code from xnec2c may be copied, translated, or adapted into fnec-rust source under any circumstances — this is a project independence policy, not a license barrier.
 - xnec2c's `examples/` and `t/` directories are the primary source for the test corpus `.nec` input files.
+
+## Additional reference implementations
+
+The following projects are useful comparative references for algorithms, behavior checks, and implementation ideas:
+
+- M5AIQ NEC notes/tools: https://www.qsl.net/m5aiq/nec.html
+- yeti01/nec2: https://github.com/yeti01/nec2
+- tmolteno/necpp: https://github.com/tmolteno/necpp
+
+These references are supplementary. 4nec2 compatibility remains the primary product target, and xnec2c remains the main NEC2 parity reference corpus source.
 
 ## Documentation process constraints
 

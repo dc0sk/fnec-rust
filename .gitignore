@@ -1,1 +1,9 @@
 target/
+
+# Local experiment scratch space (keep inside repo to avoid external temp churn)
+.tmp/
+.tmp-work/
+
+# Stray CLI output captures and draft PR bodies
+out*.txt
+pr_body.txt

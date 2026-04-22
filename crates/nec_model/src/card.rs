@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 //! Typed representations of NEC deck cards (input lines).

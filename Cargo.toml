@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Simon Keimer (DC0SK)
 
 [workspace]
@@ -18,7 +18,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 authors = ["Simon Keimer (DC0SK)"]
-license = "GPL-2.0-only"
+license = "GPL-3.0-only"
 edition = "2021"
 rust-version = "1.75"
 
