@@ -214,10 +214,6 @@ fn main() -> ExitCode {
     let z_mat = match solver_mode {
         SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
         SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(&segs, freq_hz),
-        _ => {
-            eprintln!("internal error: invalid solver mode");
-            return ExitCode::FAILURE;
-        }
     };
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
@@ -279,10 +275,6 @@ fn main() -> ExitCode {
                     Err(_) => return ExitCode::FAILURE,
                 }
             }
-        }
-        _ => {
-            eprintln!("internal error: invalid solver mode");
-            return ExitCode::FAILURE;
         }
     };
 
