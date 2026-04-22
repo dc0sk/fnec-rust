@@ -68,6 +68,12 @@ impl ZMatrix {
     fn set(&mut self, row: usize, col: usize, val: Complex64) {
         self.data[row * self.n + col] = val;
     }
+
+    /// Write an element — exposed for use by unit tests in sibling modules.
+    #[cfg(test)]
+    pub fn set_test(&mut self, row: usize, col: usize, val: Complex64) {
+        self.set(row, col, val);
+    }
 }
 
 // ---------------------------------------------------------------------------
