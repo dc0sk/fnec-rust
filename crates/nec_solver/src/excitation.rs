@@ -124,7 +124,7 @@ pub fn build_hallen_rhs(
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
     let feed_dir = segs[feed_idx].direction;
     let feed_mid = segs[feed_idx].midpoint;
-    let scale = 1.0 / ETA0;
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
@@ -325,6 +325,27 @@ mod tests {
             h.rhs[feed_idx].norm() < 1e-12,
             "rhs(feed) expected ~0, got {}",
             h.rhs[feed_idx]
+        );
+    }
+
+    #[test]
+    fn hallen_rhs_uses_two_pi_over_eta0_scale() {
+        let deck = dipole_deck();
+        let segs = build_geometry(&deck).unwrap();
+        let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
+
+        let sample_idx = 0usize;
+        let scale = 2.0 * std::f64::consts::PI / ETA0;
+        let k = 2.0 * std::f64::consts::PI * TEST_FREQ_HZ / C0;
+        let feed_mid = segs[5].midpoint;
+        let sample_mid = segs[sample_idx].midpoint;
+        let s = sample_mid[2] - feed_mid[2];
+        let expected = Complex64::new(0.0, -scale * (k * s.abs()).sin());
+
+        assert!(
+            (h.rhs[sample_idx] - expected).norm() < 1e-12,
+            "expected {expected}, got {}",
+            h.rhs[sample_idx]
         );
     }
 
