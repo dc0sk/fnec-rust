@@ -1,1 +1,5 @@
 target/
+
+# Local experiment scratch space (keep inside repo to avoid external temp churn)
+.tmp/
+.tmp-work/
