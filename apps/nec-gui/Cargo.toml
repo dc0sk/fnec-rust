@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "nec-gui"
+description = "fnec GUI frontend — modern task-oriented antenna modeling interface (iced)"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "fnec-gui"
+path = "src/main.rs"
+
+[dependencies]
+nec_project = { workspace = true }

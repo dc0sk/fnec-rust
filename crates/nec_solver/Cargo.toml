@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "nec_solver"
+description = "NEC2 MoM solver: matrix assembly, linear solve, postprocessing (currents, impedance, patterns)"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["cpu"]
+cpu = []
+gpu = ["dep:nec_accel"]
+
+[dependencies]
+nec_model = { workspace = true }
+nec_accel = { workspace = true, optional = true }

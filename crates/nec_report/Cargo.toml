@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "nec_report"
+description = "Result reporting and export: 4nec2-like text output, plotting data preparation"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nec_model = { workspace = true }

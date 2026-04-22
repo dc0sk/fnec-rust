@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "nec_accel"
+description = "Optional GPU acceleration backends for fnec-rust (wgpu compute, future: CUDA/Metal)"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+wgpu = []
+
+[dependencies]
