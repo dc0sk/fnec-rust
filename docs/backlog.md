@@ -1,10 +1,14 @@
 ---
 project: fnec-rust
+doc: docs/backlog.md
 status: living
 last_updated: 2026-04-22
-doc: docs/backlog.md
 ---
 
 # Backlog
 
-This document contains a list of features, improvements, and changes that are planned for the project.
+- [ ] Implement `scripts/stamp-docs.sh` with `--from-git-diff` support.
+- [ ] Implement `scripts/validate-docs-frontmatter.sh` for strict checks.
+- [ ] Add `.github/workflows/docs-last-updated-pr.yml`.
+- [ ] Add `.github/workflows/docs-validate.yml`.
+- [ ] Add troubleshooting note for mobile approval-dialog limitations in contributor guidance.

@@ -1,10 +1,20 @@
 ---
 project: fnec-rust
+doc: docs/sbom.md
 status: living
 last_updated: 2026-04-22
-doc: docs/sbom.md
 ---
 
-# Software Bill of Materials (SBOM)
+# SBOM (Documentation Automation Scope)
 
-This document provides information on the components used in the fnec-rust project.
+## Components
+
+- GitHub Actions workflows
+- Bash runtime (`bash`)
+- Standard Unix text tools (`grep`, `sed`, `awk` if needed)
+- Git CLI for diff detection and branch commits
+
+## Notes
+
+- No additional third-party runtime dependencies are required for the docs automation design.
+- Actions should use pinned major versions (`actions/checkout@v4`) as baseline.
