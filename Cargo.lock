@@ -16,6 +16,7 @@ dependencies = [
  "nec_parser",
  "nec_project",
  "nec_solver",
+ "num-complex",
 ]
 
 [[package]]
