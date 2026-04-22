@@ -20,15 +20,15 @@ Update this file whenever a dependency is added, removed, or its status changes.
 
 | Component | Role | License | Activity | Source |
 |:----------|:----:|:-------:|:--------:|:------|
-| nec_parser | Runtime | GPL-2.0-only | Active | crates/nec_parser |
-| nec_model | Runtime | GPL-2.0-only | Active | crates/nec_model |
-| nec_solver | Runtime | GPL-2.0-only | Active | crates/nec_solver |
-| nec_accel | Runtime | GPL-2.0-only | Active | crates/nec_accel |
-| nec_report | Runtime | GPL-2.0-only | Active | crates/nec_report |
-| nec_project | Runtime | GPL-2.0-only | Active | crates/nec_project |
-| nec-cli | Runtime | GPL-2.0-only | Active | apps/nec-cli |
-| nec-gui | Runtime | GPL-2.0-only | Active | apps/nec-gui |
-| nec-tui | Runtime | GPL-2.0-only | Active | apps/nec-tui |
+| nec_parser | Runtime | GPL-3.0-only | Active | crates/nec_parser |
+| nec_model | Runtime | GPL-3.0-only | Active | crates/nec_model |
+| nec_solver | Runtime | GPL-3.0-only | Active | crates/nec_solver |
+| nec_accel | Runtime | GPL-3.0-only | Active | crates/nec_accel |
+| nec_report | Runtime | GPL-3.0-only | Active | crates/nec_report |
+| nec_project | Runtime | GPL-3.0-only | Active | crates/nec_project |
+| nec-cli | Runtime | GPL-3.0-only | Active | apps/nec-cli |
+| nec-gui | Runtime | GPL-3.0-only | Active | apps/nec-gui |
+| nec-tui | Runtime | GPL-3.0-only | Active | apps/nec-tui |
 
 ## External runtime dependencies (to be confirmed as selected)
 
@@ -40,8 +40,8 @@ Update this file whenever a dependency is added, removed, or its status changes.
 | faer | Linear algebra | MIT OR Apache-2.0 | Active | https://github.com/sarah-ek/faer-rs |
 | wgpu | GPU compute backend | MIT OR Apache-2.0 | Active | https://github.com/gfx-rs/wgpu |
 
-**License note**: all external runtime dependencies must be compatible with GPL-2.0-only distribution.
-Verify each crate's SPDX before adding it. MIT, Apache-2.0, and BSD variants are compatible; GPL-3.0-only is not.
+**License note**: all external runtime dependencies must be compatible with GPL-3.0-only distribution.
+Verify each crate's SPDX before adding it. MIT, Apache-2.0, BSD, GPL-3.0-only, and LGPL-2.1-or-later variants are compatible. GPL-2.0-only is **not** compatible.
 
 ## CI and tooling
 
@@ -62,7 +62,7 @@ Verify each crate's SPDX before adding it. MIT, Apache-2.0, and BSD variants are
 
 ## License compatibility policy (GAP-008)
 
-- fnec-rust is GPL-2.0-only.
-- All runtime and dev dependencies must be GPL-2.0-compatible.
-- GPL-3.0-only code is **incompatible** and must never be incorporated.
+- fnec-rust is GPL-3.0-only.
+- All runtime and dev dependencies must be GPL-3.0-compatible (MIT, Apache-2.0, BSD, GPL-3.0-only, LGPL-2.1-or-later are acceptable).
+- GPL-2.0-only code is **incompatible** and must never be incorporated.
 - Reference-role entries are exempt from the compatibility requirement but must be clearly marked.

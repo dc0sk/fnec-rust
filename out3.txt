@@ -1,0 +1,3 @@
+warning: continuity residual 1.988e-1 > 1.000e-3; falling back to pulse
+1      26       1.000000+0.000000j   0.006660-0.019038j  16.370957+46.798616j
+diag: mode=continuity->pulse(residual) pulse_rhs=Raw abs_res=6.206703e-14 rel_res=1.285639e-14
