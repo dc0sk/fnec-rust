@@ -2,71 +2,81 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-22
 ---
 
 # Solver Findings
 
 ## Scope
 
-This document captures recent findings from feedpoint-impedance investigations for a center-fed half-wave dipole test case at 14.2 MHz.
+This document captures findings from feedpoint-impedance investigations for a
+center-fed half-wave dipole test case at 14.2 MHz.
 
 ## Test geometry
 
-- Wire: single GW, length 10.564 m, radius 0.001 m
-- Frequency: 14.2 MHz
-- Typical segmentation explored: 11, 21, 51, 101, 201+
-- Excitation: center segment, 1.0 V complex source
+- Wire: single GW, length 10.564 m, radius 0.001 m, frequency 14.2 MHz
+- Segments: 51 (primary benchmark), also swept at 11, 21, 101, 201, 401
+- Excitation: EX 0, center segment (tag=1, seg=26), 1.0 V
+- Reference: xnec2c NEC2 C implementation; Python MoM scripts in `studies/mom-kernel-accuracy/`
 
-## Key findings
+## Confirmed results (2026-04-22)
 
-1. Excitation normalization matters:
-- For point-matched EFIE, the driven RHS should be field-like at the match point.
-- Using source voltage directly instead of proper normalization can produce a scaled Z_in error.
+### Hallén solver — CORRECT
 
-2. Input-impedance reporting must use source voltage, not field term:
-- Correct feedpoint impedance is Z_in = V_source / I_source.
-- If RHS stores V/dl, then V_source = (V/dl) * dl at the driven segment.
+After fixing two bugs (`e098fb4`, `c302f29`):
 
-3. Pocklington pulse-basis behavior is fragile at low-to-moderate segment counts:
-- Endpoint-derivative terms are large and create heavy cancellation.
-- Conditioning worsens and practical convergence to physically expected dipole impedance can be slow.
+| Mode | N=51 | Python reference |
+|:-----|:-----|:----------------|
+| hallen | **74.242874 + j13.899516 Ω** | 74.23 + j13.90 Ω ✓ |
 
-4. Hallen path is sensitive to equation convention details:
-- RHS scaling, homogeneous-term sign, and endpoint constraints strongly affect results.
-- Several formulations can numerically solve but still produce non-physical feedpoint impedance.
+The Hallén augmented system (`[A | −cos] [I; C] = b`) with the correct
+`2π/η₀` RHS prefactor and NEC sign convention is the production-accurate solver.
 
-5. Current status:
-- The previous Hallen experiment path is informative but not yet production-ready for parity goals.
-- Next direction is continuity-enforcing basis support (rooftop/sinusoidal-like behavior).
+### Pulse/continuity solver — DIVERGES (known broken)
 
-## Current mode benchmarks (2026-04-23)
+Pulse-basis Pocklington EFIE diverges from the physical solution as segment
+count increases.  This is a fundamental property of the method, not a bug in
+the implementation:
 
-Solver modes were swept at 14.2 MHz for N = 11, 21, 51, 101 segments using the same center-fed dipole geometry.
+| N | Z_pulse |
+|---|---------|
+| 11 | 264.6 + j82.7 Ω |
+| 21 | 42.2 + j88.9 Ω |
+| 51 | 16.4 + j46.8 Ω |
+| 101 | 11.6 + j32.1 Ω |
+| 201 | 9.4 + j22.0 Ω |
+| 401 | 8.1 + j14.1 Ω |
 
-| Mode | N=11 | N=21 | N=51 | N=101 |
-|:--|:--|:--|:--|:--|
-| hallen | 363.667 - j629.119 | 422.921 - j196.313 | 466.482 + j87.333 | 482.832 + j187.315 |
-| pulse | 13.030 - j0.166 | 6.153 - j0.037 | 2.156 - j0.005 | 0.942 - j0.001 |
-| continuity | 13.891 - j0.031 | 6.337 - j0.006 | 2.178 - j0.001 | 0.946 - j0.000 |
+Root cause: the endpoint-derivative terms dominate the self-impedance element
+(~200× larger than the k²∫G term), causing heavy near-cancellation that
+amplifies discretisation error.  NEC2 avoids this by using piecewise-sinusoidal
+basis functions (`tbf`/`sbf`/`trio` in `calculations.c`).
 
-Interpretation:
+The pulse/continuity modes are marked **experimental** in the CLI with a
+runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 
-- Hallen path in the current implementation does not trend toward expected half-wave dipole feedpoint values.
-- Pulse and continuity paths still collapse toward near-zero resistance as segmentation increases.
-- Even after separating Hallen and Pocklington assembly call paths in the CLI, observed feedpoint trends are unchanged for this dipole case, indicating unresolved scaling/conditioning issues beyond simple mode routing.
-- Using NEC2-style pulse RHS wavelength normalization guidance (voltage source term proportional to 1/(dl*lambda)) did not materially change the dipole feedpoint trend in this implementation.
-- The continuity transform infrastructure remains useful groundwork, but physically correct parity still requires additional formulation correction and validation.
+## Key bugs fixed on this branch
+
+| Commit | Fix |
+|--------|-----|
+| `e098fb4` | Hallén RHS missing `2π/η₀` prefactor — was using `j·k` alone |
+| `c302f29` | Pulse RHS sign wrong — was `+v/λ`, correct is `−v/λ` (NEC sign convention) |
+
+## What did NOT cause the pulse divergence
+
+- Feedpoint measurement method (all estimators agree within ≈ 0.5 Ω — see `feedpoint_measurement.py`)
+- RHS sign/scaling (all four ± sign variants of the endpoint term give similarly wrong results)
+- Numerical precision of the endpoint derivative (exact d²/dz² via finite differences gives the same answer)
 
 ## Practical lessons
 
-- Keep experiments reproducible and local to the repo using a gitignored temp folder.
-- Favor incremental solver refactors with testable intermediate layers (basis transform, constraints, solve path).
+- Keep experiments reproducible using gitignored temp folders and `studies/` scripts.
 - Separate physics-formulation changes from reporting/output changes to isolate regressions.
+- When a solver gives wrong results, verify it in Python before modifying Rust — it is faster to falsify a formulation hypothesis in 10 lines of Python than in a Rust edit–compile–run cycle.
 
-## External references considered
+## External references
 
-- xnec2c (primary parity reference corpus source)
+- xnec2c source: https://github.com/KJ7LNW/xnec2c (primary NEC2 C reference)
+- Burke & Poggio, "NEC2 Theory of Operation", LLNL 1981
 - M5AIQ NEC resources: https://www.qsl.net/m5aiq/nec.html
-- yeti01/nec2: https://github.com/yeti01/nec2
-- tmolteno/necpp: https://github.com/tmolteno/necpp
+
