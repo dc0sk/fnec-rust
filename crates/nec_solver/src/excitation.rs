@@ -76,7 +76,7 @@ pub fn build_excitation(
 /// this helper applies the 1/lambda factor.
 pub fn scale_excitation_for_pulse_rhs(v: &[Complex64], freq_hz: f64) -> Vec<Complex64> {
     let lambda = C0 / freq_hz;
-    v.iter().map(|vi| *vi / lambda).collect()
+    v.iter().map(|vi| -*vi / lambda).collect()
 }
 
 /// Build Hallén RHS data (b and cos(k·s)) for the current geometry.

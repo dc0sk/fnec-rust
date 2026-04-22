@@ -13,6 +13,6 @@ fn pulse_rhs_scaling_applies_inverse_wavelength() {
     let scaled = scale_excitation_for_pulse_rhs(&v, freq_hz);
     let lambda = C0 / freq_hz;
 
-    assert!((scaled[0] - v[0] / lambda).norm() < 1e-12);
-    assert!((scaled[1] - v[1] / lambda).norm() < 1e-12);
+    assert!((scaled[0] + v[0] / lambda).norm() < 1e-12);
+    assert!((scaled[1] + v[1] / lambda).norm() < 1e-12);
 }
