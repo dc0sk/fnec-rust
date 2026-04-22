@@ -1,2 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
+
+pub mod card;
+pub mod deck;

@@ -11,3 +11,4 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+nec_model = { workspace = true }

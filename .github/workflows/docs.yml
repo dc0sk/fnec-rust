@@ -2,12 +2,6 @@ name: Docs Checks
 
 on:
   pull_request:
-    paths:
-      - "docs/**"
-      - "scripts/validate-doc-frontmatter.sh"
-      - "scripts/check-version-bump-docs.sh"
-      - "Cargo.toml"
-      - "SBOM.spdx.json"
 
 jobs:
   validate-doc-frontmatter:
@@ -35,3 +29,11 @@ jobs:
         run: |
           chmod +x scripts/check-version-bump-docs.sh
           ./scripts/check-version-bump-docs.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
+  # Gate job — this is the name registered as a required status check in
+  # branch protection.  It only passes when both real jobs above succeed.
+  docs:
+    runs-on: ubuntu-latest
+    needs: [validate-doc-frontmatter, check-version-bump-docs]
+    steps:
+      - run: echo "All docs checks passed"
