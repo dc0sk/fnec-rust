@@ -2,3 +2,4 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod geometry;
+pub mod matrix;

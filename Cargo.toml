@@ -30,3 +30,6 @@ nec_solver  = { path = "crates/nec_solver" }
 nec_accel   = { path = "crates/nec_accel" }
 nec_report  = { path = "crates/nec_report" }
 nec_project = { path = "crates/nec_project" }
+
+# External crates
+num-complex = "0.4"

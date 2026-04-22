@@ -16,5 +16,6 @@ cpu = []
 gpu = ["dep:nec_accel"]
 
 [dependencies]
-nec_model = { workspace = true }
-nec_accel = { workspace = true, optional = true }
+nec_model   = { workspace = true }
+num-complex = { workspace = true }
+nec_accel   = { workspace = true, optional = true }
