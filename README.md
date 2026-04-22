@@ -1,6 +1,52 @@
 # fnec-rust
 
+![version](https://img.shields.io/badge/version-0.1.0-blue)
+![license](https://img.shields.io/badge/license-GPL--3.0--only-blue)
+
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.
+
+## Features
+
+- Parse 4nec2 / NEC2 deck files (GW, EX, FR, EN cards; GE optional)
+- Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
+  - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
+- Pulse-basis and continuity-basis Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
+- CLI binary `fnec` with selectable solver and RHS modes
+- Residual diagnostics printed to stderr on every run
+- Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI, TUI
+
+## Quick start
+
+```
+cargo build --release
+./target/release/fnec dipole.nec
+```
+
+Example deck (`dipole.nec`):
+
+```
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+```
+
+Example output (tag, seg, V_source, I, Z_in):
+
+```
+1      26      1.000000+0.000000j   0.013471-0.002503j   74.242874+13.899516j
+```
+
+See [docs/cli-guide.md](docs/cli-guide.md) for full option reference.
+
+## Support fnec-rust
+
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC)
+
+If this project helps your work, please consider supporting ongoing development:
+
+https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC
 
 ## Goals
 

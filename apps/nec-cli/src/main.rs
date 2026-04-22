@@ -1,22 +1,172 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 use nec_model::card::Card;
 use nec_parser::parse;
-use nec_solver::{assemble_z_matrix, build_excitation, build_geometry, solve};
+use nec_solver::{
+    assemble_pocklington_matrix, assemble_z_matrix, build_excitation, build_geometry,
+    build_hallen_rhs, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_with_continuity_basis, Segment, ZMatrix,
+};
+use num_complex::Complex64;
 use std::path::PathBuf;
 use std::process::ExitCode;
+
+const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SolverMode {
+    Hallen,
+    Pulse,
+    Continuity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PulseRhsMode {
+    Raw,
+    Nec2,
+}
+
+fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), String> {
+    let mut solver_mode = SolverMode::Hallen;
+    let mut pulse_rhs_mode = PulseRhsMode::Nec2;
+    let mut deck_path: Option<PathBuf> = None;
+
+    let mut i = 1usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--solver" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --solver (expected: hallen|pulse|continuity)"
+                            .to_string(),
+                    );
+                }
+                solver_mode = match args[i].as_str() {
+                    "hallen" => SolverMode::Hallen,
+                    "pulse" => SolverMode::Pulse,
+                    "continuity" => SolverMode::Continuity,
+                    other => {
+                        return Err(format!(
+                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity)"
+                        ))
+                    }
+                };
+            }
+            "--pulse-rhs" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --pulse-rhs (expected: raw|nec2)".to_string());
+                }
+                pulse_rhs_mode = match args[i].as_str() {
+                    "raw" => PulseRhsMode::Raw,
+                    "nec2" => PulseRhsMode::Nec2,
+                    other => {
+                        return Err(format!(
+                            "invalid --pulse-rhs value '{other}' (expected: raw|nec2)"
+                        ))
+                    }
+                };
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!("unknown option: {flag}"));
+            }
+            path => {
+                if deck_path.is_some() {
+                    return Err(format!("unexpected extra argument: {path}"));
+                }
+                deck_path = Some(PathBuf::from(path));
+            }
+        }
+        i += 1;
+    }
+
+    let path = deck_path.ok_or_else(|| "missing deck path".to_string())?;
+    Ok((solver_mode, pulse_rhs_mode, path))
+}
+
+fn is_single_linear_chain(segs: &[Segment]) -> bool {
+    if segs.is_empty() {
+        return false;
+    }
+    let tag = segs[0].tag;
+    for (idx, s) in segs.iter().enumerate() {
+        if s.tag != tag {
+            return false;
+        }
+        if s.tag_index as usize != idx + 1 {
+            return false;
+        }
+    }
+    true
+}
+
+fn l2_norm(v: &[Complex64]) -> f64 {
+    v.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt()
+}
+
+fn residual_zi_minus_v(z: &ZMatrix, i_vec: &[Complex64], v_vec: &[Complex64]) -> (f64, f64) {
+    let n = z.n;
+    let mut r = vec![Complex64::new(0.0, 0.0); n];
+    for row in 0..n {
+        let mut zi = Complex64::new(0.0, 0.0);
+        for (col, i_col) in i_vec.iter().enumerate().take(n) {
+            zi += z.get(row, col) * *i_col;
+        }
+        r[row] = zi - v_vec[row];
+    }
+
+    let res = l2_norm(&r);
+    let denom = l2_norm(v_vec);
+    let rel = if denom > 0.0 { res / denom } else { res };
+    (res, rel)
+}
+
+fn residual_hallen(
+    z: &ZMatrix,
+    i_vec: &[Complex64],
+    c_hom: Complex64,
+    cos_vec: &[f64],
+    rhs: &[Complex64],
+) -> (f64, f64) {
+    let n = z.n;
+    let mut r = vec![Complex64::new(0.0, 0.0); n];
+    for row in 0..n {
+        let mut zi = Complex64::new(0.0, 0.0);
+        for (col, i_col) in i_vec.iter().enumerate().take(n) {
+            zi += z.get(row, col) * *i_col;
+        }
+        let lhs = zi - c_hom * cos_vec[row];
+        r[row] = lhs - rhs[row];
+    }
+
+    let res = l2_norm(&r);
+    let denom = l2_norm(rhs);
+    let rel = if denom > 0.0 { res / denom } else { res };
+    (res, rel)
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-        eprintln!("Usage: fnec <deck.nec>");
+        eprintln!(
+            "Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>"
+        );
         return ExitCode::from(2);
     }
 
-    let path = PathBuf::from(&args[1]);
+    let (solver_mode, pulse_rhs_mode, path) = match parse_args(&args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -34,61 +184,8 @@ fn main() -> ExitCode {
         }
     };
 
-    for w in &result.warnings {
-        eprintln!("warning: {w}");
-    }
-
     let deck = &result.deck;
 
-    println!("Deck: {}", path.display());
-    println!("  Cards parsed : {}", deck.cards.len());
-
-    // Print a brief inventory of card types.
-    let mut n_comment = 0u32;
-    let mut n_gw = 0u32;
-    let mut n_ex = 0u32;
-    let mut n_fr = 0u32;
-    let mut n_rp = 0u32;
-    let mut n_en = 0u32;
-
-    for card in &deck.cards {
-        match card {
-            Card::Comment(_) => n_comment += 1,
-            Card::Gw(_) => n_gw += 1,
-            Card::Ex(_) => n_ex += 1,
-            Card::Fr(_) => n_fr += 1,
-            Card::Rp(_) => n_rp += 1,
-            Card::En(_) => n_en += 1,
-        }
-    }
-
-    if n_comment > 0 {
-        println!("  CM/CE        : {n_comment}");
-    }
-    if n_gw > 0 {
-        println!("  GW wires     : {n_gw}");
-    }
-    if n_ex > 0 {
-        println!("  EX sources   : {n_ex}");
-    }
-    if n_fr > 0 {
-        println!("  FR freq      : {n_fr}");
-    }
-    if n_rp > 0 {
-        println!("  RP requests  : {n_rp}");
-    }
-    if n_en > 0 {
-        println!("  EN           : {n_en}");
-    }
-    if !result.warnings.is_empty() {
-        println!("  Warnings     : {}", result.warnings.len());
-    }
-
-    // ------------------------------------------------------------------
-    // End-to-end solve (requires GW + EX + FR cards).
-    // ------------------------------------------------------------------
-
-    // Extract the first FR frequency; skip the solve if none present.
     let freq_hz = match deck.cards.iter().find_map(|c| {
         if let Card::Fr(fr) = c {
             Some(fr.frequency_mhz * 1e6)
@@ -97,79 +194,112 @@ fn main() -> ExitCode {
         }
     }) {
         Some(f) => f,
-        None => {
-            println!("\n[No FR card — skipping impedance computation]");
-            return ExitCode::SUCCESS;
-        }
+        None => return ExitCode::SUCCESS,
     };
 
-    // Skip if there are no EX sources.
-    if n_ex == 0 {
-        println!("\n[No EX card — skipping impedance computation]");
-        return ExitCode::SUCCESS;
-    }
-
-    // Build geometry.
     let segs = match build_geometry(deck) {
         Ok(s) => s,
-        Err(e) => {
-            eprintln!("error (geometry): {e}");
-            return ExitCode::FAILURE;
-        }
+        Err(_) => return ExitCode::FAILURE,
     };
 
-    // Build excitation vector.
     let v_vec = match build_excitation(deck, &segs) {
         Ok(v) => v,
-        Err(e) => {
-            eprintln!("error (excitation): {e}");
-            return ExitCode::FAILURE;
+        Err(_) => return ExitCode::FAILURE,
+    };
+    let v_vec_pulse = match pulse_rhs_mode {
+        PulseRhsMode::Raw => v_vec.clone(),
+        PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(&v_vec, freq_hz),
+    };
+
+    let z_mat = match solver_mode {
+        SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
+        SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(&segs, freq_hz),
+    };
+
+    let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
+        SolverMode::Hallen => {
+            let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
+                Ok(h) => h,
+                Err(_) => return ExitCode::FAILURE,
+            };
+            match solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec) {
+                Ok(sol) => {
+                    let (a, r) = residual_hallen(
+                        &z_mat,
+                        &sol.currents,
+                        sol.c_hom,
+                        &hallen_rhs.cos_vec,
+                        &hallen_rhs.rhs,
+                    );
+                    (sol.currents, a, r, "hallen")
+                }
+                Err(_) => return ExitCode::FAILURE,
+            }
+        }
+        SolverMode::Pulse => match solve(&z_mat, &v_vec_pulse) {
+            Ok(i) => {
+                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                (i, a, r, "pulse")
+            }
+            Err(_) => return ExitCode::FAILURE,
+        },
+        SolverMode::Continuity => {
+            if !is_single_linear_chain(&segs) {
+                match solve(&z_mat, &v_vec_pulse) {
+                    Ok(i) => {
+                        let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                        (i, a, r, "continuity->pulse")
+                    }
+                    Err(_) => return ExitCode::FAILURE,
+                }
+            } else {
+                match solve_with_continuity_basis(&z_mat, &v_vec_pulse) {
+                    Ok(i) => {
+                        let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                        if r <= CONTINUITY_REL_RESIDUAL_MAX {
+                            (i, a, r, "continuity")
+                        } else {
+                            eprintln!(
+                                "warning: continuity residual {:.3e} > {:.3e}; falling back to pulse",
+                                r, CONTINUITY_REL_RESIDUAL_MAX
+                            );
+                            match solve(&z_mat, &v_vec_pulse) {
+                                Ok(i2) => {
+                                    let (a2, r2) = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
+                                    (i2, a2, r2, "continuity->pulse(residual)")
+                                }
+                                Err(_) => return ExitCode::FAILURE,
+                            }
+                        }
+                    }
+                    Err(_) => return ExitCode::FAILURE,
+                }
+            }
         }
     };
 
-    // Assemble impedance matrix.
-    println!(
-        "\nAssembling {n}×{n} impedance matrix at {f:.3} MHz …",
-        n = segs.len(),
-        f = freq_hz / 1e6
-    );
-    let z_mat = assemble_z_matrix(&segs, freq_hz);
-
-    // Solve Z·I = V.
-    let i_vec = match solve(&z_mat, &v_vec) {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("error (solver): {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    // Print feedpoint results for every driven segment.
-    println!("\nFeedpoint Results:");
-    println!(
-        "{:<6} {:<6} {:>20} {:>20} {:>18}",
-        "Tag", "Seg", "V (V)", "I (A)", "Z_in (Ω)"
-    );
-    println!("{}", "-".repeat(76));
-
-    let mut any_driven = false;
     for (idx, seg) in segs.iter().enumerate() {
         let v = v_vec[idx];
         if v.norm() < 1e-30 {
             continue;
         }
-        any_driven = true;
         let i = i_vec[idx];
-        let z_in = if i.norm() > 1e-60 { v / i } else { v };
+        let v_source = v * seg.length;
+        let z_in = if i.norm() > 1e-60 {
+            v_source / i
+        } else {
+            v_source
+        };
         println!(
-            "{:<6} {:<6} {:>10.4}{:+.4}j {:>10.6}{:+.6}j {:>8.3}{:+.3}j",
-            seg.tag, seg.tag_index, v.re, v.im, i.re, i.im, z_in.re, z_in.im,
+            "{:<6} {:<6} {:>10.6}{:+.6}j {:>10.6}{:+.6}j {:>10.6}{:+.6}j",
+            seg.tag, seg.tag_index, v_source.re, v_source.im, i.re, i.im, z_in.re, z_in.im,
         );
     }
 
-    if !any_driven {
-        println!("  (no driven segments found)");
-    }
+    eprintln!(
+        "diag: mode={diag_label} pulse_rhs={:?} abs_res={:.6e} rel_res={:.6e}",
+        pulse_rhs_mode, diag_abs, diag_rel
+    );
 
     ExitCode::SUCCESS
 }
