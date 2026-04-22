@@ -5,14 +5,29 @@ status: living
 last_updated: 2026-04-22
 ---
 
-# Changelog
+# fnec-rust — Changelog
 
-All notable documentation process changes are recorded here.
+Continuously updated list of notable changes. For curated release narratives, see `docs/releasenotes.md`.
 
-## 2026-04-22
-
+## Unreleased
 ### Added
+- 
 
-- Standard frontmatter requirements for all docs under `docs/`.
-- Requirements, steering, roadmap, architecture, design, backlog, SBOM, and memory structure.
-- CI automation design for docs stamping and validation.
+### Changed
+- 
+
+### Fixed
+- 
+
+### Deprecated
+- 
+
+### Removed
+- 
+
+### Security
+- 
+
+## 0.1.0 — YYYY-MM-DD
+### Added
+- Initial release.
