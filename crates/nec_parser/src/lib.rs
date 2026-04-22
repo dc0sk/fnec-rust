@@ -151,11 +151,21 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             "FR" => {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "FR", &fields, 4)?;
+                // NEC2 canonical form has 4 integer fields then floats:
+                //   FR I1 I2 I3 I4 F1 F2
+                // Many decks (and our own test fixtures) omit the unused I3/I4
+                // and use the shorthand:  FR I1 I2 F1 F2
+                // Distinguish by testing whether field[2] parses as a float ≥ 1.
+                let (freq_idx, step_idx) = if fields.len() >= 6 {
+                    (4, 5) // canonical: skip I3/I4
+                } else {
+                    (2, 3) // shorthand: no I3/I4
+                };
                 deck.cards.push(Card::Fr(FrCard {
                     step_type: parse_u32(lineno, "FR", 1, &fields[0])?,
                     steps: parse_u32(lineno, "FR", 2, &fields[1])?,
-                    frequency_mhz: parse_f64(lineno, "FR", 3, &fields[2])?,
-                    step_mhz: parse_f64(lineno, "FR", 4, &fields[3])?,
+                    frequency_mhz: parse_f64(lineno, "FR", freq_idx + 1, &fields[freq_idx])?,
+                    step_mhz: parse_f64(lineno, "FR", step_idx + 1, &fields[step_idx])?,
                 }));
             }
             "RP" => {
