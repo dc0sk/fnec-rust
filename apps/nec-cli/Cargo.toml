@@ -15,4 +15,6 @@ name = "fnec"
 path = "src/main.rs"
 
 [dependencies]
+nec_parser  = { workspace = true }
+nec_model   = { workspace = true }
 nec_project = { workspace = true }
