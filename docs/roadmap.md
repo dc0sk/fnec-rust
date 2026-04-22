@@ -15,8 +15,8 @@ last_updated: 2026-04-22
 ## Phase 2 (next)
 
 - Add and stabilize PR automation:
-  - stamp `last_updated` on changed docs
-  - validate frontmatter for all docs
+  - Stamp `last_updated` on changed docs
+  - Validate frontmatter for all docs
 
 ## Phase 3 (later)
 

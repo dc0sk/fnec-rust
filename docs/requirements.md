@@ -25,7 +25,7 @@ last_updated: 2026-04-22
 - **NFR-003**: Stamping must be idempotent (no-op when no doc changes exist).
 - **NFR-004**: Process should remain mobile-friendly; fallback instructions must not require direct `main` pushes.
 
-## Acceptance criteria
+## Acceptance criteria (definition of done per implementation cycle)
 
 - [ ] All `docs/*.md` files include valid frontmatter with correct `doc` path.
 - [ ] Validation workflow fails when frontmatter is missing or malformed.
