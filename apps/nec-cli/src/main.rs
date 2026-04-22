@@ -14,6 +14,78 @@ use std::process::ExitCode;
 
 const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SolverMode {
+    Hallen,
+    Pulse,
+    Continuity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PulseRhsMode {
+    Raw,
+    Nec2,
+}
+
+fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), String> {
+    let mut solver_mode = SolverMode::Hallen;
+    let mut pulse_rhs_mode = PulseRhsMode::Nec2;
+    let mut deck_path: Option<PathBuf> = None;
+
+    let mut i = 1usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--solver" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --solver (expected: hallen|pulse|continuity)"
+                            .to_string(),
+                    );
+                }
+                solver_mode = match args[i].as_str() {
+                    "hallen" => SolverMode::Hallen,
+                    "pulse" => SolverMode::Pulse,
+                    "continuity" => SolverMode::Continuity,
+                    other => {
+                        return Err(format!(
+                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity)"
+                        ))
+                    }
+                };
+            }
+            "--pulse-rhs" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --pulse-rhs (expected: raw|nec2)".to_string());
+                }
+                pulse_rhs_mode = match args[i].as_str() {
+                    "raw" => PulseRhsMode::Raw,
+                    "nec2" => PulseRhsMode::Nec2,
+                    other => {
+                        return Err(format!(
+                            "invalid --pulse-rhs value '{other}' (expected: raw|nec2)"
+                        ))
+                    }
+                };
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!("unknown option: {flag}"));
+            }
+            path => {
+                if deck_path.is_some() {
+                    return Err(format!("unexpected extra argument: {path}"));
+                }
+                deck_path = Some(PathBuf::from(path));
+            }
+        }
+        i += 1;
+    }
+
+    let path = deck_path.ok_or_else(|| "missing deck path".to_string())?;
+    Ok((solver_mode, pulse_rhs_mode, path))
+}
+
 fn is_single_linear_chain(segs: &[Segment]) -> bool {
     if segs.is_empty() {
         return false;
@@ -80,20 +152,21 @@ fn main() -> ExitCode {
 
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-        eprintln!("Usage: fnec [--solver <pulse|hallen|continuity>] <deck.nec>");
+        eprintln!(
+            "Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>"
+        );
         return ExitCode::from(2);
     }
 
-    let mut solver_mode = "hallen";
-    let path_str;
-    if args[1] == "--solver" && args.len() >= 4 {
-        solver_mode = &args[2];
-        path_str = &args[3];
-    } else {
-        path_str = &args[1];
-    }
-
-    let path = PathBuf::from(path_str);
+    let (solver_mode, pulse_rhs_mode, path) = match parse_args(&args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -133,19 +206,22 @@ fn main() -> ExitCode {
         Ok(v) => v,
         Err(_) => return ExitCode::FAILURE,
     };
-    let v_vec_pulse = scale_excitation_for_pulse_rhs(&v_vec, freq_hz);
+    let v_vec_pulse = match pulse_rhs_mode {
+        PulseRhsMode::Raw => v_vec.clone(),
+        PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(&v_vec, freq_hz),
+    };
 
     let z_mat = match solver_mode {
-        "hallen" => assemble_z_matrix(&segs, freq_hz),
-        "pulse" | "continuity" => assemble_pocklington_matrix(&segs, freq_hz),
+        SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
+        SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(&segs, freq_hz),
         _ => {
-            eprintln!("unknown solver: {}", solver_mode);
+            eprintln!("internal error: invalid solver mode");
             return ExitCode::FAILURE;
         }
     };
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
-        "hallen" => {
+        SolverMode::Hallen => {
             let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
                 Ok(h) => h,
                 Err(_) => return ExitCode::FAILURE,
@@ -164,14 +240,14 @@ fn main() -> ExitCode {
                 Err(_) => return ExitCode::FAILURE,
             }
         }
-        "pulse" => match solve(&z_mat, &v_vec_pulse) {
+        SolverMode::Pulse => match solve(&z_mat, &v_vec_pulse) {
             Ok(i) => {
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 (i, a, r, "pulse")
             }
             Err(_) => return ExitCode::FAILURE,
         },
-        "continuity" => {
+        SolverMode::Continuity => {
             if !is_single_linear_chain(&segs) {
                 match solve(&z_mat, &v_vec_pulse) {
                     Ok(i) => {
@@ -205,7 +281,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("unknown solver: {}", solver_mode);
+            eprintln!("internal error: invalid solver mode");
             return ExitCode::FAILURE;
         }
     };
@@ -229,8 +305,8 @@ fn main() -> ExitCode {
     }
 
     eprintln!(
-        "diag: mode={diag_label} abs_res={:.6e} rel_res={:.6e}",
-        diag_abs, diag_rel
+        "diag: mode={diag_label} pulse_rhs={:?} abs_res={:.6e} rel_res={:.6e}",
+        pulse_rhs_mode, diag_abs, diag_rel
     );
 
     ExitCode::SUCCESS
