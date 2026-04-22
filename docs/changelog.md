@@ -1,10 +1,18 @@
 ---
 project: fnec-rust
+doc: docs/changelog.md
 status: living
 last_updated: 2026-04-22
-doc: docs/changelog.md
 ---
 
 # Changelog
 
-This document tracks changes in the fnec-rust project across different versions.
+All notable documentation process changes are recorded here.
+
+## 2026-04-22
+
+### Added
+
+- Standard frontmatter requirements for all docs under `docs/`.
+- Requirements, steering, roadmap, architecture, design, backlog, SBOM, and memory structure.
+- CI automation design for docs stamping and validation.
