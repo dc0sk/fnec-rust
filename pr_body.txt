@@ -1,0 +1,51 @@
+## Summary
+
+Wires the full solver pipeline into the `fnec` CLI binary.
+
+## Pipeline
+
+```
+parse deck → build_geometry → build_excitation → assemble_z_matrix → solve → print Z_in
+```
+
+Running `fnec deck.nec` now prints a **Feedpoint Results** table with V, I, and Z_in for every driven segment.
+
+## Changes
+
+### `apps/nec-cli`
+- `main.rs`: extract FR frequency, build geometry + excitation, assemble Z, solve, print feedpoint table
+- `Cargo.toml`: add `nec_solver` workspace dependency
+
+### `crates/nec_solver/src/lib.rs`
+Re-export `build_geometry`, `Segment`, `build_excitation`, `ExcitationError`, `assemble_z_matrix`, `ZMatrix`, `solve`, `SolveError` at crate root.
+
+### `crates/nec_parser/src/lib.rs`
+Fix FR card field parsing: canonical NEC2 format uses 6 fields (`I1 I2 I3 I4 F1 F2`); the parser now selects `fields[4]`/`[5]` when 6+ fields are present and falls back to `fields[2]`/`[3]` for the legacy 4-field shorthand. All 6 existing parser tests continue to pass.
+
+### `examples/dipole_14mhz.nec`
+New smoke-test deck: 11-segment half-wave dipole at 14.2 MHz with a centre feedpoint.
+
+## Smoke Test
+
+```
+$ fnec examples/dipole_14mhz.nec
+Deck: examples/dipole_14mhz.nec
+  Cards parsed : 6
+  CM/CE        : 2
+  GW wires     : 1
+  EX sources   : 1
+  FR freq      : 1
+  EN           : 1
+
+Assembling 11×11 impedance matrix at 14.200 MHz …
+
+Feedpoint Results:
+Tag    Seg                   V (V)                I (A)           Z_in (Ω)
+----------------------------------------------------------------------------
+1      6          1.0000+0.0000j   0.002743-0.025279j    4.243+39.098j
+```
+
+## Checklist
+- [x] `cargo fmt --all -- --check` passes
+- [x] `cargo test --workspace` — 29/29 passing
+- [x] End-to-end smoke test produces a feedpoint impedance

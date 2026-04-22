@@ -31,3 +31,6 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 - `docs/backlog.md` — remaining follow-up tasks
 - `docs/sbom.md` — tooling/components inventory for docs automation
 - `docs/memories.md` — lessons and operator notes
+- `docs/solver-findings.md` — recent MoM kernel findings, experiments, and learnings
+- `docs/applied-math.md` — applied electromagnetics/math formulas used by the solver
+- `docs/rooftop-basis-plan.md` — next-step plan for continuity-enforcing basis support

@@ -78,6 +78,16 @@ fnec-rust supports multiple NEC input dialects through a layered parser architec
 - **License constraint**: xnec2c is GPL-3.0-only. fnec-rust is GPL-2.0-only. No code from xnec2c may be copied, translated, or adapted into fnec-rust source under any circumstances.
 - xnec2c's `examples/` and `t/` directories are the primary source for the test corpus `.nec` input files.
 
+## Additional reference implementations
+
+The following projects are useful comparative references for algorithms, behavior checks, and implementation ideas:
+
+- M5AIQ NEC notes/tools: https://www.qsl.net/m5aiq/nec.html
+- yeti01/nec2: https://github.com/yeti01/nec2
+- tmolteno/necpp: https://github.com/tmolteno/necpp
+
+These references are supplementary. 4nec2 compatibility remains the primary product target, and xnec2c remains the main NEC2 parity reference corpus source.
+
 ## Documentation process constraints
 
 - Docs updates flow through PRs only due to protected main.
