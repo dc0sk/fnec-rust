@@ -7,31 +7,37 @@ last_updated: 2026-04-22
 
 # Design
 
-## Frontmatter contract
+## Product design direction
 
-Required keys per file:
+- UX is modern, intuitive, and task-oriented.
+- Workflows prioritize: open/import project, configure run, execute, inspect results, iterate.
+- UI design should avoid reproducing legacy complexity where clearer flows are possible.
 
-- `project: fnec-rust`
-- `doc: docs/<name>.md` (exact path)
-- `status: living`
-- `last_updated: YYYY-MM-DD`
+## Interaction model
 
-## Validation behavior
+- CLI is the canonical execution path and baseline for correctness.
+- GUI organizes user tasks as guided workflows rather than low-level card editing dialogs.
+- Optional TUI supports operational and headless workflows.
 
-Validation script must:
+## Output design
 
-- scan all `docs/*.md`
-- assert frontmatter exists as the first block
-- verify `doc` equals actual file path
-- verify `status` equals `living`
-- verify `last_updated` matches date regex
-- emit actionable CI errors and non-zero exit on failure
+- Primary result presentation is 4nec2-like text output.
+- JSON/CSV exports are intentionally deferred.
+- Text output sections, units, and precision require a fixed format contract.
 
-## Stamping behavior
+## Incremental design strategy
 
-Stamping script must:
+- Begin with simple ground model controls.
+- Add advanced ground configuration progressively.
+- Begin with CPU-first workflows and add GPU postprocessing controls later.
 
-- detect changed docs via git diff range
-- update only `last_updated` in changed files
-- avoid touching unchanged docs
-- exit cleanly when no eligible files changed
+## Extensibility design
+
+- Plugin/scripting is in scope.
+- Initial extension model should focus on safe, bounded hooks.
+- Extension lifecycle and compatibility policy must be documented before public plugin API freeze.
+
+## Documentation design constraints
+
+- Docs files must keep standard frontmatter and PR-based update flow.
+- last_updated remains CI-managed.

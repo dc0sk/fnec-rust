@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "nec_project"
+description = "Project container: run configuration, variants, result cache, .nec and Markdown import/export"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nec_parser  = { workspace = true }
+nec_model   = { workspace = true }
+nec_solver  = { workspace = true }
+nec_report  = { workspace = true }
