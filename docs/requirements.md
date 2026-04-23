@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-23
 ---
 
 # Requirements
@@ -16,6 +16,7 @@ last_updated: 2026-04-22
 - **DEC-005**: GUI direction is modern, intuitive, and task-oriented (not a legacy 4nec2 dialog clone).
 - **DEC-006**: Plugin and scripting capabilities are in scope.
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
+- **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
 
 ## Functional requirements
 
@@ -76,6 +77,26 @@ Tolerances below define the strictest acceptable deviation; any failure is a def
 - Exceeding any target for a corpus case is a CI failure, not a warning.
 - The corpus must include at minimum: half-wave dipole (free space), half-wave dipole (over ground), Yagi, loaded element, frequency sweep, multi-source case.
 
+### Tolerance as a validation philosophy
+
+The tolerance matrix is not just acceptance criteria; it is a design contract that shapes the solver architecture and testing discipline.
+
+**Core principles:**
+
+1. **Reference-centric**: All numerical work is measured against a curated golden corpus run through the authoritative NEC-2/NEC-4 reference. No internal-only validation is acceptable.
+
+2. **Metric specificity**: Different metrics have different precision targets. Impedance must be near-exact (0.1% R/X); pattern gain can tolerate slightly more deviation (0.1 dB per sample) because angular interpolation varies between implementations. This specificity forces choices in solver precision, quadrature order, and numerical stability.
+
+3. **Absolute and relative floors**: Mixing relative and absolute tolerances avoids paradoxes near zero. A reactance near zero is allowed ±0.05 Ω absolute rather than suffering from meaninglessly wide relative bands. This grounds the contract in physical reality.
+
+4. **CI enforcement**: Exceeding any tolerance on any corpus case is a **CI failure**, not a warning or a deferred issue. This discipline prevents tolerance creep and ensures every merge maintains the compatibility contract.
+
+5. **Versioning the contract**: If a solver improvement or bug fix requires tolerance adjustment, that adjustment is documented in the changelog as a breaking API change. Users are never surprised by what "parity" means.
+
+6. **Staged corpus growth**: The MVP corpus is minimal (dipole, Yagi, loaded element). As phases progress, the corpus grows to include ground effects, frequency sweeps, multi-source cases, and edge cases. Each phase gates on corpus pass at the current scope.
+
+This discipline ensures that fnec-rust's numerical parity is measurable, auditable, and trustworthy for production antenna work.
+
 ### GAP-001 resolution
 
 - Status: **Resolved**
@@ -90,7 +111,7 @@ Tolerances below define the strictest acceptable deviation; any failure is a def
 - **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability).
 - **GAP-005 (high)**: Define text report format contract for 4nec2-like output (sections, units, precision, ordering).
 - **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow.
-- **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve.
+- **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred).
 - **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility.
 
 ## Acceptance criteria
