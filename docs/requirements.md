@@ -17,7 +17,7 @@ last_updated: 2026-04-23
 - **DEC-006**: Plugin and scripting capabilities are in scope.
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
 - **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
-- **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
+- **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, competitive with xnec2c-optimize for optimizer-loop orchestration, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
 
 ## Functional requirements
 
@@ -56,6 +56,8 @@ last_updated: 2026-04-23
 - **COMP-011**: CLI behavior must remain sufficient to replace classic open NEC batch tools for routine automated runs.
 - **COMP-012**: Library and automation surfaces must be designed so fnec-rust can compete with necpp-style embedding in optimization, research, and service contexts.
 - **COMP-013**: Automation workflow planning must explicitly track AutoEZ-class capabilities such as variable-driven studies, resonance search, convergence studies, and matching-network assistance.
+- **COMP-014**: Validation planning must include an explicit case matrix informed by the NEC-5 Validation Manual categories (kernel behavior, source modeling, convergence, junction/surface classes, and loops/wires over ground), with mapped tolerance-gated corpus coverage for in-scope equivalents.
+- **COMP-015**: Automation CLI/API contracts must be stable enough to support external optimizer loops comparable to xnec2c-optimize-style objective-driven runs.
 
 ## Documentation and process requirements
 
@@ -130,6 +132,8 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 - **GAP-010 (high)**: Define stable automation and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp-style integrations.
 - **GAP-011 (medium)**: Define classic batch-CLI parity requirements relative to open NEC2 tools such as yeti01/nec2 and xnec2c batch-oriented workflows.
 - **GAP-012 (high)**: Define measurable acceptance criteria for AutoEZ-class automation parity, including variable sweeps, resonance targeting, convergence studies, and matching-network workflows.
+- **GAP-013 (high)**: Define and maintain a NEC-5-validation-manual-informed case matrix that maps target classes to corpus tests and tolerance gates.
+- **GAP-014 (medium)**: Define measurable external optimizer-loop compatibility criteria relative to xnec2c-optimize workflows (objective input, deterministic run behavior, and machine-readable outputs).
 
 ## Acceptance criteria
 
@@ -137,6 +141,7 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 - [ ] Gap items have owners, target milestone, and resolution criteria.
 - [ ] Compatibility test corpus and tolerance matrix are documented before broad solver expansion.
 - [ ] Text report format contract is fixed before GUI result views are finalized.
-- [ ] Parity targets against NEC-2, NEC-4, NEC-5, 4nec2, EZNEC, AutoEZ, xnec2c, yeti01/nec2, and necpp are reflected consistently in roadmap and architecture.
+- [ ] Parity targets against NEC-2, NEC-4, NEC-5, 4nec2, EZNEC, AutoEZ, xnec2c, xnec2c-optimize, yeti01/nec2, and necpp are reflected consistently in roadmap and architecture.
 - [ ] Workflow parity requirements are specific enough to test, not just aspirational.
 - [ ] Automation and embedding expectations are explicit enough to drive API design decisions.
+- [ ] NEC-5-validation-manual-informed case classes are mapped to explicit tolerance-gated corpus coverage for in-scope scenarios.

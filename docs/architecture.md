@@ -13,7 +13,7 @@ last_updated: 2026-04-22
 - Provide a reusable core with separate CLI, GUI, and optional TUI frontends.
 - Prioritize fast progress with simple ground handling first.
 - Preserve room for extension through plugin/scripting capabilities.
-- Reach explicit parity targets across three fronts: NEC-family numerical trust, 4nec2/EZNEC workflow usability, AutoEZ-class automation capability, and open-source embeddability/scriptability.
+- Reach explicit parity targets across three fronts: NEC-family numerical trust, 4nec2/EZNEC workflow usability, AutoEZ/xnec2c-optimize-class automation capability, and open-source embeddability/scriptability.
 
 ## Core architecture
 
@@ -51,9 +51,10 @@ last_updated: 2026-04-22
 - xnec2c input dialect is a secondary compatibility mode; it must not dilute or alter the 4nec2 primary standard.
 - Text output format requires a stable contract before broad UI expansion.
 - Numerical parity requires a tolerance matrix and reference corpus.
+- Validation planning should explicitly map in-scope tests to NEC-5 Validation Manual scenario classes where equivalent model classes exist.
 - EZNEC is a major workflow/usability comparator even though its engine model differs; fnec-rust should match or exceed it in common user tasks over time.
 - AutoEZ is a major automation-workflow comparator; fnec-rust should eventually support comparable variable-study and repeated-analysis workflows without requiring spreadsheet coupling.
-- xnec2c is the main open-source Linux/Unix workflow comparator; yeti01/nec2 is the classic batch-CLI comparator; necpp is the embeddable automation comparator.
+- xnec2c is the main open-source Linux/Unix workflow comparator; xnec2c-optimize is the external optimizer-loop comparator; yeti01/nec2 is the classic batch-CLI comparator; necpp is the embeddable automation comparator.
 
 ## Input dialect model
 
@@ -92,8 +93,10 @@ The following projects are useful comparative references for algorithms, behavio
 - M5AIQ NEC notes/tools: https://www.qsl.net/m5aiq/nec.html
 - yeti01/nec2: https://github.com/yeti01/nec2
 - tmolteno/necpp: https://github.com/tmolteno/necpp
+- KJ7LNW/xnec2c-optimize: https://github.com/KJ7LNW/xnec2c-optimize
+- NEC-5 Validation Manual (Burke, 2019): https://ipo.llnl.gov/sites/default/files/2020-07/NEC5%20Validation%20Manual%20092419.pdf
 
-These references are supplementary, but not irrelevant. 4nec2 compatibility remains the primary product target, xnec2c remains the main NEC2 parity reference corpus source, yeti01/nec2 remains a useful baseline for clean open NEC2 batch execution, and necpp remains a useful baseline for library-oriented automation and geometry diagnostics.
+These references are supplementary, but not irrelevant. 4nec2 compatibility remains the primary product target, xnec2c remains the main NEC2 parity reference corpus source, xnec2c-optimize remains a key baseline for external optimizer-loop ergonomics, yeti01/nec2 remains a useful baseline for clean open NEC2 batch execution, necpp remains a useful baseline for library-oriented automation and geometry diagnostics, and the NEC-5 Validation Manual is used to structure higher-difficulty validation classes.
 
 ## Documentation process constraints
 

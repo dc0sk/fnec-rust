@@ -12,7 +12,7 @@ last_updated: 2026-04-22
 - UX is modern, intuitive, and task-oriented.
 - Workflows prioritize: open/import project, configure run, execute, inspect results, iterate.
 - UI design should avoid reproducing legacy complexity where clearer flows are possible.
-- UX quality is measured against real incumbents: 4nec2 and EZNEC for mainstream antenna-design workflows, AutoEZ for advanced automation-driven study workflows, xnec2c for open-source Linux workbench usability, and classic NEC batch tools for automation efficiency.
+- UX quality is measured against real incumbents: 4nec2 and EZNEC for mainstream antenna-design workflows, AutoEZ and xnec2c-optimize for advanced automation-driven study workflows, xnec2c for open-source Linux workbench usability, and classic NEC batch tools for automation efficiency.
 
 ## Interaction model
 
@@ -21,7 +21,7 @@ last_updated: 2026-04-22
 - Optional TUI supports operational and headless workflows.
 - CLI must remain strong for scripted and optimizer-driven operation; GUI improvements must not come at the cost of batch-friendliness.
 - GUI should eventually exceed legacy workflows for common tasks such as sweep setup, result inspection, and iterative tuning, even if it does not mimic their layout.
-- Automation design should reduce dependence on external spreadsheet-style orchestration by bringing high-value study workflows into the product over time.
+- Automation design should reduce dependence on external spreadsheet-style orchestration by bringing high-value study workflows into the product over time while still supporting robust external optimizer-loop integration.
 
 ## Output design
 
@@ -36,6 +36,8 @@ last_updated: 2026-04-22
 - Add advanced ground configuration progressively.
 - Begin with CPU-first workflows and add GPU postprocessing controls later.
 - Sequence work so accuracy parity, reporting parity, and workflow parity advance together; a numerically strong but operationally weak product does not meet the project goal.
+- Sequence work so accuracy parity, reporting parity, and workflow parity advance together; a numerically strong but operationally weak product does not meet the project goal.
+- Prioritize validation UX that makes NEC-5-manual-inspired scenario classes (convergence, source behavior, loops/ground, and junction stress cases) easy to run and compare repeatedly.
 
 ## Extensibility design
 
