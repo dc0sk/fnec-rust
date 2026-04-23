@@ -9,7 +9,7 @@ last_updated: 2026-04-23
 
 This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against xnec2c (NEC2 reference implementation).
 
-Every NEC deck in this corpus has been run through xnec2c and the results recorded in `corpus/reference-results.json`. CI runs `cargo test --test corpus-validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
+Every NEC deck in this corpus is validated against xnec2c and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
 ## Corpus cases
 
@@ -184,16 +184,16 @@ Results extracted into `corpus/reference-results.json` with structure:
 
 ## CI validation
 
-On each commit, `cargo test --test corpus-validation` runs fnec against every corpus deck and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
+On each commit, `cargo test -p nec-cli --test corpus_validation -- --ignored` runs fnec against corpus decks with captured references and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
 
 ## Status
 
 - [ ] Dipole free-space deck created and xnec2c reference captured
-- [ ] Dipole ground deck created (after ground model implemented)
+- [ ] Dipole ground deck created and xnec2c reference captured
 - [ ] Yagi deck created and reference captured
 - [ ] Loaded dipole deck created and reference captured
 - [ ] Frequency sweep created and reference captured
 - [ ] Multi-source deck created and reference captured
-- [ ] Validation test suite written and integrated into CI
+- [x] Validation test suite scaffolded (`apps/nec-cli/tests/corpus_validation.rs`) and CI workflow added (`.github/workflows/corpus-validation.yml`)
 - [ ] All corpus cases pass fnec-rust within tolerance matrix
 - [ ] BLK-003 resolved: corpus validation gates Phase 1 → Phase 2

@@ -88,7 +88,7 @@ For each corpus case:
 
 ### Step 2: Integration test (automatic in CI)
 
-CI runs `cargo test --test corpus-validation -- --ignored` (the `--ignored` flag skips the test until references are available in `reference-results.json`):
+CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` (the `--ignored` flag limits execution to corpus checks that are explicitly enabled):
 
 ```rust
 #[test]
@@ -120,7 +120,7 @@ Before Phase 1 → Phase 2 transition:
 
 ```bash
 cargo test                  # Unit tests
-cargo test --test corpus-validation -- --ignored  # Corpus validation (if references available)
+cargo test -p nec-cli --test corpus_validation -- --ignored  # Corpus validation (if references available)
 ```
 
 ### GitHub Actions (`.github/workflows/`)
@@ -128,8 +128,8 @@ cargo test --test corpus-validation -- --ignored  # Corpus validation (if refere
 Add a `corpus-validation.yml` workflow that:
 
 1. Runs on every commit to main and PRs
-2. Builds release binary: `cargo build --release`
-3. Runs corpus tests: `cargo test --test corpus-validation -- --ignored`
+2. Builds/runs the nec-cli test target via Cargo
+3. Runs corpus tests: `cargo test -p nec-cli --test corpus_validation -- --ignored`
 4. Reports per-case tolerance status (summary table in PR comment)
 5. Fails the CI gate if any case exceeds tolerance
 
@@ -165,9 +165,9 @@ To add a new corpus case:
 - ✅ Corpus framework established (`corpus/README.md`, 6 case definitions)
 - ✅ MVP corpus decks created (dipole free-space, dipole over ground)
 - ✅ Reference results template created (`corpus/reference-results.json`)
-- ✅ Validation test scaffolded (`tests/corpus_validation.rs`)
+- ✅ Validation test scaffolded (`apps/nec-cli/tests/corpus_validation.rs`)
 - ⏳ Reference capture in progress (xnec2c runs, result extraction)
-- ⏳ CI workflow not yet wired (`.github/workflows/corpus-validation.yml` TBD)
+- ✅ CI workflow wired (`.github/workflows/corpus-validation.yml`)
 - ⏳ Full Phase 1 corpus not complete (Yagi, loaded, frequency sweep, multi-source decks TBD)
 
 ## Next steps
@@ -176,7 +176,7 @@ To add a new corpus case:
 1. Complete reference captures for all 6 corpus cases via xnec2c
 2. Update `corpus/reference-results.json` with real reference data
 3. Enable corpus tests (remove `#[ignore]`)
-4. Add `.github/workflows/corpus-validation.yml` to CI
+4. Keep `.github/workflows/corpus-validation.yml` green and extend it with per-case summaries
 5. Validate that fnec-rust passes all corpus cases within tolerance
 
 **Later (Phase 2):**
@@ -189,6 +189,6 @@ To add a new corpus case:
 
 - `corpus/README.md` — Corpus case definitions and geometry descriptions
 - `corpus/reference-results.json` — Reference results and tolerance gates
-- `tests/corpus_validation.rs` — Integration test implementation
+- `apps/nec-cli/tests/corpus_validation.rs` — Integration test implementation
 - `docs/requirements.md` — Tolerance matrix and numerical compatibility policy
 - `docs/roadmap.md` — Phase gates and blocker definitions
