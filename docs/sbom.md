@@ -59,6 +59,13 @@ Verify each crate's SPDX before adding it. MIT, Apache-2.0, BSD, GPL-3.0-only, a
 | Component | Role | License | Activity | Source | Notes |
 |:----------|:----:|:-------:|:--------:|:------|:------|
 | xnec2c (KJ7LNW fork) | Reference | GPL-3.0-only | Active | https://github.com/KJ7LNW/xnec2c | **No code may be copied or adapted into fnec-rust.** Used as reference engine to generate golden test corpus outputs and as algorithmic study material only. |
+| xnec2c-optimize | Reference | GPL-3.0-only (plus unknown notices) | Maintenance | https://github.com/KJ7LNW/xnec2c-optimize | External optimizer-loop comparator for objective-driven geometry tuning workflows around xnec2c. Study and workflow-parity reference only. |
+| yeti01/nec2 | Reference | Unknown | Maintenance | https://github.com/yeti01/nec2 | Open NEC2 FORTRAN baseline for classic batch execution and Sommerfeld/Norton-capable CLI behavior. Study/validation only. |
+| tmolteno/necpp | Reference | GPL-2.0-only | Active | https://github.com/tmolteno/necpp | Embeddable NEC2-compatible library baseline for automation, bindings, and geometry diagnostics. Study only; **must not be incorporated** due to GPL-2.0-only incompatibility. |
+| 4nec2 | Reference | Proprietary freeware | Maintenance | https://www.4nec2.net/ | Primary product workflow comparator and fallback external reference when xnec2c is unsuitable. No code inclusion. |
+| EZNEC Pro+ | Reference | Proprietary freeware | Maintenance | https://www.eznec.com/ | Workflow and usability comparator, especially for mainstream antenna-design tasks. No code inclusion. |
+| AutoEZ | Reference | Proprietary commercial | Active | https://www.eznec.com/AutoEZ.htm | Automation-workflow comparator for variable studies, resonance search, convergence analysis, matching-network helpers, and orchestration. Purchase deferred until Phase 3 workflow benchmarking. |
+| NEC-5 Validation Manual (Burke 2019, LLNL-SM-791163) | Reference | Publication (rights reserved) | Maintenance | https://ipo.llnl.gov/sites/default/files/2020-07/NEC5%20Validation%20Manual%20092419.pdf | Validation-coverage reference for scenario classes: kernel behavior, source models, dipole convergence, surface/junction behavior, and loops/wires over ground. |
 
 ## License compatibility policy (GAP-008)
 

@@ -17,6 +17,7 @@ last_updated: 2026-04-23
 - **DEC-006**: Plugin and scripting capabilities are in scope.
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
 - **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
+- **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, competitive with xnec2c-optimize for optimizer-loop orchestration, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
 
 ## Functional requirements
 
@@ -26,6 +27,10 @@ last_updated: 2026-04-23
 - **FR-004**: The project must support Markdown-based project import and export in addition to NEC decks.
 - **FR-005**: The system must provide 4nec2-like text reports for core analysis results.
 - **FR-006**: A plugin/scripting extension mechanism must be designed and implemented in phases.
+- **FR-007**: The system must support deterministic batch and sweep workflows suitable for optimizer-driven and scripted studies.
+- **FR-008**: The system must expose stable automation-oriented core APIs so non-GUI consumers can embed solver workflows without shelling out to brittle text parsing.
+- **FR-009**: The system must provide geometry diagnostics that catch invalid, ambiguous, or numerically fragile models early with actionable messages.
+- **FR-010**: The system must eventually support automation helpers for resonance targeting, convergence studies, and matching-network-oriented workflows comparable in practical value to AutoEZ.
 
 ## Non-functional requirements
 
@@ -33,6 +38,8 @@ last_updated: 2026-04-23
 - **NFR-002**: CPU execution must be multithreaded and deterministic by default.
 - **NFR-003**: GPU acceleration must be optional at runtime with reliable CPU fallback.
 - **NFR-004**: Numerical compatibility must be measured against a reference with explicit tolerances per metric.
+- **NFR-005**: CLI execution must remain stable and script-friendly, with predictable stdin/stdout/stderr behavior suitable for UNIX batch workflows.
+- **NFR-006**: For supported workflows, usability must be competitive with incumbent tools, not just numerically correct; result inspection and repeat-run iteration must be measurably efficient.
 
 ## Compatibility requirements
 
@@ -43,6 +50,14 @@ last_updated: 2026-04-23
 - **COMP-005**: Dialect auto-detection must identify the input type before parsing begins; ambiguous input defaults to 4nec2 with a diagnostic.
 - **COMP-006**: Explicit dialect override must be available as a CLI option and as a project frontmatter field.
 - **COMP-007**: Dialect-specific logic must be architecturally isolated so the 4nec2 parser path has no dependency on xnec2c dialect code.
+- **COMP-008**: For supported model classes, numerical accuracy must be at least NEC-2/NEC-4-class and must never regress below the documented tolerance matrix without an explicit contract change.
+- **COMP-009**: Feature planning must explicitly track parity against 4nec2 and EZNEC for mainstream amateur and professional antenna-design workflows, including sweeps, report content, gain/pattern inspection, and iterative design tasks.
+- **COMP-010**: Open-source competitiveness must explicitly track xnec2c, yeti01/nec2, and necpp so fnec-rust does not fall behind on Linux workflows, classic batch execution, or embeddable automation use cases.
+- **COMP-011**: CLI behavior must remain sufficient to replace classic open NEC batch tools for routine automated runs.
+- **COMP-012**: Library and automation surfaces must be designed so fnec-rust can compete with necpp-style embedding in optimization, research, and service contexts.
+- **COMP-013**: Automation workflow planning must explicitly track AutoEZ-class capabilities such as variable-driven studies, resonance search, convergence studies, and matching-network assistance.
+- **COMP-014**: Validation planning must include an explicit case matrix informed by the NEC-5 Validation Manual categories (kernel behavior, source modeling, convergence, junction/surface classes, and loops/wires over ground), with mapped tolerance-gated corpus coverage for in-scope equivalents.
+- **COMP-015**: Automation CLI/API contracts must be stable enough to support external optimizer loops comparable to xnec2c-optimize-style objective-driven runs.
 
 ## Documentation and process requirements
 
@@ -113,6 +128,12 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 - **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow.
 - **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred).
 - **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility.
+- **GAP-009 (high)**: Define measurable acceptance criteria for 4nec2/EZNEC-grade workflow parity, including result inspection, sweep interaction, and reporting completeness.
+- **GAP-010 (high)**: Define stable automation and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp-style integrations.
+- **GAP-011 (medium)**: Define classic batch-CLI parity requirements relative to open NEC2 tools such as yeti01/nec2 and xnec2c batch-oriented workflows.
+- **GAP-012 (high)**: Define measurable acceptance criteria for AutoEZ-class automation parity, including variable sweeps, resonance targeting, convergence studies, and matching-network workflows.
+- **GAP-013 (high)**: Define and maintain a NEC-5-validation-manual-informed case matrix that maps target classes to corpus tests and tolerance gates.
+- **GAP-014 (medium)**: Define measurable external optimizer-loop compatibility criteria relative to xnec2c-optimize workflows (objective input, deterministic run behavior, and machine-readable outputs).
 
 ## Acceptance criteria
 
@@ -120,3 +141,7 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 - [ ] Gap items have owners, target milestone, and resolution criteria.
 - [ ] Compatibility test corpus and tolerance matrix are documented before broad solver expansion.
 - [ ] Text report format contract is fixed before GUI result views are finalized.
+- [ ] Parity targets against NEC-2, NEC-4, NEC-5, 4nec2, EZNEC, AutoEZ, xnec2c, xnec2c-optimize, yeti01/nec2, and necpp are reflected consistently in roadmap and architecture.
+- [ ] Workflow parity requirements are specific enough to test, not just aspirational.
+- [ ] Automation and embedding expectations are explicit enough to drive API design decisions.
+- [ ] NEC-5-validation-manual-informed case classes are mapped to explicit tolerance-gated corpus coverage for in-scope scenarios.
