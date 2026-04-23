@@ -12,7 +12,7 @@
 
 use num_complex::Complex64;
 
-use crate::basis::ContinuityTransform;
+use crate::basis::{ContinuityTransform, SinusoidalTransform};
 use crate::matrix::ZMatrix;
 
 /// Error returned by the linear solver.
@@ -97,6 +97,72 @@ pub fn solve_with_continuity_basis(
     }
 
     let tr = ContinuityTransform::for_single_chain(n);
+    let m = tr.n_basis;
+
+    // A = Z * T, dimensions n x m.
+    let mut a = vec![vec![Complex64::new(0.0, 0.0); m]; n];
+    for (r, a_row) in a.iter_mut().enumerate().take(n) {
+        for (c, a_cell) in a_row.iter_mut().enumerate().take(m) {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for seg in 0..n {
+                let t = tr.t[seg][c];
+                if t != 0.0 {
+                    sum += z.get(r, seg) * t;
+                }
+            }
+            *a_cell = sum;
+        }
+    }
+
+    // Normal equations: (A^H A + lambda*I) a = A^H v.
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); m]; m];
+    let mut atv = vec![Complex64::new(0.0, 0.0); m];
+    for i in 0..m {
+        for j in 0..m {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for row in a.iter().take(n) {
+                sum += row[i].conj() * row[j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for (row, vv) in a.iter().zip(v.iter()).take(n) {
+            sum += row[i].conj() * *vv;
+        }
+        atv[i] = sum;
+    }
+
+    let lambda = 1e-10;
+    for (i, row) in ata.iter_mut().enumerate().take(m) {
+        row[i] += Complex64::new(lambda, 0.0);
+    }
+
+    let a_sol = solve_square_in_place(&mut ata, &mut atv)?;
+    Ok(tr.segment_currents(&a_sol))
+}
+
+/// Solve Z*I = V with a sine-tapered continuity basis transform.
+///
+/// This is an incremental milestone toward NEC2-style sinusoidal basis
+/// behavior. It keeps the continuity formulation but applies a sinusoidal
+/// edge taper on segment currents.
+pub fn solve_with_sinusoidal_basis(
+    z: &ZMatrix,
+    v: &[Complex64],
+) -> Result<Vec<Complex64>, SolveError> {
+    let n = z.n;
+    if v.len() != n {
+        return Err(SolveError::DimensionMismatch {
+            z_n: n,
+            v_len: v.len(),
+        });
+    }
+
+    if n < 2 {
+        return solve(z, v);
+    }
+
+    let tr = SinusoidalTransform::for_single_chain(n);
     let m = tr.n_basis;
 
     // A = Z * T, dimensions n x m.

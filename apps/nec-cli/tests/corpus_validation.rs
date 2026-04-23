@@ -58,11 +58,12 @@ fn corpus_validation_cases_with_references() {
         let expected_real = feed.get("real_ohm").and_then(Value::as_f64);
         let expected_imag = feed.get("imag_ohm").and_then(Value::as_f64);
         let expected_sources = collect_expected_sources(case_obj, feed);
+        let expected_freq_points = collect_expected_frequency_points(feed);
 
         let expected_scalar = match (expected_real, expected_imag) {
             (Some(r), Some(x)) => (r, x),
             _ => {
-                if expected_sources.is_empty() {
+                if expected_sources.is_empty() && expected_freq_points.is_empty() {
                     skipped += 1;
                     continue;
                 }
@@ -157,6 +158,48 @@ fn corpus_validation_cases_with_references() {
             continue;
         }
 
+        if !expected_freq_points.is_empty() {
+            assert!(
+                impedances.len() >= expected_freq_points.len(),
+                "Case '{}' expected {} frequency impedance rows, got {}",
+                case_name,
+                expected_freq_points.len(),
+                impedances.len()
+            );
+
+            for (idx, (freq_mhz, exp_r, exp_x)) in expected_freq_points.iter().enumerate() {
+                let (real, imag) = impedances[idx];
+                let err_r = (real - exp_r).abs();
+                let err_x = (imag - exp_x).abs();
+                let tol_r = tolerance_with_floor(*exp_r, r_abs, r_rel_percent);
+                let tol_x = tolerance_with_floor(*exp_x, x_abs, x_rel_percent);
+
+                assert!(
+                    err_r <= tol_r,
+                    "Case '{}' freq {:.3} MHz R out of tolerance: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    freq_mhz,
+                    real,
+                    exp_r,
+                    err_r,
+                    tol_r
+                );
+                assert!(
+                    err_x <= tol_x,
+                    "Case '{}' freq {:.3} MHz X out of tolerance: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    freq_mhz,
+                    imag,
+                    exp_x,
+                    err_x,
+                    tol_x
+                );
+            }
+
+            validated += 1;
+            continue;
+        }
+
         let (real, imag) = impedances[0];
         let (expected_real, expected_imag) = expected_scalar;
 
@@ -222,6 +265,21 @@ fn collect_expected_sources(
         expected.push((real, imag));
     }
     expected
+}
+
+fn collect_expected_frequency_points(feed: &Map<String, Value>) -> Vec<(f64, f64, f64)> {
+    let mut out: Vec<(f64, f64, f64)> = feed
+        .iter()
+        .filter_map(|(k, v)| {
+            let freq_mhz = k.parse::<f64>().ok()?;
+            let obj = v.as_object()?;
+            let real = obj.get("real_ohm")?.as_f64()?;
+            let imag = obj.get("imag_ohm")?.as_f64()?;
+            Some((freq_mhz, real, imag))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
 }
 
 fn parse_impedance_lines(stdout: &str) -> Vec<(f64, f64)> {

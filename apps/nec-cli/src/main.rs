@@ -7,7 +7,7 @@ use nec_report::{render_text_report, FeedpointRow, ReportInput};
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix, build_excitation, build_geometry,
     build_hallen_rhs, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_with_continuity_basis, Segment, ZMatrix,
+    solve_with_continuity_basis, solve_with_sinusoidal_basis, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 use std::path::PathBuf;
@@ -20,6 +20,7 @@ enum SolverMode {
     Hallen,
     Pulse,
     Continuity,
+    Sinusoidal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +50,7 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), St
                 i += 1;
                 if i >= args.len() {
                     return Err(
-                        "missing value after --solver (expected: hallen|pulse|continuity)"
+                        "missing value after --solver (expected: hallen|pulse|continuity|sinusoidal)"
                             .to_string(),
                     );
                 }
@@ -57,9 +58,10 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), St
                     "hallen" => SolverMode::Hallen,
                     "pulse" => SolverMode::Pulse,
                     "continuity" => SolverMode::Continuity,
+                    "sinusoidal" => SolverMode::Sinusoidal,
                     other => {
                         return Err(format!(
-                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity)"
+                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity|sinusoidal)"
                         ))
                     }
                 };
@@ -158,15 +160,48 @@ fn residual_hallen(
 }
 
 fn warn_pulse_mode_experimental(solver_mode: SolverMode) {
-    if !matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity) {
+    if !matches!(
+        solver_mode,
+        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal
+    ) {
         return;
     }
     eprintln!(
-        "warning: pulse/continuity solver modes are EXPERIMENTAL and known-inaccurate for \
+        "warning: pulse/continuity/sinusoidal solver modes are EXPERIMENTAL and known-inaccurate for \
 thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution \
 as segment count increases. Use --solver hallen for accurate results. \
 (Sinusoidal-basis EFIE fix tracked in backlog.)"
     );
+}
+
+fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
+    let Some(fr) = deck
+        .cards
+        .iter()
+        .find_map(|c| if let Card::Fr(fr) = c { Some(fr) } else { None })
+    else {
+        return Vec::new();
+    };
+
+    let steps = fr.steps.max(1) as usize;
+    let mut out = Vec::with_capacity(steps);
+    match fr.step_type {
+        0 => {
+            for idx in 0..steps {
+                out.push((fr.frequency_mhz + (idx as f64) * fr.step_mhz) * 1e6);
+            }
+        }
+        1 => {
+            for idx in 0..steps {
+                out.push(fr.frequency_mhz * fr.step_mhz.powi(idx as i32) * 1e6);
+            }
+        }
+        _ => {
+            // Unsupported FR stepping mode: use the first frequency only.
+            out.push(fr.frequency_mhz * 1e6);
+        }
+    }
+    out
 }
 
 fn main() -> ExitCode {
@@ -175,7 +210,7 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>"
         );
         return ExitCode::from(2);
     }
@@ -184,7 +219,7 @@ fn main() -> ExitCode {
         Ok(v) => v,
         Err(e) => {
             eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>");
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>");
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
@@ -210,16 +245,10 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
 
-    let freq_hz = match deck.cards.iter().find_map(|c| {
-        if let Card::Fr(fr) = c {
-            Some(fr.frequency_mhz * 1e6)
-        } else {
-            None
-        }
-    }) {
-        Some(f) => f,
-        None => return ExitCode::SUCCESS,
-    };
+    let freqs_hz = frequencies_from_fr(deck);
+    if freqs_hz.is_empty() {
+        return ExitCode::SUCCESS;
+    }
 
     let segs = match build_geometry(deck) {
         Ok(s) => s,
@@ -230,112 +259,142 @@ fn main() -> ExitCode {
         Ok(v) => v,
         Err(_) => return ExitCode::FAILURE,
     };
-    let v_vec_pulse = match pulse_rhs_mode {
-        PulseRhsMode::Raw => v_vec.clone(),
-        PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(&v_vec, freq_hz),
-    };
+    for (fidx, freq_hz) in freqs_hz.iter().copied().enumerate() {
+        let v_vec_pulse = match pulse_rhs_mode {
+            PulseRhsMode::Raw => v_vec.clone(),
+            PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(&v_vec, freq_hz),
+        };
 
-    let z_mat = match solver_mode {
-        SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
-        SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(&segs, freq_hz),
-    };
+        let z_mat = match solver_mode {
+            SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
+            SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => {
+                assemble_pocklington_matrix(&segs, freq_hz)
+            }
+        };
 
-    let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
-        SolverMode::Hallen => {
-            let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
-                Ok(h) => h,
-                Err(_) => return ExitCode::FAILURE,
-            };
-            match solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec) {
-                Ok(sol) => {
-                    let (a, r) = residual_hallen(
-                        &z_mat,
-                        &sol.currents,
-                        sol.c_hom,
-                        &hallen_rhs.cos_vec,
-                        &hallen_rhs.rhs,
-                    );
-                    (sol.currents, a, r, "hallen")
-                }
-                Err(_) => return ExitCode::FAILURE,
-            }
-        }
-        SolverMode::Pulse => match solve(&z_mat, &v_vec_pulse) {
-            Ok(i) => {
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                (i, a, r, "pulse")
-            }
-            Err(_) => return ExitCode::FAILURE,
-        },
-        SolverMode::Continuity => {
-            if !is_single_linear_chain(&segs) {
-                match solve(&z_mat, &v_vec_pulse) {
-                    Ok(i) => {
-                        let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                        (i, a, r, "continuity->pulse")
+        let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
+            SolverMode::Hallen => {
+                let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
+                    Ok(h) => h,
+                    Err(_) => return ExitCode::FAILURE,
+                };
+                match solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec) {
+                    Ok(sol) => {
+                        let (a, r) = residual_hallen(
+                            &z_mat,
+                            &sol.currents,
+                            sol.c_hom,
+                            &hallen_rhs.cos_vec,
+                            &hallen_rhs.rhs,
+                        );
+                        (sol.currents, a, r, "hallen")
                     }
                     Err(_) => return ExitCode::FAILURE,
                 }
-            } else {
-                match solve_with_continuity_basis(&z_mat, &v_vec_pulse) {
-                    Ok(i) => {
-                        let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                        if r <= CONTINUITY_REL_RESIDUAL_MAX {
-                            (i, a, r, "continuity")
-                        } else {
-                            eprintln!(
-                                "warning: continuity residual {:.3e} > {:.3e}; falling back to pulse",
-                                r, CONTINUITY_REL_RESIDUAL_MAX
-                            );
-                            match solve(&z_mat, &v_vec_pulse) {
-                                Ok(i2) => {
-                                    let (a2, r2) = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
-                                    (i2, a2, r2, "continuity->pulse(residual)")
+            }
+            SolverMode::Pulse => match solve(&z_mat, &v_vec_pulse) {
+                Ok(i) => {
+                    let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                    (i, a, r, "pulse")
+                }
+                Err(_) => return ExitCode::FAILURE,
+            },
+            SolverMode::Continuity => {
+                if !is_single_linear_chain(&segs) {
+                    match solve(&z_mat, &v_vec_pulse) {
+                        Ok(i) => {
+                            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                            (i, a, r, "continuity->pulse")
+                        }
+                        Err(_) => return ExitCode::FAILURE,
+                    }
+                } else {
+                    match solve_with_continuity_basis(&z_mat, &v_vec_pulse) {
+                        Ok(i) => {
+                            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                            if r <= CONTINUITY_REL_RESIDUAL_MAX {
+                                (i, a, r, "continuity")
+                            } else {
+                                eprintln!(
+                                    "warning: continuity residual {:.3e} > {:.3e}; falling back to pulse",
+                                    r, CONTINUITY_REL_RESIDUAL_MAX
+                                );
+                                match solve(&z_mat, &v_vec_pulse) {
+                                    Ok(i2) => {
+                                        let (a2, r2) =
+                                            residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
+                                        (i2, a2, r2, "continuity->pulse(residual)")
+                                    }
+                                    Err(_) => return ExitCode::FAILURE,
                                 }
-                                Err(_) => return ExitCode::FAILURE,
                             }
                         }
+                        Err(_) => return ExitCode::FAILURE,
                     }
-                    Err(_) => return ExitCode::FAILURE,
                 }
             }
-        }
-    };
-
-    let mut rows: Vec<FeedpointRow> = Vec::new();
-    for (idx, seg) in segs.iter().enumerate() {
-        let v = v_vec[idx];
-        if v.norm() < 1e-30 {
-            continue;
-        }
-        let i = i_vec[idx];
-        let v_source = v * seg.length;
-        let z_in = if i.norm() > 1e-60 {
-            v_source / i
-        } else {
-            v_source
+            SolverMode::Sinusoidal => {
+                if !is_single_linear_chain(&segs) {
+                    match solve(&z_mat, &v_vec_pulse) {
+                        Ok(i) => {
+                            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                            (i, a, r, "sinusoidal->pulse")
+                        }
+                        Err(_) => return ExitCode::FAILURE,
+                    }
+                } else {
+                    match solve_with_sinusoidal_basis(&z_mat, &v_vec_pulse) {
+                        Ok(i) => {
+                            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                            (i, a, r, "sinusoidal")
+                        }
+                        Err(_) => return ExitCode::FAILURE,
+                    }
+                }
+            }
         };
-        rows.push(FeedpointRow {
-            tag: seg.tag as usize,
-            seg: seg.tag_index as usize,
-            v_source,
-            current: i,
-            z_in,
+
+        let mut rows: Vec<FeedpointRow> = Vec::new();
+        for (idx, seg) in segs.iter().enumerate() {
+            let v = v_vec[idx];
+            if v.norm() < 1e-30 {
+                continue;
+            }
+            let i = i_vec[idx];
+            let v_source = v * seg.length;
+            let z_in = if i.norm() > 1e-60 {
+                v_source / i
+            } else {
+                v_source
+            };
+            rows.push(FeedpointRow {
+                tag: seg.tag as usize,
+                seg: seg.tag_index as usize,
+                v_source,
+                current: i,
+                z_in,
+            });
+        }
+
+        if fidx > 0 {
+            println!();
+        }
+        let report = render_text_report(&ReportInput {
+            solver_mode: diag_label,
+            pulse_rhs: pulse_rhs_mode.as_contract_str(),
+            frequency_hz: freq_hz,
+            rows: &rows,
         });
+        print!("{report}");
+
+        eprintln!(
+            "diag: mode={diag_label} pulse_rhs={:?} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e}",
+            pulse_rhs_mode,
+            freq_hz / 1e6,
+            diag_abs,
+            diag_rel
+        );
     }
-
-    let report = render_text_report(&ReportInput {
-        solver_mode: diag_label,
-        pulse_rhs: pulse_rhs_mode.as_contract_str(),
-        frequency_hz: freq_hz,
-        rows: &rows,
-    });
-    print!("{report}");
-
-    eprintln!(
-        "diag: mode={diag_label} pulse_rhs={:?} abs_res={:.6e} rel_res={:.6e}",
-        pulse_rhs_mode, diag_abs, diag_rel
-    );
 
     ExitCode::SUCCESS
 }

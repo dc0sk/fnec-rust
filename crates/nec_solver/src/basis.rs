@@ -31,6 +31,20 @@ pub struct ContinuityTransform {
     pub t: Vec<Vec<f64>>,
 }
 
+/// Dense real transform with sinusoidal edge taper for a single chain.
+///
+/// Mapping: I_seg = T * a_basis, where each segment row is additionally
+/// weighted by a NEC2-style sine taper to force smooth endpoint behavior.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SinusoidalTransform {
+    /// Number of wire segments.
+    pub n_segments: usize,
+    /// Number of basis unknowns.
+    pub n_basis: usize,
+    /// Row-major dense transform data.
+    pub t: Vec<Vec<f64>>,
+}
+
 impl ContinuityTransform {
     /// Build the tip-constrained difference transform for a single chain.
     ///
@@ -57,6 +71,51 @@ impl ContinuityTransform {
         Self {
             n_segments,
             n_basis,
+            t,
+        }
+    }
+
+    /// Apply transform to basis coefficients.
+    pub fn segment_currents(&self, a_basis: &[Complex64]) -> Vec<Complex64> {
+        let mut out = vec![Complex64::new(0.0, 0.0); self.n_segments];
+        if a_basis.len() != self.n_basis {
+            return out;
+        }
+        for (r, row) in self.t.iter().enumerate() {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for (c, coeff) in row.iter().enumerate() {
+                if *coeff != 0.0 {
+                    sum += a_basis[c] * *coeff;
+                }
+            }
+            out[r] = sum;
+        }
+        out
+    }
+}
+
+impl SinusoidalTransform {
+    /// Build a sine-tapered difference transform for a single chain.
+    ///
+    /// For segment index n in [0, N-1], the row is scaled by
+    /// w_n = sin(pi * (n+1)/(N+1)).
+    pub fn for_single_chain(n_segments: usize) -> Self {
+        let base = ContinuityTransform::for_single_chain(n_segments);
+        let mut t = base.t.clone();
+
+        if n_segments > 0 {
+            let denom = (n_segments + 1) as f64;
+            for (n, row) in t.iter_mut().enumerate().take(n_segments) {
+                let w = (std::f64::consts::PI * ((n + 1) as f64) / denom).sin();
+                for coeff in row.iter_mut() {
+                    *coeff *= w;
+                }
+            }
+        }
+
+        Self {
+            n_segments: base.n_segments,
+            n_basis: base.n_basis,
             t,
         }
     }
@@ -120,5 +179,23 @@ mod tests {
         assert_eq!(i[1], Complex64::new(1.0, 0.0));
         assert_eq!(i[2], Complex64::new(1.0, 0.0));
         assert_eq!(i[3], Complex64::new(-3.0, 0.0));
+    }
+
+    #[test]
+    fn sinusoidal_transform_has_expected_shape() {
+        let tr = SinusoidalTransform::for_single_chain(11);
+        assert_eq!(tr.n_segments, 11);
+        assert_eq!(tr.n_basis, 10);
+        assert_eq!(tr.t.len(), 11);
+        assert_eq!(tr.t[0].len(), 10);
+    }
+
+    #[test]
+    fn sinusoidal_taper_reduces_edge_rows() {
+        let tr = SinusoidalTransform::for_single_chain(4);
+        // Middle rows should have stronger weight than edges.
+        let edge = tr.t[0][0].abs();
+        let mid = tr.t[1][0].abs();
+        assert!(mid > edge);
     }
 }
