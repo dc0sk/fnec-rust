@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 #[test]
 fn corpus_validation_cases_with_references() {
@@ -50,8 +50,6 @@ fn corpus_validation_cases_with_references() {
             deck_path.display()
         );
 
-        // For now, validate only scalar feedpoint refs (real_ohm/imag_ohm at case level).
-        // Nested per-frequency/per-source refs are tracked but validated in a later step.
         let feed = case_obj
             .get("feedpoint_impedance")
             .and_then(Value::as_object)
@@ -59,12 +57,16 @@ fn corpus_validation_cases_with_references() {
 
         let expected_real = feed.get("real_ohm").and_then(Value::as_f64);
         let expected_imag = feed.get("imag_ohm").and_then(Value::as_f64);
+        let expected_sources = collect_expected_sources(case_obj, feed);
 
-        let (expected_real, expected_imag) = match (expected_real, expected_imag) {
+        let expected_scalar = match (expected_real, expected_imag) {
             (Some(r), Some(x)) => (r, x),
             _ => {
-                skipped += 1;
-                continue;
+                if expected_sources.is_empty() {
+                    skipped += 1;
+                    continue;
+                }
+                (0.0, 0.0)
             }
         };
 
@@ -105,26 +107,58 @@ fn corpus_validation_cases_with_references() {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let impedance_line = stdout
-            .lines()
-            .next()
-            .unwrap_or_else(|| panic!("fnec produced no output for case '{case_name}'"));
-
-        let parts: Vec<&str> = impedance_line.split_whitespace().collect();
+        let impedances = parse_impedance_lines(&stdout);
         assert!(
-            parts.len() >= 5,
-            "Unexpected fnec output format for case '{}': {}",
+            !impedances.is_empty(),
+            "No impedance rows found in fnec output for case '{}':\n{}",
             case_name,
-            impedance_line
+            stdout
         );
 
-        let z_str = parts[parts.len() - 1];
-        let (real, imag) = parse_complex_impedance(z_str).unwrap_or_else(|| {
-            panic!(
-                "Failed to parse impedance for case '{}': {}",
-                case_name, z_str
-            )
-        });
+        if !expected_sources.is_empty() {
+            assert!(
+                impedances.len() >= expected_sources.len(),
+                "Case '{}' expected {} source impedance rows, got {}",
+                case_name,
+                expected_sources.len(),
+                impedances.len()
+            );
+
+            for (idx, (exp_r, exp_x)) in expected_sources.iter().enumerate() {
+                let (real, imag) = impedances[idx];
+                let err_r = (real - exp_r).abs();
+                let err_x = (imag - exp_x).abs();
+                let tol_r = tolerance_with_floor(*exp_r, r_abs, r_rel_percent);
+                let tol_x = tolerance_with_floor(*exp_x, x_abs, x_rel_percent);
+
+                assert!(
+                    err_r <= tol_r,
+                    "Case '{}' source_{} R out of tolerance: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    idx + 1,
+                    real,
+                    exp_r,
+                    err_r,
+                    tol_r
+                );
+                assert!(
+                    err_x <= tol_x,
+                    "Case '{}' source_{} X out of tolerance: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    idx + 1,
+                    imag,
+                    exp_x,
+                    err_x,
+                    tol_x
+                );
+            }
+
+            validated += 1;
+            continue;
+        }
+
+        let (real, imag) = impedances[0];
+        let (expected_real, expected_imag) = expected_scalar;
 
         let err_r = (real - expected_real).abs();
         let err_x = (imag - expected_imag).abs();
@@ -155,10 +189,59 @@ fn corpus_validation_cases_with_references() {
 
     assert!(
         validated > 0,
-        "No corpus cases with scalar references were validated; checked {} cases",
+        "No corpus cases with references were validated; checked {} cases",
         cases.len()
     );
     eprintln!("corpus validation summary: validated={validated}, skipped={skipped}");
+}
+
+fn collect_expected_sources(
+    case_obj: &Map<String, Value>,
+    feed: &Map<String, Value>,
+) -> Vec<(f64, f64)> {
+    let Some(sources) = case_obj.get("sources").and_then(Value::as_u64) else {
+        return Vec::new();
+    };
+
+    if sources == 0 {
+        return Vec::new();
+    }
+
+    let mut expected = Vec::new();
+    for idx in 1..=sources {
+        let key = format!("source_{idx}");
+        let Some(source_obj) = feed.get(&key).and_then(Value::as_object) else {
+            return Vec::new();
+        };
+        let Some(real) = source_obj.get("real_ohm").and_then(Value::as_f64) else {
+            return Vec::new();
+        };
+        let Some(imag) = source_obj.get("imag_ohm").and_then(Value::as_f64) else {
+            return Vec::new();
+        };
+        expected.push((real, imag));
+    }
+    expected
+}
+
+fn parse_impedance_lines(stdout: &str) -> Vec<(f64, f64)> {
+    let mut rows = Vec::new();
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 {
+            continue;
+        }
+        if parts[0].parse::<usize>().is_err() {
+            continue;
+        }
+        let Some(z_str) = parts.last() else {
+            continue;
+        };
+        if let Some((real, imag)) = parse_complex_impedance(z_str) {
+            rows.push((real, imag));
+        }
+    }
+    rows
 }
 
 fn tolerance_with_floor(expected: f64, abs_floor: f64, rel_percent: f64) -> f64 {
