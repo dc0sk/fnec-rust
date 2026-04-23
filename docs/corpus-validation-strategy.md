@@ -68,7 +68,16 @@ For each corpus case:
    ```
   If xnec2c hangs in headless Linux (known with some 4.4.x builds), run 4nec2 under Wine/VM and export equivalent impedance/report data.
 3. Extract key results (impedance, gain, pattern samples, currents)
-4. Record in `corpus/reference-results.json`:
+4. Record in `corpus/reference-results.json` (manual edit or helper script):
+   ```bash
+   scripts/import-reference-impedance.py \
+     --case dipole-ground-51seg \
+     --real 63.12 --imag -18.45 \
+     --source "4nec2 (Wine 9.x)" \
+     --status "Reference captured via 4nec2/Wine"
+   ```
+
+   JSON shape remains:
    ```json
    {
      "dipole-freesp-51seg": {

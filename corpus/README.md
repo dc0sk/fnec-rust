@@ -164,7 +164,25 @@ Fallback (4nec2 under Wine or Windows VM):
 1. Open the deck in 4nec2.
 2. Run the frequency loop.
 3. Export feedpoint impedance/report data to CSV or text.
-4. Copy the extracted values into `corpus/reference-results.json`.
+4. Import the extracted values with the helper script:
+
+```bash
+scripts/import-reference-impedance.py \
+  --case dipole-ground-51seg \
+  --real 63.12 --imag -18.45 \
+  --source "4nec2 (Wine 9.x)" \
+  --status "Reference captured via 4nec2/Wine"
+```
+
+For sweep/multi-source cases, update a point key:
+
+```bash
+scripts/import-reference-impedance.py \
+  --case frequency-sweep-dipole \
+  --point 12 \
+  --real 41.21 --imag -28.34 \
+  --source "4nec2 (Windows VM)"
+```
 
 Current caveat (Linux headless CI/dev shells):
 
