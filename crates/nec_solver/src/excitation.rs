@@ -9,6 +9,7 @@
 //! Only excitation type 0 (series voltage source) is implemented in Phase 1.
 
 use num_complex::Complex64;
+use std::collections::BTreeSet;
 
 use nec_model::card::{Card, ExCard};
 use nec_model::deck::NecDeck;
@@ -20,6 +21,7 @@ const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
 
 /// Right-hand side data for Hallén's integral equation.
+#[derive(Debug)]
 pub struct HallenRhs {
     /// Hallén RHS vector b.
     pub rhs: Vec<Complex64>,
@@ -138,17 +140,19 @@ pub fn build_hallen_rhs(
     let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
-    let mut non_collinear_tags: Vec<u32> = Vec::new();
+    let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
     for seg in segs {
         let dot = seg.direction[0] * feed_dir[0]
             + seg.direction[1] * feed_dir[1]
             + seg.direction[2] * feed_dir[2];
-        if dot.abs() < 1.0 - 1e-9 && !non_collinear_tags.contains(&seg.tag) {
-            non_collinear_tags.push(seg.tag);
+        if dot.abs() < 1.0 - 1e-9 {
+            non_collinear_tags.insert(seg.tag);
         }
     }
     if !non_collinear_tags.is_empty() {
-        return Err(ExcitationError::UnsupportedHallenTopology { non_collinear_tags });
+        return Err(ExcitationError::UnsupportedHallenTopology {
+            non_collinear_tags: non_collinear_tags.into_iter().collect(),
+        });
     }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
@@ -415,6 +419,13 @@ mod tests {
             end: [0.25, 0.0, 2.677],
             radius: 0.001,
         }));
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 4,
+            segments: 9,
+            start: [0.25, 0.0, 2.677],
+            end: [0.25, 0.0, 3.177],
+            radius: 0.001,
+        }));
         deck.cards.push(Card::Ex(ExCard {
             excitation_type: 0,
             tag: 1,
@@ -424,10 +435,13 @@ mod tests {
         }));
 
         let segs = build_geometry(&deck).unwrap();
-        assert!(matches!(
-            build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ),
-            Err(ExcitationError::UnsupportedHallenTopology { .. })
-        ));
+        let err = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap_err();
+        assert_eq!(
+            err,
+            ExcitationError::UnsupportedHallenTopology {
+                non_collinear_tags: vec![2],
+            }
+        );
     }
 
     #[test]
