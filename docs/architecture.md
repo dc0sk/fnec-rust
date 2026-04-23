@@ -13,6 +13,7 @@ last_updated: 2026-04-22
 - Provide a reusable core with separate CLI, GUI, and optional TUI frontends.
 - Prioritize fast progress with simple ground handling first.
 - Preserve room for extension through plugin/scripting capabilities.
+- Reach explicit parity targets across three fronts: NEC-family numerical trust, 4nec2/EZNEC workflow usability, AutoEZ-class automation capability, and open-source embeddability/scriptability.
 
 ## Core architecture
 
@@ -29,6 +30,7 @@ last_updated: 2026-04-22
 - GUI on iced follows a modern, intuitive, task-oriented workflow.
 - Optional TUI on ratatui shares core use cases.
 - Frontends consume stable core APIs and must not embed solver logic.
+- CLI behavior must remain strong enough to replace classic batch-oriented NEC tools for routine automation, not just human-operated one-off runs.
 
 ## Performance architecture
 
@@ -40,6 +42,8 @@ last_updated: 2026-04-22
 
 - Plugin/scripting layer is in scope and planned as explicit extension points.
 - Extension API must not break solver determinism guarantees by default.
+- Core crates should remain embeddable enough to support future bindings and automation surfaces comparable to necpp-style library workflows.
+- Automation architecture should be rich enough to support future variable-driven studies, resonance tools, and repeated-analysis workflows comparable in value to AutoEZ.
 
 ## Compatibility architecture constraints
 
@@ -47,6 +51,9 @@ last_updated: 2026-04-22
 - xnec2c input dialect is a secondary compatibility mode; it must not dilute or alter the 4nec2 primary standard.
 - Text output format requires a stable contract before broad UI expansion.
 - Numerical parity requires a tolerance matrix and reference corpus.
+- EZNEC is a major workflow/usability comparator even though its engine model differs; fnec-rust should match or exceed it in common user tasks over time.
+- AutoEZ is a major automation-workflow comparator; fnec-rust should eventually support comparable variable-study and repeated-analysis workflows without requiring spreadsheet coupling.
+- xnec2c is the main open-source Linux/Unix workflow comparator; yeti01/nec2 is the classic batch-CLI comparator; necpp is the embeddable automation comparator.
 
 ## Input dialect model
 
@@ -86,7 +93,7 @@ The following projects are useful comparative references for algorithms, behavio
 - yeti01/nec2: https://github.com/yeti01/nec2
 - tmolteno/necpp: https://github.com/tmolteno/necpp
 
-These references are supplementary. 4nec2 compatibility remains the primary product target, and xnec2c remains the main NEC2 parity reference corpus source.
+These references are supplementary, but not irrelevant. 4nec2 compatibility remains the primary product target, xnec2c remains the main NEC2 parity reference corpus source, yeti01/nec2 remains a useful baseline for clean open NEC2 batch execution, and necpp remains a useful baseline for library-oriented automation and geometry diagnostics.
 
 ## Documentation process constraints
 
