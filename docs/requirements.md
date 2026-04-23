@@ -18,6 +18,8 @@ last_updated: 2026-04-23
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
 - **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
 - **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, competitive with xnec2c-optimize for optimizer-loop orchestration, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
+- **DEC-010**: Hallen solve scope is explicitly constrained to collinear wire topologies aligned with the driven-segment axis; non-collinear Hallen requests must fail fast with a clear diagnostic.
+- **DEC-011**: Experimental sinusoidal solver mode must be safety-bounded. If residual quality is unstable for supported chain geometry, CLI behavior falls back to a stable Hallen-class solve path with explicit diagnostics.
 
 ## Functional requirements
 
@@ -112,19 +114,28 @@ The tolerance matrix is not just acceptance criteria; it is a design contract th
 
 This discipline ensures that fnec-rust's numerical parity is measurable, auditable, and trustworthy for production antenna work.
 
+### Tolerance concept #2 summary (metric specificity)
+
+Tolerance concept #2 is that each output metric gets a deliberately different tolerance based on physical and numerical behavior, rather than forcing one global percentage.
+
+- Impedance (R/X) remains near-exact and contract-tight because it is the primary parity indicator for solver correctness.
+- Pattern and gain tolerances are slightly looser to absorb angular/sample alignment effects between engines without hiding real regressions.
+- Current magnitude/phase keep their own strict bands so field and network behavior cannot silently drift while impedance still looks acceptable.
+- CI gates each metric against its own bound, which prevents a pass in one metric family from masking a failure in another.
+
 ### GAP-001 resolution
 
 - Status: **Resolved**
 - Decision date: 2026-04-22
 - Target parity level: near-100% (see table above).
 
-## Gap list (open definition work)
+## Explicit gap list (open definition work)
 
 - **GAP-001**: ~~Define numerical tolerance targets~~ — **resolved**, see tolerance matrix above.
 - **GAP-002 (critical)**: Define exactly which NEC-4 cards/features are in initial support and which are deferred. **Resolved** 2026-04-23: see `docs/nec4-support.md` for complete card support matrix and phase assignments.
 - **GAP-003 (high)**: Define MVP ground model set and upgrade path for advanced ground behavior.
 - **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability).
-- **GAP-005 (high)**: Define text report format contract for 4nec2-like output (sections, units, precision, ordering).
+- **GAP-005 (high)**: ~~Define text report format contract for 4nec2-like output (sections, units, precision, ordering).~~ **resolved** 2026-04-23 via PAR-001 v1 contract and CI gate.
 - **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow.
 - **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred).
 - **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility.
