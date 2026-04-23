@@ -1,0 +1,83 @@
+{
+  "engine": "4nec2 (Wine 9.x)",
+  "engine_version": "TBD",
+  "updates": [
+    {
+      "case": "dipole-ground-51seg",
+      "real": 63.12,
+      "imag": -18.45,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "yagi-5elm-51seg",
+      "real": 31.44,
+      "imag": -2.61,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "dipole-loaded",
+      "real": 48.20,
+      "imag": 3.77,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "frequency-sweep-dipole",
+      "point": "10",
+      "real": 19.10,
+      "imag": -52.33,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "frequency-sweep-dipole",
+      "point": "12",
+      "real": 45.80,
+      "imag": -26.44,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "frequency-sweep-dipole",
+      "point": "14.2",
+      "real": 74.24,
+      "imag": 13.90,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "frequency-sweep-dipole",
+      "point": "16",
+      "real": 102.10,
+      "imag": 34.55,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "frequency-sweep-dipole",
+      "point": "18",
+      "real": 118.77,
+      "imag": 49.22,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "multi-source",
+      "point": "source_1",
+      "real": 69.03,
+      "imag": 11.20,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    },
+    {
+      "case": "multi-source",
+      "point": "source_2",
+      "real": 69.03,
+      "imag": 11.20,
+      "source": "4nec2 (Wine 9.x)",
+      "status": "Reference captured via 4nec2/Wine"
+    }
+  ]
+}

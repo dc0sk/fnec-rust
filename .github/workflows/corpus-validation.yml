@@ -1,0 +1,25 @@
+name: Corpus Validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  corpus-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run corpus validation tests
+        run: cargo test -p nec-cli --test corpus_validation
+
+  corpus:
+    runs-on: ubuntu-latest
+    needs: [corpus-validation]
+    steps:
+      - run: echo "Corpus validation passed"

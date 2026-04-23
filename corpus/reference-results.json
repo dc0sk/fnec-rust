@@ -1,0 +1,138 @@
+{
+  "corpus_version": "1.0",
+  "generated_date": "2026-04-23",
+  "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
+  "reference_engine_version": "fnec 0.1.0",
+  "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
+  "cases": {
+    "dipole-freesp-51seg": {
+      "deck_file": "dipole-freesp-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "Python MoM validation (hallen_reference.py)",
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Reference captured from Python study; xnec2c validation TBD"
+    },
+    "dipole-ground-51seg": {
+      "deck_file": "dipole-ground-51seg.nec",
+      "description": "Half-wave dipole, 10 m AGL, perfect ground, 51 segments, 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "perfect conductor (infinite)",
+      "reference_source": "fnec Hallén solver (regression only — GN card silently ignored)",
+      "feedpoint_impedance": {
+        "real_ohm": 74.242874,
+        "imag_ohm": 13.899516
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "GN card silently ignored by fnec; regression-only reference equals free-space result; GN support pending"
+    },
+    "yagi-5elm-51seg": {
+      "deck_file": "yagi-5elm-51seg.nec",
+      "description": "5-element Yagi (1 reflector + driven + 3 directors), 14.2 MHz, 0.2-lambda element spacing",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 5,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallén solver (regression reference; deck geometry fixed 2026-04-23)",
+      "feedpoint_impedance": {
+        "real_ohm": 139.097279,
+        "imag_ohm": -125.572548
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression reference captured from fnec; NEC2 cross-validation TBD"
+    },
+    "dipole-loaded": {
+      "deck_file": "dipole-loaded.nec",
+      "description": "14.2 MHz dipole driven at 7.1 MHz with top-hat loading loop",
+      "frequency_mhz": 7.1,
+      "segments": null,
+      "wires": 5,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "none",
+      "feedpoint_impedance": {
+        "real_ohm": null,
+        "imag_ohm": null
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "known-broken: fnec returns negative R (-45 Ohm); multi-wire loaded geometry creates ill-conditioned coupling; pending deck redesign or solver fix"
+    },
+    "frequency-sweep-dipole": {
+      "deck_file": "frequency-sweep-dipole.nec",
+      "description": "Half-wave dipole, frequency sweep: 10, 12, 14, 16, 18 MHz (FR step 2.0 MHz from 10.0)",
+      "frequencies_mhz": [10.0, 12.0, 14.0, 16.0, 18.0],
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "none",
+      "feedpoint_impedance": {
+        "10.0": {"real_ohm": null, "imag_ohm": null},
+        "12.0": {"real_ohm": null, "imag_ohm": null},
+        "14.0": {"real_ohm": null, "imag_ohm": null},
+        "16.0": {"real_ohm": null, "imag_ohm": null},
+        "18.0": {"real_ohm": null, "imag_ohm": null}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "fnec only solves first FR frequency point; multi-frequency sweep support pending; references TBD"
+    },
+    "multi-source": {
+      "deck_file": "multi-source.nec",
+      "description": "Two parallel half-wave dipoles, 1 m spacing, independent 1.0 V sources at each",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 2,
+      "ground": "none",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "source_1": {"real_ohm": null, "imag_ohm": null},
+        "source_2": {"real_ohm": null, "imag_ohm": null}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Deck TBD; multi-source support in fnec TBD"
+    }
+  }
+}
