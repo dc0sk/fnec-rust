@@ -35,7 +35,10 @@ pub enum ExcitationError {
     /// An EX card uses an excitation type not yet supported.
     UnsupportedType { ex_type: u32 },
     /// Hallen RHS currently assumes all wires are collinear with the feed axis.
-    UnsupportedHallenTopology,
+    UnsupportedHallenTopology {
+        /// Wire tags that are not collinear with the feed segment axis.
+        non_collinear_tags: Vec<u32>,
+    },
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -47,9 +50,12 @@ impl std::fmt::Display for ExcitationError {
             ExcitationError::UnsupportedType { ex_type } => {
                 write!(f, "EX: excitation type {ex_type} is not yet supported")
             }
-            ExcitationError::UnsupportedHallenTopology => write!(
+            ExcitationError::UnsupportedHallenTopology {
+                non_collinear_tags,
+            } => write!(
                 f,
-                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment"
+                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}",
+                non_collinear_tags
             ),
         }
     }
@@ -132,17 +138,19 @@ pub fn build_hallen_rhs(
     let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
-    if segs.iter().any(|seg| {
-        seg.direction[0] * feed_dir[0]
+    let mut non_collinear_tags: Vec<u32> = Vec::new();
+    for seg in segs {
+        let dot = seg.direction[0] * feed_dir[0]
             + seg.direction[1] * feed_dir[1]
-            + seg.direction[2] * feed_dir[2]
-            < 1.0 - 1e-9
-            && seg.direction[0] * feed_dir[0]
-                + seg.direction[1] * feed_dir[1]
-                + seg.direction[2] * feed_dir[2]
-                > -1.0 + 1e-9
-    }) {
-        return Err(ExcitationError::UnsupportedHallenTopology);
+            + seg.direction[2] * feed_dir[2];
+        if dot.abs() < 1.0 - 1e-9 && !non_collinear_tags.contains(&seg.tag) {
+            non_collinear_tags.push(seg.tag);
+        }
+    }
+    if !non_collinear_tags.is_empty() {
+        return Err(ExcitationError::UnsupportedHallenTopology {
+            non_collinear_tags,
+        });
     }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
@@ -420,7 +428,7 @@ mod tests {
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
             build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ),
-            Err(ExcitationError::UnsupportedHallenTopology)
+            Err(ExcitationError::UnsupportedHallenTopology { .. })
         ));
     }
 
