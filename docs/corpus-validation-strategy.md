@@ -77,6 +77,11 @@ For each corpus case:
      --status "Reference captured via 4nec2/Wine"
    ```
 
+   For full runs, use batch import:
+   ```bash
+   scripts/import-reference-impedance.py --batch-file .tmp-work/reference-import.json
+   ```
+
    JSON shape remains:
    ```json
    {

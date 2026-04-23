@@ -184,6 +184,46 @@ scripts/import-reference-impedance.py \
   --source "4nec2 (Windows VM)"
 ```
 
+Bulk import (recommended once you have all numbers):
+
+1. Copy `corpus/reference-import-template.json` to `.tmp-work/reference-import.json`
+2. Replace sample values with your measured values
+3. Import all values in one shot:
+
+```bash
+scripts/import-reference-impedance.py --batch-file .tmp-work/reference-import.json
+```
+
+## Exactly what I need from you
+
+Please provide these values from 4nec2 output (all in ohms):
+
+1. `dipole-ground-51seg`: `real`, `imag`
+2. `yagi-5elm-51seg`: `real`, `imag`
+3. `dipole-loaded`: `real`, `imag`
+4. `frequency-sweep-dipole`: points `10`, `12`, `14.2`, `16`, `18` each with `real`, `imag`
+5. `multi-source`: `source_1` and `source_2` each with `real`, `imag`
+6. Reference metadata:
+   - engine label (e.g., `4nec2 (Wine 9.x)`)
+   - engine version string shown by 4nec2
+
+Preferred format: fill `corpus/reference-import-template.json` and send it back, or paste values as:
+
+```text
+dipole-ground-51seg: R=..., X=...
+yagi-5elm-51seg: R=..., X=...
+dipole-loaded: R=..., X=...
+frequency-sweep-dipole@10: R=..., X=...
+frequency-sweep-dipole@12: R=..., X=...
+frequency-sweep-dipole@14.2: R=..., X=...
+frequency-sweep-dipole@16: R=..., X=...
+frequency-sweep-dipole@18: R=..., X=...
+multi-source@source_1: R=..., X=...
+multi-source@source_2: R=..., X=...
+engine: ...
+engine_version: ...
+```
+
 Current caveat (Linux headless CI/dev shells):
 
 - `xnec2c 4.4.18` may hang in `--batch` mode with GTK warnings and no output file, even when input syntax is valid.
