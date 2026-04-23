@@ -16,7 +16,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run corpus validation tests
-        run: cargo test -p nec-cli --test corpus_validation -- --ignored
+        run: cargo test -p nec-cli --test corpus_validation
 
   corpus:
     runs-on: ubuntu-latest

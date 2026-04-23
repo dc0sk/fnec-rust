@@ -9,7 +9,6 @@ use std::process::Command;
 use serde_json::Value;
 
 #[test]
-#[ignore] // Skip by default; run with `cargo test -p nec-cli --test corpus_validation -- --ignored`
 fn corpus_validation_cases_with_references() {
     // Test file is inside apps/nec-cli; walk up to workspace root.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
