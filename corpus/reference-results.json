@@ -1,0 +1,139 @@
+{
+  "corpus_version": "1.0",
+  "generated_date": "2026-04-23",
+  "reference_engine": "xnec2c (NEC2 reference)",
+  "reference_engine_version": "TBD — to be populated after xnec2c run",
+  "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
+  "cases": {
+    "dipole-freesp-51seg": {
+      "deck_file": "dipole-freesp-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "Python MoM validation (hallen_reference.py)",
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Reference captured from Python study; xnec2c validation TBD"
+    },
+    "dipole-ground-51seg": {
+      "deck_file": "dipole-ground-51seg.nec",
+      "description": "Half-wave dipole, 10 m AGL, perfect ground, 51 segments, 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "perfect conductor (infinite)",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "real_ohm": null,
+        "imag_ohm": null
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Deck created; xnec2c reference TBD"
+    },
+    "yagi-5elm-51seg": {
+      "deck_file": "yagi-5elm-51seg.nec",
+      "description": "5-element Yagi (1 reflector + driven + 3 directors), 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 5,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "real_ohm": null,
+        "imag_ohm": null
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05,
+        "gain_max_dbi": 0.05
+      },
+      "status": "Deck TBD"
+    },
+    "dipole-loaded": {
+      "deck_file": "dipole-loaded.nec",
+      "description": "Half-wave dipole with series loading coil, 7.1 MHz",
+      "frequency_mhz": 7.1,
+      "segments": null,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "real_ohm": null,
+        "imag_ohm": null
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Deck TBD"
+    },
+    "frequency-sweep-dipole": {
+      "deck_file": "frequency-sweep-dipole.nec",
+      "description": "Half-wave dipole, frequency sweep: 10, 12, 14.2, 16, 18 MHz",
+      "frequencies_mhz": [10.0, 12.0, 14.2, 16.0, 18.0],
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "10": {"real_ohm": null, "imag_ohm": null},
+        "12": {"real_ohm": null, "imag_ohm": null},
+        "14.2": {"real_ohm": 74.23, "imag_ohm": 13.90},
+        "16": {"real_ohm": null, "imag_ohm": null},
+        "18": {"real_ohm": null, "imag_ohm": null}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Deck TBD; frequency sweep parsing TBD"
+    },
+    "multi-source": {
+      "deck_file": "multi-source.nec",
+      "description": "Two parallel half-wave dipoles, 1 m spacing, independent 1.0 V sources at each",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 2,
+      "ground": "none",
+      "reference_source": "xnec2c (TBD)",
+      "feedpoint_impedance": {
+        "source_1": {"real_ohm": null, "imag_ohm": null},
+        "source_2": {"real_ohm": null, "imag_ohm": null}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Deck TBD; multi-source support in fnec TBD"
+    }
+  }
+}

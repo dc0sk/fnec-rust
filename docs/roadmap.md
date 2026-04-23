@@ -30,6 +30,7 @@ last_updated: 2026-04-23
 
 **Key deliverables**:
 - ✅ Hallén solver working and validated (done).
+- ✅ Golden reference corpus scaffolded: 6 benchmark geometries, reference results template, validation test (done, `feat/golden-corpus-validation` branch).
 - [ ] Expand NEC-2 card support breadth (FR, GN, GE, geometry edge cases).
 - [ ] Build 4nec2-like text report format (output sections, units, precision).
 - [ ] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source).
