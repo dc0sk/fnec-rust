@@ -234,6 +234,18 @@ fn parse_impedance_lines(stdout: &str) -> Vec<(f64, f64)> {
         if parts[0].parse::<usize>().is_err() {
             continue;
         }
+
+        // Contract v1 format:
+        // TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
+        if parts.len() >= 8 {
+            if let (Ok(z_re), Ok(z_im)) = (parts[6].parse::<f64>(), parts[7].parse::<f64>()) {
+                rows.push((z_re, z_im));
+                continue;
+            }
+        }
+
+        // Legacy format:
+        // <tag> <seg> <V_re>+<V_im>j <I_re>+<I_im>j <Z_re>+<Z_im>j
         let Some(z_str) = parts.last() else {
             continue;
         };

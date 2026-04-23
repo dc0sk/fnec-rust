@@ -27,6 +27,7 @@ dependencies = [
  "nec_model",
  "nec_parser",
  "nec_project",
+ "nec_report",
  "nec_solver",
  "num-complex",
  "serde_json",
@@ -76,6 +77,7 @@ name = "nec_report"
 version = "0.1.0"
 dependencies = [
  "nec_model",
+ "num-complex",
 ]
 
 [[package]]
