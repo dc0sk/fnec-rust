@@ -36,7 +36,12 @@ pub enum ExcitationError {
     /// An EX card referenced a (tag, segment) pair not present in the geometry.
     SegmentNotFound { tag: u32, segment: u32 },
     /// An EX card uses an excitation type not yet supported.
-    UnsupportedType { ex_type: u32 },
+    UnsupportedType {
+        ex_type: u32,
+        tag: u32,
+        segment: u32,
+        i4: u32,
+    },
     /// Hallen RHS currently assumes all wires are collinear with the feed axis.
     UnsupportedHallenTopology {
         /// Wire tags that are not collinear with the feed segment axis.
@@ -54,8 +59,16 @@ impl std::fmt::Display for ExcitationError {
             ExcitationError::SegmentNotFound { tag, segment } => {
                 write!(f, "EX: no segment with tag {tag}, index {segment}")
             }
-            ExcitationError::UnsupportedType { ex_type } => {
-                write!(f, "EX: excitation type {ex_type} is not yet supported")
+            ExcitationError::UnsupportedType {
+                ex_type,
+                tag,
+                segment,
+                i4,
+            } => {
+                write!(
+                    f,
+                    "EX: excitation type {ex_type} at tag {tag}, segment {segment}, I4={i4} is not yet supported"
+                )
             }
             ExcitationError::UnsupportedHallenTopology {
                 non_collinear_tags,
@@ -119,6 +132,9 @@ pub fn build_hallen_rhs(
         if ex.excitation_type != 0 {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
+                tag: ex.tag,
+                segment: ex.segment,
+                i4: ex.i4,
             });
         }
         if first_ex.is_none() {
@@ -190,6 +206,9 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
     if ex.excitation_type != 0 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
+            tag: ex.tag,
+            segment: ex.segment,
+            i4: ex.i4,
         });
     }
 
@@ -318,7 +337,12 @@ mod tests {
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
             build_excitation(&deck, &segs),
-            Err(ExcitationError::UnsupportedType { ex_type: 5 })
+            Err(ExcitationError::UnsupportedType {
+                ex_type: 5,
+                tag: 1,
+                segment: 2,
+                i4: 0,
+            })
         ));
     }
 
