@@ -106,7 +106,7 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 ## Gap list (open definition work)
 
 - **GAP-001**: ~~Define numerical tolerance targets~~ — **resolved**, see tolerance matrix above.
-- **GAP-002 (critical)**: Define exactly which NEC-4 cards/features are in initial support and which are deferred.
+- **GAP-002 (critical)**: Define exactly which NEC-4 cards/features are in initial support and which are deferred. **Resolved** 2026-04-23: see `docs/nec4-support.md` for complete card support matrix and phase assignments.
 - **GAP-003 (high)**: Define MVP ground model set and upgrade path for advanced ground behavior.
 - **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability).
 - **GAP-005 (high)**: Define text report format contract for 4nec2-like output (sections, units, precision, ordering).
