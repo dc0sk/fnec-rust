@@ -145,3 +145,18 @@ This discipline ensures that fnec-rust's numerical parity is measurable, auditab
 - [ ] Workflow parity requirements are specific enough to test, not just aspirational.
 - [ ] Automation and embedding expectations are explicit enough to drive API design decisions.
 - [ ] NEC-5-validation-manual-informed case classes are mapped to explicit tolerance-gated corpus coverage for in-scope scenarios.
+
+## Report format contract (PAR-001 v1)
+
+The CLI text report format is versioned and contract-bound for compatibility testing.
+
+- Header line 1: `FNEC FEEDPOINT REPORT`
+- Header line 2: `FORMAT_VERSION 1`
+- Metadata lines: `FREQ_MHZ`, `SOLVER_MODE`, `PULSE_RHS`
+- Section line: `FEEDPOINTS`
+- Table header: `TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM`
+- Data rows: one source-driven segment per row; exactly 8 whitespace-separated columns
+- Numeric formatting: fixed-point with 6 decimals
+- Ordering: preserve solver/feed discovery order emitted by CLI for deterministic runs
+
+Contract changes to these tokens, column order, or precision rules require explicit changelog note and test updates.

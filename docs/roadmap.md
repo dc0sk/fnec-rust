@@ -72,6 +72,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - ✅ NEC-4 feature boundary documented: card support matrix, phase assignments (done, `docs/nec4-support.md`).
 - [ ] Expand NEC-2 card support breadth (FR, GN, GE, geometry edge cases).
 - [ ] Build 4nec2-like text report format (output sections, units, precision).
+- [ ] Lock report contract v1 in production CLI output: stable headers, metadata lines, and feedpoint table columns (`TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM`) with fixed precision and CI contract tests.
 - [ ] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source).
 - [ ] Run corpus through reference and fnec-rust; validate all results within tolerance matrix.
 - [ ] Simple ground model (infinite, raised dielectric) working and tested.

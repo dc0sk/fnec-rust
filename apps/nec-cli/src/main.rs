@@ -3,6 +3,7 @@
 
 use nec_model::card::Card;
 use nec_parser::parse;
+use nec_report::{render_text_report, FeedpointRow, ReportInput};
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix, build_excitation, build_geometry,
     build_hallen_rhs, scale_excitation_for_pulse_rhs, solve, solve_hallen,
@@ -25,6 +26,15 @@ enum SolverMode {
 enum PulseRhsMode {
     Raw,
     Nec2,
+}
+
+impl PulseRhsMode {
+    fn as_contract_str(self) -> &'static str {
+        match self {
+            PulseRhsMode::Raw => "Raw",
+            PulseRhsMode::Nec2 => "Nec2",
+        }
+    }
 }
 
 fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), String> {
@@ -292,6 +302,7 @@ fn main() -> ExitCode {
         }
     };
 
+    let mut rows: Vec<FeedpointRow> = Vec::new();
     for (idx, seg) in segs.iter().enumerate() {
         let v = v_vec[idx];
         if v.norm() < 1e-30 {
@@ -304,11 +315,22 @@ fn main() -> ExitCode {
         } else {
             v_source
         };
-        println!(
-            "{:<6} {:<6} {:>10.6}{:+.6}j {:>10.6}{:+.6}j {:>10.6}{:+.6}j",
-            seg.tag, seg.tag_index, v_source.re, v_source.im, i.re, i.im, z_in.re, z_in.im,
-        );
+        rows.push(FeedpointRow {
+            tag: seg.tag as usize,
+            seg: seg.tag_index as usize,
+            v_source,
+            current: i,
+            z_in,
+        });
     }
+
+    let report = render_text_report(&ReportInput {
+        solver_mode: diag_label,
+        pulse_rhs: pulse_rhs_mode.as_contract_str(),
+        frequency_hz: freq_hz,
+        rows: &rows,
+    });
+    print!("{report}");
 
     eprintln!(
         "diag: mode={diag_label} pulse_rhs={:?} abs_res={:.6e} rel_res={:.6e}",

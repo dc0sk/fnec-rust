@@ -64,21 +64,36 @@ Only applies to `pulse` and `continuity` modes.
 
 ## Output format
 
-One line per driven segment (segments with zero excitation are skipped):
+Report contract v1 is a stable, versioned text layout:
 
 ```
-<tag>  <seg>  <V_re>+<V_im>j  <I_re>+<I_im>j  <Z_re>+<Z_im>j
+FNEC FEEDPOINT REPORT
+FORMAT_VERSION 1
+FREQ_MHZ <mhz>
+SOLVER_MODE <mode>
+PULSE_RHS <Raw|Nec2>
+
+FEEDPOINTS
+TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
+<tag> <seg> <v_re> <v_im> <i_re> <i_im> <z_re> <z_im>
+...
 ```
 
-Columns:
+Feedpoint table columns:
 
 | Column | Unit | Description |
 |--------|------|-------------|
-| tag | — | GW tag number |
-| seg | — | 1-based segment index within the wire |
-| V_source | V | Source voltage (`v_ex × segment_length`) |
-| I | A | Current at the driven segment |
-| Z_in | Ω | Feedpoint impedance (`V_source / I`) |
+| TAG | — | GW tag number |
+| SEG | — | 1-based segment index within the wire |
+| V_RE / V_IM | V | Source voltage real/imag (`v_ex × segment_length`) |
+| I_RE / I_IM | A | Current real/imag at the driven segment |
+| Z_RE / Z_IM | Ω | Feedpoint impedance real/imag (`V_source / I`) |
+
+Formatting and ordering rules:
+
+- Fixed-point numeric formatting with 6 decimals
+- Exactly 8 whitespace-separated numeric columns per data row
+- One data row per driven segment (zero-excitation segments skipped)
 
 ## Diagnostics (stderr)
 
