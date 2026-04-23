@@ -10,8 +10,9 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - Parse 4nec2 / NEC2 deck files (GW, EX, FR, EN cards; GE optional)
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
-- Pulse-basis and continuity-basis Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
+- Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
 - CLI binary `fnec` with selectable solver and RHS modes
+- FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run
 - Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI, TUI
 
@@ -32,10 +33,18 @@ FR 0 1 0 0 14.2 0.0
 EN
 ```
 
-Example output (tag, seg, V_source, I, Z_in):
+Example output (report contract v1):
 
 ```
-1      26      1.000000+0.000000j   0.013471-0.002503j   74.242874+13.899516j
+FNEC FEEDPOINT REPORT
+FORMAT_VERSION 1
+FREQ_MHZ 14.200000
+SOLVER_MODE hallen
+PULSE_RHS Nec2
+
+FEEDPOINTS
+TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
+1 26 1.000000 0.000000 0.013013 -0.002436 74.242874 13.899516
 ```
 
 See [docs/cli-guide.md](docs/cli-guide.md) for full option reference.

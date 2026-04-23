@@ -76,7 +76,7 @@
       "wires": 5,
       "sources": 1,
       "ground": "none",
-      "reference_source": "none",
+      "reference_source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
       "feedpoint_impedance": {
         "real_ohm": null,
         "imag_ohm": null
@@ -102,13 +102,13 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "none",
+      "reference_source": "fnec Hallen solver (regression reference)",
       "feedpoint_impedance": {
-        "10.0": {"real_ohm": null, "imag_ohm": null},
-        "12.0": {"real_ohm": null, "imag_ohm": null},
-        "14.0": {"real_ohm": null, "imag_ohm": null},
-        "16.0": {"real_ohm": null, "imag_ohm": null},
-        "18.0": {"real_ohm": null, "imag_ohm": null}
+        "10.0": {"real_ohm": 27.928159, "imag_ohm": -456.030376},
+        "12.0": {"real_ohm": 45.070916, "imag_ohm": -220.400895},
+        "14.0": {"real_ohm": 70.978931, "imag_ohm": -7.133893},
+        "16.0": {"real_ohm": 111.641332, "imag_ohm": 207.119271},
+        "18.0": {"real_ohm": 179.635817, "imag_ohm": 444.830198}
       },
       "external_reference_candidate": {
         "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
@@ -124,7 +124,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "fnec only solves first FR frequency point; multi-frequency sweep support pending. External sweep candidates captured via NEC2DXS500+XQ."
+      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates retained for future parity tightening."
     },
     "multi-source": {
       "deck_file": "multi-source.nec",

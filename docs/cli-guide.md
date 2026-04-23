@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-23
 ---
 
 # CLI Guide — fnec (v0.1.0)
@@ -14,7 +14,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity>] [--pulse-rhs <raw|nec2>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -23,7 +23,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
-| `--solver` | `hallen` \| `pulse` \| `continuity` | `hallen` | MoM solver to use (see below) |
+| `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 
 ## Solver modes
@@ -53,9 +53,16 @@ basis transform for single linear wire chains.  Falls back to `pulse` for
 multi-wire decks or when residual exceeds 1e-3.  Subject to the same fundamental
 divergence as `pulse`.
 
+### `sinusoidal` (EXPERIMENTAL)
+
+Incremental milestone mode that applies a sine-tapered continuity transform on
+top of the Pocklington matrix for single linear chains. Falls back to `pulse`
+for multi-wire decks. This is not yet full NEC2 `tbf/sbf/trio` sinusoidal-basis
+assembly, but it establishes a compatible stepping-stone for that implementation.
+
 ## `--pulse-rhs` values
 
-Only applies to `pulse` and `continuity` modes.
+Applies to `pulse`, `continuity`, and `sinusoidal` modes.
 
 | Value | Behaviour |
 |-------|-----------|
@@ -100,13 +107,14 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 abs_res=3.456789e-10 rel_res=2.345678e-08
+diag: mode=hallen pulse_rhs=Nec2 freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08
 ```
 
 | Field | Description |
 |-------|-------------|
 | `mode` | Effective solver path used (may differ from `--solver` if fallback occurred) |
 | `pulse_rhs` | Active `--pulse-rhs` setting |
+| `freq_mhz` | Frequency point solved for this report block |
 | `abs_res` | Absolute L2 residual ‖Ax − b‖ |
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
 
@@ -147,7 +155,7 @@ EN
 | GW | Full |
 | GE | Parsed (ground plane flag ignored) |
 | EX type 0 | Full (voltage source) |
-| FR | Single frequency, step count ignored |
+| FR | Full linear/multiplicative sweep over all steps |
 | EN | Terminates parse |
 | Other | Warning printed, skipped |
 
