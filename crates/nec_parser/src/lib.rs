@@ -143,7 +143,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     excitation_type: parse_u32(lineno, "EX", 1, &fields[0])?,
                     tag: parse_u32(lineno, "EX", 2, &fields[1])?,
                     segment: parse_u32(lineno, "EX", 3, &fields[2])?,
-                    // fields[3] is I4 (unused for type-0 sources, consumed here)
+                    i4: parse_u32(lineno, "EX", 4, &fields[3])?,
                     voltage_real: vr,
                     voltage_imag: vi,
                 }));
@@ -262,7 +262,7 @@ mod tests {
     use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
-    /// EX format: I1=type I2=tag I3=seg I4=0(unused) F1=vr F2=vi
+    /// EX format: I1=type I2=tag I3=seg I4=aux-int F1=vr F2=vi
     const DIPOLE_DECK: &str = "\
 CM Half-wave dipole at 28 MHz
 CE
@@ -312,6 +312,7 @@ EN
                 excitation_type: 0,
                 tag: 1,
                 segment: 6,
+                i4: 0,
                 voltage_real: 1.0,
                 voltage_imag: 0.0,
             })
@@ -380,5 +381,24 @@ EN
         // CM after EN must not appear
         assert_eq!(result.deck.cards.len(), 2);
         assert_eq!(result.deck.cards[1], Card::En(EnCard));
+    }
+
+    #[test]
+    fn ex_i4_field_is_preserved() {
+        let input = "EX 5 2 7 3 1.5 -0.25\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        assert_eq!(result.deck.cards.len(), 2);
+        assert_eq!(
+            result.deck.cards[0],
+            Card::Ex(ExCard {
+                excitation_type: 5,
+                tag: 2,
+                segment: 7,
+                i4: 3,
+                voltage_real: 1.5,
+                voltage_imag: -0.25,
+            })
+        );
     }
 }

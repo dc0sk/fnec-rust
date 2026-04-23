@@ -237,6 +237,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6, // centre segment (1-based)
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -280,6 +281,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 2,
+            i4: 0,
             voltage_real: 0.5,
             voltage_imag: -0.5,
         }));
@@ -309,6 +311,7 @@ mod tests {
             excitation_type: 5, // not supported
             tag: 1,
             segment: 2,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -333,6 +336,7 @@ mod tests {
             excitation_type: 0,
             tag: 99, // no such tag
             segment: 1,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -445,6 +449,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -481,6 +486,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));

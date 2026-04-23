@@ -35,7 +35,8 @@ pub struct GwCard {
 
 /// EX — Excitation card.
 ///
-/// Only voltage-source excitation (type 0) is modelled in Phase 1.
+/// Phase 1 models voltage-source excitation (type 0). Additional fields are
+/// preserved so later phases can implement more EX source families.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExCard {
     /// Excitation type (0 = voltage source).
@@ -44,6 +45,11 @@ pub struct ExCard {
     pub tag: u32,
     /// Segment number within the tag.
     pub segment: u32,
+    /// Integer EX field I4.
+    ///
+    /// For EX type 0 this is typically unused and often set to 0. For other
+    /// source types NEC uses this field for additional source metadata.
+    pub i4: u32,
     /// Real part of the voltage (volts).
     pub voltage_real: f64,
     /// Imaginary part of the voltage (volts).
