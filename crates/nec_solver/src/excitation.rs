@@ -9,6 +9,7 @@
 //! Only excitation type 0 (series voltage source) is implemented in Phase 1.
 
 use num_complex::Complex64;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use nec_model::card::{Card, ExCard};
@@ -40,6 +41,10 @@ pub enum ExcitationError {
     UnsupportedHallenTopology {
         /// Wire tags that are not collinear with the feed segment axis.
         non_collinear_tags: Vec<u32>,
+        /// Absolute cosine alignment per non-collinear tag.
+        ///
+        /// 1.0 means collinear, 0.0 means orthogonal.
+        tag_abs_alignment_cos: Vec<(u32, f64)>,
     },
 }
 
@@ -54,10 +59,12 @@ impl std::fmt::Display for ExcitationError {
             }
             ExcitationError::UnsupportedHallenTopology {
                 non_collinear_tags,
+                tag_abs_alignment_cos,
             } => write!(
                 f,
-                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}",
-                non_collinear_tags
+                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}; abs(cos)-alignment by tag: {:?}",
+                non_collinear_tags,
+                tag_abs_alignment_cos
             ),
         }
     }
@@ -141,17 +148,25 @@ pub fn build_hallen_rhs(
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
+    let mut tag_abs_alignment_cos: BTreeMap<u32, f64> = BTreeMap::new();
     for seg in segs {
         let dot = seg.direction[0] * feed_dir[0]
             + seg.direction[1] * feed_dir[1]
             + seg.direction[2] * feed_dir[2];
-        if dot.abs() < 1.0 - 1e-9 {
+        let abs_dot = dot.abs();
+        if abs_dot < 1.0 - 1e-9 {
             non_collinear_tags.insert(seg.tag);
+            // Keep the best alignment observed for the tag.
+            tag_abs_alignment_cos
+                .entry(seg.tag)
+                .and_modify(|v| *v = v.max(abs_dot))
+                .or_insert(abs_dot);
         }
     }
     if !non_collinear_tags.is_empty() {
         return Err(ExcitationError::UnsupportedHallenTopology {
             non_collinear_tags: non_collinear_tags.into_iter().collect(),
+            tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
         });
     }
 
@@ -440,6 +455,7 @@ mod tests {
             err,
             ExcitationError::UnsupportedHallenTopology {
                 non_collinear_tags: vec![2],
+                tag_abs_alignment_cos: vec![(2, 0.0)],
             }
         );
     }
