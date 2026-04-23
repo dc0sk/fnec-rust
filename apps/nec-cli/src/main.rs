@@ -147,6 +147,18 @@ fn residual_hallen(
     (res, rel)
 }
 
+fn warn_pulse_mode_experimental(solver_mode: SolverMode) {
+    if !matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity) {
+        return;
+    }
+    eprintln!(
+        "warning: pulse/continuity solver modes are EXPERIMENTAL and known-inaccurate for \
+thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution \
+as segment count increases. Use --solver hallen for accurate results. \
+(Sinusoidal-basis EFIE fix tracked in backlog.)"
+    );
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
 
@@ -185,6 +197,8 @@ fn main() -> ExitCode {
     };
 
     let deck = &result.deck;
+
+    warn_pulse_mode_experimental(solver_mode);
 
     let freq_hz = match deck.cards.iter().find_map(|c| {
         if let Card::Fr(fr) = c {
