@@ -92,7 +92,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "known-broken: fnec returns negative R (-45 Ohm); multi-wire loaded geometry creates ill-conditioned coupling; pending deck redesign or solver fix. External candidate captured via NEC2DXS500+XQ."
+      "status": "Hallen path now rejects this case as unsupported because the loaded loop is non-collinear with the driven wire axis. External candidate captured via NEC2DXS500+XQ; full non-collinear solver support is still pending."
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",

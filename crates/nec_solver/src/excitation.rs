@@ -34,6 +34,8 @@ pub enum ExcitationError {
     SegmentNotFound { tag: u32, segment: u32 },
     /// An EX card uses an excitation type not yet supported.
     UnsupportedType { ex_type: u32 },
+    /// Hallen RHS currently assumes all wires are collinear with the feed axis.
+    UnsupportedHallenTopology,
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -45,6 +47,10 @@ impl std::fmt::Display for ExcitationError {
             ExcitationError::UnsupportedType { ex_type } => {
                 write!(f, "EX: excitation type {ex_type} is not yet supported")
             }
+            ExcitationError::UnsupportedHallenTopology => write!(
+                f,
+                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment"
+            ),
         }
     }
 }
@@ -63,7 +69,7 @@ pub fn build_excitation(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        apply_ex(ex, segs, &mut v)?;
+        apply_ex(&ex, segs, &mut v)?;
     }
 
     Ok(v)
@@ -125,6 +131,19 @@ pub fn build_hallen_rhs(
     let feed_dir = segs[feed_idx].direction;
     let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
+
+    if segs.iter().any(|seg| {
+        seg.direction[0] * feed_dir[0]
+            + seg.direction[1] * feed_dir[1]
+            + seg.direction[2] * feed_dir[2]
+            < 1.0 - 1e-9
+            && seg.direction[0] * feed_dir[0]
+                + seg.direction[1] * feed_dir[1]
+                + seg.direction[2] * feed_dir[2]
+                > -1.0 + 1e-9
+    }) {
+        return Err(ExcitationError::UnsupportedHallenTopology);
+    }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
@@ -371,5 +390,68 @@ mod tests {
                 h.rhs[j]
             );
         }
+    }
+
+    #[test]
+    fn hallen_rhs_rejects_non_collinear_topology() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 2,
+            segments: 9,
+            start: [-0.25, 0.0, 2.677],
+            end: [0.25, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 6,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        assert!(matches!(
+            build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ),
+            Err(ExcitationError::UnsupportedHallenTopology)
+        ));
+    }
+
+    #[test]
+    fn hallen_rhs_allows_parallel_multi_wire_topology() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 2,
+            segments: 11,
+            start: [1.0, 0.0, -2.677],
+            end: [1.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 6,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
+        assert_eq!(h.rhs.len(), segs.len());
+        assert_eq!(h.cos_vec.len(), segs.len());
     }
 }

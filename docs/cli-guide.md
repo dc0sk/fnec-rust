@@ -28,11 +28,13 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 
 ## Solver modes
 
-### `hallen` (recommended)
+### `hallen` (recommended for collinear wire sets)
 
 Augmented Hallén integral equation with 8-point Gauss-Legendre quadrature and
 analytic singularity subtraction.  Produces physically accurate feedpoint
-impedance for thin-wire antennas.
+impedance for thin-wire antennas when all wires are collinear with the driven
+segment axis. Non-collinear topologies currently return an explicit unsupported
+topology error instead of a misleading impedance.
 
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
@@ -162,5 +164,6 @@ EN
 ## Notes
 
 - Multi-source decks (multiple EX cards) are supported; one output line per source.
+- The Hallén solver currently rejects non-collinear wire topologies such as loaded loops and hats attached off-axis to the driven wire.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.

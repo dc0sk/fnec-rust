@@ -252,12 +252,18 @@ fn main() -> ExitCode {
 
     let segs = match build_geometry(deck) {
         Ok(s) => s,
-        Err(_) => return ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
     };
 
     let v_vec = match build_excitation(deck, &segs) {
         Ok(v) => v,
-        Err(_) => return ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
     };
     for (fidx, freq_hz) in freqs_hz.iter().copied().enumerate() {
         let v_vec_pulse = match pulse_rhs_mode {
@@ -276,7 +282,10 @@ fn main() -> ExitCode {
             SolverMode::Hallen => {
                 let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
                     Ok(h) => h,
-                    Err(_) => return ExitCode::FAILURE,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        return ExitCode::FAILURE;
+                    }
                 };
                 match solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec) {
                     Ok(sol) => {
@@ -289,7 +298,10 @@ fn main() -> ExitCode {
                         );
                         (sol.currents, a, r, "hallen")
                     }
-                    Err(_) => return ExitCode::FAILURE,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        return ExitCode::FAILURE;
+                    }
                 }
             }
             SolverMode::Pulse => match solve(&z_mat, &v_vec_pulse) {
@@ -297,7 +309,10 @@ fn main() -> ExitCode {
                     let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                     (i, a, r, "pulse")
                 }
-                Err(_) => return ExitCode::FAILURE,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    return ExitCode::FAILURE;
+                }
             },
             SolverMode::Continuity => {
                 if !is_single_linear_chain(&segs) {
@@ -306,7 +321,10 @@ fn main() -> ExitCode {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                             (i, a, r, "continuity->pulse")
                         }
-                        Err(_) => return ExitCode::FAILURE,
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            return ExitCode::FAILURE;
+                        }
                     }
                 } else {
                     match solve_with_continuity_basis(&z_mat, &v_vec_pulse) {
@@ -325,11 +343,17 @@ fn main() -> ExitCode {
                                             residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
                                         (i2, a2, r2, "continuity->pulse(residual)")
                                     }
-                                    Err(_) => return ExitCode::FAILURE,
+                                    Err(e) => {
+                                        eprintln!("error: {e}");
+                                        return ExitCode::FAILURE;
+                                    }
                                 }
                             }
                         }
-                        Err(_) => return ExitCode::FAILURE,
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            return ExitCode::FAILURE;
+                        }
                     }
                 }
             }
@@ -340,7 +364,10 @@ fn main() -> ExitCode {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                             (i, a, r, "sinusoidal->pulse")
                         }
-                        Err(_) => return ExitCode::FAILURE,
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            return ExitCode::FAILURE;
+                        }
                     }
                 } else {
                     match solve_with_sinusoidal_basis(&z_mat, &v_vec_pulse) {
@@ -348,7 +375,10 @@ fn main() -> ExitCode {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                             (i, a, r, "sinusoidal")
                         }
-                        Err(_) => return ExitCode::FAILURE,
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            return ExitCode::FAILURE;
+                        }
                     }
                 }
             }
