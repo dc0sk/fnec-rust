@@ -73,7 +73,6 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - ✅ Report contract v1 locked in CLI output and CI-gated (`FORMAT_VERSION 1`, deterministic headers/table).
 - ✅ FR sweep execution landed in CLI and tolerance-gated corpus validation (full multi-point solve path).
 - ✅ Hallen topology guardrail landed: non-collinear Hallen requests fail fast with explicit diagnostics instead of returning misleading impedance.
-- [ ] Expand NEC-2 card support breadth (FR, GN, GE, geometry edge cases).
 - [ ] Expand NEC-2 card support breadth beyond current implemented FR/GE/GW/EX/EN core, especially GN and deferred workflow cards.
 - [ ] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source).
 - [ ] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix.
@@ -83,7 +82,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and broader non-collinear support) so the parity claim is not limited to only the easy cases.
 - [ ] Ensure the CLI remains at least as scriptable and batch-friendly as open NEC2 tools like yeti01/nec2, including predictable stdin/stdout behavior and stable machine-parseable reporting conventions.
 
-**Blocker dependencies**: BLK-003 (4nec2 report format) and BLK-002 (NEC-4 feature boundary).
+**Blocker dependencies**: BLK-002 (NEC-4 feature boundary).
 
 **Estimated completion**: Q2 2026 (end of April).
 
@@ -163,7 +162,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 | GAP-002 | NEC-4 feature boundary | **CRITICAL** | Phase 2 end | (TBD) | BLK-002: Explicit list of supported/deferred NEC-4 cards/features in docs/nec4-support.md |
 | GAP-003 | MVP ground model set | **HIGH** | Phase 1 end | (TBD) | Simple (infinite, raised dielectric) implemented; advanced (Sommerfeld, buried) in Phase 2 plan |
 | GAP-004 | Plugin/scripting interface | **HIGH** | Phase 3 end | (TBD) | BLK-004: API design, safety model, first two extension points documented and working |
-| GAP-005 | 4nec2-like text report format | **HIGH** | Phase 1 end | (TBD) | BLK-003: Sections, units, precision, ordering contract locked; corpus results validated |
+| GAP-005 | 4nec2-like text report format | **HIGH** | Phase 1 end | CLI+Reporting | **Resolved 2026-04-23** via PAR-001 v1 contract and CI gate |
 | GAP-006 | GUI information architecture | **MEDIUM** | Phase 3 end | (TBD) | IA document, wireframes, and user testing feedback collected |
 | GAP-007 | GPU rollout criteria | **MEDIUM** | Phase 5 end | (TBD) | Framework selection follows DEC-008 (FOSS-first, AMD-preferred); benchmarks published |
 | GAP-008 | Dependency/license policy | **MEDIUM** | Phase 2 end | (TBD) | BLK-005: Policy thresholds, exception process, GPLv2 compatibility rules documented |
@@ -196,6 +195,6 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 |:--------|:---------------------|:-----|
 | BLK-001 | Tolerance matrix defined with metrics for R, X, gain, pattern, current, phase | Phase 1 → Phase 2 |
 | BLK-002 | NEC-4 feature boundary documented (supported/deferred cards/sources); see [docs/nec4-support.md](docs/nec4-support.md) | Phase 1 → Phase 2 |
-| BLK-003 | 4nec2 text report format contract locked; golden corpus results validated within tolerance | Phase 1 → Phase 2 |
+| BLK-003 | 4nec2 text report format contract locked; golden corpus results validated within tolerance | **Resolved 2026-04-23** |
 | BLK-004 | Plugin API design, safety model, first two extension points working | Phase 3 → Phase 4 |
 | BLK-005 | GPLv2 dependency policy thresholds and exception process documented | Phase 2 → Phase 3 |
