@@ -81,13 +81,18 @@
         "real_ohm": null,
         "imag_ohm": null
       },
+      "external_reference_candidate": {
+        "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
+        "real_ohm": 13.4632,
+        "imag_ohm": -896.032
+      },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "known-broken: fnec returns negative R (-45 Ohm); multi-wire loaded geometry creates ill-conditioned coupling; pending deck redesign or solver fix"
+      "status": "known-broken: fnec returns negative R (-45 Ohm); multi-wire loaded geometry creates ill-conditioned coupling; pending deck redesign or solver fix. External candidate captured via NEC2DXS500+XQ."
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",
@@ -105,13 +110,21 @@
         "16.0": {"real_ohm": null, "imag_ohm": null},
         "18.0": {"real_ohm": null, "imag_ohm": null}
       },
+      "external_reference_candidate": {
+        "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
+        "10.0": {"real_ohm": 29.9113, "imag_ohm": -433.231},
+        "12.0": {"real_ohm": 48.2252, "imag_ohm": -193.523},
+        "14.0": {"real_ohm": 75.8645, "imag_ohm": 24.6461},
+        "16.0": {"real_ohm": 119.275, "imag_ohm": 244.988},
+        "18.0": {"real_ohm": 191.973, "imag_ohm": 490.75}
+      },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "fnec only solves first FR frequency point; multi-frequency sweep support pending; references TBD"
+      "status": "fnec only solves first FR frequency point; multi-frequency sweep support pending. External sweep candidates captured via NEC2DXS500+XQ."
     },
     "multi-source": {
       "deck_file": "multi-source.nec",

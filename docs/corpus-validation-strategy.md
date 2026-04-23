@@ -196,6 +196,23 @@ Example PR comment:
 **Overall**: 1 pass, 2 skipped, 0 failures ✓
 ```
 
+## Host tooling dependencies
+
+The following external tools are required for the reference-capture and validation workflow used in this repository:
+
+| Tool | Required | Purpose |
+|:-----|:--------:|:--------|
+| `gh` (GitHub CLI) | Yes | PR/issue automation, milestone/label management, and workflow integration from terminal runs |
+| `jq` | Yes | JSON inspection and extraction in terminal workflows (corpus status, reference field queries) |
+| `wine` | Conditional | Run Windows NEC engines (4nec2/NEC2 binaries) when native xnec2c batch execution is unstable |
+| `xnec2c` | Preferred | Primary external NEC2 reference engine for golden-reference capture |
+| 4nec2 + NEC2 executable (`nec2dxs500.exe`/equivalent) | Fallback | External reference capture path when xnec2c is unavailable or unstable on host |
+| `pdftotext` | Conditional | Extract text from NEC-5 Validation Manual for planning and traceability work |
+
+Notes:
+- zsh command autocorrect prompts (for example, suggesting `jaq` when `jq` is missing) indicate the originally requested tool is not installed.
+- Project workflow assumes `jq` for scripts/commands unless explicitly stated otherwise.
+
 ## Adding new corpus cases
 
 To add a new corpus case:
