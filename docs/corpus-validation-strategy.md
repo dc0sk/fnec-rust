@@ -55,6 +55,40 @@ Each corpus case is defined in `corpus/README.md` with:
 - Tolerance gates for this case
 - Status (captured, validated, etc.)
 
+## NEC-5 validation coverage matrix (PAR-008)
+
+This matrix maps NEC-5 Validation Manual scenario classes to current fnec-rust corpus coverage.
+The intent is not to claim full NEC-5 capability; it is to make coverage explicit, tolerance-gated, and auditable.
+
+| NEC-5 validation class | Manual section/theme | fnec-rust in-scope equivalent | Corpus mapping | Gate metrics | Current status |
+|:-----------------------|:---------------------|:-------------------------------|:---------------|:-------------|:---------------|
+| Thin-wire kernel behavior | 2.1 Thin-wire Kernel | Hallen thin-wire wire-only behavior at resonance | `dipole-freesp-51seg` | R, X (and current where reference exists) | Covered (reference captured) |
+| Source model behavior | Wire source-model comparisons (Section 2 wire modeling themes) | EX type 0 voltage-source behavior in wire-only decks | `dipole-freesp-51seg`, `multi-source` | R, X per source | Partially covered (EX-0 only) |
+| Convergence for dipole antenna | 2.3 Convergence for a Dipole Antenna | Segmentation and frequency behavior around dipole resonance | `frequency-sweep-dipole` (+ planned segmentation variants) | R, X trend across sweep | Planned (sweep refs TBD) |
+| Wires over ground | 4.1 Horizontal Wires over Ground | Single wire over ideal/perfect ground in current scope | `dipole-ground-51seg` | R, X | Not yet valid for parity claim (GN currently ignored) |
+| Loop antennas over ground | 4.2 Loop Antennas over Ground | Small-loop/loaded-loop over ground | No current equivalent corpus case | R, X, pattern/gain (future) | Out of scope in current phase |
+| Surface meshing and wire-surface junctions | Surface/junction validation themes (wire+patch classes) | Wire-surface coupling and patch meshing | No current equivalent corpus case | Junction current continuity and field behavior (future) | Out of scope in current architecture |
+| Monopole on finite box and patch-ground classes | 3.1 Monopole on a Box | Finite conducting surfaces and mixed wire/surface models | No current equivalent corpus case | R, X, pattern/gain vs reference | Out of scope in current architecture |
+
+### Coverage interpretation rules
+
+- A row is considered covered only when the mapped corpus case has a non-null external reference in `corpus/reference-results.json` and passes tolerance in CI.
+- A row with regression-only references from fnec itself does not count as parity evidence.
+- Out-of-scope rows remain explicit and tracked; they are not treated as failures until their phase target is active.
+
+### Out-of-scope rationale (current phase)
+
+- Surface meshing, wire-surface junctions, and finite box/patch classes are out of scope because current solver architecture is wire-focused and does not implement NEC-5 mixed wire/surface capability.
+- Loop-over-ground parity is deferred until advanced ground and loop-specific corpus cases are added in Phase 2 expansion work.
+- Ground-case parity is blocked today where GN behavior is not yet modeled in solver execution; those cases remain listed but not credited as covered.
+
+### Entry/exit criteria for PAR-008 completion
+
+- Matrix rows above remain synchronized with corpus cases and `corpus/reference-results.json` status.
+- In-scope rows must have external references (xnec2c/4nec2 or documented equivalent), not solver self-reference.
+- Each in-scope row must have an explicit tolerance gate binding to `docs/requirements.md` metrics.
+- Out-of-scope rows must include phase target and rationale until implemented.
+
 ## Validation workflow
 
 ### Step 1: Reference capture (manual, one-time per case)
@@ -161,6 +195,23 @@ Example PR comment:
 
 **Overall**: 1 pass, 2 skipped, 0 failures ✓
 ```
+
+## Host tooling dependencies
+
+The following external tools are required for the reference-capture and validation workflow used in this repository:
+
+| Tool | Required | Purpose |
+|:-----|:--------:|:--------|
+| `gh` (GitHub CLI) | Yes | PR/issue automation, milestone/label management, and workflow integration from terminal runs |
+| `jq` | Yes | JSON inspection and extraction in terminal workflows (corpus status, reference field queries) |
+| `wine` | Conditional | Run Windows NEC engines (4nec2/NEC2 binaries) when native xnec2c batch execution is unstable |
+| `xnec2c` | Preferred | Primary external NEC2 reference engine for golden-reference capture |
+| 4nec2 + NEC2 executable (`nec2dxs500.exe`/equivalent) | Fallback | External reference capture path when xnec2c is unavailable or unstable on host |
+| `pdftotext` | Conditional | Extract text from NEC-5 Validation Manual for planning and traceability work |
+
+Notes:
+- zsh command autocorrect prompts (for example, suggesting `jaq` when `jq` is missing) indicate the originally requested tool is not installed.
+- Project workflow assumes `jq` for scripts/commands unless explicitly stated otherwise.
 
 ## Adding new corpus cases
 

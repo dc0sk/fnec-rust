@@ -53,6 +53,10 @@ Verify each crate's SPDX before adding it. MIT, Apache-2.0, BSD, GPL-3.0-only, a
 | rustfmt | Code formatting | MIT OR Apache-2.0 | Active | https://github.com/rust-lang/rustfmt |
 | clippy | Linting | MIT OR Apache-2.0 | Active | https://github.com/rust-lang/rust-clippy |
 | cargo-sbom | SPDX SBOM generation (run on version bump) | MIT OR Apache-2.0 | Active | https://github.com/psastras/sbom-rs |
+| GitHub CLI (`gh`) | PR/issue/milestone automation | MIT | Active | https://github.com/cli/cli |
+| jq | JSON querying in automation and terminal workflows | MIT | Active | https://github.com/jqlang/jq |
+| Wine | Windows binary compatibility layer for 4nec2/NEC2 fallback runs | LGPL-2.1-or-later | Active | https://www.winehq.org/ |
+| poppler (`pdftotext`) | PDF text extraction for validation-manual analysis workflows | GPL-2.0-or-later | Active | https://poppler.freedesktop.org/ |
 
 ## Reference implementations (study and validation only — no code inclusion)
 
