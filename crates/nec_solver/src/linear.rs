@@ -163,48 +163,63 @@ pub fn solve_with_sinusoidal_basis(
     }
 
     let tr = SinusoidalTransform::for_single_chain(n);
-    let m = tr.n_basis;
-
-    // A = Z * T, dimensions n x m.
-    let mut a = vec![vec![Complex64::new(0.0, 0.0); m]; n];
-    for (r, a_row) in a.iter_mut().enumerate().take(n) {
-        for (c, a_cell) in a_row.iter_mut().enumerate().take(m) {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for seg in 0..n {
-                let t = tr.t[seg][c];
-                if t != 0.0 {
-                    sum += z.get(r, seg) * t;
-                }
-            }
-            *a_cell = sum;
-        }
-    }
-
-    // Normal equations: (A^H A + lambda*I) a = A^H v.
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); m]; m];
-    let mut atv = vec![Complex64::new(0.0, 0.0); m];
-    for i in 0..m {
-        for j in 0..m {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for row in a.iter().take(n) {
-                sum += row[i].conj() * row[j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for (row, vv) in a.iter().zip(v.iter()).take(n) {
-            sum += row[i].conj() * *vv;
-        }
-        atv[i] = sum;
-    }
+    let (mut projected_z, mut projected_v) = projected_system(z, v, &tr.t);
 
     let lambda = 1e-10;
-    for (i, row) in ata.iter_mut().enumerate().take(m) {
+    for (i, row) in projected_z.iter_mut().enumerate().take(tr.n_basis) {
         row[i] += Complex64::new(lambda, 0.0);
     }
 
-    let a_sol = solve_square_in_place(&mut ata, &mut atv)?;
+    let a_sol = solve_square_in_place(&mut projected_z, &mut projected_v)?;
     Ok(tr.segment_currents(&a_sol))
+}
+
+fn projected_system(
+    z: &ZMatrix,
+    v: &[Complex64],
+    t: &[Vec<f64>],
+) -> (Vec<Vec<Complex64>>, Vec<Complex64>) {
+    let n = z.n;
+    let m = t.first().map_or(0, Vec::len);
+
+    let mut zt = vec![vec![Complex64::new(0.0, 0.0); m]; n];
+    for (r, zt_row) in zt.iter_mut().enumerate().take(n) {
+        for (c, zt_cell) in zt_row.iter_mut().enumerate().take(m) {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for (seg, t_row) in t.iter().enumerate().take(n) {
+                let coeff = t_row[c];
+                if coeff != 0.0 {
+                    sum += z.get(r, seg) * coeff;
+                }
+            }
+            *zt_cell = sum;
+        }
+    }
+
+    let mut projected_z = vec![vec![Complex64::new(0.0, 0.0); m]; m];
+    let mut projected_v = vec![Complex64::new(0.0, 0.0); m];
+    for i in 0..m {
+        for j in 0..m {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for row in 0..n {
+                let coeff = t[row][i];
+                if coeff != 0.0 {
+                    sum += coeff * zt[row][j];
+                }
+            }
+            projected_z[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for row in 0..n {
+            let coeff = t[row][i];
+            if coeff != 0.0 {
+                sum += coeff * v[row];
+            }
+        }
+        projected_v[i] = sum;
+    }
+
+    (projected_z, projected_v)
 }
 
 /// Result of solving Hallén's augmented system.

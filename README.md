@@ -12,6 +12,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- Current scope: collinear wire sets aligned with the driven segment axis; non-collinear Hallén topologies fail fast with an explicit error
 - Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
+	- `sinusoidal` now falls back to Hallen on single collinear chains when its residual budget is exceeded, so the CLI avoids returning misleading impedances for that path
 - CLI binary `fnec` with selectable solver and RHS modes
 - FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run
