@@ -148,9 +148,7 @@ pub fn build_hallen_rhs(
         }
     }
     if !non_collinear_tags.is_empty() {
-        return Err(ExcitationError::UnsupportedHallenTopology {
-            non_collinear_tags,
-        });
+        return Err(ExcitationError::UnsupportedHallenTopology { non_collinear_tags });
     }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
