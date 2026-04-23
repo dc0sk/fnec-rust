@@ -31,6 +31,7 @@ last_updated: 2026-04-23
 **Key deliverables**:
 - ✅ Hallén solver working and validated (done).
 - ✅ Golden reference corpus scaffolded: 6 benchmark geometries, reference results template, validation test (done, `feat/golden-corpus-validation` branch).
+- ✅ NEC-4 feature boundary documented: card support matrix, phase assignments (done, `docs/nec4-support.md`).
 - [ ] Expand NEC-2 card support breadth (FR, GN, GE, geometry edge cases).
 - [ ] Build 4nec2-like text report format (output sections, units, precision).
 - [ ] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source).
@@ -112,7 +113,7 @@ last_updated: 2026-04-23
 | Blocker | Resolution condition | Gate |
 |:--------|:---------------------|:-----|
 | BLK-001 | Tolerance matrix defined with metrics for R, X, gain, pattern, current, phase | Phase 1 → Phase 2 |
-| BLK-002 | NEC-4 feature boundary documented (supported/deferred cards/sources) | Phase 1 → Phase 2 |
+| BLK-002 | NEC-4 feature boundary documented (supported/deferred cards/sources); see [docs/nec4-support.md](docs/nec4-support.md) | Phase 1 → Phase 2 |
 | BLK-003 | 4nec2 text report format contract locked; golden corpus results validated within tolerance | Phase 1 → Phase 2 |
 | BLK-004 | Plugin API design, safety model, first two extension points working | Phase 3 → Phase 4 |
 | BLK-005 | GPLv2 dependency policy thresholds and exception process documented | Phase 2 → Phase 3 |

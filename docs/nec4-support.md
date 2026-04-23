@@ -1,0 +1,195 @@
+---
+project: fnec-rust
+doc: docs/nec4-support.md
+status: living
+last_updated: 2026-04-23
+---
+
+# NEC-4 Support Boundary
+
+This document explicitly defines which NEC-2/NEC-4 cards and features are supported in fnec-rust, which are partially supported (with caveats), and which are deferred to future phases.
+
+**Goal**: Make the scope boundary transparent to users so there are no surprises about what is and isn't available in a given version.
+
+## Support status definitions
+
+| Status | Meaning |
+|:-------|:--------|
+| **FULL** | Fully implemented and tested. Behavior matches NEC-2/NEC-4 reference. |
+| **PARTIAL** | Implemented with limitations (e.g., subset of options, caveats documented). |
+| **EXPERIMENTAL** | Implemented but known to diverge from reference or have numerical issues. Not production-ready. |
+| **DEFERRED** | Recognized but not yet implemented. Future phases or backlog. |
+| **OUT OF SCOPE** | Will not be implemented in fnec-rust (design decision). Reason documented. |
+
+## NEC card support matrix
+
+### Structure cards
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| CM | Comment | FULL | Parsed and ignored as per spec |
+| CE | Comment end | FULL | Parsed and ignored |
+| GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
+| GE | Geometry end | FULL | Parsed; optional ground reflection flag ignored in Phase 1 |
+| SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
+| GM | Move segments | DEFERRED | Geometry translation/rotation. Phase 2. |
+| GR | Repeat segments | DEFERRED | Parametric repetition. Phase 2. |
+| GF | Scale segments | DEFERRED | Geometry scaling. Phase 2. |
+
+### Excitation cards
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| EX type 0 | Voltage source (voltage-driven dipole) | FULL | Supported at any segment, with complex voltage. Primary excitation type. |
+| EX type 1 | Current source (magnetic dipole) | DEFERRED | Not yet implemented. Phase 2. |
+| EX type 2 | Incident plane wave | DEFERRED | Scattering analysis. Phase 2. |
+| EX type 3 | Normalized voltage source | DEFERRED | RHS scaling variant. Phase 2. |
+| EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
+| EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
+| PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
+| LD | Load impedance | DEFERRED | Localized wire loads. Phase 2. |
+
+### Frequency and output cards
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| FR | Frequency specification | FULL | Single frequency (NP=0, NF≥1). Frequency step (NF>1) supported. Step count respected. |
+| RP | Radiation pattern request | PARTIAL | Calculated internally; text output format defined in Phase 1. JSON/export formats deferred. |
+| XQ | Near/far field request | DEFERRED | Near-field analysis. Phase 2+. |
+
+### Ground cards
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| GN | Ground definition | PARTIAL | Type 0 (perfect conductor) supported. Type 1 (Sommerfeld, finite conductivity) DEFERRED (Phase 2). Type 2 (seawater over rock) DEFERRED (Phase 3). |
+| EN | End of input | FULL | Terminates deck parse. |
+
+### Advanced/specialized cards
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
+| SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
+| TL | Transmission line (network) | DEFERRED | Multi-port transmission lines. Phase 3. |
+| NT | Network definition | DEFERRED | Multi-port networks, couplings. Phase 3. |
+| CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
+| MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |
+
+### Control/metadata cards (NEC-4)
+
+| Card | Description | Status | Notes |
+|:-----|:------------|:-------|:------|
+| NM | Program control (NEC-4) | DEFERRED | Version/control flags. Phase 2. |
+| NE | Program end (NEC-4) | DEFERRED | Extension to EN. Phase 2. |
+
+## Source type support matrix
+
+| Source Type | Status | Notes |
+|:------------|:-------|:------|
+| Voltage excitation (EX 0) | FULL | Complex voltage at any segment. Primary production mode. |
+| Current excitation (magnetic dipole) | DEFERRED | EX 1, EX 5 (qdsrc). Phase 2. |
+| Plane wave incidence | DEFERRED | EX 2. Scattering analysis. Phase 2. |
+| Multi-port sources | DEFERRED | PT (transmission line), NT (network). Phase 3. |
+
+## Solver mode support
+
+| Mode | Status | Notes |
+|:-----|:-------|:------|
+| Hallén (augmented integral equation) | FULL | Validated: 74.24 + j13.90 Ω vs Python reference. Production-ready. |
+| Pocklington pulse basis | EXPERIMENTAL | Known divergence for thin-wire antennas. Do not use. Fixed by sinusoidal basis (Phase 2). |
+| Pocklington continuity basis | EXPERIMENTAL | Rooftop basis transform. Same divergence issue. Phase 2. |
+
+## Ground model support
+
+| Model | Status | Notes |
+|:-----|:-------|:------|
+| Free space (no ground) | FULL | Baseline. No coupling to ground plane. |
+| Perfect conductor (infinite, ideal) | PARTIAL | Implemented via image method. Phase 1. Sommerfeld corrections (Phase 2) for accuracy near ground. |
+| Finite conductivity (Sommerfeld) | DEFERRED | Includes earth losses, frequency-dependent coupling. Phase 2. |
+| Layered earth | DEFERRED | Multi-layer soil models. Phase 3. |
+| Seawater effects | DEFERRED | Conductive media. Phase 3. |
+
+## Output format support
+
+| Format | Status | Notes |
+|:-----|:-------|:------|
+| Text (4nec2-like) | FULL | Impedance per source, segment currents, residual diagnostics. Defined in Phase 1. |
+| JSON | DEFERRED | Structured output for automation. Phase 2. |
+| CSV | DEFERRED | Spreadsheet compatibility. Phase 2. |
+| Plot data (pattern, current) | DEFERRED | gnuplot, matplotlib data. Phase 2. |
+
+## Numerical feature support
+
+| Feature | Status | Notes |
+|:-----|:-------|:------|
+| Complex impedance (R + jX) | FULL | All computations in complex domain. |
+| Frequency sweep | FULL | Multiple frequencies in single deck (FR card with NF > 1). |
+| Multi-source (multiple EX cards) | PARTIAL | Parsed, but output reporting needs work (Phase 1). |
+| Segment current calculation | FULL | Complex current per segment, phase and magnitude. |
+| Feedpoint impedance | FULL | Computed via V_source / I at driven segment. |
+| Gain computation | PARTIAL | Calculated but not yet output in text format (Phase 1). |
+| Radiation pattern | PARTIAL | Calculated internally; text output format defined in Phase 1. Full pattern export deferred (Phase 2). |
+
+## Phase progression
+
+| Phase | Cumulative Support |
+|:------|:------------------|
+| Phase 1 (current) | GW, EX type 0, FR, GE, GN type 0, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source parsing |
+| Phase 2 | Add: GN type 1 (Sommerfeld), LD (loads), more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, pattern export, sinusoidal Pocklington basis, GM/GR/GF (geometry manipulation) |
+| Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
+| Phase 4+ | Additional NEC-4 specialty features as demanded |
+
+## Compatibility with xnec2c vs 4nec2
+
+fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compatibility.
+
+| Tool | Dialect support |
+|:-----|:----------------|
+| 4nec2 | Primary (default) |
+| xnec2c | Secondary (auto-detect or via flag). Subset of features from xnec2c accepted where they overlap with 4nec2; xnec2c-only features (e.g., custom Lua scripts) are out of scope. |
+| NEC2 (FORTRAN reference) | Implicit (xnec2c is the working reference). |
+| NEC4 (commercial) | Incremental adoption; Phase-gated. No guarantee of 100% parity. |
+
+## Parsing robustness
+
+| Aspect | Status |
+|:-------|:-------|
+| Unknown cards | FULL | Parsed as warnings; does not halt. User sees diagnostic. |
+| Malformed cards | FULL | Validation errors printed; parse halts with clear message. |
+| Numeric field errors | FULL | Type/bounds checking; fails with diagnostic. |
+| Blank lines and comments | FULL | Gracefully skipped. |
+
+## Known limitations and caveats
+
+### Phase 1 known issues
+
+1. **Pulse/continuity solver modes diverge** for thin-wire antennas. Use Hallén mode (`--solver hallen`) for production work. These modes are marked EXPERIMENTAL with a runtime warning.
+
+2. **Perfect ground only**: Type 0 (ideal conductor) works; Type 1 (Sommerfeld, finite conductivity) is deferred to Phase 2. If you need earth losses, use a workaround (model as equivalent lossy loads on wires) or wait for Phase 2.
+
+3. **Text output only**: No JSON, CSV, or plot data export yet. Scripting to post-process text output is the current workaround.
+
+4. **Pattern not in text output**: Gain and radiation pattern are calculated internally but not yet included in the 4nec2-like text output. Phase 1 deliverable.
+
+5. **No near fields**: Only far-field impedance and pattern. Near-field analysis deferred to Phase 2.
+
+6. **Single frequency per run**: Frequency sweep works (multiple points), but each frequency is a separate line in output. Batch sweeps need external scripting or await Phase 2+ reporting improvements.
+
+## Acceptance criteria for Phase 1 → Phase 2 gate
+
+- [ ] This document (`docs/nec4-support.md`) is written and ratified.
+- [ ] All FULL cards have integration test coverage.
+- [ ] All PARTIAL cards have explicit documentation of limitations in this file.
+- [ ] All DEFERRED cards have planned Phase assignment and backlog entry.
+- [ ] Golden corpus passes all tolerance gates (BLK-001, BLK-003).
+- [ ] Known limitations (`corpus/README.md`) align with this support matrix.
+- [ ] User-facing error messages direct users to this document for unsupported features.
+
+## References
+
+- **NEC-2 Theory of Operation**: Burke & Poggio, LLNL 1981 (FORTRAN reference implementation)
+- **xnec2c source**: https://github.com/KJ7LNW/xnec2c (working C reference)
+- **4nec2 documentation**: https://www.4nec2.net/ (user-facing reference)
+- `docs/requirements.md` — Tolerance matrix and numerical compatibility policy
+- `docs/roadmap.md` — Phase definitions and deliverables
+- `corpus/README.md` — Golden reference corpus cases and validation
