@@ -31,10 +31,12 @@ pub struct ContinuityTransform {
     pub t: Vec<Vec<f64>>,
 }
 
-/// Dense real transform with sinusoidal edge taper for a single chain.
+/// Dense real transform with overlapping sinusoidal shape functions for a
+/// single chain.
 ///
-/// Mapping: I_seg = T * a_basis, where each segment row is additionally
-/// weighted by a NEC2-style sine taper to force smooth endpoint behavior.
+/// Mapping: I_seg = T * a_basis, where each basis coefficient contributes to
+/// the two adjacent segments around an internal junction with positive
+/// sinusoidal weights.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SinusoidalTransform {
     /// Number of wire segments.
@@ -95,27 +97,29 @@ impl ContinuityTransform {
 }
 
 impl SinusoidalTransform {
-    /// Build a sine-tapered difference transform for a single chain.
+    /// Build overlapping sinusoidal shape functions for a single chain.
     ///
-    /// For segment index n in [0, N-1], the row is scaled by
-    /// w_n = sin(pi * (n+1)/(N+1)).
+    /// For internal junction coefficient a_j, contributions are placed on the
+    /// two neighboring segments j and j+1 with positive sine-envelope weights.
     pub fn for_single_chain(n_segments: usize) -> Self {
-        let base = ContinuityTransform::for_single_chain(n_segments);
-        let mut t = base.t.clone();
+        let n_basis = n_segments.saturating_sub(1);
+        let mut t = vec![vec![0.0; n_basis]; n_segments];
 
         if n_segments > 0 {
             let denom = (n_segments + 1) as f64;
-            for (n, row) in t.iter_mut().enumerate().take(n_segments) {
-                let w = (std::f64::consts::PI * ((n + 1) as f64) / denom).sin();
-                for coeff in row.iter_mut() {
-                    *coeff *= w;
-                }
+            for basis_idx in 0..n_basis {
+                let left_seg = basis_idx;
+                let right_seg = basis_idx + 1;
+                t[left_seg][basis_idx] =
+                    (std::f64::consts::PI * ((left_seg + 1) as f64) / denom).sin();
+                t[right_seg][basis_idx] =
+                    (std::f64::consts::PI * ((right_seg + 1) as f64) / denom).sin();
             }
         }
 
         Self {
-            n_segments: base.n_segments,
-            n_basis: base.n_basis,
+            n_segments,
+            n_basis,
             t,
         }
     }
@@ -193,9 +197,19 @@ mod tests {
     #[test]
     fn sinusoidal_taper_reduces_edge_rows() {
         let tr = SinusoidalTransform::for_single_chain(4);
-        // Middle rows should have stronger weight than edges.
         let edge = tr.t[0][0].abs();
-        let mid = tr.t[1][0].abs();
+        let mid = tr.t[1][1].abs();
         assert!(mid > edge);
+    }
+
+    #[test]
+    fn sinusoidal_transform_overlaps_adjacent_segments() {
+        let tr = SinusoidalTransform::for_single_chain(4);
+        assert!(tr.t[0][0] > 0.0);
+        assert!(tr.t[1][0] > 0.0);
+        assert!(tr.t[1][1] > 0.0);
+        assert!(tr.t[2][1] > 0.0);
+        assert_eq!(tr.t[0][1], 0.0);
+        assert_eq!(tr.t[3][0], 0.0);
     }
 }

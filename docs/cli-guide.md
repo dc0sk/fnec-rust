@@ -61,6 +61,9 @@ Incremental milestone mode that applies a sine-tapered continuity transform on
 top of the Pocklington matrix for single linear chains. Falls back to `pulse`
 for multi-wire decks. This is not yet full NEC2 `tbf/sbf/trio` sinusoidal-basis
 assembly, but it establishes a compatible stepping-stone for that implementation.
+If the projected sinusoidal solve exceeds the residual budget on a single
+collinear chain, the CLI falls back to `hallen` and reports
+`SOLVER_MODE sinusoidal->hallen(residual)`.
 
 ## `--pulse-rhs` values
 

@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
+const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SolverMode {
@@ -373,7 +374,42 @@ fn main() -> ExitCode {
                     match solve_with_sinusoidal_basis(&z_mat, &v_vec_pulse) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                            (i, a, r, "sinusoidal")
+                            if r <= SINUSOIDAL_REL_RESIDUAL_MAX {
+                                (i, a, r, "sinusoidal")
+                            } else {
+                                eprintln!(
+                                    "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
+                                    r, SINUSOIDAL_REL_RESIDUAL_MAX
+                                );
+                                let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        eprintln!("error: {e}");
+                                        return ExitCode::FAILURE;
+                                    }
+                                };
+                                match solve_hallen(
+                                    &assemble_z_matrix(&segs, freq_hz),
+                                    &hallen_rhs.rhs,
+                                    &hallen_rhs.cos_vec,
+                                ) {
+                                    Ok(sol) => {
+                                        let hallen_z = assemble_z_matrix(&segs, freq_hz);
+                                        let (a2, r2) = residual_hallen(
+                                            &hallen_z,
+                                            &sol.currents,
+                                            sol.c_hom,
+                                            &hallen_rhs.cos_vec,
+                                            &hallen_rhs.rhs,
+                                        );
+                                        (sol.currents, a2, r2, "sinusoidal->hallen(residual)")
+                                    }
+                                    Err(e) => {
+                                        eprintln!("error: {e}");
+                                        return ExitCode::FAILURE;
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             eprintln!("error: {e}");
