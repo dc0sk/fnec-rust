@@ -17,7 +17,7 @@ This document describes the corpus philosophy, validation process, and CI integr
 
 ### Reference-centric validation
 
-All numerical work is validated against a **golden reference corpus** run through the authoritative NEC2 reference implementation (xnec2c). Internal self-consistency testing is necessary but insufficient; we measure against external truth.
+All numerical work is validated against a **golden reference corpus** run through an external reference engine (xnec2c preferred; 4nec2 fallback when needed). Internal self-consistency testing is necessary but insufficient; we measure against external truth.
 
 ### Tolerance matrix is the contract
 
@@ -62,10 +62,11 @@ Each corpus case is defined in `corpus/README.md` with:
 For each corpus case:
 
 1. Write the NEC deck file (e.g., `corpus/dipole-freesp-51seg.nec`)
-2. Run through xnec2c (or other reference):
+2. Run through reference engine:
    ```bash
-   xnec2c -i corpus/dipole-freesp-51seg.nec -o - 2>&1 | tee corpus/dipole-freesp-51seg.xnec2c.txt
+  xnec2c --batch -j0 -i corpus/dipole-freesp-51seg.nec --write-csv .tmp-work/dipole-freesp.csv
    ```
+  If xnec2c hangs in headless Linux (known with some 4.4.x builds), run 4nec2 under Wine/VM and export equivalent impedance/report data.
 3. Extract key results (impedance, gain, pattern samples, currents)
 4. Record in `corpus/reference-results.json`:
    ```json
@@ -154,7 +155,7 @@ To add a new corpus case:
 1. Write the NEC deck: `corpus/my-case.nec`
 2. Update `corpus/README.md` with case description
 3. Add stub to `corpus/reference-results.json` with `null` values and status "Deck created; reference TBD"
-4. Run reference capture (manual): `xnec2c -i corpus/my-case.nec -o - | ...`
+4. Run reference capture (manual): `xnec2c --batch -j0 -i corpus/my-case.nec --write-csv ...` (or 4nec2 export when xnec2c is unstable)
 5. Update `corpus/reference-results.json` with real values
 6. Create integration test: `#[test] #[ignore] fn corpus_validation_my_case() { ... }`
 7. Update status in `corpus/README.md`: "Reference captured"
@@ -166,7 +167,7 @@ To add a new corpus case:
 - ✅ MVP corpus decks created (dipole free-space, dipole over ground)
 - ✅ Reference results template created (`corpus/reference-results.json`)
 - ✅ Validation test scaffolded (`apps/nec-cli/tests/corpus_validation.rs`)
-- ⏳ Reference capture in progress (xnec2c runs, result extraction)
+- ⏳ Reference capture in progress (xnec2c where stable; 4nec2 fallback on headless hosts)
 - ✅ CI workflow wired (`.github/workflows/corpus-validation.yml`)
 - ⏳ Full Phase 1 corpus not complete (Yagi, loaded, frequency sweep, multi-source decks TBD)
 

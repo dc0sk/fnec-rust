@@ -7,9 +7,9 @@ last_updated: 2026-04-23
 
 # Golden Reference Corpus
 
-This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against xnec2c (NEC2 reference implementation).
+This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against NEC reference engines (primary: xnec2c, fallback: 4nec2).
 
-Every NEC deck in this corpus is validated against xnec2c and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
+Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
 ## Corpus cases
 
@@ -153,11 +153,23 @@ Every NEC deck in this corpus is validated against xnec2c and the results are re
 
 ## Reference workflow
 
-All results recorded here were generated via:
+Preferred (xnec2c, when stable on the host):
 
 ```bash
-xnec2c -i dipole-freesp-51seg.nec -o - | tee dipole-freesp-51seg.xnec2c.txt
+xnec2c --batch -j0 -i corpus/dipole-freesp-51seg.nec --write-csv .tmp-work/dipole-freesp.csv
 ```
+
+Fallback (4nec2 under Wine or Windows VM):
+
+1. Open the deck in 4nec2.
+2. Run the frequency loop.
+3. Export feedpoint impedance/report data to CSV or text.
+4. Copy the extracted values into `corpus/reference-results.json`.
+
+Current caveat (Linux headless CI/dev shells):
+
+- `xnec2c 4.4.18` may hang in `--batch` mode with GTK warnings and no output file, even when input syntax is valid.
+- In that environment, use 4nec2 (Wine/VM) or Python validated references until xnec2c batch stability is resolved.
 
 Results extracted into `corpus/reference-results.json` with structure:
 

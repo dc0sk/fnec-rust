@@ -1,7 +1,6 @@
-CM Half-wave dipole frequency sweep 10..18 MHz
+CE
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
 GE
 EX 0 1 26 0 1.0 0.0
-CM FR: NFRQ=5, start=10 MHz, step=2 MHz -> 10,12,14,16,18
 FR 0 5 0 0 10.0 2.0
 EN

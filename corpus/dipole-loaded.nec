@@ -1,5 +1,4 @@
-CM Loaded dipole approximation at 7.1 MHz
-CM Main dipole plus a small top loop acting as coupled loading structure
+CE
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
 GW 2 9 -0.25 0 5.282 0.25 0 5.282 0.001
 GW 3 9 0.25 0 5.282 0.25 0 5.782 0.001

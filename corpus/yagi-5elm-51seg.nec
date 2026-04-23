@@ -1,5 +1,4 @@
-CM 5-element Yagi, 14.2 MHz, free-space
-CM Reflector at x=-0.2m, driven at x=0m, directors at x=0.2/0.4/0.6m
+CE
 GW 1 51 -0.2 0 -5.400 -0.2 0 5.400 0.001
 GW 2 51 0.0 0 -5.282 0.0 0 5.282 0.001
 GW 3 51 0.2 0 -5.150 0.2 0 5.150 0.001
