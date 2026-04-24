@@ -42,3 +42,9 @@ All notable documentation process changes are recorded here.
 - Added documented mode benchmark deltas across segment counts in solver findings.
 - Added explicit Hallen vs Pocklington matrix routing by solver mode and post-change benchmark notes.
 - Added NEC2 reference-inspired pulse RHS wavelength normalization path (`1/(dl*lambda)`) and validation notes.
+
+## KaTeX Formula Equivalents
+
+$$
+	ext{Pulse RHS wavelength normalization: } \frac{1}{dl\,\lambda}
+$$

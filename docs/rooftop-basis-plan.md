@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/rooftop-basis-plan.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-24
 ---
 
 # Rooftop Basis Plan
@@ -53,3 +53,21 @@ Recent findings showed that pulse-only formulations can produce strong cancellat
 - Keep CLI output contract unchanged.
 - Introduce this as an internal solver path first, behind a clearly isolated API.
 - Preserve room for later sinusoidal basis or higher-order basis options.
+
+## KaTeX Formula Equivalents
+
+$$
+I_{\mathrm{seg}} = T a
+$$
+
+$$
+Z T a = v
+$$
+
+$$
+Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}
+$$
+
+$$
+I_{\mathrm{tip}} = 0
+$$

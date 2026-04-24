@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-24
 ---
 
 # NEC-4 Support Boundary
@@ -193,3 +193,17 @@ fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compa
 - `docs/requirements.md` — Tolerance matrix and numerical compatibility policy
 - `docs/roadmap.md` — Phase definitions and deliverables
 - `corpus/README.md` — Golden reference corpus cases and validation
+
+## KaTeX Formula Equivalents
+
+$$
+	ext{GN type }1 \Rightarrow \text{PEC image method at } z=0
+$$
+
+$$
+Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX
+$$
+
+$$
+	ext{Validated Hallen baseline: } Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega
+$$

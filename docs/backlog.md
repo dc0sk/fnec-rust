@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/backlog.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-24
 ---
 
 # Backlog
@@ -42,3 +42,9 @@ last_updated: 2026-04-22
 
 - [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
+
+## KaTeX Formula Equivalents
+
+$$
+	ext{Pulse RHS normalization candidate: } \frac{1}{dl\,\lambda}
+$$

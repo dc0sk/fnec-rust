@@ -88,6 +88,27 @@ Tolerances below define the strictest acceptable deviation; any failure is a def
 | Segment current phase | degrees | ≤ 0.1 ° | Near-exact parity |
 | SWR (derived) | — | ≤ 0.01 absolute | Derived metric; tight because R/X targets already bind it |
 
+### KaTeX Formula Equivalents
+
+$$
+\Delta R \le \max\left(0.05\,\Omega,\, 0.001\,|R_{\mathrm{ref}}|\right)
+$$
+
+$$
+\Delta X \le \max\left(0.05\,\Omega,\, 0.001\,|X_{\mathrm{ref}}|\right)
+$$
+
+$$
+\Delta G_{\max} \le 0.05\,\mathrm{dB}, \qquad
+\Delta G_{\mathrm{sample}} \le 0.1\,\mathrm{dB}
+$$
+
+$$
+\Delta |I| \le 0.001\,|I_{\mathrm{ref}}|, \qquad
+\Delta \angle I \le 0.1^\circ, \qquad
+\Delta \mathrm{SWR} \le 0.01
+$$
+
 ### Tolerance policy
 
 - If a reference value is near zero the absolute floor applies to avoid meaninglessly large relative errors.

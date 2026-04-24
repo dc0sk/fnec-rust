@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-24
 ---
 
 # Roadmap
@@ -198,3 +198,13 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 | BLK-003 | 4nec2 text report format contract locked; golden corpus results validated within tolerance | **Resolved 2026-04-23** |
 | BLK-004 | Plugin API design, safety model, first two extension points working | Phase 3 → Phase 4 |
 | BLK-005 | GPLv2 dependency policy thresholds and exception process documented | Phase 2 → Phase 3 |
+
+## KaTeX Formula Equivalents
+
+$$
+\lambda/2\ \text{dipole validation point: } Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega
+$$
+
+$$
+\Delta R,\Delta X,\Delta G,\Delta I\ \text{must remain within contract tolerances at each phase gate}
+$$
