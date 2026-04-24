@@ -109,6 +109,7 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Pre-commit: `cargo fmt --all -- --check`, `cargo test --workspace`
 - Pre-push: `cargo audit`
 - Docs validation: `./scripts/validate-docs-frontmatter.sh`
+- Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
 
 ### Troubleshooting: Mobile approval dialogs
 
