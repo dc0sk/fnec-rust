@@ -28,6 +28,7 @@ last_updated: 2026-04-24
 	- 2026-04-24 progress: added `scripts/pi-benchmark-compare.sh` to compute per deck/solver deltas between two benchmark CSV baselines (timing + residual ratios).
 	- 2026-04-24 progress: `scripts/pi-benchmark-compare.sh` now supports threshold gating (`--max-delta-pct`) and mode-drift failure checks (`--fail-on-mode-drift`) for CI-style regression enforcement.
 	- 2026-04-24 progress: added `.github/workflows/benchmark-compare.yml` to run benchmark delta gates in PRs when benchmark CSV inputs are present, with manual dispatch overrides.
+	- 2026-04-24 progress: benchmark-compare workflow now publishes skip reasons and a compare-result preview in the Actions job summary for quick PR review.
 
 ## Parity-driven backlog items
 

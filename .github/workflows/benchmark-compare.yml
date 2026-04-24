@@ -60,6 +60,18 @@ jobs:
             echo "Skipping benchmark compare: expected files not found."
             echo "  base_csv=${base_csv}"
             echo "  candidate_csv=${candidate_csv}"
+
+      - name: Write skip summary
+        if: steps.detect.outputs.should_run != 'true'
+        run: |
+          {
+            echo "## Benchmark Compare"
+            echo
+            echo "Skipped: required benchmark CSV files were not found."
+            echo
+            echo "- base_csv: \`${{ steps.cfg.outputs.base_csv }}\`"
+            echo "- candidate_csv: \`${{ steps.cfg.outputs.candidate_csv }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Run benchmark compare gate
@@ -86,6 +98,24 @@ jobs:
         with:
           name: benchmark-compare-report
           path: benchmark-compare.csv
+
+      - name: Write compare summary
+        if: steps.detect.outputs.should_run == 'true'
+        run: |
+          {
+            echo "## Benchmark Compare"
+            echo
+            echo "- base_csv: \`${{ steps.cfg.outputs.base_csv }}\`"
+            echo "- candidate_csv: \`${{ steps.cfg.outputs.candidate_csv }}\`"
+            echo "- max_delta_pct: \`${{ steps.cfg.outputs.max_delta_pct }}\`"
+            echo "- fail_on_mode_drift: \`${{ steps.cfg.outputs.fail_on_mode_drift }}\`"
+            echo
+            echo "### Result Preview"
+            echo
+            echo "\`\`\`csv"
+            sed -n '1,20p' benchmark-compare.csv
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   benchmark-compare:
     runs-on: ubuntu-latest
