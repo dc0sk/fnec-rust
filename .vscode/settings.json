@@ -1,0 +1,17 @@
+{
+  "files.exclude": {
+    "**/target": true,
+    "**/.tmp": true,
+    "**/.tmp-work": true
+  },
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/.tmp/**": true,
+    "**/.tmp-work/**": true
+  },
+  "search.exclude": {
+    "**/target/**": true,
+    "**/.tmp/**": true,
+    "**/.tmp-work/**": true
+  }
+}
