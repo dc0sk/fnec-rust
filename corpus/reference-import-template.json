@@ -4,6 +4,7 @@
   "updates": [
     {
       "case": "dipole-ground-51seg",
+      "target": "external",
       "real": 63.12,
       "imag": -18.45,
       "source": "4nec2 (Wine 9.x)",
@@ -11,6 +12,7 @@
     },
     {
       "case": "yagi-5elm-51seg",
+      "target": "external",
       "real": 31.44,
       "imag": -2.61,
       "source": "4nec2 (Wine 9.x)",

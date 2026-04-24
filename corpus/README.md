@@ -176,6 +176,13 @@ scripts/import-reference-impedance.py \
   --real 63.12 --imag -18.45 \
   --source "4nec2 (Wine 9.x)" \
   --status "Reference captured via 4nec2/Wine"
+
+# Optional: record the same number as an external_reference_candidate
+scripts/import-reference-impedance.py \
+  --case dipole-ground-51seg \
+  --target external \
+  --real 63.12 --imag -18.45 \
+  --source "4nec2 (Wine 9.x)"
 ```
 
 For sweep/multi-source cases, update a point key:
