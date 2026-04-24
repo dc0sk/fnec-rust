@@ -3,6 +3,30 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn diag_mode(stderr: &str) -> Option<&str> {
+    for line in stderr.lines() {
+        if !line.starts_with("diag: ") {
+            continue;
+        }
+        for field in line.split_whitespace() {
+            if let Some(mode) = field.strip_prefix("mode=") {
+                return Some(mode);
+            }
+        }
+    }
+    None
+}
+
+fn assert_diag_mode(stderr: &str, expected_diag_mode: &str) {
+    let actual = diag_mode(stderr);
+    assert_eq!(
+        actual,
+        Some(expected_diag_mode),
+        "expected diag mode '{expected_diag_mode}', got {:?} in stderr:\n{stderr}",
+        actual
+    );
+}
+
 fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -36,10 +60,7 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
         )),
         "expected topology fallback warning in stderr, got:\n{stderr}"
     );
-    assert!(
-        stderr.contains(&format!("diag: mode={expected_diag_mode} ")),
-        "expected fallback diag mode '{expected_diag_mode}' in stderr, got:\n{stderr}"
-    );
+    assert_diag_mode(&stderr, expected_diag_mode);
 }
 
 #[test]
@@ -81,8 +102,5 @@ fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
         stderr.contains("falling back to hallen"),
         "expected sinusoidal fallback-to-hallen warning in stderr, got:\n{stderr}"
     );
-    assert!(
-        stderr.contains("diag: mode=sinusoidal->hallen(residual) "),
-        "expected residual fallback diag mode in stderr, got:\n{stderr}"
-    );
+    assert_diag_mode(&stderr, "sinusoidal->hallen(residual)");
 }
