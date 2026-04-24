@@ -63,6 +63,18 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     assert_diag_mode(&stderr, expected_diag_mode);
 }
 
+fn run_solver_on_reference_dipole(solver: &str) -> std::process::Output {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg(solver)
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for solver '{solver}': {e}"))
+}
+
 #[test]
 fn continuity_non_single_chain_falls_back_to_pulse() {
     assert_non_single_chain_fallback("continuity", "continuity->pulse");
@@ -75,17 +87,7 @@ fn sinusoidal_non_single_chain_falls_back_to_pulse() {
 
 #[test]
 fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("sinusoidal")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| {
-            panic!("Failed to run fnec for sinusoidal residual fallback test: {e}")
-        });
+    let output = run_solver_on_reference_dipole("sinusoidal");
 
     assert!(
         output.status.success(),
@@ -103,4 +105,33 @@ fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
         "expected sinusoidal fallback-to-hallen warning in stderr, got:\n{stderr}"
     );
     assert_diag_mode(&stderr, "sinusoidal->hallen(residual)");
+}
+
+#[test]
+fn experimental_warning_is_mode_gated() {
+    let hallen = run_solver_on_reference_dipole("hallen");
+    assert!(
+        hallen.status.success(),
+        "fnec failed for hallen: {}",
+        String::from_utf8_lossy(&hallen.stderr)
+    );
+    let hallen_stderr = String::from_utf8_lossy(&hallen.stderr);
+    assert!(
+        !hallen_stderr.contains("solver modes are EXPERIMENTAL"),
+        "did not expect experimental warning for hallen, got:\n{hallen_stderr}"
+    );
+
+    for solver in ["pulse", "continuity", "sinusoidal"] {
+        let output = run_solver_on_reference_dipole(solver);
+        assert!(
+            output.status.success(),
+            "fnec failed for {solver}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("solver modes are EXPERIMENTAL"),
+            "expected experimental warning for {solver}, got:\n{stderr}"
+        );
+    }
 }
