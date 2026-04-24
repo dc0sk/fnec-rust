@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/architecture.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-24
 ---
 
 # Architecture
@@ -37,6 +37,7 @@ last_updated: 2026-04-22
 - CPU multithreading is baseline.
 - Runtime acceleration mode selects CPU or GPU path when available.
 - Initial GPU scope is postprocessing only; further offload is staged.
+- Explicit portable-Linux hardware targets include Raspberry Pi 4 (VideoCore VI) and Raspberry Pi 5 (VideoCore VII), so acceleration design must keep ARM64 plus these GPU classes in scope.
 
 ## Extensibility architecture
 

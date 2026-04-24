@@ -66,6 +66,7 @@ https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC
 - Solver implemented from scratch in Rust
 - CLI, GUI, and optional TUI frontends over a shared core
 - Multithreaded CPU execution with staged GPU acceleration
+- Explicit Linux-on-ARM targets: Raspberry Pi 4 (VideoCore VI GPU) and Raspberry Pi 5 (VideoCore VII GPU)
 
 ## Workspace layout
 
