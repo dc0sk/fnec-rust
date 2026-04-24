@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
-use common::{assert_diag_field, assert_diag_mode};
+use common::{assert_diag_field, assert_diag_field_is_finite_nonnegative, assert_diag_mode};
 
 fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let now = SystemTime::now()
@@ -175,4 +175,27 @@ fn freq_mhz_diag_field_has_fixed_six_decimal_format() {
     );
     let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
     assert_diag_field(&pulse_stderr, "freq_mhz", "14.200000");
+}
+
+#[test]
+fn residual_diag_fields_are_finite_and_nonnegative() {
+    let hallen = run_solver_on_reference_dipole("hallen");
+    assert!(
+        hallen.status.success(),
+        "fnec failed for hallen: {}",
+        String::from_utf8_lossy(&hallen.stderr)
+    );
+    let hallen_stderr = String::from_utf8_lossy(&hallen.stderr);
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "abs_res");
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "rel_res");
+
+    let pulse = run_solver_on_reference_dipole("pulse");
+    assert!(
+        pulse.status.success(),
+        "fnec failed for pulse: {}",
+        String::from_utf8_lossy(&pulse.stderr)
+    );
+    let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
 }

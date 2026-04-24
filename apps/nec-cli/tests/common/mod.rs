@@ -36,3 +36,19 @@ pub fn assert_diag_field(stderr: &str, key: &str, expected_value: &str) {
         actual
     );
 }
+
+pub fn assert_diag_field_is_finite_nonnegative(stderr: &str, key: &str) {
+    let raw = diag_field(stderr, key)
+        .unwrap_or_else(|| panic!("missing diag field '{key}' in stderr:\n{stderr}"));
+    let value = raw
+        .parse::<f64>()
+        .unwrap_or_else(|e| panic!("failed to parse diag field '{key}={raw}' as f64: {e}"));
+    assert!(
+        value.is_finite(),
+        "expected diag field '{key}' to be finite, got {value} from stderr:\n{stderr}"
+    );
+    assert!(
+        value >= 0.0,
+        "expected diag field '{key}' to be non-negative, got {value} from stderr:\n{stderr}"
+    );
+}
