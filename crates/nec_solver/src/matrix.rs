@@ -148,7 +148,7 @@ pub fn assemble_z_matrix_with_ground(
         for j in 0..n {
             let direct = elem(&segs[i], &segs[j], k, i == j);
             let image_contrib = match ground {
-                GroundModel::FreeSpace => Complex64::new(0.0, 0.0),
+                GroundModel::FreeSpace | GroundModel::Deferred { .. } => Complex64::new(0.0, 0.0),
                 GroundModel::PerfectConductor => {
                     let img = image_segment(&segs[j]);
                     // Image is always at a different location than the

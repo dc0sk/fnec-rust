@@ -30,19 +30,26 @@ pub enum GroundModel {
     /// Implemented via the image method: for each real segment a mirror image
     /// at z → −z is added to the Green's function kernel.
     PerfectConductor,
+    /// GN card was present, but the requested ground type is not implemented.
+    ///
+    /// The current Phase-1 behavior is to fall back to free-space while
+    /// emitting a runtime warning in the CLI.
+    Deferred { gn_type: i32 },
 }
 
 /// Extract the ground model from a parsed deck.
 ///
 /// Uses the first `GN` card found.  Returns [`GroundModel::FreeSpace`] if no
-/// GN card is present.  GN types other than 1 (PEC) are also treated as
-/// free-space in Phase 1 (Sommerfeld ground is deferred).
+/// GN card is present.
+///
+/// - `GN 1` maps to [`GroundModel::PerfectConductor`].
+/// - Any other GN type maps to [`GroundModel::Deferred`].
 pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
     for card in &deck.cards {
         if let Card::Gn(GnCard { ground_type }) = card {
             return match ground_type {
                 1 => GroundModel::PerfectConductor,
-                _ => GroundModel::FreeSpace,
+                other => GroundModel::Deferred { gn_type: *other },
             };
         }
     }
@@ -298,5 +305,25 @@ mod tests {
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Gn(GnCard { ground_type: 1 }));
         assert_eq!(ground_model_from_deck(&deck), GroundModel::PerfectConductor);
+    }
+
+    #[test]
+    fn ground_model_marks_gn0_as_deferred() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard { ground_type: 0 }));
+        assert_eq!(
+            ground_model_from_deck(&deck),
+            GroundModel::Deferred { gn_type: 0 }
+        );
+    }
+
+    #[test]
+    fn ground_model_marks_gn2_as_deferred() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard { ground_type: 2 }));
+        assert_eq!(
+            ground_model_from_deck(&deck),
+            GroundModel::Deferred { gn_type: 2 }
+        );
     }
 }
