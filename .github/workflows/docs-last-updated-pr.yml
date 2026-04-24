@@ -29,7 +29,7 @@ jobs:
       - name: Stamp changed docs
         run: |
           chmod +x scripts/stamp-doc-last-updated.sh
-          ./scripts/stamp-doc-last-updated.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+          ./scripts/stamp-doc-last-updated.sh --from-git-diff "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
 
       - name: Commit and push stamp changes
         run: |
