@@ -108,7 +108,7 @@ This configures `core.hooksPath` to use `.githooks/`.
 
 - Pre-commit: `cargo fmt --all -- --check`, `cargo test --workspace`
 - Pre-push: `cargo audit`
-- Docs validation: `./scripts/validate-doc-frontmatter.sh`
+- Docs validation: `./scripts/validate-docs-frontmatter.sh`
 
 ## Version bump workflow
 
