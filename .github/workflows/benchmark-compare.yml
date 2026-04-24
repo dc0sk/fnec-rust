@@ -60,6 +60,7 @@ jobs:
             echo "Skipping benchmark compare: expected files not found."
             echo "  base_csv=${base_csv}"
             echo "  candidate_csv=${candidate_csv}"
+          fi
 
       - name: Write skip summary
         if: steps.detect.outputs.should_run != 'true'
@@ -72,7 +73,6 @@ jobs:
             echo "- base_csv: \`${{ steps.cfg.outputs.base_csv }}\`"
             echo "- candidate_csv: \`${{ steps.cfg.outputs.candidate_csv }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Run benchmark compare gate
         if: steps.detect.outputs.should_run == 'true'
