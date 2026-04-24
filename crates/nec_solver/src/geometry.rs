@@ -16,7 +16,7 @@
 //! - `tag_index`     — 1-based segment index within the tag
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GnCard, GwCard};
+use nec_model::card::{Card, GeCard, GnCard, GwCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -39,18 +39,35 @@ pub enum GroundModel {
 
 /// Extract the ground model from a parsed deck.
 ///
-/// Uses the first `GN` card found.  Returns [`GroundModel::FreeSpace`] if no
-/// GN card is present.
-///
-/// - `GN 1` maps to [`GroundModel::PerfectConductor`].
-/// - Any other GN type maps to [`GroundModel::Deferred`].
+/// Resolution order:
+/// 1. If a `GN` card is present it takes priority.
+///    - `GN 1`  → [`GroundModel::PerfectConductor`].
+///    - Other GN types → [`GroundModel::Deferred`].
+/// 2. If no `GN` card is present but a `GE` card has `ground_reflection_flag > 0`
+///    (the standard NEC flag for "enable image-method PEC ground at z = 0"),
+///    infer [`GroundModel::PerfectConductor`].
+/// 3. Otherwise returns [`GroundModel::FreeSpace`].
 pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
+    // GN card takes priority.
     for card in &deck.cards {
         if let Card::Gn(GnCard { ground_type }) = card {
             return match ground_type {
                 1 => GroundModel::PerfectConductor,
                 other => GroundModel::Deferred { gn_type: *other },
             };
+        }
+    }
+    // No GN card: check GE flag.  GE I1=1 is the conventional NEC shorthand
+    // for "perfect electric conductor ground, apply image method", and GE I1=-1
+    // is a half-space variant that is not yet supported.
+    for card in &deck.cards {
+        if let Card::Ge(GeCard {
+            ground_reflection_flag,
+        }) = card
+        {
+            if *ground_reflection_flag == 1 {
+                return GroundModel::PerfectConductor;
+            }
         }
     }
     GroundModel::FreeSpace
