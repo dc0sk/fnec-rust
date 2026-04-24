@@ -13,6 +13,7 @@ last_updated: 2026-04-24
 - [x] Add `.github/workflows/docs-validate.yml`.
 - [ ] Add troubleshooting note for mobile approval-dialog limitations in contributor guidance.
 - [ ] **Sinusoidal-basis EFIE (NEC2-style Pocklington fix)**: The current pulse/continuity solver modes use a pulse-basis Pocklington EFIE that is known to diverge from the physical solution for thin-wire antennas as the segment count increases. NEC2 uses sinusoidal (piecewise-sinusoidal) basis functions via `tbf`/`sbf`/`trio` which eliminate this divergence. Implementing the same sinusoidal-basis matrix assembly would make pulse/continuity modes accurate. Until then, these modes are marked experimental in the CLI. Reference: xnec2c `calculations.c`, NEC2 Theory of Operation (Burke & Poggio 1981).
+  - Pulse RHS normalization candidate: $$\frac{1}{dl\,\lambda}$$
 
 ## Parity-driven backlog items
 
@@ -42,9 +43,3 @@ last_updated: 2026-04-24
 
 - [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
-
-## KaTeX Formula Equivalents
-
-$$
-	ext{Pulse RHS normalization candidate: } \frac{1}{dl\,\lambda}
-$$

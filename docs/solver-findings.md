@@ -23,11 +23,26 @@ center-fed half-wave dipole test case at 14.2 MHz.
 
 ### Hallén solver — CORRECT
 
-After fixing two bugs (`e098fb4`, `c302f29`):
+After fixing two bugs (`e098fb4`, `c302f29`), the Hallén augmented system is now:
+
+$$\left[\,A\;|\;-\cos\,\right]
+\begin{bmatrix}
+I\\
+C
+\end{bmatrix}
+= b$$
+
+with the correct RHS prefactor:
+
+$$\text{Hallén RHS prefactor} = \frac{2\pi}{\eta_0}$$
+
+Validation results:
 
 | Mode | N=51 | Python reference |
 |:-----|:-----|:----------------|
 | hallen | **74.242874 + j13.899516 Ω** | 74.23 + j13.90 Ω ✓ |
+
+$$Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega$$
 
 The Hallén augmented system (`[A | −cos] [I; C] = b`) with the correct
 `2π/η₀` RHS prefactor and NEC sign convention is the production-accurate solver.
@@ -39,6 +54,8 @@ For `corpus/dipole-ground-51seg.nec` (14.2 MHz, 10 m AGL), current CI-regression
 | Mode | Case | Value |
 |:-----|:-----|:------|
 | hallen + GN=1 | dipole-ground-51seg | **81.914743 + j16.416629 Ω** |
+
+$$Z_{\mathrm{hallen},\,GN=1} \approx 81.914743 + j\,16.416629\,\Omega$$
 
 This confirms GN=1 ground behavior is no longer silently ignored in the Hallen path.
 External-reference parity for this case is still pending explicit xnec2c/4nec2 capture;
@@ -91,27 +108,4 @@ runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 - xnec2c source: https://github.com/KJ7LNW/xnec2c (primary NEC2 C reference)
 - Burke & Poggio, "NEC2 Theory of Operation", LLNL 1981
 - M5AIQ NEC resources: https://www.qsl.net/m5aiq/nec.html
-
-## KaTeX Formula Equivalents
-
-$$
-Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega
-$$
-
-$$
-\left[\,A\;|\;-\cos\,\right]
-\begin{bmatrix}
-I\\
-C
-\end{bmatrix}
-= b
-$$
-
-$$
-	ext{Hallen RHS prefactor} = \frac{2\pi}{\eta_0}
-$$
-
-$$
-Z_{\mathrm{hallen},\,GN=1} \approx 81.914743 + j\,16.416629\,\Omega
-$$
 

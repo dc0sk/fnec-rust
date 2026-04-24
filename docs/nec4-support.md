@@ -61,7 +61,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
-| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported. Other types currently emit a runtime warning and fall back to free-space. Finite-conductivity Sommerfeld/Norton variants are DEFERRED (Phase 2+). |
+| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported: $$\text{GN type }1 \Rightarrow \text{PEC image method at } z=0$$. Other types currently emit a runtime warning and fall back to free-space. Finite-conductivity Sommerfeld/Norton variants are DEFERRED (Phase 2+). |
 | EN | End of input | FULL | Terminates deck parse. |
 
 ### Advanced/specialized cards
@@ -95,7 +95,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Mode | Status | Notes |
 |:-----|:-------|:------|
-| Hallén (augmented integral equation) | FULL | Validated: 74.24 + j13.90 Ω vs Python reference. Production-ready. |
+| Hallén (augmented integral equation) | FULL | Validated: $$Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega$$ vs Python reference. Production-ready. |
 | Pocklington pulse basis | EXPERIMENTAL | Known divergence for thin-wire antennas. Do not use. Fixed by sinusoidal basis (Phase 2). |
 | Pocklington continuity basis | EXPERIMENTAL | Rooftop basis transform. Same divergence issue. Phase 2. |
 
@@ -126,7 +126,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Frequency sweep | FULL | Multiple frequencies in single deck (FR card with NF > 1). |
 | Multi-source (multiple EX cards) | PARTIAL | Parsed, but output reporting needs work (Phase 1). |
 | Segment current calculation | FULL | Complex current per segment, phase and magnitude. |
-| Feedpoint impedance | FULL | Computed via V_source / I at driven segment. |
+| Feedpoint impedance | FULL | Computed via: $$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX$$ at driven segment. |
 | Gain computation | PARTIAL | Calculated but not yet output in text format (Phase 1). |
 | Radiation pattern | PARTIAL | Calculated internally; text output format defined in Phase 1. Full pattern export deferred (Phase 2). |
 
@@ -193,17 +193,3 @@ fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compa
 - `docs/requirements.md` — Tolerance matrix and numerical compatibility policy
 - `docs/roadmap.md` — Phase definitions and deliverables
 - `corpus/README.md` — Golden reference corpus cases and validation
-
-## KaTeX Formula Equivalents
-
-$$
-	ext{GN type }1 \Rightarrow \text{PEC image method at } z=0
-$$
-
-$$
-Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX
-$$
-
-$$
-	ext{Validated Hallen baseline: } Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega
-$$
