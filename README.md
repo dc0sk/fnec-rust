@@ -110,6 +110,14 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Pre-push: `cargo audit`
 - Docs validation: `./scripts/validate-docs-frontmatter.sh`
 
+### Troubleshooting: Mobile approval dialogs
+
+If you review or approve workflow/tool actions from a mobile device, some approval dialogs may be truncated, fail to render all options, or not submit reliably.
+
+- Prefer desktop browser approval for multi-step actions (branch push, workflow changes, multi-file edits).
+- If a mobile approval appears stuck, refresh and retry from desktop rather than re-running commands repeatedly.
+- Keep command payloads and commit messages concise when you know approvals may be handled on mobile.
+
 ## Version bump workflow
 
 When bumping the workspace version:

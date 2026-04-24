@@ -51,6 +51,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 | PRT-008 | Accuracy program is strong for the Hallen dipole baseline but not yet broad enough to support "better than NEC" claims | Claims of parity are too narrow; difficult models can regress unnoticed | Corpus extended to ground, loads, sweeps, multi-source, pattern, current, and difficult-geometry sensitivity cases | Phase 1-3 |
 | PRT-009 | No NEC-5-class plan for surfaces and difficult geometry robustness | fnec-rust risks plateauing below the modern state of the art | Explicit surfaces strategy and mixed wire/surface roadmap, even if delivered after core wire parity | Phase 4-5 |
 | PRT-010 | No explicit validation matrix derived from the NEC-5 Validation Manual test themes (kernel accuracy, source modeling, convergence, surface/junction behavior, loops/ground behavior) | Accuracy claims can miss the exact difficult scenarios NEC-5 uses to expose modeling and convergence weaknesses | Add a documented NEC-5-informed validation matrix and map each covered case to corpus tests with tolerances | Phase 2-3 |
+| PRT-011 | No network-distributed authenticated execution mode beyond local CPU threading and GPU offload | Large sweep/optimization workloads cannot scale across trusted LAN or cluster nodes, limiting throughput for serious design-space exploration | Add authenticated distributed solve mode with node discovery, node capability cache, and work-result cache for deterministic repeat runs | Phase 4-5 |
 
 ## Phase 0 (done/in place)
 
@@ -137,6 +138,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [ ] Publish a stable automation surface for batch studies, optimizer loops, and custom result extraction.
 - [ ] Define bindings and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp in optimization and research pipelines.
 - [ ] Support automation-driven model transformation workflows comparable in value to AutoEZ's variable substitution and repeated-study orchestration, without requiring spreadsheet tooling.
+- [ ] Design distributed authenticated execution architecture for trusted clusters (transport, authN/authZ, remote worker contract, failure semantics), including SSH-backed bootstrap as a practical first deployment path.
 
 **Estimated completion**: Q1 2027 (end of March).
 
@@ -152,6 +154,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [ ] CI benchmarking dashboard for performance tracking.
 - [ ] Define the post-NEC-4 accuracy frontier: surfaces, mixed wire/surface problems, and difficult-geometry sensitivity regression tracking informed by NEC-5-class expectations.
 - [ ] Establish whether fnec-rust will pursue NEC-5-class mixed-potential and surface capability directly or via an explicitly documented alternative architecture.
+- [ ] Deliver cluster execution mode beyond multithreading/GPU: authenticated node discovery, cached node capability inventory, and work-content/result caching to reduce repeated transfer/compute costs across distributed runs.
 
 **Estimated completion**: Q2 2027 (end of June).
 
@@ -181,6 +184,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 | CP-008 | AutoEZ | **MEDIUM** | Matching-network helpers, variable-driven model generation, and format-translation workflows materially reduce engineering friction today | Plan explicit automation helper features instead of assuming generic scripting will cover them; defer purchase until a Phase 3 workflow benchmark needs hands-on verification |
 | CP-009 | NEC-5 | **MEDIUM** | NEC-5-class robustness is the longer-term path to claiming "better than NEC-2/4" instead of just "compatible with" | Create explicit Phase 5 architecture decision on surfaces and mixed-potential methods |
 | CP-010 | xnec2c-optimize | **MEDIUM** | Open-source users already have a practical optimizer loop with repeatable objective-driven tuning workflows | Add optimizer-loop compatibility criteria (CLI/API contracts, objective I/O stability, convergence-study support) in Phase 3-4 |
+| CP-011 | HPC scheduler + cluster workflows | **MEDIUM** | Serious sweep and optimization studies need distributed execution, trust boundaries, and repeat-run caching that local-only acceleration cannot provide | Add authenticated distributed mode with discovery and caching in Phase 4-5, with SSH-backed deployment path first |
 
 ## Commercial benchmark acquisition policy
 

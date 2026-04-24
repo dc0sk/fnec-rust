@@ -11,7 +11,7 @@ last_updated: 2026-04-24
 - [x] Implement `scripts/validate-docs-frontmatter.sh` for strict checks.
 - [x] Add `.github/workflows/docs-last-updated-pr.yml`.
 - [x] Add `.github/workflows/docs-validate.yml`.
-- [ ] Add troubleshooting note for mobile approval-dialog limitations in contributor guidance.
+- [x] Add troubleshooting note for mobile approval-dialog limitations in contributor guidance.
 - [ ] **Sinusoidal-basis EFIE (NEC2-style Pocklington fix)**: The current pulse/continuity solver modes use a pulse-basis Pocklington EFIE that is known to diverge from the physical solution for thin-wire antennas as the segment count increases. NEC2 uses sinusoidal (piecewise-sinusoidal) basis functions via `tbf`/`sbf`/`trio` which eliminate this divergence. Implementing the same sinusoidal-basis matrix assembly would make pulse/continuity modes accurate. Until then, these modes are marked experimental in the CLI. Reference: xnec2c `calculations.c`, NEC2 Theory of Operation (Burke & Poggio 1981).
   - Pulse RHS normalization candidate: $$\frac{1}{dl\,\lambda}$$
 
@@ -43,3 +43,6 @@ last_updated: 2026-04-24
 
 - [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
+
+- [ ] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 4-5 / Issue: #23**
+	Resolution criteria: architecture decision doc approved (auth model, trust boundary, transport, failure semantics); authenticated node discovery implemented with capability cache; work-content/result cache implemented with deterministic cache keys and invalidation policy; SSH-backed bootstrap flow documented and demonstrated on at least 2 worker nodes.
