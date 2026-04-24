@@ -2,12 +2,25 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-24
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
+
+## 2026-04-24
+
+### Added
+
+- Added Phase 1 `GN` card support for perfect-ground (`GN 1`) Hallen runs.
+- Added PEC image-method contribution path in Hallen matrix assembly.
+- Added parser and solver tests that cover GN parsing and ground-aware matrix behavior.
+
+### Changed
+
+- Updated corpus ground regression reference (`dipole-ground-51seg`) to GN-aware Hallen values.
+- Updated support boundary documentation to reflect current GN status (`GN 1` supported; Sommerfeld/Norton deferred).
 
 ## 2026-04-22
 
