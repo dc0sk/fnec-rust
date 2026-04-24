@@ -2,8 +2,8 @@
 set -euo pipefail
 
 usage() {
-        cat <<'EOF_USAGE'
-Usage: scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>
+    cat <<'EOF_USAGE'
+Usage: scripts/pi-benchmark-compare.sh [options] <base.csv> <candidate.csv>
 
 Compare two benchmark CSV files produced by scripts/pi-remote-benchmark.sh and
 print per deck+solver deltas for timing and residual diagnostics.
@@ -17,6 +17,12 @@ Notes:
     - Rows with status != ok are ignored.
     - Ratio columns are candidate/base.
     - If a base value is zero, percentage/ratio fields are reported as n/a.
+
+Options:
+  --max-delta-pct <number>  Fail if candidate timing regression exceeds this percentage.
+                            Only positive (slower) regressions are checked.
+  --fail-on-mode-drift      Fail if candidate diag_mode differs from base diag_mode.
+  -h, --help                Show this help text.
 EOF_USAGE
 }
 
@@ -24,6 +30,42 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
     usage
     exit 0
 fi
+
+max_delta_pct=""
+fail_on_mode_drift=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --max-delta-pct)
+            shift
+            if [[ $# -eq 0 ]]; then
+                echo "error: --max-delta-pct requires a numeric value" >&2
+                exit 1
+            fi
+            max_delta_pct="$1"
+            ;;
+        --fail-on-mode-drift)
+            fail_on_mode_drift=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "error: unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+    shift
+done
 
 if [[ $# -ne 2 ]]; then
     usage >&2
@@ -42,7 +84,12 @@ if [[ ! -f "${cand_csv}" ]]; then
     exit 1
 fi
 
-awk -F, '
+if [[ -n "${max_delta_pct}" ]] && ! [[ "${max_delta_pct}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "error: --max-delta-pct must be a non-negative number" >&2
+    exit 1
+fi
+
+awk -F, -v max_delta_pct="${max_delta_pct}" -v fail_mode_drift="${fail_on_mode_drift}" '
 function pct(delta, base) {
     if (base == 0) return "n/a"
     return sprintf("%+.2f%%", (delta / base) * 100.0)
@@ -79,6 +126,7 @@ NR == FNR {
     c_m[k] = m_merge(c_m[k], $8)
 }
 END {
+    fail = 0
     for (k in all) {
         split(k, p, "|")
         br = b_c[k]+0; cr = c_c[k]+0
@@ -87,9 +135,24 @@ END {
         brel = (br>0)?b_r[k]/br:0; crel = (cr>0)?c_r[k]/cr:0
         bm = (br>0)?b_m[k]:"missing"; cm = (cr>0)?c_m[k]:"missing"
         
+            if (br > 0 && cr > 0 && ba > 0) {
+                delta_pct_num = ((ca - ba) / ba) * 100.0
+                if (max_delta_pct != "" && delta_pct_num > (max_delta_pct + 0.0)) {
+                    printf "threshold violation: deck=%s solver=%s delta_pct=%+.2f%% exceeds max %s%%\n", p[1], p[2], delta_pct_num, max_delta_pct > "/dev/stderr"
+                    fail = 1
+                }
+            }
+            if (fail_mode_drift == "1" && bm != cm) {
+                printf "mode drift violation: deck=%s solver=%s base_mode=%s cand_mode=%s\n", p[1], p[2], bm, cm > "/dev/stderr"
+                fail = 1
+            }
+
             printf "%s,%s,%d,%d,%.3f,%.3f,%+.3f,%s,%s,%s,%.6e,%.6e,%s,%.6e,%.6e,%s\n",
             p[1],p[2],br,cr,ba,ca,ca-ba,pct(ca-ba,ba),bm,cm,babs,cabs,ratio(cabs,babs),brel,crel,ratio(crel,brel)
     }
+        if (fail) {
+            exit 2
+        }
 }
 ' "$base_csv" "$cand_csv" | {
     echo "deck,solver,base_runs,cand_runs,base_avg_ms,cand_avg_ms,delta_ms,delta_pct,base_mode,cand_mode,base_abs_res,cand_abs_res,abs_res_ratio,base_rel_res,cand_rel_res,rel_res_ratio"

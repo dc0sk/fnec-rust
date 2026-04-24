@@ -112,6 +112,7 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
 - Remote ARM64 benchmark CSV (Pi over SSH): `bash ./scripts/pi-remote-benchmark.sh <user@host>`
 - Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`
+- Benchmark CSV delta gate example: `bash ./scripts/pi-benchmark-compare.sh --max-delta-pct 15 --fail-on-mode-drift <base.csv> <candidate.csv>`
 
 ### Troubleshooting: Mobile approval dialogs
 
