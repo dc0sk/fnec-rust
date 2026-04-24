@@ -33,6 +33,19 @@ pub struct GwCard {
     pub radius: f64,
 }
 
+/// GE — Geometry end card.
+///
+/// Marks the end of geometry input. The optional ground-reflection integer
+/// field is preserved for diagnostics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeCard {
+    /// Optional GE ground-reflection flag.
+    ///
+    /// `0` disables geometry reflection. Non-zero values request reflected
+    /// geometry handling that is currently deferred in Phase 1.
+    pub ground_reflection_flag: i32,
+}
+
 /// EX — Excitation card.
 ///
 /// Phase 1 models voltage-source excitation (type 0). Additional fields are
@@ -114,6 +127,7 @@ pub struct EnCard;
 pub enum Card {
     Comment(CommentCard),
     Gw(GwCard),
+    Ge(GeCard),
     Gn(GnCard),
     Ex(ExCard),
     Fr(FrCard),

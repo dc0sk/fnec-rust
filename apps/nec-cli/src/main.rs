@@ -182,6 +182,24 @@ fn warn_deferred_ground_model(ground: &GroundModel) {
     eprintln!("warning: GN type {gn_type} is not yet supported; treating this deck as free-space");
 }
 
+fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
+    let Some(flag) = deck.cards.iter().find_map(|c| {
+        if let Card::Ge(ge) = c {
+            Some(ge.ground_reflection_flag)
+        } else {
+            None
+        }
+    }) else {
+        return;
+    };
+
+    if flag != 0 {
+        eprintln!(
+            "warning: GE ground-reflection flag {flag} is not yet implemented; geometry reflection is ignored in Phase 1"
+        );
+    }
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -252,6 +270,7 @@ fn main() -> ExitCode {
     let deck = &result.deck;
 
     warn_pulse_mode_experimental(solver_mode);
+    warn_ge_ground_reflection_flag(deck);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {

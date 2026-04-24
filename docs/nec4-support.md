@@ -30,7 +30,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | CM | Comment | FULL | Parsed and ignored as per spec |
 | CE | Comment end | FULL | Parsed and ignored |
 | GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
-| GE | Geometry end | FULL | Parsed; optional ground reflection flag ignored in Phase 1 |
+| GE | Geometry end | FULL | Parsed; optional ground-reflection flag is preserved. Non-zero flag currently emits a runtime warning and is ignored in Phase 1. |
 | SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
 | GM | Move segments | DEFERRED | Geometry translation/rotation. Phase 2. |
 | GR | Repeat segments | DEFERRED | Parametric repetition. Phase 2. |
