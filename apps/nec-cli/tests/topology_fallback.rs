@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -49,4 +50,39 @@ fn continuity_non_single_chain_falls_back_to_pulse() {
 #[test]
 fn sinusoidal_non_single_chain_falls_back_to_pulse() {
     assert_non_single_chain_fallback("sinusoidal", "sinusoidal->pulse");
+}
+
+#[test]
+fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal residual fallback test: {e}")
+        });
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: sinusoidal residual "),
+        "expected sinusoidal residual warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("falling back to hallen"),
+        "expected sinusoidal fallback-to-hallen warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("diag: mode=sinusoidal->hallen(residual) "),
+        "expected residual fallback diag mode in stderr, got:\n{stderr}"
+    );
 }
