@@ -267,6 +267,10 @@ fn main() -> ExitCode {
         }
     };
 
+    for warning in &result.warnings {
+        eprintln!("warning: {warning}");
+    }
+
     let deck = &result.deck;
 
     warn_pulse_mode_experimental(solver_mode);
