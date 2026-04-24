@@ -9,7 +9,9 @@
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
-use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, RpCard};
+use nec_model::card::{
+    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, LdCard, RpCard,
+};
 use nec_model::deck::NecDeck;
 
 /// A parse error.
@@ -197,6 +199,37 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 require_fields(lineno, "GN", &fields, 1)?;
                 deck.cards.push(Card::Gn(GnCard {
                     ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
+                }));
+            }
+            "LD" => {
+                // LD I1 I2 I3 I4 F1 F2 F3
+                // I1: load type; I2: tag; I3: first seg; I4: last seg
+                // F1..F3: load parameters (type-dependent)
+                let fields = parse_fields(rest);
+                require_fields(lineno, "LD", &fields, 4)?;
+                let f1 = if fields.len() > 4 {
+                    parse_f64(lineno, "LD", 5, &fields[4])?
+                } else {
+                    0.0
+                };
+                let f2 = if fields.len() > 5 {
+                    parse_f64(lineno, "LD", 6, &fields[5])?
+                } else {
+                    0.0
+                };
+                let f3 = if fields.len() > 6 {
+                    parse_f64(lineno, "LD", 7, &fields[6])?
+                } else {
+                    0.0
+                };
+                deck.cards.push(Card::Ld(LdCard {
+                    load_type: parse_i32(lineno, "LD", 1, &fields[0])?,
+                    tag: parse_u32(lineno, "LD", 2, &fields[1])?,
+                    seg_first: parse_u32(lineno, "LD", 3, &fields[2])?,
+                    seg_last: parse_u32(lineno, "LD", 4, &fields[3])?,
+                    f1,
+                    f2,
+                    f3,
                 }));
             }
             "EN" => {

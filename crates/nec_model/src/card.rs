@@ -119,6 +119,38 @@ pub struct GnCard {
 }
 
 /// EN — End-of-data card.  Signals the end of a NEC deck.
+/// LD — Load card.
+///
+/// Applies a lumped or distributed impedance load to one or more segments.
+///
+/// NEC load types implemented in Phase 1:
+///
+/// | I1 | Type                       | F1       | F2        | F3          |
+/// |----|----------------------------|----------|-----------|-------------|
+/// |  0 | Series RLC (lumped)        | R (Ω)    | L (H)     | C (F)       |
+/// |  4 | Series impedance Z=R+jX   | R (Ω)    | X (Ω)     | —           |
+/// |  5 | Wire conductivity (dist.)  | σ (S/m)  | —         | —           |
+///
+/// All other load types are stored verbatim and handled at solve time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LdCard {
+    /// Load type (0–5; see table above).
+    pub load_type: i32,
+    /// Wire tag number.  0 = apply to all tags.
+    pub tag: u32,
+    /// First segment number within the tag.  0 = all segments.
+    pub seg_first: u32,
+    /// Last segment number within the tag.  0 = same as `seg_first`.
+    pub seg_last: u32,
+    /// F1: resistance (Ω), conductance, or conductivity depending on type.
+    pub f1: f64,
+    /// F2: inductance (H) or reactance (Ω) depending on type.
+    pub f2: f64,
+    /// F3: capacitance (F).  0.0 means no capacitor term.
+    pub f3: f64,
+}
+
+/// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
 
@@ -129,6 +161,7 @@ pub enum Card {
     Gw(GwCard),
     Ge(GeCard),
     Gn(GnCard),
+    Ld(LdCard),
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),

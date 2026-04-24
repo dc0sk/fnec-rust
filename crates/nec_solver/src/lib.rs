@@ -5,6 +5,7 @@ pub mod basis;
 pub mod excitation;
 pub mod geometry;
 pub mod linear;
+pub mod loads;
 pub mod matrix;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
@@ -16,6 +17,7 @@ pub use linear::{
     solve, solve_hallen, solve_with_continuity_basis, solve_with_sinusoidal_basis, HallenSolution,
     SolveError,
 };
+pub use loads::{build_loads, LoadWarning};
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };

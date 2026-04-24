@@ -4,6 +4,7 @@
 use nec_model::card::Card;
 use nec_parser::parse;
 use nec_report::{render_text_report, FeedpointRow, ReportInput};
+use nec_solver::build_loads;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
     build_hallen_rhs, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve, solve_hallen,
@@ -330,12 +331,18 @@ fn main() -> ExitCode {
             PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(&v_vec, freq_hz),
         };
 
-        let z_mat = match solver_mode {
+        let mut z_mat = match solver_mode {
             SolverMode::Hallen => assemble_z_matrix_with_ground(&segs, freq_hz, &ground),
             SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => {
                 assemble_pocklington_matrix(&segs, freq_hz)
             }
         };
+
+        let (load_vec, load_warnings) = build_loads(deck, &segs, freq_hz);
+        for warning in &load_warnings {
+            eprintln!("warning: {warning}");
+        }
+        z_mat.add_to_diagonal(&load_vec);
 
         let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
             SolverMode::Hallen => {
@@ -446,8 +453,9 @@ fn main() -> ExitCode {
                                         return ExitCode::FAILURE;
                                     }
                                 };
-                                let hallen_z =
+                                let mut hallen_z =
                                     assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
+                                hallen_z.add_to_diagonal(&load_vec);
                                 match solve_hallen(&hallen_z, &hallen_rhs.rhs, &hallen_rhs.cos_vec)
                                 {
                                     Ok(sol) => {
