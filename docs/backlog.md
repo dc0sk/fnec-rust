@@ -16,6 +16,7 @@ last_updated: 2026-04-24
   - Pulse RHS normalization candidate: $$\frac{1}{dl\,\lambda}$$
 	- 2026-04-24 progress: scale-aware regularization added for projected continuity/sinusoidal solves in `crates/nec_solver/src/linear.rs`.
 	- 2026-04-24 progress: CLI now emits explicit topology fallback warnings for continuity/sinusoidal non-single-chain cases, and sinusoidal residual fallback reuses one Hallen matrix assembly.
+	- 2026-04-24 progress: CLI regression coverage added for continuity/sinusoidal non-single-chain topology fallback warnings and diagnostic mode labels (`apps/nec-cli/tests/topology_fallback.rs`).
 
 ## Parity-driven backlog items
 
