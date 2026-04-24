@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
-use common::assert_diag_mode;
+use common::{assert_diag_field, assert_diag_mode};
 
 fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let now = SystemTime::now()
@@ -53,6 +53,25 @@ fn run_solver_on_reference_dipole(solver: &str) -> std::process::Output {
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for solver '{solver}': {e}"))
+}
+
+fn run_solver_on_reference_dipole_with_pulse_rhs(
+    solver: &str,
+    pulse_rhs: &str,
+) -> std::process::Output {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg(solver)
+        .arg("--pulse-rhs")
+        .arg(pulse_rhs)
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for solver '{solver}' with pulse-rhs '{pulse_rhs}': {e}")
+        })
 }
 
 #[test]
@@ -114,4 +133,25 @@ fn experimental_warning_is_mode_gated() {
             "expected experimental warning for {solver}, got:\n{stderr}"
         );
     }
+}
+
+#[test]
+fn pulse_rhs_flag_is_reflected_in_diag_field() {
+    let raw = run_solver_on_reference_dipole_with_pulse_rhs("pulse", "raw");
+    assert!(
+        raw.status.success(),
+        "fnec failed for pulse/raw: {}",
+        String::from_utf8_lossy(&raw.stderr)
+    );
+    let raw_stderr = String::from_utf8_lossy(&raw.stderr);
+    assert_diag_field(&raw_stderr, "pulse_rhs", "Raw");
+
+    let nec2 = run_solver_on_reference_dipole_with_pulse_rhs("pulse", "nec2");
+    assert!(
+        nec2.status.success(),
+        "fnec failed for pulse/nec2: {}",
+        String::from_utf8_lossy(&nec2.stderr)
+    );
+    let nec2_stderr = String::from_utf8_lossy(&nec2.stderr);
+    assert_diag_field(&nec2_stderr, "pulse_rhs", "Nec2");
 }
