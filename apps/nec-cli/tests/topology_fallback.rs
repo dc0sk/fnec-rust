@@ -155,3 +155,24 @@ fn pulse_rhs_flag_is_reflected_in_diag_field() {
     let nec2_stderr = String::from_utf8_lossy(&nec2.stderr);
     assert_diag_field(&nec2_stderr, "pulse_rhs", "Nec2");
 }
+
+#[test]
+fn freq_mhz_diag_field_has_fixed_six_decimal_format() {
+    let hallen = run_solver_on_reference_dipole("hallen");
+    assert!(
+        hallen.status.success(),
+        "fnec failed for hallen: {}",
+        String::from_utf8_lossy(&hallen.stderr)
+    );
+    let hallen_stderr = String::from_utf8_lossy(&hallen.stderr);
+    assert_diag_field(&hallen_stderr, "freq_mhz", "14.200000");
+
+    let pulse = run_solver_on_reference_dipole("pulse");
+    assert!(
+        pulse.status.success(),
+        "fnec failed for pulse: {}",
+        String::from_utf8_lossy(&pulse.stderr)
+    );
+    let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
+    assert_diag_field(&pulse_stderr, "freq_mhz", "14.200000");
+}
