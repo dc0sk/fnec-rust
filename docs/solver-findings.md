@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-24
 ---
 
 # Solver Findings
@@ -31,6 +31,18 @@ After fixing two bugs (`e098fb4`, `c302f29`):
 
 The Hallén augmented system (`[A | −cos] [I; C] = b`) with the correct
 `2π/η₀` RHS prefactor and NEC sign convention is the production-accurate solver.
+
+### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
+
+For `corpus/dipole-ground-51seg.nec` (14.2 MHz, 10 m AGL), current CI-regression value is:
+
+| Mode | Case | Value |
+|:-----|:-----|:------|
+| hallen + GN=1 | dipole-ground-51seg | **81.914743 + j16.416629 Ω** |
+
+This confirms GN=1 ground behavior is no longer silently ignored in the Hallen path.
+External-reference parity for this case is still pending explicit xnec2c/4nec2 capture;
+the corpus now tracks an `external_reference_candidate` placeholder for that follow-up.
 
 ### Pulse/continuity solver — DIVERGES (known broken)
 

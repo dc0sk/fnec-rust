@@ -39,13 +39,18 @@
         "real_ohm": 81.914743,
         "imag_ohm": 16.416629
       },
+      "external_reference_candidate": {
+        "source": "xnec2c/4nec2 external capture pending",
+        "real_ohm": null,
+        "imag_ohm": null
+      },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "GN=1 PEC image-method support active; reference captured from fnec Hallen for regression gating"
+      "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate placeholder added; xnec2c/4nec2 capture pending."
     },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
