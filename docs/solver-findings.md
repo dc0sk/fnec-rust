@@ -92,3 +92,26 @@ runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 - Burke & Poggio, "NEC2 Theory of Operation", LLNL 1981
 - M5AIQ NEC resources: https://www.qsl.net/m5aiq/nec.html
 
+## KaTeX Formula Equivalents
+
+$$
+Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega
+$$
+
+$$
+\left[\,A\;|\;-\cos\,\right]
+\begin{bmatrix}
+I\\
+C
+\end{bmatrix}
+= b
+$$
+
+$$
+	ext{Hallen RHS prefactor} = \frac{2\pi}{\eta_0}
+$$
+
+$$
+Z_{\mathrm{hallen},\,GN=1} \approx 81.914743 + j\,16.416629\,\Omega
+$$
+

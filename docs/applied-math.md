@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/applied-math.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-04-24
 ---
 
 # Applied Math Reference
@@ -91,3 +91,53 @@ Recover segment currents by I_seg = T*a after solve.
   with analytic integral for 1/R_eff part.
 - Direct normal equations amplify conditioning issues; QR/SVD is typically more robust for overdetermined augmented systems.
 - Constraint enforcement (tip current, symmetry, feed normalization) should be explicit and unit-tested.
+
+## KaTeX Formula Equivalents
+
+$$
+\omega = 2\pi f
+$$
+
+$$
+\eta_0 = \sqrt{\frac{\mu_0}{\varepsilon_0}}, \qquad
+k = \frac{\omega}{c_0} = \frac{2\pi}{\lambda}
+$$
+
+$$
+G(R) = \frac{e^{-jkR}}{R}
+$$
+
+$$
+E_{\mathrm{inc}}(z) + E_{\mathrm{scat}}(z) = 0
+$$
+
+$$
+E_{\mathrm{scat}} = -j\omega A_t - \nabla_t \Phi
+$$
+
+$$
+A_z(z) = \frac{\mu_0}{4\pi}\int I(z')\,G(R)\,dz'
+$$
+
+$$
+E_{\mathrm{scat}}(z) = -\frac{j\omega\mu_0}{4\pi}\int I(z')\left[k^2 + \frac{d^2}{dz^2}\right]G(R)\,dz'
+$$
+
+$$
+\int I(z')\,G(R)\,dz' = F(z) + C_1\cos(kz) + C_2\sin(kz)
+$$
+
+$$
+Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}, \qquad
+V_{\mathrm{source}} = \left(\frac{V_0}{dl}\right)dl
+$$
+
+$$
+I_{\mathrm{seg}} = Ta, \qquad
+ZTa = v, \qquad
+\left(T^H Z^H Z T\right)a = T^H Z^H v
+$$
+
+$$
+G(R_{\mathrm{eff}})=\left[G(R_{\mathrm{eff}})-\frac{1}{R_{\mathrm{eff}}}\right]+\frac{1}{R_{\mathrm{eff}}}
+$$

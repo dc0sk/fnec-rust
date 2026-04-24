@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-24
 ---
 
 # CLI Guide — fnec (v0.1.0)
@@ -170,3 +170,17 @@ EN
 - The Hallén solver currently rejects non-collinear wire topologies such as loaded loops and hats attached off-axis to the driven wire.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
+
+## KaTeX Formula Equivalents
+
+$$
+Z_{\mathrm{in}} = R + jX
+$$
+
+$$
+Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}
+$$
+
+$$
+\mathrm{rel\_res} = \frac{\lVert Ax-b\rVert_2}{\lVert b\rVert_2}
+$$
