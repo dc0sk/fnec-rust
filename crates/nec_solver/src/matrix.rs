@@ -107,6 +107,23 @@ impl ZMatrix {
     pub fn set_test(&mut self, row: usize, col: usize, val: Complex64) {
         self.set(row, col, val);
     }
+
+    /// Add `loads[i]` to the diagonal element [i, i] for each segment.
+    ///
+    /// Used to apply series lumped or distributed impedance loads to the
+    /// assembled MoM matrix. `loads` must have the same length as the matrix
+    /// dimension (`n`).
+    pub fn add_to_diagonal(&mut self, loads: &[Complex64]) {
+        debug_assert_eq!(
+            loads.len(),
+            self.n,
+            "loads length must equal matrix dimension"
+        );
+        for (i, &z) in loads.iter().enumerate() {
+            let cur = self.data[i * self.n + i];
+            self.data[i * self.n + i] = cur + z;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

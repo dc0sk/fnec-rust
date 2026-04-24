@@ -30,7 +30,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | CM | Comment | FULL | Parsed and ignored as per spec |
 | CE | Comment end | FULL | Parsed and ignored |
 | GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
-| GE | Geometry end | FULL | Parsed; optional ground-reflection flag is preserved. Non-zero flag currently emits a runtime warning and is ignored in Phase 1. |
+| GE | Geometry end | FULL | Parsed; GE I1=1 infers PEC ground when no GN card is present. Other non-zero values currently emit a runtime warning and are ignored. |
 | SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
 | GM | Move segments | DEFERRED | Geometry translation/rotation. Phase 2. |
 | GR | Repeat segments | DEFERRED | Parametric repetition. Phase 2. |
@@ -47,7 +47,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
 | EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
 | PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
-| LD | Load impedance | DEFERRED | Localized wire loads. Phase 2. |
+| LD | Load impedance | PARTIAL | Types 0 (series RLC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
 
 ### Frequency and output cards
 
@@ -134,8 +134,8 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Phase | Cumulative Support |
 |:------|:------------------|
-| Phase 1 (current) | GW, EX type 0, FR, GE, GN type 0, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source parsing |
-| Phase 2 | Add: GN type 1 (Sommerfeld), LD (loads), more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, pattern export, sinusoidal Pocklington basis, GM/GR/GF (geometry manipulation) |
+| Phase 1 (current) | GW, EX type 0, FR, GE, GN type 1 (PEC), LD types 0/4/5, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source parsing |
+| Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, pattern export, sinusoidal Pocklington basis, GM/GR/GF (geometry manipulation) |
 | Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
 | Phase 4+ | Additional NEC-4 specialty features as demanded |
 
