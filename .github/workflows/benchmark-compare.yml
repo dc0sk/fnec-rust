@@ -1,0 +1,94 @@
+name: Benchmark Compare Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base_csv:
+        description: "Path to baseline benchmark CSV"
+        required: false
+        default: "benchmarks/pi-base.csv"
+      candidate_csv:
+        description: "Path to candidate benchmark CSV"
+        required: false
+        default: "benchmarks/pi-candidate.csv"
+      max_delta_pct:
+        description: "Maximum allowed timing regression percent"
+        required: false
+        default: "15"
+      fail_on_mode_drift:
+        description: "Fail when diag_mode drifts"
+        required: false
+        default: "true"
+
+jobs:
+  compare-benchmarks:
+    runs-on: ubuntu-latest
+    env:
+      BASE_CSV_INPUT: ${{ github.event.inputs.base_csv }}
+      CANDIDATE_CSV_INPUT: ${{ github.event.inputs.candidate_csv }}
+      MAX_DELTA_PCT_INPUT: ${{ github.event.inputs.max_delta_pct }}
+      FAIL_ON_MODE_DRIFT_INPUT: ${{ github.event.inputs.fail_on_mode_drift }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve compare settings
+        id: cfg
+        run: |
+          base_csv="${BASE_CSV_INPUT:-benchmarks/pi-base.csv}"
+          candidate_csv="${CANDIDATE_CSV_INPUT:-benchmarks/pi-candidate.csv}"
+          max_delta_pct="${MAX_DELTA_PCT_INPUT:-15}"
+          fail_on_mode_drift="${FAIL_ON_MODE_DRIFT_INPUT:-true}"
+
+          echo "base_csv=${base_csv}" >> "$GITHUB_OUTPUT"
+          echo "candidate_csv=${candidate_csv}" >> "$GITHUB_OUTPUT"
+          echo "max_delta_pct=${max_delta_pct}" >> "$GITHUB_OUTPUT"
+          echo "fail_on_mode_drift=${fail_on_mode_drift}" >> "$GITHUB_OUTPUT"
+
+      - name: Detect benchmark CSV inputs
+        id: detect
+        run: |
+          base_csv='${{ steps.cfg.outputs.base_csv }}'
+          candidate_csv='${{ steps.cfg.outputs.candidate_csv }}'
+
+          if [[ -f "${base_csv}" && -f "${candidate_csv}" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Found benchmark CSV files: ${base_csv}, ${candidate_csv}"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping benchmark compare: expected files not found."
+            echo "  base_csv=${base_csv}"
+            echo "  candidate_csv=${candidate_csv}"
+          fi
+
+      - name: Run benchmark compare gate
+        if: steps.detect.outputs.should_run == 'true'
+        run: |
+          chmod +x scripts/pi-benchmark-compare.sh
+
+          args=(
+            --max-delta-pct '${{ steps.cfg.outputs.max_delta_pct }}'
+            '${{ steps.cfg.outputs.base_csv }}'
+            '${{ steps.cfg.outputs.candidate_csv }}'
+          )
+
+          if [[ '${{ steps.cfg.outputs.fail_on_mode_drift }}' == 'true' ]]; then
+            args=(--fail-on-mode-drift "${args[@]}")
+          fi
+
+          echo "Running: bash scripts/pi-benchmark-compare.sh ${args[*]}"
+          bash scripts/pi-benchmark-compare.sh "${args[@]}" | tee benchmark-compare.csv
+
+      - name: Upload compare report artifact
+        if: steps.detect.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-compare-report
+          path: benchmark-compare.csv
+
+  benchmark-compare:
+    runs-on: ubuntu-latest
+    needs: [compare-benchmarks]
+    steps:
+      - run: echo "Benchmark compare checks passed or were skipped (no CSV inputs found)."

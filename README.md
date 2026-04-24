@@ -114,6 +114,8 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`
 - Benchmark CSV delta gate example: `bash ./scripts/pi-benchmark-compare.sh --max-delta-pct 15 --fail-on-mode-drift <base.csv> <candidate.csv>`
 
+GitHub Actions includes `benchmark-compare.yml`, which runs on PRs and compares `benchmarks/pi-base.csv` vs `benchmarks/pi-candidate.csv` when both files exist. If either file is missing, the job reports a clean skip.
+
 ### Troubleshooting: Mobile approval dialogs
 
 If you review or approve workflow/tool actions from a mobile device, some approval dialogs may be truncated, fail to render all options, or not submit reliably.
