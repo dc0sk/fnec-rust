@@ -50,6 +50,10 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Z_in ≈ 81.91 + j16.42 Ω
 - Current distribution: distorted from free-space case due to image interaction
 
+**External parity status**:
+- External reference candidate for this case is tracked in `corpus/reference-results.json` and remains pending capture from xnec2c/4nec2.
+- CI currently gates the GN=1 regression value and prints external deltas when candidate values are present.
+
 **Tolerance gates**: Same as dipole-freesp (R, X, current).
 
 **Why this case**: Ground effects are critical for practical antennas. Validates GN=1 perfect-ground image-method behavior.
