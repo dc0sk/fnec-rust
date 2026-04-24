@@ -24,6 +24,7 @@ last_updated: 2026-04-24
 	- 2026-04-24 progress: CLI regression coverage now locks `diag: freq_mhz` to fixed six-decimal formatting (`14.200000`) on reference dipole runs.
 	- 2026-04-24 progress: shared CLI diagnostics tests now assert `abs_res`/`rel_res` fields remain parseable finite non-negative numbers for reference Hallen and pulse runs.
 	- 2026-04-24 progress: Raspberry Pi 5 target smoke-validated over SSH and automated with `scripts/pi-remote-workspace-check.sh` (sync + optional rustup bootstrap + remote workspace tests).
+	- 2026-04-24 progress: added `scripts/pi-remote-benchmark.sh` to run repeatable Pi deck/solver timing sweeps and emit timestamped CSV baselines.
 
 ## Parity-driven backlog items
 
