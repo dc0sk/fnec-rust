@@ -4,12 +4,12 @@
 //! Minimal Phase-1 NEC deck parser.
 //!
 //! Parses the cards required to run a basic dipole simulation:
-//! `CM`, `CE`, `GW`, `EX`, `FR`, `RP`, `EN`.
+//! `CM`, `CE`, `GW`, `GN`, `EX`, `FR`, `RP`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
-use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
+use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GnCard, GwCard, RpCard};
 use nec_model::deck::NecDeck;
 
 /// A parse error.
@@ -181,6 +181,13 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     d_phi: parse_f64(lineno, "RP", 7, &fields[6])?,
                 }));
             }
+            "GN" => {
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GN", &fields, 1)?;
+                deck.cards.push(Card::Gn(GnCard {
+                    ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
+                }));
+            }
             "EN" => {
                 deck.cards.push(Card::En(EnCard));
                 // Stop at EN per NEC spec.
@@ -229,6 +236,18 @@ fn require_fields(
     } else {
         Ok(())
     }
+}
+
+fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
+    // Accept floats like "-1.0" that some NEC tools emit for integer fields.
+    s.parse::<f64>()
+        .map(|v| v as i32)
+        .map_err(|_| ParseError::BadField {
+            line: lineno,
+            card: card.to_string(),
+            field,
+            raw: s.to_string(),
+        })
 }
 
 fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, ParseError> {
@@ -381,6 +400,22 @@ EN
         // CM after EN must not appear
         assert_eq!(result.deck.cards.len(), 2);
         assert_eq!(result.deck.cards[1], Card::En(EnCard));
+    }
+
+    #[test]
+    fn gn_card_parsed_and_stored() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGN 1\nEX 0 1 2 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gn_card = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gn(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        assert!(gn_card.is_some(), "GN card not found in deck");
+        assert_eq!(gn_card.unwrap().ground_type, 1);
     }
 
     #[test]

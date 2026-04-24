@@ -5,8 +5,8 @@ use nec_model::card::Card;
 use nec_parser::parse;
 use nec_report::{render_text_report, FeedpointRow, ReportInput};
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix, build_excitation, build_geometry,
-    build_hallen_rhs, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
+    build_hallen_rhs, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve, solve_hallen,
     solve_with_continuity_basis, solve_with_sinusoidal_basis, Segment, ZMatrix,
 };
 use num_complex::Complex64;
@@ -266,6 +266,9 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    let ground = ground_model_from_deck(deck);
+
     for (fidx, freq_hz) in freqs_hz.iter().copied().enumerate() {
         let v_vec_pulse = match pulse_rhs_mode {
             PulseRhsMode::Raw => v_vec.clone(),
@@ -273,7 +276,7 @@ fn main() -> ExitCode {
         };
 
         let z_mat = match solver_mode {
-            SolverMode::Hallen => assemble_z_matrix(&segs, freq_hz),
+            SolverMode::Hallen => assemble_z_matrix_with_ground(&segs, freq_hz, &ground),
             SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => {
                 assemble_pocklington_matrix(&segs, freq_hz)
             }
@@ -389,12 +392,13 @@ fn main() -> ExitCode {
                                     }
                                 };
                                 match solve_hallen(
-                                    &assemble_z_matrix(&segs, freq_hz),
+                                    &assemble_z_matrix_with_ground(&segs, freq_hz, &ground),
                                     &hallen_rhs.rhs,
                                     &hallen_rhs.cos_vec,
                                 ) {
                                     Ok(sol) => {
-                                        let hallen_z = assemble_z_matrix(&segs, freq_hz);
+                                        let hallen_z =
+                                            assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
                                         let (a2, r2) = residual_hallen(
                                             &hallen_z,
                                             &sol.currents,

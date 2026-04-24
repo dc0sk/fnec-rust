@@ -90,6 +90,21 @@ pub struct RpCard {
     pub d_phi: f64,
 }
 
+/// GN — Ground definition card.
+///
+/// Specifies the electrical ground model below the antenna geometry.
+/// Only the first integer field (ground type) is stored in Phase 1.
+/// Future phases can extend this struct with conductivity and permittivity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GnCard {
+    /// Ground type:
+    ///   -1 = null ground (equivalent to no GN card)
+    ///    0 = reflection coefficient method (approximate; deferred Phase 2)
+    ///    1 = perfect electric conductor (image method)
+    ///    2 = finite conductivity Sommerfeld/Norton (deferred Phase 2)
+    pub ground_type: i32,
+}
+
 /// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
@@ -99,6 +114,7 @@ pub struct EnCard;
 pub enum Card {
     Comment(CommentCard),
     Gw(GwCard),
+    Gn(GnCard),
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),

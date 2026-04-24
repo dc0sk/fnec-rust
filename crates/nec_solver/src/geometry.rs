@@ -16,8 +16,38 @@
 //! - `tag_index`     — 1-based segment index within the tag
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GwCard};
+use nec_model::card::{Card, GnCard, GwCard};
 use nec_model::deck::NecDeck;
+
+/// Ground model extracted from a GN card (or absence thereof).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum GroundModel {
+    /// No ground — free-space simulation (default when no GN card is present).
+    #[default]
+    FreeSpace,
+    /// Perfect electric conductor (PEC) ground at z = 0.
+    ///
+    /// Implemented via the image method: for each real segment a mirror image
+    /// at z → −z is added to the Green's function kernel.
+    PerfectConductor,
+}
+
+/// Extract the ground model from a parsed deck.
+///
+/// Uses the first `GN` card found.  Returns [`GroundModel::FreeSpace`] if no
+/// GN card is present.  GN types other than 1 (PEC) are also treated as
+/// free-space in Phase 1 (Sommerfeld ground is deferred).
+pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
+    for card in &deck.cards {
+        if let Card::Gn(GnCard { ground_type }) = card {
+            return match ground_type {
+                1 => GroundModel::PerfectConductor,
+                _ => GroundModel::FreeSpace,
+            };
+        }
+    }
+    GroundModel::FreeSpace
+}
 
 /// A single NEC wire segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -145,7 +175,7 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{Card, GwCard};
+    use nec_model::card::{Card, GnCard, GwCard};
     use nec_model::deck::NecDeck;
 
     fn deck_with_gw(tag: u32, segs: u32, start: [f64; 3], end: [f64; 3], r: f64) -> NecDeck {
@@ -255,5 +285,18 @@ mod tests {
     fn no_wires_is_error() {
         let deck = NecDeck::new();
         assert!(matches!(build_geometry(&deck), Err(GeometryError::NoWires)));
+    }
+
+    #[test]
+    fn ground_model_defaults_to_free_space_without_gn() {
+        let deck = NecDeck::new();
+        assert_eq!(ground_model_from_deck(&deck), GroundModel::FreeSpace);
+    }
+
+    #[test]
+    fn ground_model_detects_perfect_conductor_gn1() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard { ground_type: 1 }));
+        assert_eq!(ground_model_from_deck(&deck), GroundModel::PerfectConductor);
     }
 }

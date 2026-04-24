@@ -22,7 +22,7 @@
 
 use num_complex::Complex64;
 
-use crate::geometry::Segment;
+use crate::geometry::{GroundModel, Segment};
 
 // ---------------------------------------------------------------------------
 // Physical constants (SI)
@@ -113,14 +113,32 @@ impl ZMatrix {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Assemble the N×N Hallén A-matrix for `segs` at frequency `freq_hz`.
+/// Assemble the N×N Hallén A-matrix for `segs` at frequency `freq_hz` in free space.
 ///
-/// Each element A[m,n] = cos(α) · ∫_{seg_n} G(R_eff) dl is a complex
-/// Green's function integral (units: m, dominated by the 1/R static part).
-///
-/// The Hallén system is A × I − C × cos_vec = b, where C is the unknown
-/// homogeneous constant, solved by [`crate::linear::solve_hallen`].
+/// Convenience wrapper around [`assemble_z_matrix_with_ground`] using
+/// [`GroundModel::FreeSpace`].
 pub fn assemble_z_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
+    assemble_z_matrix_with_ground(segs, freq_hz, &GroundModel::FreeSpace)
+}
+
+/// Assemble the N×N Hallén A-matrix for `segs` at frequency `freq_hz`,
+/// optionally including a ground-plane image contribution.
+///
+/// For [`GroundModel::PerfectConductor`] each element A[i,j] gets an
+/// additional term from the mirror image of segment j across z = 0:
+///
+/// ```text
+/// A[i,j] = A_free[i,j] + A_free(segs[i], image(segs[j]))
+/// ```
+///
+/// where `image(seg)` has its z-coordinates negated and its z-direction
+/// component sign-flipped, which produces the correct ±1 reflection
+/// coefficient for horizontal (cos = +1) and vertical (cos = −1) currents.
+pub fn assemble_z_matrix_with_ground(
+    segs: &[Segment],
+    freq_hz: f64,
+    ground: &GroundModel,
+) -> ZMatrix {
     let n = segs.len();
     let mut z = ZMatrix::new(n);
 
@@ -128,7 +146,17 @@ pub fn assemble_z_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
 
     for i in 0..n {
         for j in 0..n {
-            z.set(i, j, elem(&segs[i], &segs[j], k, i == j));
+            let direct = elem(&segs[i], &segs[j], k, i == j);
+            let image_contrib = match ground {
+                GroundModel::FreeSpace => Complex64::new(0.0, 0.0),
+                GroundModel::PerfectConductor => {
+                    let img = image_segment(&segs[j]);
+                    // Image is always at a different location than the
+                    // observation segment, so never treat as self-element.
+                    elem(&segs[i], &img, k, false)
+                }
+            };
+            z.set(i, j, direct + image_contrib);
         }
     }
 
@@ -162,6 +190,29 @@ pub fn assemble_pocklington_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Mirror a segment across the z = 0 ground plane.
+///
+/// - Endpoints and midpoint have their z-coordinate negated.
+/// - The direction vector has its z-component negated.
+///
+/// For a perfect electric conductor at z = 0, the image current of a
+/// horizontal element flows in the same direction (cos_alpha = same sign) and
+/// the image of a vertical element flows in the opposite direction
+/// (cos_alpha = −1), which is the correct image-theory reflection coefficient.
+fn image_segment(seg: &Segment) -> Segment {
+    Segment {
+        tag: seg.tag,
+        tag_index: seg.tag_index,
+        global_index: seg.global_index,
+        start: [seg.start[0], seg.start[1], -seg.start[2]],
+        end: [seg.end[0], seg.end[1], -seg.end[2]],
+        midpoint: [seg.midpoint[0], seg.midpoint[1], -seg.midpoint[2]],
+        direction: [seg.direction[0], seg.direction[1], -seg.direction[2]],
+        length: seg.length,
+        radius: seg.radius,
+    }
+}
 
 /// Compute the (obs, src) Hallén A-matrix element:
 ///   A = cos(α) · ∫_{src} G(R_eff) dl
@@ -437,5 +488,31 @@ mod tests {
             z01.im,
             z10.im
         );
+    }
+
+    #[test]
+    fn pec_ground_changes_hallen_matrix_element() {
+        let s = make_seg(1, 1, 0, [0.0, 0.0, 1.0], DIR_Z, SEG_LEN, RADIUS);
+        let z_free = assemble_z_matrix_with_ground(&[s.clone()], FREQ, &GroundModel::FreeSpace);
+        let z_pec = assemble_z_matrix_with_ground(&[s], FREQ, &GroundModel::PerfectConductor);
+
+        let delta = z_pec.get(0, 0) - z_free.get(0, 0);
+        assert!(
+            delta.norm() > 1e-8,
+            "PEC image term should modify A11, delta={delta}"
+        );
+    }
+
+    #[test]
+    fn image_segment_reflects_across_z0_plane() {
+        let s = make_seg(3, 2, 7, [1.0, -2.0, 4.0], [0.0, 0.6, 0.8], SEG_LEN, RADIUS);
+        let img = image_segment(&s);
+
+        assert_eq!(img.start[2], -s.start[2]);
+        assert_eq!(img.end[2], -s.end[2]);
+        assert_eq!(img.midpoint[2], -s.midpoint[2]);
+        assert_eq!(img.direction[0], s.direction[0]);
+        assert_eq!(img.direction[1], s.direction[1]);
+        assert_eq!(img.direction[2], -s.direction[2]);
     }
 }
