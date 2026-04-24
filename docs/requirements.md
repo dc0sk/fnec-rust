@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-24
 ---
 
 # Requirements
@@ -37,6 +37,7 @@ last_updated: 2026-04-23
 ## Non-functional requirements
 
 - **NFR-001**: Primary runtime target is Linux (Wayland), then macOS, then Windows.
+- **NFR-001a**: Linux-on-ARM deployment targets must explicitly include Raspberry Pi 4 and Raspberry Pi 5, with Raspberry Pi 4's VideoCore VI GPU and Raspberry Pi 5's VideoCore VII GPU treated as in-scope optional-acceleration reference hardware.
 - **NFR-002**: CPU execution must be multithreaded and deterministic by default.
 - **NFR-003**: GPU acceleration must be optional at runtime with reliable CPU fallback.
 - **NFR-004**: Numerical compatibility must be measured against a reference with explicit tolerances per metric.

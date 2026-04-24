@@ -9,6 +9,7 @@
 //! Only excitation type 0 (series voltage source) is implemented in Phase 1.
 
 use num_complex::Complex64;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use nec_model::card::{Card, ExCard};
@@ -35,11 +36,20 @@ pub enum ExcitationError {
     /// An EX card referenced a (tag, segment) pair not present in the geometry.
     SegmentNotFound { tag: u32, segment: u32 },
     /// An EX card uses an excitation type not yet supported.
-    UnsupportedType { ex_type: u32 },
+    UnsupportedType {
+        ex_type: u32,
+        tag: u32,
+        segment: u32,
+        i4: u32,
+    },
     /// Hallen RHS currently assumes all wires are collinear with the feed axis.
     UnsupportedHallenTopology {
         /// Wire tags that are not collinear with the feed segment axis.
         non_collinear_tags: Vec<u32>,
+        /// Absolute cosine alignment per non-collinear tag.
+        ///
+        /// 1.0 means collinear, 0.0 means orthogonal.
+        tag_abs_alignment_cos: Vec<(u32, f64)>,
     },
 }
 
@@ -49,15 +59,25 @@ impl std::fmt::Display for ExcitationError {
             ExcitationError::SegmentNotFound { tag, segment } => {
                 write!(f, "EX: no segment with tag {tag}, index {segment}")
             }
-            ExcitationError::UnsupportedType { ex_type } => {
-                write!(f, "EX: excitation type {ex_type} is not yet supported")
+            ExcitationError::UnsupportedType {
+                ex_type,
+                tag,
+                segment,
+                i4,
+            } => {
+                write!(
+                    f,
+                    "EX: excitation type {ex_type} at tag {tag}, segment {segment}, I4={i4} is not yet supported"
+                )
             }
             ExcitationError::UnsupportedHallenTopology {
                 non_collinear_tags,
+                tag_abs_alignment_cos,
             } => write!(
                 f,
-                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}",
-                non_collinear_tags
+                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}; abs(cos)-alignment by tag: {:?}",
+                non_collinear_tags,
+                tag_abs_alignment_cos
             ),
         }
     }
@@ -112,6 +132,9 @@ pub fn build_hallen_rhs(
         if ex.excitation_type != 0 {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
+                tag: ex.tag,
+                segment: ex.segment,
+                i4: ex.i4,
             });
         }
         if first_ex.is_none() {
@@ -141,17 +164,25 @@ pub fn build_hallen_rhs(
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
+    let mut tag_abs_alignment_cos: BTreeMap<u32, f64> = BTreeMap::new();
     for seg in segs {
         let dot = seg.direction[0] * feed_dir[0]
             + seg.direction[1] * feed_dir[1]
             + seg.direction[2] * feed_dir[2];
-        if dot.abs() < 1.0 - 1e-9 {
+        let abs_dot = dot.abs();
+        if abs_dot < 1.0 - 1e-9 {
             non_collinear_tags.insert(seg.tag);
+            // Keep the best alignment observed for the tag.
+            tag_abs_alignment_cos
+                .entry(seg.tag)
+                .and_modify(|v| *v = v.max(abs_dot))
+                .or_insert(abs_dot);
         }
     }
     if !non_collinear_tags.is_empty() {
         return Err(ExcitationError::UnsupportedHallenTopology {
             non_collinear_tags: non_collinear_tags.into_iter().collect(),
+            tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
         });
     }
 
@@ -175,6 +206,9 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
     if ex.excitation_type != 0 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
+            tag: ex.tag,
+            segment: ex.segment,
+            i4: ex.i4,
         });
     }
 
@@ -222,6 +256,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6, // centre segment (1-based)
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -265,6 +300,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 2,
+            i4: 0,
             voltage_real: 0.5,
             voltage_imag: -0.5,
         }));
@@ -294,13 +330,19 @@ mod tests {
             excitation_type: 5, // not supported
             tag: 1,
             segment: 2,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
             build_excitation(&deck, &segs),
-            Err(ExcitationError::UnsupportedType { ex_type: 5 })
+            Err(ExcitationError::UnsupportedType {
+                ex_type: 5,
+                tag: 1,
+                segment: 2,
+                i4: 0,
+            })
         ));
     }
 
@@ -318,6 +360,7 @@ mod tests {
             excitation_type: 0,
             tag: 99, // no such tag
             segment: 1,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -430,6 +473,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));
@@ -440,6 +484,7 @@ mod tests {
             err,
             ExcitationError::UnsupportedHallenTopology {
                 non_collinear_tags: vec![2],
+                tag_abs_alignment_cos: vec![(2, 0.0)],
             }
         );
     }
@@ -465,6 +510,7 @@ mod tests {
             excitation_type: 0,
             tag: 1,
             segment: 6,
+            i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
         }));

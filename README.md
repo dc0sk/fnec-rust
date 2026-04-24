@@ -7,9 +7,10 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 
 ## Features
 
-- Parse 4nec2 / NEC2 deck files (GW, EX, FR, EN cards; GE optional)
+- Parse 4nec2 / NEC2 deck files (GW, GN, EX, FR, EN cards; GE optional)
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
+	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
 	- Current scope: collinear wire sets aligned with the driven segment axis; non-collinear Hallén topologies fail fast with an explicit error
 - Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
 	- `sinusoidal` now falls back to Hallen on single collinear chains when its residual budget is exceeded, so the CLI avoids returning misleading impedances for that path
@@ -66,6 +67,7 @@ https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC
 - Solver implemented from scratch in Rust
 - CLI, GUI, and optional TUI frontends over a shared core
 - Multithreaded CPU execution with staged GPU acceleration
+- Explicit Linux-on-ARM targets: Raspberry Pi 4 (VideoCore VI GPU) and Raspberry Pi 5 (VideoCore VII GPU)
 
 ## Workspace layout
 

@@ -35,7 +35,8 @@ pub struct GwCard {
 
 /// EX — Excitation card.
 ///
-/// Only voltage-source excitation (type 0) is modelled in Phase 1.
+/// Phase 1 models voltage-source excitation (type 0). Additional fields are
+/// preserved so later phases can implement more EX source families.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExCard {
     /// Excitation type (0 = voltage source).
@@ -44,6 +45,11 @@ pub struct ExCard {
     pub tag: u32,
     /// Segment number within the tag.
     pub segment: u32,
+    /// Integer EX field I4.
+    ///
+    /// For EX type 0 this is typically unused and often set to 0. For other
+    /// source types NEC uses this field for additional source metadata.
+    pub i4: u32,
     /// Real part of the voltage (volts).
     pub voltage_real: f64,
     /// Imaginary part of the voltage (volts).
@@ -84,6 +90,21 @@ pub struct RpCard {
     pub d_phi: f64,
 }
 
+/// GN — Ground definition card.
+///
+/// Specifies the electrical ground model below the antenna geometry.
+/// Only the first integer field (ground type) is stored in Phase 1.
+/// Future phases can extend this struct with conductivity and permittivity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GnCard {
+    /// Ground type:
+    ///   -1 = null ground (equivalent to no GN card)
+    ///    0 = reflection coefficient method (approximate; deferred Phase 2)
+    ///    1 = perfect electric conductor (image method)
+    ///    2 = finite conductivity Sommerfeld/Norton (deferred Phase 2)
+    pub ground_type: i32,
+}
+
 /// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
@@ -93,6 +114,7 @@ pub struct EnCard;
 pub enum Card {
     Comment(CommentCard),
     Gw(GwCard),
+    Gn(GnCard),
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),

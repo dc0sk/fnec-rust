@@ -34,10 +34,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "perfect conductor (infinite)",
-      "reference_source": "fnec Hallén solver (regression only — GN card silently ignored)",
+      "reference_source": "fnec Hallén solver with GN=1 PEC image-method ground (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 81.914743,
+        "imag_ohm": 16.416629
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -45,7 +45,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "GN card silently ignored by fnec; regression-only reference equals free-space result; GN support pending"
+      "status": "GN=1 PEC image-method support active; reference captured from fnec Hallen for regression gating"
     },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",

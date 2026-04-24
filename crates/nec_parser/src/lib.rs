@@ -4,12 +4,12 @@
 //! Minimal Phase-1 NEC deck parser.
 //!
 //! Parses the cards required to run a basic dipole simulation:
-//! `CM`, `CE`, `GW`, `EX`, `FR`, `RP`, `EN`.
+//! `CM`, `CE`, `GW`, `GN`, `EX`, `FR`, `RP`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
-use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
+use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GnCard, GwCard, RpCard};
 use nec_model::deck::NecDeck;
 
 /// A parse error.
@@ -143,7 +143,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     excitation_type: parse_u32(lineno, "EX", 1, &fields[0])?,
                     tag: parse_u32(lineno, "EX", 2, &fields[1])?,
                     segment: parse_u32(lineno, "EX", 3, &fields[2])?,
-                    // fields[3] is I4 (unused for type-0 sources, consumed here)
+                    i4: parse_u32(lineno, "EX", 4, &fields[3])?,
                     voltage_real: vr,
                     voltage_imag: vi,
                 }));
@@ -179,6 +179,13 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     phi0: parse_f64(lineno, "RP", 5, &fields[4])?,
                     d_theta: parse_f64(lineno, "RP", 6, &fields[5])?,
                     d_phi: parse_f64(lineno, "RP", 7, &fields[6])?,
+                }));
+            }
+            "GN" => {
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GN", &fields, 1)?;
+                deck.cards.push(Card::Gn(GnCard {
+                    ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
                 }));
             }
             "EN" => {
@@ -231,6 +238,18 @@ fn require_fields(
     }
 }
 
+fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
+    // Accept floats like "-1.0" that some NEC tools emit for integer fields.
+    s.parse::<f64>()
+        .map(|v| v as i32)
+        .map_err(|_| ParseError::BadField {
+            line: lineno,
+            card: card.to_string(),
+            field,
+            raw: s.to_string(),
+        })
+}
+
 fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, ParseError> {
     // Accept floats like "1.0" that 4nec2 sometimes emits for integer fields.
     s.parse::<f64>()
@@ -262,7 +281,7 @@ mod tests {
     use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
-    /// EX format: I1=type I2=tag I3=seg I4=0(unused) F1=vr F2=vi
+    /// EX format: I1=type I2=tag I3=seg I4=aux-int F1=vr F2=vi
     const DIPOLE_DECK: &str = "\
 CM Half-wave dipole at 28 MHz
 CE
@@ -312,6 +331,7 @@ EN
                 excitation_type: 0,
                 tag: 1,
                 segment: 6,
+                i4: 0,
                 voltage_real: 1.0,
                 voltage_imag: 0.0,
             })
@@ -380,5 +400,40 @@ EN
         // CM after EN must not appear
         assert_eq!(result.deck.cards.len(), 2);
         assert_eq!(result.deck.cards[1], Card::En(EnCard));
+    }
+
+    #[test]
+    fn gn_card_parsed_and_stored() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGN 1\nEX 0 1 2 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gn_card = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gn(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        assert!(gn_card.is_some(), "GN card not found in deck");
+        assert_eq!(gn_card.unwrap().ground_type, 1);
+    }
+
+    #[test]
+    fn ex_i4_field_is_preserved() {
+        let input = "EX 5 2 7 3 1.5 -0.25\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        assert_eq!(result.deck.cards.len(), 2);
+        assert_eq!(
+            result.deck.cards[0],
+            Card::Ex(ExCard {
+                excitation_type: 5,
+                tag: 2,
+                segment: 7,
+                i4: 3,
+                voltage_real: 1.5,
+                voltage_imag: -0.25,
+            })
+        );
     }
 }
