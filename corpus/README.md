@@ -37,7 +37,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 ### 2. `dipole-ground-51seg.nec` — Half-wave dipole, over ground
 
-**Purpose**: Validate Hallén solver with ground effects (Sommerfeld integral).
+**Purpose**: Validate Hallén solver with perfect-ground image-method effects.
 
 **Geometry**:
 - Frequency: 14.2 MHz
@@ -46,13 +46,13 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Feed: Center segment, 1.0 V
 - Ground: Perfect conductor at z = 0 (infinite, ideal)
 
-**Expected results** (from xnec2c):
-- Z_in ≈ [TBD after xnec2c run — expected 50–100 Ω real, ±10 Ω imag depending on height]
+**Expected results** (current regression gate):
+- Z_in ≈ 81.91 + j16.42 Ω
 - Current distribution: distorted from free-space case due to image interaction
 
 **Tolerance gates**: Same as dipole-freesp (R, X, current).
 
-**Why this case**: Ground effects are critical for practical antennas. Validates that image method / Sommerfeld treatment is correct.
+**Why this case**: Ground effects are critical for practical antennas. Validates GN=1 perfect-ground image-method behavior.
 
 ### 3. `yagi-5elm-51seg.nec` — 5-element Yagi array
 
@@ -143,7 +143,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
 |:-----|:----------|:---------|:------|:--------|:-------|:------------------|
 | 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
-| 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | [TBD] |
+| 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 81.91 + j16.42 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |

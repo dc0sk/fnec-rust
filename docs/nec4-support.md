@@ -61,7 +61,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
-| GN | Ground definition | PARTIAL | Type 0 (perfect conductor) supported. Type 1 (Sommerfeld, finite conductivity) DEFERRED (Phase 2). Type 2 (seawater over rock) DEFERRED (Phase 3). |
+| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported. Types -1/0 are treated as free-space for now. Type 2+ (finite-conductivity Sommerfeld/Norton variants) DEFERRED (Phase 2+). |
 | EN | End of input | FULL | Terminates deck parse. |
 
 ### Advanced/specialized cards
