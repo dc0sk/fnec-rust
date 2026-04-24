@@ -17,8 +17,9 @@ last_updated: 2026-04-24
 
 ## Parity-driven backlog items
 
-- [ ] **PAR-001 / 4nec2-EZNEC text-report parity contract / Owner: CLI+Reporting / Target: Phase 1 / Issue: #14**
-	Resolution criteria: report spec document approved (sections, units, precision, ordering); at least 3 corpus cases checked for output conformance; CI check enforces format contract.
+- [x] **PAR-001 / 4nec2-EZNEC text-report parity contract / Owner: CLI+Reporting / Target: Phase 1 / Issue: #14**
+	Resolution: PAR-001 v1 contract implemented and CI-gated on 2026-04-23 (`FORMAT_VERSION 1`, deterministic headers/table, report contract integration test).
+	Follow-up scope (gain/pattern/current report breadth and richer parity expectations) remains tracked under Phase 1-2 roadmap/report parity items.
 
 - [ ] **PAR-002 / Advanced ground parity plan / Owner: Solver / Target: Phase 2 / Issue: #15**
 	Resolution criteria: NEC-4-class ground scope document published; Sommerfeld validation corpus added; tolerance pass documented for supported near-ground cases.
