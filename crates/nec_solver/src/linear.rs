@@ -132,7 +132,7 @@ pub fn solve_with_continuity_basis(
         atv[i] = sum;
     }
 
-    let lambda = 1e-10;
+    let lambda = regularization_lambda(&ata, 1e-10, 1e-14);
     for (i, row) in ata.iter_mut().enumerate().take(m) {
         row[i] += Complex64::new(lambda, 0.0);
     }
@@ -165,7 +165,7 @@ pub fn solve_with_sinusoidal_basis(
     let tr = SinusoidalTransform::for_single_chain(n);
     let (mut projected_z, mut projected_v) = projected_system(z, v, &tr.t);
 
-    let lambda = 1e-10;
+    let lambda = regularization_lambda(&projected_z, 1e-10, 1e-14);
     for (i, row) in projected_z.iter_mut().enumerate().take(tr.n_basis) {
         row[i] += Complex64::new(lambda, 0.0);
     }
@@ -220,6 +220,23 @@ fn projected_system(
     }
 
     (projected_z, projected_v)
+}
+
+fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f64 {
+    if a.is_empty() {
+        return floor;
+    }
+
+    let n = a.len();
+    let mut diag_sum = 0.0;
+    for (i, row) in a.iter().enumerate().take(n) {
+        if i < row.len() {
+            diag_sum += row[i].norm();
+        }
+    }
+
+    let diag_avg = diag_sum / (n as f64);
+    (diag_avg * rel_scale).max(floor)
 }
 
 /// Result of solving Hallén's augmented system.
@@ -373,7 +390,7 @@ fn solve_square_in_place(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::basis::ContinuityTransform;
+    use crate::basis::{ContinuityTransform, SinusoidalTransform};
     use crate::matrix::ZMatrix;
     use num_complex::Complex64;
 
@@ -491,6 +508,26 @@ mod tests {
         let v = tr.segment_currents(&a);
 
         let i = solve_with_continuity_basis(&z, &v).unwrap();
+        for k in 0..n {
+            assert!((i[k] - v[k]).norm() < 1e-8, "k={k}, i={}, v={}", i[k], v[k]);
+        }
+    }
+
+    #[test]
+    fn sinusoidal_basis_identity_reconstructs_column_space_vector() {
+        let n = 5;
+        let mut z = ZMatrix::new(n);
+        for i in 0..n {
+            for j in 0..n {
+                z.set_test(i, j, if i == j { c(1.0, 0.0) } else { c(0.0, 0.0) });
+            }
+        }
+
+        let tr = SinusoidalTransform::for_single_chain(n);
+        let a = vec![c(1.0, 0.0), c(0.5, 0.0), c(-0.25, 0.0), c(0.75, 0.0)];
+        let v = tr.segment_currents(&a);
+
+        let i = solve_with_sinusoidal_basis(&z, &v).unwrap();
         for k in 0..n {
             assert!((i[k] - v[k]).norm() < 1e-8, "k={k}, i={}, v={}", i[k], v[k]);
         }

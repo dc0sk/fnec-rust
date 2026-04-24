@@ -88,7 +88,7 @@ Tolerances below define the strictest acceptable deviation; any failure is a def
 | Segment current phase | degrees | ≤ 0.1 ° | Near-exact parity |
 | SWR (derived) | — | ≤ 0.01 absolute | Derived metric; tight because R/X targets already bind it |
 
-### KaTeX Formula Equivalents
+The tolerance matrix formalizes to:
 
 $$
 \Delta R \le \max\left(0.05\,\Omega,\, 0.001\,|R_{\mathrm{ref}}|\right)

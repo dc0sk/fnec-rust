@@ -108,7 +108,22 @@ This configures `core.hooksPath` to use `.githooks/`.
 
 - Pre-commit: `cargo fmt --all -- --check`, `cargo test --workspace`
 - Pre-push: `cargo audit`
-- Docs validation: `./scripts/validate-doc-frontmatter.sh`
+- Docs validation: `./scripts/validate-docs-frontmatter.sh`
+- Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
+- Remote ARM64 benchmark CSV (Pi over SSH): `bash ./scripts/pi-remote-benchmark.sh <user@host>`
+- Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`
+- Benchmark CSV delta gate example: `bash ./scripts/pi-benchmark-compare.sh --max-delta-pct 15 --fail-on-mode-drift <base.csv> <candidate.csv>`
+
+GitHub Actions includes `benchmark-compare.yml`, which runs on PRs and compares `benchmarks/pi-base.csv` vs `benchmarks/pi-candidate.csv` when both files exist. If either file is missing, the job reports a clean skip.
+When it runs, it also writes a benchmark delta preview to the Actions job summary.
+
+### Troubleshooting: Mobile approval dialogs
+
+If you review or approve workflow/tool actions from a mobile device, some approval dialogs may be truncated, fail to render all options, or not submit reliably.
+
+- Prefer desktop browser approval for multi-step actions (branch push, workflow changes, multi-file edits).
+- If a mobile approval appears stuck, refresh and retry from desktop rather than re-running commands repeatedly.
+- Keep command payloads and commit messages concise when you know approvals may be handled on mobile.
 
 ## Version bump workflow
 

@@ -101,6 +101,9 @@ Feedpoint table columns:
 | I_RE / I_IM | A | Current real/imag at the driven segment |
 | Z_RE / Z_IM | Ω | Feedpoint impedance real/imag (`V_source / I`) |
 
+The impedance is computed as:
+$$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX$$
+
 Formatting and ordering rules:
 
 - Fixed-point numeric formatting with 6 decimals
@@ -122,6 +125,9 @@ diag: mode=hallen pulse_rhs=Nec2 freq_mhz=14.200000 abs_res=3.456789e-10 rel_res
 | `freq_mhz` | Frequency point solved for this report block |
 | `abs_res` | Absolute L2 residual ‖Ax − b‖ |
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
+
+The relative residual is defined as:
+$$\mathrm{rel\_res} = \frac{\lVert Ax-b\rVert_2}{\lVert b\rVert_2}$$
 
 ## Examples
 
@@ -170,17 +176,3 @@ EN
 - The Hallén solver currently rejects non-collinear wire topologies such as loaded loops and hats attached off-axis to the driven wire.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
-
-## KaTeX Formula Equivalents
-
-$$
-Z_{\mathrm{in}} = R + jX
-$$
-
-$$
-Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}
-$$
-
-$$
-\mathrm{rel\_res} = \frac{\lVert Ax-b\rVert_2}{\lVert b\rVert_2}
-$$

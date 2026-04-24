@@ -18,16 +18,21 @@ Recent findings showed that pulse-only formulations can produce strong cancellat
 ## Phase 1: Basis transform layer
 
 1. Implement a basis-transform utility T for each straight wire chain.
-2. Ensure endpoint current constraints are intrinsic (tip current = 0).
+   $$I_{\mathrm{seg}} = T a$$
+2. Ensure endpoint current constraints are intrinsic:
+   $$I_{\mathrm{tip}} = 0$$
 3. Provide reversible mapping APIs:
-- segment_current_from_basis(a)
-- basis_from_segment_current(I) (least-squares helper)
+   - segment_current_from_basis(a)
+   - basis_from_segment_current(I) (least-squares helper)
 
 ## Phase 2: Matrix solve integration
 
 1. Keep existing matrix assembly initially.
-2. Solve transformed system Z*T*a = v.
-3. Recover segment currents I = T*a for reporting.
+2. Solve transformed system:
+   $$Z T a = v$$
+3. Recover segment currents for reporting:
+   $$I = T a$$
+   for reporting.
 4. Validate against existing unit tests and add regression tests for transform consistency.
 
 ## Phase 3: Numerical robustness
@@ -39,7 +44,8 @@ Recent findings showed that pulse-only formulations can produce strong cancellat
 ## Phase 4: Physics validation
 
 1. Re-run the half-wave dipole benchmark across segment counts.
-2. Track convergence of real and imaginary parts of Z_in.
+2. Track convergence of real and imaginary parts of:
+   $$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}$$
 3. Compare against 4nec2/xnec2c and other references for trend consistency.
 
 ## Acceptance criteria
@@ -53,21 +59,3 @@ Recent findings showed that pulse-only formulations can produce strong cancellat
 - Keep CLI output contract unchanged.
 - Introduce this as an internal solver path first, behind a clearly isolated API.
 - Preserve room for later sinusoidal basis or higher-order basis options.
-
-## KaTeX Formula Equivalents
-
-$$
-I_{\mathrm{seg}} = T a
-$$
-
-$$
-Z T a = v
-$$
-
-$$
-Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}}
-$$
-
-$$
-I_{\mathrm{tip}} = 0
-$$
