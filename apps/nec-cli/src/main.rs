@@ -301,7 +301,9 @@ fn main() -> ExitCode {
     };
     let single_linear_chain = is_single_linear_chain(&segs);
 
-    if matches!(solver_mode, SolverMode::Continuity | SolverMode::Sinusoidal) && !single_linear_chain {
+    if matches!(solver_mode, SolverMode::Continuity | SolverMode::Sinusoidal)
+        && !single_linear_chain
+    {
         eprintln!(
             "warning: {} solver currently supports only single linear chains; falling back to pulse on this topology",
             solver_mode.as_str()
@@ -441,12 +443,10 @@ fn main() -> ExitCode {
                                         return ExitCode::FAILURE;
                                     }
                                 };
-                                let hallen_z = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-                                match solve_hallen(
-                                    &hallen_z,
-                                    &hallen_rhs.rhs,
-                                    &hallen_rhs.cos_vec,
-                                ) {
+                                let hallen_z =
+                                    assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
+                                match solve_hallen(&hallen_z, &hallen_rhs.rhs, &hallen_rhs.cos_vec)
+                                {
                                     Ok(sol) => {
                                         let (a2, r2) = residual_hallen(
                                             &hallen_z,
