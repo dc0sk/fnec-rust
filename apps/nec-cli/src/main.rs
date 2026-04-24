@@ -24,6 +24,17 @@ enum SolverMode {
     Sinusoidal,
 }
 
+impl SolverMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            SolverMode::Hallen => "hallen",
+            SolverMode::Pulse => "pulse",
+            SolverMode::Continuity => "continuity",
+            SolverMode::Sinusoidal => "sinusoidal",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PulseRhsMode {
     Raw,
@@ -288,6 +299,14 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let single_linear_chain = is_single_linear_chain(&segs);
+
+    if matches!(solver_mode, SolverMode::Continuity | SolverMode::Sinusoidal) && !single_linear_chain {
+        eprintln!(
+            "warning: {} solver currently supports only single linear chains; falling back to pulse on this topology",
+            solver_mode.as_str()
+        );
+    }
 
     let v_vec = match build_excitation(deck, &segs) {
         Ok(v) => v,
@@ -350,7 +369,7 @@ fn main() -> ExitCode {
                 }
             },
             SolverMode::Continuity => {
-                if !is_single_linear_chain(&segs) {
+                if !single_linear_chain {
                     match solve(&z_mat, &v_vec_pulse) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
@@ -393,7 +412,7 @@ fn main() -> ExitCode {
                 }
             }
             SolverMode::Sinusoidal => {
-                if !is_single_linear_chain(&segs) {
+                if !single_linear_chain {
                     match solve(&z_mat, &v_vec_pulse) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
@@ -422,14 +441,13 @@ fn main() -> ExitCode {
                                         return ExitCode::FAILURE;
                                     }
                                 };
+                                let hallen_z = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
                                 match solve_hallen(
-                                    &assemble_z_matrix_with_ground(&segs, freq_hz, &ground),
+                                    &hallen_z,
                                     &hallen_rhs.rhs,
                                     &hallen_rhs.cos_vec,
                                 ) {
                                     Ok(sol) => {
-                                        let hallen_z =
-                                            assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
                                         let (a2, r2) = residual_hallen(
                                             &hallen_z,
                                             &sol.currents,

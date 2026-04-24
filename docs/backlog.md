@@ -14,6 +14,8 @@ last_updated: 2026-04-24
 - [x] Add troubleshooting note for mobile approval-dialog limitations in contributor guidance.
 - [ ] **Sinusoidal-basis EFIE (NEC2-style Pocklington fix)**: The current pulse/continuity solver modes use a pulse-basis Pocklington EFIE that is known to diverge from the physical solution for thin-wire antennas as the segment count increases. NEC2 uses sinusoidal (piecewise-sinusoidal) basis functions via `tbf`/`sbf`/`trio` which eliminate this divergence. Implementing the same sinusoidal-basis matrix assembly would make pulse/continuity modes accurate. Until then, these modes are marked experimental in the CLI. Reference: xnec2c `calculations.c`, NEC2 Theory of Operation (Burke & Poggio 1981).
   - Pulse RHS normalization candidate: $$\frac{1}{dl\,\lambda}$$
+	- 2026-04-24 progress: scale-aware regularization added for projected continuity/sinusoidal solves in `crates/nec_solver/src/linear.rs`.
+	- 2026-04-24 progress: CLI now emits explicit topology fallback warnings for continuity/sinusoidal non-single-chain cases, and sinusoidal residual fallback reuses one Hallen matrix assembly.
 
 ## Parity-driven backlog items
 
