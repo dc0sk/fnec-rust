@@ -154,6 +154,28 @@ fn corpus_validation_cases_with_references() {
                 );
             }
 
+            if let Some(ext_obj) = case_obj
+                .get("external_reference_candidate")
+                .and_then(Value::as_object)
+            {
+                let ext_sources = collect_external_sources(case_obj, ext_obj);
+                if !ext_sources.is_empty() {
+                    for (idx, (ext_r, ext_x)) in ext_sources.iter().enumerate() {
+                        if idx >= impedances.len() {
+                            break;
+                        }
+                        let (real, imag) = impedances[idx];
+                        eprintln!(
+                            "corpus external delta: case='{}' source_{} dR={:+.6} dX={:+.6} (fnec-ext)",
+                            case_name,
+                            idx + 1,
+                            real - ext_r,
+                            imag - ext_x
+                        );
+                    }
+                }
+            }
+
             validated += 1;
             continue;
         }
@@ -196,6 +218,33 @@ fn corpus_validation_cases_with_references() {
                 );
             }
 
+            if let Some(ext_obj) = case_obj
+                .get("external_reference_candidate")
+                .and_then(Value::as_object)
+            {
+                let ext_points = collect_external_frequency_points(ext_obj);
+                if !ext_points.is_empty() {
+                    for (freq_mhz, ext_r, ext_x) in &ext_points {
+                        if let Some((idx, _)) = expected_freq_points
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (f, _, _))| (*f - *freq_mhz).abs() < 1e-9)
+                        {
+                            if idx < impedances.len() {
+                                let (real, imag) = impedances[idx];
+                                eprintln!(
+                                    "corpus external delta: case='{}' freq={:.3}MHz dR={:+.6} dX={:+.6} (fnec-ext)",
+                                    case_name,
+                                    freq_mhz,
+                                    real - ext_r,
+                                    imag - ext_x
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
             validated += 1;
             continue;
         }
@@ -226,6 +275,23 @@ fn corpus_validation_cases_with_references() {
             err_x,
             tol_x
         );
+
+        if let Some(ext_obj) = case_obj
+            .get("external_reference_candidate")
+            .and_then(Value::as_object)
+        {
+            if let (Some(ext_r), Some(ext_x)) = (
+                ext_obj.get("real_ohm").and_then(Value::as_f64),
+                ext_obj.get("imag_ohm").and_then(Value::as_f64),
+            ) {
+                eprintln!(
+                    "corpus external delta: case='{}' dR={:+.6} dX={:+.6} (fnec-ext)",
+                    case_name,
+                    real - ext_r,
+                    imag - ext_x
+                );
+            }
+        }
 
         validated += 1;
     }
@@ -269,6 +335,50 @@ fn collect_expected_sources(
 
 fn collect_expected_frequency_points(feed: &Map<String, Value>) -> Vec<(f64, f64, f64)> {
     let mut out: Vec<(f64, f64, f64)> = feed
+        .iter()
+        .filter_map(|(k, v)| {
+            let freq_mhz = k.parse::<f64>().ok()?;
+            let obj = v.as_object()?;
+            let real = obj.get("real_ohm")?.as_f64()?;
+            let imag = obj.get("imag_ohm")?.as_f64()?;
+            Some((freq_mhz, real, imag))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
+}
+
+fn collect_external_sources(
+    case_obj: &Map<String, Value>,
+    ext: &Map<String, Value>,
+) -> Vec<(f64, f64)> {
+    let Some(sources) = case_obj.get("sources").and_then(Value::as_u64) else {
+        return Vec::new();
+    };
+
+    if sources == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for idx in 1..=sources {
+        let key = format!("source_{idx}");
+        let Some(source_obj) = ext.get(&key).and_then(Value::as_object) else {
+            return Vec::new();
+        };
+        let Some(real) = source_obj.get("real_ohm").and_then(Value::as_f64) else {
+            return Vec::new();
+        };
+        let Some(imag) = source_obj.get("imag_ohm").and_then(Value::as_f64) else {
+            return Vec::new();
+        };
+        out.push((real, imag));
+    }
+    out
+}
+
+fn collect_external_frequency_points(ext: &Map<String, Value>) -> Vec<(f64, f64, f64)> {
+    let mut out: Vec<(f64, f64, f64)> = ext
         .iter()
         .filter_map(|(k, v)| {
             let freq_mhz = k.parse::<f64>().ok()?;
