@@ -90,7 +90,9 @@ jobs:
           fi
 
           echo "Running: bash scripts/pi-benchmark-compare.sh ${args[*]}"
-          bash scripts/pi-benchmark-compare.sh "${args[@]}" | tee benchmark-compare.csv
+          bash scripts/pi-benchmark-compare.sh "${args[@]}" \
+            2> >(tee benchmark-violations.txt >&2) \
+            | tee benchmark-compare.csv
 
       - name: Upload compare report artifact
         if: steps.detect.outputs.should_run == 'true'
@@ -98,6 +100,13 @@ jobs:
         with:
           name: benchmark-compare-report
           path: benchmark-compare.csv
+
+      - name: Upload violations artifact
+        if: steps.detect.outputs.should_run == 'true' && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-violations
+          path: benchmark-violations.txt
 
       - name: Write compare summary
         if: steps.detect.outputs.should_run == 'true'
@@ -115,6 +124,14 @@ jobs:
             echo "\`\`\`csv"
             sed -n '1,20p' benchmark-compare.csv
             echo "\`\`\`"
+            if [[ -s benchmark-violations.txt ]]; then
+              echo
+              echo "### Violations"
+              echo
+              echo "\`\`\`"
+              cat benchmark-violations.txt
+              echo "\`\`\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   benchmark-compare:
