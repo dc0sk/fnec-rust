@@ -65,7 +65,7 @@ The intent is not to claim full NEC-5 capability; it is to make coverage explici
 | Thin-wire kernel behavior | 2.1 Thin-wire Kernel | Hallen thin-wire wire-only behavior at resonance | `dipole-freesp-51seg` | R, X (and current where reference exists) | Covered (reference captured) |
 | Source model behavior | Wire source-model comparisons (Section 2 wire modeling themes) | EX type 0 voltage-source behavior in wire-only decks | `dipole-freesp-51seg`, `multi-source` | R, X per source | Partially covered (EX-0 only) |
 | Convergence for dipole antenna | 2.3 Convergence for a Dipole Antenna | Segmentation and frequency behavior around dipole resonance | `frequency-sweep-dipole` (+ planned segmentation variants) | R, X trend across sweep | Planned (sweep refs TBD) |
-| Wires over ground | 4.1 Horizontal Wires over Ground | Single wire over ideal/perfect ground in current scope | `dipole-ground-51seg` | R, X | Not yet valid for parity claim (GN currently ignored) |
+| Wires over ground | 4.1 Horizontal Wires over Ground | Single wire over ideal/perfect ground in current scope | `dipole-ground-51seg` | R, X | Regression-covered in CI (GN=1 PEC image method active); external parity candidate still pending |
 | Loop antennas over ground | 4.2 Loop Antennas over Ground | Small-loop/loaded-loop over ground | No current equivalent corpus case | R, X, pattern/gain (future) | Out of scope in current phase |
 | Surface meshing and wire-surface junctions | Surface/junction validation themes (wire+patch classes) | Wire-surface coupling and patch meshing | No current equivalent corpus case | Junction current continuity and field behavior (future) | Out of scope in current architecture |
 | Monopole on finite box and patch-ground classes | 3.1 Monopole on a Box | Finite conducting surfaces and mixed wire/surface models | No current equivalent corpus case | R, X, pattern/gain vs reference | Out of scope in current architecture |
@@ -80,7 +80,7 @@ The intent is not to claim full NEC-5 capability; it is to make coverage explici
 
 - Surface meshing, wire-surface junctions, and finite box/patch classes are out of scope because current solver architecture is wire-focused and does not implement NEC-5 mixed wire/surface capability.
 - Loop-over-ground parity is deferred until advanced ground and loop-specific corpus cases are added in Phase 2 expansion work.
-- Ground-case parity is blocked today where GN behavior is not yet modeled in solver execution; those cases remain listed but not credited as covered.
+- Ground-case regression is now modeled for GN=1 (PEC image method), but external-reference parity evidence for this class is still incomplete.
 
 ### Entry/exit criteria for PAR-008 completion
 
@@ -137,11 +137,10 @@ For each corpus case:
 
 ### Step 2: Integration test (automatic in CI)
 
-CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` (the `--ignored` flag limits execution to corpus checks that are explicitly enabled):
+CI runs `cargo test -p nec-cli --test corpus_validation`:
 
 ```rust
 #[test]
-#[ignore]
 fn corpus_validation_dipole_freesp() {
     // Run fnec-rust: fnec --solver hallen corpus/dipole-freesp-51seg.nec
     // Extract impedance from output: 74.242874+13.899516j
@@ -169,7 +168,7 @@ Before Phase 1 → Phase 2 transition:
 
 ```bash
 cargo test                  # Unit tests
-cargo test -p nec-cli --test corpus_validation -- --ignored  # Corpus validation (if references available)
+cargo test -p nec-cli --test corpus_validation  # Corpus validation
 ```
 
 ### GitHub Actions (`.github/workflows/`)
@@ -178,7 +177,7 @@ Add a `corpus-validation.yml` workflow that:
 
 1. Runs on every commit to main and PRs
 2. Builds/runs the nec-cli test target via Cargo
-3. Runs corpus tests: `cargo test -p nec-cli --test corpus_validation -- --ignored`
+3. Runs corpus tests: `cargo test -p nec-cli --test corpus_validation`
 4. Reports per-case tolerance status (summary table in PR comment)
 5. Fails the CI gate if any case exceeds tolerance
 
