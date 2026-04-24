@@ -19,6 +19,7 @@ last_updated: 2026-04-24
 	- 2026-04-24 progress: CLI regression coverage added for continuity/sinusoidal non-single-chain topology fallback warnings and diagnostic mode labels (`apps/nec-cli/tests/topology_fallback.rs`).
 	- 2026-04-24 progress: CLI regression coverage now also asserts sinusoidal residual-threshold fallback to Hallen (`diag: mode=sinusoidal->hallen(residual)`) on the reference dipole deck.
 	- 2026-04-24 progress: CLI regression coverage now asserts experimental-warning mode gating (present for pulse/continuity/sinusoidal, absent for Hallen).
+	- 2026-04-24 progress: extracted shared CLI diagnostics test helpers into `apps/nec-cli/tests/common/mod.rs` to centralize `diag:` mode parsing/assertion logic.
 
 ## Parity-driven backlog items
 
