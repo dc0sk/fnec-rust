@@ -11,6 +11,12 @@ Examples:
     --source "4nec2 (Wine 9.x)" \
     --status "Reference captured via 4nec2/Wine"
 
+    scripts/import-reference-impedance.py \
+        --case dipole-ground-51seg \
+        --target external \
+        --real 63.12 --imag -18.45 \
+        --source "4nec2 (Wine 9.x)"
+
   scripts/import-reference-impedance.py \
     --case frequency-sweep-dipole \
     --point 12 \
@@ -43,8 +49,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--point",
         help=(
-            "Optional sub-key under feedpoint_impedance, e.g. '12' for sweep "
+            "Optional sub-key under selected target object, e.g. '12' for sweep "
             "or 'source_1' for multi-source"
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        choices=["feedpoint", "external"],
+        default="feedpoint",
+        help=(
+            "Target impedance object to update: 'feedpoint' updates "
+            "feedpoint_impedance (default), 'external' updates "
+            "external_reference_candidate"
         ),
     )
     parser.add_argument("--real", type=float, help="Real impedance in ohms")
@@ -75,28 +91,49 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def update_single_case(cases: dict, case_name: str, point: str | None, real: float, imag: float) -> None:
+def _target_field(target: str) -> str:
+    return "external_reference_candidate" if target == "external" else "feedpoint_impedance"
+
+
+def update_single_case(
+    cases: dict,
+    case_name: str,
+    target: str,
+    point: str | None,
+    real: float,
+    imag: float,
+) -> None:
     if case_name not in cases:
         available = ", ".join(sorted(cases.keys()))
         raise ValueError(f"unknown case '{case_name}'. available: {available}")
 
     case_obj = cases[case_name]
-    feed = case_obj.get("feedpoint_impedance")
-    if not isinstance(feed, dict):
-        raise ValueError(
-            f"invalid schema: case '{case_name}' missing object 'feedpoint_impedance'"
-        )
+    field = _target_field(target)
+    bucket = case_obj.get(field)
+    if not isinstance(bucket, dict):
+        if target == "external":
+            bucket = {}
+            case_obj[field] = bucket
+        else:
+            raise ValueError(
+                f"invalid schema: case '{case_name}' missing object '{field}'"
+            )
 
     if point:
-        if point not in feed or not isinstance(feed[point], dict):
-            raise ValueError(
-                f"case '{case_name}' has no point '{point}' under feedpoint_impedance"
-            )
-        feed[point]["real_ohm"] = real
-        feed[point]["imag_ohm"] = imag
+        entry = bucket.get(point)
+        if not isinstance(entry, dict):
+            if target == "external":
+                bucket[point] = {}
+                entry = bucket[point]
+            else:
+                raise ValueError(
+                    f"case '{case_name}' has no point '{point}' under {field}"
+                )
+        entry["real_ohm"] = real
+        entry["imag_ohm"] = imag
     else:
-        feed["real_ohm"] = real
-        feed["imag_ohm"] = imag
+        bucket["real_ohm"] = real
+        bucket["imag_ohm"] = imag
 
 
 def apply_batch_updates(data: dict, batch_path: Path) -> int:
@@ -118,6 +155,7 @@ def apply_batch_updates(data: dict, batch_path: Path) -> int:
             raise ValueError(f"updates[{idx}] must be an object")
 
         case_name = item.get("case")
+        target = item.get("target", "feedpoint")
         point = item.get("point")
         real = item.get("real")
         imag = item.get("imag")
@@ -127,12 +165,23 @@ def apply_batch_updates(data: dict, batch_path: Path) -> int:
             raise ValueError(f"updates[{idx}] missing numeric 'real'")
         if not isinstance(imag, (int, float)):
             raise ValueError(f"updates[{idx}] missing numeric 'imag'")
+        if target not in ("feedpoint", "external"):
+            raise ValueError(
+                f"updates[{idx}] has invalid 'target' value '{target}' "
+                "(expected 'feedpoint' or 'external')"
+            )
 
-        update_single_case(cases, case_name, point, float(real), float(imag))
+        update_single_case(cases, case_name, target, point, float(real), float(imag))
 
         case_obj = cases[case_name]
-        if isinstance(item.get("source"), str):
+        if isinstance(item.get("source"), str) and target == "feedpoint":
             case_obj["reference_source"] = item["source"]
+        if isinstance(item.get("source"), str) and target == "external":
+            ext = case_obj.get("external_reference_candidate")
+            if not isinstance(ext, dict):
+                ext = {}
+                case_obj["external_reference_candidate"] = ext
+            ext["source"] = item["source"]
         if isinstance(item.get("status"), str):
             case_obj["status"] = item["status"]
         count += 1
@@ -171,13 +220,21 @@ def main() -> int:
                 )
                 return 1
 
-            update_single_case(cases, args.case, args.point, args.real, args.imag)
+            update_single_case(cases, args.case, args.target, args.point, args.real, args.imag)
             case_obj = cases[args.case]
-            if args.source:
+            if args.source and args.target == "feedpoint":
                 case_obj["reference_source"] = args.source
+            if args.source and args.target == "external":
+                ext = case_obj.get("external_reference_candidate")
+                if not isinstance(ext, dict):
+                    ext = {}
+                    case_obj["external_reference_candidate"] = ext
+                ext["source"] = args.source
             if args.status:
                 case_obj["status"] = args.status
-            where = f"{args.case}.{args.point}" if args.point else args.case
+            where = (
+                f"{args.case}.{args.point}" if args.point else args.case
+            ) + f"[{args.target}]"
 
         if args.engine:
             data["reference_engine"] = args.engine
