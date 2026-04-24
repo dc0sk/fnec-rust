@@ -61,7 +61,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
-| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported. Types -1/0 are treated as free-space for now. Type 2+ (finite-conductivity Sommerfeld/Norton variants) DEFERRED (Phase 2+). |
+| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported. Other types currently emit a runtime warning and fall back to free-space. Finite-conductivity Sommerfeld/Norton variants are DEFERRED (Phase 2+). |
 | EN | End of input | FULL | Terminates deck parse. |
 
 ### Advanced/specialized cards
@@ -165,7 +165,7 @@ fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compa
 
 1. **Pulse/continuity solver modes diverge** for thin-wire antennas. Use Hallén mode (`--solver hallen`) for production work. These modes are marked EXPERIMENTAL with a runtime warning.
 
-2. **Perfect ground only**: Type 0 (ideal conductor) works; Type 1 (Sommerfeld, finite conductivity) is deferred to Phase 2. If you need earth losses, use a workaround (model as equivalent lossy loads on wires) or wait for Phase 2.
+2. **Perfect-ground scope only**: `GN 1` is implemented (PEC image method at z=0). Other GN variants currently warn and fall back to free-space. Finite-conductivity Sommerfeld/Norton models remain deferred to Phase 2+.
 
 3. **Text output only**: No JSON, CSV, or plot data export yet. Scripting to post-process text output is the current workaround.
 

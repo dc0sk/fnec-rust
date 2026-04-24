@@ -7,7 +7,7 @@ use nec_report::{render_text_report, FeedpointRow, ReportInput};
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
     build_hallen_rhs, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_with_continuity_basis, solve_with_sinusoidal_basis, Segment, ZMatrix,
+    solve_with_continuity_basis, solve_with_sinusoidal_basis, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 use std::path::PathBuf;
@@ -175,6 +175,13 @@ as segment count increases. Use --solver hallen for accurate results. \
     );
 }
 
+fn warn_deferred_ground_model(ground: &GroundModel) {
+    let GroundModel::Deferred { gn_type } = ground else {
+        return;
+    };
+    eprintln!("warning: GN type {gn_type} is not yet supported; treating this deck as free-space");
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -268,6 +275,7 @@ fn main() -> ExitCode {
     };
 
     let ground = ground_model_from_deck(deck);
+    warn_deferred_ground_model(&ground);
 
     for (fidx, freq_hz) in freqs_hz.iter().copied().enumerate() {
         let v_vec_pulse = match pulse_rhs_mode {
