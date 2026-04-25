@@ -13,6 +13,9 @@ struct PatternSample {
     theta_deg: f64,
     phi_deg: f64,
     gain_db: f64,
+    gain_v_db: f64,
+    gain_h_db: f64,
+    axial_ratio: f64,
 }
 
 #[test]
@@ -107,6 +110,10 @@ fn corpus_validation_cases_with_references() {
             .get("Gain_absolute_dB")
             .and_then(Value::as_f64)
             .unwrap_or(0.05);
+        let axial_ratio_abs = gates
+            .get("AxialRatio_absolute")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0001);
 
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .arg("--solver")
@@ -352,6 +359,9 @@ fn corpus_validation_cases_with_references() {
                     });
 
                 let err_gain = (row.gain_db - sample.gain_db).abs();
+                let err_gain_v = (row.gain_v_db - sample.gain_v_db).abs();
+                let err_gain_h = (row.gain_h_db - sample.gain_h_db).abs();
+                let err_axial_ratio = (row.axial_ratio - sample.axial_ratio).abs();
                 assert!(
                     err_gain <= gain_abs_db,
                     "Case '{}' pattern gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
@@ -362,6 +372,39 @@ fn corpus_validation_cases_with_references() {
                     sample.gain_db,
                     err_gain,
                     gain_abs_db
+                );
+                assert!(
+                    err_gain_v <= gain_abs_db,
+                    "Case '{}' pattern vertical gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    sample.theta_deg,
+                    sample.phi_deg,
+                    row.gain_v_db,
+                    sample.gain_v_db,
+                    err_gain_v,
+                    gain_abs_db
+                );
+                assert!(
+                    err_gain_h <= gain_abs_db,
+                    "Case '{}' pattern horizontal gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    sample.theta_deg,
+                    sample.phi_deg,
+                    row.gain_h_db,
+                    sample.gain_h_db,
+                    err_gain_h,
+                    gain_abs_db
+                );
+                assert!(
+                    err_axial_ratio <= axial_ratio_abs,
+                    "Case '{}' pattern axial ratio out of tolerance at theta={:.4} phi={:.4}: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    sample.theta_deg,
+                    sample.phi_deg,
+                    row.axial_ratio,
+                    sample.axial_ratio,
+                    err_axial_ratio,
+                    axial_ratio_abs
                 );
             }
         }
@@ -478,6 +521,9 @@ fn collect_expected_pattern_samples(case_obj: &Map<String, Value>) -> Vec<Patter
                 theta_deg: sample.get("theta_deg")?.as_f64()?,
                 phi_deg: sample.get("phi_deg")?.as_f64()?,
                 gain_db: sample.get("gain_db")?.as_f64()?,
+                gain_v_db: sample.get("gain_v_db")?.as_f64()?,
+                gain_h_db: sample.get("gain_h_db")?.as_f64()?,
+                axial_ratio: sample.get("axial_ratio")?.as_f64()?,
             })
         })
         .collect()
@@ -550,11 +596,23 @@ fn parse_pattern_rows(stdout: &str) -> Vec<PatternSample> {
         let Ok(gain_db) = parts[2].parse::<f64>() else {
             continue;
         };
+        let Ok(gain_v_db) = parts[3].parse::<f64>() else {
+            continue;
+        };
+        let Ok(gain_h_db) = parts[4].parse::<f64>() else {
+            continue;
+        };
+        let Ok(axial_ratio) = parts[5].parse::<f64>() else {
+            continue;
+        };
 
         rows.push(PatternSample {
             theta_deg,
             phi_deg,
             gain_db,
+            gain_v_db,
+            gain_h_db,
+            axial_ratio,
         });
     }
 

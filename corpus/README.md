@@ -70,12 +70,13 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Z_in = 74.242874 + j13.899516 Ω
 - Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
 - Numeric pattern samples locked in corpus validation:
-  - θ = 0°, φ = 0° → -999.99 dB
-  - θ = 90°, φ = 0° → 2.1428 dBi
+  - θ = 0°, φ = 0° → `GAIN_DB=-999.99`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 90°, φ = 0° → `GAIN_DB=2.1483`, `GAIN_V_DB=2.1483`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
 
 **Tolerance gates**:
 - Same as `dipole-freesp-51seg` for impedance
-- Pattern samples: ≤ 0.05 dB absolute on stored `GAIN_DB` values
+- Pattern gain fields: ≤ 0.05 dB absolute on stored `GAIN_DB`, `GAIN_V_DB`, and `GAIN_H_DB` values
+- Axial ratio: ≤ 0.0001 absolute on stored `AXIAL_RATIO` values
 
 **Why this case**: It locks RP execution into corpus and report-contract testing without adding new solver-option surface area.
 

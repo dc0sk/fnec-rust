@@ -43,12 +43,18 @@
         {
           "theta_deg": 0.0,
           "phi_deg": 0.0,
-          "gain_db": -999.99
+          "gain_db": -999.99,
+          "gain_v_db": -999.99,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 0.0,
-          "gain_db": 2.1428
+          "gain_db": 2.1483,
+          "gain_v_db": 2.1483,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
         }
       ],
       "tolerance_gates": {
@@ -56,7 +62,8 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
-        "Gain_absolute_dB": 0.05
+        "Gain_absolute_dB": 0.05,
+        "AxialRatio_absolute": 0.0001
       },
       "status": "Regression reference locks RP execution path and radiation-pattern table contract"
     },
