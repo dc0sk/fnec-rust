@@ -222,6 +222,158 @@ fn projected_system(
     (projected_z, projected_v)
 }
 
+/// Build a block-diagonal sinusoidal transform for `n` segments split into
+/// `wire_endpoints` chains.  Each wire `(first, last)` gets its own
+/// `SinusoidalTransform::for_single_chain(n_w)` block placed at the
+/// corresponding rows/columns of the global transform.
+fn build_block_sinusoidal_transform(n: usize, wire_endpoints: &[(usize, usize)]) -> Vec<Vec<f64>> {
+    let m: usize = wire_endpoints
+        .iter()
+        .map(|&(first, last)| (last - first + 1).saturating_sub(1))
+        .sum();
+    let mut t = vec![vec![0.0f64; m]; n];
+    let mut col_offset = 0;
+    for &(first, last) in wire_endpoints {
+        let n_w = last - first + 1;
+        let tr_w = SinusoidalTransform::for_single_chain(n_w);
+        for (local_row, t_row) in tr_w.t.iter().enumerate() {
+            let global_row = first + local_row;
+            for (local_col, &coeff) in t_row.iter().enumerate() {
+                if coeff != 0.0 {
+                    t[global_row][col_offset + local_col] = coeff;
+                }
+            }
+        }
+        col_offset += tr_w.n_basis;
+    }
+    t
+}
+
+/// Build a block-diagonal continuity transform for `n` segments split into
+/// `wire_endpoints` chains.
+fn build_block_continuity_transform(n: usize, wire_endpoints: &[(usize, usize)]) -> Vec<Vec<f64>> {
+    let m: usize = wire_endpoints
+        .iter()
+        .map(|&(first, last)| (last - first + 1).saturating_sub(1))
+        .sum();
+    let mut t = vec![vec![0.0f64; m]; n];
+    let mut col_offset = 0;
+    for &(first, last) in wire_endpoints {
+        let n_w = last - first + 1;
+        let tr_w = ContinuityTransform::for_single_chain(n_w);
+        for (local_row, t_row) in tr_w.t.iter().enumerate() {
+            let global_row = first + local_row;
+            for (local_col, &coeff) in t_row.iter().enumerate() {
+                if coeff != 0.0 {
+                    t[global_row][col_offset + local_col] = coeff;
+                }
+            }
+        }
+        col_offset += tr_w.n_basis;
+    }
+    t
+}
+
+/// Apply a basis transform T and recover segment currents I = T·a from
+/// basis coefficients `a`.
+fn basis_to_currents(t: &[Vec<f64>], a: &[Complex64]) -> Vec<Complex64> {
+    let n = t.len();
+    let mut currents = vec![Complex64::new(0.0, 0.0); n];
+    for (row, t_row) in t.iter().enumerate() {
+        for (col, &coeff) in t_row.iter().enumerate() {
+            if coeff != 0.0 {
+                currents[row] += a[col] * coeff;
+            }
+        }
+    }
+    currents
+}
+
+/// Solve `Z·I = V` using a sinusoidal basis applied independently to each wire
+/// chain described by `wire_endpoints`.
+///
+/// `wire_endpoints` is a slice of `(first, last)` inclusive segment index
+/// ranges, one per wire.  Each wire must contain at least two segments; if any
+/// wire has fewer the function falls back to `solve(z, v)`.
+///
+/// The global transform is block-diagonal: wire `k` with `n_k` segments
+/// contributes an `n_k × (n_k − 1)` sinusoidal block at offset
+/// `(first_k, col_offset_k)`.  Mutual coupling between wires is preserved
+/// because the full `Z` matrix is projected rather than solved per wire.
+pub fn solve_with_sinusoidal_basis_per_wire(
+    z: &ZMatrix,
+    v: &[Complex64],
+    wire_endpoints: &[(usize, usize)],
+) -> Result<Vec<Complex64>, SolveError> {
+    let n = z.n;
+    if v.len() != n {
+        return Err(SolveError::DimensionMismatch {
+            z_n: n,
+            v_len: v.len(),
+        });
+    }
+    if n < 2 {
+        return solve(z, v);
+    }
+    if wire_endpoints
+        .iter()
+        .any(|&(first, last)| last < first || last - first < 1)
+    {
+        return solve(z, v);
+    }
+    let global_t = build_block_sinusoidal_transform(n, wire_endpoints);
+    let m = global_t.first().map_or(0, Vec::len);
+    if m == 0 {
+        return solve(z, v);
+    }
+    let (mut proj_z, mut proj_v) = projected_system(z, v, &global_t);
+    let lambda = regularization_lambda(&proj_z, 1e-10, 1e-14);
+    for i in 0..m {
+        proj_z[i][i] += Complex64::new(lambda, 0.0);
+    }
+    let a_sol = solve_square_in_place(&mut proj_z, &mut proj_v)?;
+    Ok(basis_to_currents(&global_t, &a_sol))
+}
+
+/// Solve `Z·I = V` using a continuity basis applied independently to each wire
+/// chain described by `wire_endpoints`.
+///
+/// Semantics and fallback rules mirror [`solve_with_sinusoidal_basis_per_wire`].
+pub fn solve_with_continuity_basis_per_wire(
+    z: &ZMatrix,
+    v: &[Complex64],
+    wire_endpoints: &[(usize, usize)],
+) -> Result<Vec<Complex64>, SolveError> {
+    let n = z.n;
+    if v.len() != n {
+        return Err(SolveError::DimensionMismatch {
+            z_n: n,
+            v_len: v.len(),
+        });
+    }
+    if n < 2 {
+        return solve(z, v);
+    }
+    if wire_endpoints
+        .iter()
+        .any(|&(first, last)| last < first || last - first < 1)
+    {
+        return solve(z, v);
+    }
+    let global_t = build_block_continuity_transform(n, wire_endpoints);
+    let m = global_t.first().map_or(0, Vec::len);
+    if m == 0 {
+        return solve(z, v);
+    }
+    let (mut proj_z, mut proj_v) = projected_system(z, v, &global_t);
+    let lambda = regularization_lambda(&proj_z, 1e-10, 1e-14);
+    for i in 0..m {
+        proj_z[i][i] += Complex64::new(lambda, 0.0);
+    }
+    let a_sol = solve_square_in_place(&mut proj_z, &mut proj_v)?;
+    Ok(basis_to_currents(&global_t, &a_sol))
+}
+
 fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f64 {
     if a.is_empty() {
         return floor;
@@ -610,5 +762,155 @@ mod tests {
             diff > 1e-6,
             "hallén solution should respond to RHS, diff={diff}"
         );
+    }
+
+    // ── per-wire block-transform tests ───────────────────────────────────────
+
+    /// Single wire chain: per-wire sinusoidal should give the same result as
+    /// the original single-chain solve.
+    #[test]
+    fn sinusoidal_per_wire_single_chain_matches_original() {
+        let n = 5usize;
+        let mut z = ZMatrix::new(n);
+        for i in 0..n {
+            for j in 0..n {
+                let diag = if i == j { c(10.0, 0.0) } else { c(0.3, 0.0) };
+                z.set_test(i, j, diag);
+            }
+        }
+        let v: Vec<Complex64> = (0..n).map(|i| c(i as f64 + 1.0, 0.0)).collect();
+        let wire_ep = vec![(0usize, n - 1)];
+
+        let result_single = solve_with_sinusoidal_basis(&z, &v).unwrap();
+        let result_per = solve_with_sinusoidal_basis_per_wire(&z, &v, &wire_ep).unwrap();
+
+        for k in 0..n {
+            assert!(
+                (result_single[k] - result_per[k]).norm() < 1e-10,
+                "k={k}: single={} per_wire={}",
+                result_single[k],
+                result_per[k]
+            );
+        }
+    }
+
+    /// Single wire chain: per-wire continuity should give the same result as
+    /// the original single-chain solve.
+    #[test]
+    fn continuity_per_wire_single_chain_matches_original() {
+        let n = 4usize;
+        let mut z = ZMatrix::new(n);
+        for i in 0..n {
+            for j in 0..n {
+                let val = if i == j { c(8.0, 0.0) } else { c(0.5, 0.0) };
+                z.set_test(i, j, val);
+            }
+        }
+        let v: Vec<Complex64> = (0..n).map(|i| c(1.0 + i as f64, 0.5)).collect();
+        let wire_ep = vec![(0usize, n - 1)];
+
+        let result_single = solve_with_continuity_basis(&z, &v).unwrap();
+        let result_per = solve_with_continuity_basis_per_wire(&z, &v, &wire_ep).unwrap();
+
+        for k in 0..n {
+            assert!(
+                (result_single[k] - result_per[k]).norm() < 1e-10,
+                "k={k}: single={} per_wire={}",
+                result_single[k],
+                result_per[k]
+            );
+        }
+    }
+
+    /// Two-wire block-diagonal: segments 0-2 form wire A, segments 3-5 form
+    /// wire B.  Block-diagonal Z (no cross-wire coupling) so each wire is
+    /// independent.  The per-wire result must match solving each wire alone.
+    #[test]
+    fn sinusoidal_per_wire_two_uncoupled_wires() {
+        let na = 3usize;
+        let nb = 3usize;
+        let n = na + nb;
+
+        let mut z_full = ZMatrix::new(n);
+        for i in 0..n {
+            for j in 0..n {
+                let same_block = (i < na) == (j < na);
+                let val = if i == j {
+                    c(10.0, 0.0)
+                } else if same_block {
+                    c(0.5, 0.0)
+                } else {
+                    c(0.0, 0.0)
+                };
+                z_full.set_test(i, j, val);
+            }
+        }
+        let v_full: Vec<Complex64> = (0..n).map(|i| c(i as f64 + 1.0, 0.0)).collect();
+        let wire_ep = vec![(0usize, na - 1), (na, n - 1)];
+
+        let result_full = solve_with_sinusoidal_basis_per_wire(&z_full, &v_full, &wire_ep).unwrap();
+
+        // Solve wire A alone.
+        let mut z_a = ZMatrix::new(na);
+        for i in 0..na {
+            for j in 0..na {
+                z_a.set_test(i, j, z_full.get(i, j));
+            }
+        }
+        let v_a: Vec<Complex64> = v_full[..na].to_vec();
+        let result_a = solve_with_sinusoidal_basis(&z_a, &v_a).unwrap();
+
+        // Solve wire B alone.
+        let mut z_b = ZMatrix::new(nb);
+        for i in 0..nb {
+            for j in 0..nb {
+                z_b.set_test(i, j, z_full.get(na + i, na + j));
+            }
+        }
+        let v_b: Vec<Complex64> = v_full[na..].to_vec();
+        let result_b = solve_with_sinusoidal_basis(&z_b, &v_b).unwrap();
+
+        for k in 0..na {
+            assert!(
+                (result_full[k] - result_a[k]).norm() < 1e-8,
+                "wire A k={k}: full={} alone={}",
+                result_full[k],
+                result_a[k]
+            );
+        }
+        for k in 0..nb {
+            assert!(
+                (result_full[na + k] - result_b[k]).norm() < 1e-8,
+                "wire B k={k}: full={} alone={}",
+                result_full[na + k],
+                result_b[k]
+            );
+        }
+    }
+
+    /// When a wire has only 1 segment (n_w < 2), per-wire functions fall back
+    /// to plain `solve` rather than panicking or returning wrong results.
+    #[test]
+    fn sinusoidal_per_wire_fallback_on_1seg_wire() {
+        let n = 3usize;
+        let mut z = ZMatrix::new(n);
+        for i in 0..n {
+            z.set_test(i, i, c(5.0, 0.0));
+        }
+        let v = vec![c(1.0, 0.0), c(2.0, 0.0), c(3.0, 0.0)];
+        // Wire B has only 1 segment → fallback to plain solve.
+        let wire_ep = vec![(0usize, 1), (2, 2)];
+        let result = solve_with_sinusoidal_basis_per_wire(&z, &v, &wire_ep).unwrap();
+        assert_eq!(result.len(), n);
+        // Check result matches plain solve (diagonal system → I[k] = V[k]/Z[k]).
+        for k in 0..n {
+            let expected = v[k] / c(5.0, 0.0);
+            assert!(
+                (result[k] - expected).norm() < 1e-10,
+                "k={k}: got={} expected={}",
+                result[k],
+                expected
+            );
+        }
     }
 }

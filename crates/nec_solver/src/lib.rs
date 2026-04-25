@@ -13,10 +13,13 @@ pub use excitation::{
     build_excitation, build_hallen_rhs, build_hallen_rhs_with_options,
     scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
-pub use geometry::{build_geometry, ground_model_from_deck, GeometryError, GroundModel, Segment};
+pub use geometry::{
+    build_geometry, ground_model_from_deck, wire_endpoints_from_segs, GeometryError, GroundModel,
+    Segment,
+};
 pub use linear::{
-    solve, solve_hallen, solve_with_continuity_basis, solve_with_sinusoidal_basis, HallenSolution,
-    SolveError,
+    solve, solve_hallen, solve_with_continuity_basis, solve_with_continuity_basis_per_wire,
+    solve_with_sinusoidal_basis, solve_with_sinusoidal_basis_per_wire, HallenSolution, SolveError,
 };
 pub use loads::{build_loads, LoadWarning};
 pub use matrix::{

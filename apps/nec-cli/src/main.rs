@@ -8,8 +8,8 @@ use nec_solver::build_loads;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
     build_hallen_rhs_with_options, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_with_continuity_basis, solve_with_sinusoidal_basis, GroundModel, Segment,
-    ZMatrix,
+    solve_hallen, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
+    wire_endpoints_from_segs, GroundModel, ZMatrix,
 };
 use num_complex::Complex64;
 use std::path::PathBuf;
@@ -24,17 +24,6 @@ enum SolverMode {
     Pulse,
     Continuity,
     Sinusoidal,
-}
-
-impl SolverMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            SolverMode::Hallen => "hallen",
-            SolverMode::Pulse => "pulse",
-            SolverMode::Continuity => "continuity",
-            SolverMode::Sinusoidal => "sinusoidal",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,22 +108,6 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, bool, PathBu
         hallen_allow_non_collinear,
         path,
     ))
-}
-
-fn is_single_linear_chain(segs: &[Segment]) -> bool {
-    if segs.is_empty() {
-        return false;
-    }
-    let tag = segs[0].tag;
-    for (idx, s) in segs.iter().enumerate() {
-        if s.tag != tag {
-            return false;
-        }
-        if s.tag_index as usize != idx + 1 {
-            return false;
-        }
-    }
-    true
 }
 
 fn l2_norm(v: &[Complex64]) -> f64 {
@@ -358,16 +331,9 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let single_linear_chain = is_single_linear_chain(&segs);
-
-    if matches!(solver_mode, SolverMode::Continuity | SolverMode::Sinusoidal)
-        && !single_linear_chain
-    {
-        eprintln!(
-            "warning: {} solver currently supports only single linear chains; falling back to pulse on this topology",
-            solver_mode.as_str()
-        );
-    }
+    // Per-wire basis solve requires every wire to have >= 2 segments.
+    let wire_endpoints = wire_endpoints_from_segs(&segs);
+    let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
     let v_vec = match build_excitation(deck, &segs) {
         Ok(v) => v,
@@ -447,7 +413,10 @@ fn main() -> ExitCode {
                 }
             },
             SolverMode::Continuity => {
-                if !single_linear_chain {
+                if !per_wire_basis_feasible {
+                    eprintln!(
+                        "warning: continuity solver requires >=2 segments per wire; falling back to pulse"
+                    );
                     match solve(&z_mat, &v_vec_pulse) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
@@ -459,7 +428,11 @@ fn main() -> ExitCode {
                         }
                     }
                 } else {
-                    match solve_with_continuity_basis(&z_mat, &v_vec_pulse) {
+                    match solve_with_continuity_basis_per_wire(
+                        &z_mat,
+                        &v_vec_pulse,
+                        &wire_endpoints,
+                    ) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                             if r <= CONTINUITY_REL_RESIDUAL_MAX {
@@ -490,7 +463,10 @@ fn main() -> ExitCode {
                 }
             }
             SolverMode::Sinusoidal => {
-                if !single_linear_chain {
+                if !per_wire_basis_feasible {
+                    eprintln!(
+                        "warning: sinusoidal solver requires >=2 segments per wire; falling back to pulse"
+                    );
                     match solve(&z_mat, &v_vec_pulse) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
@@ -502,7 +478,11 @@ fn main() -> ExitCode {
                         }
                     }
                 } else {
-                    match solve_with_sinusoidal_basis(&z_mat, &v_vec_pulse) {
+                    match solve_with_sinusoidal_basis_per_wire(
+                        &z_mat,
+                        &v_vec_pulse,
+                        &wire_endpoints,
+                    ) {
                         Ok(i) => {
                             let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                             if r <= SINUSOIDAL_REL_RESIDUAL_MAX {
