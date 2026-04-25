@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use nec_model::card::{Card, ExCard};
 use nec_model::deck::NecDeck;
 
-use crate::geometry::Segment;
+use crate::geometry::{wire_endpoints_from_segs, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
@@ -314,26 +314,6 @@ pub fn build_hallen_rhs_with_options(
         cos_vec,
         wire_endpoints: wire_endpoints_from_segs(segs),
     })
-}
-
-/// Compute per-wire endpoint indices (first, last global segment index per wire tag).
-fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
-    let mut out: Vec<(usize, usize)> = Vec::new();
-    let mut current_tag = u32::MAX;
-    let mut first = 0usize;
-    for (i, seg) in segs.iter().enumerate() {
-        if seg.tag != current_tag {
-            if current_tag != u32::MAX {
-                out.push((first, i - 1));
-            }
-            current_tag = seg.tag;
-            first = i;
-        }
-    }
-    if current_tag != u32::MAX {
-        out.push((first, segs.len() - 1));
-    }
-    out
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {

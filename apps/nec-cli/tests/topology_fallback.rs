@@ -14,8 +14,9 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-topology-fallback-{solver}-{now}.nec"));
 
-    // Two disjoint wires (different tags) to ensure the topology is not a single linear chain.
-    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 11 0.5 0.0 -1.0 0.5 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    // Topology that is invalid for per-wire basis solve: one wire has only 1 segment.
+    // This must force continuity/sinusoidal to fall back to pulse.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 1 0.5 0.0 0.0 0.5 0.0 0.1 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary topology-fallback deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -36,7 +37,7 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(&format!(
-            "warning: {solver} solver currently supports only single linear chains; falling back to pulse on this topology"
+            "warning: {solver} solver requires >=2 segments per wire; falling back to pulse"
         )),
         "expected topology fallback warning in stderr, got:\n{stderr}"
     );

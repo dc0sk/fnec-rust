@@ -123,6 +123,30 @@ impl std::fmt::Display for GeometryError {
 
 impl std::error::Error for GeometryError {}
 
+/// Compute per-wire endpoint indices from a flat segment list.
+///
+/// Wires are identified by contiguous runs of segments sharing the same tag.
+/// Returns a `Vec` of `(first, last)` inclusive global-index pairs, one per
+/// wire, in deck order.  An empty segment list returns an empty `Vec`.
+pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut current_tag = u32::MAX;
+    let mut first = 0usize;
+    for (i, seg) in segs.iter().enumerate() {
+        if seg.tag != current_tag {
+            if current_tag != u32::MAX {
+                out.push((first, i - 1));
+            }
+            current_tag = seg.tag;
+            first = i;
+        }
+    }
+    if current_tag != u32::MAX {
+        out.push((first, segs.len() - 1));
+    }
+    out
+}
+
 /// Build the flat segment list from all `GW`, `GM`, and `GR` cards in `deck`.
 ///
 /// Cards are processed in deck order:
