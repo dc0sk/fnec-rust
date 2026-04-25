@@ -2,12 +2,33 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-05-01
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
+
+## 0.2.0 — 2026-05-01
+
+### Added
+
+- **GM/GR card support**: GM (Geometry Move) and GR (Geometry Repeat) cards are now parsed and
+  applied during geometry expansion. GM rotates/translates wire ranges (in-place or as copies with
+  incremented tags); GR repeats all existing wires by successive z-axis rotations.
+- **Segment current distribution table**: CLI output now includes a `CURRENTS` section listing
+  TAG, SEG, I_RE, I_IM, I_MAG, I_PHASE (deg) for every segment after the feedpoint table.
+- **Multi-wire Hallen fix**: per-wire homogeneous constants and endpoint constraints; passive wires
+  now correctly receive zero RHS. Yagi and multi-source corpus validation now produces correct
+  impedances (Yagi: 30.6+j5.0 Ω, multi-source: 152.4+j31.6 Ω each port).
+
+### Changed
+
+- GE I1=-1 warning now says "requests below-ground wire handling (no image method);
+  treating as free-space" instead of a generic "not yet supported" message.
+- GE I1=other unknown values now include the valid range hint
+  `(valid values: 0=free-space, 1=PEC image, -1=below-ground)`.
+- Updated corpus reference values for yagi-5elm-51seg and multi-source decks.
 
 ## 2026-04-24
 

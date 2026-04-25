@@ -1,19 +1,22 @@
 # fnec-rust
 
-![version](https://img.shields.io/badge/version-0.1.0-blue)
+![version](https://img.shields.io/badge/version-0.2.0-blue)
 ![license](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.
 
 ## Features
 
-- Parse 4nec2 / NEC2 deck files (GW, GE, GN, EX, FR, EN cards)
+- Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, EN cards)
+  - **GM** (Geometry Move): rotate and/or translate wire ranges; creates numbered copies when `tag_increment > 0`
+  - **GR** (Geometry Repeat): replicate all existing wires by successive z-axis rotation
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
 	- GN types other than 1 are currently deferred; fnec warns and falls back to free-space behavior
-	- GE ground-reflection flag is parsed; non-zero values currently emit a warning and are ignored in Phase 1
-	- Current scope: collinear wire sets aligned with the driven segment axis; non-collinear Hallén topologies fail fast with an explicit error
+	- GE ground-reflection flag: `1` = PEC image (handled); `-1` = below-ground (warns); other values warn with valid range hint
+	- Multi-wire Hallen: per-wire homogeneous constants and endpoint constraints; correct passive-wire (zero) RHS
+- Segment current distribution table in CLI output (`CURRENTS` section after feedpoint table)
 - Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
 	- `sinusoidal` now falls back to Hallen on single collinear chains when its residual budget is exceeded, so the CLI avoids returning misleading impedances for that path
 - CLI binary `fnec` with selectable solver and RHS modes
