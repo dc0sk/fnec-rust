@@ -56,6 +56,11 @@ pub enum ExcitationError {
         /// 1.0 means collinear, 0.0 means orthogonal.
         tag_abs_alignment_cos: Vec<(u32, f64)>,
     },
+    /// Two or more EX 0 cards target the same wire tag.
+    ///
+    /// The Hallén path uses per-tag source data and cannot correctly represent
+    /// multiple feed points on the same tag.  Use distinct tags for each source.
+    DuplicateSourceTag { tag: u32 },
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -83,6 +88,10 @@ impl std::fmt::Display for ExcitationError {
                 "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}; abs(cos)-alignment by tag: {:?}",
                 non_collinear_tags,
                 tag_abs_alignment_cos
+            ),
+            ExcitationError::DuplicateSourceTag { tag } => write!(
+                f,
+                "Hallén solver: two or more EX 0 cards target tag {tag}; use distinct tags for multiple feed points"
             ),
         }
     }
@@ -205,15 +214,27 @@ pub fn build_hallen_rhs_with_options(
         });
     }
 
+    // Reject decks with two or more EX 0 cards on the same tag.
+    // The Hallén path stores a single per-tag source; silently ignoring a
+    // second feed on the same wire would produce an incorrect drive vector.
+    {
+        let mut seen_tags: BTreeSet<u32> = BTreeSet::new();
+        for card in &deck.cards {
+            let Card::Ex(ex) = card else { continue };
+            if !seen_tags.insert(ex.tag) {
+                return Err(ExcitationError::DuplicateSourceTag { tag: ex.tag });
+            }
+        }
+    }
+
     // Collect per-tag source data for every driven wire (all type-0 EX cards).
-    // First source per tag wins; subsequent EX cards on the same tag are ignored.
     //
     // Map: tag → (feed_midpoint, feed_direction, source_voltage)
     let mut tag_sources: BTreeMap<u32, ([f64; 3], [f64; 3], Complex64)> = BTreeMap::new();
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
         if tag_sources.contains_key(&ex.tag) {
-            continue;
+            continue; // unreachable after the check above, kept for safety
         }
         let seg_idx = segs
             .iter()
@@ -701,5 +722,35 @@ mod tests {
         let h = build_hallen_rhs_with_options(&deck, &segs, TEST_FREQ_HZ, true).unwrap();
         assert_eq!(h.rhs.len(), segs.len());
         assert_eq!(h.cos_vec.len(), segs.len());
+    }
+
+    /// Two EX 0 cards on the same tag must be rejected with DuplicateSourceTag.
+    #[test]
+    fn hallen_rhs_rejects_duplicate_source_tag() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        // Two EX cards referencing the same tag — should be rejected.
+        for seg in [3u32, 9] {
+            deck.cards.push(Card::Ex(ExCard {
+                excitation_type: 0,
+                tag: 1,
+                segment: seg,
+                i4: 0,
+                voltage_real: 1.0,
+                voltage_imag: 0.0,
+            }));
+        }
+        let segs = build_geometry(&deck).unwrap();
+        let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
+        assert!(
+            matches!(result, Err(ExcitationError::DuplicateSourceTag { tag: 1 })),
+            "expected DuplicateSourceTag error, got: {result:?}"
+        );
     }
 }

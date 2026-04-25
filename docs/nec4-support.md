@@ -124,7 +124,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:-------|:------|
 | Complex impedance (R + jX) | FULL | All computations in complex domain. |
 | Frequency sweep | FULL | Multiple frequencies in single deck (FR card with NF > 1). |
-| Multi-source (multiple EX cards) | FULL | Multiple `EX 0` voltage sources are solved and reported as one feedpoint row per excited segment. Advanced multi-port/network features remain deferred to `PT`/`NT`. |
+| Multi-source (multiple EX cards) | PARTIAL | Multiple `EX 0` sources on **distinct tags** are solved and reported as one feedpoint row per excited segment. Two sources on the **same tag** are rejected with a clear error in the Hallén path (unsupported; pulse path handles it without this restriction). Advanced multi-port/network features remain deferred to `PT`/`NT`. |
 | Segment current calculation | FULL | Complex current per segment, phase and magnitude. |
 | Feedpoint impedance | FULL | Computed via: $$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX$$ at driven segment. |
 | Gain computation | DEFERRED | Not yet implemented in the current solver/report path. Planned with radiation-pattern support in a later phase. |
