@@ -21,6 +21,7 @@ All notable documentation process changes are recorded here.
 
 - Updated support and CLI docs to mark RP pattern output as implemented in the text-report path (with remaining export/near-field scope still deferred).
 - Corpus validation now numerically checks stored RP pattern samples instead of only asserting pattern-table presence.
+- Corpus validation now also checks the stored vertical/horizontal gain columns and axial ratio for locked RP sample angles.
 
 ## 0.2.0 — 2026-05-01
 
