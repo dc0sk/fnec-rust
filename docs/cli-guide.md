@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # CLI Guide — fnec (v0.1.0)
@@ -14,7 +14,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -25,6 +25,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
+| `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
 
 ## Solver modes
 
@@ -35,6 +36,10 @@ analytic singularity subtraction.  Produces physically accurate feedpoint
 impedance for thin-wire antennas when all wires are collinear with the driven
 segment axis. Non-collinear topologies currently return an explicit unsupported
 topology error instead of a misleading impedance.
+
+If `--allow-noncollinear-hallen` is set, this hard-fail guardrail is bypassed
+and Hallen RHS is built using feed-axis projection for all segments. This path
+is experimental and can be inaccurate.
 
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
@@ -164,7 +169,7 @@ EN
 | Card | Support |
 |------|---------|
 | GW | Full |
-| GE | Parsed (ground plane flag ignored) |
+| GE | Full (GE I1=1 infers PEC ground when no GN card is present) |
 | EX type 0 | Full (voltage source) |
 | FR | Full linear/multiplicative sweep over all steps |
 | EN | Terminates parse |
@@ -173,6 +178,6 @@ EN
 ## Notes
 
 - Multi-source decks (multiple EX cards) are supported; one output line per source.
-- The Hallén solver currently rejects non-collinear wire topologies such as loaded loops and hats attached off-axis to the driven wire.
+- The Hallén solver rejects non-collinear wire topologies by default. Use `--allow-noncollinear-hallen` only for experimental exploration.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.

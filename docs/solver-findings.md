@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # Solver Findings
@@ -84,6 +84,32 @@ basis functions (`tbf`/`sbf`/`trio` in `calculations.c`).
 The pulse/continuity modes are marked **experimental** in the CLI with a
 runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 
+### Non-collinear loaded element case — BLOCKED ON SOLVER BREADTH
+
+For `corpus/dipole-loaded.nec`, the current status is now explicit and tested:
+
+- Hallen mode fails fast by design because the geometry is not collinear with the driven wire.
+- Pulse, continuity, and sinusoidal modes all currently collapse to the same pulse-basis result on this topology.
+- That result is not close enough to use as a parity substitute.
+
+Observed fnec result at 7.1 MHz:
+
+| Mode | Value |
+|:-----|:------|
+| pulse | **-13.7780 + j374.425 \u03a9** |
+| continuity | **-13.7780 + j374.425 \u03a9** (fallback to pulse) |
+| sinusoidal | **-13.7780 + j374.425 \u03a9** (fallback to pulse) |
+
+External candidate currently tracked in the corpus:
+
+| Reference | Value |
+|:----------|:------|
+| NEC2DXS500 via Wine | **13.4632 - j896.032 \u03a9** |
+
+This is a sign and magnitude mismatch in both $R$ and $X$, not a small calibration delta.
+The loaded-element corpus gap is therefore blocked by non-collinear solver support,
+not by LD-card parsing or matrix-load application.
+
 ## Key bugs fixed on this branch
 
 | Commit | Fix |
@@ -102,6 +128,7 @@ runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 - Keep experiments reproducible using gitignored temp folders and `studies/` scripts.
 - Separate physics-formulation changes from reporting/output changes to isolate regressions.
 - When a solver gives wrong results, verify it in Python before modifying Rust — it is faster to falsify a formulation hypothesis in 10 lines of Python than in a Rust edit–compile–run cycle.
+- Treat non-collinear loaded-element parity as a solver-breadth problem first; routing Hallen failures into the current pulse path only hides the real blocker.
 
 ## External references
 
