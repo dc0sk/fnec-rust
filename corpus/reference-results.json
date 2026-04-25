@@ -39,6 +39,67 @@
         "real_ohm": 74.242874,
         "imag_ohm": 13.899516
       },
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
+        "pattern_samples": [
+          {
+            "theta_deg": 0.0,
+            "phi_deg": 0.0,
+            "gain_db": -999.99,
+            "gain_v_db": -999.99,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 30.0,
+            "phi_deg": 0.0,
+            "gain_db": -5.49,
+            "gain_v_db": -5.49,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 60.0,
+            "phi_deg": 0.0,
+            "gain_db": 0.38,
+            "gain_v_db": 0.38,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 90.0,
+            "phi_deg": 0.0,
+            "gain_db": 2.17,
+            "gain_v_db": 2.17,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 120.0,
+            "phi_deg": 0.0,
+            "gain_db": 0.38,
+            "gain_v_db": 0.38,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 150.0,
+            "phi_deg": 0.0,
+            "gain_db": -5.49,
+            "gain_v_db": -5.49,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 180.0,
+            "phi_deg": 0.0,
+            "gain_db": -999.99,
+            "gain_v_db": -999.99,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          }
+        ]
+      },
       "pattern_samples": [
         {
           "theta_deg": 0.0,
@@ -105,7 +166,7 @@
         "Gain_absolute_dB": 0.05,
         "AxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks RP execution path and radiation-pattern table contract"
+      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking"
     },
     "dipole-xaxis-rp-grid-51seg": {
       "deck_file": "dipole-xaxis-rp-grid-51seg.nec",
@@ -119,6 +180,75 @@
       "feedpoint_impedance": {
         "real_ohm": 74.242874,
         "imag_ohm": 13.899516
+      },
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
+        "pattern_samples": [
+          {
+            "theta_deg": 0.0,
+            "phi_deg": 0.0,
+            "gain_db": 2.17,
+            "gain_v_db": 2.17,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 45.0,
+            "phi_deg": 0.0,
+            "gain_db": -1.92,
+            "gain_v_db": -1.92,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 90.0,
+            "phi_deg": 0.0,
+            "gain_db": -999.99,
+            "gain_v_db": -999.99,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 0.0,
+            "phi_deg": 90.0,
+            "gain_db": 2.17,
+            "gain_v_db": -999.99,
+            "gain_h_db": 2.17,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 45.0,
+            "phi_deg": 90.0,
+            "gain_db": 2.17,
+            "gain_v_db": -999.99,
+            "gain_h_db": 2.17,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 90.0,
+            "phi_deg": 90.0,
+            "gain_db": 2.17,
+            "gain_v_db": -999.99,
+            "gain_h_db": 2.17,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 0.0,
+            "phi_deg": 270.0,
+            "gain_db": 2.17,
+            "gain_v_db": -999.99,
+            "gain_h_db": 2.17,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 90.0,
+            "phi_deg": 270.0,
+            "gain_db": 2.17,
+            "gain_v_db": -999.99,
+            "gain_h_db": 2.17,
+            "axial_ratio": 0.0
+          }
+        ]
       },
       "pattern_samples": [
         {
@@ -194,7 +324,7 @@
         "Gain_absolute_dB": 0.05,
         "AxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole"
+      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking"
     },
     "dipole-freesp-gm-inplace-shifted": {
       "deck_file": "dipole-freesp-gm-inplace-shifted.nec",

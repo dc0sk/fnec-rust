@@ -407,6 +407,30 @@ fn corpus_validation_cases_with_references() {
                     axial_ratio_abs
                 );
             }
+
+            if let Some(ext_obj) = case_obj
+                .get("external_reference_candidate")
+                .and_then(Value::as_object)
+            {
+                let ext_pattern_samples = collect_external_pattern_samples(ext_obj);
+                for sample in &ext_pattern_samples {
+                    if let Some(row) = pattern_rows.iter().find(|row| {
+                        (row.theta_deg - sample.theta_deg).abs() < 1e-9
+                            && (row.phi_deg - sample.phi_deg).abs() < 1e-9
+                    }) {
+                        eprintln!(
+                            "corpus external delta: case='{}' pattern theta={:.4} phi={:.4} dGain={:+.4} dGainV={:+.4} dGainH={:+.4} dAxialRatio={:+.4} (fnec-ext)",
+                            case_name,
+                            sample.theta_deg,
+                            sample.phi_deg,
+                            row.gain_db - sample.gain_db,
+                            row.gain_v_db - sample.gain_v_db,
+                            row.gain_h_db - sample.gain_h_db,
+                            row.axial_ratio - sample.axial_ratio,
+                        );
+                    }
+                }
+            }
         }
 
         validated += 1;
@@ -510,6 +534,27 @@ fn collect_external_frequency_points(ext: &Map<String, Value>) -> Vec<(f64, f64,
 
 fn collect_expected_pattern_samples(case_obj: &Map<String, Value>) -> Vec<PatternSample> {
     let Some(samples) = case_obj.get("pattern_samples").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    samples
+        .iter()
+        .filter_map(|sample| {
+            let sample = sample.as_object()?;
+            Some(PatternSample {
+                theta_deg: sample.get("theta_deg")?.as_f64()?,
+                phi_deg: sample.get("phi_deg")?.as_f64()?,
+                gain_db: sample.get("gain_db")?.as_f64()?,
+                gain_v_db: sample.get("gain_v_db")?.as_f64()?,
+                gain_h_db: sample.get("gain_h_db")?.as_f64()?,
+                axial_ratio: sample.get("axial_ratio")?.as_f64()?,
+            })
+        })
+        .collect()
+}
+
+fn collect_external_pattern_samples(ext: &Map<String, Value>) -> Vec<PatternSample> {
+    let Some(samples) = ext.get("pattern_samples").and_then(Value::as_array) else {
         return Vec::new();
     };
 
