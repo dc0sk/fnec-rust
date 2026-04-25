@@ -24,6 +24,8 @@ All notable documentation process changes are recorded here.
 - Corpus validation now also checks the stored vertical/horizontal gain columns and axial ratio for locked RP sample angles.
 - RP corpus angle coverage was expanded from 2 locked sample angles to 7 locked angles across the theta sweep.
 - Added a second RP corpus case with non-z-axis geometry and multi-phi sample locking to validate true azimuth-cut coverage.
+- Corpus validation now also records external-reference deltas for RP pattern samples when `external_reference_candidate.pattern_samples` is present.
+- Added `nec2c` external RP sample candidates for the multi-phi x-axis corpus case so parity tracking now covers both current RP decks.
 
 ## 0.2.0 — 2026-05-01
 
