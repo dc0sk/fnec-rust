@@ -239,12 +239,22 @@ fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     };
 
     // GE I1=0: no ground (default, no action needed).
-    // GE I1=1: PEC image method — now handled via ground_model_from_deck.
-    // Other values (e.g. -1 for half-space absorption) are not yet supported.
-    if flag != 0 && flag != 1 {
-        eprintln!(
-            "warning: GE ground-reflection flag {flag} is not yet supported; treating as free-space"
-        );
+    // GE I1=1: PEC image method — handled via ground_model_from_deck.
+    match flag {
+        0 | 1 => {}
+        -1 => {
+            eprintln!(
+                "warning: GE I1=-1 requests below-ground wire handling \
+                 (no image method); treating as free-space"
+            );
+        }
+        _ => {
+            eprintln!(
+                "warning: GE I1={flag} is not a recognised ground-reflection flag \
+                 (valid values: 0=free-space, 1=PEC image, -1=below-ground); \
+                 treating as free-space"
+            );
+        }
     }
 }
 

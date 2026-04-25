@@ -149,7 +149,7 @@ fn ge_negative_flag_emits_unsupported_warning() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("warning: GE ground-reflection flag -1 is not yet supported"),
-        "expected unsupported-flag warning in stderr, got:\n{stderr}"
+        stderr.contains("warning: GE I1=-1 requests below-ground wire handling"),
+        "expected below-ground warning in stderr, got:\n{stderr}"
     );
 }
