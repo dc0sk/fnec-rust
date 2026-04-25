@@ -94,3 +94,30 @@ fn report_contract_v1_headers_and_rows() {
         "Expected at least one current distribution row in stdout:\n{stdout}"
     );
 }
+
+#[test]
+fn report_contract_includes_radiation_pattern_when_rp_present() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-rp-51seg.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for RP report contract test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("RADIATION_PATTERN\n"));
+    assert!(stdout.contains("N_POINTS 19\n"));
+    assert!(stdout.contains("THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO\n"));
+    assert!(stdout.contains("0.0000 0.0000 -999.9900"));
+    assert!(stdout.contains("90.0000 0.0000"));
+}

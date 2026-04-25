@@ -20,6 +20,23 @@ pub struct FeedpointRow {
     pub z_in: Complex64,
 }
 
+/// One row in the radiation-pattern table (one (θ, φ) point).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PatternRow {
+    /// Zenith angle θ in degrees (0 = +z axis).
+    pub theta_deg: f64,
+    /// Azimuth angle φ in degrees.
+    pub phi_deg: f64,
+    /// Total directivity (dBi).
+    pub gain_total_dbi: f64,
+    /// Theta-polarised (vertical) component directivity (dBi).
+    pub gain_theta_dbi: f64,
+    /// Phi-polarised (horizontal) component directivity (dBi).
+    pub gain_phi_dbi: f64,
+    /// Axial ratio |E_θ| / |E_φ|.
+    pub axial_ratio: f64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReportInput<'a> {
     pub solver_mode: &'a str,
@@ -29,6 +46,9 @@ pub struct ReportInput<'a> {
     /// Segment current distribution table.  When non-empty, appended after the
     /// feedpoint section as `CURRENTS / TAG SEG I_RE I_IM I_MAG I_PHASE` rows.
     pub current_table: &'a [CurrentRow],
+    /// Radiation-pattern table.  When non-empty, appended after the currents
+    /// section as `RADIATION_PATTERN / THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO` rows.
+    pub pattern_table: &'a [PatternRow],
 }
 
 pub fn render_text_report(input: &ReportInput<'_>) -> String {
@@ -58,6 +78,17 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         }
     }
 
+    if !input.pattern_table.is_empty() {
+        out.push('\n');
+        out.push_str("RADIATION_PATTERN\n");
+        out.push_str(&format!("N_POINTS {}\n", input.pattern_table.len()));
+        out.push_str("THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO\n");
+        for row in input.pattern_table {
+            out.push_str(&format_pattern_row(row));
+            out.push('\n');
+        }
+    }
+
     out
 }
 
@@ -81,6 +112,18 @@ pub fn format_current_row(row: &CurrentRow) -> String {
     format!(
         "{} {} {:.6e} {:.6e} {:.6e} {:.4}",
         row.tag, row.seg, row.current.re, row.current.im, mag, phase
+    )
+}
+
+pub fn format_pattern_row(row: &PatternRow) -> String {
+    format!(
+        "{:.4} {:.4} {:.4} {:.4} {:.4} {:.4}",
+        row.theta_deg,
+        row.phi_deg,
+        row.gain_total_dbi,
+        row.gain_theta_dbi,
+        row.gain_phi_dbi,
+        row.axial_ratio,
     )
 }
 
@@ -120,6 +163,7 @@ mod tests {
             frequency_hz: 14_200_000.0,
             rows: &rows,
             current_table: &[],
+            pattern_table: &[],
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -160,6 +204,7 @@ mod tests {
             frequency_hz: 14_200_000.0,
             rows: &rows,
             current_table: &current_table,
+            pattern_table: &[],
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -198,5 +243,52 @@ mod tests {
         // I_MAG should be positive.
         let mag: f64 = cols[4].parse().unwrap();
         assert!(mag > 0.0);
+    }
+
+    #[test]
+    fn pattern_row_format_is_stable() {
+        let row = PatternRow {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+            gain_total_dbi: 2.1428,
+            gain_theta_dbi: 2.1428,
+            gain_phi_dbi: -999.99,
+            axial_ratio: 0.0,
+        };
+        let line = format_pattern_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 6, "pattern row should have 6 columns: {line}");
+        assert_eq!(cols[0], "90.0000");
+        assert_eq!(cols[1], "0.0000");
+    }
+
+    #[test]
+    fn report_includes_radiation_pattern_section_when_provided() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 26,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.013471, -0.002522),
+            z_in: Complex64::new(74.242874, 13.899516),
+        }];
+        let pattern = [PatternRow {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+            gain_total_dbi: 2.14,
+            gain_theta_dbi: 2.14,
+            gain_phi_dbi: -999.99,
+            axial_ratio: 0.0,
+        }];
+        let report = render_text_report(&ReportInput {
+            solver_mode: "hallen",
+            pulse_rhs: "Nec2",
+            frequency_hz: 14_200_000.0,
+            rows: &rows,
+            current_table: &[],
+            pattern_table: &pattern,
+        });
+        assert!(report.contains("RADIATION_PATTERN\n"));
+        assert!(report.contains("N_POINTS 1\n"));
+        assert!(report.contains("THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO\n"));
     }
 }

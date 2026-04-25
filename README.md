@@ -7,7 +7,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 
 ## Features
 
-- Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, EN cards)
+- Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, RP, EN cards)
 	- **GM** (Geometry Move): rotate and/or translate wire ranges in place, or append one transformed copy when `tag_increment > 0`
 	- **GR** (Geometry Repeat): supported subset repeats existing wires by successive z-axis rotation
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
@@ -17,6 +17,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 	- GE ground-reflection flag: `1` = PEC image (handled); `-1` = below-ground (warns); other values warn with valid range hint
 	- Multi-wire Hallen: per-wire homogeneous constants and endpoint constraints; correct passive-wire (zero) RHS
 - Segment current distribution table in CLI output (`CURRENTS` section after feedpoint table)
+- RP radiation-pattern execution in CLI output (`RADIATION_PATTERN` section with theta/phi gain rows)
 - Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
 	- `sinusoidal` now falls back to Hallen on single collinear chains when its residual budget is exceeded, so the CLI avoids returning misleading impedances for that path
 - CLI binary `fnec` with selectable solver and RHS modes

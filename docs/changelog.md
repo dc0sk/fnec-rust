@@ -9,6 +9,18 @@ last_updated: 2026-05-01
 
 All notable documentation process changes are recorded here.
 
+## Unreleased
+
+### Added
+
+- RP card execution is now wired into the CLI report path.
+- Text reports now include a `RADIATION_PATTERN` section when one or more `RP` cards are present.
+- Added corpus regression deck `corpus/dipole-freesp-rp-51seg.nec` and contract coverage for pattern-table rendering.
+
+### Changed
+
+- Updated support and CLI docs to mark RP pattern output as implemented in the text-report path (with remaining export/near-field scope still deferred).
+
 ## 0.2.0 — 2026-05-01
 
 ### Added

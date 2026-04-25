@@ -29,6 +29,7 @@ last_updated: 2026-04-24
 	- 2026-04-24 progress: `scripts/pi-benchmark-compare.sh` now supports threshold gating (`--max-delta-pct`) and mode-drift failure checks (`--fail-on-mode-drift`) for CI-style regression enforcement.
 	- 2026-04-24 progress: added `.github/workflows/benchmark-compare.yml` to run benchmark delta gates in PRs when benchmark CSV inputs are present, with manual dispatch overrides.
 	- 2026-04-24 progress: benchmark-compare workflow now publishes skip reasons and a compare-result preview in the Actions job summary for quick PR review.
+	- 2026-04-25 progress: RP cards are now executed in the CLI report path with a `RADIATION_PATTERN` section (`THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO`), and regression coverage was added via `corpus/dipole-freesp-rp-51seg.nec` plus report-contract tests.
 
 ## Parity-driven backlog items
 

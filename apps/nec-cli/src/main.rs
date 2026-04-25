@@ -3,13 +3,14 @@
 
 use nec_model::card::Card;
 use nec_parser::parse;
-use nec_report::{render_text_report, CurrentRow, FeedpointRow, ReportInput};
+use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, ReportInput};
 use nec_solver::build_loads;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
-    build_hallen_rhs_with_options, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
-    wire_endpoints_from_segs, GroundModel, ZMatrix,
+    build_hallen_rhs_with_options, compute_radiation_pattern, ground_model_from_deck,
+    rp_card_points, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
+    wire_endpoints_from_segs, FarFieldPoint, GroundModel, ZMatrix,
 };
 use num_complex::Complex64;
 use std::path::PathBuf;
@@ -576,12 +577,46 @@ fn main() -> ExitCode {
             })
             .collect();
 
+        // Collect RP cards and compute radiation pattern if any are present.
+        let pattern_points: Vec<FarFieldPoint> = deck
+            .cards
+            .iter()
+            .filter_map(|c| {
+                if let Card::Rp(rp) = c {
+                    Some(rp_card_points(
+                        rp.n_theta, rp.n_phi, rp.theta0, rp.phi0, rp.d_theta, rp.d_phi,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+
+        let pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
+            Vec::new()
+        } else {
+            let results = compute_radiation_pattern(&segs, &i_vec, freq_hz, &pattern_points);
+            results
+                .iter()
+                .map(|r| PatternRow {
+                    theta_deg: r.theta_deg,
+                    phi_deg: r.phi_deg,
+                    gain_total_dbi: r.gain_total_dbi,
+                    gain_theta_dbi: r.gain_theta_dbi,
+                    gain_phi_dbi: r.gain_phi_dbi,
+                    axial_ratio: r.axial_ratio,
+                })
+                .collect()
+        };
+
         let report = render_text_report(&ReportInput {
             solver_mode: diag_label,
             pulse_rhs: pulse_rhs_mode.as_contract_str(),
             frequency_hz: freq_hz,
             rows: &rows,
             current_table: &current_table,
+            pattern_table: &pattern_table,
         });
         print!("{report}");
 
