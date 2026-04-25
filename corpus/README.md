@@ -11,6 +11,10 @@ This directory contains the golden reference test corpus used to validate fnec-r
 
 Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
+Optional external-candidate gates can be enabled per case in `tolerance_gates`:
+- Impedance candidates: `ExternalR_absolute_ohm`, `ExternalX_absolute_ohm`, `ExternalR_percent_rel`, `ExternalX_percent_rel`
+- RP candidates: `ExternalGain_absolute_dB`, `ExternalAxialRatio_absolute`
+
 ## Corpus cases
 
 ### 1. `dipole-freesp-51seg.nec` — Half-wave dipole, free space

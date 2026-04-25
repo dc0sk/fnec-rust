@@ -114,12 +114,32 @@ fn corpus_validation_cases_with_references() {
             .get("AxialRatio_absolute")
             .and_then(Value::as_f64)
             .unwrap_or(0.0001);
+        let external_r_abs = gates.get("ExternalR_absolute_ohm").and_then(Value::as_f64);
+        let external_x_abs = gates.get("ExternalX_absolute_ohm").and_then(Value::as_f64);
+        let external_r_rel_percent = gates.get("ExternalR_percent_rel").and_then(Value::as_f64);
+        let external_x_rel_percent = gates.get("ExternalX_percent_rel").and_then(Value::as_f64);
         let external_gain_abs_db = gates
             .get("ExternalGain_absolute_dB")
             .and_then(Value::as_f64);
         let external_axial_ratio_abs = gates
             .get("ExternalAxialRatio_absolute")
             .and_then(Value::as_f64);
+        let external_r_tol = if external_r_abs.is_some() || external_r_rel_percent.is_some() {
+            Some((
+                external_r_abs.unwrap_or(r_abs),
+                external_r_rel_percent.unwrap_or(r_rel_percent),
+            ))
+        } else {
+            None
+        };
+        let external_x_tol = if external_x_abs.is_some() || external_x_rel_percent.is_some() {
+            Some((
+                external_x_abs.unwrap_or(x_abs),
+                external_x_rel_percent.unwrap_or(x_rel_percent),
+            ))
+        } else {
+            None
+        };
 
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .arg("--solver")
@@ -214,6 +234,8 @@ fn corpus_validation_cases_with_references() {
                             break;
                         }
                         let (real, imag) = impedances[idx];
+                        let err_r = (real - ext_r).abs();
+                        let err_x = (imag - ext_x).abs();
                         eprintln!(
                             "corpus external delta: case='{}' source_{} dR={:+.6} dX={:+.6} (fnec-ext)",
                             case_name,
@@ -221,6 +243,33 @@ fn corpus_validation_cases_with_references() {
                             real - ext_r,
                             imag - ext_x
                         );
+
+                        if let Some((abs_floor, rel_percent)) = external_r_tol {
+                            let tol_r = tolerance_with_floor(*ext_r, abs_floor, rel_percent);
+                            assert!(
+                                err_r <= tol_r,
+                                "Case '{}' external source_{} R out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                idx + 1,
+                                real,
+                                ext_r,
+                                err_r,
+                                tol_r
+                            );
+                        }
+                        if let Some((abs_floor, rel_percent)) = external_x_tol {
+                            let tol_x = tolerance_with_floor(*ext_x, abs_floor, rel_percent);
+                            assert!(
+                                err_x <= tol_x,
+                                "Case '{}' external source_{} X out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                idx + 1,
+                                imag,
+                                ext_x,
+                                err_x,
+                                tol_x
+                            );
+                        }
                     }
                 }
             }
@@ -281,6 +330,8 @@ fn corpus_validation_cases_with_references() {
                         {
                             if idx < impedances.len() {
                                 let (real, imag) = impedances[idx];
+                                let err_r = (real - ext_r).abs();
+                                let err_x = (imag - ext_x).abs();
                                 eprintln!(
                                     "corpus external delta: case='{}' freq={:.3}MHz dR={:+.6} dX={:+.6} (fnec-ext)",
                                     case_name,
@@ -288,6 +339,35 @@ fn corpus_validation_cases_with_references() {
                                     real - ext_r,
                                     imag - ext_x
                                 );
+
+                                if let Some((abs_floor, rel_percent)) = external_r_tol {
+                                    let tol_r =
+                                        tolerance_with_floor(*ext_r, abs_floor, rel_percent);
+                                    assert!(
+                                        err_r <= tol_r,
+                                        "Case '{}' external freq {:.3} MHz R out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                        case_name,
+                                        freq_mhz,
+                                        real,
+                                        ext_r,
+                                        err_r,
+                                        tol_r
+                                    );
+                                }
+                                if let Some((abs_floor, rel_percent)) = external_x_tol {
+                                    let tol_x =
+                                        tolerance_with_floor(*ext_x, abs_floor, rel_percent);
+                                    assert!(
+                                        err_x <= tol_x,
+                                        "Case '{}' external freq {:.3} MHz X out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                        case_name,
+                                        freq_mhz,
+                                        imag,
+                                        ext_x,
+                                        err_x,
+                                        tol_x
+                                    );
+                                }
                             }
                         }
                     }
@@ -333,12 +413,39 @@ fn corpus_validation_cases_with_references() {
                 ext_obj.get("real_ohm").and_then(Value::as_f64),
                 ext_obj.get("imag_ohm").and_then(Value::as_f64),
             ) {
+                let err_r = (real - ext_r).abs();
+                let err_x = (imag - ext_x).abs();
                 eprintln!(
                     "corpus external delta: case='{}' dR={:+.6} dX={:+.6} (fnec-ext)",
                     case_name,
                     real - ext_r,
                     imag - ext_x
                 );
+
+                if let Some((abs_floor, rel_percent)) = external_r_tol {
+                    let tol_r = tolerance_with_floor(ext_r, abs_floor, rel_percent);
+                    assert!(
+                        err_r <= tol_r,
+                        "Case '{}' external R out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                        case_name,
+                        real,
+                        ext_r,
+                        err_r,
+                        tol_r
+                    );
+                }
+                if let Some((abs_floor, rel_percent)) = external_x_tol {
+                    let tol_x = tolerance_with_floor(ext_x, abs_floor, rel_percent);
+                    assert!(
+                        err_x <= tol_x,
+                        "Case '{}' external X out of tolerance: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                        case_name,
+                        imag,
+                        ext_x,
+                        err_x,
+                        tol_x
+                    );
+                }
             }
         }
 
