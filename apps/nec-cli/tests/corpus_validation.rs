@@ -114,7 +114,9 @@ fn corpus_validation_cases_with_references() {
             .get("AxialRatio_absolute")
             .and_then(Value::as_f64)
             .unwrap_or(0.0001);
-        let external_gain_abs_db = gates.get("ExternalGain_absolute_dB").and_then(Value::as_f64);
+        let external_gain_abs_db = gates
+            .get("ExternalGain_absolute_dB")
+            .and_then(Value::as_f64);
         let external_axial_ratio_abs = gates
             .get("ExternalAxialRatio_absolute")
             .and_then(Value::as_f64);
