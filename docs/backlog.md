@@ -38,6 +38,7 @@ last_updated: 2026-04-24
 	- 2026-04-25 progress: `dipole-xaxis-rp-grid-51seg` now also carries `nec2c` external RP samples, so the observational parity path covers both current RP corpus decks.
 	- 2026-04-25 progress: RP corpus cases can now promote those external pattern candidates into CI gates with optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` thresholds.
 	- 2026-04-25 progress: corpus validation now also supports optional external impedance gates (`ExternalR_absolute_ohm`, `ExternalX_absolute_ohm`, `ExternalR_percent_rel`, `ExternalX_percent_rel`) for scalar, source, and FR candidate deltas.
+	- 2026-04-25 progress: `frequency-sweep-dipole` now enables the first external impedance candidate gates with `ExternalR_absolute_ohm=15.0` and `ExternalX_absolute_ohm=50.0`.
 
 ## Parity-driven backlog items
 
