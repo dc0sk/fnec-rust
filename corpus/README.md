@@ -315,8 +315,8 @@ Results extracted into `corpus/reference-results.json` with structure:
       "imag_ohm": 13.90
     },
     "tolerance_gates": {
-      "R_percent": 0.1,
-      "X_percent": 0.1,
+      "R_percent_rel": 0.1,
+      "X_percent_rel": 0.1,
       "R_absolute_ohm": 0.05,
       "X_absolute_ohm": 0.05
     }
@@ -331,12 +331,9 @@ On each commit, `cargo test -p nec-cli --test corpus_validation` runs fnec again
 
 ## Status
 
-- [ ] Dipole free-space deck created and xnec2c reference captured
-- [ ] Dipole ground deck created and xnec2c reference captured
-- [ ] Yagi deck created and reference captured
-- [ ] Loaded dipole deck created and reference captured
-- [ ] Frequency sweep created and reference captured
-- [ ] Multi-source deck created and reference captured
-- [x] Validation test suite scaffolded (`apps/nec-cli/tests/corpus_validation.rs`) and CI workflow added (`.github/workflows/corpus-validation.yml`)
-- [ ] All corpus cases pass fnec-rust within tolerance matrix
-- [ ] BLK-003 resolved: corpus validation gates Phase 1 → Phase 2
+- [x] 9 corpus deck families are present, including GM/GR equivalence regressions.
+- [x] `corpus/reference-results.json` is populated with active regression values and tolerance gates.
+- [x] Validation test suite is active (`apps/nec-cli/tests/corpus_validation.rs`) and CI workflow is wired (`.github/workflows/corpus-validation.yml`).
+- [x] Active corpus validation currently passes in CI/local runs (with documented skips where references are intentionally absent).
+- [ ] External-reference parity capture remains incomplete for several cases (notably loaded and some pattern/gain-oriented classes).
+- [ ] Full Phase 1→2 parity gate remains open until external-reference coverage and deferred scope items are closed.
