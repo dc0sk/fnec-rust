@@ -150,6 +150,57 @@ pub struct LdCard {
     pub f3: f64,
 }
 
+/// GM — Geometry move card.
+///
+/// Translates and/or rotates a range of wire tags (or all wires).
+/// Can also replicate that range `new_tag_increment` times.
+///
+/// NEC field mapping:
+///   I1 = tag number increment between copies (0 = move in place)
+///   I2 = tag number of the last wire to move (0 = all wires so far)
+///   F1–F3 = rotation angles about x, y, z axes (degrees)
+///   F4–F6 = translation (metres) in x, y, z
+///   F7    = starting tag for the range to move (0 = all)
+#[derive(Debug, Clone, PartialEq)]
+pub struct GmCard {
+    /// Tag increment between successive copies (0 = just transform in place).
+    pub tag_increment: u32,
+    /// Last tag in the affected range (0 = all wires defined so far).
+    pub last_tag: u32,
+    /// Rotation about x-axis, degrees.
+    pub rot_x_deg: f64,
+    /// Rotation about y-axis, degrees.
+    pub rot_y_deg: f64,
+    /// Rotation about z-axis, degrees.
+    pub rot_z_deg: f64,
+    /// Translation along x, metres.
+    pub translate_x: f64,
+    /// Translation along y, metres.
+    pub translate_y: f64,
+    /// Translation along z, metres.
+    pub translate_z: f64,
+    /// Starting tag for the affected range (0 = all wires defined so far).
+    pub first_tag: u32,
+}
+
+/// GR — Geometry repeat card.
+///
+/// Repeats existing wires by successive rotation about the z-axis.
+///
+/// NEC field mapping:
+///   I1 = tag increment between copies
+///   I2 = number of times to repeat (additional copies, not including original)
+///   F1 = rotation angle per step (degrees, about z-axis)
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrCard {
+    /// Tag number increment between successive copies.
+    pub tag_increment: u32,
+    /// Number of additional copies to create (0 = no-op).
+    pub count: u32,
+    /// Rotation angle per copy, degrees about z-axis.
+    pub angle_deg: f64,
+}
+
 /// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
@@ -159,6 +210,8 @@ pub struct EnCard;
 pub enum Card {
     Comment(CommentCard),
     Gw(GwCard),
+    Gm(GmCard),
+    Gr(GrCard),
     Ge(GeCard),
     Gn(GnCard),
     Ld(LdCard),

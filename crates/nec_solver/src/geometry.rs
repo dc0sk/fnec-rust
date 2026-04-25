@@ -16,7 +16,7 @@
 //! - `tag_index`     — 1-based segment index within the tag
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GeCard, GnCard, GwCard};
+use nec_model::card::{Card, GeCard, GmCard, GnCard, GrCard, GwCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -123,20 +123,41 @@ impl std::fmt::Display for GeometryError {
 
 impl std::error::Error for GeometryError {}
 
-/// Build the flat segment list from all `GW` cards in `deck`.
+/// Build the flat segment list from all `GW`, `GM`, and `GR` cards in `deck`.
 ///
-/// Segments are appended in deck order: all segments of the first GW card
-/// come first, then the second, and so on.
+/// Cards are processed in deck order:
+/// - `GW` appends new segments.
+/// - `GM` transforms (rotate + translate) a range of existing wires, optionally
+///   creating numbered copies when `tag_increment > 0`.
+/// - `GR` creates additional copies of all existing wires, each rotated about
+///   the z-axis by successive multiples of `angle_deg`.
+///
+/// Segments are assigned consecutive `global_index` values in output order.
 pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
     let mut segments: Vec<Segment> = Vec::new();
 
     for card in &deck.cards {
-        let Card::Gw(gw) = card else { continue };
-        expand_wire(gw, &mut segments)?;
+        match card {
+            Card::Gw(gw) => {
+                expand_wire(gw, &mut segments)?;
+            }
+            Card::Gm(gm) => {
+                apply_gm(gm, &mut segments)?;
+            }
+            Card::Gr(gr) => {
+                apply_gr(gr, &mut segments)?;
+            }
+            _ => {}
+        }
     }
 
     if segments.is_empty() {
         return Err(GeometryError::NoWires);
+    }
+
+    // Re-number global_index in final order.
+    for (i, seg) in segments.iter_mut().enumerate() {
+        seg.global_index = i;
     }
 
     Ok(segments)
@@ -192,6 +213,131 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
     Ok(())
 }
 
+/// Apply a GM card: rotate then translate matching wires; optionally replicate.
+///
+/// When `tag_increment == 0` the existing wires are transformed in place.
+/// When `tag_increment > 0` a copy with incremented tags is appended and the
+/// originals are left unchanged.
+///
+/// Tag filtering: `first_tag..=last_tag` if both are > 0; `first_tag..` if
+/// only `first_tag` > 0; `..=last_tag` if only `last_tag` > 0; all wires if
+/// both are 0.
+fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
+    if gm.tag_increment == 0 {
+        // In-place transform: mutate matching segments.
+        for seg in segs.iter_mut() {
+            if tag_in_range(seg.tag, gm.first_tag, gm.last_tag) {
+                seg.start = transform_point(seg.start, gm);
+                seg.end = transform_point(seg.end, gm);
+                seg.midpoint = transform_point(seg.midpoint, gm);
+                seg.direction = recompute_direction(seg.start, seg.end);
+            }
+        }
+    } else {
+        // Copy transform: append new segments with incremented tag numbers.
+        let base: Vec<Segment> = segs
+            .iter()
+            .filter(|s| tag_in_range(s.tag, gm.first_tag, gm.last_tag))
+            .cloned()
+            .collect();
+        for mut seg in base {
+            seg.tag += gm.tag_increment;
+            seg.start = transform_point(seg.start, gm);
+            seg.end = transform_point(seg.end, gm);
+            seg.midpoint = transform_point(seg.midpoint, gm);
+            seg.direction = recompute_direction(seg.start, seg.end);
+            segs.push(seg);
+        }
+    }
+    Ok(())
+}
+
+/// Apply a GR card: repeat existing wires `count` times, rotating each copy
+/// about the z-axis by successive multiples of `angle_deg`.
+fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
+    if gr.count == 0 {
+        return Ok(());
+    }
+    // Snapshot original set of segments (before any copies).
+    let originals: Vec<Segment> = segs.clone();
+    for copy_idx in 1..=gr.count {
+        let total_angle_deg = gr.angle_deg * copy_idx as f64;
+        let cos_a = total_angle_deg.to_radians().cos();
+        let sin_a = total_angle_deg.to_radians().sin();
+        for orig in &originals {
+            let mut seg = orig.clone();
+            seg.tag += gr.tag_increment * copy_idx;
+            seg.start = rotate_z(seg.start, cos_a, sin_a);
+            seg.end = rotate_z(seg.end, cos_a, sin_a);
+            seg.midpoint = rotate_z(seg.midpoint, cos_a, sin_a);
+            seg.direction = recompute_direction(seg.start, seg.end);
+            segs.push(seg);
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+
+/// True if `tag` falls in [first_tag, last_tag] with 0 meaning "no limit".
+fn tag_in_range(tag: u32, first_tag: u32, last_tag: u32) -> bool {
+    let above_first = first_tag == 0 || tag >= first_tag;
+    let below_last = last_tag == 0 || tag <= last_tag;
+    above_first && below_last
+}
+
+/// Apply GM rotation (Rx Ry Rz) then translation to a point.
+///
+/// Rotation order follows NEC convention: Rx, then Ry, then Rz.
+fn transform_point(p: [f64; 3], gm: &GmCard) -> [f64; 3] {
+    let p = rotate_x(
+        p,
+        gm.rot_x_deg.to_radians().cos(),
+        gm.rot_x_deg.to_radians().sin(),
+    );
+    let p = rotate_y(
+        p,
+        gm.rot_y_deg.to_radians().cos(),
+        gm.rot_y_deg.to_radians().sin(),
+    );
+    let p = rotate_z(
+        p,
+        gm.rot_z_deg.to_radians().cos(),
+        gm.rot_z_deg.to_radians().sin(),
+    );
+    [
+        p[0] + gm.translate_x,
+        p[1] + gm.translate_y,
+        p[2] + gm.translate_z,
+    ]
+}
+
+fn rotate_x(p: [f64; 3], c: f64, s: f64) -> [f64; 3] {
+    [p[0], c * p[1] - s * p[2], s * p[1] + c * p[2]]
+}
+
+fn rotate_y(p: [f64; 3], c: f64, s: f64) -> [f64; 3] {
+    [c * p[0] + s * p[2], p[1], -s * p[0] + c * p[2]]
+}
+
+fn rotate_z(p: [f64; 3], c: f64, s: f64) -> [f64; 3] {
+    [c * p[0] - s * p[1], s * p[0] + c * p[1], p[2]]
+}
+
+fn recompute_direction(start: [f64; 3], end: [f64; 3]) -> [f64; 3] {
+    let dx = end[0] - start[0];
+    let dy = end[1] - start[1];
+    let dz = end[2] - start[2];
+    let len = (dx * dx + dy * dy + dz * dz).sqrt();
+    if len == 0.0 {
+        [0.0, 0.0, 1.0] // degenerate — direction undefined
+    } else {
+        [dx / len, dy / len, dz / len]
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -199,7 +345,7 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{Card, GnCard, GwCard};
+    use nec_model::card::{Card, GmCard, GnCard, GrCard, GwCard};
     use nec_model::deck::NecDeck;
 
     fn deck_with_gw(tag: u32, segs: u32, start: [f64; 3], end: [f64; 3], r: f64) -> NecDeck {
@@ -342,5 +488,150 @@ mod tests {
             ground_model_from_deck(&deck),
             GroundModel::Deferred { gn_type: 2 }
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // GM / GR tests
+    // -------------------------------------------------------------------------
+
+    fn make_gm(
+        tag_increment: u32,
+        last_tag: u32,
+        first_tag: u32,
+        rx: f64,
+        ry: f64,
+        rz: f64,
+        tx: f64,
+        ty: f64,
+        tz: f64,
+    ) -> GmCard {
+        GmCard {
+            tag_increment,
+            last_tag,
+            first_tag,
+            rot_x_deg: rx,
+            rot_y_deg: ry,
+            rot_z_deg: rz,
+            translate_x: tx,
+            translate_y: ty,
+            translate_z: tz,
+        }
+    }
+
+    /// GM with tag_increment=0 translates segments in place.
+    #[test]
+    fn gm_inplace_translate() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        // Translate +2 m along z
+        deck.cards
+            .push(Card::Gm(make_gm(0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0)));
+        let segs = build_geometry(&deck).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert!((segs[0].start[2] - 2.0).abs() < 1e-12);
+        assert!((segs[0].end[2] - 2.0).abs() < 1e-12);
+    }
+
+    /// GM with tag_increment>0 creates a copy with incremented tag.
+    #[test]
+    fn gm_copy_increments_tag() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        // Copy with tag_increment=1, translate +1 m along y
+        deck.cards
+            .push(Card::Gm(make_gm(1, 0, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
+        let segs = build_geometry(&deck).unwrap();
+        assert_eq!(segs.len(), 2);
+        // Original (tag=1) unchanged
+        assert_eq!(segs[0].tag, 1);
+        assert!((segs[0].start[1]).abs() < 1e-12);
+        // Copy (tag=2) translated
+        assert_eq!(segs[1].tag, 2);
+        assert!((segs[1].start[1] - 1.0).abs() < 1e-12);
+    }
+
+    /// GR with count=3 and 90-degree steps produces 4 wires (original + 3 copies).
+    #[test]
+    fn gr_repeat_produces_correct_count() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [1.0, 0.0, 0.0],
+            end: [2.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 3,
+            angle_deg: 90.0,
+        }));
+        let segs = build_geometry(&deck).unwrap();
+        // 1 original + 3 copies = 4 segments (each wire has 1 segment)
+        assert_eq!(segs.len(), 4);
+        assert_eq!(segs[0].tag, 1);
+        assert_eq!(segs[1].tag, 2);
+        assert_eq!(segs[2].tag, 3);
+        assert_eq!(segs[3].tag, 4);
+    }
+
+    /// GR 90-degree rotation moves (1,0,0) to (0,1,0).
+    #[test]
+    fn gr_rotation_is_correct() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [1.0, 0.0, 0.0],
+            end: [2.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 1,
+            angle_deg: 90.0,
+        }));
+        let segs = build_geometry(&deck).unwrap();
+        assert_eq!(segs.len(), 2);
+        // Copy should be at y=1..2, x≈0
+        assert!((segs[1].start[0]).abs() < 1e-12, "x should be ~0");
+        assert!((segs[1].start[1] - 1.0).abs() < 1e-12, "y should be ~1");
+        assert!((segs[1].end[0]).abs() < 1e-12);
+        assert!((segs[1].end[1] - 2.0).abs() < 1e-12);
+    }
+
+    /// global_index values are contiguous 0..N-1 after GR expansion.
+    #[test]
+    fn gr_global_indices_are_contiguous() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [1.0, 0.0, 0.0],
+            end: [2.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 2,
+            angle_deg: 120.0,
+        }));
+        let segs = build_geometry(&deck).unwrap();
+        assert_eq!(segs.len(), 9); // 3 wires × 3 segments
+        for (i, s) in segs.iter().enumerate() {
+            assert_eq!(s.global_index, i);
+        }
     }
 }

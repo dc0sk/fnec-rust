@@ -10,7 +10,8 @@
 //! parsing — callers decide whether to treat them as fatal.
 
 use nec_model::card::{
-    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, LdCard, RpCard,
+    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
+    RpCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -237,6 +238,75 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // Stop at EN per NEC spec.
                 break;
             }
+            "GM" => {
+                // GM I1 I2 F1 F2 F3 F4 F5 F6 [F7]
+                // I1: tag increment, I2: last tag (0=all), F1-F3: rot x/y/z deg,
+                // F4-F6: translate x/y/z m, F7: first tag (0=all, optional)
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GM", &fields, 2)?;
+                let rot_x = if fields.len() > 2 {
+                    parse_f64(lineno, "GM", 3, &fields[2])?
+                } else {
+                    0.0
+                };
+                let rot_y = if fields.len() > 3 {
+                    parse_f64(lineno, "GM", 4, &fields[3])?
+                } else {
+                    0.0
+                };
+                let rot_z = if fields.len() > 4 {
+                    parse_f64(lineno, "GM", 5, &fields[4])?
+                } else {
+                    0.0
+                };
+                let tx = if fields.len() > 5 {
+                    parse_f64(lineno, "GM", 6, &fields[5])?
+                } else {
+                    0.0
+                };
+                let ty = if fields.len() > 6 {
+                    parse_f64(lineno, "GM", 7, &fields[6])?
+                } else {
+                    0.0
+                };
+                let tz = if fields.len() > 7 {
+                    parse_f64(lineno, "GM", 8, &fields[7])?
+                } else {
+                    0.0
+                };
+                let first_tag = if fields.len() > 8 {
+                    parse_u32(lineno, "GM", 9, &fields[8])?
+                } else {
+                    0
+                };
+                deck.cards.push(Card::Gm(GmCard {
+                    tag_increment: parse_u32(lineno, "GM", 1, &fields[0])?,
+                    last_tag: parse_u32(lineno, "GM", 2, &fields[1])?,
+                    rot_x_deg: rot_x,
+                    rot_y_deg: rot_y,
+                    rot_z_deg: rot_z,
+                    translate_x: tx,
+                    translate_y: ty,
+                    translate_z: tz,
+                    first_tag,
+                }));
+            }
+            "GR" => {
+                // GR I1 I2 [F1]
+                // I1: tag increment, I2: repeat count, F1: angle per copy (deg about z)
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GR", &fields, 2)?;
+                let angle = if fields.len() > 2 {
+                    parse_f64(lineno, "GR", 3, &fields[2])?
+                } else {
+                    0.0
+                };
+                deck.cards.push(Card::Gr(GrCard {
+                    tag_increment: parse_u32(lineno, "GR", 1, &fields[0])?,
+                    count: parse_u32(lineno, "GR", 2, &fields[1])?,
+                    angle_deg: angle,
+                }));
+            }
             other => {
                 warnings.push(ParseError::UnknownCard {
                     line: lineno,
@@ -322,7 +392,9 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GwCard, RpCard};
+    use nec_model::card::{
+        Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GrCard, GwCard, RpCard,
+    };
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
     /// EX format: I1=type I2=tag I3=seg I4=aux-int F1=vr F2=vi
@@ -519,5 +591,70 @@ EN
                 voltage_imag: -0.25,
             })
         );
+    }
+
+    #[test]
+    fn gm_card_is_parsed() {
+        // GM I1 I2 F1 F2 F3 F4 F5 F6 F7
+        let input = "GW 1 3 0 0 0 1 0 0 0.001\nGM 2 5 30.0 45.0 90.0 0.5 1.0 2.0 1\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gm = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gm(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        assert!(gm.is_some(), "GM card not found");
+        let gm = gm.unwrap();
+        assert_eq!(gm.tag_increment, 2);
+        assert_eq!(gm.last_tag, 5);
+        assert!((gm.rot_x_deg - 30.0).abs() < 1e-10);
+        assert!((gm.rot_y_deg - 45.0).abs() < 1e-10);
+        assert!((gm.rot_z_deg - 90.0).abs() < 1e-10);
+        assert!((gm.translate_x - 0.5).abs() < 1e-10);
+        assert!((gm.translate_y - 1.0).abs() < 1e-10);
+        assert!((gm.translate_z - 2.0).abs() < 1e-10);
+        assert_eq!(gm.first_tag, 1);
+    }
+
+    #[test]
+    fn gm_card_minimal_fields_default_to_zero() {
+        // Only I1 and I2 required; all floats default to 0
+        let input = "GM 0 0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gm = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gm(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        let gm = gm.unwrap();
+        assert_eq!(gm.tag_increment, 0);
+        assert!((gm.rot_z_deg).abs() < 1e-10);
+        assert!((gm.translate_z).abs() < 1e-10);
+        assert_eq!(gm.first_tag, 0);
+    }
+
+    #[test]
+    fn gr_card_is_parsed() {
+        let input = "GR 1 3 120.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gr = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gr(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        assert!(gr.is_some(), "GR card not found");
+        let gr = gr.unwrap();
+        assert_eq!(gr.tag_increment, 1);
+        assert_eq!(gr.count, 3);
+        assert!((gr.angle_deg - 120.0).abs() < 1e-10);
     }
 }
