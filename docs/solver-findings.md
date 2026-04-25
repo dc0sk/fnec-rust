@@ -110,6 +110,43 @@ This is a sign and magnitude mismatch in both $R$ and $X$, not a small calibrati
 The loaded-element corpus gap is therefore blocked by non-collinear solver support,
 not by LD-card parsing or matrix-load application.
 
+### Experimental non-collinear Hallen path (`--allow-noncollinear-hallen` flag)
+
+As of 2026-04-25, an experimental opt-in path exists to allow non-collinear topologies
+in the Hallen solver via feed-axis RHS projection. Results summary:
+
+| Mode | Value | dX from external | Improvement vs pulse |
+|:-----|:------|:-----------------|:---------------------|
+| pulse baseline | **-13.7780 + j374.425 Ω** | 1270.46 Ω | baseline |
+| hallen + `--allow-noncollinear-hallen` | **-45.0682 - j1008.139 Ω** | 112.11 Ω | **11.3× better** |
+| external (NEC2DXS500) | **13.4632 - j896.032 Ω** | 0.0 Ω | — |
+
+The experimental Hallen path achieves **11× improvement in reactance error** vs pulse 
+but does not reach parity. Both real and imaginary parts remain far from the reference.
+
+**Architectural limitation**: The improvement plateaus because the core issue is not
+the RHS formulation but the matrix structure itself. All thin-wire MoM methods (Hallen,
+Pocklington) weight off-diagonal matrix elements by $\cos(\alpha) = \mathbf{\hat{d}}_m \cdot \mathbf{\hat{d}}_n$ 
+(the dot product of segment directions). For non-collinear geometries like the top-hat loop:
+
+- For non-aligned segments, $|\cos(\alpha)| \approx 0$, making the matrix entries tiny
+- This suppresses coupling between the main antenna and the loading loop
+- The matrix becomes ill-conditioned and cannot recover the full 3D electromagnetic interaction
+
+Tested improvements that did NOT help (2026-04-25):
+- Blending perpendicular distance into the RHS (α = 0.5 weighting)
+- Using pure Euclidean distance from feed point for non-collinear segments (α = 1.0)
+- Both approaches made no measurable change to the impedance results
+
+**Conclusion**: Forcing non-collinear support into thin-wire MoM via RHS tweaks alone
+is fundamentally limited. A proper solution would require either:
+1. Matrix reformulation for non-collinear topologies (substantial research effort)
+2. Hybrid solver using different bases for collinear vs non-collinear parts
+3. Acceptance that geometric loads (non-collinear loops) require surface or mixed-element modeling
+
+For Phase 1 scope, the experimental path is adequate as a fallback that improves upon
+pulse-baseline for users who understand its limitations, but is **not** a path to parity.
+
 ## Key bugs fixed on this branch
 
 | Commit | Fix |
