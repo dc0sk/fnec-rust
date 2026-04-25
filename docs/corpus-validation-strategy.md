@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # Corpus Validation Strategy
@@ -35,13 +35,16 @@ Acceptance criteria are defined in `docs/requirements.md` (Numerical compatibili
 
 ### Staged corpus growth
 
-The MVP corpus (Phase 1) includes:
+The current Phase 1 corpus includes:
 1. Half-wave dipole, free space (the ground truth)
-2. Half-wave dipole, over perfect ground (validates image/Sommerfeld treatment)
-3. 5-element Yagi (validates multi-wire coupling and array gain)
-4. Loaded dipole (validates geometry edge cases and wire-wire coupling)
-5. Frequency sweep (validates frequency-domain convergence)
-6. Multi-source case (validates multi-driver support)
+2. Half-wave dipole shifted via GM in-place transform (translation-invariance regression)
+3. Half-wave dipole, over perfect ground (validates image/Sommerfeld treatment)
+4. 5-element Yagi (validates multi-wire coupling and array gain)
+5. Loaded dipole (validates geometry edge cases and wire-wire coupling)
+6. Frequency sweep (validates frequency-domain convergence)
+7. Multi-source case (validates multi-driver support)
+8. Multi-source generated via GR (geometry-repeat equivalence regression)
+9. Multi-source generated via GM copy (geometry-move equivalence regression)
 
 As phases progress, the corpus grows to include:
 - Complex geometries (helix, spirals, bent wires)

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # Roadmap
@@ -69,13 +69,15 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 
 **Key deliverables**:
 - ✅ Hallén solver working and validated (done).
-- ✅ Golden reference corpus scaffolded: 6 benchmark geometries, reference results template, validation test (done, `feat/golden-corpus-validation` branch).
+- ✅ Golden reference corpus expanded and regression-gated: 9 benchmark families including GM/GR equivalence cases.
 - ✅ NEC-4 feature boundary documented: card support matrix, phase assignments (done, `docs/nec4-support.md`).
 - ✅ Report contract v1 locked in CLI output and CI-gated (`FORMAT_VERSION 1`, deterministic headers/table).
+- ✅ Segment current distribution table (`CURRENTS`) landed in CLI report output and contract tests.
 - ✅ FR sweep execution landed in CLI and tolerance-gated corpus validation (full multi-point solve path).
 - ✅ Hallen topology guardrail landed: non-collinear Hallen requests fail fast with explicit diagnostics instead of returning misleading impedance.
-- [ ] Expand NEC-2 card support breadth beyond current implemented FR/GE/GW/EX/EN core, especially GN and deferred workflow cards.
-- [ ] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source).
+- ✅ GM/GR parser + geometry-builder support landed and is corpus-validated via equivalence decks.
+- [ ] Expand remaining NEC-2/NEC-4 card execution breadth beyond the current wire/impedance workflow core (e.g., RP execution, additional EX families, TL/NT).
+- [x] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source, GM/GR equivalence cases).
 - [ ] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix.
 - [ ] Simple ground model (infinite, raised dielectric) working and tested.
 - [ ] CLI-first execution flow complete with all core flags (solver mode, solver options).

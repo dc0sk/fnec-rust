@@ -9,7 +9,7 @@ last_updated: 2026-04-25
 
 This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against NEC reference engines (primary: xnec2c, fallback: 4nec2).
 
-Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
+Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
 ## Corpus cases
 
@@ -327,7 +327,7 @@ Results extracted into `corpus/reference-results.json` with structure:
 
 ## CI validation
 
-On each commit, `cargo test -p nec-cli --test corpus_validation -- --ignored` runs fnec against corpus decks with captured references and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
+On each commit, `cargo test -p nec-cli --test corpus_validation` runs fnec against corpus decks with captured references and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
 
 ## Status
 
