@@ -69,9 +69,14 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Same feedpoint impedance as `dipole-freesp-51seg`
 - Z_in = 74.242874 + j13.899516 Ω
 - Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
-- Numeric pattern samples locked in corpus validation:
+- Numeric pattern samples locked in corpus validation across 7 theta points (`0°, 30°, 60°, 90°, 120°, 150°, 180°` at `φ=0°`):
   - θ = 0°, φ = 0° → `GAIN_DB=-999.99`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 30°, φ = 0° → `GAIN_DB=-5.4220`, `GAIN_V_DB=-5.4220`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 60°, φ = 0° → `GAIN_DB=0.3910`, `GAIN_V_DB=0.3910`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
   - θ = 90°, φ = 0° → `GAIN_DB=2.1483`, `GAIN_V_DB=2.1483`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 120°, φ = 0° → `GAIN_DB=0.3910`, `GAIN_V_DB=0.3910`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 150°, φ = 0° → `GAIN_DB=-5.4220`, `GAIN_V_DB=-5.4220`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - θ = 180°, φ = 0° → `GAIN_DB=-999.99`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
 
 **Tolerance gates**:
 - Same as `dipole-freesp-51seg` for impedance

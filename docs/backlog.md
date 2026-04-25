@@ -32,6 +32,7 @@ last_updated: 2026-04-24
 	- 2026-04-25 progress: RP cards are now executed in the CLI report path with a `RADIATION_PATTERN` section (`THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO`), and regression coverage was added via `corpus/dipole-freesp-rp-51seg.nec` plus report-contract tests.
 	- 2026-04-25 progress: `apps/nec-cli/tests/corpus_validation.rs` now parses `RADIATION_PATTERN` rows and tolerance-gates stored RP sample gains from `corpus/reference-results.json`.
 	- 2026-04-25 progress: RP corpus validation now also gates `GAIN_V_DB`, `GAIN_H_DB`, and `AXIAL_RATIO` for stored sample angles, not only total `GAIN_DB`.
+	- 2026-04-25 progress: RP corpus validation angle coverage increased from 2 sample angles to 7 (`0°, 30°, 60°, 90°, 120°, 150°, 180°` at `φ=0°`).
 
 ## Parity-driven backlog items
 

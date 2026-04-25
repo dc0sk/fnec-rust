@@ -49,10 +49,50 @@
           "axial_ratio": 0.0
         },
         {
+          "theta_deg": 30.0,
+          "phi_deg": 0.0,
+          "gain_db": -5.422,
+          "gain_v_db": -5.422,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 60.0,
+          "phi_deg": 0.0,
+          "gain_db": 0.391,
+          "gain_v_db": 0.391,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
           "theta_deg": 90.0,
           "phi_deg": 0.0,
           "gain_db": 2.1483,
           "gain_v_db": 2.1483,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 120.0,
+          "phi_deg": 0.0,
+          "gain_db": 0.391,
+          "gain_v_db": 0.391,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 150.0,
+          "phi_deg": 0.0,
+          "gain_db": -5.422,
+          "gain_v_db": -5.422,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 180.0,
+          "phi_deg": 0.0,
+          "gain_db": -999.99,
+          "gain_v_db": -999.99,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         }
