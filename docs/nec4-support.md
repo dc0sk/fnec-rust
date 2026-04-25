@@ -32,7 +32,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
 | GE | Geometry end | FULL | Parsed; GE I1=1 infers PEC ground when no GN card is present. GE I1=-1 emits a below-ground warning; other unknown values warn with valid range hint; both fall back to free-space. |
 | SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
-| GM | Move segments | FULL | Rotate (Rx/Ry/Rz) and translate wire tag ranges. `tag_increment=0` modifies in place; `tag_increment>0` appends copies with incremented tags. |
+| GM | Move segments | PARTIAL | Supported subset: rotate (Rx/Ry/Rz) and translate wire tag ranges. `tag_increment=0` modifies in place; `tag_increment>0` appends one transformed copy with incremented tags. Broader NEC GM semantics should be reviewed before claiming full parity. |
 | GR | Repeat segments | FULL | Repeats existing wires by successive z-axis rotations. Each copy is rotated by a cumulative multiple of `angle_deg` with incremented tag numbers. |
 | GF | Scale segments | DEFERRED | Geometry scaling. Phase 2. |
 

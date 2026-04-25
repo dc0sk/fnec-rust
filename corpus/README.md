@@ -162,6 +162,26 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 **Why this case**: It is a direct corpus-level check that parser + geometry-builder `GR` support is not only syntactically accepted, but electrically equivalent to an already validated explicit geometry.
 
+### 8. `multi-source-gm-copy.nec` — Dipole array generated via `GM`
+
+**Purpose**: Validate that the currently supported `GM` translated-copy subset produces the same electrical result as an equivalent handwritten multi-wire deck.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Start with one vertical half-wave dipole centered at x = 0 m
+- `GM 1 1 0 0 0 1.0 0 0 1` appends one translated copy at x = +1.0 m with tag increment 1
+- Both dipoles are center-fed at 1.0 V
+- Ground: None
+
+**Expected results** (current regression gate):
+- Same feedpoint impedances as `multi-source.nec`
+- Source 1: 152.352342 + j31.560296 Ω
+- Source 2: 152.352339 + j31.560296 Ω
+
+**Tolerance gates**: Same as `multi-source.nec`.
+
+**Why this case**: It locks the currently implemented `GM` behavior into corpus validation and makes the supported subset explicit: one in-place transform or one appended transformed copy, not full unqualified NEC GM parity.
+
 ## Corpus metadata
 
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
@@ -173,8 +193,9 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |
 | 6 | multi-source.nec | 51 | 2 | 2 | None | [TBD] × 2 |
 | 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
+| 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 
-**Total**: 7 benchmark families, ≈14 individual frequency/source points.
+**Total**: 8 benchmark families, ≈16 individual frequency/source points.
 
 ## Reference workflow
 

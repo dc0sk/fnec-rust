@@ -183,6 +183,27 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation"
+    },
+    "multi-source-gm-copy": {
+      "deck_file": "multi-source-gm-copy.nec",
+      "description": "Two parallel half-wave dipoles generated from one seed dipole via GM translated copy",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 2,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference; GM translated-copy expansion validated against handwritten multi-source deck)",
+      "feedpoint_impedance": {
+        "source_1": {"real_ohm": 152.352342, "imag_ohm": 31.560296},
+        "source_2": {"real_ohm": 152.352339, "imag_ohm": 31.560296}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation"
     }
   }
 }

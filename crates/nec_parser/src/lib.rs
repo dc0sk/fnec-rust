@@ -392,9 +392,7 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{
-        Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GwCard, RpCard,
-    };
+    use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GwCard, RpCard};
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
     /// EX format: I1=type I2=tag I3=seg I4=aux-int F1=vr F2=vi

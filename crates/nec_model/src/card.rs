@@ -153,7 +153,8 @@ pub struct LdCard {
 /// GM — Geometry move card.
 ///
 /// Translates and/or rotates a range of wire tags (or all wires).
-/// Can also replicate that range `new_tag_increment` times.
+/// Supports either in-place transformation (`tag_increment = 0`) or appending
+/// one transformed copy with incremented tags (`tag_increment > 0`).
 ///
 /// NEC field mapping:
 ///   I1 = tag number increment between copies (0 = move in place)
@@ -163,7 +164,7 @@ pub struct LdCard {
 ///   F7    = starting tag for the range to move (0 = all)
 #[derive(Debug, Clone, PartialEq)]
 pub struct GmCard {
-    /// Tag increment between successive copies (0 = just transform in place).
+    /// Tag increment for the appended transformed copy (0 = transform in place).
     pub tag_increment: u32,
     /// Last tag in the affected range (0 = all wires defined so far).
     pub last_tag: u32,
