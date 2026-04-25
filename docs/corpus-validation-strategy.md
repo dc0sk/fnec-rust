@@ -224,7 +224,7 @@ To add a new corpus case:
 3. Add stub to `corpus/reference-results.json` with `null` values and status "Deck created; reference TBD"
 4. Run reference capture (manual): `xnec2c --batch -j0 -i corpus/my-case.nec --write-csv ...` (or 4nec2 export when xnec2c is unstable)
 5. Update `corpus/reference-results.json` with real values
-6. Ensure `apps/nec-cli/tests/corpus_validation.rs` includes the new case through `reference-results.json` (the harness is table-driven; no per-case `#[ignore]` stubs are needed)
+6. Ensure the new case is represented in `corpus/reference-results.json` (the harness is table-driven and reads from the JSON table)
 7. Update status in `corpus/README.md`: "Reference captured"
 8. Commit together
 
