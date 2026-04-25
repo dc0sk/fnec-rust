@@ -9,7 +9,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 
 - Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, EN cards)
 	- **GM** (Geometry Move): rotate and/or translate wire ranges in place, or append one transformed copy when `tag_increment > 0`
-  - **GR** (Geometry Repeat): replicate all existing wires by successive z-axis rotation
+	- **GR** (Geometry Repeat): supported subset repeats existing wires by successive z-axis rotation
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
