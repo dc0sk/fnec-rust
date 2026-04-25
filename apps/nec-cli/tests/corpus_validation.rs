@@ -8,6 +8,13 @@ use std::process::Command;
 
 use serde_json::{Map, Value};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PatternSample {
+    theta_deg: f64,
+    phi_deg: f64,
+    gain_db: f64,
+}
+
 #[test]
 fn corpus_validation_cases_with_references() {
     // Test file is inside apps/nec-cli; walk up to workspace root.
@@ -63,6 +70,7 @@ fn corpus_validation_cases_with_references() {
         let expected_imag = feed.get("imag_ohm").and_then(Value::as_f64);
         let expected_sources = collect_expected_sources(case_obj, feed);
         let expected_freq_points = collect_expected_frequency_points(feed);
+        let expected_pattern_samples = collect_expected_pattern_samples(case_obj);
 
         let expected_scalar = match (expected_real, expected_imag) {
             (Some(r), Some(x)) => (r, x),
@@ -95,6 +103,10 @@ fn corpus_validation_cases_with_references() {
             .get("X_percent_rel")
             .and_then(Value::as_f64)
             .unwrap_or(0.1);
+        let gain_abs_db = gates
+            .get("Gain_absolute_dB")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.05);
 
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .arg("--solver")
@@ -132,6 +144,7 @@ fn corpus_validation_cases_with_references() {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let impedances = parse_impedance_lines(&stdout);
+        let pattern_rows = parse_pattern_rows(&stdout);
         assert!(
             !impedances.is_empty(),
             "No impedance rows found in fnec output for case '{}':\n{}",
@@ -316,6 +329,43 @@ fn corpus_validation_cases_with_references() {
             }
         }
 
+        if !expected_pattern_samples.is_empty() {
+            assert!(
+                !pattern_rows.is_empty(),
+                "Case '{}' expected radiation-pattern rows, got none:\n{}",
+                case_name,
+                stdout
+            );
+
+            for sample in &expected_pattern_samples {
+                let row = pattern_rows
+                    .iter()
+                    .find(|row| {
+                        (row.theta_deg - sample.theta_deg).abs() < 1e-9
+                            && (row.phi_deg - sample.phi_deg).abs() < 1e-9
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Case '{}' missing pattern sample at theta={:.4} phi={:.4}",
+                            case_name, sample.theta_deg, sample.phi_deg
+                        )
+                    });
+
+                let err_gain = (row.gain_db - sample.gain_db).abs();
+                assert!(
+                    err_gain <= gain_abs_db,
+                    "Case '{}' pattern gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, expected {:.6}, err {:.6}, tol {:.6}",
+                    case_name,
+                    sample.theta_deg,
+                    sample.phi_deg,
+                    row.gain_db,
+                    sample.gain_db,
+                    err_gain,
+                    gain_abs_db
+                );
+            }
+        }
+
         validated += 1;
     }
 
@@ -415,6 +465,24 @@ fn collect_external_frequency_points(ext: &Map<String, Value>) -> Vec<(f64, f64,
     out
 }
 
+fn collect_expected_pattern_samples(case_obj: &Map<String, Value>) -> Vec<PatternSample> {
+    let Some(samples) = case_obj.get("pattern_samples").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    samples
+        .iter()
+        .filter_map(|sample| {
+            let sample = sample.as_object()?;
+            Some(PatternSample {
+                theta_deg: sample.get("theta_deg")?.as_f64()?,
+                phi_deg: sample.get("phi_deg")?.as_f64()?,
+                gain_db: sample.get("gain_db")?.as_f64()?,
+            })
+        })
+        .collect()
+}
+
 fn parse_impedance_lines(stdout: &str) -> Vec<(f64, f64)> {
     let mut rows = Vec::new();
     for line in stdout.lines() {
@@ -444,6 +512,52 @@ fn parse_impedance_lines(stdout: &str) -> Vec<(f64, f64)> {
             rows.push((real, imag));
         }
     }
+    rows
+}
+
+fn parse_pattern_rows(stdout: &str) -> Vec<PatternSample> {
+    let mut rows = Vec::new();
+    let mut in_pattern = false;
+
+    for line in stdout.lines() {
+        if line == "RADIATION_PATTERN" {
+            in_pattern = true;
+            continue;
+        }
+        if !in_pattern {
+            continue;
+        }
+        if line.is_empty() {
+            break;
+        }
+        if line.starts_with("N_POINTS ")
+            || line == "THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO"
+        {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 6 {
+            continue;
+        }
+
+        let Ok(theta_deg) = parts[0].parse::<f64>() else {
+            continue;
+        };
+        let Ok(phi_deg) = parts[1].parse::<f64>() else {
+            continue;
+        };
+        let Ok(gain_db) = parts[2].parse::<f64>() else {
+            continue;
+        };
+
+        rows.push(PatternSample {
+            theta_deg,
+            phi_deg,
+            gain_db,
+        });
+    }
+
     rows
 }
 
