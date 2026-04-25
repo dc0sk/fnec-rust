@@ -161,18 +161,41 @@ fn residual_zi_minus_v(z: &ZMatrix, i_vec: &[Complex64], v_vec: &[Complex64]) ->
 fn residual_hallen(
     z: &ZMatrix,
     i_vec: &[Complex64],
-    c_hom: Complex64,
+    c_hom_per_wire: &[Complex64],
     cos_vec: &[f64],
     rhs: &[Complex64],
+    wire_endpoints: &[(usize, usize)],
 ) -> (f64, f64) {
     let n = z.n;
     let mut r = vec![Complex64::new(0.0, 0.0); n];
+
+    let endpoints: &[(usize, usize)];
+    let fallback_endpoints;
+    if wire_endpoints.is_empty() || n == 0 {
+        fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
+        endpoints = &fallback_endpoints;
+    } else {
+        endpoints = wire_endpoints;
+    }
+
+    let mut row_wire = vec![0usize; n];
+    for (wi, &(first, last)) in endpoints.iter().enumerate() {
+        for rw in row_wire.iter_mut().take(last + 1).skip(first) {
+            *rw = wi;
+        }
+    }
+
     for row in 0..n {
         let mut zi = Complex64::new(0.0, 0.0);
         for (col, i_col) in i_vec.iter().enumerate().take(n) {
             zi += z.get(row, col) * *i_col;
         }
-        let lhs = zi - c_hom * cos_vec[row];
+        let c_row = c_hom_per_wire
+            .get(row_wire[row])
+            .copied()
+            .or_else(|| c_hom_per_wire.first().copied())
+            .unwrap_or(Complex64::new(0.0, 0.0));
+        let lhs = zi - c_row * cos_vec[row];
         r[row] = lhs - rhs[row];
     }
 
@@ -380,14 +403,20 @@ fn main() -> ExitCode {
                         return ExitCode::FAILURE;
                     }
                 };
-                match solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec) {
+                match solve_hallen(
+                    &z_mat,
+                    &hallen_rhs.rhs,
+                    &hallen_rhs.cos_vec,
+                    &hallen_rhs.wire_endpoints,
+                ) {
                     Ok(sol) => {
                         let (a, r) = residual_hallen(
                             &z_mat,
                             &sol.currents,
-                            sol.c_hom,
+                            &sol.c_hom_per_wire,
                             &hallen_rhs.cos_vec,
                             &hallen_rhs.rhs,
+                            &hallen_rhs.wire_endpoints,
                         );
                         (sol.currents, a, r, "hallen")
                     }
@@ -488,15 +517,20 @@ fn main() -> ExitCode {
                                 let mut hallen_z =
                                     assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
                                 hallen_z.add_to_diagonal(&load_vec);
-                                match solve_hallen(&hallen_z, &hallen_rhs.rhs, &hallen_rhs.cos_vec)
-                                {
+                                match solve_hallen(
+                                    &hallen_z,
+                                    &hallen_rhs.rhs,
+                                    &hallen_rhs.cos_vec,
+                                    &hallen_rhs.wire_endpoints,
+                                ) {
                                     Ok(sol) => {
                                         let (a2, r2) = residual_hallen(
                                             &hallen_z,
                                             &sol.currents,
-                                            sol.c_hom,
+                                            &sol.c_hom_per_wire,
                                             &hallen_rhs.cos_vec,
                                             &hallen_rhs.rhs,
+                                            &hallen_rhs.wire_endpoints,
                                         );
                                         (sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                                     }

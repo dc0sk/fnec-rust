@@ -1,6 +1,6 @@
 {
   "corpus_version": "1.0",
-  "generated_date": "2026-04-23",
+  "generated_date": "2026-04-25",
   "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
   "reference_engine_version": "fnec 0.1.0",
   "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
@@ -60,10 +60,10 @@
       "wires": 5,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallén solver (regression reference; deck geometry fixed 2026-04-23)",
+      "reference_source": "fnec Hallén solver (regression reference; multi-wire RHS/endpoints fixed 2026-04-25)",
       "feedpoint_impedance": {
-        "real_ohm": 139.097279,
-        "imag_ohm": -125.572548
+        "real_ohm": 30.626170,
+        "imag_ohm": 5.023033
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended)",
@@ -76,7 +76,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference captured from fnec; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy"
+      "status": "Regression reference captured from corrected fnec multi-wire Hallen implementation; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy"
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",
@@ -147,8 +147,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference)",
       "feedpoint_impedance": {
-        "source_1": {"real_ohm": 152.352950, "imag_ohm": 31.560358},
-        "source_2": {"real_ohm": 152.352950, "imag_ohm": 31.560358}
+        "source_1": {"real_ohm": 152.352342, "imag_ohm": 31.560296},
+        "source_2": {"real_ohm": 152.352339, "imag_ohm": 31.560296}
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended)",
