@@ -23,6 +23,7 @@ All notable documentation process changes are recorded here.
 - Corpus validation now numerically checks stored RP pattern samples instead of only asserting pattern-table presence.
 - Corpus validation now also checks the stored vertical/horizontal gain columns and axial ratio for locked RP sample angles.
 - RP corpus angle coverage was expanded from 2 locked sample angles to 7 locked angles across the theta sweep.
+- Added a second RP corpus case with non-z-axis geometry and multi-phi sample locking to validate true azimuth-cut coverage.
 
 ## 0.2.0 — 2026-05-01
 

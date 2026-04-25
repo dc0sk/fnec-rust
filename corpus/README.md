@@ -85,6 +85,33 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 **Why this case**: It locks RP execution into corpus and report-contract testing without adding new solver-option surface area.
 
+### 1d. `dipole-xaxis-rp-grid-51seg.nec` — X-axis dipole with theta/phi RP grid
+
+**Purpose**: Validate that the RP path handles true multi-phi coverage on a geometry whose pattern is not invariant across the sampled azimuth cuts.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Wire: same canonical 51-segment half-wave dipole length as case 1, but rotated onto the x-axis
+- Feed: Center segment (tag=1, seg=26), 1.0 V excitation
+- Ground: None
+- RP: `RP 0 5 4 0.0 0.0 45.0 90.0` (theta points `0°, 45°, 90°, 135°, 180°`; phi points `0°, 90°, 180°, 270°`)
+
+**Expected results** (current regression gate):
+- Same feedpoint impedance as `dipole-freesp-51seg`
+- Z_in = 74.242874 + j13.899516 Ω
+- Pattern table present with 20 points (`RADIATION_PATTERN`, `N_POINTS 20`)
+- Numeric pattern samples locked in corpus validation across representative theta/phi combinations, including:
+  - `θ=0°, φ=0°` → `GAIN_DB=2.1485`, `GAIN_V_DB=2.1485`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
+  - `θ=90°, φ=0°` → deep null (`GAIN_DB=-999.99`)
+  - `θ=90°, φ=90°` → `GAIN_DB=2.1485`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=2.1485`, `AXIAL_RATIO=0.0`
+
+**Tolerance gates**:
+- Same as `dipole-freesp-51seg` for impedance
+- Pattern gain fields: ≤ 0.05 dB absolute on stored `GAIN_DB`, `GAIN_V_DB`, and `GAIN_H_DB` values
+- Axial ratio: ≤ 0.0001 absolute on stored `AXIAL_RATIO` values
+
+**Why this case**: It proves the RP regression path across multiple phi cuts on a non-z-axis geometry, which is a stronger check than the azimuth-invariant baseline dipole.
+
 ### 2. `dipole-ground-51seg.nec` — Half-wave dipole, over ground
 
 **Purpose**: Validate Hallén solver with perfect-ground image-method effects.
@@ -239,6 +266,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
+| 1d | dipole-xaxis-rp-grid-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 81.91 + j16.42 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
@@ -247,7 +275,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 | 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 
-**Total**: 10 benchmark families, ≈18 individual frequency/source points.
+**Total**: 11 benchmark families, ≈19 individual frequency/source points.
 
 ## Reference workflow
 
