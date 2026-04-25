@@ -36,6 +36,7 @@ last_updated: 2026-04-24
 	- 2026-04-25 progress: added `corpus/dipole-xaxis-rp-grid-51seg.nec` to lock multi-phi RP behavior on an x-axis dipole with representative `(theta, phi)` samples.
 	- 2026-04-25 progress: corpus validation now logs external-reference deltas for RP sample rows, and `dipole-freesp-rp-51seg` carries a first `nec2c` pattern candidate for parity tracking.
 	- 2026-04-25 progress: `dipole-xaxis-rp-grid-51seg` now also carries `nec2c` external RP samples, so the observational parity path covers both current RP corpus decks.
+	- 2026-04-25 progress: RP corpus cases can now promote those external pattern candidates into CI gates with optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` thresholds.
 
 ## Parity-driven backlog items
 

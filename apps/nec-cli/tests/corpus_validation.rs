@@ -114,6 +114,12 @@ fn corpus_validation_cases_with_references() {
             .get("AxialRatio_absolute")
             .and_then(Value::as_f64)
             .unwrap_or(0.0001);
+        let external_gain_abs_db = gates
+            .get("ExternalGain_absolute_dB")
+            .and_then(Value::as_f64);
+        let external_axial_ratio_abs = gates
+            .get("ExternalAxialRatio_absolute")
+            .and_then(Value::as_f64);
 
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .arg("--solver")
@@ -418,6 +424,10 @@ fn corpus_validation_cases_with_references() {
                         (row.theta_deg - sample.theta_deg).abs() < 1e-9
                             && (row.phi_deg - sample.phi_deg).abs() < 1e-9
                     }) {
+                        let err_gain = (row.gain_db - sample.gain_db).abs();
+                        let err_gain_v = (row.gain_v_db - sample.gain_v_db).abs();
+                        let err_gain_h = (row.gain_h_db - sample.gain_h_db).abs();
+                        let err_axial_ratio = (row.axial_ratio - sample.axial_ratio).abs();
                         eprintln!(
                             "corpus external delta: case='{}' pattern theta={:.4} phi={:.4} dGain={:+.4} dGainV={:+.4} dGainH={:+.4} dAxialRatio={:+.4} (fnec-ext)",
                             case_name,
@@ -428,6 +438,56 @@ fn corpus_validation_cases_with_references() {
                             row.gain_h_db - sample.gain_h_db,
                             row.axial_ratio - sample.axial_ratio,
                         );
+
+                        if let Some(tol) = external_gain_abs_db {
+                            assert!(
+                                err_gain <= tol,
+                                "Case '{}' external pattern gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                sample.theta_deg,
+                                sample.phi_deg,
+                                row.gain_db,
+                                sample.gain_db,
+                                err_gain,
+                                tol
+                            );
+                            assert!(
+                                err_gain_v <= tol,
+                                "Case '{}' external pattern vertical gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                sample.theta_deg,
+                                sample.phi_deg,
+                                row.gain_v_db,
+                                sample.gain_v_db,
+                                err_gain_v,
+                                tol
+                            );
+                            assert!(
+                                err_gain_h <= tol,
+                                "Case '{}' external pattern horizontal gain out of tolerance at theta={:.4} phi={:.4}: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                sample.theta_deg,
+                                sample.phi_deg,
+                                row.gain_h_db,
+                                sample.gain_h_db,
+                                err_gain_h,
+                                tol
+                            );
+                        }
+
+                        if let Some(tol) = external_axial_ratio_abs {
+                            assert!(
+                                err_axial_ratio <= tol,
+                                "Case '{}' external pattern axial ratio out of tolerance at theta={:.4} phi={:.4}: got {:.6}, external {:.6}, err {:.6}, tol {:.6}",
+                                case_name,
+                                sample.theta_deg,
+                                sample.phi_deg,
+                                row.axial_ratio,
+                                sample.axial_ratio,
+                                err_axial_ratio,
+                                tol
+                            );
+                        }
                     }
                 }
             }

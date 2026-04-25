@@ -82,6 +82,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Same as `dipole-freesp-51seg` for impedance
 - Pattern gain fields: ≤ 0.05 dB absolute on stored `GAIN_DB`, `GAIN_V_DB`, and `GAIN_H_DB` values
 - Axial ratio: ≤ 0.0001 absolute on stored `AXIAL_RATIO` values
+- External RP candidate gates: optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` keys can additionally CI-gate `external_reference_candidate.pattern_samples` when present
 
 **Why this case**: It locks RP execution into corpus and report-contract testing without adding new solver-option surface area.
 
@@ -109,6 +110,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Same as `dipole-freesp-51seg` for impedance
 - Pattern gain fields: ≤ 0.05 dB absolute on stored `GAIN_DB`, `GAIN_V_DB`, and `GAIN_H_DB` values
 - Axial ratio: ≤ 0.0001 absolute on stored `AXIAL_RATIO` values
+- External RP candidate gates: optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` keys can additionally CI-gate `external_reference_candidate.pattern_samples` when present
 
 **Why this case**: It proves the RP regression path across multiple phi cuts on a non-z-axis geometry, which is a stronger check than the azimuth-invariant baseline dipole.
 
