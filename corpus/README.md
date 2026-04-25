@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-25
 ---
 
 # Golden Reference Corpus
@@ -142,6 +142,26 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 **Why this case**: Multi-source problems are common (feed networks, phased arrays, test fixtures). Validates that the solver correctly handles multiple excitation points and coupling.
 
+### 7. `multi-source-gr-180.nec` — Dipole array generated via `GR`
+
+**Purpose**: Validate that `GR` geometry expansion produces the same electrical result as an equivalent handwritten multi-wire deck.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Start with one vertical half-wave dipole centered at x = +0.5 m
+- `GR 1 1 180.0` generates one additional copy by rotating 180 degrees about z, placing the second dipole at x = -0.5 m
+- Both dipoles are center-fed at 1.0 V
+- Ground: None
+
+**Expected results** (current regression gate):
+- Same feedpoint impedances as `multi-source.nec`
+- Source 1: 152.352342 + j31.560296 Ω
+- Source 2: 152.352339 + j31.560296 Ω
+
+**Tolerance gates**: Same as `multi-source.nec`.
+
+**Why this case**: It is a direct corpus-level check that parser + geometry-builder `GR` support is not only syntactically accepted, but electrically equivalent to an already validated explicit geometry.
+
 ## Corpus metadata
 
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
@@ -152,8 +172,9 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |
 | 6 | multi-source.nec | 51 | 2 | 2 | None | [TBD] × 2 |
+| 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 
-**Total**: 6 benchmark families, ≈12 individual frequency/source points.
+**Total**: 7 benchmark families, ≈14 individual frequency/source points.
 
 ## Reference workflow
 

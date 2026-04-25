@@ -2,7 +2,7 @@
   "corpus_version": "1.0",
   "generated_date": "2026-04-25",
   "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
-  "reference_engine_version": "fnec 0.1.0",
+  "reference_engine_version": "fnec 0.2.0",
   "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
   "cases": {
     "dipole-freesp-51seg": {
@@ -162,6 +162,27 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy"
+    },
+    "multi-source-gr-180": {
+      "deck_file": "multi-source-gr-180.nec",
+      "description": "Two parallel half-wave dipoles generated from one off-axis dipole via GR 180-degree rotation",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 2,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference; GR geometry expansion validated against handwritten multi-source deck)",
+      "feedpoint_impedance": {
+        "source_1": {"real_ohm": 152.352342, "imag_ohm": 31.560296},
+        "source_2": {"real_ohm": 152.352339, "imag_ohm": 31.560296}
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation"
     }
   }
 }
