@@ -202,6 +202,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Tolerance gates**:
 - Each frequency point: R, X within 0.1% relative
+- External impedance candidate gate (enabled in corpus JSON): `ExternalR_absolute_ohm=15.0`, `ExternalX_absolute_ohm=50.0`
 - Trend validation: impedance curve must be smooth (no discontinuities), resonance near 14.2 MHz
 
 **Why this case**: Frequency sweeps are standard analysis. Validates that the solver scales correctly across frequency and produces physically sensible results.

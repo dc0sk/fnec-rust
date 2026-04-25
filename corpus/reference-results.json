@@ -458,9 +458,11 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 15.0,
+        "ExternalX_absolute_ohm": 50.0
       },
-      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates retained for future parity tightening."
+      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now also gated with absolute external R/X thresholds for parity tightening."
     },
     "multi-source": {
       "deck_file": "multi-source.nec",
