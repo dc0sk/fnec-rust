@@ -3,7 +3,7 @@
 
 use nec_model::card::Card;
 use nec_parser::parse;
-use nec_report::{render_text_report, FeedpointRow, ReportInput};
+use nec_report::{render_text_report, CurrentRow, FeedpointRow, ReportInput};
 use nec_solver::build_loads;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
@@ -575,11 +575,23 @@ fn main() -> ExitCode {
         if fidx > 0 {
             println!();
         }
+
+        let current_table: Vec<CurrentRow> = segs
+            .iter()
+            .enumerate()
+            .map(|(idx, seg)| CurrentRow {
+                tag: seg.tag as usize,
+                seg: seg.tag_index as usize,
+                current: i_vec[idx],
+            })
+            .collect();
+
         let report = render_text_report(&ReportInput {
             solver_mode: diag_label,
             pulse_rhs: pulse_rhs_mode.as_contract_str(),
             frequency_hz: freq_hz,
             rows: &rows,
+            current_table: &current_table,
         });
         print!("{report}");
 
