@@ -74,6 +74,23 @@ fn run_solver_on_reference_dipole_with_pulse_rhs(
         })
 }
 
+fn run_hallen_on_loaded_case(allow_noncollinear_hallen: bool) -> std::process::Output {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-loaded.nec");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
+    cmd.arg("--solver").arg("hallen");
+    if allow_noncollinear_hallen {
+        cmd.arg("--allow-noncollinear-hallen");
+    }
+    cmd.arg(&deck_path);
+    cmd.output().unwrap_or_else(|e| {
+        panic!(
+            "Failed to run fnec hallen for loaded case (allow_noncollinear_hallen={allow_noncollinear_hallen}): {e}"
+        )
+    })
+}
+
 #[test]
 fn continuity_non_single_chain_falls_back_to_pulse() {
     assert_non_single_chain_fallback("continuity", "continuity->pulse");
@@ -198,4 +215,36 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
+}
+
+#[test]
+fn hallen_non_collinear_fails_without_opt_in_flag() {
+    let output = run_hallen_on_loaded_case(false);
+
+    assert!(
+        !output.status.success(),
+        "expected hallen to fail on non-collinear loaded case without opt-in flag"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("solver currently supports only collinear wire topologies aligned with the driven segment"),
+        "expected non-collinear topology error in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn hallen_non_collinear_opt_in_flag_runs_experimental_path() {
+    let output = run_hallen_on_loaded_case(true);
+
+    assert!(
+        output.status.success(),
+        "expected hallen to run with --allow-noncollinear-hallen, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: --allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries"),
+        "expected experimental opt-in warning in stderr, got:\n{stderr}"
+    );
+    assert_diag_mode(&stderr, "hallen");
 }

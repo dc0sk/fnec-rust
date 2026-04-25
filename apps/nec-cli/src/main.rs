@@ -7,8 +7,9 @@ use nec_report::{render_text_report, FeedpointRow, ReportInput};
 use nec_solver::build_loads;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
-    build_hallen_rhs, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_with_continuity_basis, solve_with_sinusoidal_basis, GroundModel, Segment, ZMatrix,
+    build_hallen_rhs_with_options, ground_model_from_deck, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_with_continuity_basis, solve_with_sinusoidal_basis, GroundModel, Segment,
+    ZMatrix,
 };
 use num_complex::Complex64;
 use std::path::PathBuf;
@@ -51,9 +52,10 @@ impl PulseRhsMode {
     }
 }
 
-fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), String> {
+fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, bool, PathBuf), String> {
     let mut solver_mode = SolverMode::Hallen;
     let mut pulse_rhs_mode = PulseRhsMode::Nec2;
+    let mut hallen_allow_non_collinear = false;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -94,6 +96,9 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), St
                     }
                 };
             }
+            "--allow-noncollinear-hallen" => {
+                hallen_allow_non_collinear = true;
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -108,7 +113,12 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, PathBuf), St
     }
 
     let path = deck_path.ok_or_else(|| "missing deck path".to_string())?;
-    Ok((solver_mode, pulse_rhs_mode, path))
+    Ok((
+        solver_mode,
+        pulse_rhs_mode,
+        hallen_allow_non_collinear,
+        path,
+    ))
 }
 
 fn is_single_linear_chain(segs: &[Segment]) -> bool {
@@ -251,20 +261,32 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>"
         );
         return ExitCode::from(2);
     }
 
-    let (solver_mode, pulse_rhs_mode, path) = match parse_args(&args) {
+    let (solver_mode, pulse_rhs_mode, hallen_allow_non_collinear, path) = match parse_args(&args) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] <deck.nec>");
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>");
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
     };
+
+    if hallen_allow_non_collinear && solver_mode != SolverMode::Hallen {
+        eprintln!(
+            "warning: --allow-noncollinear-hallen is ignored unless --solver hallen is selected"
+        );
+    }
+
+    if hallen_allow_non_collinear {
+        eprintln!(
+            "warning: --allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries; results may be inaccurate"
+        );
+    }
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -346,7 +368,12 @@ fn main() -> ExitCode {
 
         let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
             SolverMode::Hallen => {
-                let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
+                let hallen_rhs = match build_hallen_rhs_with_options(
+                    deck,
+                    &segs,
+                    freq_hz,
+                    hallen_allow_non_collinear,
+                ) {
                     Ok(h) => h,
                     Err(e) => {
                         eprintln!("error: {e}");
@@ -446,7 +473,12 @@ fn main() -> ExitCode {
                                     "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
                                     r, SINUSOIDAL_REL_RESIDUAL_MAX
                                 );
-                                let hallen_rhs = match build_hallen_rhs(deck, &segs, freq_hz) {
+                                let hallen_rhs = match build_hallen_rhs_with_options(
+                                    deck,
+                                    &segs,
+                                    freq_hz,
+                                    hallen_allow_non_collinear,
+                                ) {
                                     Ok(h) => h,
                                     Err(e) => {
                                         eprintln!("error: {e}");

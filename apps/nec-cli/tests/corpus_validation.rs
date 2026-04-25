@@ -37,6 +37,10 @@ fn corpus_validation_cases_with_references() {
             .and_then(Value::as_object)
             .unwrap_or_else(|| panic!("case '{case_name}' is not an object"));
 
+        let expected_hallen_error_contains = case_obj
+            .get("expected_hallen_error_contains")
+            .and_then(Value::as_str);
+
         let deck_file = case_obj
             .get("deck_file")
             .and_then(Value::as_str)
@@ -98,6 +102,25 @@ fn corpus_validation_cases_with_references() {
             .arg(&deck_path)
             .output()
             .unwrap_or_else(|e| panic!("Failed to run fnec for case '{case_name}': {e}"));
+
+        if let Some(expected_msg) = expected_hallen_error_contains {
+            assert!(
+                !output.status.success(),
+                "case '{}' expected Hallen failure containing '{}', but command succeeded",
+                case_name,
+                expected_msg
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains(expected_msg),
+                "case '{}' expected Hallen error containing '{}', got stderr:\n{}",
+                case_name,
+                expected_msg,
+                stderr
+            );
+            validated += 1;
+            continue;
+        }
 
         if !output.status.success() {
             panic!(

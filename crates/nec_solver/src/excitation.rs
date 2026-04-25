@@ -126,6 +126,21 @@ pub fn build_hallen_rhs(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<HallenRhs, ExcitationError> {
+    build_hallen_rhs_with_options(deck, segs, freq_hz, false)
+}
+
+/// Build Hallén RHS data with optional non-collinear topology allowance.
+///
+/// When `allow_non_collinear` is `false` (default behavior), non-collinear
+/// segment directions are rejected with [`ExcitationError::UnsupportedHallenTopology`].
+/// When it is `true`, the RHS is still built using feed-axis projection and
+/// should be treated as experimental for non-collinear decks.
+pub fn build_hallen_rhs_with_options(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    allow_non_collinear: bool,
+) -> Result<HallenRhs, ExcitationError> {
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
@@ -179,7 +194,7 @@ pub fn build_hallen_rhs(
                 .or_insert(abs_dot);
         }
     }
-    if !non_collinear_tags.is_empty() {
+    if !allow_non_collinear && !non_collinear_tags.is_empty() {
         return Err(ExcitationError::UnsupportedHallenTopology {
             non_collinear_tags: non_collinear_tags.into_iter().collect(),
             tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
@@ -517,6 +532,38 @@ mod tests {
 
         let segs = build_geometry(&deck).unwrap();
         let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
+        assert_eq!(h.rhs.len(), segs.len());
+        assert_eq!(h.cos_vec.len(), segs.len());
+    }
+
+    #[test]
+    fn hallen_rhs_with_option_allows_non_collinear_topology() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 2,
+            segments: 9,
+            start: [-0.25, 0.0, 2.677],
+            end: [0.25, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 6,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let h = build_hallen_rhs_with_options(&deck, &segs, TEST_FREQ_HZ, true).unwrap();
         assert_eq!(h.rhs.len(), segs.len());
         assert_eq!(h.cos_vec.len(), segs.len());
     }

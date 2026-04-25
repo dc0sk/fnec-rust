@@ -86,6 +86,7 @@
       "wires": 5,
       "sources": 1,
       "ground": "none",
+      "expected_hallen_error_contains": "solver currently supports only collinear wire topologies aligned with the driven segment",
       "reference_source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
       "feedpoint_impedance": {
         "real_ohm": null,

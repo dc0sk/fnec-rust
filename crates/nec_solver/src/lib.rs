@@ -10,7 +10,8 @@ pub mod matrix;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
-    build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
+    build_excitation, build_hallen_rhs, build_hallen_rhs_with_options,
+    scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use geometry::{build_geometry, ground_model_from_deck, GeometryError, GroundModel, Segment};
 pub use linear::{
