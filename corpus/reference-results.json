@@ -55,7 +55,8 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "Gain_absolute_dB": 0.05
       },
       "status": "Regression reference locks RP execution path and radiation-pattern table contract"
     },

@@ -69,8 +69,13 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Same feedpoint impedance as `dipole-freesp-51seg`
 - Z_in = 74.242874 + j13.899516 Ω
 - Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
+- Numeric pattern samples locked in corpus validation:
+  - θ = 0°, φ = 0° → -999.99 dB
+  - θ = 90°, φ = 0° → 2.1428 dBi
 
-**Tolerance gates**: Same as `dipole-freesp-51seg` for impedance.
+**Tolerance gates**:
+- Same as `dipole-freesp-51seg` for impedance
+- Pattern samples: ≤ 0.05 dB absolute on stored `GAIN_DB` values
 
 **Why this case**: It locks RP execution into corpus and report-contract testing without adding new solver-option surface area.
 
