@@ -1,0 +1,445 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "creationInfo": {
+    "created": "2026-04-25T14:31:03Z",
+    "creators": [
+      "Tool: cargo-sbom-v0.10.0"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://spdx.org/spdxdocs/fnec-rust-6e2e3265-c590-4fd6-abd1-be3a85e77f51",
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File-fnec",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-fnec-gui",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-fnec-tui",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_accel",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_model",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_parser",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_project",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_report",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-nec_solver",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "03c648831f78a24591adc30fc5c6afbd64b2a8c0"
+        }
+      ],
+      "fileName": "./Cargo.lock",
+      "fileTypes": [
+        "SOURCE",
+        "TEXT"
+      ]
+    }
+  ],
+  "name": "fnec-rust",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-nec-cli-0.2.0",
+      "description": "fnec CLI frontend — run NEC decks and projects from the command line",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec-cli",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--model-0.2.0",
+      "description": "Domain model for NEC structures: geometry, sources, ground, frequency sweeps, requests",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_model",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-num-traits-0.2.19",
+      "description": "Numeric traits for generic mathematics",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:cargo/num-traits@0.2.19",
+          "referenceType": "purl"
+        }
+      ],
+      "homepage": "https://github.com/rust-num/num-traits",
+      "licenseConcluded": "MIT OR Apache-2.0",
+      "licenseDeclared": "MIT OR Apache-2.0",
+      "name": "num-traits",
+      "versionInfo": "0.2.19"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-num-complex-0.4.6",
+      "description": "Complex numbers implementation for Rust",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:cargo/num-complex@0.4.6",
+          "referenceType": "purl"
+        }
+      ],
+      "homepage": "https://github.com/rust-num/num-complex",
+      "licenseConcluded": "MIT OR Apache-2.0",
+      "licenseDeclared": "MIT OR Apache-2.0",
+      "name": "num-complex",
+      "versionInfo": "0.4.6"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--parser-0.2.0",
+      "description": "NEC2/4nec2-tolerant deck parser with diagnostics and dialect auto-detection",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_parser",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--accel-0.2.0",
+      "description": "Optional GPU acceleration backends for fnec-rust (wgpu compute, future: CUDA/Metal)",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_accel",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec-gui-0.2.0",
+      "description": "fnec GUI frontend — modern task-oriented antenna modeling interface (iced)",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec-gui",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--solver-0.2.0",
+      "description": "NEC2 MoM solver: matrix assembly, linear solve, postprocessing (currents, impedance, patterns)",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_solver",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec-tui-0.2.0",
+      "description": "fnec TUI frontend — terminal interface for batch runs and quick inspection (ratatui)",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec-tui",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--project-0.2.0",
+      "description": "Project container: run configuration, variants, result cache, .nec and Markdown import/export",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_project",
+      "versionInfo": "0.2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nec--report-0.2.0",
+      "description": "Result reporting and export: 4nec2-like text output, plotting data preparation",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "GPL-3.0",
+      "licenseDeclared": "GPL-3.0",
+      "name": "nec_report",
+      "versionInfo": "0.2.0"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_parser",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--report-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--project-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-fnec-gui",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--solver-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--parser-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--project-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-tui-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--accel-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--solver-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-fnec-tui",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--project-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-gui-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec-gui-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-fnec-gui"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-num-complex-0.4.6",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--report-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-num-traits-0.2.19",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-num-complex-0.4.6"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-fnec",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--report-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_report"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--project-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_project"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-num-complex-0.4.6",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-num-complex-0.4.6",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--solver-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--report-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--solver-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_model",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--parser-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_parser"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_report",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--project-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_accel",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--solver-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--project-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec-cli-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-fnec"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--project-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec-cli-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec-tui-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-fnec-tui"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_model"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--solver-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_solver"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_project",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-nec_solver",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--parser-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--parser-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--project-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--model-0.2.0",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-nec--report-0.2.0"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-nec--accel-0.2.0",
+      "relationshipType": "GENERATED_FROM",
+      "spdxElementId": "SPDXRef-File-nec_accel"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}

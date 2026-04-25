@@ -1,0 +1,9 @@
+CM Two parallel half-wave dipoles generated via GM translated copy
+CE
+GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001
+GM 1 1 0 0 0 1.0 0 0 1
+GE
+EX 0 1 26 0 1.0 0.0
+EX 0 2 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

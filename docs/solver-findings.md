@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # Solver Findings
@@ -84,6 +84,69 @@ basis functions (`tbf`/`sbf`/`trio` in `calculations.c`).
 The pulse/continuity modes are marked **experimental** in the CLI with a
 runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 
+### Non-collinear loaded element case — BLOCKED ON SOLVER BREADTH
+
+For `corpus/dipole-loaded.nec`, the current status is now explicit and tested:
+
+- Hallen mode fails fast by design because the geometry is not collinear with the driven wire.
+- Pulse, continuity, and sinusoidal modes all currently collapse to the same pulse-basis result on this topology.
+- That result is not close enough to use as a parity substitute.
+
+Observed fnec result at 7.1 MHz:
+
+| Mode | Value |
+|:-----|:------|
+| pulse | **-13.7780 + j374.425 \u03a9** |
+| continuity | **-13.7780 + j374.425 \u03a9** (fallback to pulse) |
+| sinusoidal | **-13.7780 + j374.425 \u03a9** (fallback to pulse) |
+
+External candidate currently tracked in the corpus:
+
+| Reference | Value |
+|:----------|:------|
+| NEC2DXS500 via Wine | **13.4632 - j896.032 \u03a9** |
+
+This is a sign and magnitude mismatch in both $R$ and $X$, not a small calibration delta.
+The loaded-element corpus gap is therefore blocked by non-collinear solver support,
+not by LD-card parsing or matrix-load application.
+
+### Experimental non-collinear Hallen path (`--allow-noncollinear-hallen` flag)
+
+As of 2026-04-25, an experimental opt-in path exists to allow non-collinear topologies
+in the Hallen solver via feed-axis RHS projection. Results summary:
+
+| Mode | Value | dX from external | Improvement vs pulse |
+|:-----|:------|:-----------------|:---------------------|
+| pulse baseline | **-13.7780 + j374.425 Ω** | 1270.46 Ω | baseline |
+| hallen + `--allow-noncollinear-hallen` | **-45.0682 - j1008.139 Ω** | 112.11 Ω | **11.3× better** |
+| external (NEC2DXS500) | **13.4632 - j896.032 Ω** | 0.0 Ω | — |
+
+The experimental Hallen path achieves **11× improvement in reactance error** vs pulse 
+but does not reach parity. Both real and imaginary parts remain far from the reference.
+
+**Architectural limitation**: The improvement plateaus because the core issue is not
+the RHS formulation but the matrix structure itself. All thin-wire MoM methods (Hallen,
+Pocklington) weight off-diagonal matrix elements by $\cos(\alpha) = \mathbf{\hat{d}}_m \cdot \mathbf{\hat{d}}_n$ 
+(the dot product of segment directions). For non-collinear geometries like the top-hat loop:
+
+- For non-aligned segments, $|\cos(\alpha)| \approx 0$, making the matrix entries tiny
+- This suppresses coupling between the main antenna and the loading loop
+- The matrix becomes ill-conditioned and cannot recover the full 3D electromagnetic interaction
+
+Tested improvements that did NOT help (2026-04-25):
+- Blending perpendicular distance into the RHS (α = 0.5 weighting)
+- Using pure Euclidean distance from feed point for non-collinear segments (α = 1.0)
+- Both approaches made no measurable change to the impedance results
+
+**Conclusion**: Forcing non-collinear support into thin-wire MoM via RHS tweaks alone
+is fundamentally limited. A proper solution would require either:
+1. Matrix reformulation for non-collinear topologies (substantial research effort)
+2. Hybrid solver using different bases for collinear vs non-collinear parts
+3. Acceptance that geometric loads (non-collinear loops) require surface or mixed-element modeling
+
+For Phase 1 scope, the experimental path is adequate as a fallback that improves upon
+pulse-baseline for users who understand its limitations, but is **not** a path to parity.
+
 ## Key bugs fixed on this branch
 
 | Commit | Fix |
@@ -102,6 +165,7 @@ runtime warning.  A sinusoidal-basis EFIE fix is tracked in `docs/backlog.md`.
 - Keep experiments reproducible using gitignored temp folders and `studies/` scripts.
 - Separate physics-formulation changes from reporting/output changes to isolate regressions.
 - When a solver gives wrong results, verify it in Python before modifying Rust — it is faster to falsify a formulation hypothesis in 10 lines of Python than in a Rust edit–compile–run cycle.
+- Treat non-collinear loaded-element parity as a solver-breadth problem first; routing Hallen failures into the current pulse path only hides the real blocker.
 
 ## External references
 

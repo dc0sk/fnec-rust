@@ -2,14 +2,14 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-04-23
+last_updated: 2026-04-25
 ---
 
 # Golden Reference Corpus
 
 This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against NEC reference engines (primary: xnec2c, fallback: 4nec2).
 
-Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation -- --ignored` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
+Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
 ## Corpus cases
 
@@ -34,6 +34,25 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 - Current mag (center): ≤ 0.1% relative
 
 **Why this case**: It is the simplest, most well-understood benchmark. Pass here is a prerequisite for all other cases.
+
+### 1b. `dipole-freesp-gm-inplace-shifted.nec` — Free-space dipole shifted via `GM`
+
+**Purpose**: Validate that the currently supported `GM` in-place transform preserves electrical behavior for a free-space dipole under rigid translation.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Start with the canonical `dipole-freesp-51seg` wire
+- Apply `GM 0 1 0 0 0 1.0 0 0 1` to translate the geometry by +1.0 m along x in place
+- Feed: Center segment (tag=1, seg=26), 1.0 V excitation
+- Ground: None
+
+**Expected results** (current regression gate):
+- Same feedpoint impedance as `dipole-freesp-51seg`
+- Z_in = 74.242874 + j13.899516 Ω
+
+**Tolerance gates**: Same as `dipole-freesp-51seg`.
+
+**Why this case**: It is a direct corpus-level check that parser + geometry-builder `GM` in-place translation is not only accepted syntactically, but electrically invariant under free-space rigid translation.
 
 ### 2. `dipole-ground-51seg.nec` — Half-wave dipole, over ground
 
@@ -142,18 +161,61 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 **Why this case**: Multi-source problems are common (feed networks, phased arrays, test fixtures). Validates that the solver correctly handles multiple excitation points and coupling.
 
+### 7. `multi-source-gr-180.nec` — Dipole array generated via `GR`
+
+**Purpose**: Validate that `GR` geometry expansion produces the same electrical result as an equivalent handwritten multi-wire deck.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Start with one vertical half-wave dipole centered at x = +0.5 m
+- `GR 1 1 180.0` generates one additional copy by rotating 180 degrees about z, placing the second dipole at x = -0.5 m
+- Both dipoles are center-fed at 1.0 V
+- Ground: None
+
+**Expected results** (current regression gate):
+- Same feedpoint impedances as `multi-source.nec`
+- Source 1: 152.352342 + j31.560296 Ω
+- Source 2: 152.352339 + j31.560296 Ω
+
+**Tolerance gates**: Same as `multi-source.nec`.
+
+**Why this case**: It is a direct corpus-level check that parser + geometry-builder `GR` support is not only syntactically accepted, but electrically equivalent to an already validated explicit geometry.
+
+### 8. `multi-source-gm-copy.nec` — Dipole array generated via `GM`
+
+**Purpose**: Validate that the currently supported `GM` translated-copy subset produces the same electrical result as an equivalent handwritten multi-wire deck.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Start with one vertical half-wave dipole centered at x = 0 m
+- `GM 1 1 0 0 0 1.0 0 0 1` appends one translated copy at x = +1.0 m with tag increment 1
+- Both dipoles are center-fed at 1.0 V
+- Ground: None
+
+**Expected results** (current regression gate):
+- Same feedpoint impedances as `multi-source.nec`
+- Source 1: 152.352342 + j31.560296 Ω
+- Source 2: 152.352339 + j31.560296 Ω
+
+**Tolerance gates**: Same as `multi-source.nec`.
+
+**Why this case**: It locks the currently implemented `GM` behavior into corpus validation and makes the supported subset explicit: one in-place transform or one appended transformed copy, not full unqualified NEC GM parity.
+
 ## Corpus metadata
 
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
 |:-----|:----------|:---------|:------|:--------|:-------|:------------------|
 | 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
+| 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 81.91 + j16.42 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |
 | 6 | multi-source.nec | 51 | 2 | 2 | None | [TBD] × 2 |
+| 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
+| 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 
-**Total**: 6 benchmark families, ≈12 individual frequency/source points.
+**Total**: 9 benchmark families, ≈17 individual frequency/source points.
 
 ## Reference workflow
 
@@ -253,8 +315,8 @@ Results extracted into `corpus/reference-results.json` with structure:
       "imag_ohm": 13.90
     },
     "tolerance_gates": {
-      "R_percent": 0.1,
-      "X_percent": 0.1,
+      "R_percent_rel": 0.1,
+      "X_percent_rel": 0.1,
       "R_absolute_ohm": 0.05,
       "X_absolute_ohm": 0.05
     }
@@ -265,16 +327,13 @@ Results extracted into `corpus/reference-results.json` with structure:
 
 ## CI validation
 
-On each commit, `cargo test -p nec-cli --test corpus_validation -- --ignored` runs fnec against corpus decks with captured references and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
+On each commit, `cargo test -p nec-cli --test corpus_validation` runs fnec against corpus decks with captured references and compares results against `corpus/reference-results.json`. Any result exceeding the tolerance gate is a **CI failure** (not a warning).
 
 ## Status
 
-- [ ] Dipole free-space deck created and xnec2c reference captured
-- [ ] Dipole ground deck created and xnec2c reference captured
-- [ ] Yagi deck created and reference captured
-- [ ] Loaded dipole deck created and reference captured
-- [ ] Frequency sweep created and reference captured
-- [ ] Multi-source deck created and reference captured
-- [x] Validation test suite scaffolded (`apps/nec-cli/tests/corpus_validation.rs`) and CI workflow added (`.github/workflows/corpus-validation.yml`)
-- [ ] All corpus cases pass fnec-rust within tolerance matrix
-- [ ] BLK-003 resolved: corpus validation gates Phase 1 → Phase 2
+- [x] 9 corpus deck families are present, including GM/GR equivalence regressions.
+- [x] `corpus/reference-results.json` is populated with active regression values and tolerance gates.
+- [x] Validation test suite is active (`apps/nec-cli/tests/corpus_validation.rs`) and CI workflow is wired (`.github/workflows/corpus-validation.yml`).
+- [x] Active corpus validation currently passes in CI/local runs (with documented skips where references are intentionally absent).
+- [ ] External-reference parity capture remains incomplete for several cases (notably loaded and some pattern/gain-oriented classes).
+- [ ] Full Phase 1→2 parity gate remains open until external-reference coverage and deferred scope items are closed.

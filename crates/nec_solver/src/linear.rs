@@ -243,25 +243,34 @@ fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f6
 pub struct HallenSolution {
     /// Solved segment currents.
     pub currents: Vec<Complex64>,
-    /// Homogeneous-constant coefficient C.
+    /// Homogeneous-constant coefficients per wire.
+    ///
+    /// Length is the number of wires constrained in the Hallen solve.
+    pub c_hom_per_wire: Vec<Complex64>,
+    /// Homogeneous-constant coefficient of the first wire (compat field).
     pub c_hom: Complex64,
 }
 
 /// Solve Hallén's augmented system in least-squares form.
 ///
-/// Unknown vector x = [I_0 .. I_{N-1}, C]^T.
+/// Unknown vector x = [I_0 .. I_{N-1}, C_0 .. C_{W-1}]^T.
 ///
 /// Overdetermined augmented system:
-///   A · I - C·cos_vec = rhs
-///   I_0 = 0
-///   I_{N-1} = 0
-
+///   A · I - C_w(row)·cos_vec = rhs
+///   I_{wire_k_first} = 0  (for each wire k)
+///   I_{wire_k_last}  = 0  (for each wire k)
+///
+/// `wire_endpoints` is a slice of `(first_seg_idx, last_seg_idx)` per wire.
+/// An empty slice falls back to constraining only the global first and last segment,
+/// which is correct for single-wire decks.
+///
 /// Solved via regularized normal equations:
 ///   (MᴴM + λI) x = Mᴴy
 pub fn solve_hallen(
     z: &ZMatrix,
     rhs: &[Complex64],
     cos_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n {
@@ -272,22 +281,43 @@ pub fn solve_hallen(
         });
     }
 
-    let rows = n + 2;
-    let cols = n + 1;
+    // Build the endpoint constraint list: per-wire if supplied, else global endpoints.
+    let endpoints: &[(usize, usize)];
+    let fallback_endpoints;
+    if wire_endpoints.is_empty() || n == 0 {
+        fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
+        endpoints = &fallback_endpoints;
+    } else {
+        endpoints = wire_endpoints;
+    }
+
+    let w = endpoints.len();
+    let rows = n + 2 * w;
+    let cols = n + w;
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y = vec![Complex64::new(0.0, 0.0); rows];
+
+    // Determine wire index for each segment row from endpoint ranges.
+    let mut row_wire = vec![0usize; n];
+    for (wi, &(first, last)) in endpoints.iter().enumerate() {
+        for rw in row_wire.iter_mut().take(last + 1).skip(first) {
+            *rw = wi;
+        }
+    }
 
     for r in 0..n {
         for c in 0..n {
             m[r][c] = z.get(r, c);
         }
-        m[r][n] = Complex64::new(-cos_vec[r], 0.0);
+        let c_col = n + row_wire[r];
+        m[r][c_col] = Complex64::new(-cos_vec[r], 0.0);
         y[r] = rhs[r];
     }
 
-    // Tip-current constraints.
-    m[n][0] = Complex64::new(1.0, 0.0);
-    m[n + 1][n - 1] = Complex64::new(1.0, 0.0);
+    for (w, &(first, last)) in endpoints.iter().enumerate() {
+        m[n + 2 * w][first] = Complex64::new(1.0, 0.0);
+        m[n + 2 * w + 1][last] = Complex64::new(1.0, 0.0);
+    }
 
     // Normal equations with light Tikhonov regularization.
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -313,9 +343,14 @@ pub fn solve_hallen(
     }
 
     let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let c_hom_per_wire = x[n..].to_vec();
     Ok(HallenSolution {
         currents: x[..n].to_vec(),
-        c_hom: x[n],
+        c_hom: c_hom_per_wire
+            .first()
+            .copied()
+            .unwrap_or(Complex64::new(0.0, 0.0)),
+        c_hom_per_wire,
     })
 }
 
@@ -543,7 +578,7 @@ mod tests {
         let rhs = vec![c(1.0, 0.0)];
         let cos_vec = vec![1.0, 1.0];
         assert!(matches!(
-            solve_hallen(&z, &rhs, &cos_vec),
+            solve_hallen(&z, &rhs, &cos_vec, &[]),
             Err(SolveError::HallenDimensionMismatch {
                 z_n: 2,
                 rhs_len: 1,
@@ -564,8 +599,8 @@ mod tests {
         let rhs_a = vec![c(0.0, 0.0), c(0.0, 0.0), c(0.0, 0.0)];
         let rhs_b = vec![c(0.0, -0.1), c(0.0, -0.2), c(0.0, -0.1)];
 
-        let a = solve_hallen(&z, &rhs_a, &cos_vec).unwrap();
-        let b = solve_hallen(&z, &rhs_b, &cos_vec).unwrap();
+        let a = solve_hallen(&z, &rhs_a, &cos_vec, &[]).unwrap();
+        let b = solve_hallen(&z, &rhs_b, &cos_vec, &[]).unwrap();
 
         let mut diff = 0.0;
         for i in 0..3 {

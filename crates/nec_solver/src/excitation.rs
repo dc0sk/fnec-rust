@@ -28,6 +28,11 @@ pub struct HallenRhs {
     pub rhs: Vec<Complex64>,
     /// cos(k·s_m) samples for the homogeneous-term column.
     pub cos_vec: Vec<f64>,
+    /// Per-wire endpoint indices: (first_seg_idx, last_seg_idx) for each wire.
+    ///
+    /// Used by the solver to enforce zero tip-current at each wire end.
+    /// Derived from the geometry; empty only when there are no segments.
+    pub wire_endpoints: Vec<(usize, usize)>,
 }
 
 /// Error from the excitation builder.
@@ -51,6 +56,11 @@ pub enum ExcitationError {
         /// 1.0 means collinear, 0.0 means orthogonal.
         tag_abs_alignment_cos: Vec<(u32, f64)>,
     },
+    /// Two or more EX 0 cards target the same wire tag.
+    ///
+    /// The Hallén path uses per-tag source data and cannot correctly represent
+    /// multiple feed points on the same tag.  Use distinct tags for each source.
+    DuplicateSourceTag { tag: u32 },
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -78,6 +88,10 @@ impl std::fmt::Display for ExcitationError {
                 "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}; abs(cos)-alignment by tag: {:?}",
                 non_collinear_tags,
                 tag_abs_alignment_cos
+            ),
+            ExcitationError::DuplicateSourceTag { tag } => write!(
+                f,
+                "Hallén solver: two or more EX 0 cards target tag {tag}; use distinct tags for multiple feed points"
             ),
         }
     }
@@ -126,6 +140,21 @@ pub fn build_hallen_rhs(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<HallenRhs, ExcitationError> {
+    build_hallen_rhs_with_options(deck, segs, freq_hz, false)
+}
+
+/// Build Hallén RHS data with optional non-collinear topology allowance.
+///
+/// When `allow_non_collinear` is `false` (default behavior), non-collinear
+/// segment directions are rejected with [`ExcitationError::UnsupportedHallenTopology`].
+/// When it is `true`, the RHS is still built using feed-axis projection and
+/// should be treated as experimental for non-collinear decks.
+pub fn build_hallen_rhs_with_options(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    allow_non_collinear: bool,
+) -> Result<HallenRhs, ExcitationError> {
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
@@ -146,6 +175,7 @@ pub fn build_hallen_rhs(
         return Ok(HallenRhs {
             rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
             cos_vec: vec![0.0; segs.len()],
+            wire_endpoints: wire_endpoints_from_segs(segs),
         });
     };
 
@@ -157,10 +187,8 @@ pub fn build_hallen_rhs(
             segment: ex.segment,
         })?;
 
-    let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
     let feed_dir = segs[feed_idx].direction;
-    let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
@@ -179,27 +207,133 @@ pub fn build_hallen_rhs(
                 .or_insert(abs_dot);
         }
     }
-    if !non_collinear_tags.is_empty() {
+    if !allow_non_collinear && !non_collinear_tags.is_empty() {
         return Err(ExcitationError::UnsupportedHallenTopology {
             non_collinear_tags: non_collinear_tags.into_iter().collect(),
             tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
         });
     }
 
+    // Reject decks with two or more EX 0 cards on the same tag.
+    // The Hallén path stores a single per-tag source; silently ignoring a
+    // second feed on the same wire would produce an incorrect drive vector.
+    {
+        let mut seen_tags: BTreeSet<u32> = BTreeSet::new();
+        for card in &deck.cards {
+            let Card::Ex(ex) = card else { continue };
+            if !seen_tags.insert(ex.tag) {
+                return Err(ExcitationError::DuplicateSourceTag { tag: ex.tag });
+            }
+        }
+    }
+
+    // Collect per-tag source data for every driven wire (all type-0 EX cards).
+    //
+    // Map: tag → (feed_midpoint, feed_direction, source_voltage)
+    let mut tag_sources: BTreeMap<u32, ([f64; 3], [f64; 3], Complex64)> = BTreeMap::new();
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        if tag_sources.contains_key(&ex.tag) {
+            continue; // unreachable after the check above, kept for safety
+        }
+        let seg_idx = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            .ok_or(ExcitationError::SegmentNotFound {
+                tag: ex.tag,
+                segment: ex.segment,
+            })?;
+        tag_sources.insert(
+            ex.tag,
+            (
+                segs[seg_idx].midpoint,
+                segs[seg_idx].direction,
+                Complex64::new(ex.voltage_real, ex.voltage_imag),
+            ),
+        );
+    }
+
+    // Build per-wire local coordinates for cos(k*s):
+    // - driven wires are referenced to their own source segment midpoint
+    // - passive wires are referenced to the wire centre midpoint
+    let mut tag_axis: BTreeMap<u32, ([f64; 3], [f64; 3])> = BTreeMap::new();
+    let mut i = 0usize;
+    while i < segs.len() {
+        let tag = segs[i].tag;
+        let first = i;
+        while i + 1 < segs.len() && segs[i + 1].tag == tag {
+            i += 1;
+        }
+        let last = i;
+
+        if let Some(&(src_mid, src_dir, _)) = tag_sources.get(&tag) {
+            tag_axis.insert(tag, (src_mid, src_dir));
+        } else {
+            let a = segs[first].midpoint;
+            let b = segs[last].midpoint;
+            let center = [
+                0.5 * (a[0] + b[0]),
+                0.5 * (a[1] + b[1]),
+                0.5 * (a[2] + b[2]),
+            ];
+            tag_axis.insert(tag, (center, segs[first].direction));
+        }
+        i += 1;
+    }
+
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
     for (m, seg) in segs.iter().enumerate() {
-        let d = [
-            seg.midpoint[0] - feed_mid[0],
-            seg.midpoint[1] - feed_mid[1],
-            seg.midpoint[2] - feed_mid[2],
+        let (axis_origin, axis_dir) = tag_axis
+            .get(&seg.tag)
+            .copied()
+            .unwrap_or((seg.midpoint, seg.direction));
+        let ds_axis = [
+            seg.midpoint[0] - axis_origin[0],
+            seg.midpoint[1] - axis_origin[1],
+            seg.midpoint[2] - axis_origin[2],
         ];
-        let s = d[0] * feed_dir[0] + d[1] * feed_dir[1] + d[2] * feed_dir[2];
-        rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * v_source;
-        cos_vec[m] = (k * s).cos();
+        let s_axis = ds_axis[0] * axis_dir[0] + ds_axis[1] * axis_dir[1] + ds_axis[2] * axis_dir[2];
+        cos_vec[m] = (k * s_axis).cos();
+
+        if let Some(&(src_mid, src_dir, src_v)) = tag_sources.get(&seg.tag) {
+            // Driven wire: RHS uses arc-length from this wire's own feed point.
+            let ds = [
+                seg.midpoint[0] - src_mid[0],
+                seg.midpoint[1] - src_mid[1],
+                seg.midpoint[2] - src_mid[2],
+            ];
+            let s = ds[0] * src_dir[0] + ds[1] * src_dir[1] + ds[2] * src_dir[2];
+            rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * src_v;
+        }
+        // Passive wire: rhs[m] stays zero.
     }
 
-    Ok(HallenRhs { rhs, cos_vec })
+    Ok(HallenRhs {
+        rhs,
+        cos_vec,
+        wire_endpoints: wire_endpoints_from_segs(segs),
+    })
+}
+
+/// Compute per-wire endpoint indices (first, last global segment index per wire tag).
+fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut current_tag = u32::MAX;
+    let mut first = 0usize;
+    for (i, seg) in segs.iter().enumerate() {
+        if seg.tag != current_tag {
+            if current_tag != u32::MAX {
+                out.push((first, i - 1));
+            }
+            current_tag = seg.tag;
+            first = i;
+        }
+    }
+    if current_tag != u32::MAX {
+        out.push((first, segs.len() - 1));
+    }
+    out
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
@@ -519,5 +653,104 @@ mod tests {
         let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
         assert_eq!(h.rhs.len(), segs.len());
         assert_eq!(h.cos_vec.len(), segs.len());
+
+        // Driven wire (tag 1) segments must have nonzero RHS; passive wire (tag 2) must be zero.
+        let driven_segs: Vec<usize> = segs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.tag == 1)
+            .map(|(i, _)| i)
+            .collect();
+        let passive_segs: Vec<usize> = segs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.tag == 2)
+            .map(|(i, _)| i)
+            .collect();
+
+        // Non-feed driven segments must have nonzero RHS.
+        let feed_idx_in_segs = segs
+            .iter()
+            .position(|s| s.tag == 1 && s.tag_index == 6)
+            .unwrap();
+        for &i in &driven_segs {
+            if i != feed_idx_in_segs {
+                assert!(
+                    h.rhs[i].norm() > 1e-12,
+                    "driven seg {i} expected nonzero rhs, got {}",
+                    h.rhs[i]
+                );
+            }
+        }
+        // All passive wire segments must have zero RHS.
+        for &i in &passive_segs {
+            assert!(
+                h.rhs[i].norm() < 1e-30,
+                "passive seg {i} expected zero rhs, got {}",
+                h.rhs[i]
+            );
+        }
+    }
+
+    #[test]
+    fn hallen_rhs_rejects_bent_topology() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 2,
+            segments: 9,
+            start: [-0.25, 0.0, 2.677],
+            end: [0.25, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 6,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let h = build_hallen_rhs_with_options(&deck, &segs, TEST_FREQ_HZ, true).unwrap();
+        assert_eq!(h.rhs.len(), segs.len());
+        assert_eq!(h.cos_vec.len(), segs.len());
+    }
+
+    /// Two EX 0 cards on the same tag must be rejected with DuplicateSourceTag.
+    #[test]
+    fn hallen_rhs_rejects_duplicate_source_tag() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -2.677],
+            end: [0.0, 0.0, 2.677],
+            radius: 0.001,
+        }));
+        // Two EX cards referencing the same tag — should be rejected.
+        for seg in [3u32, 9] {
+            deck.cards.push(Card::Ex(ExCard {
+                excitation_type: 0,
+                tag: 1,
+                segment: seg,
+                i4: 0,
+                voltage_real: 1.0,
+                voltage_imag: 0.0,
+            }));
+        }
+        let segs = build_geometry(&deck).unwrap();
+        let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
+        assert!(
+            matches!(result, Err(ExcitationError::DuplicateSourceTag { tag: 1 })),
+            "expected DuplicateSourceTag error, got: {result:?}"
+        );
     }
 }

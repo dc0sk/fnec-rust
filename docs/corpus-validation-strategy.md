@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-25
 ---
 
 # Corpus Validation Strategy
@@ -35,13 +35,16 @@ Acceptance criteria are defined in `docs/requirements.md` (Numerical compatibili
 
 ### Staged corpus growth
 
-The MVP corpus (Phase 1) includes:
+The current Phase 1 corpus includes:
 1. Half-wave dipole, free space (the ground truth)
-2. Half-wave dipole, over perfect ground (validates image/Sommerfeld treatment)
-3. 5-element Yagi (validates multi-wire coupling and array gain)
-4. Loaded dipole (validates geometry edge cases and wire-wire coupling)
-5. Frequency sweep (validates frequency-domain convergence)
-6. Multi-source case (validates multi-driver support)
+2. Half-wave dipole shifted via GM in-place transform (translation-invariance regression)
+3. Half-wave dipole, over perfect ground (validates image/Sommerfeld treatment)
+4. 5-element Yagi (validates multi-wire coupling and array gain)
+5. Loaded dipole (validates geometry edge cases and wire-wire coupling)
+6. Frequency sweep (validates frequency-domain convergence)
+7. Multi-source case (validates multi-driver support)
+8. Multi-source generated via GR (geometry-repeat equivalence regression)
+9. Multi-source generated via GM copy (geometry-move equivalence regression)
 
 As phases progress, the corpus grows to include:
 - Complex geometries (helix, spirals, bent wires)
@@ -173,7 +176,7 @@ cargo test -p nec-cli --test corpus_validation  # Corpus validation
 
 ### GitHub Actions (`.github/workflows/`)
 
-Add a `corpus-validation.yml` workflow that:
+`corpus-validation.yml` workflow behavior:
 
 1. Runs on every commit to main and PRs
 2. Builds/runs the nec-cli test target via Cargo
@@ -221,28 +224,26 @@ To add a new corpus case:
 3. Add stub to `corpus/reference-results.json` with `null` values and status "Deck created; reference TBD"
 4. Run reference capture (manual): `xnec2c --batch -j0 -i corpus/my-case.nec --write-csv ...` (or 4nec2 export when xnec2c is unstable)
 5. Update `corpus/reference-results.json` with real values
-6. Create integration test: `#[test] #[ignore] fn corpus_validation_my_case() { ... }`
+6. Ensure the new case is represented in `corpus/reference-results.json` (the harness is table-driven and reads from the JSON table)
 7. Update status in `corpus/README.md`: "Reference captured"
 8. Commit together
 
 ## Status quo (April 2026)
 
-- ✅ Corpus framework established (`corpus/README.md`, 6 case definitions)
-- ✅ MVP corpus decks created (dipole free-space, dipole over ground)
-- ✅ Reference results template created (`corpus/reference-results.json`)
-- ✅ Validation test scaffolded (`apps/nec-cli/tests/corpus_validation.rs`)
-- ⏳ Reference capture in progress (xnec2c where stable; 4nec2 fallback on headless hosts)
+- ✅ Corpus framework established (`corpus/README.md`, 9 active case families)
+- ✅ Regression references and tolerance gates maintained in `corpus/reference-results.json`
+- ✅ Validation test is active and table-driven (`apps/nec-cli/tests/corpus_validation.rs`)
 - ✅ CI workflow wired (`.github/workflows/corpus-validation.yml`)
-- ⏳ Full Phase 1 corpus not complete (Yagi, loaded, frequency sweep, multi-source decks TBD)
+- ⏳ External-reference parity capture is still in progress for some classes/cases
+- ⏳ Full Phase 1→2 gate remains open pending external-reference closure and deferred scope items
 
 ## Next steps
 
 **Immediate (Phase 1):**
-1. Complete reference captures for all 6 corpus cases via xnec2c
-2. Update `corpus/reference-results.json` with real reference data
-3. Enable corpus tests (remove `#[ignore]`)
-4. Keep `.github/workflows/corpus-validation.yml` green and extend it with per-case summaries
-5. Validate that fnec-rust passes all corpus cases within tolerance
+1. Complete external-reference captures for remaining in-scope cases (xnec2c preferred, 4nec2 fallback)
+2. Keep `corpus/reference-results.json` synchronized with case additions and tolerance-gate intent
+3. Keep `.github/workflows/corpus-validation.yml` green and extend per-case summaries where useful
+4. Maintain corpus pass status while unresolved/deferred cases remain explicitly documented
 
 **Later (Phase 2):**
 1. Expand corpus with complex geometries
