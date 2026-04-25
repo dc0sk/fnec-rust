@@ -3,6 +3,7 @@
 
 pub mod basis;
 pub mod excitation;
+pub mod farfield;
 pub mod geometry;
 pub mod linear;
 pub mod loads;
@@ -13,6 +14,7 @@ pub use excitation::{
     build_excitation, build_hallen_rhs, build_hallen_rhs_with_options,
     scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
+pub use farfield::{compute_radiation_pattern, rp_card_points, FarFieldPoint, FarFieldResult};
 pub use geometry::{
     build_geometry, ground_model_from_deck, wire_endpoints_from_segs, GeometryError, GroundModel,
     Segment,

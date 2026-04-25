@@ -54,6 +54,26 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 
 **Why this case**: It is a direct corpus-level check that parser + geometry-builder `GM` in-place translation is not only accepted syntactically, but electrically invariant under free-space rigid translation.
 
+### 1c. `dipole-freesp-rp-51seg.nec` — Free-space dipole with `RP` sweep
+
+**Purpose**: Validate that `RP` cards trigger radiation-pattern execution and append a stable pattern table to the report contract.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Wire: same canonical 51-segment half-wave dipole as case 1
+- Feed: Center segment (tag=1, seg=26), 1.0 V excitation
+- Ground: None
+- RP: `RP 0 19 1 0.0 0.0 10.0 0.0` (theta sweep 0..180° in 10° steps at phi=0°)
+
+**Expected results** (current regression gate):
+- Same feedpoint impedance as `dipole-freesp-51seg`
+- Z_in = 74.242874 + j13.899516 Ω
+- Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
+
+**Tolerance gates**: Same as `dipole-freesp-51seg` for impedance.
+
+**Why this case**: It locks RP execution into corpus and report-contract testing without adding new solver-option surface area.
+
 ### 2. `dipole-ground-51seg.nec` — Half-wave dipole, over ground
 
 **Purpose**: Validate Hallén solver with perfect-ground image-method effects.
@@ -207,6 +227,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 |:-----|:----------|:---------|:------|:--------|:-------|:------------------|
 | 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
+| 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
 | 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 81.91 + j16.42 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
@@ -215,7 +236,7 @@ Every NEC deck in this corpus is validated against a reference engine and the re
 | 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 | 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
 
-**Total**: 9 benchmark families, ≈17 individual frequency/source points.
+**Total**: 10 benchmark families, ≈18 individual frequency/source points.
 
 ## Reference workflow
 

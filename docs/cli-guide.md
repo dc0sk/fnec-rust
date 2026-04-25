@@ -8,7 +8,8 @@ last_updated: 2026-05-01
 # CLI Guide — fnec (v0.2.0)
 
 `fnec` is the command-line frontend for fnec-rust.  It reads a NEC deck file,
-runs the configured solver, and prints per-source feedpoint impedance to stdout.
+runs the configured solver, and prints a versioned text report to stdout
+(feedpoints, currents, and RP-driven radiation pattern when requested).
 Diagnostics are written to stderr.
 
 ## Synopsis
@@ -56,15 +57,16 @@ EFIE fix is tracked in `docs/backlog.md`.
 ### `continuity` (EXPERIMENTAL)
 
 Same Pocklington matrix as `pulse`, but solves via a continuity-enforcing rooftop
-basis transform for single linear wire chains.  Falls back to `pulse` for
-multi-wire decks or when residual exceeds 1e-3.  Subject to the same fundamental
+basis transform applied per wire chain on multi-wire decks when each wire has
+at least two segments. Falls back to `pulse` when topology is infeasible for
+the basis transform or when residual exceeds 1e-3. Subject to the same fundamental
 divergence as `pulse`.
 
 ### `sinusoidal` (EXPERIMENTAL)
 
 Incremental milestone mode that applies a sine-tapered continuity transform on
-top of the Pocklington matrix for single linear chains. Falls back to `pulse`
-for multi-wire decks. This is not yet full NEC2 `tbf/sbf/trio` sinusoidal-basis
+top of the Pocklington matrix with per-wire block transforms on multi-wire decks
+when each wire has at least two segments. This is not yet full NEC2 `tbf/sbf/trio` sinusoidal-basis
 assembly, but it establishes a compatible stepping-stone for that implementation.
 If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
@@ -94,6 +96,15 @@ FEEDPOINTS
 TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
 <tag> <seg> <v_re> <v_im> <i_re> <i_im> <z_re> <z_im>
 ...
+
+CURRENTS
+TAG SEG I_RE I_IM I_MAG I_PHASE
+...
+
+RADIATION_PATTERN
+N_POINTS <n>
+THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO
+...
 ```
 
 Feedpoint table columns:
@@ -114,6 +125,7 @@ Formatting and ordering rules:
 - Fixed-point numeric formatting with 6 decimals
 - Exactly 8 whitespace-separated numeric columns per data row
 - One data row per driven segment (zero-excitation segments skipped)
+- `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 
 ## Diagnostics (stderr)
 
@@ -172,6 +184,7 @@ EN
 | GE | Full (GE I1=1 infers PEC ground when no GN card is present) |
 | EX type 0 | Full (voltage source) |
 | FR | Full linear/multiplicative sweep over all steps |
+| RP | Full report-path support (pattern table rendered in text output) |
 | EN | Terminates parse |
 | Other | Warning printed, skipped |
 

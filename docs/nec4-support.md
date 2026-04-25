@@ -54,7 +54,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
 | FR | Frequency specification | FULL | Single frequency (NP=0, NF≥1). Frequency step (NF>1) supported. Step count respected. |
-| RP | Radiation pattern request | PARTIAL | Parsed and preserved, but not yet used by the solver or rendered in output. Pattern/gain implementation remains deferred beyond current Phase 1 scope. |
+| RP | Radiation pattern request | PARTIAL | Parsed and executed in the CLI report path. `RADIATION_PATTERN` section is emitted with THETA/PHI and gain columns. Scope is currently text-report output only (no JSON/CSV/plot export, no near-field `XQ`). |
 | XQ | Near/far field request | DEFERRED | Near-field analysis. Phase 2+. |
 
 ### Ground cards
@@ -127,15 +127,15 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Multi-source (multiple EX cards) | PARTIAL | Multiple `EX 0` sources on **distinct tags** are solved and reported as one feedpoint row per excited segment. Two sources on the **same tag** are rejected with a clear error in the Hallén path (unsupported; pulse path handles it without this restriction). Advanced multi-port/network features remain deferred to `PT`/`NT`. |
 | Segment current calculation | FULL | Complex current per segment, phase and magnitude. |
 | Feedpoint impedance | FULL | Computed via: $$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX$$ at driven segment. |
-| Gain computation | DEFERRED | Not yet implemented in the current solver/report path. Planned with radiation-pattern support in a later phase. |
-| Radiation pattern | DEFERRED | Not yet implemented in the current solver/report path. `RP` cards are parsed, but no pattern solution or export is produced yet. |
+| Gain computation | PARTIAL | RP-driven far-field gain table is implemented in text report output (`GAIN_DB`, `GAIN_V_DB`, `GAIN_H_DB`). Structured exports and additional parity metrics remain deferred. |
+| Radiation pattern | PARTIAL | `RP` cards now produce a `RADIATION_PATTERN` section in CLI text output. Near-field and external plot/export workflows remain deferred. |
 
 ## Phase progression
 
 | Phase | Cumulative Support |
 |:------|:------------------|
-| Phase 1 (current) | GW, partial GM/GR, EX type 0, FR, GE, GN type 1 (PEC), LD types 0/4/5, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
-| Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, pattern/gain support, sinusoidal Pocklington basis, GF (geometry scaling) |
+| Phase 1 (current) | GW, partial GM/GR, EX type 0, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/4/5, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
+| Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, sinusoidal Pocklington basis, GF (geometry scaling), richer pattern/gain parity |
 | Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
 | Phase 4+ | Additional NEC-4 specialty features as demanded |
 
@@ -169,7 +169,7 @@ fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compa
 
 3. **Text output only**: No JSON, CSV, or plot data export yet. Scripting to post-process text output is the current workaround.
 
-4. **Pattern/gain not implemented yet**: `RP` cards are parsed, but no radiation-pattern or gain computation is currently produced by the solver/report path.
+4. **Pattern/gain scope is partial**: `RP` cards are executed and rendered in text output, but JSON/CSV export and near-field parity remain deferred.
 
 5. **No near fields**: Current output is limited to feedpoint impedance, segment currents, and residual diagnostics. Near-field analysis is deferred to Phase 2.
 
