@@ -197,5 +197,5 @@ EN
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
 - `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
-- Hybrid currently prints an explicit warning when GPU-candidate lane points are present, because those points still run on CPU fallback until GPU kernels are wired.
+- Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.
 - `--exec gpu` is accepted in real application runs, currently emits fallback diagnostics, and executes the CPU solve path.

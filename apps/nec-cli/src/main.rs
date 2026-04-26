@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
+use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
 use nec_model::card::Card;
 use nec_parser::parse;
 use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, ReportInput};
@@ -153,9 +154,13 @@ fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
     match execution_mode {
         ExecutionMode::Cpu => {}
         ExecutionMode::Hybrid => {}
-        ExecutionMode::Gpu => eprintln!(
-            "warning: --exec gpu requested, but GPU solve kernels are not yet wired; using CPU solve path"
-        ),
+        ExecutionMode::Gpu => {
+            if let DispatchDecision::FallbackToCpu { reason } =
+                dispatch_frequency_point(AccelRequestKind::GpuOnly, 0.0)
+            {
+                eprintln!("warning: --exec gpu requested, but {reason}; using CPU solve path");
+            }
+        }
     }
 }
 
@@ -669,13 +674,6 @@ fn main() -> ExitCode {
     {
         let lane_plan = build_hybrid_lane_plan(freqs_hz.len());
 
-        if !lane_plan.gpu_candidate_indices.is_empty() {
-            eprintln!(
-                    "warning: --exec hybrid scheduled {} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback",
-                    lane_plan.gpu_candidate_indices.len()
-                );
-        }
-
         let mut solved = Vec::with_capacity(freqs_hz.len());
 
         let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>)> = lane_plan
@@ -686,12 +684,42 @@ fn main() -> ExitCode {
             .collect();
         solved.extend(cpu_results);
 
-        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> = lane_plan
+        let gpu_dispatch: Vec<(usize, DispatchDecision)> = lane_plan
             .gpu_candidate_indices
             .iter()
             .copied()
-            .map(|idx| (idx, solve_one(freqs_hz[idx])))
+            .map(|idx| {
+                (
+                    idx,
+                    dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]),
+                )
+            })
             .collect();
+
+        let gpu_fallback_count = gpu_dispatch
+            .iter()
+            .filter(|(_, decision)| matches!(decision, DispatchDecision::FallbackToCpu { .. }))
+            .count();
+        if gpu_fallback_count > 0 {
+            eprintln!(
+                "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
+            );
+        }
+
+        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> =
+            gpu_dispatch
+                .into_iter()
+                .map(|(idx, decision)| match decision {
+                    DispatchDecision::FallbackToCpu { .. } => (idx, solve_one(freqs_hz[idx])),
+                    DispatchDecision::RunOnGpu => (
+                        idx,
+                        Err(
+                            "internal error: GPU dispatch selected, but GPU solve path is not wired in nec-cli"
+                                .to_string(),
+                        ),
+                    ),
+                })
+                .collect();
         solved.extend(gpu_fallback_results);
 
         solved

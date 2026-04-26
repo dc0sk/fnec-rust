@@ -43,6 +43,7 @@ last_updated: 2026-04-24
 	- 2026-04-26 progress: roadmap now explicitly requires CPU single-threaded, CPU multithreaded, and GPU benchmark modes across all target classes.
 	- 2026-04-26 progress: CLI execution-mode plumbing landed with `--exec <cpu|hybrid|gpu>` and diag `exec=...`; initial scaffold path exposed real-application mode selection before hybrid runtime work.
 	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
+	- 2026-04-26 progress: hybrid GPU-candidate lane routing now calls `nec_accel::dispatch_frequency_point(...)` before CPU fallback, establishing the first concrete accelerator integration seam.
 
 ## Parity-driven backlog items
 
