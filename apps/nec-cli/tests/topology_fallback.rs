@@ -304,6 +304,7 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     let hallen_stderr = String::from_utf8_lossy(&hallen.stderr);
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "diag_spread");
 
     let pulse = run_solver_on_reference_dipole("pulse");
     assert!(
@@ -314,6 +315,7 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "diag_spread");
 }
 
 #[test]

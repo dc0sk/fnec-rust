@@ -255,6 +255,29 @@ fn l2_norm(v: &[Complex64]) -> f64 {
     v.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt()
 }
 
+fn matrix_diagonal_spread(z: &ZMatrix) -> f64 {
+    if z.n == 0 {
+        return 0.0;
+    }
+
+    let mut max_diag = 0.0f64;
+    let mut min_diag = f64::INFINITY;
+    for i in 0..z.n {
+        let d = z.get(i, i).norm();
+        max_diag = max_diag.max(d);
+        min_diag = min_diag.min(d);
+    }
+
+    if !max_diag.is_finite() || !min_diag.is_finite() {
+        return f64::NAN;
+    }
+    if max_diag == 0.0 {
+        return 0.0;
+    }
+
+    max_diag / min_diag.max(1e-30)
+}
+
 fn residual_zi_minus_v(z: &ZMatrix, i_vec: &[Complex64], v_vec: &[Complex64]) -> (f64, f64) {
     let n = z.n;
     let mut r = vec![Complex64::new(0.0, 0.0); n];
@@ -488,6 +511,7 @@ fn solve_frequency_point(
         eprintln!("warning: {warning}");
     }
     z_mat.add_to_diagonal(&load_vec);
+    let diag_spread = matrix_diagonal_spread(&z_mat);
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
@@ -699,12 +723,13 @@ fn solve_frequency_point(
         pattern_table: &pattern_table,
     });
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e}",
         pulse_rhs_mode,
         execution_mode.as_diag_str(),
         freq_hz / 1e6,
         diag_abs,
-        diag_rel
+        diag_rel,
+        diag_spread
     );
 
     Ok(FrequencySolveResult { report, diag_line })
