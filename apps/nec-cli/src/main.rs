@@ -310,6 +310,30 @@ fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     out
 }
 
+struct HybridLanePlan {
+    cpu_indices: Vec<usize>,
+    gpu_candidate_indices: Vec<usize>,
+}
+
+fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {
+    let mut cpu_indices = Vec::new();
+    let mut gpu_candidate_indices = Vec::new();
+
+    for idx in 0..freq_count {
+        // Interleaving preserves broad frequency spread in both lanes.
+        if idx % 2 == 0 {
+            cpu_indices.push(idx);
+        } else {
+            gpu_candidate_indices.push(idx);
+        }
+    }
+
+    HybridLanePlan {
+        cpu_indices,
+        gpu_candidate_indices,
+    }
+}
+
 struct FrequencySolveResult {
     report: String,
     diag_line: String,
@@ -638,22 +662,47 @@ fn main() -> ExitCode {
         )
     };
 
-    let solved: Vec<(usize, Result<FrequencySolveResult, String>)> =
-        if matches!(execution_mode, ExecutionMode::Hybrid) && freqs_hz.len() > 1 {
-            freqs_hz
-                .par_iter()
-                .copied()
-                .enumerate()
-                .map(|(idx, freq_hz)| (idx, solve_one(freq_hz)))
-                .collect()
-        } else {
-            freqs_hz
-                .iter()
-                .copied()
-                .enumerate()
-                .map(|(idx, freq_hz)| (idx, solve_one(freq_hz)))
-                .collect()
-        };
+    let solved: Vec<(usize, Result<FrequencySolveResult, String>)> = if matches!(
+        execution_mode,
+        ExecutionMode::Hybrid
+    ) && freqs_hz.len() > 1
+    {
+        let lane_plan = build_hybrid_lane_plan(freqs_hz.len());
+
+        if !lane_plan.gpu_candidate_indices.is_empty() {
+            eprintln!(
+                    "warning: --exec hybrid scheduled {} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback",
+                    lane_plan.gpu_candidate_indices.len()
+                );
+        }
+
+        let mut solved = Vec::with_capacity(freqs_hz.len());
+
+        let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>)> = lane_plan
+            .cpu_indices
+            .par_iter()
+            .copied()
+            .map(|idx| (idx, solve_one(freqs_hz[idx])))
+            .collect();
+        solved.extend(cpu_results);
+
+        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> = lane_plan
+            .gpu_candidate_indices
+            .iter()
+            .copied()
+            .map(|idx| (idx, solve_one(freqs_hz[idx])))
+            .collect();
+        solved.extend(gpu_fallback_results);
+
+        solved
+    } else {
+        freqs_hz
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(idx, freq_hz)| (idx, solve_one(freq_hz)))
+            .collect()
+    };
 
     let mut solved = solved;
     solved.sort_by_key(|(idx, _)| *idx);

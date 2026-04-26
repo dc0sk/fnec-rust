@@ -26,7 +26,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `cpu` | Execution backend preference. `hybrid` enables coarse-grain multithreaded FR sweep solving on CPU while GPU kernels are scaffolded; `gpu` currently falls back to CPU kernels with explicit diagnostics |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `cpu` | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
 
 ## Solver modes
@@ -196,5 +196,6 @@ EN
 - The Hallén solver rejects non-collinear wire topologies by default. Use `--allow-noncollinear-hallen` only for experimental exploration.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
-- `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (frequency points solved in parallel, output emitted in frequency order) while GPU kernels remain scaffolded.
+- `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
+- Hybrid currently prints an explicit warning when GPU-candidate lane points are present, because those points still run on CPU fallback until GPU kernels are wired.
 - `--exec gpu` is accepted in real application runs, currently emits fallback diagnostics, and executes the CPU solve path.
