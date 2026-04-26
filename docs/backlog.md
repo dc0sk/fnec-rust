@@ -41,7 +41,7 @@ last_updated: 2026-04-24
 	- 2026-04-25 progress: `frequency-sweep-dipole` now enables the first external impedance candidate gates with `ExternalR_absolute_ohm=15.0` and `ExternalX_absolute_ohm=50.0`.
 	- 2026-04-26 progress: `dipole-ground-51seg` now also enables external impedance candidate gates with `ExternalR_absolute_ohm=10.0` and `ExternalX_absolute_ohm=30.0`.
 	- 2026-04-26 progress: roadmap now explicitly requires CPU single-threaded, CPU multithreaded, and GPU benchmark modes across all target classes.
-	- 2026-04-26 progress: CLI execution-mode plumbing landed with `--exec <cpu|hybrid|gpu>` and diag `exec=...`; `hybrid`/`gpu` currently run CPU fallback while exposing real-application mode selection.
+	- 2026-04-26 progress: CLI execution-mode plumbing landed with `--exec <cpu|hybrid|gpu>` and diag `exec=...`; initial scaffold path exposed real-application mode selection before hybrid runtime work.
 	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
 
 ## Parity-driven backlog items

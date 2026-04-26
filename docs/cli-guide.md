@@ -140,7 +140,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 |-------|-------------|
 | `mode` | Effective solver path used (may differ from `--solver` if fallback occurred) |
 | `pulse_rhs` | Active `--pulse-rhs` setting |
-| `exec` | Effective execution mode (`cpu`, `hybrid(cpu-fallback)`, `gpu(cpu-fallback)`) |
+| `exec` | Effective execution mode (`cpu`, `hybrid`, `gpu(cpu-fallback)`) |
 | `freq_mhz` | Frequency point solved for this report block |
 | `abs_res` | Absolute L2 residual ‖Ax − b‖ |
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |

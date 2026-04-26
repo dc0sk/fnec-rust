@@ -40,10 +40,10 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     );
 
     assert!(
-        stderr.contains("warning: --exec hybrid requested"),
-        "expected hybrid fallback warning in stderr, got:\n{stderr}"
+        !stderr.contains("warning: --exec hybrid requested"),
+        "did not expect hybrid fallback warning in stderr, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid(cpu-fallback)");
+    assert_diag_field(&stderr, "exec", "hybrid");
 
     // Verify report ordering remains ascending by FR sweep points.
     let expected_order = [

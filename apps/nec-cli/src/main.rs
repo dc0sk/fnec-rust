@@ -45,7 +45,7 @@ impl ExecutionMode {
     fn as_diag_str(self) -> &'static str {
         match self {
             ExecutionMode::Cpu => "cpu",
-            ExecutionMode::Hybrid => "hybrid(cpu-fallback)",
+            ExecutionMode::Hybrid => "hybrid",
             ExecutionMode::Gpu => "gpu(cpu-fallback)",
         }
     }
@@ -152,9 +152,7 @@ fn parse_args(
 fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
     match execution_mode {
         ExecutionMode::Cpu => {}
-        ExecutionMode::Hybrid => eprintln!(
-            "warning: --exec hybrid requested, but CPU+GPU split kernels are not yet wired; using CPU solve path"
-        ),
+        ExecutionMode::Hybrid => {}
         ExecutionMode::Gpu => eprintln!(
             "warning: --exec gpu requested, but GPU solve kernels are not yet wired; using CPU solve path"
         ),

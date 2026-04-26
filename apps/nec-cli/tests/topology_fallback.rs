@@ -203,7 +203,7 @@ fn exec_mode_defaults_to_cpu_in_diag_field() {
 }
 
 #[test]
-fn hybrid_and_gpu_exec_modes_are_reflected_and_warn_cpu_fallback() {
+fn hybrid_exec_is_reflected_without_fallback_warning_and_gpu_warns_cpu_fallback() {
     let hybrid = run_solver_on_reference_dipole_with_exec("hallen", "hybrid");
     assert!(
         hybrid.status.success(),
@@ -212,10 +212,10 @@ fn hybrid_and_gpu_exec_modes_are_reflected_and_warn_cpu_fallback() {
     );
     let hybrid_stderr = String::from_utf8_lossy(&hybrid.stderr);
     assert!(
-        hybrid_stderr.contains("warning: --exec hybrid requested"),
-        "expected hybrid fallback warning in stderr, got:\n{hybrid_stderr}"
+        !hybrid_stderr.contains("warning: --exec hybrid requested"),
+        "did not expect hybrid fallback warning in stderr, got:\n{hybrid_stderr}"
     );
-    assert_diag_field(&hybrid_stderr, "exec", "hybrid(cpu-fallback)");
+    assert_diag_field(&hybrid_stderr, "exec", "hybrid");
 
     let gpu = run_solver_on_reference_dipole_with_exec("hallen", "gpu");
     assert!(
