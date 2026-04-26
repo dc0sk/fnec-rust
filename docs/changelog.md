@@ -38,6 +38,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Completed PAR-008 coverage-matrix scope: NEC-5 validation scenario classes are now explicitly mapped to current corpus-backed in-scope equivalents, with out-of-scope classes and rationale documented for phased deferral.
 - Updated support and CLI docs to mark RP pattern output as implemented in the text-report path (with remaining export/near-field scope still deferred).
 - Corpus validation now numerically checks stored RP pattern samples instead of only asserting pattern-table presence.
 - Corpus validation now also checks the stored vertical/horizontal gain columns and axial ratio for locked RP sample angles.

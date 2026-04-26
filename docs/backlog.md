@@ -71,8 +71,8 @@ last_updated: 2026-04-24
 - [ ] **PAR-007 / AutoEZ procurement gate / Owner: Product / Target: Phase 3 start / Issue: #20**
 	Resolution criteria: go/no-go decision recorded with evidence from open-tool and documentation benchmarking; if go, purchase and benchmark plan logged; if no-go, defer rationale and next review date logged.
 
-- [ ] **PAR-008 / NEC-5 validation-manual coverage matrix / Owner: Solver+Validation / Target: Phase 2 / Issue: #21**
-	Resolution criteria: NEC-5 Validation Manual scenario classes mapped to fnec-rust in-scope equivalents; each mapped class has at least one reproducible corpus test with explicit tolerance gating; known out-of-scope classes are documented with rationale. Matrix source: `docs/corpus-validation-strategy.md` section "NEC-5 validation coverage matrix (PAR-008)".
+- [x] **PAR-008 / NEC-5 validation-manual coverage matrix / Owner: Solver+Validation / Target: Phase 2 / Issue: #21**
+	Resolution: Completed 2026-04-26 for coverage-matrix scope. NEC-5 Validation Manual scenario classes are mapped to current fnec-rust in-scope equivalents; mapped in-scope classes have reproducible corpus tests with explicit tolerance gating; known out-of-scope classes are documented with rationale and phase deferral. Matrix source: `docs/corpus-validation-strategy.md` section "NEC-5 validation coverage matrix (PAR-008)".
 
 - [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
