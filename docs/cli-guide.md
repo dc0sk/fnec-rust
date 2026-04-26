@@ -15,10 +15,17 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
+
+Compatibility profile note:
+
+- The CLI now includes a filename-steered compatibility profile scaffold for 4nec2-style external kernel replacement workflows.
+- If the executable name contains `nec2dxs` or `4nec2`, default execution is steered to `--exec hybrid` unless `--exec` is explicitly provided.
+- Diagnostics explicitly distinguish the two cases: "default execution path steered" vs "preserving explicit --exec=...".
+- This currently changes execution-mode defaulting only; argument/output contract compatibility work remains tracked in backlog parity item `PAR-011`.
 
 ## Options
 
@@ -26,6 +33,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `cpu` | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
 
 ## Solver modes
@@ -132,13 +140,14 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08
 ```
 
 | Field | Description |
 |-------|-------------|
 | `mode` | Effective solver path used (may differ from `--solver` if fallback occurred) |
 | `pulse_rhs` | Active `--pulse-rhs` setting |
+| `exec` | Effective execution mode (`cpu`, `hybrid`, `gpu(cpu-fallback)`) |
 | `freq_mhz` | Frequency point solved for this report block |
 | `abs_res` | Absolute L2 residual ‖Ax − b‖ |
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
@@ -194,3 +203,7 @@ EN
 - The Hallén solver rejects non-collinear wire topologies by default. Use `--allow-noncollinear-hallen` only for experimental exploration.
 - Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
+- `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
+- Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.
+- For integration testing only, setting `FNEC_ACCEL_STUB_GPU=1` enables an accelerator stub dispatch path; hybrid and gpu modes then report stub dispatch usage while still solving via CPU emulation.
+- `--exec gpu` is accepted in real application runs and executes the CPU solve path today, reporting either explicit fallback diagnostics or accelerator-stub dispatch diagnostics depending on dispatch outcome.

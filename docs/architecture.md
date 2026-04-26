@@ -95,9 +95,10 @@ The following projects are useful comparative references for algorithms, behavio
 - yeti01/nec2: https://github.com/yeti01/nec2
 - tmolteno/necpp: https://github.com/tmolteno/necpp
 - KJ7LNW/xnec2c-optimize: https://github.com/KJ7LNW/xnec2c-optimize
+- GNU NEC (SourceForge): https://sourceforge.net/projects/gnu-nec/
 - NEC-5 Validation Manual (Burke, 2019): https://ipo.llnl.gov/sites/default/files/2020-07/NEC5%20Validation%20Manual%20092419.pdf
 
-These references are supplementary, but not irrelevant. 4nec2 compatibility remains the primary product target, xnec2c remains the main NEC2 parity reference corpus source, xnec2c-optimize remains a key baseline for external optimizer-loop ergonomics, yeti01/nec2 remains a useful baseline for clean open NEC2 batch execution, necpp remains a useful baseline for library-oriented automation and geometry diagnostics, and the NEC-5 Validation Manual is used to structure higher-difficulty validation classes.
+These references are supplementary, but not irrelevant. 4nec2 compatibility remains the primary product target, xnec2c remains the main NEC2 parity reference corpus source, xnec2c-optimize remains a key baseline for external optimizer-loop ergonomics, yeti01/nec2 and GNU NEC remain useful baselines for clean open NEC2 batch execution, necpp remains a useful baseline for library-oriented automation and geometry diagnostics, and the NEC-5 Validation Manual is used to structure higher-difficulty validation classes.
 
 ## Documentation process constraints
 

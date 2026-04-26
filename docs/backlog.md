@@ -39,6 +39,12 @@ last_updated: 2026-04-24
 	- 2026-04-25 progress: RP corpus cases can now promote those external pattern candidates into CI gates with optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` thresholds.
 	- 2026-04-25 progress: corpus validation now also supports optional external impedance gates (`ExternalR_absolute_ohm`, `ExternalX_absolute_ohm`, `ExternalR_percent_rel`, `ExternalX_percent_rel`) for scalar, source, and FR candidate deltas.
 	- 2026-04-25 progress: `frequency-sweep-dipole` now enables the first external impedance candidate gates with `ExternalR_absolute_ohm=15.0` and `ExternalX_absolute_ohm=50.0`.
+	- 2026-04-26 progress: `dipole-ground-51seg` now also enables external impedance candidate gates with `ExternalR_absolute_ohm=10.0` and `ExternalX_absolute_ohm=30.0`.
+	- 2026-04-26 progress: roadmap now explicitly requires CPU single-threaded, CPU multithreaded, and GPU benchmark modes across all target classes.
+	- 2026-04-26 progress: CLI execution-mode plumbing landed with `--exec <cpu|hybrid|gpu>` and diag `exec=...`; initial scaffold path exposed real-application mode selection before hybrid runtime work.
+	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
+	- 2026-04-26 progress: hybrid GPU-candidate lane routing now calls `nec_accel::dispatch_frequency_point(...)` before CPU fallback, establishing the first concrete accelerator integration seam.
+	- 2026-04-26 progress: `DispatchDecision::RunOnGpu` is now handled non-fatally in CLI hybrid and gpu execution flows via an accelerator stub branch (`FNEC_ACCEL_STUB_GPU=1`) that preserves report/diag contracts while using CPU emulation.
 
 ## Parity-driven backlog items
 
@@ -72,3 +78,16 @@ last_updated: 2026-04-24
 
 - [ ] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 4-5 / Issue: #23**
 	Resolution criteria: architecture decision doc approved (auth model, trust boundary, transport, failure semantics); authenticated node discovery implemented with capability cache; work-content/result cache implemented with deterministic cache keys and invalidation policy; SSH-backed bootstrap flow documented and demonstrated on at least 2 worker nodes.
+
+- [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
+	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
+	- 2026-04-26 assessment: deferred from Phase 2-3 to Phase 4-5 after reviewing real NEC2MP replacement artifacts (`nec2dxs500/1K5/3k0/5k0/8k0/11k` variants plus external install procedure docs). Full drop-in parity likely requires Windows-specific replacement semantics, binary-name matrix handling, and compatibility validation against external tool expectations beyond current CLI contract scope.
+	- Discovery checklist (capture before implementation starts):
+		- Binary-name matrix: confirm exact accepted executable names/casing and segment-limit mapping (`nec2dxs500.exe`, `nec2dxs1K5.exe`, `nec2dxs3k0.exe`, `nec2dxs5k0.exe`, `nec2dxs8k0.exe`, `nec2dxs11k.exe`).
+		- Install contract: document required replacement/copy steps in Windows 4nec2 installation paths and whether side-by-side binary variants are expected.
+		- Invocation contract: capture argv shape, working-directory expectations, stdin/stdout/stderr behavior, exit-code semantics, and timeout/error handling expected by 4nec2.
+		- File side effects: enumerate all expected temporary/input/output files and lifecycle rules (create/overwrite/delete) during external-kernel execution.
+		- Dependency surface: verify companion DLL/runtime requirements (if any) and loader-path assumptions in both portable and installed setups.
+		- Compatibility fixtures: archive representative external-kernel call traces and outputs for each binary variant as regression fixtures.
+		- Benchmark method: define throughput comparison protocol against the legacy single-thread kernel on identical decks, with per-variant segment-count bands.
+		- Reference sources: index `nec2mp-readme.pdf` notes, the cited URL (`http://users.otenet.gr/~jmsp`), and GNU NEC SourceForge project notes (`https://sourceforge.net/projects/gnu-nec/`) into a short evidence memo for future PAR-011 kickoff.

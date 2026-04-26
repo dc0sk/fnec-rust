@@ -138,6 +138,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - CI currently gates the GN=1 regression value and prints external deltas when candidate values are present.
 
 **Tolerance gates**: Same as dipole-freesp (R, X, current).
+- External impedance candidate gate (enabled in corpus JSON): `ExternalR_absolute_ohm=10.0`, `ExternalX_absolute_ohm=30.0`
 
 **Why this case**: Ground effects are critical for practical antennas. Validates GN=1 perfect-ground image-method behavior.
 

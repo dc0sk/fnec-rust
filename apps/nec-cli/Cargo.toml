@@ -17,10 +17,12 @@ path = "src/main.rs"
 [dependencies]
 nec_parser  = { workspace = true }
 nec_model   = { workspace = true }
+nec_accel   = { workspace = true }
 nec_project = { workspace = true }
 nec_report  = { workspace = true }
 nec_solver  = { workspace = true }
 num-complex = { workspace = true }
+rayon       = { workspace = true }
 
 [dev-dependencies]
 serde_json = "1"

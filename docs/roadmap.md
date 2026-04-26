@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # Roadmap
@@ -148,6 +148,27 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 
 **Goals**: GPU acceleration from postprocessing to solver kernel.
 
+### Benchmark mode matrix (all targets)
+
+To prevent regressions and keep performance claims comparable, benchmarking must run in three modes on every supported target class:
+
+- **CPU single-threaded**: deterministic baseline (`RAYON_NUM_THREADS=1` or equivalent) for direct algorithmic comparison.
+- **CPU multithreaded**: throughput mode using target-default thread count and an explicit fixed-thread variant for reproducibility.
+- **GPU offload**: accelerator path (where available) with framework/runtime metadata captured in benchmark artifacts.
+
+Target classes for this matrix:
+
+- Desktop/workstation (`x86_64` Linux, Windows, macOS)
+- SBC/edge (`aarch64` Raspberry Pi class)
+- Remote worker/cluster nodes used by distributed execution mode
+
+Required benchmark outputs per target/mode:
+
+- wall-clock runtime, solver/kernel time split, and memory footprint
+- problem-size metadata (segments, wires, frequency points, solver mode)
+- run metadata (CPU model, GPU model, driver/runtime, thread count)
+- regression deltas vs last accepted baseline
+
 **Key deliverables**:
 - [ ] GPU acceleration for postprocessing (pattern interpolation, report generation).
 - [ ] Benchmark CPU vs GPU behavior; define selection criteria.
@@ -187,6 +208,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 | CP-009 | NEC-5 | **MEDIUM** | NEC-5-class robustness is the longer-term path to claiming "better than NEC-2/4" instead of just "compatible with" | Create explicit Phase 5 architecture decision on surfaces and mixed-potential methods |
 | CP-010 | xnec2c-optimize | **MEDIUM** | Open-source users already have a practical optimizer loop with repeatable objective-driven tuning workflows | Add optimizer-loop compatibility criteria (CLI/API contracts, objective I/O stability, convergence-study support) in Phase 3-4 |
 | CP-011 | HPC scheduler + cluster workflows | **MEDIUM** | Serious sweep and optimization studies need distributed execution, trust boundaries, and repeat-run caching that local-only acceleration cannot provide | Add authenticated distributed mode with discovery and caching in Phase 4-5, with SSH-backed deployment path first |
+| CP-012 | 4nec2 external kernel binary workflow | **LOW (deferred)** | Users can keep mature 4nec2 UX while swapping in a faster kernel only if invocation compatibility is preserved | Defer to Phase 4-5: complete filename-steered drop-in mode, Windows replacement workflow compatibility checks, and representative 4nec2 kernel-call contract validation |
 
 ## Commercial benchmark acquisition policy
 
