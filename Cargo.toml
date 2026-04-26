@@ -33,3 +33,4 @@ nec_project = { path = "crates/nec_project" }
 
 # External crates
 num-complex = "0.4"
+rayon = "1"
