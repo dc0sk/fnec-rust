@@ -18,6 +18,7 @@ use nec_solver::{
 };
 use num_complex::Complex64;
 use rayon::prelude::*;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -45,6 +46,12 @@ enum ExecutionMode {
     Gpu,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompatibilityProfile {
+    Native,
+    FourNec2DropIn,
+}
+
 impl ExecutionMode {
     fn as_diag_str(self) -> &'static str {
         match self {
@@ -62,6 +69,47 @@ impl PulseRhsMode {
             PulseRhsMode::Nec2 => "Nec2",
         }
     }
+}
+
+fn detect_compatibility_profile(argv0: &str) -> CompatibilityProfile {
+    let stem = Path::new(argv0)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if stem.contains("nec2dxs") || stem.contains("4nec2") {
+        CompatibilityProfile::FourNec2DropIn
+    } else {
+        CompatibilityProfile::Native
+    }
+}
+
+fn steer_execution_mode_by_profile(
+    execution_mode: ExecutionMode,
+    profile: CompatibilityProfile,
+    exec_flag_explicitly_set: bool,
+) -> ExecutionMode {
+    if exec_flag_explicitly_set {
+        return execution_mode;
+    }
+
+    match profile {
+        CompatibilityProfile::Native => execution_mode,
+        // In drop-in mode prefer throughput when caller did not force an exec mode.
+        CompatibilityProfile::FourNec2DropIn => ExecutionMode::Hybrid,
+    }
+}
+
+fn warn_compatibility_profile(profile: CompatibilityProfile, execution_mode: ExecutionMode) {
+    if profile != CompatibilityProfile::FourNec2DropIn {
+        return;
+    }
+
+    eprintln!(
+        "warning: 4nec2 drop-in compatibility profile detected by binary name; default execution path is steered to exec={} unless --exec is explicitly provided",
+        execution_mode.as_diag_str()
+    );
 }
 
 fn parse_args(
@@ -555,6 +603,8 @@ fn solve_frequency_point(
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    let profile = detect_compatibility_profile(args.first().map(String::as_str).unwrap_or("fnec"));
+    let exec_flag_explicitly_set = args.iter().any(|arg| arg == "--exec");
 
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
@@ -564,7 +614,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let (solver_mode, pulse_rhs_mode, execution_mode, hallen_allow_non_collinear, path) =
+    let (solver_mode, pulse_rhs_mode, mut execution_mode, hallen_allow_non_collinear, path) =
         match parse_args(&args) {
             Ok(v) => v,
             Err(e) => {
@@ -574,6 +624,10 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         };
+
+    execution_mode =
+        steer_execution_mode_by_profile(execution_mode, profile, exec_flag_explicitly_set);
+    warn_compatibility_profile(profile, execution_mode);
 
     if hallen_allow_non_collinear && solver_mode != SolverMode::Hallen {
         eprintln!(
@@ -770,4 +824,56 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        detect_compatibility_profile, steer_execution_mode_by_profile, CompatibilityProfile,
+        ExecutionMode,
+    };
+
+    #[test]
+    fn detects_fournec2_dropin_profile_by_kernel_name() {
+        assert_eq!(
+            detect_compatibility_profile("/tmp/nec2dxs500"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
+            detect_compatibility_profile("C:/tools/4nec2-kernel"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+    }
+
+    #[test]
+    fn keeps_native_profile_for_default_binary_name() {
+        assert_eq!(
+            detect_compatibility_profile("/usr/bin/fnec"),
+            CompatibilityProfile::Native
+        );
+    }
+
+    #[test]
+    fn dropin_profile_steers_default_exec_to_hybrid() {
+        assert_eq!(
+            steer_execution_mode_by_profile(
+                ExecutionMode::Cpu,
+                CompatibilityProfile::FourNec2DropIn,
+                false,
+            ),
+            ExecutionMode::Hybrid
+        );
+    }
+
+    #[test]
+    fn explicit_exec_flag_prevents_profile_steering() {
+        assert_eq!(
+            steer_execution_mode_by_profile(
+                ExecutionMode::Gpu,
+                CompatibilityProfile::FourNec2DropIn,
+                true,
+            ),
+            ExecutionMode::Gpu
+        );
+    }
 }

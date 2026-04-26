@@ -208,6 +208,7 @@ Required benchmark outputs per target/mode:
 | CP-009 | NEC-5 | **MEDIUM** | NEC-5-class robustness is the longer-term path to claiming "better than NEC-2/4" instead of just "compatible with" | Create explicit Phase 5 architecture decision on surfaces and mixed-potential methods |
 | CP-010 | xnec2c-optimize | **MEDIUM** | Open-source users already have a practical optimizer loop with repeatable objective-driven tuning workflows | Add optimizer-loop compatibility criteria (CLI/API contracts, objective I/O stability, convergence-study support) in Phase 3-4 |
 | CP-011 | HPC scheduler + cluster workflows | **MEDIUM** | Serious sweep and optimization studies need distributed execution, trust boundaries, and repeat-run caching that local-only acceleration cannot provide | Add authenticated distributed mode with discovery and caching in Phase 4-5, with SSH-backed deployment path first |
+| CP-012 | 4nec2 external kernel binary workflow | **MEDIUM** | Users can keep mature 4nec2 UX while swapping in a faster kernel only if invocation compatibility is preserved | Add filename-steered solver-binary drop-in compatibility mode and validate contract parity with representative 4nec2 kernel-call scenarios |
 
 ## Commercial benchmark acquisition policy
 
