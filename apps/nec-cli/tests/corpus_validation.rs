@@ -622,9 +622,9 @@ fn corpus_validation_cases_with_references() {
         if !expected_current_samples.is_empty() {
             for expected_curr in &expected_current_samples {
                 // Find matching current in output by wire_id and segment_id
-                let matching = current_rows
-                    .iter()
-                    .find(|(wire, seg, _, _)| *wire == expected_curr.wire_id && *seg == expected_curr.segment_id);
+                let matching = current_rows.iter().find(|(wire, seg, _, _)| {
+                    *wire == expected_curr.wire_id && *seg == expected_curr.segment_id
+                });
 
                 let (_, _, actual_amp_db, actual_phase_deg) = match matching {
                     Some(m) => *m,

@@ -83,6 +83,9 @@ dependencies = [
 [[package]]
 name = "nec_accel"
 version = "0.2.0"
+dependencies = [
+ "num-complex",
+]
 
 [[package]]
 name = "nec_model"
