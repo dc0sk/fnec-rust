@@ -334,6 +334,30 @@ as segment count increases. Use --solver hallen for accurate results. \
     );
 }
 
+fn sinusoidal_a1_topology_supported(
+    segs: &[nec_solver::Segment],
+    wire_endpoints: &[(usize, usize)],
+) -> bool {
+    if wire_endpoints.len() != 1 {
+        return false;
+    }
+    if segs.is_empty() {
+        return false;
+    }
+
+    let ref_dir = segs[0].direction;
+    for seg in segs {
+        let dot = seg.direction[0] * ref_dir[0]
+            + seg.direction[1] * ref_dir[1]
+            + seg.direction[2] * ref_dir[2];
+        if dot.abs() < 1.0 - 1e-9 {
+            return false;
+        }
+    }
+
+    true
+}
+
 fn warn_deferred_ground_model(ground: &GroundModel) {
     let GroundModel::Deferred { gn_type } = ground else {
         return;
@@ -525,6 +549,13 @@ fn solve_frequency_point(
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 (i, a, r, "sinusoidal->pulse")
+            } else if !sinusoidal_a1_topology_supported(segs, wire_endpoints) {
+                eprintln!(
+                    "warning: sinusoidal A1 currently supports only single-wire collinear topologies; falling back to pulse"
+                );
+                let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
+                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                (i, a, r, "sinusoidal->pulse(topology)")
             } else {
                 let i = solve_with_sinusoidal_basis_per_wire(&z_mat, &v_vec_pulse, wire_endpoints)
                     .map_err(|e| e.to_string())?;
