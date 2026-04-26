@@ -18,6 +18,8 @@ All notable documentation process changes are recorded here.
 - Added corpus regression deck `corpus/dipole-freesp-rp-51seg.nec` and contract coverage for pattern-table rendering.
 - Added a collaboration efficiency guide with rate-limit-aware prompting patterns at `docs/copilot-efficiency-guide.md`.
 - Added `docs/par011-dropin-evidence-memo.md` as a dedicated evidence scaffold for deferred 4nec2 drop-in compatibility work.
+- **GPU kernel stubs**: Added `nec_accel::gpu_kernels` module with concrete Hallen far-field radiation pattern computation stubs. These stubs implement the numerical algorithm on CPU but are structured with GPU-compatible data layouts (`GpuSegment`, `HallenFrGpuKernel`) to serve as a stable scaffolding point for future CUDA/OpenCL kernel implementations. Includes `compute_hallen_fr_point_stub()` and batch API with full unit test coverage (8 lib tests) and integration test suite (6 tests validating dipole patterns, multi-segment arrays, azimuth symmetry, and numerical stability).
+- Added `crates/nec_accel/Cargo.toml` dependency on `num-complex` to support complex-number far-field calculations in GPU kernel module.
 
 ### Changed
 

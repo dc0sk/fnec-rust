@@ -45,6 +45,7 @@ last_updated: 2026-04-24
 	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
 	- 2026-04-26 progress: hybrid GPU-candidate lane routing now calls `nec_accel::dispatch_frequency_point(...)` before CPU fallback, establishing the first concrete accelerator integration seam.
 	- 2026-04-26 progress: `DispatchDecision::RunOnGpu` is now handled non-fatally in CLI hybrid and gpu execution flows via an accelerator stub branch (`FNEC_ACCEL_STUB_GPU=1`) that preserves report/diag contracts while using CPU emulation.
+	- 2026-04-26 progress: first concrete GPU kernel scaffold landed (`nec_accel::gpu_kernels::HallenFrGpuKernel`) with Hallen far-field radiation pattern computation stubs. Module provides GPU-compatible data layouts and API surface for future CUDA/OpenCL kernel implementations, complete with unit tests (8) and integration test suite (6) validating dipole patterns, multi-segment arrays, azimuth symmetry, and numerical edge cases.
 
 ## Parity-driven backlog items
 
