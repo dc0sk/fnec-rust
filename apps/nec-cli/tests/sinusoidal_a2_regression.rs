@@ -102,6 +102,7 @@ fn sinusoidal_tracks_hallen_on_reference_dipole() {
         stderr
     );
     assert_diag_field_is_finite_nonnegative(&stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&stderr, "sin_rel_res");
 }
 
 #[test]
@@ -133,4 +134,5 @@ fn sinusoidal_tracks_hallen_on_frequency_sweep_dipole() {
         stderr
     );
     assert_diag_field_is_finite_nonnegative(&stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&stderr, "sin_rel_res");
 }

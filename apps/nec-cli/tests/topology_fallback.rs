@@ -305,6 +305,7 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "rel_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "sin_rel_res");
 
     let pulse = run_solver_on_reference_dipole("pulse");
     assert!(
@@ -316,6 +317,19 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "sin_rel_res");
+
+    let sinusoidal = run_solver_on_reference_dipole("sinusoidal");
+    assert!(
+        sinusoidal.status.success(),
+        "fnec failed for sinusoidal: {}",
+        String::from_utf8_lossy(&sinusoidal.stderr)
+    );
+    let sinusoidal_stderr = String::from_utf8_lossy(&sinusoidal.stderr);
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "abs_res");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "sin_rel_res");
 }
 
 #[test]

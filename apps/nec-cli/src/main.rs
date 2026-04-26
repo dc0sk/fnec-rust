@@ -512,6 +512,7 @@ fn solve_frequency_point(
     }
     z_mat.add_to_diagonal(&load_vec);
     let diag_spread = matrix_diagonal_spread(&z_mat);
+    let mut sin_rel_res: f64 = 0.0;
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
@@ -584,6 +585,7 @@ fn solve_frequency_point(
                 let i = solve_with_sinusoidal_basis_per_wire(&z_mat, &v_vec_pulse, wire_endpoints)
                     .map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                sin_rel_res = r;
                 if r <= SINUSOIDAL_REL_RESIDUAL_MAX {
                     (i, a, r, "sinusoidal")
                 } else {
@@ -723,13 +725,14 @@ fn solve_frequency_point(
         pattern_table: &pattern_table,
     });
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e}",
         pulse_rhs_mode,
         execution_mode.as_diag_str(),
         freq_hz / 1e6,
         diag_abs,
         diag_rel,
-        diag_spread
+        diag_spread,
+        sin_rel_res
     );
 
     Ok(FrequencySolveResult { report, diag_line })
