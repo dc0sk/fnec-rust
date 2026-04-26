@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
+use nec_accel::{
+    dispatch_frequency_point, execute_frequency_point, AccelRequestKind, DispatchDecision,
+    ExecutionPath,
+};
 use nec_model::card::Card;
 use nec_parser::parse;
 use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, ReportInput};
@@ -154,13 +157,16 @@ fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
     match execution_mode {
         ExecutionMode::Cpu => {}
         ExecutionMode::Hybrid => {}
-        ExecutionMode::Gpu => {
-            if let DispatchDecision::FallbackToCpu { reason } =
-                dispatch_frequency_point(AccelRequestKind::GpuOnly, 0.0)
-            {
+        ExecutionMode::Gpu => match dispatch_frequency_point(AccelRequestKind::GpuOnly, 0.0) {
+            DispatchDecision::FallbackToCpu { reason } => {
                 eprintln!("warning: --exec gpu requested, but {reason}; using CPU solve path");
             }
-        }
+            DispatchDecision::RunOnGpu => {
+                eprintln!(
+                        "warning: --exec gpu dispatched to accelerator stub backend; solving with CPU emulation"
+                    );
+            }
+        },
     }
 }
 
@@ -696,14 +702,27 @@ fn main() -> ExitCode {
             })
             .collect();
 
-        let gpu_fallback_count = gpu_dispatch
+        let gpu_fallback_results: Vec<(
+            usize,
+            ExecutionPath,
+            Result<FrequencySolveResult, String>,
+        )> = gpu_dispatch
+            .into_iter()
+            .map(|(idx, decision)| {
+                let (path, result) = execute_frequency_point(decision, || solve_one(freqs_hz[idx]));
+                (idx, path, result)
+            })
+            .collect();
+
+        let gpu_fallback_count = gpu_fallback_results
             .iter()
-            .filter(|(_, decision)| matches!(decision, DispatchDecision::FallbackToCpu { .. }))
+            .filter(|(_, path, _)| matches!(path, ExecutionPath::CpuFallback))
             .count();
-        let gpu_stub_count = gpu_dispatch
+        let gpu_stub_count = gpu_fallback_results
             .iter()
-            .filter(|(_, decision)| matches!(decision, DispatchDecision::RunOnGpu))
+            .filter(|(_, path, _)| matches!(path, ExecutionPath::GpuStubEmulation))
             .count();
+
         if gpu_fallback_count > 0 {
             eprintln!(
                 "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
@@ -715,14 +734,11 @@ fn main() -> ExitCode {
             );
         }
 
-        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> = gpu_dispatch
-            .into_iter()
-            .map(|(idx, decision)| match decision {
-                DispatchDecision::FallbackToCpu { .. } => (idx, solve_one(freqs_hz[idx])),
-                DispatchDecision::RunOnGpu => (idx, solve_one(freqs_hz[idx])),
-            })
-            .collect();
-        solved.extend(gpu_fallback_results);
+        solved.extend(
+            gpu_fallback_results
+                .into_iter()
+                .map(|(idx, _, result)| (idx, result)),
+        );
 
         solved
     } else {

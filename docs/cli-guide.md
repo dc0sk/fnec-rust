@@ -198,5 +198,5 @@ EN
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
 - `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
 - Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.
-- For integration testing only, setting `FNEC_ACCEL_STUB_GPU=1` enables an accelerator stub dispatch path; hybrid then reports stub dispatch usage while still solving via CPU emulation.
-- `--exec gpu` is accepted in real application runs, currently emits fallback diagnostics, and executes the CPU solve path.
+- For integration testing only, setting `FNEC_ACCEL_STUB_GPU=1` enables an accelerator stub dispatch path; hybrid and gpu modes then report stub dispatch usage while still solving via CPU emulation.
+- `--exec gpu` is accepted in real application runs and executes the CPU solve path today, reporting either explicit fallback diagnostics or accelerator-stub dispatch diagnostics depending on dispatch outcome.

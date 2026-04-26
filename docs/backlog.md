@@ -44,7 +44,7 @@ last_updated: 2026-04-24
 	- 2026-04-26 progress: CLI execution-mode plumbing landed with `--exec <cpu|hybrid|gpu>` and diag `exec=...`; initial scaffold path exposed real-application mode selection before hybrid runtime work.
 	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
 	- 2026-04-26 progress: hybrid GPU-candidate lane routing now calls `nec_accel::dispatch_frequency_point(...)` before CPU fallback, establishing the first concrete accelerator integration seam.
-	- 2026-04-26 progress: `DispatchDecision::RunOnGpu` is now handled non-fatally in CLI hybrid runs via an accelerator stub branch (`FNEC_ACCEL_STUB_GPU=1`) that preserves report/diag contracts while using CPU emulation.
+	- 2026-04-26 progress: `DispatchDecision::RunOnGpu` is now handled non-fatally in CLI hybrid and gpu execution flows via an accelerator stub branch (`FNEC_ACCEL_STUB_GPU=1`) that preserves report/diag contracts while using CPU emulation.
 
 ## Parity-driven backlog items
 

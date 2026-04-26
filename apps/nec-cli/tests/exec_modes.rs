@@ -105,3 +105,36 @@ fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
     assert_eq!(stdout.matches("FNEC FEEDPOINT REPORT").count(), 5);
     assert_eq!(stdout.matches("FREQ_MHZ ").count(), 5);
 }
+
+#[test]
+fn gpu_exec_mode_accepts_accelerator_stub_dispatch_path() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("gpu")
+        .env("FNEC_ACCEL_STUB_GPU", "1")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for gpu exec stub test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: --exec gpu dispatched to accelerator stub backend"),
+        "expected gpu stub dispatch warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("warning: --exec gpu requested"),
+        "did not expect gpu fallback-request warning in stub path, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "gpu(cpu-fallback)");
+}

@@ -13,6 +13,12 @@ pub enum DispatchDecision {
     FallbackToCpu { reason: &'static str },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionPath {
+    CpuFallback,
+    GpuStubEmulation,
+}
+
 const ACCEL_STUB_GPU_ENV: &str = "FNEC_ACCEL_STUB_GPU";
 
 fn stub_gpu_enabled() -> bool {
@@ -31,11 +37,29 @@ pub fn dispatch_frequency_point(_request: AccelRequestKind, _freq_hz: f64) -> Di
     }
 }
 
+pub fn execute_frequency_point<T, F>(
+    decision: DispatchDecision,
+    cpu_emulated_solve: F,
+) -> (ExecutionPath, Result<T, String>)
+where
+    F: FnOnce() -> Result<T, String>,
+{
+    match decision {
+        DispatchDecision::FallbackToCpu { .. } => {
+            (ExecutionPath::CpuFallback, cpu_emulated_solve())
+        }
+        DispatchDecision::RunOnGpu => (ExecutionPath::GpuStubEmulation, cpu_emulated_solve()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
 
-    use super::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
+    use super::{
+        dispatch_frequency_point, execute_frequency_point, AccelRequestKind, DispatchDecision,
+        ExecutionPath,
+    };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -77,5 +101,27 @@ mod tests {
 
         assert!(matches!(hybrid, DispatchDecision::RunOnGpu));
         assert!(matches!(gpu_only, DispatchDecision::RunOnGpu));
+    }
+
+    #[test]
+    fn execute_frequency_point_marks_fallback_path() {
+        let (path, result) = execute_frequency_point(
+            DispatchDecision::FallbackToCpu {
+                reason: "GPU kernels are not yet wired",
+            },
+            || Ok::<usize, String>(42),
+        );
+
+        assert_eq!(path, ExecutionPath::CpuFallback);
+        assert!(matches!(result, Ok(42)));
+    }
+
+    #[test]
+    fn execute_frequency_point_marks_stub_emulation_path() {
+        let (path, result) =
+            execute_frequency_point(DispatchDecision::RunOnGpu, || Ok::<usize, String>(7));
+
+        assert_eq!(path, ExecutionPath::GpuStubEmulation);
+        assert!(matches!(result, Ok(7)));
     }
 }
