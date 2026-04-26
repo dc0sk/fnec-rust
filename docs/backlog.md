@@ -90,4 +90,4 @@ last_updated: 2026-04-24
 		- Dependency surface: verify companion DLL/runtime requirements (if any) and loader-path assumptions in both portable and installed setups.
 		- Compatibility fixtures: archive representative external-kernel call traces and outputs for each binary variant as regression fixtures.
 		- Benchmark method: define throughput comparison protocol against the legacy single-thread kernel on identical decks, with per-variant segment-count bands.
-		- Reference sources: index `nec2mp-readme.pdf` notes and the cited URL (`http://users.otenet.gr/~jmsp`) into a short evidence memo for future PAR-011 kickoff.
+		- Reference sources: index `nec2mp-readme.pdf` notes, the cited URL (`http://users.otenet.gr/~jmsp`), and GNU NEC SourceForge project notes (`https://sourceforge.net/projects/gnu-nec/`) into a short evidence memo for future PAR-011 kickoff.
