@@ -187,15 +187,46 @@ EN
 
 ## Supported NEC cards
 
-| Card | Support |
-|------|---------|
-| GW | Full |
-| GE | Full (GE I1=1 infers PEC ground when no GN card is present) |
-| EX type 0 | Full (voltage source) |
-| FR | Full linear/multiplicative sweep over all steps |
-| RP | Full report-path support (pattern table rendered in text output) |
-| EN | Terminates parse |
-| Other | Warning printed, skipped |
+| Card | Support | Notes |
+|------|---------|-------|
+| GW | Full | Wire segment geometry definition |
+| GE | Full | Geometry end; GE I1=1 infers PEC ground when no GN card is present |
+| GN | Full | Ground model (type 0 = reflection coeff, type 1 = PEC image method) |
+| GM | Full | Geometry move: in-place or appended transformed copies |
+| GR | Full | Geometry repeat (arc repetition) |
+| EX type 0 | Full | Voltage source excitation |
+| FR | Full | Linear frequency sweep over all steps |
+| RP | Full | Radiation pattern calculation and report table rendering |
+| LD type 0, 4, 5 | Full | Lumped loads (RLC series, impedance, conductivity) and distributed loads |
+| TL | Full | Transmission-line connections (lossless and lossy models) |
+| EN | Full | Terminates parse |
+| Other | Warning | Unknown cards print a warning and are skipped |
+
+### Load (LD) card support
+
+The LD card applies impedance loads to antenna segments. Supported types:
+
+| Type | Description | Fields |
+|------|-------------|--------|
+| 0 | Series RLC (lumped) | F1 = R (Ω), F2 = L (H), F3 = C (F) |
+| 4 | Series impedance Z = R + jX | F1 = R (Ω), F2 = X (Ω) |
+| 5 | Wire conductivity (distributed) | F1 = σ (S/m) |
+
+Example: `LD 4 1 26 26 50.0 -j100.0` applies a 50 − j100 Ω load to tag 1, segment 26.
+
+### Transmission line (TL) card support
+
+The TL card connects two segments with a transmission line, supporting lossless and lossy models.
+
+**NEC field mapping** (TL I1 I2 I3 I4 I5 I6 F1 F2 F3):
+- I1–I4: Segment locations (tag1, seg1, tag2, seg2)
+- I5: Number of TL segments in the model (typically 1)
+- I6: TL type (0 = lossless, non-zero = lossy/complex)
+- F1: Characteristic impedance (Ω, default 50)
+- F2: Transmission-line length (m)
+- F3: Angle (°) for lossy models or velocity factor (ratio) for lossless (default 1.0)
+
+**Solver integration**: TL cards are parsed and stored in the deck model. Solver handling is deferred to Phase 2 (multi-wire coupled-transmission-line modes).
 
 ## Notes
 

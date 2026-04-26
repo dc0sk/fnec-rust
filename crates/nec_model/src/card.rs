@@ -202,6 +202,41 @@ pub struct GrCard {
     pub angle_deg: f64,
 }
 
+/// TL — Transmission line card.
+///
+/// Connects two segments with a transmission line, with optional attenuation and
+/// velocity factor.  Used to model transmission lines (e.g., antenna feeds, coupled
+/// elements) as circuit connections.
+///
+/// NEC field mapping (TL I1 I2 I3 I4 I5 I6 F1 F2 F3):
+///   I1–I4: Define segment locations (tag, segment number pairs)
+///   I5: Number of transmission-line segments (for stepped models; typically 1)
+///   I6: Transmission-line type (0 = lossless; non-zero flags lossy/complex models)
+///   F1: Characteristic impedance (Ω)
+///   F2: Transmission-line length (m)
+///   F3: Angle (°) for lossy models; velocity factor (ratio) for lossless
+#[derive(Debug, Clone, PartialEq)]
+pub struct TlCard {
+    /// Tag number of the first segment to connect.
+    pub tag1: u32,
+    /// Segment number within tag1 (0 = all segments in tag).
+    pub segment1: u32,
+    /// Tag number of the second segment to connect.
+    pub tag2: u32,
+    /// Segment number within tag2 (0 = all segments in tag).
+    pub segment2: u32,
+    /// Number of transmission-line segments in the model (typically 1).
+    pub num_segments: u32,
+    /// Transmission-line type: 0 = lossless, non-zero = lossy/complex.
+    pub tl_type: u32,
+    /// Characteristic impedance (Ω).
+    pub z0: f64,
+    /// Transmission-line length (m).
+    pub length: f64,
+    /// Angle (°) for lossy models or velocity factor (ratio) for lossless.
+    pub f3: f64,
+}
+
 /// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
@@ -216,6 +251,7 @@ pub enum Card {
     Ge(GeCard),
     Gn(GnCard),
     Ld(LdCard),
+    Tl(TlCard),
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),
