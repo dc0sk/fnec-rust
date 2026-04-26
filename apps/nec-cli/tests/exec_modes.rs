@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
 
 mod common;
 
@@ -22,6 +22,13 @@ fn create_dropin_alias(alias_name: &str) -> PathBuf {
     let source = PathBuf::from(env!("CARGO_BIN_EXE_fnec"));
     let alias = make_dropin_alias_path(alias_name);
 
+    #[cfg(unix)]
+    {
+        if symlink(&source, &alias).is_ok() {
+            return alias;
+        }
+    }
+
     if fs::hard_link(&source, &alias).is_ok() {
         return alias;
     }
@@ -33,17 +40,6 @@ fn create_dropin_alias(alias_name: &str) -> PathBuf {
             alias.display()
         )
     });
-
-    #[cfg(unix)]
-    {
-        let mut perms = fs::metadata(&alias)
-            .unwrap_or_else(|e| panic!("failed to read alias metadata '{}': {e}", alias.display()))
-            .permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&alias, perms).unwrap_or_else(|e| {
-            panic!("failed to mark alias executable '{}': {e}", alias.display())
-        });
-    }
 
     alias
 }
@@ -245,5 +241,43 @@ fn explicit_exec_overrides_dropin_filename_steering() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("preserving explicit --exec=cpu"),
+        "expected explicit exec preservation warning in stderr, got:\n{stderr}"
+    );
     assert_diag_field(&stderr, "exec", "cpu");
+}
+
+#[test]
+fn filename_steering_also_detects_4nec2_alias_names() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("4nec2-kernel");
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' for 4nec2 detection test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert!(
+        output.status.success(),
+        "fnec drop-in alias failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "hybrid");
 }

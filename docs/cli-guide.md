@@ -24,6 +24,7 @@ Compatibility profile note:
 
 - The CLI now includes a filename-steered compatibility profile scaffold for 4nec2-style external kernel replacement workflows.
 - If the executable name contains `nec2dxs` or `4nec2`, default execution is steered to `--exec hybrid` unless `--exec` is explicitly provided.
+- Diagnostics explicitly distinguish the two cases: "default execution path steered" vs "preserving explicit --exec=...".
 - This currently changes execution-mode defaulting only; argument/output contract compatibility work remains tracked in backlog parity item `PAR-011`.
 
 ## Options

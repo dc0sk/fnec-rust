@@ -101,15 +101,27 @@ fn steer_execution_mode_by_profile(
     }
 }
 
-fn warn_compatibility_profile(profile: CompatibilityProfile, execution_mode: ExecutionMode) {
+fn warn_compatibility_profile(
+    profile: CompatibilityProfile,
+    requested_execution_mode: ExecutionMode,
+    effective_execution_mode: ExecutionMode,
+    exec_flag_explicitly_set: bool,
+) {
     if profile != CompatibilityProfile::FourNec2DropIn {
         return;
     }
 
-    eprintln!(
-        "warning: 4nec2 drop-in compatibility profile detected by binary name; default execution path is steered to exec={} unless --exec is explicitly provided",
-        execution_mode.as_diag_str()
-    );
+    if exec_flag_explicitly_set {
+        eprintln!(
+            "warning: 4nec2 drop-in compatibility profile detected by binary name; preserving explicit --exec={}",
+            requested_execution_mode.as_diag_str()
+        );
+    } else {
+        eprintln!(
+            "warning: 4nec2 drop-in compatibility profile detected by binary name; default execution path steered to exec={}",
+            effective_execution_mode.as_diag_str()
+        );
+    }
 }
 
 fn parse_args(
@@ -625,9 +637,18 @@ fn main() -> ExitCode {
             }
         };
 
-    execution_mode =
-        steer_execution_mode_by_profile(execution_mode, profile, exec_flag_explicitly_set);
-    warn_compatibility_profile(profile, execution_mode);
+    let requested_execution_mode = execution_mode;
+    execution_mode = steer_execution_mode_by_profile(
+        requested_execution_mode,
+        profile,
+        exec_flag_explicitly_set,
+    );
+    warn_compatibility_profile(
+        profile,
+        requested_execution_mode,
+        execution_mode,
+        exec_flag_explicitly_set,
+    );
 
     if hallen_allow_non_collinear && solver_mode != SolverMode::Hallen {
         eprintln!(
