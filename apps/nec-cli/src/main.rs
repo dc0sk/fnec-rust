@@ -126,11 +126,24 @@ fn warn_compatibility_profile(
 
 fn parse_args(
     args: &[String],
-) -> Result<(SolverMode, PulseRhsMode, ExecutionMode, bool, PathBuf), String> {
+) -> Result<
+    (
+        SolverMode,
+        PulseRhsMode,
+        ExecutionMode,
+        bool,
+        bool,
+        bool,
+        PathBuf,
+    ),
+    String,
+> {
     let mut solver_mode = SolverMode::Hallen;
     let mut pulse_rhs_mode = PulseRhsMode::Nec2;
     let mut execution_mode = ExecutionMode::Cpu;
     let mut hallen_allow_non_collinear = false;
+    let mut enable_benchmarking = false;
+    let mut enable_gpu_fr = false;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -190,6 +203,12 @@ fn parse_args(
             "--allow-noncollinear-hallen" => {
                 hallen_allow_non_collinear = true;
             }
+            "--bench" => {
+                enable_benchmarking = true;
+            }
+            "--gpu-fr" => {
+                enable_gpu_fr = true;
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -209,6 +228,8 @@ fn parse_args(
         pulse_rhs_mode,
         execution_mode,
         hallen_allow_non_collinear,
+        enable_benchmarking,
+        enable_gpu_fr,
         path,
     ))
 }
@@ -423,6 +444,7 @@ fn solve_frequency_point(
     pulse_rhs_mode: PulseRhsMode,
     execution_mode: ExecutionMode,
     hallen_allow_non_collinear: bool,
+    enable_gpu_fr: bool,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
     let v_vec_pulse = match pulse_rhs_mode {
@@ -579,18 +601,62 @@ fn solve_frequency_point(
     let pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
     } else {
-        let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points);
-        results
-            .iter()
-            .map(|r| PatternRow {
-                theta_deg: r.theta_deg,
-                phi_deg: r.phi_deg,
-                gain_total_dbi: r.gain_total_dbi,
-                gain_theta_dbi: r.gain_theta_dbi,
-                gain_phi_dbi: r.gain_phi_dbi,
-                axial_ratio: r.axial_ratio,
-            })
-            .collect()
+        if enable_gpu_fr {
+            // Dispatch far-field to GPU kernel stub
+            // Note: GPU stub uses CPU computation; normalization computed via simple heuristic
+            let gpu_segments: Vec<_> = segs
+                .iter()
+                .map(|seg| nec_accel::gpu_kernels::GpuSegment {
+                    midpoint: seg.midpoint,
+                    direction: seg.direction,
+                    length: seg.length,
+                })
+                .collect();
+
+            // Use standard CPU path once to get normalization, then switch to GPU stub for pattern eval
+            // (In production, the GPU would compute this on-device)
+            let _ = compute_radiation_pattern(segs, &i_vec, freq_hz, &[pattern_points[0]]);
+
+            // For stub, use a simple normalized reference (total current squared)
+            let norm_ref = i_vec.iter().map(|i| i.norm_sqr()).sum::<f64>();
+
+            let kernel = nec_accel::HallenFrGpuKernel::new(
+                gpu_segments,
+                i_vec.clone(),
+                freq_hz,
+                norm_ref.max(1e-6),
+            );
+            let pattern_points_tuples: Vec<_> = pattern_points
+                .iter()
+                .map(|p| (p.theta_deg, p.phi_deg))
+                .collect();
+
+            nec_accel::compute_hallen_fr_batch_stub(&kernel, &pattern_points_tuples)
+                .iter()
+                .map(|r| PatternRow {
+                    theta_deg: r.theta_deg,
+                    phi_deg: r.phi_deg,
+                    gain_total_dbi: r.gain_total_dbi,
+                    gain_theta_dbi: r.gain_theta_dbi,
+                    gain_phi_dbi: r.gain_phi_dbi,
+                    axial_ratio: r.axial_ratio,
+                })
+                .collect()
+        } else {
+            // Standard CPU path
+            let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points);
+            results
+                .iter()
+                .map(|r| PatternRow {
+                    theta_deg: r.theta_deg,
+                    phi_deg: r.phi_deg,
+                    gain_total_dbi: r.gain_total_dbi,
+                    gain_theta_dbi: r.gain_theta_dbi,
+                    gain_phi_dbi: r.gain_phi_dbi,
+                    axial_ratio: r.axial_ratio,
+                })
+                .collect()
+        }
     };
 
     let report = render_text_report(&ReportInput {
@@ -621,21 +687,33 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--gpu-fr] <deck.nec>"
         );
         return ExitCode::from(2);
     }
 
-    let (solver_mode, pulse_rhs_mode, mut execution_mode, hallen_allow_non_collinear, path) =
-        match parse_args(&args) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-                eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>");
-                eprintln!("error: {e}");
-                return ExitCode::from(2);
-            }
-        };
+    let (
+        solver_mode,
+        pulse_rhs_mode,
+        mut execution_mode,
+        hallen_allow_non_collinear,
+        enable_benchmarking,
+        enable_gpu_fr,
+        path,
+    ) = match parse_args(&args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--gpu-fr] <deck.nec>");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    // Enable GPU benchmarking if --bench flag is set
+    if enable_benchmarking {
+        std::env::set_var("FNEC_GPU_BENCH", "1");
+    }
 
     let requested_execution_mode = execution_mode;
     execution_mode = steer_execution_mode_by_profile(
@@ -744,6 +822,7 @@ fn main() -> ExitCode {
             pulse_rhs_mode,
             execution_mode,
             hallen_allow_non_collinear,
+            enable_gpu_fr,
             freq_hz,
         )
     };

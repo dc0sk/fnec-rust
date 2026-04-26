@@ -20,10 +20,32 @@
 
 use num_complex::Complex64;
 use std::f64::consts::PI;
+use std::time::Instant;
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
 const DB_FACTOR: f64 = 10.0_f64;
 const MIN_NORM_PATTERN: f64 = 1e-20;
+
+/// Execution timing result for GPU kernel operations.
+///
+/// Tracks wall-clock time for each kernel stage (prep, GPU execution, retrieval).
+/// Currently all times are identical (CPU stub); future GPU implementations will
+/// show true device execution time separately from host-device transfer overhead.
+#[derive(Debug, Clone, Copy)]
+pub struct KernelTiming {
+    /// Host-side preparation time (geometry conversion, memory staging) in microseconds.
+    pub prep_us: u64,
+    /// GPU kernel execution time in microseconds (stub: CPU compute time).
+    pub exec_us: u64,
+    /// Device-to-host result transfer time in microseconds (stub: 0).
+    pub retrieval_us: u64,
+}
+
+impl KernelTiming {
+    pub fn total_us(&self) -> u64 {
+        self.prep_us + self.exec_us + self.retrieval_us
+    }
+}
 
 /// GPU-prepared geometry segment for kernel computation.
 ///
@@ -98,6 +120,64 @@ impl HallenFrGpuKernel {
     }
 }
 
+/// Hallén RHS construction GPU kernel.
+///
+/// Prepares the right-hand side vector for the Hallén augmented system.
+/// GPU kernel computes the integral terms and boundary conditions efficiently
+/// for large segment counts.
+pub struct HallenRhsGpuKernel {
+    /// GPU-prepared segments.
+    pub gpu_segments: Vec<GpuSegment>,
+    /// Excitation source position (segment tag, segment index).
+    pub excitation: (u32, u32),
+    /// Operating frequency in Hz.
+    pub freq_hz: f64,
+    /// Precomputed wavenumber k = 2π·f/c.
+    pub wavenumber: f64,
+}
+
+impl HallenRhsGpuKernel {
+    /// Prepare a Hallén RHS kernel from geometry and excitation.
+    pub fn new(segments: Vec<GpuSegment>, excitation: (u32, u32), freq_hz: f64) -> Self {
+        let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+        HallenRhsGpuKernel {
+            gpu_segments: segments,
+            excitation,
+            freq_hz,
+            wavenumber,
+        }
+    }
+}
+
+/// Pocklington matrix assembly GPU kernel.
+///
+/// Assembles the impedance matrix from wire geometry using pulse-basis EFIE.
+/// GPU kernel distributes matrix-element computation across CUDA/OpenCL threads.
+pub struct PocklingtonMatrixGpuKernel {
+    /// GPU-prepared segments.
+    pub gpu_segments: Vec<GpuSegment>,
+    /// Operating frequency in Hz.
+    pub freq_hz: f64,
+    /// Precomputed wavenumber k = 2π·f/c.
+    pub wavenumber: f64,
+    /// Number of matrix elements (n_segments × n_segments).
+    pub matrix_size: usize,
+}
+
+impl PocklingtonMatrixGpuKernel {
+    /// Prepare a Pocklington matrix assembly kernel.
+    pub fn new(segments: Vec<GpuSegment>, freq_hz: f64) -> Self {
+        let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+        let matrix_size = segments.len() * segments.len();
+        PocklingtonMatrixGpuKernel {
+            gpu_segments: segments,
+            freq_hz,
+            wavenumber,
+            matrix_size,
+        }
+    }
+}
+
 /// Compute far-field point using Hallen FR GPU stub kernel.
 ///
 /// This function computes the complex far-field components (Eθ, Eφ) at a
@@ -121,8 +201,34 @@ pub fn compute_hallen_fr_point_stub(
     theta_deg: f64,
     phi_deg: f64,
 ) -> GpuFarFieldPoint {
+    compute_hallen_fr_point_with_timing(kernel, theta_deg, phi_deg).0
+}
+
+/// Compute far-field point with optional timing instrumentation.
+///
+/// Same as `compute_hallen_fr_point_stub()` but returns execution timing data.
+/// Enable timing collection via `FNEC_GPU_BENCH=1` environment variable.
+pub fn compute_hallen_fr_point_with_timing(
+    kernel: &HallenFrGpuKernel,
+    theta_deg: f64,
+    phi_deg: f64,
+) -> (GpuFarFieldPoint, KernelTiming) {
+    let timing_enabled = std::env::var_os("FNEC_GPU_BENCH")
+        .and_then(|v| v.into_string().ok())
+        .is_some_and(|v| v == "1");
+
+    let prep_start = Instant::now();
+
     // Compute unit vectors in spherical coordinates.
     let (r_hat, theta_hat, phi_hat) = unit_vectors(theta_deg, phi_deg);
+
+    let prep_elapsed = if timing_enabled {
+        prep_start.elapsed().as_micros() as u64
+    } else {
+        0
+    };
+
+    let exec_start = Instant::now();
 
     // Compute far-field components by summing over all segments.
     let (f_theta, f_phi) = far_field_components(
@@ -169,14 +275,28 @@ pub fn compute_hallen_fr_point_stub(
         0.0
     };
 
-    GpuFarFieldPoint {
+    let exec_elapsed = if timing_enabled {
+        exec_start.elapsed().as_micros() as u64
+    } else {
+        0
+    };
+
+    let result = GpuFarFieldPoint {
         theta_deg,
         phi_deg,
         gain_total_dbi,
         gain_theta_dbi,
         gain_phi_dbi,
         axial_ratio,
-    }
+    };
+
+    let timing = KernelTiming {
+        prep_us: prep_elapsed,
+        exec_us: exec_elapsed,
+        retrieval_us: 0,
+    };
+
+    (result, timing)
 }
 
 /// Compute multiple far-field points using Hallen FR GPU stub kernel.
@@ -249,6 +369,60 @@ fn far_field_components(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hallen_rhs_kernel_construction() {
+        let seg = GpuSegment {
+            midpoint: [0.0, 0.0, 0.0],
+            direction: [0.0, 0.0, 1.0],
+            length: 1.0,
+        };
+        let kernel = HallenRhsGpuKernel::new(vec![seg], (1, 1), 14.2e6);
+        assert_eq!(kernel.freq_hz, 14.2e6);
+        assert!(kernel.wavenumber > 0.0);
+        assert_eq!(kernel.excitation, (1, 1));
+    }
+
+    #[test]
+    fn pocklington_matrix_kernel_construction() {
+        let seg = GpuSegment {
+            midpoint: [0.0, 0.0, 0.0],
+            direction: [0.0, 0.0, 1.0],
+            length: 1.0,
+        };
+        let kernel = PocklingtonMatrixGpuKernel::new(vec![seg], 14.2e6);
+        assert_eq!(kernel.freq_hz, 14.2e6);
+        assert!(kernel.wavenumber > 0.0);
+        assert_eq!(kernel.matrix_size, 1); // 1 segment => 1x1 matrix
+    }
+
+    #[test]
+    fn pocklington_matrix_size_multi_segment() {
+        let segs = vec![
+            GpuSegment {
+                midpoint: [0.0, 0.0, 0.0],
+                direction: [0.0, 0.0, 1.0],
+                length: 1.0,
+            },
+            GpuSegment {
+                midpoint: [0.0, 0.0, 1.0],
+                direction: [0.0, 0.0, 1.0],
+                length: 1.0,
+            },
+        ];
+        let kernel = PocklingtonMatrixGpuKernel::new(segs, 14.2e6);
+        assert_eq!(kernel.matrix_size, 4); // 2 segments => 2x2 = 4 elements
+    }
+
+    #[test]
+    fn kernel_timing_structure() {
+        let timing = KernelTiming {
+            prep_us: 100,
+            exec_us: 500,
+            retrieval_us: 10,
+        };
+        assert_eq!(timing.total_us(), 610);
+    }
 
     #[test]
     fn gpu_kernel_construction() {

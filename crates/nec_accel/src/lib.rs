@@ -3,6 +3,12 @@
 
 pub mod gpu_kernels;
 
+pub use gpu_kernels::{
+    compute_hallen_fr_batch_stub, compute_hallen_fr_point_stub,
+    compute_hallen_fr_point_with_timing, HallenFrGpuKernel, HallenRhsGpuKernel, KernelTiming,
+    PocklingtonMatrixGpuKernel,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccelRequestKind {
     HybridGpuCandidate,
