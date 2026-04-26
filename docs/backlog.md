@@ -82,6 +82,8 @@ last_updated: 2026-04-24
 - [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
 	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
 	- 2026-04-26 assessment: deferred from Phase 2-3 to Phase 4-5 after reviewing real NEC2MP replacement artifacts (`nec2dxs500/1K5/3k0/5k0/8k0/11k` variants plus external install procedure docs). Full drop-in parity likely requires Windows-specific replacement semantics, binary-name matrix handling, and compatibility validation against external tool expectations beyond current CLI contract scope.
+	- 2026-04-26 progress: populated `docs/par011-dropin-evidence-memo.md` with concrete artifact fingerprints/readme findings and added a phased docs-only implementation plan with acceptance tests (`AT-PAR011-*`).
+	- 2026-04-26 scope decision: compatibility harness skeleton work is postponed for now (option 3 deferred).
 	- Discovery checklist (capture before implementation starts):
 		- Binary-name matrix: confirm exact accepted executable names/casing and segment-limit mapping (`nec2dxs500.exe`, `nec2dxs1K5.exe`, `nec2dxs3k0.exe`, `nec2dxs5k0.exe`, `nec2dxs8k0.exe`, `nec2dxs11k.exe`).
 		- Install contract: document required replacement/copy steps in Windows 4nec2 installation paths and whether side-by-side binary variants are expected.
