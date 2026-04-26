@@ -17,6 +17,7 @@ All notable documentation process changes are recorded here.
 - Text reports now include a `RADIATION_PATTERN` section when one or more `RP` cards are present.
 - Added corpus regression deck `corpus/dipole-freesp-rp-51seg.nec` and contract coverage for pattern-table rendering.
 - Added a collaboration efficiency guide with rate-limit-aware prompting patterns at `docs/copilot-efficiency-guide.md`.
+- Added `docs/par011-dropin-evidence-memo.md` as a dedicated evidence scaffold for deferred 4nec2 drop-in compatibility work.
 
 ### Changed
 
