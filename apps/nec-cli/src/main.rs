@@ -33,6 +33,23 @@ enum PulseRhsMode {
     Nec2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionMode {
+    Cpu,
+    Hybrid,
+    Gpu,
+}
+
+impl ExecutionMode {
+    fn as_diag_str(self) -> &'static str {
+        match self {
+            ExecutionMode::Cpu => "cpu",
+            ExecutionMode::Hybrid => "hybrid(cpu-fallback)",
+            ExecutionMode::Gpu => "gpu(cpu-fallback)",
+        }
+    }
+}
+
 impl PulseRhsMode {
     fn as_contract_str(self) -> &'static str {
         match self {
@@ -42,9 +59,12 @@ impl PulseRhsMode {
     }
 }
 
-fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, bool, PathBuf), String> {
+fn parse_args(
+    args: &[String],
+) -> Result<(SolverMode, PulseRhsMode, ExecutionMode, bool, PathBuf), String> {
     let mut solver_mode = SolverMode::Hallen;
     let mut pulse_rhs_mode = PulseRhsMode::Nec2;
+    let mut execution_mode = ExecutionMode::Cpu;
     let mut hallen_allow_non_collinear = false;
     let mut deck_path: Option<PathBuf> = None;
 
@@ -86,6 +106,22 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, bool, PathBu
                     }
                 };
             }
+            "--exec" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --exec (expected: cpu|hybrid|gpu)".to_string());
+                }
+                execution_mode = match args[i].as_str() {
+                    "cpu" => ExecutionMode::Cpu,
+                    "hybrid" => ExecutionMode::Hybrid,
+                    "gpu" => ExecutionMode::Gpu,
+                    other => {
+                        return Err(format!(
+                            "invalid --exec value '{other}' (expected: cpu|hybrid|gpu)"
+                        ))
+                    }
+                };
+            }
             "--allow-noncollinear-hallen" => {
                 hallen_allow_non_collinear = true;
             }
@@ -106,9 +142,22 @@ fn parse_args(args: &[String]) -> Result<(SolverMode, PulseRhsMode, bool, PathBu
     Ok((
         solver_mode,
         pulse_rhs_mode,
+        execution_mode,
         hallen_allow_non_collinear,
         path,
     ))
+}
+
+fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
+    match execution_mode {
+        ExecutionMode::Cpu => {}
+        ExecutionMode::Hybrid => eprintln!(
+            "warning: --exec hybrid requested, but CPU+GPU split kernels are not yet wired; using CPU solve path"
+        ),
+        ExecutionMode::Gpu => eprintln!(
+            "warning: --exec gpu requested, but GPU solve kernels are not yet wired; using CPU solve path"
+        ),
+    }
 }
 
 fn l2_norm(v: &[Complex64]) -> f64 {
@@ -268,20 +317,21 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>"
         );
         return ExitCode::from(2);
     }
 
-    let (solver_mode, pulse_rhs_mode, hallen_allow_non_collinear, path) = match parse_args(&args) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--allow-noncollinear-hallen] <deck.nec>");
-            eprintln!("error: {e}");
-            return ExitCode::from(2);
-        }
-    };
+    let (solver_mode, pulse_rhs_mode, execution_mode, hallen_allow_non_collinear, path) =
+        match parse_args(&args) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>");
+                eprintln!("error: {e}");
+                return ExitCode::from(2);
+            }
+        };
 
     if hallen_allow_non_collinear && solver_mode != SolverMode::Hallen {
         eprintln!(
@@ -294,6 +344,8 @@ fn main() -> ExitCode {
             "warning: --allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries; results may be inaccurate"
         );
     }
+
+    warn_execution_mode_fallback(execution_mode);
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -621,8 +673,9 @@ fn main() -> ExitCode {
         print!("{report}");
 
         eprintln!(
-            "diag: mode={diag_label} pulse_rhs={:?} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e}",
+            "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e}",
             pulse_rhs_mode,
+            execution_mode.as_diag_str(),
             freq_hz / 1e6,
             diag_abs,
             diag_rel

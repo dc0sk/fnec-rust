@@ -75,6 +75,22 @@ fn run_solver_on_reference_dipole_with_pulse_rhs(
         })
 }
 
+fn run_solver_on_reference_dipole_with_exec(solver: &str, exec_mode: &str) -> std::process::Output {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg(solver)
+        .arg("--exec")
+        .arg(exec_mode)
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for solver '{solver}' with exec-mode '{exec_mode}': {e}")
+        })
+}
+
 fn run_hallen_on_loaded_case(allow_noncollinear_hallen: bool) -> std::process::Output {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-loaded.nec");
@@ -172,6 +188,47 @@ fn pulse_rhs_flag_is_reflected_in_diag_field() {
     );
     let nec2_stderr = String::from_utf8_lossy(&nec2.stderr);
     assert_diag_field(&nec2_stderr, "pulse_rhs", "Nec2");
+}
+
+#[test]
+fn exec_mode_defaults_to_cpu_in_diag_field() {
+    let output = run_solver_on_reference_dipole("hallen");
+    assert!(
+        output.status.success(),
+        "fnec failed for hallen/default-exec: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_diag_field(&stderr, "exec", "cpu");
+}
+
+#[test]
+fn hybrid_and_gpu_exec_modes_are_reflected_and_warn_cpu_fallback() {
+    let hybrid = run_solver_on_reference_dipole_with_exec("hallen", "hybrid");
+    assert!(
+        hybrid.status.success(),
+        "fnec failed for hallen/hybrid: {}",
+        String::from_utf8_lossy(&hybrid.stderr)
+    );
+    let hybrid_stderr = String::from_utf8_lossy(&hybrid.stderr);
+    assert!(
+        hybrid_stderr.contains("warning: --exec hybrid requested"),
+        "expected hybrid fallback warning in stderr, got:\n{hybrid_stderr}"
+    );
+    assert_diag_field(&hybrid_stderr, "exec", "hybrid(cpu-fallback)");
+
+    let gpu = run_solver_on_reference_dipole_with_exec("hallen", "gpu");
+    assert!(
+        gpu.status.success(),
+        "fnec failed for hallen/gpu: {}",
+        String::from_utf8_lossy(&gpu.stderr)
+    );
+    let gpu_stderr = String::from_utf8_lossy(&gpu.stderr);
+    assert!(
+        gpu_stderr.contains("warning: --exec gpu requested"),
+        "expected gpu fallback warning in stderr, got:\n{gpu_stderr}"
+    );
+    assert_diag_field(&gpu_stderr, "exec", "gpu(cpu-fallback)");
 }
 
 #[test]
