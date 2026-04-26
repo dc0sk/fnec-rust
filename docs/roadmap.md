@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # Roadmap
@@ -147,6 +147,27 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 ## Phase 5: Performance scaling
 
 **Goals**: GPU acceleration from postprocessing to solver kernel.
+
+### Benchmark mode matrix (all targets)
+
+To prevent regressions and keep performance claims comparable, benchmarking must run in three modes on every supported target class:
+
+- **CPU single-threaded**: deterministic baseline (`RAYON_NUM_THREADS=1` or equivalent) for direct algorithmic comparison.
+- **CPU multithreaded**: throughput mode using target-default thread count and an explicit fixed-thread variant for reproducibility.
+- **GPU offload**: accelerator path (where available) with framework/runtime metadata captured in benchmark artifacts.
+
+Target classes for this matrix:
+
+- Desktop/workstation (`x86_64` Linux, Windows, macOS)
+- SBC/edge (`aarch64` Raspberry Pi class)
+- Remote worker/cluster nodes used by distributed execution mode
+
+Required benchmark outputs per target/mode:
+
+- wall-clock runtime, solver/kernel time split, and memory footprint
+- problem-size metadata (segments, wires, frequency points, solver mode)
+- run metadata (CPU model, GPU model, driver/runtime, thread count)
+- regression deltas vs last accepted baseline
 
 **Key deliverables**:
 - [ ] GPU acceleration for postprocessing (pattern interpolation, report generation).
