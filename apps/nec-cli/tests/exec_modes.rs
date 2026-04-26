@@ -66,3 +66,42 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
         cursor += rel + marker.len();
     }
 }
+
+#[test]
+fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("hybrid")
+        .env("FNEC_ACCEL_STUB_GPU", "1")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec stub test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !stderr.contains("GPU-candidate lane"),
+        "did not expect GPU-candidate fallback warning in stub path, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("accelerator stub backend"),
+        "expected accelerator stub warning in stderr, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "hybrid");
+
+    // Contract remains unchanged: one ordered report block per FR point.
+    assert_eq!(stdout.matches("FNEC FEEDPOINT REPORT").count(), 5);
+    assert_eq!(stdout.matches("FREQ_MHZ ").count(), 5);
+}

@@ -700,26 +700,28 @@ fn main() -> ExitCode {
             .iter()
             .filter(|(_, decision)| matches!(decision, DispatchDecision::FallbackToCpu { .. }))
             .count();
+        let gpu_stub_count = gpu_dispatch
+            .iter()
+            .filter(|(_, decision)| matches!(decision, DispatchDecision::RunOnGpu))
+            .count();
         if gpu_fallback_count > 0 {
             eprintln!(
                 "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
             );
         }
+        if gpu_stub_count > 0 {
+            eprintln!(
+                "warning: --exec hybrid dispatched {gpu_stub_count} frequency point(s) to accelerator stub backend; solving with CPU emulation"
+            );
+        }
 
-        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> =
-            gpu_dispatch
-                .into_iter()
-                .map(|(idx, decision)| match decision {
-                    DispatchDecision::FallbackToCpu { .. } => (idx, solve_one(freqs_hz[idx])),
-                    DispatchDecision::RunOnGpu => (
-                        idx,
-                        Err(
-                            "internal error: GPU dispatch selected, but GPU solve path is not wired in nec-cli"
-                                .to_string(),
-                        ),
-                    ),
-                })
-                .collect();
+        let gpu_fallback_results: Vec<(usize, Result<FrequencySolveResult, String>)> = gpu_dispatch
+            .into_iter()
+            .map(|(idx, decision)| match decision {
+                DispatchDecision::FallbackToCpu { .. } => (idx, solve_one(freqs_hz[idx])),
+                DispatchDecision::RunOnGpu => (idx, solve_one(freqs_hz[idx])),
+            })
+            .collect();
         solved.extend(gpu_fallback_results);
 
         solved
