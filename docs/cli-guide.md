@@ -26,6 +26,7 @@ Compatibility profile note:
 - If the executable name contains `nec2dxs` or `4nec2`, default execution is steered to `--exec hybrid` unless `--exec` is explicitly provided.
 - Diagnostics explicitly distinguish the two cases: "default execution path steered" vs "preserving explicit --exec=...".
 - This currently changes execution-mode defaulting only; argument/output contract compatibility work remains tracked in backlog parity item `PAR-011`.
+- In the native profile (normal `fnec` binary name), when `--exec` is omitted, startup now runs a quick execution probe and auto-selects the best available execution mode for the current workload shape.
 
 ## Options
 
@@ -33,7 +34,7 @@ Compatibility profile note:
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `cpu` | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
@@ -252,3 +253,4 @@ The TL card connects two segments with a transmission line, supporting lossless 
 - Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.
 - For integration testing only, setting `FNEC_ACCEL_STUB_GPU=1` enables an accelerator stub dispatch path; hybrid and gpu modes then report stub dispatch usage while still solving via CPU emulation.
 - `--exec gpu` is accepted in real application runs and executes the CPU solve path today, reporting either explicit fallback diagnostics or accelerator-stub dispatch diagnostics depending on dispatch outcome.
+- When `--exec` is omitted in native profile, startup emits an informational probe line to stderr showing assessed availability and the selected execution mode.

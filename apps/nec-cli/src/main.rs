@@ -72,6 +72,14 @@ impl SolverMode {
 }
 
 impl ExecutionMode {
+    fn as_cli_str(self) -> &'static str {
+        match self {
+            ExecutionMode::Cpu => "cpu",
+            ExecutionMode::Hybrid => "hybrid",
+            ExecutionMode::Gpu => "gpu",
+        }
+    }
+
     fn as_diag_str(self) -> &'static str {
         match self {
             ExecutionMode::Cpu => "cpu",
@@ -691,6 +699,55 @@ fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StartupExecutionProbe {
+    cpu_threads: usize,
+    freq_points: usize,
+    gpu_available: bool,
+    hybrid_gpu_lane_available: bool,
+}
+
+fn startup_execution_probe(freq_points: usize) -> StartupExecutionProbe {
+    let cpu_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let gpu_available = matches!(
+        dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6),
+        DispatchDecision::RunOnGpu
+    );
+    let hybrid_gpu_lane_available = matches!(
+        dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6),
+        DispatchDecision::RunOnGpu
+    );
+
+    StartupExecutionProbe {
+        cpu_threads,
+        freq_points,
+        gpu_available,
+        hybrid_gpu_lane_available,
+    }
+}
+
+fn auto_select_execution_mode(
+    suggested_default: ExecutionMode,
+    probe: StartupExecutionProbe,
+) -> ExecutionMode {
+    // For single-point solves CPU is typically best today due scheduling overhead.
+    let cpu_multithread_viable = probe.cpu_threads > 1 && probe.freq_points > 1;
+
+    if probe.gpu_available && probe.hybrid_gpu_lane_available && cpu_multithread_viable {
+        return ExecutionMode::Hybrid;
+    }
+    if probe.gpu_available {
+        return ExecutionMode::Gpu;
+    }
+    if cpu_multithread_viable {
+        return ExecutionMode::Hybrid;
+    }
+
+    suggested_default
+}
+
 struct FrequencySolveResult {
     report: String,
     diag_line: String,
@@ -1034,8 +1091,6 @@ fn main() -> ExitCode {
         );
     }
 
-    warn_execution_mode_fallback(execution_mode);
-
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
@@ -1065,6 +1120,22 @@ fn main() -> ExitCode {
     if freqs_hz.is_empty() {
         return ExitCode::SUCCESS;
     }
+
+    if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
+        let probe = startup_execution_probe(freqs_hz.len());
+        let auto_mode = auto_select_execution_mode(execution_mode, probe);
+        eprintln!(
+            "info: startup exec probe: cpu_threads={} freq_points={} gpu_available={} hybrid_gpu_lane_available={} selected_exec={}",
+            probe.cpu_threads,
+            probe.freq_points,
+            probe.gpu_available,
+            probe.hybrid_gpu_lane_available,
+            auto_mode.as_cli_str(),
+        );
+        execution_mode = auto_mode;
+    }
+
+    warn_execution_mode_fallback(execution_mode);
 
     let segs = match build_geometry(deck) {
         Ok(s) => s,
@@ -1272,8 +1343,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        detect_compatibility_profile, steer_execution_mode_by_profile, CompatibilityProfile,
-        ExecutionMode,
+        auto_select_execution_mode, detect_compatibility_profile, steer_execution_mode_by_profile,
+        CompatibilityProfile, ExecutionMode, StartupExecutionProbe,
     };
 
     #[test]
@@ -1317,6 +1388,62 @@ mod tests {
                 true,
             ),
             ExecutionMode::Gpu
+        );
+    }
+
+    #[test]
+    fn auto_probe_prefers_cpu_for_single_point_workloads() {
+        let probe = StartupExecutionProbe {
+            cpu_threads: 16,
+            freq_points: 1,
+            gpu_available: false,
+            hybrid_gpu_lane_available: false,
+        };
+        assert_eq!(
+            auto_select_execution_mode(ExecutionMode::Cpu, probe),
+            ExecutionMode::Cpu
+        );
+    }
+
+    #[test]
+    fn auto_probe_prefers_hybrid_for_multifrequency_multicore_cpu() {
+        let probe = StartupExecutionProbe {
+            cpu_threads: 8,
+            freq_points: 5,
+            gpu_available: false,
+            hybrid_gpu_lane_available: false,
+        };
+        assert_eq!(
+            auto_select_execution_mode(ExecutionMode::Cpu, probe),
+            ExecutionMode::Hybrid
+        );
+    }
+
+    #[test]
+    fn auto_probe_prefers_gpu_when_gpu_is_available_without_cpu_multithread_gain() {
+        let probe = StartupExecutionProbe {
+            cpu_threads: 1,
+            freq_points: 1,
+            gpu_available: true,
+            hybrid_gpu_lane_available: true,
+        };
+        assert_eq!(
+            auto_select_execution_mode(ExecutionMode::Cpu, probe),
+            ExecutionMode::Gpu
+        );
+    }
+
+    #[test]
+    fn auto_probe_prefers_hybrid_when_gpu_and_cpu_multithread_are_available() {
+        let probe = StartupExecutionProbe {
+            cpu_threads: 8,
+            freq_points: 9,
+            gpu_available: true,
+            hybrid_gpu_lane_available: true,
+        };
+        assert_eq!(
+            auto_select_execution_mode(ExecutionMode::Cpu, probe),
+            ExecutionMode::Hybrid
         );
     }
 }
