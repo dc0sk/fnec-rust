@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -35,6 +35,9 @@ Compatibility profile note:
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `cpu` | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
+| `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
+| `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
+| `--gpu-fr` | flag | off | Route RP far-field evaluation through accelerator stub path |
 
 ## Solver modes
 
@@ -140,7 +143,7 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0
 ```
 
 | Field | Description |
@@ -151,6 +154,17 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `freq_mhz` | Frequency point solved for this report block |
 | `abs_res` | Absolute L2 residual ‖Ax − b‖ |
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
+| `diag_spread` | Conditioning proxy: max/min diagonal magnitude ratio of solved matrix |
+| `sin_rel_res` | Sinusoidal pre-fallback relative residual (0 for non-sinusoidal paths) |
+
+When `--bench-format csv` is enabled, one header plus one machine-readable line per solved frequency point is emitted to stderr:
+
+```
+bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res
+bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,hallen,Nec2,cpu,14.200000,2.931358e-8,3.479257e-7,1.000000e0,0.000000e0
+```
+
+When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix.
 
 The relative residual is defined as:
 $$\mathrm{rel\_res} = \frac{\lVert Ax-b\rVert_2}{\lVert b\rVert_2}$$

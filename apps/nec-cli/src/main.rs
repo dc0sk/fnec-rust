@@ -21,6 +21,7 @@ use rayon::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
@@ -50,6 +51,24 @@ enum ExecutionMode {
 enum CompatibilityProfile {
     Native,
     FourNec2DropIn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BenchFormat {
+    Human,
+    Csv,
+    Json,
+}
+
+impl SolverMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            SolverMode::Hallen => "hallen",
+            SolverMode::Pulse => "pulse",
+            SolverMode::Continuity => "continuity",
+            SolverMode::Sinusoidal => "sinusoidal",
+        }
+    }
 }
 
 impl ExecutionMode {
@@ -133,6 +152,7 @@ fn parse_args(
         ExecutionMode,
         bool,
         bool,
+        BenchFormat,
         bool,
         PathBuf,
     ),
@@ -143,6 +163,7 @@ fn parse_args(
     let mut execution_mode = ExecutionMode::Cpu;
     let mut hallen_allow_non_collinear = false;
     let mut enable_benchmarking = false;
+    let mut bench_format = BenchFormat::Human;
     let mut enable_gpu_fr = false;
     let mut deck_path: Option<PathBuf> = None;
 
@@ -206,6 +227,27 @@ fn parse_args(
             "--bench" => {
                 enable_benchmarking = true;
             }
+            "--bench-format" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --bench-format (expected: human|csv|json)".to_string(),
+                    );
+                }
+                bench_format = match args[i].as_str() {
+                    "human" => BenchFormat::Human,
+                    "csv" => BenchFormat::Csv,
+                    "json" => BenchFormat::Json,
+                    other => {
+                        return Err(format!(
+                            "invalid --bench-format value '{other}' (expected: human|csv|json)"
+                        ))
+                    }
+                };
+                if bench_format != BenchFormat::Human {
+                    enable_benchmarking = true;
+                }
+            }
             "--gpu-fr" => {
                 enable_gpu_fr = true;
             }
@@ -229,9 +271,93 @@ fn parse_args(
         execution_mode,
         hallen_allow_non_collinear,
         enable_benchmarking,
+        bench_format,
         enable_gpu_fr,
         path,
     ))
+}
+
+#[derive(Debug, Clone)]
+struct BenchRecord {
+    mode: String,
+    pulse_rhs: String,
+    exec: String,
+    freq_mhz: f64,
+    abs_res: f64,
+    rel_res: f64,
+    diag_spread: f64,
+    sin_rel_res: f64,
+}
+
+fn epoch_millis_now() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn emit_bench_csv_header() {
+    eprintln!(
+        "bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res"
+    );
+}
+
+fn emit_bench_record_csv(
+    target: &str,
+    deck: &str,
+    solver: &str,
+    run: usize,
+    elapsed_ms: u128,
+    bench: &BenchRecord,
+) {
+    eprintln!(
+        "bench_csv:{},{},{},{},{},ok,{},{},{},{},{:.6},{:.6e},{:.6e},{:.6e},{:.6e}",
+        epoch_millis_now(),
+        target,
+        deck,
+        solver,
+        run,
+        elapsed_ms,
+        bench.mode,
+        bench.pulse_rhs,
+        bench.exec,
+        bench.freq_mhz,
+        bench.abs_res,
+        bench.rel_res,
+        bench.diag_spread,
+        bench.sin_rel_res
+    );
+}
+
+fn emit_bench_record_json(
+    target: &str,
+    deck: &str,
+    solver: &str,
+    run: usize,
+    elapsed_ms: u128,
+    bench: &BenchRecord,
+) {
+    eprintln!(
+        "bench_json:{{\"timestamp_unix_ms\":{},\"target\":\"{}\",\"deck\":\"{}\",\"solver\":\"{}\",\"run\":{},\"status\":\"ok\",\"elapsed_ms\":{},\"diag_mode\":\"{}\",\"pulse_rhs\":\"{}\",\"exec\":\"{}\",\"freq_mhz\":{:.6},\"abs_res\":{:.6e},\"rel_res\":{:.6e},\"diag_spread\":{:.6e},\"sin_rel_res\":{:.6e}}}",
+        epoch_millis_now(),
+        json_escape(target),
+        json_escape(deck),
+        json_escape(solver),
+        run,
+        elapsed_ms,
+        json_escape(&bench.mode),
+        json_escape(&bench.pulse_rhs),
+        json_escape(&bench.exec),
+        bench.freq_mhz,
+        bench.abs_res,
+        bench.rel_res,
+        bench.diag_spread,
+        bench.sin_rel_res
+    );
 }
 
 fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
@@ -568,6 +694,7 @@ fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {
 struct FrequencySolveResult {
     report: String,
     diag_line: String,
+    bench: BenchRecord,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -827,7 +954,22 @@ fn solve_frequency_point(
         sin_rel_res
     );
 
-    Ok(FrequencySolveResult { report, diag_line })
+    let bench = BenchRecord {
+        mode: diag_label.to_string(),
+        pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
+        exec: execution_mode.as_diag_str().to_string(),
+        freq_mhz: freq_hz / 1e6,
+        abs_res: diag_abs,
+        rel_res: diag_rel,
+        diag_spread,
+        sin_rel_res,
+    };
+
+    Ok(FrequencySolveResult {
+        report,
+        diag_line,
+        bench,
+    })
 }
 
 fn main() -> ExitCode {
@@ -838,7 +980,7 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--gpu-fr] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>"
         );
         return ExitCode::from(2);
     }
@@ -849,13 +991,14 @@ fn main() -> ExitCode {
         mut execution_mode,
         hallen_allow_non_collinear,
         enable_benchmarking,
+        bench_format,
         enable_gpu_fr,
         path,
     ) = match parse_args(&args) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--gpu-fr] <deck.nec>");
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>");
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
@@ -978,20 +1121,30 @@ fn main() -> ExitCode {
         )
     };
 
-    let solved: Vec<(usize, Result<FrequencySolveResult, String>)> = if matches!(
+    let timed_solve_one = |freq_hz: f64| {
+        let t0 = std::time::Instant::now();
+        let result = solve_one(freq_hz);
+        (result, t0.elapsed().as_millis())
+    };
+
+    let solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)> = if matches!(
         execution_mode,
         ExecutionMode::Hybrid
-    ) && freqs_hz.len() > 1
+    ) && freqs_hz.len()
+        > 1
     {
         let lane_plan = build_hybrid_lane_plan(freqs_hz.len());
 
         let mut solved = Vec::with_capacity(freqs_hz.len());
 
-        let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>)> = lane_plan
+        let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>, u128)> = lane_plan
             .cpu_indices
             .par_iter()
             .copied()
-            .map(|idx| (idx, solve_one(freqs_hz[idx])))
+            .map(|idx| {
+                let (result, elapsed_ms) = timed_solve_one(freqs_hz[idx]);
+                (idx, result, elapsed_ms)
+            })
             .collect();
         solved.extend(cpu_results);
 
@@ -1011,21 +1164,24 @@ fn main() -> ExitCode {
             usize,
             ExecutionPath,
             Result<FrequencySolveResult, String>,
+            u128,
         )> = gpu_dispatch
             .into_iter()
             .map(|(idx, decision)| {
+                let t0 = std::time::Instant::now();
                 let (path, result) = execute_frequency_point(decision, || solve_one(freqs_hz[idx]));
-                (idx, path, result)
+                let elapsed_ms = t0.elapsed().as_millis();
+                (idx, path, result, elapsed_ms)
             })
             .collect();
 
         let gpu_fallback_count = gpu_fallback_results
             .iter()
-            .filter(|(_, path, _)| matches!(path, ExecutionPath::CpuFallback))
+            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::CpuFallback))
             .count();
         let gpu_stub_count = gpu_fallback_results
             .iter()
-            .filter(|(_, path, _)| matches!(path, ExecutionPath::GpuStubEmulation))
+            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::GpuStubEmulation))
             .count();
 
         if gpu_fallback_count > 0 {
@@ -1042,7 +1198,7 @@ fn main() -> ExitCode {
         solved.extend(
             gpu_fallback_results
                 .into_iter()
-                .map(|(idx, _, result)| (idx, result)),
+                .map(|(idx, _, result, elapsed_ms)| (idx, result, elapsed_ms)),
         );
 
         solved
@@ -1051,14 +1207,27 @@ fn main() -> ExitCode {
             .iter()
             .copied()
             .enumerate()
-            .map(|(idx, freq_hz)| (idx, solve_one(freq_hz)))
+            .map(|(idx, freq_hz)| {
+                let (result, elapsed_ms) = timed_solve_one(freq_hz);
+                (idx, result, elapsed_ms)
+            })
             .collect()
     };
 
     let mut solved = solved;
-    solved.sort_by_key(|(idx, _)| *idx);
+    solved.sort_by_key(|(idx, _, _)| *idx);
 
-    for (fidx, result) in solved {
+    if enable_benchmarking && bench_format == BenchFormat::Csv {
+        emit_bench_csv_header();
+    }
+
+    let bench_target = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let bench_deck = path.display().to_string();
+    let bench_solver = solver_mode.as_str().to_string();
+
+    for (fidx, result, elapsed_ms) in solved {
         let solved_point = match result {
             Ok(v) => v,
             Err(e) => {
@@ -1072,6 +1241,29 @@ fn main() -> ExitCode {
         }
         print!("{}", solved_point.report);
         eprintln!("{}", solved_point.diag_line);
+
+        if enable_benchmarking {
+            let run = fidx + 1;
+            match bench_format {
+                BenchFormat::Human => {}
+                BenchFormat::Csv => emit_bench_record_csv(
+                    &bench_target,
+                    &bench_deck,
+                    &bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+                BenchFormat::Json => emit_bench_record_json(
+                    &bench_target,
+                    &bench_deck,
+                    &bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+            }
+        }
     }
 
     ExitCode::SUCCESS

@@ -30,6 +30,7 @@ All notable documentation process changes are recorded here.
   - Integration tested with 6 GPU stub tests + existing exec_modes contract tests
 - **Performance benchmarking** (Phase D): Added optional timing instrumentation for GPU kernel operations:
   - `--bench` CLI flag to enable benchmarking mode
+  - `--bench-format <human|csv|json>` to emit machine-readable benchmark records while preserving the standard human-readable report output
   - `FNEC_GPU_BENCH` environment variable control (set to "1" to enable timing collection)
   - `compute_hallen_fr_point_with_timing()` API returns `(result, KernelTiming)` tuples
   - Timing breakdown: prep (coordinate transform), exec (far-field summation), retrieval (stub: zero)
