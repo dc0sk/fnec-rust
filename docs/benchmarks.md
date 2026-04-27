@@ -1,7 +1,8 @@
 ---
-title: Benchmarks (Sanitized Baseline Comparison)
-status: draft
-last-updated: 2026-04-27
+project: fnec-rust
+doc: docs/benchmarks.md
+status: living
+last_updated: 2026-04-27
 ---
 
 # Benchmarks

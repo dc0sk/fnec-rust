@@ -63,6 +63,12 @@ Current behavior is explicit and test-locked: EX type 3 is accepted and produces
 the same electrical excitation result as EX type 0 for equivalent card inputs.
 Future changes to NEC normalization semantics should update these locks together.
 
+On 2026-04-27, a non-breaking solver scaffold for EX type 3 normalization was
+introduced in `nec_solver::excitation` via `Ex3NormalizationMode` and
+`build_excitation_with_options(...)`. The production path still uses
+`LegacyTreatAsType0`; provisional `I4`-divisor behavior is currently test-only
+and not wired into CLI runtime.
+
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 
 For `corpus/dipole-ground-51seg.nec` (14.2 MHz, 10 m AGL), current CI-regression value is:
