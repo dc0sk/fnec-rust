@@ -645,6 +645,21 @@ fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     }
 }
 
+fn warn_deferred_tl_cards(deck: &nec_model::deck::NecDeck) {
+    let tl_count = deck
+        .cards
+        .iter()
+        .filter(|c| matches!(c, Card::Tl(_)))
+        .count();
+    if tl_count == 0 {
+        return;
+    }
+
+    eprintln!(
+        "warning: TL card support is deferred; {tl_count} TL card(s) will be ignored in this run"
+    );
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1115,6 +1130,7 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
+    warn_deferred_tl_cards(deck);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {
