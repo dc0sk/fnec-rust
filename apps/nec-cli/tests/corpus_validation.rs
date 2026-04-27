@@ -58,6 +58,11 @@ fn corpus_validation_cases_with_references() {
         let expected_hallen_error_contains = case_obj
             .get("expected_hallen_error_contains")
             .and_then(Value::as_str);
+        let expected_warning_substrings: Vec<&str> = case_obj
+            .get("expected_warning_substrings")
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
 
         let deck_file = case_obj
             .get("deck_file")
@@ -165,6 +170,8 @@ fn corpus_validation_cases_with_references() {
             .output()
             .unwrap_or_else(|e| panic!("Failed to run fnec for case '{case_name}': {e}"));
 
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
         if let Some(expected_msg) = expected_hallen_error_contains {
             assert!(
                 !output.status.success(),
@@ -172,7 +179,6 @@ fn corpus_validation_cases_with_references() {
                 case_name,
                 expected_msg
             );
-            let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 stderr.contains(expected_msg),
                 "case '{}' expected Hallen error containing '{}', got stderr:\n{}",
@@ -188,7 +194,17 @@ fn corpus_validation_cases_with_references() {
             panic!(
                 "fnec failed for case '{}': {}",
                 case_name,
-                String::from_utf8_lossy(&output.stderr)
+                stderr
+            );
+        }
+
+        for expected_warning in &expected_warning_substrings {
+            assert!(
+                stderr.contains(expected_warning),
+                "Case '{}' expected warning containing '{}', got stderr:\n{}",
+                case_name,
+                expected_warning,
+                stderr
             );
         }
 

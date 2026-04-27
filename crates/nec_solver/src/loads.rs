@@ -9,6 +9,8 @@
 //! |----|---------------------------|----------------------------------------------------|
 //! |  0 | Series RLC (lumped)       | R + j(ωL − 1/(ωC))  (C=0 ⇒ no capacitor term)     |
 //! |  1 | Parallel RLC (lumped)     | 1 / (1/R + 1/(jωL) + jωC)                         |
+//! |  2 | Series RL (lumped)        | R + jωL                                            |
+//! |  3 | Series RC (lumped)        | R − j/(ωC)  (C=0 ⇒ no capacitor term)             |
 //! |  4 | Series impedance Z=R+jX   | R + jX  (flat, frequency-independent)              |
 //! |  5 | Wire conductivity (dist.) | Σ per segment: dl/(2π·a·σ)                        |
 //!
@@ -98,6 +100,19 @@ pub fn build_loads(
                     } else {
                         Complex64::new(1.0, 0.0) / y
                     }
+                }
+                2 => {
+                    // Series RL: Z = R + jωL
+                    Complex64::new(ld.f1, omega * ld.f2)
+                }
+                3 => {
+                    // Series RC: Z = R - j/(ωC)
+                    let x_c = if ld.f3 > 0.0 {
+                        1.0 / (omega * ld.f3)
+                    } else {
+                        0.0
+                    };
+                    Complex64::new(ld.f1, -x_c)
                 }
                 4 => {
                     // Series impedance: Z = R + jX (frequency-independent)
@@ -244,10 +259,50 @@ mod tests {
     }
 
     #[test]
+    fn type2_series_rl_produces_correct_impedance() {
+        let segs = vec![seg(1, 1, 0.1, 0.001)];
+        let freq = 14.2e6_f64;
+        let omega = TWO_PI * freq;
+        let deck = deck_with_ld(LdCard {
+            load_type: 2,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: 10.0,
+            f2: 1e-6,
+            f3: 0.0,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, freq);
+        assert!(warns.is_empty());
+        assert!((loads[0].re - 10.0).abs() < 1e-6);
+        assert!((loads[0].im - omega * 1e-6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn type3_series_rc_produces_correct_impedance() {
+        let segs = vec![seg(1, 1, 0.1, 0.001)];
+        let freq = 14.2e6_f64;
+        let c = 1e-12_f64;
+        let deck = deck_with_ld(LdCard {
+            load_type: 3,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: 10.0,
+            f2: 0.0,
+            f3: c,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, freq);
+        assert!(warns.is_empty());
+        assert!((loads[0].re - 10.0).abs() < 1e-6);
+        assert!((loads[0].im + 1.0 / (TWO_PI * freq * c)).abs() < 1e-3);
+    }
+
+    #[test]
     fn unsupported_type_produces_warning_and_zero_load() {
         let segs = vec![seg(1, 1, 0.1, 0.001)];
         let deck = deck_with_ld(LdCard {
-            load_type: 3,
+            load_type: 9,
             tag: 1,
             seg_first: 1,
             seg_last: 1,

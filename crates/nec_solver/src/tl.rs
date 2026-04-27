@@ -5,8 +5,9 @@
 //!
 //! Supported subset (initial executable semantics):
 //! - `tl_type = 0` (lossless)
-//! - `num_segments = 1`
-//! - explicit endpoint segments (`segment1 > 0`, `segment2 > 0`)
+//! - `num_segments = 0` or `1` (`0` is treated as a single-section shorthand)
+//! - endpoint segments (`segment=0` is accepted and mapped to the tag center;
+//!   for even segment counts, the lower of the two center segments is used)
 //! - positive characteristic impedance `z0 > 0`
 //!
 //! For the supported subset we stamp a symmetric 2-port Z-parameter model into
@@ -65,7 +66,12 @@ pub fn build_tl_stamps(
             });
             continue;
         }
-        if tl.num_segments != 1 {
+        let effective_num_segments = if tl.num_segments == 0 {
+            1
+        } else {
+            tl.num_segments
+        };
+        if effective_num_segments != 1 {
             warnings.push(TlWarning {
                 message: format!(
                     "TL with NSEG={} between ({}, {}) and ({}, {}) is not yet supported; TL card ignored",
@@ -75,7 +81,9 @@ pub fn build_tl_stamps(
             continue;
         }
 
-        let Some(i1) = find_segment_index(segs, tl.tag1, tl.segment1) else {
+        let Some((i1, resolved_seg1, center_warn1)) =
+            find_segment_index(segs, tl.tag1, tl.segment1)
+        else {
             warnings.push(TlWarning {
                 message: format!(
                     "TL endpoint ({}, {}) not found in geometry; TL card ignored",
@@ -84,7 +92,9 @@ pub fn build_tl_stamps(
             });
             continue;
         };
-        let Some(i2) = find_segment_index(segs, tl.tag2, tl.segment2) else {
+        let Some((i2, resolved_seg2, center_warn2)) =
+            find_segment_index(segs, tl.tag2, tl.segment2)
+        else {
             warnings.push(TlWarning {
                 message: format!(
                     "TL endpoint ({}, {}) not found in geometry; TL card ignored",
@@ -93,11 +103,17 @@ pub fn build_tl_stamps(
             });
             continue;
         };
+        if let Some(warn) = center_warn1 {
+            warnings.push(TlWarning { message: warn });
+        }
+        if let Some(warn) = center_warn2 {
+            warnings.push(TlWarning { message: warn });
+        }
         if i1 == i2 {
             warnings.push(TlWarning {
                 message: format!(
-                    "TL endpoints resolve to the same segment ({}, {}); TL card ignored",
-                    tl.tag1, tl.segment1
+                    "TL endpoints resolve to the same segment (({}, {}) and ({}, {})); TL card ignored",
+                    tl.tag1, resolved_seg1, tl.tag2, resolved_seg2
                 ),
             });
             continue;
@@ -152,12 +168,64 @@ pub fn build_tl_stamps(
     (stamps, warnings)
 }
 
-fn find_segment_index(segs: &[Segment], tag: u32, segment: u32) -> Option<usize> {
+fn find_segment_index(
+    segs: &[Segment],
+    tag: u32,
+    segment: u32,
+) -> Option<(usize, u32, Option<String>)> {
     if segment == 0 {
+        return find_center_segment_index(segs, tag);
+    }
+    let idx = segs
+        .iter()
+        .position(|s| s.tag == tag && s.tag_index == segment)?;
+    Some((idx, segment, None))
+}
+
+fn find_center_segment_index(segs: &[Segment], tag: u32) -> Option<(usize, u32, Option<String>)> {
+    let tagged: Vec<(usize, u32)> = segs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.tag == tag {
+                Some((i, s.tag_index))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if tagged.is_empty() {
         return None;
     }
-    segs.iter()
-        .position(|s| s.tag == tag && s.tag_index == segment)
+
+    let n = tagged.len() as u32;
+    let (pick_offset, message) = if tagged.len() % 2 == 1 {
+        let offset = tagged.len() / 2;
+        let (_, resolved_seg) = tagged[offset];
+        (
+            offset,
+            Some(format!(
+                "TL endpoint ({}, 0): interpreting segment 0 as center segment {} for tag {}",
+                tag, resolved_seg, tag
+            )),
+        )
+    } else {
+        let lower_center_seg = n / 2;
+        let offset = tagged
+            .iter()
+            .position(|(_, seg_idx)| *seg_idx == lower_center_seg)
+            .unwrap_or((tagged.len() / 2).saturating_sub(1));
+        (
+            offset,
+            Some(format!(
+                "TL endpoint ({}, 0): tag has even segment count {}; using lower center segment {}",
+                tag, n, lower_center_seg
+            )),
+        )
+    };
+
+    let (idx, resolved_seg) = tagged[pick_offset];
+    Some((idx, resolved_seg, message))
 }
 
 #[cfg(test)]
@@ -165,23 +233,56 @@ mod tests {
     use super::*;
     use nec_model::card::{Card, GwCard, TlCard};
 
-    fn segs_two_wire_geometry() -> Vec<Segment> {
+    fn warn_contains(warns: &[TlWarning], needle: &str) -> bool {
+        warns.iter().any(|w| w.message.contains(needle))
+    }
+
+    fn segs_two_wire_geometry_with_segments(per_wire_segments: u32) -> Vec<Segment> {
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Gw(GwCard {
             tag: 1,
-            segments: 3,
+            segments: per_wire_segments,
             start: [0.0, 0.0, -1.0],
             end: [0.0, 0.0, 1.0],
             radius: 0.001,
         }));
         deck.cards.push(Card::Gw(GwCard {
             tag: 2,
-            segments: 3,
+            segments: per_wire_segments,
             start: [1.0, 0.0, -1.0],
             end: [1.0, 0.0, 1.0],
             radius: 0.001,
         }));
         crate::geometry::build_geometry(&deck).expect("geometry should build")
+    }
+
+    fn segs_two_wire_geometry() -> Vec<Segment> {
+        segs_two_wire_geometry_with_segments(3)
+    }
+
+    #[test]
+    fn segment_zero_even_segment_count_uses_lower_center() {
+        let segs = segs_two_wire_geometry_with_segments(4);
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Tl(TlCard {
+            tag1: 1,
+            segment1: 0,
+            tag2: 2,
+            segment2: 0,
+            num_segments: 1,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }));
+
+        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
+        assert_eq!(stamps.len(), 4);
+        assert_eq!(warns.len(), 2);
+        assert!(warn_contains(
+            &warns,
+            "tag has even segment count 4; using lower center segment 2"
+        ));
     }
 
     #[test]
@@ -208,6 +309,27 @@ mod tests {
     }
 
     #[test]
+    fn nseg_zero_is_accepted_like_single_section() {
+        let segs = segs_two_wire_geometry();
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Tl(TlCard {
+            tag1: 1,
+            segment1: 2,
+            tag2: 2,
+            segment2: 2,
+            num_segments: 0,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }));
+
+        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
+        assert!(warns.is_empty());
+        assert_eq!(stamps.len(), 4);
+    }
+
+    #[test]
     fn unsupported_tl_type_emits_warning() {
         let segs = segs_two_wire_geometry();
         let mut deck = NecDeck::new();
@@ -227,5 +349,30 @@ mod tests {
         assert!(stamps.is_empty());
         assert_eq!(warns.len(), 1);
         assert!(warns[0].message.contains("not yet supported"));
+    }
+
+    #[test]
+    fn segment_zero_maps_to_tag_center() {
+        let segs = segs_two_wire_geometry();
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Tl(TlCard {
+            tag1: 1,
+            segment1: 0,
+            tag2: 2,
+            segment2: 0,
+            num_segments: 1,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }));
+
+        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
+        assert_eq!(stamps.len(), 4);
+        assert_eq!(warns.len(), 2);
+        assert!(warn_contains(
+            &warns,
+            "interpreting segment 0 as center segment"
+        ));
     }
 }

@@ -488,6 +488,56 @@ mod tests {
     }
 
     #[test]
+    fn ex_type3_matches_ex_type0_vector() {
+        let mut deck_ex0 = NecDeck::new();
+        deck_ex0.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex0.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let mut deck_ex3 = NecDeck::new();
+        deck_ex3.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex3.cards.push(Card::Ex(ExCard {
+            excitation_type: 3,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
+        let segs_ex3 = build_geometry(&deck_ex3).unwrap();
+        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
+        let v_ex3 = build_excitation(&deck_ex3, &segs_ex3).expect("EX type 3 should be accepted");
+
+        assert_eq!(v_ex0.len(), v_ex3.len());
+        for (i, (a, b)) in v_ex0.iter().zip(v_ex3.iter()).enumerate() {
+            assert!(
+                (*a - *b).norm() < 1e-12,
+                "segment {i} mismatch: ex0={a}, ex3={b}"
+            );
+        }
+    }
+
+    #[test]
     fn segment_not_found_is_error() {
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Gw(GwCard {

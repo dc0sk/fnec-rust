@@ -646,6 +646,22 @@ fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     }
 }
 
+fn warn_ex_type3_normalization_semantics(deck: &nec_model::deck::NecDeck) {
+    let has_non_default_i4 = deck.cards.iter().any(|c| {
+        if let Card::Ex(ex) = c {
+            ex.excitation_type == 3 && ex.i4 != 0
+        } else {
+            false
+        }
+    });
+
+    if has_non_default_i4 {
+        eprintln!(
+            "warning: EX type 3 with non-default I4 is currently treated like EX type 0; full normalization semantics are pending"
+        );
+    }
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1126,6 +1142,7 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
+    warn_ex_type3_normalization_semantics(deck);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {

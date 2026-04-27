@@ -43,11 +43,11 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 0 | Voltage source (voltage-driven dipole) | FULL | Supported at any segment, with complex voltage. Primary excitation type. |
 | EX type 1 | Current source (magnetic dipole) | DEFERRED | Not yet implemented. Phase 2. |
 | EX type 2 | Incident plane wave | DEFERRED | Scattering analysis. Phase 2. |
-| EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path and currently treated like EX type 0 (voltage source). Full NEC normalization semantics are pending. |
+| EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path and currently treated like EX type 0 (voltage source). Non-default I4 values emit an explicit runtime warning; full NEC normalization semantics are pending. |
 | EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
 | EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
 | PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
-| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
+| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
 
 ### Frequency and output cards
 
@@ -70,7 +70,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:------------|:-------|:------|
 | CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
 | SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
-| TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG=1`, explicit endpoints) contributes a 2-port impedance stamp to the matrix. Unsupported TL variants emit runtime warnings and are ignored. |
+| TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG=0` or `1`) contributes a 2-port impedance stamp to the matrix. Endpoint `segment=0` is mapped to the tag center segment with a warning; for even segment counts, the lower center segment is chosen deterministically. Unsupported TL variants emit runtime warnings and are ignored. |
 | NT | Network definition | DEFERRED | Multi-port networks, couplings. Phase 3. |
 | CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
 | MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |

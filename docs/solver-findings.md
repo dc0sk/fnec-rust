@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-04-27
 ---
 
 # Solver Findings
@@ -46,6 +46,22 @@ $$Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega$$
 
 The Hallén augmented system (`[A | −cos] [I; C] = b`) with the correct
 `2π/η₀` RHS prefactor and NEC sign convention is the production-accurate solver.
+
+### EX type 3 source handling — REGRESSION-COVERED
+
+As of 2026-04-27, EX type 3 support is locked at three layers while normalization
+semantics remain intentionally deferred:
+
+- Solver unit regression in `crates/nec_solver/src/excitation.rs`:
+	`ex_type3_matches_ex_type0_vector`
+- CLI integration regression in `apps/nec-cli/tests/ex_cards.rs`:
+	`ex_type3_matches_ex_type0_feedpoint_impedance`
+- Corpus regression deck and reference case:
+	`corpus/dipole-ex3-freesp-51seg.nec` / `dipole-ex3-freesp-51seg`
+
+Current behavior is explicit and test-locked: EX type 3 is accepted and produces
+the same electrical excitation result as EX type 0 for equivalent card inputs.
+Future changes to NEC normalization semantics should update these locks together.
 
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 
