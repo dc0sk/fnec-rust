@@ -53,6 +53,21 @@ Verify access:
 ssh t480 'uname -a && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader'
 ```
 
+Optional: keep host aliases and usernames in a local gitignored env file.
+
+```bash
+cp .benchmark-hosts.env.example .benchmark-hosts.env
+$EDITOR .benchmark-hosts.env
+source .benchmark-hosts.env
+```
+
+Then you can call benchmark scripts without hardcoding hosts in shell history:
+
+```bash
+scripts/pi-remote-benchmark.sh "$FNEC_HOST_T480" "$FNEC_REMOTE_REPO_SUBDIR"
+scripts/pi-remote-benchmark.sh "$FNEC_HOST_PI5" "$FNEC_REMOTE_REPO_SUBDIR"
+```
+
 ### C. Run benchmark sweep (CPU + hybrid + GPU)
 
 From the repository root on your workstation:
@@ -66,6 +81,19 @@ FNEC_BENCH_SOLVERS="hallen pulse sinusoidal" \
 FNEC_BENCH_DECKS="corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec corpus/yagi-5elm-51seg.nec" \
 FNEC_BENCH_OUT="tmp/t480-baseline-$(date -u +%Y%m%dT%H%M%SZ).csv" \
 scripts/pi-remote-benchmark.sh t480 git/fnec-rust
+```
+
+If using the env-file workflow above:
+
+```bash
+source .benchmark-hosts.env
+
+FNEC_BENCH_RUNS=5 \
+FNEC_BENCH_EXECS="cpu hybrid gpu" \
+FNEC_BENCH_SOLVERS="hallen pulse sinusoidal" \
+FNEC_BENCH_DECKS="corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec corpus/yagi-5elm-51seg.nec" \
+FNEC_BENCH_OUT="tmp/t480-baseline-$(date -u +%Y%m%dT%H%M%SZ).csv" \
+scripts/pi-remote-benchmark.sh "$FNEC_HOST_T480" "$FNEC_REMOTE_REPO_SUBDIR"
 ```
 
 Output CSV now includes:
