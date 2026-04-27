@@ -26,6 +26,51 @@
       },
       "status": "Reference captured from Python study; xnec2c validation TBD"
     },
+    "dipole-ex3-freesp-51seg": {
+      "deck_file": "dipole-ex3-freesp-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for EX type 3 acceptance; currently mapped like EX type 0)",
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for EX type 3 deck portability while normalization semantics are pending."
+    },
+    "dipole-ex3-i4-freesp-51seg": {
+      "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with non-default I4",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for EX type 3 non-default I4 warning contract)",
+      "expected_warning_substrings": [
+        "EX type 3 with non-default I4 is currently treated like EX type 0"
+      ],
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for EX type 3 non-default I4 warning semantics while normalization behavior remains pending."
+    },
     "dipole-freesp-rp-51seg": {
       "deck_file": "dipole-freesp-rp-51seg.nec",
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, RP theta sweep",
@@ -433,6 +478,48 @@
       },
       "status": "Regression lock for LD type 1 (parallel RLC equivalent impedance) after initial implementation. External nec2c candidate is now CI-gated with provisional absolute thresholds while parity is still being improved."
     },
+    "dipole-ld-series-rl-51seg": {
+      "deck_file": "dipole-ld-series-rl-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, LD type 2 series RL feed loading",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for LD type 2 support)",
+      "feedpoint_impedance": {
+        "real_ohm": 23.997576,
+        "imag_ohm": 651.798682
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for LD type 2 (series RL) after initial implementation."
+    },
+    "dipole-ld-series-rc-51seg": {
+      "deck_file": "dipole-ld-series-rc-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, LD type 3 series RC feed loading",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for LD type 3 support)",
+      "feedpoint_impedance": {
+        "real_ohm": 15247.905084,
+        "imag_ohm": -78413.559728
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for LD type 3 (series RC) after initial implementation."
+    },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
       "description": "Two parallel dipoles with a lossless TL link between feed segments; one driven source",
@@ -457,7 +544,70 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for TL execution subset (type 0, NSEG=1, explicit endpoints). External candidate is observational only for now; gating will be enabled after TL parity tightening."
+      "status": "Regression lock for TL execution subset (type 0, NSEG=1; explicit or segment=0-mapped endpoints). External candidate is observational only for now; gating will be enabled after TL parity tightening."
+    },
+    "tl-two-dipoles-linked-seg0": {
+      "deck_file": "tl-two-dipoles-linked-seg0.nec",
+      "description": "Two parallel dipoles with a lossless TL link using segment=0 endpoint mapping",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for TL segment=0 center mapping)",
+      "feedpoint_impedance": {
+        "real_ohm": 3.670518,
+        "imag_ohm": -14.490406
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for TL segment=0 endpoint mapping to tag-center segment in the initial TL execution subset."
+    },
+    "tl-two-dipoles-linked-nseg0": {
+      "deck_file": "tl-two-dipoles-linked-nseg0.nec",
+      "description": "Two parallel dipoles with a lossless TL link using NSEG=0 single-section shorthand",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for TL NSEG=0 single-section shorthand)",
+      "feedpoint_impedance": {
+        "real_ohm": 3.670518,
+        "imag_ohm": -14.490406
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for TL NSEG=0 acceptance as a single-section shorthand in the initial TL execution subset."
+    },
+    "tl-two-dipoles-linked-seg0-even52": {
+      "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
+      "description": "Two parallel dipoles with a lossless TL link using segment=0 endpoints on even-segment wires",
+      "frequency_mhz": 14.2,
+      "segments": 52,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for TL segment=0 lower-center mapping on even-segment tags)",
+      "feedpoint_impedance": {
+        "real_ohm": -2.752568,
+        "imag_ohm": -75.916177
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for TL segment=0 mapping on even-segment tags, where fnec now deterministically chooses the lower center segment."
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",

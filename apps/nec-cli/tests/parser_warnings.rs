@@ -117,3 +117,209 @@ fn unsupported_tl_type_emits_warning_but_run_succeeds() {
         "expected unsupported TL warning in stderr, got:\n{stderr}"
     );
 }
+
+#[test]
+fn tl_segment_zero_is_mapped_to_center_with_warning_and_runs() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-tl-seg0-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary deck with TL segment 0");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for TL segment0 warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("interpreting segment 0 as center segment"),
+        "expected TL segment0 mapping warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("TL card ignored"),
+        "TL segment0 case should be mapped, not ignored:\n{stderr}"
+    );
+}
+
+#[test]
+fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-tl-seg0-even-{now}.nec"));
+
+    let deck = "GW 1 52 0 0 -5.282 0 0 5.282 0.001\nGW 2 52 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary deck with even-segment TL segment 0");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for even-segment TL segment0 warning test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("tag has even segment count 52; using lower center segment 26"),
+        "expected even-segment lower-center warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("TL card ignored"),
+        "even-segment segment0 case should be mapped, not ignored:\n{stderr}"
+    );
+}
+
+#[test]
+fn tl_nseg_zero_runs_without_ignored_warning() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-tl-nseg0-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 0 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary deck with TL NSEG=0");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for TL NSEG=0 warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("TL card ignored"),
+        "TL NSEG=0 case should be treated as supported, not ignored:\n{stderr}"
+    );
+}
+
+#[test]
+fn ex_type3_runs_without_unsupported_error() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-ex-type3-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary deck with EX type 3");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type3 warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("excitation type 3") && !stderr.contains("not yet supported"),
+        "EX type 3 should be accepted (currently mapped like EX type 0), got stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn ex_type3_non_default_i4_emits_normalization_warning() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-ex-type3-i4-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 1 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary deck with EX type 3 non-default I4");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type3 I4 warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
+        "expected EX type 3 normalization warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("not yet supported"),
+        "EX type 3 non-default I4 should warn but still run, got stderr:\n{stderr}"
+    );
+}

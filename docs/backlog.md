@@ -60,8 +60,21 @@ last_updated: 2026-04-24
 - [ ] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
 	- 2026-04-27 progress: LD load-family coverage expanded with LD type 1 (parallel RLC) solve support in `nec_solver::build_loads`, plus CLI integration regression (`apps/nec-cli/tests/ld_loads.rs`) and new corpus fixture `corpus/dipole-ld-loaded-51seg.nec`.
-	- 2026-04-27 progress: TL cards now have an executable initial subset in solver runtime (`type=0`, `NSEG=1`, explicit endpoints) via impedance-matrix stamps (`nec_solver::build_tl_stamps`), with CLI regression coverage (`apps/nec-cli/tests/tl_cards.rs` and `apps/nec-cli/tests/parser_warnings.rs`).
+	- 2026-04-27 progress: LD load-family coverage now also includes LD types 2 (series RL) and 3 (series RC) in `nec_solver::build_loads`, with CLI regression coverage in `apps/nec-cli/tests/ld_loads.rs`.
+	- 2026-04-27 progress: added corpus regression cases `dipole-ld-series-rl-51seg` and `dipole-ld-series-rc-51seg` to lock LD types 2/3 behavior in CI.
+	- 2026-04-27 progress: TL cards now have an executable initial subset in solver runtime (`type=0`, `NSEG=0` or `1`) via impedance-matrix stamps (`nec_solver::build_tl_stamps`), with CLI regression coverage (`apps/nec-cli/tests/tl_cards.rs` and `apps/nec-cli/tests/parser_warnings.rs`).
+	- 2026-04-27 progress: TL endpoint `segment=0` now maps to the tag center segment with an explicit runtime warning (instead of being rejected), improving mainstream deck portability.
+	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-seg0` (`corpus/tl-two-dipoles-linked-seg0.nec`) to lock TL segment=0 center-mapping behavior in CI.
+	- 2026-04-27 progress: TL segment=0 mapping now resolves even-segment tags deterministically to the lower center segment, with explicit warning text and solver regression coverage in `nec_solver::tl` tests.
+	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-nseg0` (`corpus/tl-two-dipoles-linked-nseg0.nec`) to lock TL `NSEG=0` single-section shorthand behavior in CI.
+	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-seg0-even52` (`corpus/tl-two-dipoles-linked-seg0-even52.nec`) to lock TL segment=0 lower-center mapping on even-segment tags in CI.
 	- 2026-04-27 progress: EX type 3 is now accepted in the excitation path (currently treated as EX type 0 semantics), unblocking mainstream deck portability while full normalization semantics remain pending.
+	- 2026-04-27 progress: added CLI warning-contract regression `ex_type3_runs_without_unsupported_error` in `apps/nec-cli/tests/parser_warnings.rs` to lock EX type 3 acceptance behavior.
+	- 2026-04-27 progress: added corpus regression case `dipole-ex3-freesp-51seg` (`corpus/dipole-ex3-freesp-51seg.nec`) to lock EX type 3 runtime acceptance in CI.
+	- 2026-04-27 progress: added CLI parity regression `ex_type3_matches_ex_type0_feedpoint_impedance` in `apps/nec-cli/tests/ex_cards.rs` to lock current EX type 3 == EX type 0 electrical behavior.
+	- 2026-04-27 progress: added solver-level parity regression `ex_type3_matches_ex_type0_vector` in `crates/nec_solver/src/excitation.rs` to lock EX RHS equivalence between type 3 and type 0.
+	- 2026-04-27 progress: EX type 3 with non-default `I4` now emits an explicit runtime warning in CLI (`warn_ex_type3_normalization_semantics`), with regression coverage in `apps/nec-cli/tests/parser_warnings.rs`.
+	- 2026-04-27 progress: corpus warning-contract coverage added for EX type 3 non-default `I4` via `dipole-ex3-i4-freesp-51seg` and `expected_warning_substrings` checks in `apps/nec-cli/tests/corpus_validation.rs`.
 	- 2026-04-27 progress: added corpus validation case `tl-two-dipoles-linked` (`corpus/tl-two-dipoles-linked.nec`) to lock TL subset behavior in CI, with a first `nec2c` external impedance candidate captured for parity tracking.
 
 - [ ] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**

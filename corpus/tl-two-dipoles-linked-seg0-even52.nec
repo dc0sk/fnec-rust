@@ -1,0 +1,10 @@
+CM Two parallel dipoles linked by a lossless TL card using segment=0 endpoints on even-segment wires.
+CM segment=0 maps to the lower center segment for even segment counts.
+CE
+GW 1 52 0.0 0 -5.282 0.0 0 5.282 0.001
+GW 2 52 1.0 0 -5.282 1.0 0 5.282 0.001
+GE
+TL 1 0 2 0 1 0 50.0 0.1 1.0
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

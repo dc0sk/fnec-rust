@@ -1,0 +1,7 @@
+CM Half-wave dipole with LD type 3 series RC load on the feed segment.
+CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+LD 3 1 26 26 10.0 0.0 1e-12
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
