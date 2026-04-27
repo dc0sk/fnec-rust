@@ -1,7 +1,8 @@
 ---
-title: T480 Validation Host Setup
-status: draft
-last-updated: 2026-04-27
+project: fnec-rust
+doc: docs/t480-validation-host-setup.md
+status: living
+last_updated: 2026-04-27
 ---
 
 # T480 CUDA & Intel GPU Validation Host
