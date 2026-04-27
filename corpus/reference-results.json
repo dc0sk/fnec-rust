@@ -433,6 +433,32 @@
       },
       "status": "Regression lock for LD type 1 (parallel RLC equivalent impedance) after initial implementation. External nec2c candidate is now CI-gated with provisional absolute thresholds while parity is still being improved."
     },
+    "tl-two-dipoles-linked": {
+      "deck_file": "tl-two-dipoles-linked.nec",
+      "description": "Two parallel dipoles with a lossless TL link between feed segments; one driven source",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for TL initial executable subset)",
+      "feedpoint_impedance": {
+        "real_ohm": 3.670518,
+        "imag_ohm": -14.490406
+      },
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ inserted before EN)",
+        "real_ohm": 0.019604,
+        "imag_ohm": -0.000036527
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for TL execution subset (type 0, NSEG=1, explicit endpoints). External candidate is observational only for now; gating will be enabled after TL parity tightening."
+    },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",
       "description": "14.2 MHz dipole driven at 7.1 MHz with top-hat loading loop",
