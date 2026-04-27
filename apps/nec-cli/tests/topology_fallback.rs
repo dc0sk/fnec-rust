@@ -119,7 +119,7 @@ fn sinusoidal_non_single_chain_falls_back_to_pulse() {
 }
 
 #[test]
-fn sinusoidal_a1_multiwire_topology_falls_back_to_pulse() {
+fn sinusoidal_a4_multiwire_nonchain_topology_falls_back_to_pulse() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
@@ -128,7 +128,7 @@ fn sinusoidal_a1_multiwire_topology_falls_back_to_pulse() {
         std::env::temp_dir().join(format!("fnec-sinusoidal-a1-multiwire-fallback-{now}.nec"));
 
     // Two wires, both >=2 segments, so per-wire basis is feasible.
-    // A1 sinusoidal gate still rejects multi-wire topologies.
+    // A4 still rejects disconnected non-chain multi-wire topologies.
     let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 11 0.5 0.0 -1.0 0.5 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A1 fallback deck");
 
@@ -152,11 +152,53 @@ fn sinusoidal_a1_multiwire_topology_falls_back_to_pulse() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "warning: sinusoidal A1 currently supports only single-wire collinear topologies; falling back to pulse"
+            "warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse"
         ),
-        "expected sinusoidal A1 topology warning in stderr, got:\n{stderr}"
+        "expected sinusoidal A4 topology warning in stderr, got:\n{stderr}"
     );
     assert_diag_mode(&stderr, "sinusoidal->pulse(topology)");
+}
+
+#[test]
+fn sinusoidal_a4_collinear_chain_topology_is_not_rejected_by_topology_gate() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-collinear-chain-{now}.nec"));
+
+    // Two collinear wires that touch end-to-start at z=0.0.
+    // This should pass the A4 topology gate.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 0.0 0.0 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A4 chain deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal A4 collinear-chain test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
+        "did not expect A4 topology-gate fallback warning for collinear chain, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("mode=sinusoidal->pulse(topology)"),
+        "did not expect topology fallback diag mode for collinear chain, got:\n{stderr}"
+    );
 }
 
 #[test]

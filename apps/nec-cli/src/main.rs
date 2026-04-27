@@ -357,13 +357,10 @@ as segment count increases. Use --solver hallen for accurate results. \
     );
 }
 
-fn sinusoidal_a1_topology_supported(
+fn sinusoidal_a4_topology_supported(
     segs: &[nec_solver::Segment],
     wire_endpoints: &[(usize, usize)],
 ) -> bool {
-    if wire_endpoints.len() != 1 {
-        return false;
-    }
     if segs.is_empty() {
         return false;
     }
@@ -378,7 +375,29 @@ fn sinusoidal_a1_topology_supported(
         }
     }
 
+    // A4 phase-1: support collinear wire chains, not just a single wire.
+    // Adjacent wires in deck order must touch end-to-start (within epsilon)
+    // so branched or disconnected multi-wire topologies still fall back.
+    const TOUCH_EPS: f64 = 1e-9;
+    for window in wire_endpoints.windows(2) {
+        let (first_a, last_a) = window[0];
+        let (first_b, _last_b) = window[1];
+        if first_a > last_a || first_b >= segs.len() || last_a >= segs.len() {
+            return false;
+        }
+        if !points_close(segs[last_a].end, segs[first_b].start, TOUCH_EPS) {
+            return false;
+        }
+    }
+
     true
+}
+
+fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let dz = a[2] - b[2];
+    (dx * dx + dy * dy + dz * dz).sqrt() <= eps
 }
 
 fn warn_deferred_ground_model(ground: &GroundModel) {
@@ -574,9 +593,9 @@ fn solve_frequency_point(
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 (i, a, r, "sinusoidal->pulse")
-            } else if !sinusoidal_a1_topology_supported(segs, wire_endpoints) {
+            } else if !sinusoidal_a4_topology_supported(segs, wire_endpoints) {
                 eprintln!(
-                    "warning: sinusoidal A1 currently supports only single-wire collinear topologies; falling back to pulse"
+                    "warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse"
                 );
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);

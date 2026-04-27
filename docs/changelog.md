@@ -38,6 +38,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Sinusoidal topology gating advanced to A4 phase-1: the solver now accepts collinear wire-chain geometries (including multi-wire chains) and still falls back for disconnected/unsupported multi-wire topologies.
 - Added `sin_rel_res` to CLI diagnostics: the sinusoidal basis relative residual captured before any fallback decision, enabling solver-quality trending across runs (0.0 for non-sinusoidal modes).
 - Added `diag_spread` to CLI diagnostics as a conditioning proxy (ratio of max/min diagonal magnitudes of the solved system matrix), enabling quick stability checks in automation.
 - Added sinusoidal A2 regression checks that compare sinusoidal-mode impedance output against Hallen on `dipole-freesp-51seg` and `frequency-sweep-dipole` corpus decks.
