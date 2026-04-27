@@ -375,19 +375,76 @@ fn sinusoidal_a4_topology_supported(
         }
     }
 
-    // A4 phase-1: support collinear wire chains, not just a single wire.
-    // Adjacent wires in deck order must touch end-to-start (within epsilon)
-    // so branched or disconnected multi-wire topologies still fall back.
+    // A4 phase-2: wire-chain detection is orientation/order agnostic.
+    // Build an undirected graph from wire endpoints and require a single
+    // connected path (degrees <=2, exactly two degree-1 nodes unless there is
+    // only one wire). This still rejects disconnected and branched topologies.
     const TOUCH_EPS: f64 = 1e-9;
-    for window in wire_endpoints.windows(2) {
-        let (first_a, last_a) = window[0];
-        let (first_b, _last_b) = window[1];
-        if first_a > last_a || first_b >= segs.len() || last_a >= segs.len() {
+    let mut nodes: Vec<[f64; 3]> = Vec::new();
+    let mut degree: Vec<usize> = Vec::new();
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+
+    for (first, last) in wire_endpoints.iter().copied() {
+        if first > last || last >= segs.len() {
             return false;
         }
-        if !points_close(segs[last_a].end, segs[first_b].start, TOUCH_EPS) {
+        let a = segs[first].start;
+        let b = segs[last].end;
+        let ia = find_or_insert_node(&mut nodes, &mut degree, a, TOUCH_EPS);
+        let ib = find_or_insert_node(&mut nodes, &mut degree, b, TOUCH_EPS);
+        if ia == ib {
             return false;
         }
+        degree[ia] += 1;
+        degree[ib] += 1;
+        edges.push((ia, ib));
+    }
+
+    if degree.iter().any(|d| *d > 2) {
+        return false;
+    }
+    let degree_one = degree.iter().filter(|d| **d == 1).count();
+    if wire_endpoints.len() == 1 {
+        if degree_one != 2 {
+            return false;
+        }
+    } else if degree_one != 2 {
+        return false;
+    }
+
+    if nodes.is_empty() {
+        return false;
+    }
+
+    let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
+    for (u, v) in edges {
+        adjacency[u].push(v);
+        adjacency[v].push(u);
+    }
+
+    let start = match degree.iter().position(|d| *d > 0) {
+        Some(idx) => idx,
+        None => return false,
+    };
+    let mut seen = vec![false; nodes.len()];
+    let mut stack = vec![start];
+    while let Some(u) = stack.pop() {
+        if seen[u] {
+            continue;
+        }
+        seen[u] = true;
+        for &v in &adjacency[u] {
+            if !seen[v] {
+                stack.push(v);
+            }
+        }
+    }
+    if degree
+        .iter()
+        .enumerate()
+        .any(|(idx, d)| *d > 0 && !seen[idx])
+    {
+        return false;
     }
 
     true
@@ -398,6 +455,22 @@ fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
     let dy = a[1] - b[1];
     let dz = a[2] - b[2];
     (dx * dx + dy * dy + dz * dz).sqrt() <= eps
+}
+
+fn find_or_insert_node(
+    nodes: &mut Vec<[f64; 3]>,
+    degree: &mut Vec<usize>,
+    p: [f64; 3],
+    eps: f64,
+) -> usize {
+    for (idx, node) in nodes.iter().enumerate() {
+        if points_close(*node, p, eps) {
+            return idx;
+        }
+    }
+    nodes.push(p);
+    degree.push(0);
+    nodes.len() - 1
 }
 
 fn warn_deferred_ground_model(ground: &GroundModel) {

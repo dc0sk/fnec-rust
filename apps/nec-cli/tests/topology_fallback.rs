@@ -202,6 +202,48 @@ fn sinusoidal_a4_collinear_chain_topology_is_not_rejected_by_topology_gate() {
 }
 
 #[test]
+fn sinusoidal_a4_collinear_chain_with_mixed_wire_orientation_is_supported() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-mixed-orientation-{now}.nec"));
+
+    // Two collinear wires touching at z=0.0 with opposite declaration direction.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 1.0 0.0 0.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary sinusoidal A4 mixed-orientation deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal A4 mixed-orientation test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
+        "did not expect A4 topology-gate fallback warning for mixed orientation chain, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("mode=sinusoidal->pulse(topology)"),
+        "did not expect topology fallback diag mode for mixed orientation chain, got:\n{stderr}"
+    );
+}
+
+#[test]
 fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
     let output = run_solver_on_reference_dipole("sinusoidal");
 
