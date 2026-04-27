@@ -23,6 +23,16 @@ const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
 
+/// EX type 3 normalization mode.
+///
+/// `LegacyTreatAsType0` preserves the current production behavior.
+/// `ProvisionalDivideByI4` is an experimental scaffold for future semantics work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ex3NormalizationMode {
+    LegacyTreatAsType0,
+    ProvisionalDivideByI4,
+}
+
 /// Right-hand side data for Hallén's integral equation.
 #[derive(Debug)]
 pub struct HallenRhs {
@@ -109,11 +119,23 @@ pub fn build_excitation(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Result<Vec<Complex64>, ExcitationError> {
+    build_excitation_with_options(deck, segs, Ex3NormalizationMode::LegacyTreatAsType0)
+}
+
+/// Build excitation vector with explicit EX type 3 normalization mode.
+///
+/// This is primarily intended to stage incremental EX type 3 normalization work
+/// while keeping the default path behavior-stable.
+pub fn build_excitation_with_options(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ex3_mode: Ex3NormalizationMode,
+) -> Result<Vec<Complex64>, ExcitationError> {
     let mut v = vec![Complex64::new(0.0, 0.0); segs.len()];
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        apply_ex(&ex, segs, &mut v)?;
+        apply_ex(&ex, segs, &mut v, ex3_mode)?;
     }
 
     Ok(v)
@@ -318,7 +340,12 @@ pub fn build_hallen_rhs_with_options(
     })
 }
 
-fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
+fn apply_ex(
+    ex: &ExCard,
+    segs: &[Segment],
+    v: &mut [Complex64],
+    ex3_mode: Ex3NormalizationMode,
+) -> Result<(), ExcitationError> {
     if ex.excitation_type != 0 && ex.excitation_type != 3 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
@@ -341,7 +368,15 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
     // source of voltage V over a segment of length Δl impresses a tangential
     // field E = V / Δl at the midpoint of that segment.
     let delta_l = segs[idx].length;
-    v[idx] += Complex64::new(ex.voltage_real, ex.voltage_imag) / delta_l;
+    let mut source_voltage = Complex64::new(ex.voltage_real, ex.voltage_imag);
+    if ex.excitation_type == 3
+        && matches!(ex3_mode, Ex3NormalizationMode::ProvisionalDivideByI4)
+        && ex.i4 > 0
+    {
+        // Experimental scaffold: treat I4 as a normalization divisor.
+        source_voltage /= ex.i4 as f64;
+    }
+    v[idx] += source_voltage / delta_l;
     Ok(())
 }
 
@@ -535,6 +570,43 @@ mod tests {
                 "segment {i} mismatch: ex0={a}, ex3={b}"
             );
         }
+    }
+
+    #[test]
+    fn ex_type3_provisional_mode_divides_by_i4() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 3,
+            tag: 1,
+            segment: 2,
+            i4: 2,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let v_legacy = build_excitation_with_options(&deck, &segs, Ex3NormalizationMode::LegacyTreatAsType0)
+            .expect("legacy EX type 3 should be accepted");
+        let v_provisional = build_excitation_with_options(
+            &deck,
+            &segs,
+            Ex3NormalizationMode::ProvisionalDivideByI4,
+        )
+        .expect("provisional EX type 3 should be accepted");
+
+        let expected_ratio = 0.5_f64;
+        assert!(
+            (v_provisional[1].norm() / v_legacy[1].norm() - expected_ratio).abs() < 1e-12,
+            "expected provisional/legacy ratio {expected_ratio}, got {}",
+            v_provisional[1].norm() / v_legacy[1].norm()
+        );
     }
 
     #[test]
