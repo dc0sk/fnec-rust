@@ -6,7 +6,9 @@
 //! Converts `EX` cards from the parsed deck into a complex right-hand-side
 //! vector V, where V[i] is the impressed voltage on segment i (0 elsewhere).
 //!
-//! Only excitation type 0 (series voltage source) is implemented in Phase 1.
+//! Excitation types implemented in Phase 1:
+//! - type 0: series voltage source
+//! - type 3: normalized voltage source (currently treated as type 0)
 
 use num_complex::Complex64;
 use std::collections::BTreeMap;
@@ -158,7 +160,7 @@ pub fn build_hallen_rhs_with_options(
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 0 {
+        if ex.excitation_type != 0 && ex.excitation_type != 3 {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
                 tag: ex.tag,
@@ -317,7 +319,7 @@ pub fn build_hallen_rhs_with_options(
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
-    if ex.excitation_type != 0 {
+    if ex.excitation_type != 0 && ex.excitation_type != 3 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
             tag: ex.tag,
@@ -458,6 +460,31 @@ mod tests {
                 i4: 0,
             })
         ));
+    }
+
+    #[test]
+    fn ex_type3_is_currently_accepted_like_type0() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 3,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 1.5,
+            voltage_imag: -0.25,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let v = build_excitation(&deck, &segs).expect("EX type 3 should be accepted");
+        let expected = Complex64::new(1.5, -0.25) / segs[1].length;
+        assert!((v[1] - expected).norm() < 1e-12);
     }
 
     #[test]

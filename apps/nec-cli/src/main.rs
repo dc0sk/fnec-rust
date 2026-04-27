@@ -9,6 +9,7 @@ use nec_model::card::Card;
 use nec_parser::parse;
 use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, ReportInput};
 use nec_solver::build_loads;
+use nec_solver::build_tl_stamps;
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
     build_hallen_rhs_with_options, compute_radiation_pattern, ground_model_from_deck,
@@ -645,21 +646,6 @@ fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     }
 }
 
-fn warn_deferred_tl_cards(deck: &nec_model::deck::NecDeck) {
-    let tl_count = deck
-        .cards
-        .iter()
-        .filter(|c| matches!(c, Card::Tl(_)))
-        .count();
-    if tl_count == 0 {
-        return;
-    }
-
-    eprintln!(
-        "warning: TL card support is deferred; {tl_count} TL card(s) will be ignored in this run"
-    );
-}
-
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -802,6 +788,13 @@ fn solve_frequency_point(
         eprintln!("warning: {warning}");
     }
     z_mat.add_to_diagonal(&load_vec);
+    let (tl_stamps, tl_warnings) = build_tl_stamps(deck, segs, freq_hz);
+    for warning in &tl_warnings {
+        eprintln!("warning: {warning}");
+    }
+    for (row, col, delta) in &tl_stamps {
+        z_mat.add_to_entry(*row, *col, *delta);
+    }
     let diag_spread = matrix_diagonal_spread(&z_mat);
     let mut sin_rel_res: f64 = 0.0;
 
@@ -893,6 +886,9 @@ fn solve_frequency_point(
                     .map_err(|e| e.to_string())?;
                     let mut hallen_z = assemble_z_matrix_with_ground(segs, freq_hz, ground);
                     hallen_z.add_to_diagonal(&load_vec);
+                    for (row, col, delta) in &tl_stamps {
+                        hallen_z.add_to_entry(*row, *col, *delta);
+                    }
                     let sol = solve_hallen(
                         &hallen_z,
                         &hallen_rhs.rhs,
@@ -1130,7 +1126,6 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
-    warn_deferred_tl_cards(deck);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {
