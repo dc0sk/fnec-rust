@@ -59,6 +59,7 @@ last_updated: 2026-04-24
 
 - [ ] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
+	- 2026-04-27 progress: LD load-family coverage expanded with LD type 1 (parallel RLC) solve support in `nec_solver::build_loads`, plus CLI integration regression (`apps/nec-cli/tests/ld_loads.rs`) and new corpus fixture `corpus/dipole-ld-loaded-51seg.nec`.
 
 - [ ] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**
 	Resolution criteria: usability acceptance checklist defined and demonstrated (interactive sweep inspection, graphical result browsing, fast edit-run-inspect loop); at least one end-to-end demo captured.

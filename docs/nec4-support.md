@@ -47,7 +47,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
 | EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
 | PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
-| LD | Load impedance | PARTIAL | Types 0 (series RLC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
+| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
 
 ### Frequency and output cards
 

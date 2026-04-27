@@ -3,13 +3,14 @@
 
 //! Load builder: converts LD cards into per-segment complex impedance loads.
 //!
-//! Three load types are implemented in Phase 1:
+//! Load types implemented:
 //!
-//! | I1 | Description              | Z formula                                         |
-//! |----|--------------------------|---------------------------------------------------|
-//! |  0 | Series RLC (lumped)      | R + j(ωL − 1/(ωC))  (C=0 ⇒ no capacitor term)    |
-//! |  4 | Series impedance Z=R+jX  | R + jX  (flat, frequency-independent)             |
-//! |  5 | Wire conductivity (dist.) | Σ per segment: dl/(2π·a·σ)                       |
+//! | I1 | Description               | Z formula                                          |
+//! |----|---------------------------|----------------------------------------------------|
+//! |  0 | Series RLC (lumped)       | R + j(ωL − 1/(ωC))  (C=0 ⇒ no capacitor term)     |
+//! |  1 | Parallel RLC (lumped)     | 1 / (1/R + 1/(jωL) + jωC)                         |
+//! |  4 | Series impedance Z=R+jX   | R + jX  (flat, frequency-independent)              |
+//! |  5 | Wire conductivity (dist.) | Σ per segment: dl/(2π·a·σ)                        |
 //!
 //! Other load types are stored in `LdCard` but emit a warning via the returned
 //! `Vec<LoadWarning>` and are otherwise ignored.
@@ -72,6 +73,31 @@ pub fn build_loads(
                     let x_l = omega * l;
                     let x_c = if c > 0.0 { 1.0 / (omega * c) } else { 0.0 };
                     Complex64::new(r, x_l - x_c)
+                }
+                1 => {
+                    // Parallel RLC: Y = 1/R + 1/(jωL) + jωC  →  Z = 1/Y
+                    // Missing branches (zero L → infinite susceptance; zero R → infinite
+                    // conductance) are treated as degenerate loads contributing zero impedance.
+                    let r = ld.f1;
+                    let l = ld.f2;
+                    let c = ld.f3;
+                    let mut y = Complex64::new(0.0, 0.0);
+                    if r > 0.0 {
+                        y += Complex64::new(1.0 / r, 0.0);
+                    }
+                    if l > 0.0 {
+                        // 1/(jωL) = -j/(ωL)
+                        y += Complex64::new(0.0, -1.0 / (omega * l));
+                    }
+                    if c > 0.0 {
+                        y += Complex64::new(0.0, omega * c);
+                    }
+                    if y.norm() < 1e-30 {
+                        // All branches open — contribute nothing
+                        Complex64::new(0.0, 0.0)
+                    } else {
+                        Complex64::new(1.0, 0.0) / y
+                    }
                 }
                 4 => {
                     // Series impedance: Z = R + jX (frequency-independent)
@@ -233,6 +259,82 @@ mod tests {
         assert_eq!(loads[0], Complex64::new(0.0, 0.0));
         assert_eq!(warns.len(), 1);
         assert!(warns[0].message.contains("not yet supported"));
+    }
+
+    #[test]
+    fn type1_parallel_r_only_is_inverse_resistance() {
+        // Parallel RLC with L=0 C=0: Y = 1/R  →  Z = R
+        let segs = vec![seg(1, 1, 0.1, 0.001)];
+        let deck = deck_with_ld(LdCard {
+            load_type: 1,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: 200.0, // R = 200 Ω
+            f2: 0.0,
+            f3: 0.0,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, 14.2e6);
+        assert!(warns.is_empty());
+        assert!((loads[0].re - 200.0).abs() < 1e-9);
+        assert!(loads[0].im.abs() < 1e-9);
+    }
+
+    #[test]
+    fn type1_parallel_rlc_admittance_formula() {
+        // Parallel RLC: Z = 1 / (1/R + 1/(jωL) + jωC)
+        let segs = vec![seg(1, 1, 0.1, 0.001)];
+        let freq = 14.2e6_f64;
+        let omega = TWO_PI * freq;
+        let r = 500.0_f64;
+        let l = 1e-6_f64;
+        let c = 1e-12_f64;
+        let deck = deck_with_ld(LdCard {
+            load_type: 1,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: r,
+            f2: l,
+            f3: c,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, freq);
+        assert!(warns.is_empty());
+        let g = 1.0 / r;
+        let b_l = -1.0 / (omega * l); // susceptance of inductor: -1/(ωL)
+        let b_c = omega * c; // susceptance of capacitor: ωC
+        let y = Complex64::new(g, b_l + b_c);
+        let expected_z = Complex64::new(1.0, 0.0) / y;
+        assert!(
+            (loads[0].re - expected_z.re).abs() < 1e-6,
+            "Re: {} vs {}",
+            loads[0].re,
+            expected_z.re
+        );
+        assert!(
+            (loads[0].im - expected_z.im).abs() < 1e-6,
+            "Im: {} vs {}",
+            loads[0].im,
+            expected_z.im
+        );
+    }
+
+    #[test]
+    fn type1_all_open_branches_produces_zero_load() {
+        // All parameters zero → open circuit → no contribution
+        let segs = vec![seg(1, 1, 0.1, 0.001)];
+        let deck = deck_with_ld(LdCard {
+            load_type: 1,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: 0.0,
+            f2: 0.0,
+            f3: 0.0,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, 14.2e6);
+        assert!(warns.is_empty());
+        assert_eq!(loads[0], Complex64::new(0.0, 0.0));
     }
 
     #[test]
