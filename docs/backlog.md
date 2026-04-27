@@ -45,6 +45,8 @@ last_updated: 2026-04-24
 	- 2026-04-26 progress: `--exec hybrid` now runs coarse-grain multithreaded FR sweeps (parallel per-frequency solves with ordered output), while `--exec gpu` remains CPU fallback scaffolding.
 	- 2026-04-26 progress: hybrid GPU-candidate lane routing now calls `nec_accel::dispatch_frequency_point(...)` before CPU fallback, establishing the first concrete accelerator integration seam.
 	- 2026-04-26 progress: `DispatchDecision::RunOnGpu` is now handled non-fatally in CLI hybrid and gpu execution flows via an accelerator stub branch (`FNEC_ACCEL_STUB_GPU=1`) that preserves report/diag contracts while using CPU emulation.
+	- 2026-04-26 progress: first concrete GPU kernel scaffold landed (`nec_accel::gpu_kernels::HallenFrGpuKernel`) with Hallen far-field radiation pattern computation stubs. Module provides GPU-compatible data layouts and API surface for future CUDA/OpenCL kernel implementations, complete with unit tests (8) and integration test suite (6) validating dipole patterns, multi-segment arrays, azimuth symmetry, and numerical edge cases.
+	- 2026-04-27 progress: native CLI startup now auto-selects execution mode when `--exec` is omitted by running a quick startup probe and choosing the most suitable available mode (`cpu`/`hybrid`/`gpu`) for current frequency sweep shape and dispatch availability.
 
 ## Parity-driven backlog items
 
@@ -57,6 +59,10 @@ last_updated: 2026-04-24
 
 - [ ] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
+	- 2026-04-27 progress: LD load-family coverage expanded with LD type 1 (parallel RLC) solve support in `nec_solver::build_loads`, plus CLI integration regression (`apps/nec-cli/tests/ld_loads.rs`) and new corpus fixture `corpus/dipole-ld-loaded-51seg.nec`.
+	- 2026-04-27 progress: TL cards now have an executable initial subset in solver runtime (`type=0`, `NSEG=1`, explicit endpoints) via impedance-matrix stamps (`nec_solver::build_tl_stamps`), with CLI regression coverage (`apps/nec-cli/tests/tl_cards.rs` and `apps/nec-cli/tests/parser_warnings.rs`).
+	- 2026-04-27 progress: EX type 3 is now accepted in the excitation path (currently treated as EX type 0 semantics), unblocking mainstream deck portability while full normalization semantics remain pending.
+	- 2026-04-27 progress: added corpus validation case `tl-two-dipoles-linked` (`corpus/tl-two-dipoles-linked.nec`) to lock TL subset behavior in CI, with a first `nec2c` external impedance candidate captured for parity tracking.
 
 - [ ] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**
 	Resolution criteria: usability acceptance checklist defined and demonstrated (interactive sweep inspection, graphical result browsing, fast edit-run-inspect loop); at least one end-to-end demo captured.
@@ -70,18 +76,21 @@ last_updated: 2026-04-24
 - [ ] **PAR-007 / AutoEZ procurement gate / Owner: Product / Target: Phase 3 start / Issue: #20**
 	Resolution criteria: go/no-go decision recorded with evidence from open-tool and documentation benchmarking; if go, purchase and benchmark plan logged; if no-go, defer rationale and next review date logged.
 
-- [ ] **PAR-008 / NEC-5 validation-manual coverage matrix / Owner: Solver+Validation / Target: Phase 2 / Issue: #21**
-	Resolution criteria: NEC-5 Validation Manual scenario classes mapped to fnec-rust in-scope equivalents; each mapped class has at least one reproducible corpus test with explicit tolerance gating; known out-of-scope classes are documented with rationale. Matrix source: `docs/corpus-validation-strategy.md` section "NEC-5 validation coverage matrix (PAR-008)".
+- [x] **PAR-008 / NEC-5 validation-manual coverage matrix / Owner: Solver+Validation / Target: Phase 2 / Issue: #21**
+	Resolution: Completed 2026-04-26 for coverage-matrix scope. NEC-5 Validation Manual scenario classes are mapped to current fnec-rust in-scope equivalents; mapped in-scope classes have reproducible corpus tests with explicit tolerance gating; known out-of-scope classes are documented with rationale and phase deferral. Matrix source: `docs/corpus-validation-strategy.md` section "NEC-5 validation coverage matrix (PAR-008)".
 
 - [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
 
-- [ ] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 4-5 / Issue: #23**
+- [ ] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 5+ (after full GPU support) / Issue: #23**
 	Resolution criteria: architecture decision doc approved (auth model, trust boundary, transport, failure semantics); authenticated node discovery implemented with capability cache; work-content/result cache implemented with deterministic cache keys and invalidation policy; SSH-backed bootstrap flow documented and demonstrated on at least 2 worker nodes.
+	- Sequencing constraint: implementation starts only after full GPU solver support (matrix fill + solve path) is complete and benchmarked.
 
 - [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
 	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
 	- 2026-04-26 assessment: deferred from Phase 2-3 to Phase 4-5 after reviewing real NEC2MP replacement artifacts (`nec2dxs500/1K5/3k0/5k0/8k0/11k` variants plus external install procedure docs). Full drop-in parity likely requires Windows-specific replacement semantics, binary-name matrix handling, and compatibility validation against external tool expectations beyond current CLI contract scope.
+	- 2026-04-26 progress: populated `docs/par011-dropin-evidence-memo.md` with concrete artifact fingerprints/readme findings and added a phased docs-only implementation plan with acceptance tests (`AT-PAR011-*`).
+	- 2026-04-26 scope decision: compatibility harness skeleton work is postponed for now (option 3 deferred).
 	- Discovery checklist (capture before implementation starts):
 		- Binary-name matrix: confirm exact accepted executable names/casing and segment-limit mapping (`nec2dxs500.exe`, `nec2dxs1K5.exe`, `nec2dxs3k0.exe`, `nec2dxs5k0.exe`, `nec2dxs8k0.exe`, `nec2dxs11k.exe`).
 		- Install contract: document required replacement/copy steps in Windows 4nec2 installation paths and whether side-by-side binary variants are expected.
@@ -90,4 +99,4 @@ last_updated: 2026-04-24
 		- Dependency surface: verify companion DLL/runtime requirements (if any) and loader-path assumptions in both portable and installed setups.
 		- Compatibility fixtures: archive representative external-kernel call traces and outputs for each binary variant as regression fixtures.
 		- Benchmark method: define throughput comparison protocol against the legacy single-thread kernel on identical decks, with per-variant segment-count bands.
-		- Reference sources: index `nec2mp-readme.pdf` notes, the cited URL (`http://users.otenet.gr/~jmsp`), and GNU NEC SourceForge project notes (`https://sourceforge.net/projects/gnu-nec/`) into a short evidence memo for future PAR-011 kickoff.
+		- Reference sources: index `nec2mp-readme.pdf` notes, the cited URL (`http://users.otenet.gr/~jmsp`), and GNU NEC SourceForge project notes (`https://sourceforge.net/projects/gnu-nec/`) into the evidence memo (`docs/par011-dropin-evidence-memo.md`) for future PAR-011 kickoff.

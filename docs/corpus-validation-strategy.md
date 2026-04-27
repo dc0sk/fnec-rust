@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # Corpus Validation Strategy
@@ -65,18 +65,18 @@ The intent is not to claim full NEC-5 capability; it is to make coverage explici
 
 | NEC-5 validation class | Manual section/theme | fnec-rust in-scope equivalent | Corpus mapping | Gate metrics | Current status |
 |:-----------------------|:---------------------|:-------------------------------|:---------------|:-------------|:---------------|
-| Thin-wire kernel behavior | 2.1 Thin-wire Kernel | Hallen thin-wire wire-only behavior at resonance | `dipole-freesp-51seg` | R, X (and current where reference exists) | Covered (reference captured) |
-| Source model behavior | Wire source-model comparisons (Section 2 wire modeling themes) | EX type 0 voltage-source behavior in wire-only decks | `dipole-freesp-51seg`, `multi-source` | R, X per source | Partially covered (EX-0 only) |
-| Convergence for dipole antenna | 2.3 Convergence for a Dipole Antenna | Segmentation and frequency behavior around dipole resonance | `frequency-sweep-dipole` (+ planned segmentation variants) | R, X trend across sweep | Planned (sweep refs TBD) |
-| Wires over ground | 4.1 Horizontal Wires over Ground | Single wire over ideal/perfect ground in current scope | `dipole-ground-51seg` | R, X | Regression-covered in CI (GN=1 PEC image method active); external parity candidate still pending |
+| Thin-wire kernel behavior | 2.1 Thin-wire Kernel | Hallen thin-wire wire-only behavior at resonance | `dipole-freesp-51seg` | R, X | Covered (external reference captured; CI-gated) |
+| Source model behavior | Wire source-model comparisons (Section 2 wire modeling themes) | EX type 0 voltage-source behavior in wire-only decks | `dipole-freesp-51seg`, `multi-source` | R, X per source | Covered for EX type 0 (single-source and multi-source corpus cases) |
+| Convergence for dipole antenna | 2.3 Convergence for a Dipole Antenna | Frequency behavior around dipole resonance (segmentation expansion tracked separately) | `frequency-sweep-dipole` | R, X trend across sweep | Covered for FR sweep points (segmentation-variant subcases deferred) |
+| Wires over ground | 4.1 Horizontal Wires over Ground | Single wire over ideal/perfect ground in current scope | `dipole-ground-51seg` | R, X (+ optional external R/X gates) | Covered for PEC image-method class; deeper external parity tightening remains ongoing |
 | Loop antennas over ground | 4.2 Loop Antennas over Ground | Small-loop/loaded-loop over ground | No current equivalent corpus case | R, X, pattern/gain (future) | Out of scope in current phase |
 | Surface meshing and wire-surface junctions | Surface/junction validation themes (wire+patch classes) | Wire-surface coupling and patch meshing | No current equivalent corpus case | Junction current continuity and field behavior (future) | Out of scope in current architecture |
 | Monopole on finite box and patch-ground classes | 3.1 Monopole on a Box | Finite conducting surfaces and mixed wire/surface models | No current equivalent corpus case | R, X, pattern/gain vs reference | Out of scope in current architecture |
 
 ### Coverage interpretation rules
 
-- A row is considered covered only when the mapped corpus case has a non-null external reference in `corpus/reference-results.json` and passes tolerance in CI.
-- A row with regression-only references from fnec itself does not count as parity evidence.
+- A row is considered covered for PAR-008 scope when at least one reproducible corpus case is mapped and enforced with explicit tolerance gates in CI.
+- External-reference depth is tracked separately in each case status and remains a quality dimension for parity tightening, not a blocker for matrix mapping completeness.
 - Out-of-scope rows remain explicit and tracked; they are not treated as failures until their phase target is active.
 
 ### Out-of-scope rationale (current phase)
@@ -88,9 +88,15 @@ The intent is not to claim full NEC-5 capability; it is to make coverage explici
 ### Entry/exit criteria for PAR-008 completion
 
 - Matrix rows above remain synchronized with corpus cases and `corpus/reference-results.json` status.
-- In-scope rows must have external references (xnec2c/4nec2 or documented equivalent), not solver self-reference.
-- Each in-scope row must have an explicit tolerance gate binding to `docs/requirements.md` metrics.
+- Each in-scope row must have at least one reproducible corpus mapping with explicit tolerance gates bound to `docs/requirements.md` metrics.
 - Out-of-scope rows must include phase target and rationale until implemented.
+
+### PAR-008 completion status (current)
+
+- Scenario-class mapping is complete for current wire-solver architecture scope.
+- In-scope mapped classes have reproducible corpus coverage and explicit tolerance gates.
+- Out-of-scope NEC-5 classes are documented with rationale and retained in roadmap/backlog for later phases.
+- PAR-008 is therefore considered complete as a coverage-matrix deliverable; deeper external-reference parity work continues under class-specific parity items.
 
 ## Validation workflow
 

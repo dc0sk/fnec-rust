@@ -15,3 +15,4 @@ default = []
 wgpu = []
 
 [dependencies]
+num-complex = { workspace = true }

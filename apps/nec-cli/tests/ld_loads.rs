@@ -7,6 +7,9 @@ fn run_fnec(deck_path: &Path, workspace_root: &Path) -> (String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
         .arg(deck_path)
         .current_dir(workspace_root)
         .output()
@@ -106,5 +109,47 @@ fn unsupported_ld_type_emits_warning_and_continues() {
     assert!(
         stderr.contains("warning: LD type 3 on tag 1 is not yet supported; load ignored"),
         "expected unsupported LD warning in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let base_path = std::env::temp_dir().join(format!("fnec-ld1-base-{now}.nec"));
+    let loaded_path = std::env::temp_dir().join(format!("fnec-ld1-loaded-{now}.nec"));
+
+    let base_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let loaded_deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 1 1 26 26 1000.0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    fs::write(&base_path, base_deck).expect("failed to write base deck");
+    fs::write(&loaded_path, loaded_deck).expect("failed to write loaded deck");
+
+    let (base_out, base_err) = run_fnec(&base_path, &workspace_root);
+    let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
+
+    let _ = fs::remove_file(&base_path);
+    let _ = fs::remove_file(&loaded_path);
+
+    assert!(
+        !loaded_err.contains("warning: LD type 1 on tag 1 is not yet supported; load ignored"),
+        "LD type 1 should be supported, got stderr:\n{loaded_err}"
+    );
+    assert!(
+        !base_err.contains("warning: LD type 1 on tag 1 is not yet supported; load ignored"),
+        "unexpected unsupported LD1 warning in base run stderr:\n{base_err}"
+    );
+
+    let (base_r, _base_x) = first_feedpoint_impedance(&base_out);
+    let (loaded_r, _loaded_x) = first_feedpoint_impedance(&loaded_out);
+
+    assert!(
+        loaded_r > base_r + 500.0,
+        "expected LD type 1 parallel-R equivalent load to change impedance significantly: base={base_r:.6}, loaded={loaded_r:.6}"
     );
 }

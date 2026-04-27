@@ -6,12 +6,16 @@
 //! Parses the cards required to run a basic dipole simulation:
 //! `CM`, `CE`, `GW`, `GE`, `GN`, `EX`, `FR`, `RP`, `EN`.
 //!
+//! Extended support for:
+//! - `LD` — Lumped and distributed loads (types 0, 4, 5)
+//! - `TL` — Transmission-line connections (lossless and lossy models)
+//!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
-    RpCard,
+    RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -230,6 +234,46 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     seg_last: parse_u32(lineno, "LD", 4, &fields[3])?,
                     f1,
                     f2,
+                    f3,
+                }));
+            }
+            "TL" => {
+                // TL I1 I2 I3 I4 I5 I6 F1 F2 F3
+                // I1: tag of first segment
+                // I2: segment number of first segment (0 = all)
+                // I3: tag of second segment
+                // I4: segment number of second segment (0 = all)
+                // I5: number of transmission-line segments
+                // I6: transmission-line type (0 = lossless, non-zero = lossy)
+                // F1: characteristic impedance (Ω)
+                // F2: transmission-line length (m)
+                // F3: angle (°) or velocity factor
+                let fields = parse_fields(rest);
+                require_fields(lineno, "TL", &fields, 6)?;
+                let z0 = if fields.len() > 6 {
+                    parse_f64(lineno, "TL", 7, &fields[6])?
+                } else {
+                    50.0 // Default 50 Ω if omitted
+                };
+                let length = if fields.len() > 7 {
+                    parse_f64(lineno, "TL", 8, &fields[7])?
+                } else {
+                    0.0
+                };
+                let f3 = if fields.len() > 8 {
+                    parse_f64(lineno, "TL", 9, &fields[8])?
+                } else {
+                    1.0 // Default velocity factor 1.0 (lossless) if omitted
+                };
+                deck.cards.push(Card::Tl(TlCard {
+                    tag1: parse_u32(lineno, "TL", 1, &fields[0])?,
+                    segment1: parse_u32(lineno, "TL", 2, &fields[1])?,
+                    tag2: parse_u32(lineno, "TL", 3, &fields[2])?,
+                    segment2: parse_u32(lineno, "TL", 4, &fields[3])?,
+                    num_segments: parse_u32(lineno, "TL", 5, &fields[4])?,
+                    tl_type: parse_u32(lineno, "TL", 6, &fields[5])?,
+                    z0,
+                    length,
                     f3,
                 }));
             }

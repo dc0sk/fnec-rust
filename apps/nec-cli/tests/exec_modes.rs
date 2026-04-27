@@ -54,6 +54,7 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
         .arg("hallen")
         .arg("--exec")
         .arg("hybrid")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec sweep test: {e}"));
@@ -187,6 +188,7 @@ fn filename_steering_sets_default_exec_for_dropin_alias() {
     let output = Command::new(&alias)
         .arg("--solver")
         .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -223,6 +225,7 @@ fn explicit_exec_overrides_dropin_filename_steering() {
         .arg("hallen")
         .arg("--exec")
         .arg("cpu")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -257,6 +260,7 @@ fn filename_steering_also_detects_4nec2_alias_names() {
     let output = Command::new(&alias)
         .arg("--solver")
         .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {

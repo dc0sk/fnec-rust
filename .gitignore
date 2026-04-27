@@ -7,3 +7,6 @@ target/
 # Stray CLI output captures and draft PR bodies
 out*.txt
 pr_body.txt
+
+# Local benchmark host aliases/secrets
+.benchmark-hosts.env

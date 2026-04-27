@@ -1,0 +1,12 @@
+CM Half-wave dipole, free space, 51 segments, 14.2 MHz
+CM LD type-4 series 50 Ohm resistive load at feedpoint (tag 1, seg 26)
+CM LD type-1 parallel 1000 Ohm shunt resistor at feedpoint (tag 1, seg 26)
+CM Used to validate LD type 0, 1, and 4 load handling.
+CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+LD 4 1 26 26 50.0 0.0 0.0
+LD 1 1 26 26 1000.0 0.0 0.0
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

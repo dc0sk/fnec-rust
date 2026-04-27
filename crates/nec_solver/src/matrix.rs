@@ -124,6 +124,12 @@ impl ZMatrix {
             self.data[i * self.n + i] = cur + z;
         }
     }
+
+    /// Add `delta` to one matrix entry.
+    pub fn add_to_entry(&mut self, row: usize, col: usize, delta: Complex64) {
+        let idx = row * self.n + col;
+        self.data[idx] += delta;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -531,5 +537,14 @@ mod tests {
         assert_eq!(img.direction[0], s.direction[0]);
         assert_eq!(img.direction[1], s.direction[1]);
         assert_eq!(img.direction[2], -s.direction[2]);
+    }
+
+    #[test]
+    fn add_to_entry_updates_single_element() {
+        let mut z = ZMatrix::new(2);
+        let d = Complex64::new(3.0, -2.0);
+        z.add_to_entry(1, 0, d);
+        assert_eq!(z.get(1, 0), d);
+        assert_eq!(z.get(0, 1), Complex64::new(0.0, 0.0));
     }
 }

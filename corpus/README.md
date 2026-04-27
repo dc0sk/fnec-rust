@@ -11,6 +11,52 @@ This directory contains the golden reference test corpus used to validate fnec-r
 
 Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
 
+## Validation Framework
+
+The corpus validation test (`apps/nec-cli/tests/corpus_validation.rs`) supports comprehensive accuracy gating across multiple output domains:
+
+### 1. **Feedpoint Impedance** (all cases)
+- Real and imaginary parts with absolute and relative tolerance gates
+- Multi-source impedance validation (per-source gates for multi-wire scenarios)
+- Frequency-sweep impedance validation (per-frequency gates)
+- **Tolerance gates**: `R_absolute_ohm`, `X_absolute_ohm`, `R_percent_rel`, `X_percent_rel`
+
+### 2. **Radiation Pattern Samples** (RP-enabled cases)
+- Gain (linear, vertical, horizontal), axial ratio at specified (θ, φ) points
+- Automatic extraction from fnec `RADIATION_PATTERN` section
+- Comparison against reference `pattern_samples` array in `reference-results.json`
+- **Tolerance gates**: `Gain_absolute_dB` (for gain fields), `AxialRatio_absolute`
+- **External candidate gates** (optional): `ExternalGain_absolute_dB`, `ExternalAxialRatio_absolute`
+
+### 3. **Current Distribution** (multi-wire and multi-segment cases — infrastructure in place)
+- Segment current magnitude and phase at specified (wire_id, segment_id) points
+- Automatic extraction from fnec CURRENTS section
+- Support for multi-wire scenarios (Yagi arrays, parallel dipoles, etc.)
+- **Reference data**: `current_samples` array (wire_id, segment_id, amplitude_db, phase_deg, description)
+- **Tolerance gates**: `Current_amplitude_dB`, `Current_phase_deg` (values TBD per case)
+- **Status**: Infrastructure implemented; reference values to be captured via measurement
+
+### 4. **External Reference Candidates** (optional, per-case gating)
+- Parallel validation against external solvers (nec2c, 4nec2, NEC2DXS500)
+- Absolute and relative tolerance gates for impedance deltas
+- Optional pattern-sample comparison when external RP data available
+- **Tolerance gates**: `ExternalR_absolute_ohm`, `ExternalX_absolute_ohm`, `ExternalR_percent_rel`, `ExternalX_percent_rel`
+
+## Tolerance Matrix
+
+Default tolerance gates (overridable per case in `reference-results.json`):
+
+| Domain | Gate Name | Default | Notes |
+|--------|-----------|---------|-------|
+| Feedpoint R | `R_absolute_ohm` | 0.05 Ω | Minimum acceptable; relative floor applied |
+| Feedpoint X | `X_absolute_ohm` | 0.05 Ω | Minimum acceptable; relative floor applied |
+| Feedpoint R | `R_percent_rel` | 0.1% | Relative tolerance relative to reference |
+| Feedpoint X | `X_percent_rel` | 0.1% | Relative tolerance relative to reference |
+| RP Gain | `Gain_absolute_dB` | 0.05 dB | Applies to all gain fields (linear, V, H) |
+| RP Axial Ratio | `AxialRatio_absolute` | 0.0001 | Dimensionless (unitless) |
+| Current Mag | `Current_amplitude_dB` | 0.1 dB | Per-segment current magnitude variance |
+| Current Phase | `Current_phase_deg` | 2.0° | Per-segment current phase variance |
+
 Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Impedance candidates: `ExternalR_absolute_ohm`, `ExternalX_absolute_ohm`, `ExternalR_percent_rel`, `ExternalX_percent_rel`
 - RP candidates: `ExternalGain_absolute_dB`, `ExternalAxialRatio_absolute`

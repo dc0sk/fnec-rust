@@ -18,6 +18,14 @@ struct PatternSample {
     axial_ratio: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CurrentSample {
+    segment_id: usize,
+    wire_id: usize,
+    amplitude_db: f64,
+    phase_deg: f64,
+}
+
 #[test]
 fn corpus_validation_cases_with_references() {
     // Test file is inside apps/nec-cli; walk up to workspace root.
@@ -74,6 +82,7 @@ fn corpus_validation_cases_with_references() {
         let expected_sources = collect_expected_sources(case_obj, feed);
         let expected_freq_points = collect_expected_frequency_points(feed);
         let expected_pattern_samples = collect_expected_pattern_samples(case_obj);
+        let expected_current_samples = collect_expected_current_samples(case_obj);
 
         let expected_scalar = match (expected_real, expected_imag) {
             (Some(r), Some(x)) => (r, x),
@@ -140,6 +149,14 @@ fn corpus_validation_cases_with_references() {
         } else {
             None
         };
+        let current_amplitude_dB_tol = gates
+            .get("Current_amplitude_dB")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.1);
+        let current_phase_deg_tol = gates
+            .get("Current_phase_deg")
+            .and_then(Value::as_f64)
+            .unwrap_or(2.0);
 
         let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .arg("--solver")
@@ -178,6 +195,7 @@ fn corpus_validation_cases_with_references() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let impedances = parse_impedance_lines(&stdout);
         let pattern_rows = parse_pattern_rows(&stdout);
+        let current_rows = parse_current_rows(&stdout);
         assert!(
             !impedances.is_empty(),
             "No impedance rows found in fnec output for case '{}':\n{}",
@@ -600,6 +618,53 @@ fn corpus_validation_cases_with_references() {
             }
         }
 
+        // Validate current distribution samples if expected
+        if !expected_current_samples.is_empty() {
+            for expected_curr in &expected_current_samples {
+                // Find matching current in output by wire_id and segment_id
+                let matching = current_rows.iter().find(|(wire, seg, _, _)| {
+                    *wire == expected_curr.wire_id && *seg == expected_curr.segment_id
+                });
+
+                let (_, _, actual_amp_db, actual_phase_deg) = match matching {
+                    Some(m) => *m,
+                    None => {
+                        eprintln!(
+                            "Warning: case '{}' expected current sample wire={} seg={} not found in output",
+                            case_name, expected_curr.wire_id, expected_curr.segment_id
+                        );
+                        continue;
+                    }
+                };
+
+                let err_amp = (actual_amp_db - expected_curr.amplitude_db).abs();
+                let err_phase = (actual_phase_deg - expected_curr.phase_deg).abs();
+
+                assert!(
+                    err_amp <= current_amplitude_dB_tol,
+                    "Case '{}' current amplitude at wire={} seg={} out of tolerance: got {:.4} dB, expected {:.4} dB, err {:.4} dB, tol {:.4} dB",
+                    case_name,
+                    expected_curr.wire_id,
+                    expected_curr.segment_id,
+                    actual_amp_db,
+                    expected_curr.amplitude_db,
+                    err_amp,
+                    current_amplitude_dB_tol
+                );
+                assert!(
+                    err_phase <= current_phase_deg_tol,
+                    "Case '{}' current phase at wire={} seg={} out of tolerance: got {:.2}°, expected {:.2}°, err {:.2}°, tol {:.2}°",
+                    case_name,
+                    expected_curr.wire_id,
+                    expected_curr.segment_id,
+                    actual_phase_deg,
+                    expected_curr.phase_deg,
+                    err_phase,
+                    current_phase_deg_tol
+                );
+            }
+        }
+
         validated += 1;
     }
 
@@ -720,6 +785,25 @@ fn collect_expected_pattern_samples(case_obj: &Map<String, Value>) -> Vec<Patter
         .collect()
 }
 
+fn collect_expected_current_samples(case_obj: &Map<String, Value>) -> Vec<CurrentSample> {
+    let Some(samples) = case_obj.get("current_samples").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    samples
+        .iter()
+        .filter_map(|sample| {
+            let sample = sample.as_object()?;
+            Some(CurrentSample {
+                segment_id: sample.get("segment_id")?.as_u64()? as usize,
+                wire_id: sample.get("wire_id")?.as_u64()? as usize,
+                amplitude_db: sample.get("amplitude_db")?.as_f64()?,
+                phase_deg: sample.get("phase_deg")?.as_f64()?,
+            })
+        })
+        .collect()
+}
+
 fn collect_external_pattern_samples(ext: &Map<String, Value>) -> Vec<PatternSample> {
     let Some(samples) = ext.get("pattern_samples").and_then(Value::as_array) else {
         return Vec::new();
@@ -826,6 +910,49 @@ fn parse_pattern_rows(stdout: &str) -> Vec<PatternSample> {
             gain_h_db,
             axial_ratio,
         });
+    }
+
+    rows
+}
+
+fn parse_current_rows(stdout: &str) -> Vec<(usize, usize, f64, f64)> {
+    let mut rows = Vec::new();
+    let mut in_current = false;
+
+    for line in stdout.lines() {
+        // Detect start of current distribution section (tag/segment/current data)
+        if line.contains("SEG") && line.contains("I_MAG") {
+            in_current = true;
+            continue;
+        }
+        if !in_current {
+            continue;
+        }
+        if line.is_empty() || line.starts_with("---") {
+            break;
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // Format: TAG SEG I_MAG I_PHASE ...
+        if parts.len() < 4 {
+            continue;
+        }
+
+        let Ok(tag) = parts[0].parse::<usize>() else {
+            continue;
+        };
+        let Ok(seg) = parts[1].parse::<usize>() else {
+            continue;
+        };
+        let Ok(magnitude_db) = parts[2].parse::<f64>() else {
+            continue;
+        };
+        let Ok(phase_deg) = parts[3].parse::<f64>() else {
+            continue;
+        };
+
+        // Note: tag maps to wire_id, seg maps to segment_id in our schema
+        rows.push((tag, seg, magnitude_db, phase_deg));
     }
 
     rows

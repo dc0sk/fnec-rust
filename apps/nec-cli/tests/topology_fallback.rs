@@ -22,6 +22,7 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for {solver} topology fallback test: {e}"));
@@ -51,6 +52,7 @@ fn run_solver_on_reference_dipole(solver: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for solver '{solver}': {e}"))
@@ -68,6 +70,7 @@ fn run_solver_on_reference_dipole_with_pulse_rhs(
         .arg(solver)
         .arg("--pulse-rhs")
         .arg(pulse_rhs)
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -84,6 +87,7 @@ fn run_solver_on_reference_dipole_with_exec(solver: &str, exec_mode: &str) -> st
         .arg(solver)
         .arg("--exec")
         .arg(exec_mode)
+        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -97,6 +101,7 @@ fn run_hallen_on_loaded_case(allow_noncollinear_hallen: bool) -> std::process::O
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.arg("--solver").arg("hallen");
+    cmd.env_remove("FNEC_ACCEL_STUB_GPU");
     if allow_noncollinear_hallen {
         cmd.arg("--allow-noncollinear-hallen");
     }
@@ -116,6 +121,133 @@ fn continuity_non_single_chain_falls_back_to_pulse() {
 #[test]
 fn sinusoidal_non_single_chain_falls_back_to_pulse() {
     assert_non_single_chain_fallback("sinusoidal", "sinusoidal->pulse");
+}
+
+#[test]
+fn sinusoidal_a4_multiwire_nonchain_topology_falls_back_to_pulse() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-sinusoidal-a1-multiwire-fallback-{now}.nec"));
+
+    // Two wires, both >=2 segments, so per-wire basis is feasible.
+    // A4 still rejects disconnected non-chain multi-wire topologies.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 11 0.5 0.0 -1.0 0.5 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A1 fallback deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal A1 multi-wire fallback test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse"
+        ),
+        "expected sinusoidal A4 topology warning in stderr, got:\n{stderr}"
+    );
+    assert_diag_mode(&stderr, "sinusoidal->pulse(topology)");
+}
+
+#[test]
+fn sinusoidal_a4_collinear_chain_topology_is_not_rejected_by_topology_gate() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-collinear-chain-{now}.nec"));
+
+    // Two collinear wires that touch end-to-start at z=0.0.
+    // This should pass the A4 topology gate.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 0.0 0.0 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A4 chain deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal A4 collinear-chain test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
+        "did not expect A4 topology-gate fallback warning for collinear chain, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("mode=sinusoidal->pulse(topology)"),
+        "did not expect topology fallback diag mode for collinear chain, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn sinusoidal_a4_collinear_chain_with_mixed_wire_orientation_is_supported() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-mixed-orientation-{now}.nec"));
+
+    // Two collinear wires touching at z=0.0 with opposite declaration direction.
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 1.0 0.0 0.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary sinusoidal A4 mixed-orientation deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("sinusoidal")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run fnec for sinusoidal A4 mixed-orientation test: {e}")
+        });
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
+        "did not expect A4 topology-gate fallback warning for mixed orientation chain, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("mode=sinusoidal->pulse(topology)"),
+        "did not expect topology fallback diag mode for mixed orientation chain, got:\n{stderr}"
+    );
 }
 
 #[test]
@@ -263,6 +395,8 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     let hallen_stderr = String::from_utf8_lossy(&hallen.stderr);
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&hallen_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&hallen_stderr, "sin_rel_res");
 
     let pulse = run_solver_on_reference_dipole("pulse");
     assert!(
@@ -273,6 +407,20 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
     let pulse_stderr = String::from_utf8_lossy(&pulse.stderr);
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "abs_res");
     assert_diag_field_is_finite_nonnegative(&pulse_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&pulse_stderr, "sin_rel_res");
+
+    let sinusoidal = run_solver_on_reference_dipole("sinusoidal");
+    assert!(
+        sinusoidal.status.success(),
+        "fnec failed for sinusoidal: {}",
+        String::from_utf8_lossy(&sinusoidal.stderr)
+    );
+    let sinusoidal_stderr = String::from_utf8_lossy(&sinusoidal.stderr);
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "abs_res");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "rel_res");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "diag_spread");
+    assert_diag_field_is_finite_nonnegative(&sinusoidal_stderr, "sin_rel_res");
 }
 
 #[test]

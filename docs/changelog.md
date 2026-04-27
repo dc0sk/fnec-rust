@@ -16,10 +16,42 @@ All notable documentation process changes are recorded here.
 - RP card execution is now wired into the CLI report path.
 - Text reports now include a `RADIATION_PATTERN` section when one or more `RP` cards are present.
 - Added corpus regression deck `corpus/dipole-freesp-rp-51seg.nec` and contract coverage for pattern-table rendering.
+- Added `docs/benchmarks.md` with a validated three-host baseline comparison (local workstation, T480, Raspberry Pi 5).
 - Added a collaboration efficiency guide with rate-limit-aware prompting patterns at `docs/copilot-efficiency-guide.md`.
+- Added `docs/par011-dropin-evidence-memo.md` as a dedicated evidence scaffold for deferred 4nec2 drop-in compatibility work.
+- **GPU kernel stubs** (Phase A expansion): Extended `nec_accel::gpu_kernels` module with additional kernel scaffolds:
+  - `HallenRhsGpuKernel` for Hallén RHS vector computation with excitation handling
+  - `PocklingtonMatrixGpuKernel` for matrix assembly with segment-pair element distribution
+  - `KernelTiming` struct for capturing prep/exec/retrieval timing data (microsecond resolution)
+  - 4 new unit tests for kernel construction and sizing (12 total nec_accel lib tests)
+  - GPU-compatible data structures prepared for future CUDA/OpenCL replacement
+- **CLI GPU FR integration** (Phase B): Added `--gpu-fr` command-line flag to dispatch radiation pattern computation to GPU kernel stub:
+  - Far-field points routed through `HallenFrGpuKernel` when flag is enabled
+  - Maintains full output parity with CPU far-field path
+  - Integration tested with 6 GPU stub tests + existing exec_modes contract tests
+- **Performance benchmarking** (Phase D): Added optional timing instrumentation for GPU kernel operations:
+  - `--bench` CLI flag to enable benchmarking mode
+  - `--bench-format <human|csv|json>` to emit machine-readable benchmark records while preserving the standard human-readable report output
+  - `FNEC_GPU_BENCH` environment variable control (set to "1" to enable timing collection)
+  - `compute_hallen_fr_point_with_timing()` API returns `(result, KernelTiming)` tuples
+  - Timing breakdown: prep (coordinate transform), exec (far-field summation), retrieval (stub: zero)
+  - Ready for future GPU timing collection once real CUDA/OpenCL kernels are wired
+- Corpus validation framework already supports pattern and current-gate scenarios (Phase C); enhancements documented for future use.
 
 ### Changed
 
+- Native CLI startup now auto-selects execution mode when `--exec` is omitted by running a quick execution probe (CPU threads, frequency-point count, and accelerator dispatch availability) and choosing among `cpu`/`hybrid`/`gpu` heuristically for the current workload shape.
+- Consolidated benchmark documentation into a single canonical file (`docs/benchmarks.md`) and removed the duplicate `docs/benchmark.md` shim.
+- Benchmark docs now explicitly map reported numbers to four execution modes: CPU single-thread, CPU multithread, GPU, and hybrid (CPU multithread + GPU), with a dedicated local four-mode coverage result block.
+- Sinusoidal topology gating advanced through A4: the solver now accepts collinear wire-chain geometries (including multi-wire chains) with orientation/order-agnostic endpoint connectivity checks, and still falls back for disconnected/branched/unsupported topologies.
+- Added a gitignored benchmark host env pattern (`.benchmark-hosts.env` with tracked `.benchmark-hosts.env.example`) and updated `scripts/pi-remote-benchmark.sh` to accept env defaults (`FNEC_BENCH_TARGET`, `FNEC_REMOTE_REPO_SUBDIR`).
+- Remote benchmark tooling now supports execution-mode sweeps (`FNEC_BENCH_EXECS`) and records `diag_spread` plus `sin_rel_res` in benchmark CSV output and comparison reports.
+- Added `scripts/pi-benchmark-summary.sh` to summarize a single benchmark CSV without pandas or ad hoc shell commands.
+- Added `sin_rel_res` to CLI diagnostics: the sinusoidal basis relative residual captured before any fallback decision, enabling solver-quality trending across runs (0.0 for non-sinusoidal modes).
+- Added `diag_spread` to CLI diagnostics as a conditioning proxy (ratio of max/min diagonal magnitudes of the solved system matrix), enabling quick stability checks in automation.
+- Added sinusoidal A2 regression checks that compare sinusoidal-mode impedance output against Hallen on `dipole-freesp-51seg` and `frequency-sweep-dipole` corpus decks.
+- Sinusoidal solver routing is now topology-gated for A1: it runs only on single-wire collinear decks and otherwise falls back explicitly to pulse with `sinusoidal->pulse(topology)` diagnostics.
+- Completed PAR-008 coverage-matrix scope: NEC-5 validation scenario classes are now explicitly mapped to current corpus-backed in-scope equivalents, with out-of-scope classes and rationale documented for phased deferral.
 - Updated support and CLI docs to mark RP pattern output as implemented in the text-report path (with remaining export/near-field scope still deferred).
 - Corpus validation now numerically checks stored RP pattern samples instead of only asserting pattern-table presence.
 - Corpus validation now also checks the stored vertical/horizontal gain columns and axial ratio for locked RP sample angles.
@@ -43,6 +75,8 @@ All notable documentation process changes are recorded here.
 - Added GNU NEC (`https://sourceforge.net/projects/gnu-nec/`) as an additional open-source reference candidate in architecture and PAR-011 source notes.
 - Refined filename-steered 4nec2 compatibility warnings to explicitly report whether execution was auto-steered or an explicit `--exec` value was preserved.
 - Extended drop-in compatibility contract tests to cover both `nec2dxs*` and `4nec2*` alias-name detection paths.
+- Populated `docs/par011-dropin-evidence-memo.md` with concrete NEC2MP artifact evidence (inventory, readme findings, SHA256 fingerprints) and a phased docs-only PAR-011 implementation plan with `AT-PAR011-*` acceptance tests.
+- Explicitly postponed PAR-011 compatibility harness-skeleton work in current scope (option 3 deferred).
 
 ## 0.2.0 — 2026-05-01
 
