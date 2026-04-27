@@ -93,7 +93,23 @@ Interpretation guidance:
 - `diag_spread_ratio`: conditioning drift indicator
 - `sin_rel_res_ratio`: sinusoidal pre-fallback quality trend
 
-### E. Recommended operating pattern
+### E. Summarize a single benchmark CSV
+
+Use the local summary helper instead of ad hoc shell one-liners:
+
+```bash
+scripts/pi-benchmark-summary.sh tmp/t480-baseline-<timestamp>.csv
+```
+
+It prints:
+
+- average runtime by deck + solver + exec mode
+- diag mode counts
+- any sinusoidal fallback rows
+- `sin_rel_res` min/max by deck + exec mode
+- `diag_spread` min/max by deck + solver
+
+### F. Recommended operating pattern
 
 1. Capture one baseline CSV on the current branch tip.
 2. After each solver/tooling change, run the same sweep and compare.
