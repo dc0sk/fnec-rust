@@ -1,10 +1,103 @@
 ---
 title: T480 Validation Host Setup
 status: draft
-last-updated: 2026-04-26
+last-updated: 2026-04-27
 ---
 
 # T480 CUDA & Intel GPU Validation Host
+
+## Quick Runbook For Your Setup (Ubuntu 26.04 + NVIDIA Proprietary Driver)
+
+This is the fastest path to get actionable benchmark data from your T480 over SSH.
+
+### A. One-time host prep on the T480
+
+```bash
+sudo apt update
+sudo apt install -y openssh-server rsync git curl build-essential pkg-config libssl-dev clinfo
+sudo apt install -y intel-opencl-icd ocl-icd-opencl-dev
+sudo systemctl enable --now ssh
+```
+
+Confirm drivers/runtimes:
+
+```bash
+nvidia-smi
+clinfo | sed -n '1,60p'
+```
+
+Install Rust toolchain (if not already installed):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+rustc -V
+cargo -V
+```
+
+### B. One-time SSH convenience on your workstation
+
+Add this to your local SSH config:
+
+```sshconfig
+Host t480
+	HostName <t480-ip>
+	User <your-user>
+	IdentityFile ~/.ssh/id_ed25519
+	ServerAliveInterval 30
+```
+
+Verify access:
+
+```bash
+ssh t480 'uname -a && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader'
+```
+
+### C. Run benchmark sweep (CPU + hybrid + GPU)
+
+From the repository root on your workstation:
+
+```bash
+cd /home/dc0sk/git/fnec-rust
+
+FNEC_BENCH_RUNS=5 \
+FNEC_BENCH_EXECS="cpu hybrid gpu" \
+FNEC_BENCH_SOLVERS="hallen pulse sinusoidal" \
+FNEC_BENCH_DECKS="corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec corpus/yagi-5elm-51seg.nec" \
+FNEC_BENCH_OUT="tmp/t480-baseline-$(date -u +%Y%m%dT%H%M%SZ).csv" \
+scripts/pi-remote-benchmark.sh t480 git/fnec-rust
+```
+
+Output CSV now includes:
+
+- `exec_mode`
+- `diag_spread`
+- `sin_rel_res`
+
+This lets you trend solver quality and conditioning alongside timing.
+
+### D. Compare two runs (for regressions)
+
+```bash
+scripts/pi-benchmark-compare.sh \
+	--max-delta-pct 15 \
+	--fail-on-mode-drift \
+	tmp/t480-baseline-<timestamp>.csv \
+	tmp/t480-candidate-<timestamp>.csv
+```
+
+Interpretation guidance:
+
+- `delta_pct`: runtime regression/improvement by deck + solver + exec mode
+- `mode` drift: unexpected fallback/routing changes
+- `diag_spread_ratio`: conditioning drift indicator
+- `sin_rel_res_ratio`: sinusoidal pre-fallback quality trend
+
+### E. Recommended operating pattern
+
+1. Capture one baseline CSV on the current branch tip.
+2. After each solver/tooling change, run the same sweep and compare.
+3. Treat mode drift or large `sin_rel_res` increase as a quality signal even when timing improves.
 
 ## Hardware Assessment
 
