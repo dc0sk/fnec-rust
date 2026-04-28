@@ -27,6 +27,7 @@ Define near-continuous execution rules for autonomous development with minimal i
   - fix/topic
   - docs/topic
 - Lifecycle rule: create a new topic branch immediately after each merge
+- Continuation default: while on a feature branch, continue autonomous implementation, validation, PR, and merge-eligible iteration without waiting for additional prompts unless a hard stop condition is hit
 
 ## Allowed Autonomous Actions
 
