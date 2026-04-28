@@ -109,15 +109,15 @@ For each corpus case:
    ```bash
   xnec2c --batch -j0 -i corpus/dipole-freesp-51seg.nec --write-csv .tmp-work/dipole-freesp.csv
    ```
-  If xnec2c hangs in headless Linux (known with some 4.4.x builds), run 4nec2 under Wine/VM and export equivalent impedance/report data.
+  If xnec2c hangs in headless Linux (known with some 4.4.x builds), run 4nec2 or EZNEC under Wine/VM and export equivalent impedance/report data.
 3. Extract key results (impedance, gain, pattern samples, currents)
 4. Record in `corpus/reference-results.json` (manual edit or helper script):
    ```bash
    scripts/import-reference-impedance.py \
      --case dipole-ground-51seg \
      --real 63.12 --imag -18.45 \
-     --source "4nec2 (Wine 9.x)" \
-     --status "Reference captured via 4nec2/Wine"
+    --source "4nec2 or EZNEC (Wine 9.x)" \
+    --status "Reference captured via Windows NEC engine under Wine"
    ```
 
    For full runs, use batch import:
@@ -212,9 +212,9 @@ The following external tools are required for the reference-capture and validati
 |:-----|:--------:|:--------|
 | `gh` (GitHub CLI) | Yes | PR/issue automation, milestone/label management, and workflow integration from terminal runs |
 | `jq` | Yes | JSON inspection and extraction in terminal workflows (corpus status, reference field queries) |
-| `wine` | Conditional | Run Windows NEC engines (4nec2/NEC2 binaries) when native xnec2c batch execution is unstable |
+| `wine` | Conditional | Run Windows NEC engines (4nec2/EZNEC/NEC2 binaries) when native xnec2c batch execution is unstable |
 | `xnec2c` | Preferred | Primary external NEC2 reference engine for golden-reference capture |
-| 4nec2 + NEC2 executable (`nec2dxs500.exe`/equivalent) | Fallback | External reference capture path when xnec2c is unavailable or unstable on host |
+| 4nec2 or EZNEC + NEC2 executable (`nec2dxs500.exe`/equivalent) | Fallback | External reference capture path when xnec2c is unavailable or unstable on host |
 | `pdftotext` | Conditional | Extract text from NEC-5 Validation Manual for planning and traceability work |
 
 Notes:
@@ -228,7 +228,7 @@ To add a new corpus case:
 1. Write the NEC deck: `corpus/my-case.nec`
 2. Update `corpus/README.md` with case description
 3. Add stub to `corpus/reference-results.json` with `null` values and status "Deck created; reference TBD"
-4. Run reference capture (manual): `xnec2c --batch -j0 -i corpus/my-case.nec --write-csv ...` (or 4nec2 export when xnec2c is unstable)
+4. Run reference capture (manual): `xnec2c --batch -j0 -i corpus/my-case.nec --write-csv ...` (or 4nec2/EZNEC export when xnec2c is unstable)
 5. Update `corpus/reference-results.json` with real values
 6. Ensure the new case is represented in `corpus/reference-results.json` (the harness is table-driven and reads from the JSON table)
 7. Update status in `corpus/README.md`: "Reference captured"
