@@ -727,7 +727,9 @@ EN
         assert!(result.warnings.is_empty());
         assert!(matches!(
             result.deck.cards.first(),
-            Some(Card::Pt(pt)) if !pt.raw_fields.is_empty()
+            Some(Card::Pt(pt))
+                if pt.raw_fields
+                    == vec!["0", "1", "26", "0", "50.0", "0.1", "1.0"]
         ));
     }
 
@@ -738,7 +740,9 @@ EN
         assert!(result.warnings.is_empty());
         assert!(matches!(
             result.deck.cards.first(),
-            Some(Card::Nt(nt)) if !nt.raw_fields.is_empty()
+            Some(Card::Nt(nt))
+                if nt.raw_fields
+                    == vec!["1", "1", "26", "1", "1", "26", "50.0", "0.0"]
         ));
     }
 }
