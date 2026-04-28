@@ -728,6 +728,22 @@ fn warn_ex_type1_portability_semantics(deck: &nec_model::deck::NecDeck) {
     }
 }
 
+fn warn_ex_type2_portability_semantics(deck: &nec_model::deck::NecDeck) {
+    let has_ex_type2 = deck.cards.iter().any(|c| {
+        if let Card::Ex(ex) = c {
+            ex.excitation_type == 2
+        } else {
+            false
+        }
+    });
+
+    if has_ex_type2 {
+        eprintln!(
+            "warning: EX type 2 is currently treated like EX type 0; incident-plane-wave semantics are pending"
+        );
+    }
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1217,6 +1233,7 @@ fn main() -> ExitCode {
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
     warn_ex_type1_portability_semantics(deck);
+    warn_ex_type2_portability_semantics(deck);
     warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
 
     let freqs_hz = frequencies_from_fr(deck);
