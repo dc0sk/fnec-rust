@@ -215,6 +215,7 @@ EN
 | EX type 2 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that incident-plane-wave semantics are pending |
 | EX type 3 | Partial | Accepted; default `legacy` mode treats it like EX type 0 (with non-default I4 warning). Optional `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
 | EX type 4 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that segment-current semantics are pending |
+| EX type 5 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that qdsrc semantics are pending |
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern calculation and report table rendering |
 | LD type 0, 1, 2, 3, 4, 5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads |

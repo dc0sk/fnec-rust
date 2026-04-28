@@ -266,6 +266,48 @@ fn ex_type4_matches_ex_type0_feedpoint_impedance() {
 }
 
 #[test]
+fn ex_type5_matches_ex_type0_feedpoint_impedance() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let ex0_path = std::env::temp_dir().join(format!("fnec-ex0-{now}.nec"));
+    let ex5_path = std::env::temp_dir().join(format!("fnec-ex5-{now}.nec"));
+
+    let ex0_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let ex5_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    fs::write(&ex0_path, ex0_deck).expect("failed to write EX type 0 deck");
+    fs::write(&ex5_path, ex5_deck).expect("failed to write EX type 5 deck");
+
+    let (ex0_out, ex0_err) = run_fnec(&ex0_path, &workspace_root);
+    let (ex5_out, ex5_err) = run_fnec(&ex5_path, &workspace_root);
+
+    let _ = fs::remove_file(&ex0_path);
+    let _ = fs::remove_file(&ex5_path);
+
+    assert!(
+        ex5_err.contains("EX type 5 is currently treated like EX type 0")
+            && !ex5_err.contains("not yet supported"),
+        "EX type 5 should be accepted with portability warning, got stderr:\n{ex5_err}"
+    );
+
+    let (ex0_r, ex0_x) = first_feedpoint_impedance(&ex0_out);
+    let (ex5_r, ex5_x) = first_feedpoint_impedance(&ex5_out);
+
+    let dr = (ex5_r - ex0_r).abs();
+    let dx = (ex5_x - ex0_x).abs();
+    assert!(
+        dr <= 1e-6 && dx <= 1e-6,
+        "expected EX type 5 to match EX type 0 impedance; dR={dr:.9}, dX={dx:.9}; ex0=({ex0_r:.9}, {ex0_x:.9}) ex5=({ex5_r:.9}, {ex5_x:.9}); ex0 stderr:\n{ex0_err}\nex5 stderr:\n{ex5_err}"
+    );
+}
+
+#[test]
 fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()

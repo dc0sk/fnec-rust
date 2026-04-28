@@ -408,6 +408,48 @@ fn ex_type4_runs_with_portability_warning_without_unsupported_error() {
 }
 
 #[test]
+fn ex_type5_runs_with_portability_warning_without_unsupported_error() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-ex-type5-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary deck with EX type 5");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type5 warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("EX type 5 is currently treated like EX type 0"),
+        "expected EX type 5 portability warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("not yet supported"),
+        "EX type 5 should no longer be rejected as unsupported, got stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn ex_type3_non_default_i4_emits_normalization_warning() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
