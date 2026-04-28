@@ -792,4 +792,51 @@ EN
             ]
         );
     }
+
+    #[test]
+    fn repeated_nt_and_pt_cards_preserve_order_and_raw_fields() {
+        let input = "NT 1 1 26 1 1 26 50.0 0.0\nNT 1 1 26 1 1 26 75.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nPT 0 1 26 0 75.0 0.2 1.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let nt_cards: Vec<_> = result
+            .deck
+            .cards
+            .iter()
+            .filter_map(|card| {
+                if let Card::Nt(nt) = card {
+                    Some(nt.raw_fields.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let pt_cards: Vec<_> = result
+            .deck
+            .cards
+            .iter()
+            .filter_map(|card| {
+                if let Card::Pt(pt) = card {
+                    Some(pt.raw_fields.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            nt_cards,
+            vec![
+                vec!["1", "1", "26", "1", "1", "26", "50.0", "0.0"],
+                vec!["1", "1", "26", "1", "1", "26", "75.0", "0.0"],
+            ]
+        );
+        assert_eq!(
+            pt_cards,
+            vec![
+                vec!["0", "1", "26", "0", "50.0", "0.1", "1.0"],
+                vec!["0", "1", "26", "0", "75.0", "0.2", "1.0"],
+            ]
+        );
+    }
 }
