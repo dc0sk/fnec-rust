@@ -100,6 +100,7 @@ last_updated: 2026-04-24
 	- 2026-04-28 progress: external validation path expanded: EZNEC via Wine is now available for future external impedance candidate capture alongside nec2c seeds.
 	- 2026-04-28 progress: updated `docs/corpus-validation-strategy.md` to document EZNEC-via-Wine as a fallback capture path in external-reference workflow guidance.
 	- 2026-04-28 progress: added parser regression `repeated_pt_and_nt_cards_preserve_order_and_raw_fields` in `crates/nec_parser/src/lib.rs` to lock repeated PT/NT token preservation order.
+	- 2026-04-28 progress: added parser regression `repeated_nt_and_pt_cards_preserve_order_and_raw_fields` in `crates/nec_parser/src/lib.rs` to lock repeated NT/PT token preservation order.
 	- 2026-04-28 progress: added CLI warning-contract regression `nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds` to lock PT/NT deferred-warning behavior independent of card order.
 	- 2026-04-28 progress: added corpus regression case `dipole-nt-pt-freesp-51seg` to lock NT-then-PT card-order portability and warning contract in corpus validation CI.
 	- 2026-04-28 progress: added CLI warning-contract regression `repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family` and corpus case `dipole-nt-pt-repeated-freesp-51seg` to lock deduplicated deferred warnings for repeated reversed-order NT/PT cards.
