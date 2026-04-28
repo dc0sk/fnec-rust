@@ -39,11 +39,43 @@ Without additional approval, the agent may:
 - Open PRs
 - Merge PRs when checks pass and policy allows
 
+## Autonomous PR Merge Authority
+
+- Delegated authority: the agent may merge eligible PRs without additional confirmation
+- Eligibility requirements:
+  - all required branch-protection checks are successful
+  - no required check is pending, canceled, or failing
+  - no merge conflicts
+  - no blocking labels such as wip, do-not-merge, or hold
+  - PR scope matches the active workstream target
+- Branch protection compatibility:
+  - autonomous merge is allowed only when repository review policy permits it
+  - if review policy blocks merge, stop and report the policy blocker
+
+## Automation Identity Requirements
+
+- pull requests: write
+- repository contents: write
+- checks and status: read
+- branch deletion after merge: allowed
+
 ## Merge Policy
 
 - Default merge method: normal merge commit
-- Auto-merge: allowed when checks pass
+- Auto-merge: allowed when checks pass and eligibility requirements are met
 - Squash: allowed only when there are many small low-risk commits
+- Delete source branch after merge
+- Immediately create next topic branch and continue with the next smallest safe increment
+
+## Check Polling And Timeout
+
+- Poll required checks until completion
+- Treat pending checks as non-fatal while waiting
+- Timeout window: 60 minutes per PR
+- On timeout, stop merge attempts and report:
+  - PR number
+  - still-pending checks
+  - last known check snapshot
 
 ## Mandatory Quality Gates
 
@@ -65,6 +97,15 @@ Without additional approval, the agent may:
 ### Flaky Failures
 
 - Stop and ask for user decision
+
+## Hard Stop Conditions
+
+- Any required check fails
+- Merge conflict appears
+- Permission or policy denial prevents merge
+- Unexpected repository state makes continuation unsafe
+
+When a hard stop is hit, do not force merge; publish blocker report and wait.
 
 ## Mandatory Interrupt Boundaries
 
@@ -89,6 +130,23 @@ The agent must interrupt and ask before proceeding when a change would cause any
 - checks status
 - done in this cycle
 - next exact action
+
+## Merge Audit Trail Fields
+
+For each autonomous merge cycle, include:
+
+- branch name
+- commit sha
+- PR link or number
+- checks summary at merge time
+- next branch name after merge
+
+## Safety Constraints
+
+- Never revert unrelated local changes
+- Never use destructive history rewrite commands unless explicitly requested
+- Keep each increment small and scoped
+- If scope is ambiguous, pause and ask for clarification
 
 ## Definition Of Done Per Task Type
 
