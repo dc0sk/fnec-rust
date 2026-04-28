@@ -760,6 +760,22 @@ fn warn_ex_type4_portability_semantics(deck: &nec_model::deck::NecDeck) {
     }
 }
 
+fn warn_ex_type5_portability_semantics(deck: &nec_model::deck::NecDeck) {
+    let has_ex_type5 = deck.cards.iter().any(|c| {
+        if let Card::Ex(ex) = c {
+            ex.excitation_type == 5
+        } else {
+            false
+        }
+    });
+
+    if has_ex_type5 {
+        eprintln!(
+            "warning: EX type 5 is currently treated like EX type 0; qdsrc semantics are pending"
+        );
+    }
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1251,6 +1267,7 @@ fn main() -> ExitCode {
     warn_ex_type1_portability_semantics(deck);
     warn_ex_type2_portability_semantics(deck);
     warn_ex_type4_portability_semantics(deck);
+    warn_ex_type5_portability_semantics(deck);
     warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
 
     let freqs_hz = frequencies_from_fr(deck);

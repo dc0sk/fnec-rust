@@ -127,6 +127,25 @@ Regression coverage exists at three layers:
 
 When true EX type 4 semantics are implemented, update all three layers together.
 
+### EX type 5 staged portability handling — REGRESSION-COVERED
+
+As of 2026-04-28, EX type 5 is accepted on the same solver path currently used for
+EX type 0 so portable decks no longer fail fast on this source family.
+
+Current behavior is explicit and test-locked: EX type 5 is accepted, emits a CLI
+warning that qdsrc semantics are still pending, and presently
+produces the same excitation vector and Hallen feed behavior as EX type 0.
+
+This is intentionally a compatibility bridge, not a physical implementation of
+NEC qdsrc excitation semantics.
+
+Regression coverage exists at three layers:
+- solver unit tests in `crates/nec_solver/src/excitation.rs`
+- CLI warning/parity tests in `apps/nec-cli/tests/parser_warnings.rs` and `apps/nec-cli/tests/ex_cards.rs`
+- corpus portability coverage via `dipole-ex5-freesp-51seg`
+
+When true EX type 5 semantics are implemented, update all three layers together.
+
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 
 For `corpus/dipole-ground-51seg.nec` (14.2 MHz, 10 m AGL), current CI-regression value is:

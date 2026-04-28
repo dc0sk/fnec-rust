@@ -12,6 +12,7 @@
 //! - type 2: staged portability fallback (currently treated as type 0)
 //! - type 3: normalized voltage source (currently treated as type 0)
 //! - type 4: staged portability fallback (currently treated as type 0)
+//! - type 5: staged portability fallback (currently treated as type 0)
 
 use num_complex::Complex64;
 use std::collections::BTreeMap;
@@ -214,6 +215,7 @@ pub fn build_hallen_rhs_with_runtime_options(
             && ex.excitation_type != 2
             && ex.excitation_type != 3
             && ex.excitation_type != 4
+            && ex.excitation_type != 5
         {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
@@ -395,6 +397,7 @@ fn apply_ex(
         && ex.excitation_type != 2
         && ex.excitation_type != 3
         && ex.excitation_type != 4
+        && ex.excitation_type != 5
     {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
@@ -520,7 +523,7 @@ mod tests {
             radius: 0.001,
         }));
         deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 5, // not supported
+            excitation_type: 6, // not supported
             tag: 1,
             segment: 2,
             i4: 0,
@@ -531,7 +534,7 @@ mod tests {
         assert!(matches!(
             build_excitation(&deck, &segs),
             Err(ExcitationError::UnsupportedType {
-                ex_type: 5,
+                ex_type: 6,
                 tag: 1,
                 segment: 2,
                 i4: 0,
@@ -785,6 +788,81 @@ mod tests {
             assert!(
                 (*a - *b).norm() < 1e-12,
                 "segment {i} mismatch: ex0={a}, ex4={b}"
+            );
+        }
+    }
+
+    #[test]
+    fn ex_type5_is_currently_accepted_like_type0() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 5,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.9,
+            voltage_imag: -0.2,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let v = build_excitation(&deck, &segs).expect("EX type 5 should be accepted");
+        let expected = Complex64::new(0.9, -0.2) / segs[1].length;
+        assert!((v[1] - expected).norm() < 1e-12);
+    }
+
+    #[test]
+    fn ex_type5_matches_ex_type0_vector() {
+        let mut deck_ex0 = NecDeck::new();
+        deck_ex0.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex0.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let mut deck_ex5 = NecDeck::new();
+        deck_ex5.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex5.cards.push(Card::Ex(ExCard {
+            excitation_type: 5,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
+        let segs_ex5 = build_geometry(&deck_ex5).unwrap();
+        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
+        let v_ex5 = build_excitation(&deck_ex5, &segs_ex5).expect("EX type 5 should be accepted");
+
+        assert_eq!(v_ex0.len(), v_ex5.len());
+        for (i, (a, b)) in v_ex0.iter().zip(v_ex5.iter()).enumerate() {
+            assert!(
+                (*a - *b).norm() < 1e-12,
+                "segment {i} mismatch: ex0={a}, ex5={b}"
             );
         }
     }
