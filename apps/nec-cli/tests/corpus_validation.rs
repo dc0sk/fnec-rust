@@ -811,6 +811,109 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
     }
 }
 
+#[test]
+fn par002_ground_checklist_cases_are_present_and_contracted() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    // PAR-002 ground checklist:
+    //   (case_name, expect_regression_gate, expect_warning_contract)
+    //   expect_regression_gate: feedpoint_impedance.real_ohm must be non-null
+    //   expect_warning_contract: expected_warning_substrings must be present and non-empty
+    let required_cases: &[(&str, bool, bool)] = &[
+        // GN=1 PEC image method: implemented; must have regression AND external
+        // reference gates; no warning expected.
+        ("dipole-ground-51seg", true, false),
+        // GN=2 Sommerfeld/Norton finite-conductivity: deferred; must have
+        // warning contract documenting fallback behavior.
+        ("dipole-gn2-deferred", true, true),
+    ];
+
+    for (case_name, expect_regression_gate, expect_warning_contract) in required_cases {
+        let case_obj = cases
+            .get(*case_name)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("PAR-002 checklist case '{}' missing", case_name));
+
+        let deck_file = case_obj
+            .get("deck_file")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("PAR-002 case '{}' missing 'deck_file'", case_name));
+        let deck_path = corpus_root.join(deck_file);
+        assert!(
+            deck_path.exists(),
+            "PAR-002 checklist deck missing for case '{}': {}",
+            case_name,
+            deck_path.display()
+        );
+
+        if *expect_regression_gate {
+            let feed = case_obj
+                .get("feedpoint_impedance")
+                .and_then(Value::as_object)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PAR-002 checklist case '{}' missing 'feedpoint_impedance' object",
+                        case_name
+                    )
+                });
+            let real = feed.get("real_ohm").and_then(Value::as_f64);
+            let imag = feed.get("imag_ohm").and_then(Value::as_f64);
+            assert!(
+                real.is_some() && imag.is_some(),
+                "PAR-002 checklist case '{}' must have numeric real_ohm and imag_ohm",
+                case_name
+            );
+
+            let gates = case_obj
+                .get("tolerance_gates")
+                .and_then(Value::as_object)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PAR-002 checklist case '{}' missing 'tolerance_gates' object",
+                        case_name
+                    )
+                });
+            assert!(
+                gates
+                    .get("R_absolute_ohm")
+                    .and_then(Value::as_f64)
+                    .is_some(),
+                "PAR-002 checklist case '{}' missing 'R_absolute_ohm' gate",
+                case_name
+            );
+        }
+
+        if *expect_warning_contract {
+            let expected_warning_substrings = case_obj
+                .get("expected_warning_substrings")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PAR-002 checklist case '{}' missing 'expected_warning_substrings'",
+                        case_name
+                    )
+                });
+            assert!(
+                !expected_warning_substrings.is_empty(),
+                "PAR-002 checklist case '{}' has empty warning contract",
+                case_name
+            );
+        }
+    }
+}
+
 fn collect_expected_sources(
     case_obj: &Map<String, Value>,
     feed: &Map<String, Value>,

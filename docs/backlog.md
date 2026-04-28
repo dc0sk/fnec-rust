@@ -58,6 +58,9 @@ last_updated: 2026-04-28
 	Resolution criteria: NEC-4-class ground scope document published; Sommerfeld validation corpus added; tolerance pass documented for supported near-ground cases.
 	- 2026-04-28 progress: started PAR-002 docs-first discovery slice by adding a scoped finite-ground plan to `docs/nec4-support.md` (scope/non-goals/completion evidence).
 	- 2026-04-28 progress: added PAR-002 finite-ground validation workflow and closure checklist to `docs/corpus-validation-strategy.md` to define capture/gating expectations before solver expansion.
+	- 2026-04-28 progress: added GN type 2 (Sommerfeld/Norton) deferred-ground corpus fixture `corpus/dipole-gn2-deferred.nec` with warning contract and free-space fallback regression gate in `corpus/reference-results.json`.
+	- 2026-04-28 progress: added GN type 2 and GN type 3 warning-contract regression tests to `apps/nec-cli/tests/ground_diagnostics.rs`, extending deferred-ground test coverage beyond the existing GN type 0 test.
+	- 2026-04-28 progress: added `par002_ground_checklist_cases_are_present_and_contracted` gate test to `apps/nec-cli/tests/corpus_validation.rs` to lock both the PEC and deferred-ground corpus fixtures in CI.
 
 - [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
