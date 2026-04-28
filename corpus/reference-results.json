@@ -950,6 +950,32 @@
       },
       "status": "PAR-002 deferred-ground fixture. GN 2 (Sommerfeld/Norton) is not implemented; runtime warns and falls back to free-space. Impedance gated on known free-space reference. Once Sommerfeld is implemented, reference values and gates will be updated."
     },
+    "dipole-gn-1-null": {
+      "deck_file": "dipole-gn-1-null.nec",
+      "description": "Half-wave dipole, GN -1 (null ground — cancels previous GN per NEC spec §3.3), 51 segments, 14.2 MHz. Must produce free-space results with NO deferred-ground warning.",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none (GN -1 null ground → free-space)",
+      "reference_source": "fnec Hallén solver free-space (regression; GN -1 treated as free-space per NEC spec)",
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
+        "GN type -1 is not yet supported"
+      ],
+      "expected_warning_counts": {},
+      "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted."
+    },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
       "description": "5-element Yagi (1 reflector + driven + 3 directors), 14.2 MHz, 0.2-lambda element spacing",

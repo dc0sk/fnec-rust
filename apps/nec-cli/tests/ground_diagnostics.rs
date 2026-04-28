@@ -272,3 +272,61 @@ fn gn_type2_warning_includes_parsed_medium_params() {
         "expected medium params in deferred warning, got:\n{stderr}"
     );
 }
+
+#[test]
+fn gn_negative1_null_ground_is_silent_free_space() {
+    // GN -1 cancels a previous GN statement (NEC spec §3.3); when it is the
+    // only GN card the solver must treat it as free-space WITHOUT emitting the
+    // deferred-ground warning.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn-neg1-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN -1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary GN -1 deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for GN -1 test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("warning: GN type -1 is not yet supported"),
+        "GN -1 should NOT emit a deferred-ground warning, got:\n{stderr}"
+    );
+
+    // GN -1 should produce free-space results matching the free-space dipole.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let z_re = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[6].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
+
+    assert!(
+        (z_re - 74.23).abs() < 0.1,
+        "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~74.23 (free-space)"
+    );
+}
