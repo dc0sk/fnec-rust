@@ -248,6 +248,17 @@ pub struct PtCard {
     pub raw_fields: Vec<String>,
 }
 
+/// NT — Network definition card.
+///
+/// NT semantics are not yet implemented in the solver path. Phase 2 currently
+/// preserves NT fields to improve deck portability and enable explicit runtime
+/// deferred-support warnings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NtCard {
+    /// Raw NT fields captured after the mnemonic.
+    pub raw_fields: Vec<String>,
+}
+
 /// EN — End-of-data card.  Signals the end of a NEC deck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnCard;
@@ -264,6 +275,7 @@ pub enum Card {
     Ld(LdCard),
     Tl(TlCard),
     Pt(PtCard),
+    Nt(NtCard),
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),

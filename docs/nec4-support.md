@@ -71,7 +71,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
 | SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
 | TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG=0` or `1`) contributes a 2-port impedance stamp to the matrix. Endpoint `segment=0` is mapped to the tag center segment with a warning; for even segment counts, the lower center segment is chosen deterministically. Unsupported TL variants emit runtime warnings and are ignored. |
-| NT | Network definition | DEFERRED | Multi-port networks, couplings. Phase 3. |
+| NT | Network definition | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores NT electrical semantics. |
 | CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
 | MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |
 
@@ -89,7 +89,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Voltage excitation (EX 0) | FULL | Complex voltage at any segment. Primary production mode. |
 | Current excitation (magnetic dipole) | DEFERRED | EX 1, EX 5 (qdsrc). Phase 2. |
 | Plane wave incidence | DEFERRED | EX 2. Scattering analysis. Phase 2. |
-| Multi-port sources | DEFERRED | PT (transmission line), NT (network). Phase 3. |
+| Multi-port sources | PARTIAL | PT and NT are parsed for staged portability with explicit deferred-support warnings; electrical semantics remain deferred. |
 
 ## Solver mode support
 

@@ -15,6 +15,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 	- **EX type 4**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while segment-current semantics remain pending
 	- **EX type 5**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while qdsrc semantics remain pending
 	- **PT**: staged portability parsing is supported; current runtime emits an explicit deferred-support warning and ignores PT electrical semantics
+	- **NT**: staged portability parsing is supported; current runtime emits an explicit deferred-support warning and ignores NT electrical semantics
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**

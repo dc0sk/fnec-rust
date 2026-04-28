@@ -221,6 +221,7 @@ EN
 | LD type 0, 1, 2, 3, 4, 5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads |
 | TL | Partial | Lossless subset only (`type=0`, `NSEG=0/1`, `segment=0` center mapping); other variants warn and are ignored |
 | PT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
+| NT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
 | EN | Full | Terminates parse |
 | Other | Warning | Unknown cards print a warning and are skipped |
 

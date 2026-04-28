@@ -160,6 +160,20 @@ Regression coverage exists at two layers:
 
 When PT runtime semantics are implemented, update both layers together.
 
+### NT staged portability parsing — REGRESSION-COVERED
+
+As of 2026-04-28, NT cards are parsed into the deck model so mainstream decks no
+longer fall back to generic unknown-card warnings when NT appears.
+
+Current behavior is explicit and test-locked: runtime emits a deferred-support
+warning and NT electrical semantics are intentionally ignored.
+
+Regression coverage exists at two layers:
+- CLI warning-contract test in `apps/nec-cli/tests/parser_warnings.rs`
+- corpus portability coverage via `dipole-nt-freesp-51seg`
+
+When NT runtime semantics are implemented, update both layers together.
+
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 
 For `corpus/dipole-ground-51seg.nec` (14.2 MHz, 10 m AGL), current CI-regression value is:
