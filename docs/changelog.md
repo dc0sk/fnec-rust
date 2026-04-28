@@ -17,6 +17,7 @@ All notable documentation process changes are recorded here.
 - EX type 2 is now accepted as a staged portability fallback: the CLI warns that incident-plane-wave semantics are still pending, and current runtime behavior treats EX type 2 like EX type 0 until a dedicated implementation lands.
 - EX type 4 is now accepted as a staged portability fallback: the CLI warns that segment-current semantics are still pending, and current runtime behavior treats EX type 4 like EX type 0 until a dedicated implementation lands.
 - EX type 5 is now accepted as a staged portability fallback: the CLI warns that qdsrc semantics are still pending, and current runtime behavior treats EX type 5 like EX type 0 until a dedicated implementation lands.
+- PT cards are now parsed for staged portability and emit an explicit deferred-support warning at runtime; PT electrical semantics are still pending and currently ignored.
 
 ### Added
 

@@ -776,6 +776,15 @@ fn warn_ex_type5_portability_semantics(deck: &nec_model::deck::NecDeck) {
     }
 }
 
+fn warn_pt_card_deferred_support(deck: &nec_model::deck::NecDeck) {
+    let has_pt = deck.cards.iter().any(|c| matches!(c, Card::Pt(_)));
+    if has_pt {
+        eprintln!(
+            "warning: PT card support is currently deferred; PT cards are parsed for portability but ignored at runtime"
+        );
+    }
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1268,6 +1277,7 @@ fn main() -> ExitCode {
     warn_ex_type2_portability_semantics(deck);
     warn_ex_type4_portability_semantics(deck);
     warn_ex_type5_portability_semantics(deck);
+    warn_pt_card_deferred_support(deck);
     warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
 
     let freqs_hz = frequencies_from_fr(deck);

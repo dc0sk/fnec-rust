@@ -9,13 +9,14 @@
 //! Extended support for:
 //! - `LD` — Lumped and distributed loads (types 0, 4, 5)
 //! - `TL` — Transmission-line connections (lossless and lossy models)
+//! - `PT` — Preserved for staged portability (runtime semantics deferred)
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
-    RpCard, TlCard,
+    PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -276,6 +277,15 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     length,
                     f3,
                 }));
+            }
+            "PT" => {
+                // PT cards are preserved for staged portability.
+                // Runtime semantics are currently deferred and handled by CLI warnings.
+                let fields = parse_fields(rest)
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                deck.cards.push(Card::Pt(PtCard { raw_fields: fields }));
             }
             "EN" => {
                 deck.cards.push(Card::En(EnCard));

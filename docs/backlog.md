@@ -89,6 +89,8 @@ last_updated: 2026-04-24
 	- 2026-04-28 progress: EX type 5 is now accepted in the parser/solver path as a staged portability fallback; current runtime behavior treats it like EX type 0 and emits an explicit warning that qdsrc semantics are pending.
 	- 2026-04-28 progress: added CLI warning-contract regression `ex_type5_runs_with_portability_warning_without_unsupported_error` and parity regression `ex_type5_matches_ex_type0_feedpoint_impedance` to lock current EX type 5 behavior.
 	- 2026-04-28 progress: added corpus regression case `dipole-ex5-freesp-51seg` with expected warning lock to keep EX type 5 deck portability covered in CI.
+	- 2026-04-28 progress: PT cards are now parsed for staged portability (instead of being treated as unknown cards), and runtime emits an explicit deferred-support warning while PT electrical semantics remain ignored.
+	- 2026-04-28 progress: added CLI warning-contract regression `pt_card_emits_deferred_warning_but_run_succeeds` and corpus regression case `dipole-pt-freesp-51seg` to lock PT staged portability behavior in CI.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `tl-two-dipoles-linked` with conservative thresholds (`ExternalR_absolute_ohm=5.0`, `ExternalX_absolute_ohm=20.0`) as external-impedance gate seed-2.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `multi-source` with conservative thresholds (`ExternalR_absolute_ohm=15.0`, `ExternalX_absolute_ohm=50.0`) as external-impedance gate seed-3.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `yagi-5elm-51seg` with conservative thresholds (`ExternalR_absolute_ohm=30.0`, `ExternalX_absolute_ohm=70.0`) as external-impedance gate seed-5.
