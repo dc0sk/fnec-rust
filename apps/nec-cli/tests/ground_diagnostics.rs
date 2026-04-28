@@ -166,8 +166,8 @@ fn gn_type2_deferred_emits_warning_and_falls_back_to_free_space() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-gn2-{now}.nec"));
 
-    // Average-ground parameters (EPSE=13, SIG=0.005 S/m); parser reads only
-    // the type field so the extra parameters are silently ignored.
+    // Average-ground parameters (EPSE=13, SIG=0.005 S/m); the parser now reads
+    // and stores these fields, and the CLI warning appends them.
     let deck =
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary GN-2 deck");
@@ -232,5 +232,43 @@ fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
         stderr
             .contains("warning: GN type 3 is not yet supported; treating this deck as free-space"),
         "expected deferred GN type 3 warning in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn gn_type2_warning_includes_parsed_medium_params() {
+    // When a GN card includes medium parameters (EPSE, SIG), the deferred
+    // warning must append them so the user sees what was parsed.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-params-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary GN-2 params deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for GN medium params test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[parsed: EPSE=13, SIG=0.005 S/m]"),
+        "expected medium params in deferred warning, got:\n{stderr}"
     );
 }

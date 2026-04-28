@@ -61,6 +61,10 @@ last_updated: 2026-04-28
 	- 2026-04-28 progress: added GN type 2 (Sommerfeld/Norton) deferred-ground corpus fixture `corpus/dipole-gn2-deferred.nec` with warning contract and free-space fallback regression gate in `corpus/reference-results.json`.
 	- 2026-04-28 progress: added GN type 2 and GN type 3 warning-contract regression tests to `apps/nec-cli/tests/ground_diagnostics.rs`, extending deferred-ground test coverage beyond the existing GN type 0 test.
 	- 2026-04-28 progress: added `par002_ground_checklist_cases_are_present_and_contracted` gate test to `apps/nec-cli/tests/corpus_validation.rs` to lock both the PEC and deferred-ground corpus fixtures in CI.
+	- 2026-04-28 progress: extended `nec_model::card::GnCard` with `eps_r: Option<f64>` and `sigma: Option<f64>` fields; updated parser to read EPSE/SIG medium-parameter fields from GN cards (e.g. `GN 2 0 0 0 13.0 0.005`).
+	- 2026-04-28 progress: updated `nec_solver::geometry::GroundModel::Deferred` to carry `eps_r` and `sigma` from the parsed GN card; updated `ground_model_from_deck()` to pass them through.
+	- 2026-04-28 progress: updated CLI `warn_deferred_ground_model()` to append parsed medium parameters to the deferred-ground warning (e.g. `[parsed: EPSE=13, SIG=0.005 S/m]`) when present.
+	- 2026-04-28 progress: added parser tests `gn_card_with_medium_params_parses_eps_r_and_sigma` and `gn_card_without_medium_params_uses_none`; added geometry test `ground_model_carries_medium_params_from_gn_card`; added CLI integration test `gn_type2_warning_includes_parsed_medium_params`.
 
 - [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
