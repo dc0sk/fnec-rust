@@ -164,7 +164,13 @@ pub fn build_hallen_rhs(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<HallenRhs, ExcitationError> {
-    build_hallen_rhs_with_options(deck, segs, freq_hz, false)
+    build_hallen_rhs_with_runtime_options(
+        deck,
+        segs,
+        freq_hz,
+        false,
+        Ex3NormalizationMode::LegacyTreatAsType0,
+    )
 }
 
 /// Build Hallén RHS data with optional non-collinear topology allowance.
@@ -178,6 +184,23 @@ pub fn build_hallen_rhs_with_options(
     segs: &[Segment],
     freq_hz: f64,
     allow_non_collinear: bool,
+) -> Result<HallenRhs, ExcitationError> {
+    build_hallen_rhs_with_runtime_options(
+        deck,
+        segs,
+        freq_hz,
+        allow_non_collinear,
+        Ex3NormalizationMode::LegacyTreatAsType0,
+    )
+}
+
+/// Build Hallén RHS data with runtime normalization options.
+pub fn build_hallen_rhs_with_runtime_options(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    allow_non_collinear: bool,
+    ex3_mode: Ex3NormalizationMode,
 ) -> Result<HallenRhs, ExcitationError> {
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
@@ -272,7 +295,7 @@ pub fn build_hallen_rhs_with_options(
             (
                 segs[seg_idx].midpoint,
                 segs[seg_idx].direction,
-                Complex64::new(ex.voltage_real, ex.voltage_imag),
+                ex_source_voltage(ex, ex3_mode),
             ),
         );
     }
@@ -340,6 +363,18 @@ pub fn build_hallen_rhs_with_options(
     })
 }
 
+fn ex_source_voltage(ex: &ExCard, ex3_mode: Ex3NormalizationMode) -> Complex64 {
+    let mut source_voltage = Complex64::new(ex.voltage_real, ex.voltage_imag);
+    if ex.excitation_type == 3
+        && matches!(ex3_mode, Ex3NormalizationMode::ProvisionalDivideByI4)
+        && ex.i4 > 0
+    {
+        // Experimental scaffold: treat I4 as a normalization divisor.
+        source_voltage /= ex.i4 as f64;
+    }
+    source_voltage
+}
+
 fn apply_ex(
     ex: &ExCard,
     segs: &[Segment],
@@ -368,14 +403,7 @@ fn apply_ex(
     // source of voltage V over a segment of length Δl impresses a tangential
     // field E = V / Δl at the midpoint of that segment.
     let delta_l = segs[idx].length;
-    let mut source_voltage = Complex64::new(ex.voltage_real, ex.voltage_imag);
-    if ex.excitation_type == 3
-        && matches!(ex3_mode, Ex3NormalizationMode::ProvisionalDivideByI4)
-        && ex.i4 > 0
-    {
-        // Experimental scaffold: treat I4 as a normalization divisor.
-        source_voltage /= ex.i4 as f64;
-    }
+    let source_voltage = ex_source_voltage(ex, ex3_mode);
     v[idx] += source_voltage / delta_l;
     Ok(())
 }
@@ -592,8 +620,9 @@ mod tests {
         }));
 
         let segs = build_geometry(&deck).unwrap();
-        let v_legacy = build_excitation_with_options(&deck, &segs, Ex3NormalizationMode::LegacyTreatAsType0)
-            .expect("legacy EX type 3 should be accepted");
+        let v_legacy =
+            build_excitation_with_options(&deck, &segs, Ex3NormalizationMode::LegacyTreatAsType0)
+                .expect("legacy EX type 3 should be accepted");
         let v_provisional = build_excitation_with_options(
             &deck,
             &segs,
@@ -606,6 +635,55 @@ mod tests {
             (v_provisional[1].norm() / v_legacy[1].norm() - expected_ratio).abs() < 1e-12,
             "expected provisional/legacy ratio {expected_ratio}, got {}",
             v_provisional[1].norm() / v_legacy[1].norm()
+        );
+    }
+
+    #[test]
+    fn hallen_rhs_runtime_mode_scales_type3_source_by_i4() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 3,
+            tag: 1,
+            segment: 2,
+            i4: 2,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let h_legacy = build_hallen_rhs_with_runtime_options(
+            &deck,
+            &segs,
+            TEST_FREQ_HZ,
+            false,
+            Ex3NormalizationMode::LegacyTreatAsType0,
+        )
+        .expect("legacy EX type 3 should be accepted in Hallen RHS");
+        let h_provisional = build_hallen_rhs_with_runtime_options(
+            &deck,
+            &segs,
+            TEST_FREQ_HZ,
+            false,
+            Ex3NormalizationMode::ProvisionalDivideByI4,
+        )
+        .expect("provisional EX type 3 should be accepted in Hallen RHS");
+
+        let sample_idx = 0usize;
+        let expected_ratio = 0.5_f64;
+        assert!(
+            (h_provisional.rhs[sample_idx].norm() / h_legacy.rhs[sample_idx].norm()
+                - expected_ratio)
+                .abs()
+                < 1e-12,
+            "expected provisional/legacy Hallen RHS ratio {expected_ratio}, got {}",
+            h_provisional.rhs[sample_idx].norm() / h_legacy.rhs[sample_idx].norm()
         );
     }
 

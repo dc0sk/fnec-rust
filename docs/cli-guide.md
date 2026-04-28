@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -36,6 +36,7 @@ Compatibility profile note:
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
+| `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | `legacy` | EX type 3 runtime semantics: `legacy` keeps type 3 == type 0 behavior; `divide-by-i4` enables experimental source normalization using I4 as divisor when I4>0 |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
 | `--gpu-fr` | flag | off | Route RP far-field evaluation through accelerator stub path |
@@ -210,7 +211,7 @@ EN
 | GM | Full | Geometry move: in-place or appended transformed copies |
 | GR | Full | Geometry repeat (arc repetition) |
 | EX type 0 | Full | Voltage source excitation |
-| EX type 3 | Partial | Accepted and currently treated like EX type 0; non-default I4 warns and normalization semantics remain pending |
+| EX type 3 | Partial | Accepted; default `legacy` mode treats it like EX type 0 (with non-default I4 warning). Optional `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern calculation and report table rendering |
 | LD type 0, 1, 2, 3, 4, 5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads |

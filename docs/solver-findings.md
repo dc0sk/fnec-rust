@@ -66,8 +66,9 @@ Future changes to NEC normalization semantics should update these locks together
 On 2026-04-27, a non-breaking solver scaffold for EX type 3 normalization was
 introduced in `nec_solver::excitation` via `Ex3NormalizationMode` and
 `build_excitation_with_options(...)`. The production path still uses
-`LegacyTreatAsType0`; provisional `I4`-divisor behavior is currently test-only
-and not wired into CLI runtime.
+`LegacyTreatAsType0`. As of 2026-04-28, CLI runtime wiring is available via
+`--ex3-i4-mode <legacy|divide-by-i4>`, and Hallen RHS uses the same mode so
+EX type 3 source normalization is consistent across solver paths.
 
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 

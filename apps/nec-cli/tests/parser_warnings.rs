@@ -290,9 +290,9 @@ fn ex_type3_non_default_i4_emits_normalization_warning() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-ex-type3-i4-{now}.nec"));
 
-    let deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 1 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary deck with EX type 3 non-default I4");
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 1 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary deck with EX type 3 non-default I4");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
@@ -321,5 +321,52 @@ fn ex_type3_non_default_i4_emits_normalization_warning() {
     assert!(
         !stderr.contains("not yet supported"),
         "EX type 3 non-default I4 should warn but still run, got stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn ex_type3_non_default_i4_divide_by_i4_mode_emits_experimental_warning() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-ex-type3-i4-mode-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 2 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary deck with EX type 3 non-default I4");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .arg("--ex3-i4-mode")
+        .arg("divide-by-i4")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type3 I4 mode warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
+        ),
+        "expected EX type 3 divide-by-i4 mode warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
+        "legacy EX3-I4 pending warning should not appear when divide-by-i4 mode is selected:\n{stderr}"
     );
 }

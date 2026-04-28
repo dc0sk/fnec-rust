@@ -43,7 +43,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 0 | Voltage source (voltage-driven dipole) | FULL | Supported at any segment, with complex voltage. Primary excitation type. |
 | EX type 1 | Current source (magnetic dipole) | DEFERRED | Not yet implemented. Phase 2. |
 | EX type 2 | Incident plane wave | DEFERRED | Scattering analysis. Phase 2. |
-| EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path and currently treated like EX type 0 (voltage source). Non-default I4 values emit an explicit runtime warning; full NEC normalization semantics are pending. |
+| EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path. Default runtime mode treats EX type 3 like EX type 0 and warns on non-default I4; optional CLI mode `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor normalization semantics. |
 | EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
 | EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
 | PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
