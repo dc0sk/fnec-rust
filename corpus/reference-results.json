@@ -381,6 +381,9 @@
       "expected_warning_substrings": [
         "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
       ],
+      "forbidden_warning_substrings": [
+        "EX type 3 with non-default I4 is currently treated like EX type 0"
+      ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -408,6 +411,9 @@
       "reference_source": "fnec Hallen solver (regression reference for EX type 3 I4=2 divide-by-i4 mode warning contract)",
       "expected_warning_substrings": [
         "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
+      ],
+      "forbidden_warning_substrings": [
+        "EX type 3 with non-default I4 is currently treated like EX type 0"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,

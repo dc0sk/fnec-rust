@@ -63,6 +63,11 @@ fn corpus_validation_cases_with_references() {
             .and_then(Value::as_array)
             .map(|arr| arr.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
+        let forbidden_warning_substrings: Vec<&str> = case_obj
+            .get("forbidden_warning_substrings")
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
         let cli_args: Vec<&str> = case_obj
             .get("cli_args")
             .and_then(Value::as_array)
@@ -209,6 +214,15 @@ fn corpus_validation_cases_with_references() {
                 "Case '{}' expected warning containing '{}', got stderr:\n{}",
                 case_name,
                 expected_warning,
+                stderr
+            );
+        }
+        for forbidden_warning in &forbidden_warning_substrings {
+            assert!(
+                !stderr.contains(forbidden_warning),
+                "Case '{}' should not emit warning containing '{}', got stderr:\n{}",
+                case_name,
+                forbidden_warning,
                 stderr
             );
         }
