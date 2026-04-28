@@ -63,6 +63,11 @@ fn corpus_validation_cases_with_references() {
             .and_then(Value::as_array)
             .map(|arr| arr.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
+        let cli_args: Vec<&str> = case_obj
+            .get("cli_args")
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
 
         let deck_file = case_obj
             .get("deck_file")
@@ -163,10 +168,14 @@ fn corpus_validation_cases_with_references() {
             .and_then(Value::as_f64)
             .unwrap_or(2.0);
 
-        let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-            .arg("--solver")
-            .arg("hallen")
-            .arg(&deck_path)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fnec"));
+        command.arg("--solver").arg("hallen");
+        if !cli_args.is_empty() {
+            command.args(&cli_args);
+        }
+        command.arg(&deck_path);
+
+        let output = command
             .output()
             .unwrap_or_else(|e| panic!("Failed to run fnec for case '{case_name}': {e}"));
 
