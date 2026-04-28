@@ -108,6 +108,7 @@ last_updated: 2026-04-24
 	- 2026-04-28 progress: added corpus case `dipole-ex3-i4-two-divide-by-i4-freesp-51seg` (deck `dipole-ex3-i4-two-freesp-51seg.nec`) to lock EX3 `I4=2` divide-by-i4 warning semantics in corpus CI.
 	- 2026-04-28 progress: added corpus case `dipole-ex3-i4-two-freesp-51seg` (legacy mode) to lock EX3 `I4=2` non-default warning semantics on the default runtime path.
 	- 2026-04-28 progress: corpus validation now supports `forbidden_warning_substrings`, and EX3 divide-by-i4 corpus cases now assert the legacy non-default-I4 warning is absent when divide-by-i4 mode is selected.
+	- 2026-04-28 progress: corpus validation now supports `expected_warning_counts`; repeated/interleaved PT/NT and EX3 legacy/divide-by-i4 corpus cases now assert exact warning occurrence counts for stronger warning-contract parity.
 	- 2026-04-28 progress: added CLI warning-contract regression `nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds` to lock PT/NT deferred-warning behavior independent of card order.
 	- 2026-04-28 progress: added corpus regression case `dipole-nt-pt-freesp-51seg` to lock NT-then-PT card-order portability and warning contract in corpus validation CI.
 	- 2026-04-28 progress: added CLI warning-contract regression `repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family` and corpus case `dipole-nt-pt-repeated-freesp-51seg` to lock deduplicated deferred warnings for repeated reversed-order NT/PT cards.

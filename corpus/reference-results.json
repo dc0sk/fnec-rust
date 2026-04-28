@@ -204,6 +204,10 @@
         "PT card support is currently deferred",
         "NT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "PT card support is currently deferred": 1,
+        "NT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -229,6 +233,10 @@
         "NT card support is currently deferred",
         "PT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "NT card support is currently deferred": 1,
+        "PT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -254,6 +262,10 @@
         "PT card support is currently deferred",
         "NT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "PT card support is currently deferred": 1,
+        "NT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -279,6 +291,10 @@
         "NT card support is currently deferred",
         "PT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "NT card support is currently deferred": 1,
+        "PT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -353,6 +369,9 @@
       "expected_warning_substrings": [
         "EX type 3 with non-default I4 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 3 with non-default I4 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -381,6 +400,9 @@
       "expected_warning_substrings": [
         "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
       ],
+      "expected_warning_counts": {
+        "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics": 1
+      },
       "forbidden_warning_substrings": [
         "EX type 3 with non-default I4 is currently treated like EX type 0"
       ],
@@ -412,6 +434,9 @@
       "expected_warning_substrings": [
         "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
       ],
+      "expected_warning_counts": {
+        "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics": 1
+      },
       "forbidden_warning_substrings": [
         "EX type 3 with non-default I4 is currently treated like EX type 0"
       ],
@@ -439,6 +464,9 @@
       "expected_warning_substrings": [
         "EX type 3 with non-default I4 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 3 with non-default I4 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
