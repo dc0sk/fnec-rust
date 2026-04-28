@@ -47,6 +47,7 @@ pub enum GroundModel {
 ///
 /// Resolution order:
 /// 1. If a `GN` card is present it takes priority.
+///    - `GN -1` → [`GroundModel::FreeSpace`] (null ground; equivalent to no GN card).
 ///    - `GN 1`  → [`GroundModel::PerfectConductor`].
 ///    - Other GN types → [`GroundModel::Deferred`].
 /// 2. If no `GN` card is present but a `GE` card has `ground_reflection_flag > 0`
@@ -58,6 +59,9 @@ pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
     for card in &deck.cards {
         if let Card::Gn(gn) = card {
             return match gn.ground_type {
+                // -1 = null ground: NEC spec says this is equivalent to no
+                // GN card — treat as free-space without emitting a warning.
+                -1 => GroundModel::FreeSpace,
                 1 => GroundModel::PerfectConductor,
                 other => GroundModel::Deferred {
                     gn_type: other,
@@ -542,6 +546,19 @@ mod tests {
                 sigma: None,
             }
         );
+    }
+
+    #[test]
+    fn ground_model_gn_negative1_returns_free_space() {
+        // GN -1 is the NEC "null ground" card — it cancels a previous GN
+        // statement and should produce FreeSpace with no warning.
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: -1,
+            eps_r: None,
+            sigma: None,
+        }));
+        assert_eq!(ground_model_from_deck(&deck), GroundModel::FreeSpace);
     }
 
     #[test]

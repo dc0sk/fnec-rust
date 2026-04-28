@@ -828,19 +828,24 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
         .expect("reference-results.json missing 'cases' object");
 
     // PAR-002 ground checklist:
-    //   (case_name, expect_regression_gate, expect_warning_contract)
+    //   (case_name, expect_regression_gate, expect_warning_contract, expect_forbidden_contract)
     //   expect_regression_gate: feedpoint_impedance.real_ohm must be non-null
     //   expect_warning_contract: expected_warning_substrings must be present and non-empty
-    let required_cases: &[(&str, bool, bool)] = &[
-        // GN=1 PEC image method: implemented; must have regression AND external
-        // reference gates; no warning expected.
-        ("dipole-ground-51seg", true, false),
+    //   expect_forbidden_contract: forbidden_warning_substrings must be present and non-empty
+    let required_cases: &[(&str, bool, bool, bool)] = &[
+        // GN=1 PEC image method: implemented; must have regression gate; no warning expected.
+        ("dipole-ground-51seg", true, false, false),
         // GN=2 Sommerfeld/Norton finite-conductivity: deferred; must have
         // warning contract documenting fallback behavior.
-        ("dipole-gn2-deferred", true, true),
+        ("dipole-gn2-deferred", true, true, false),
+        // GN=-1 null ground: maps to free-space silently; must have a
+        // forbidden-warning contract ensuring no deferred-ground warning fires.
+        ("dipole-gn-1-null", true, false, true),
     ];
 
-    for (case_name, expect_regression_gate, expect_warning_contract) in required_cases {
+    for (case_name, expect_regression_gate, expect_warning_contract, expect_forbidden_contract) in
+        required_cases
+    {
         let case_obj = cases
             .get(*case_name)
             .and_then(Value::as_object)
@@ -908,6 +913,23 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
             assert!(
                 !expected_warning_substrings.is_empty(),
                 "PAR-002 checklist case '{}' has empty warning contract",
+                case_name
+            );
+        }
+
+        if *expect_forbidden_contract {
+            let forbidden_warning_substrings = case_obj
+                .get("forbidden_warning_substrings")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PAR-002 checklist case '{}' missing 'forbidden_warning_substrings'",
+                        case_name
+                    )
+                });
+            assert!(
+                !forbidden_warning_substrings.is_empty(),
+                "PAR-002 checklist case '{}' has empty forbidden-warning contract",
                 case_name
             );
         }

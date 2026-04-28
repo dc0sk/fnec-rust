@@ -65,6 +65,7 @@ last_updated: 2026-04-28
 	- 2026-04-28 progress: updated `nec_solver::geometry::GroundModel::Deferred` to carry `eps_r` and `sigma` from the parsed GN card; updated `ground_model_from_deck()` to pass them through.
 	- 2026-04-28 progress: updated CLI `warn_deferred_ground_model()` to append parsed medium parameters to the deferred-ground warning (e.g. `[parsed: EPSE=13, SIG=0.005 S/m]`) when present.
 	- 2026-04-28 progress: added parser tests `gn_card_with_medium_params_parses_eps_r_and_sigma` and `gn_card_without_medium_params_uses_none`; added geometry test `ground_model_carries_medium_params_from_gn_card`; added CLI integration test `gn_type2_warning_includes_parsed_medium_params`.
+	- 2026-04-28 progress: fixed GN -1 (null ground) to map to `GroundModel::FreeSpace` without emitting a deferred-ground warning; added geometry unit test `ground_model_gn_negative1_returns_free_space`, CLI integration test `gn_negative1_null_ground_is_silent_free_space`, corpus fixture `corpus/dipole-gn-1-null.nec`, and `corpus/reference-results.json` entry with forbidden-warning contract; extended PAR-002 checklist gate to include the GN -1 case with `expect_forbidden_contract`.
 
 - [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
