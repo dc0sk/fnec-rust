@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-04-28
 ---
 
 # NEC-4 Support Boundary
@@ -109,6 +109,29 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Finite conductivity (Sommerfeld) | DEFERRED | Includes earth losses, frequency-dependent coupling. Phase 2. |
 | Layered earth | DEFERRED | Multi-layer soil models. Phase 3. |
 | Seawater effects | DEFERRED | Conductive media. Phase 3. |
+
+## PAR-002 scoped ground parity plan
+
+PAR-002 focuses on moving beyond PEC-only ground by adding a finite-conductivity near-ground subset that is externally validated and CI-gated.
+
+Planned PAR-002 scope:
+
+1. Add an explicit finite-conductivity GN subset in runtime behavior (while keeping unsupported GN variants as warning+fallback paths).
+2. Add near-ground corpus fixtures that isolate finite-conductivity effects from unrelated feature changes.
+3. Add tolerance-gated external-reference comparisons for those fixtures in `corpus/reference-results.json` and `apps/nec-cli/tests/corpus_validation.rs`.
+4. Keep existing GN type 1 PEC behavior unchanged and regression-protected while finite-ground support expands.
+
+PAR-002 non-goals for this slice:
+
+1. Full layered-earth modeling.
+2. Seawater-specific propagation models.
+3. Broad near-field feature parity.
+
+PAR-002 completion evidence (document-level):
+
+1. `docs/corpus-validation-strategy.md` contains a finite-ground capture workflow and acceptance checklist.
+2. Backlog PAR-002 entry includes concrete progress notes tied to implemented corpus and validation artifacts.
+3. This support matrix remains synchronized with the exact GN subset actually implemented.
 
 ## Output format support
 

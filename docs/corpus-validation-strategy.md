@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-04-26
+last_updated: 2026-04-28
 ---
 
 # Corpus Validation Strategy
@@ -220,6 +220,31 @@ The following external tools are required for the reference-capture and validati
 Notes:
 - zsh command autocorrect prompts (for example, suggesting `jaq` when `jq` is missing) indicate the originally requested tool is not installed.
 - Project workflow assumes `jq` for scripts/commands unless explicitly stated otherwise.
+
+## PAR-002 finite-ground validation slice
+
+This section defines the first validation slice for PAR-002 (advanced ground parity plan).
+
+Objectives:
+
+1. Add at least one finite-conductivity near-ground corpus fixture with stable reference captures.
+2. Add explicit tolerance gates for finite-ground impedance behavior (R/X) in `corpus/reference-results.json`.
+3. Keep PEC (`GN 1`) behavior independently gated so PAR-002 work cannot regress current ground support.
+
+Capture and gating workflow (PAR-002):
+
+1. Select a simple near-ground geometry that already behaves stably under PEC gating.
+2. Capture external finite-ground references (xnec2c preferred; 4nec2/EZNEC fallback).
+3. Record source metadata in `corpus/reference-results.json` and define conservative initial R/X gates.
+4. Add or update corpus validation expectations so finite-ground cases are CI-enforced.
+5. Tighten tolerances only after repeated stable captures across at least two independent runs.
+
+Acceptance checklist for PAR-002 closure:
+
+1. Finite-ground corpus fixture(s) are present and documented in `corpus/README.md`.
+2. Finite-ground reference values and tolerance gates are present in `corpus/reference-results.json`.
+3. `cargo test -p nec-cli --test corpus_validation` passes with finite-ground gates enabled.
+4. `docs/nec4-support.md` accurately reflects the GN subset status after implementation.
 
 ## Adding new corpus cases
 
