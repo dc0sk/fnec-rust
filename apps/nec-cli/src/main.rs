@@ -11,11 +11,11 @@ use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, Repor
 use nec_solver::build_loads;
 use nec_solver::build_tl_stamps;
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation, build_geometry,
-    build_hallen_rhs_with_options, compute_radiation_pattern, ground_model_from_deck,
-    rp_card_points, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_excitation_with_options,
+    build_geometry, build_hallen_rhs_with_runtime_options, compute_radiation_pattern,
+    ground_model_from_deck, rp_card_points, scale_excitation_for_pulse_rhs, solve, solve_hallen,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
-    wire_endpoints_from_segs, FarFieldPoint, GroundModel, ZMatrix,
+    wire_endpoints_from_segs, Ex3NormalizationMode, FarFieldPoint, GroundModel, ZMatrix,
 };
 use num_complex::Complex64;
 use rayon::prelude::*;
@@ -59,6 +59,21 @@ enum BenchFormat {
     Human,
     Csv,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ex3I4Mode {
+    Legacy,
+    DivideByI4,
+}
+
+impl Ex3I4Mode {
+    fn as_solver_mode(self) -> Ex3NormalizationMode {
+        match self {
+            Ex3I4Mode::Legacy => Ex3NormalizationMode::LegacyTreatAsType0,
+            Ex3I4Mode::DivideByI4 => Ex3NormalizationMode::ProvisionalDivideByI4,
+        }
+    }
 }
 
 impl SolverMode {
@@ -162,6 +177,7 @@ fn parse_args(
         bool,
         bool,
         BenchFormat,
+        Ex3I4Mode,
         bool,
         PathBuf,
     ),
@@ -174,6 +190,7 @@ fn parse_args(
     let mut enable_benchmarking = false;
     let mut bench_format = BenchFormat::Human;
     let mut enable_gpu_fr = false;
+    let mut ex3_i4_mode = Ex3I4Mode::Legacy;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -260,6 +277,24 @@ fn parse_args(
             "--gpu-fr" => {
                 enable_gpu_fr = true;
             }
+            "--ex3-i4-mode" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --ex3-i4-mode (expected: legacy|divide-by-i4)"
+                            .to_string(),
+                    );
+                }
+                ex3_i4_mode = match args[i].as_str() {
+                    "legacy" => Ex3I4Mode::Legacy,
+                    "divide-by-i4" => Ex3I4Mode::DivideByI4,
+                    other => {
+                        return Err(format!(
+                            "invalid --ex3-i4-mode value '{other}' (expected: legacy|divide-by-i4)"
+                        ))
+                    }
+                };
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -281,6 +316,7 @@ fn parse_args(
         hallen_allow_non_collinear,
         enable_benchmarking,
         bench_format,
+        ex3_i4_mode,
         enable_gpu_fr,
         path,
     ))
@@ -646,7 +682,7 @@ fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     }
 }
 
-fn warn_ex_type3_normalization_semantics(deck: &nec_model::deck::NecDeck) {
+fn warn_ex_type3_normalization_semantics(deck: &nec_model::deck::NecDeck, ex3_i4_mode: Ex3I4Mode) {
     let has_non_default_i4 = deck.cards.iter().any(|c| {
         if let Card::Ex(ex) = c {
             ex.excitation_type == 3 && ex.i4 != 0
@@ -655,7 +691,21 @@ fn warn_ex_type3_normalization_semantics(deck: &nec_model::deck::NecDeck) {
         }
     });
 
-    if has_non_default_i4 {
+    let has_ex_type3 = deck.cards.iter().any(|c| {
+        if let Card::Ex(ex) = c {
+            ex.excitation_type == 3
+        } else {
+            false
+        }
+    });
+
+    if has_ex_type3 && matches!(ex3_i4_mode, Ex3I4Mode::DivideByI4) {
+        eprintln!(
+            "warning: --ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics (I4 divisor when I4>0)"
+        );
+    }
+
+    if has_non_default_i4 && matches!(ex3_i4_mode, Ex3I4Mode::Legacy) {
         eprintln!(
             "warning: EX type 3 with non-default I4 is currently treated like EX type 0; full normalization semantics are pending"
         );
@@ -784,6 +834,7 @@ fn solve_frequency_point(
     pulse_rhs_mode: PulseRhsMode,
     execution_mode: ExecutionMode,
     hallen_allow_non_collinear: bool,
+    ex3_mode: Ex3NormalizationMode,
     enable_gpu_fr: bool,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
@@ -816,9 +867,14 @@ fn solve_frequency_point(
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
-            let hallen_rhs =
-                build_hallen_rhs_with_options(deck, segs, freq_hz, hallen_allow_non_collinear)
-                    .map_err(|e| e.to_string())?;
+            let hallen_rhs = build_hallen_rhs_with_runtime_options(
+                deck,
+                segs,
+                freq_hz,
+                hallen_allow_non_collinear,
+                ex3_mode,
+            )
+            .map_err(|e| e.to_string())?;
             let sol = solve_hallen(
                 &z_mat,
                 &hallen_rhs.rhs,
@@ -893,11 +949,12 @@ fn solve_frequency_point(
                         "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
                         r, SINUSOIDAL_REL_RESIDUAL_MAX
                     );
-                    let hallen_rhs = build_hallen_rhs_with_options(
+                    let hallen_rhs = build_hallen_rhs_with_runtime_options(
                         deck,
                         segs,
                         freq_hz,
                         hallen_allow_non_collinear,
+                        ex3_mode,
                     )
                     .map_err(|e| e.to_string())?;
                     let mut hallen_z = assemble_z_matrix_with_ground(segs, freq_hz, ground);
@@ -1064,7 +1121,7 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!(
-            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>"
+            "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>"
         );
         return ExitCode::from(2);
     }
@@ -1076,13 +1133,14 @@ fn main() -> ExitCode {
         hallen_allow_non_collinear,
         enable_benchmarking,
         bench_format,
+        ex3_i4_mode,
         enable_gpu_fr,
         path,
     ) = match parse_args(&args) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
-            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>");
+            eprintln!("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>");
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
@@ -1142,7 +1200,7 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
-    warn_ex_type3_normalization_semantics(deck);
+    warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {
@@ -1176,7 +1234,8 @@ fn main() -> ExitCode {
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
-    let v_vec = match build_excitation(deck, &segs) {
+    let ex3_mode = ex3_i4_mode.as_solver_mode();
+    let v_vec = match build_excitation_with_options(deck, &segs, ex3_mode) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1215,6 +1274,7 @@ fn main() -> ExitCode {
             pulse_rhs_mode,
             execution_mode,
             hallen_allow_non_collinear,
+            ex3_mode,
             enable_gpu_fr,
             freq_hz,
         )
