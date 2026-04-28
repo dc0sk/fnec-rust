@@ -153,3 +153,84 @@ fn ge_negative_flag_emits_unsupported_warning() {
         "expected below-ground warning in stderr, got:\n{stderr}"
     );
 }
+
+#[test]
+fn gn_type2_deferred_emits_warning_and_falls_back_to_free_space() {
+    // GN type 2 (Sommerfeld/Norton finite-conductivity) is deferred; the
+    // solver must warn and fall back to free-space, not fail or produce PEC
+    // results.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-{now}.nec"));
+
+    // Average-ground parameters (EPSE=13, SIG=0.005 S/m); parser reads only
+    // the type field so the extra parameters are silently ignored.
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary GN-2 deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for GN type 2 diagnostics test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("warning: GN type 2 is not yet supported; treating this deck as free-space"),
+        "expected deferred GN type 2 warning in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
+    // GN type 3 is not a standard NEC-2 type but may appear in NEC-4 decks.
+    // It must be treated as deferred with a warning, not silently accepted.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn3-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary GN-3 deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for GN type 3 diagnostics test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("warning: GN type 3 is not yet supported; treating this deck as free-space"),
+        "expected deferred GN type 3 warning in stderr, got:\n{stderr}"
+    );
+}

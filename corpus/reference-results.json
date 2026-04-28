@@ -922,6 +922,34 @@
       },
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds."
     },
+    "dipole-gn2-deferred": {
+      "deck_file": "dipole-gn2-deferred.nec",
+      "description": "Half-wave dipole, GN type 2 (Sommerfeld/Norton finite-conductivity; deferred), 51 segments, 14.2 MHz. Falls back to free-space with a runtime warning.",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "finite conductivity Sommerfeld/Norton (deferred, falls back to free-space)",
+      "reference_source": "fnec Hallén solver free-space fallback (regression); GN type 2 ground parameters parsed but not yet applied",
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "expected_warning_substrings": [
+        "GN type 2 is not yet supported; treating this deck as free-space"
+      ],
+      "forbidden_warning_substrings": [],
+      "expected_warning_counts": {
+        "warning: GN type 2 is not yet supported; treating this deck as free-space": 1
+      },
+      "status": "PAR-002 deferred-ground fixture. GN 2 (Sommerfeld/Norton) is not implemented; runtime warns and falls back to free-space. Impedance gated on known free-space reference. Once Sommerfeld is implemented, reference values and gates will be updated."
+    },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
       "description": "5-element Yagi (1 reflector + driven + 3 directors), 14.2 MHz, 0.2-lambda element spacing",

@@ -1,0 +1,11 @@
+CE PAR-002 deferred-ground fixture: GN type 2 (Sommerfeld/Norton, finite conductivity)
+CE Wire geometry identical to dipole-freesp-51seg.nec so that free-space fallback
+CE impedance can be verified against the known free-space reference.
+CE Medium parameters (EPSE=13, SIG=0.005 S/m — "average ground") are parsed but
+CE currently ignored; runtime falls back to free-space with a warning.
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+GN 2 0 0 0 13.0 0.005
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
