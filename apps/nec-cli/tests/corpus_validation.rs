@@ -732,6 +732,85 @@ fn corpus_validation_cases_with_references() {
     eprintln!("corpus validation summary: validated={validated}, skipped={skipped}");
 }
 
+#[test]
+fn par003_portability_checklist_cases_are_present_and_contracted() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    // PAR-003 portability checklist: selected mainstream staged cards and order variants.
+    let required_cases = [
+        ("dipole-ex1-freesp-51seg", true),
+        ("dipole-ex2-freesp-51seg", true),
+        ("dipole-ex3-freesp-51seg", false),
+        ("dipole-ex3-i4-freesp-51seg", true),
+        ("dipole-ex3-divide-by-i4-freesp-51seg", true),
+        ("dipole-ex3-i4-divide-by-i4-freesp-51seg", true),
+        ("dipole-ex3-i4-two-freesp-51seg", true),
+        ("dipole-ex3-i4-two-divide-by-i4-freesp-51seg", true),
+        ("dipole-ex4-freesp-51seg", true),
+        ("dipole-ex5-freesp-51seg", true),
+        ("dipole-pt-freesp-51seg", true),
+        ("dipole-nt-freesp-51seg", true),
+        ("dipole-pt-nt-freesp-51seg", true),
+        ("dipole-nt-pt-freesp-51seg", true),
+        ("dipole-pt-nt-repeated-freesp-51seg", true),
+        ("dipole-nt-pt-repeated-freesp-51seg", true),
+        ("dipole-pt-nt-interleaved-freesp-51seg", true),
+        ("dipole-nt-pt-interleaved-freesp-51seg", true),
+        ("tl-two-dipoles-linked", false),
+        ("tl-two-dipoles-linked-seg0", false),
+        ("tl-two-dipoles-linked-nseg0", false),
+        ("tl-two-dipoles-linked-seg0-even52", false),
+    ];
+
+    for (case_name, expect_warning_contract) in required_cases {
+        let case_obj = cases
+            .get(case_name)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("PAR-003 checklist case '{}' missing", case_name));
+
+        let deck_file = case_obj
+            .get("deck_file")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("case '{}' missing 'deck_file'", case_name));
+        let deck_path = corpus_root.join(deck_file);
+        assert!(
+            deck_path.exists(),
+            "PAR-003 checklist deck missing for case '{}': {}",
+            case_name,
+            deck_path.display()
+        );
+
+        if expect_warning_contract {
+            let expected_warning_substrings = case_obj
+                .get("expected_warning_substrings")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PAR-003 checklist case '{}' missing 'expected_warning_substrings'",
+                        case_name
+                    )
+                });
+            assert!(
+                !expected_warning_substrings.is_empty(),
+                "PAR-003 checklist case '{}' has empty warning contract",
+                case_name
+            );
+        }
+    }
+}
+
 fn collect_expected_sources(
     case_obj: &Map<String, Value>,
     feed: &Map<String, Value>,

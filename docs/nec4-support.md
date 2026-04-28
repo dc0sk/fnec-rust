@@ -87,8 +87,9 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Source Type | Status | Notes |
 |:------------|:-------|:------|
 | Voltage excitation (EX 0) | FULL | Complex voltage at any segment. Primary production mode. |
-| Current excitation (magnetic dipole) | DEFERRED | EX 1, EX 5 (qdsrc). Phase 2. |
-| Plane wave incidence | DEFERRED | EX 2. Scattering analysis. Phase 2. |
+| Current excitation (magnetic dipole) | PARTIAL | EX 1 and EX 5 are accepted as staged portability fallbacks, currently mapped to EX 0 behavior with explicit runtime warnings; full semantics remain deferred. |
+| Plane wave incidence | PARTIAL | EX 2 is accepted as a staged portability fallback, currently mapped to EX 0 behavior with an explicit runtime warning; full scattering semantics remain deferred. |
+| Segment-current excitation | PARTIAL | EX 4 is accepted as a staged portability fallback, currently mapped to EX 0 behavior with an explicit runtime warning; full segment-current semantics remain deferred. |
 | Multi-port sources | PARTIAL | PT and NT are parsed for staged portability with explicit deferred-support warnings; electrical semantics remain deferred. |
 
 ## Solver mode support
@@ -134,7 +135,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Phase | Cumulative Support |
 |:------|:------------------|
-| Phase 1 (current) | GW, partial GM/GR, EX type 0, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/4/5, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
+| Phase 1 (current) | GW, partial GM/GR, EX type 0, staged EX types 1/2/4/5 and EX3 mode-gated normalization path, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/1/2/3/4/5, TL subset (`type=0`, `NSEG=0/1`, segment-0 center mapping), PT/NT staged parsing, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
 | Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, sinusoidal Pocklington basis, GF (geometry scaling), richer pattern/gain parity |
 | Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
 | Phase 4+ | Additional NEC-4 specialty features as demanded |
