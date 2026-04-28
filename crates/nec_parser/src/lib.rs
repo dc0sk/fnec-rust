@@ -719,4 +719,26 @@ EN
         assert_eq!(gr.count, 3);
         assert!((gr.angle_deg - 120.0).abs() < 1e-10);
     }
+
+    #[test]
+    fn pt_card_is_parsed_without_unknown_warning() {
+        let input = "PT 0 1 26 0 50.0 0.1 1.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        assert!(matches!(
+            result.deck.cards.first(),
+            Some(Card::Pt(pt)) if !pt.raw_fields.is_empty()
+        ));
+    }
+
+    #[test]
+    fn nt_card_is_parsed_without_unknown_warning() {
+        let input = "NT 1 1 26 1 1 26 50.0 0.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        assert!(matches!(
+            result.deck.cards.first(),
+            Some(Card::Nt(nt)) if !nt.raw_fields.is_empty()
+        ));
+    }
 }
