@@ -68,6 +68,19 @@ fn corpus_validation_cases_with_references() {
             .and_then(Value::as_array)
             .map(|arr| arr.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
+        let expected_warning_counts: Vec<(&str, usize)> = case_obj
+            .get("expected_warning_counts")
+            .and_then(Value::as_object)
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(warning, count)| {
+                        count
+                            .as_u64()
+                            .map(|count| (warning.as_str(), count as usize))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let cli_args: Vec<&str> = case_obj
             .get("cli_args")
             .and_then(Value::as_array)
@@ -224,6 +237,14 @@ fn corpus_validation_cases_with_references() {
                 case_name,
                 forbidden_warning,
                 stderr
+            );
+        }
+        for (warning, expected_count) in &expected_warning_counts {
+            let actual_count = stderr.matches(warning).count();
+            assert_eq!(
+                actual_count, *expected_count,
+                "Case '{}' expected warning '{}' to appear {} time(s), got {} occurrence(s) in stderr:\n{}",
+                case_name, warning, expected_count, actual_count, stderr
             );
         }
 
