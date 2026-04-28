@@ -224,6 +224,48 @@ fn ex_type2_matches_ex_type0_feedpoint_impedance() {
 }
 
 #[test]
+fn ex_type4_matches_ex_type0_feedpoint_impedance() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let ex0_path = std::env::temp_dir().join(format!("fnec-ex0-{now}.nec"));
+    let ex4_path = std::env::temp_dir().join(format!("fnec-ex4-{now}.nec"));
+
+    let ex0_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let ex4_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    fs::write(&ex0_path, ex0_deck).expect("failed to write EX type 0 deck");
+    fs::write(&ex4_path, ex4_deck).expect("failed to write EX type 4 deck");
+
+    let (ex0_out, ex0_err) = run_fnec(&ex0_path, &workspace_root);
+    let (ex4_out, ex4_err) = run_fnec(&ex4_path, &workspace_root);
+
+    let _ = fs::remove_file(&ex0_path);
+    let _ = fs::remove_file(&ex4_path);
+
+    assert!(
+        ex4_err.contains("EX type 4 is currently treated like EX type 0")
+            && !ex4_err.contains("not yet supported"),
+        "EX type 4 should be accepted with portability warning, got stderr:\n{ex4_err}"
+    );
+
+    let (ex0_r, ex0_x) = first_feedpoint_impedance(&ex0_out);
+    let (ex4_r, ex4_x) = first_feedpoint_impedance(&ex4_out);
+
+    let dr = (ex4_r - ex0_r).abs();
+    let dx = (ex4_x - ex0_x).abs();
+    assert!(
+        dr <= 1e-6 && dx <= 1e-6,
+        "expected EX type 4 to match EX type 0 impedance; dR={dr:.9}, dX={dx:.9}; ex0=({ex0_r:.9}, {ex0_x:.9}) ex4=({ex4_r:.9}, {ex4_x:.9}); ex0 stderr:\n{ex0_err}\nex4 stderr:\n{ex4_err}"
+    );
+}
+
+#[test]
 fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
