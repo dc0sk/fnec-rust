@@ -211,6 +211,7 @@ EN
 | GM | Full | Geometry move: in-place or appended transformed copies |
 | GR | Full | Geometry repeat (arc repetition) |
 | EX type 0 | Full | Voltage source excitation |
+| EX type 1 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that current-source semantics are pending |
 | EX type 3 | Partial | Accepted; default `legacy` mode treats it like EX type 0 (with non-default I4 warning). Optional `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern calculation and report table rendering |

@@ -11,6 +11,10 @@ All notable documentation process changes are recorded here.
 
 ## Unreleased
 
+### Changed
+
+- EX type 1 is now accepted as a staged portability fallback: the CLI warns that current-source semantics are still pending, and current runtime behavior treats EX type 1 like EX type 0 until a dedicated implementation lands.
+
 ### Added
 
 - RP card execution is now wired into the CLI report path.
