@@ -191,11 +191,7 @@ fn corpus_validation_cases_with_references() {
         }
 
         if !output.status.success() {
-            panic!(
-                "fnec failed for case '{}': {}",
-                case_name,
-                stderr
-            );
+            panic!("fnec failed for case '{}': {}", case_name, stderr);
         }
 
         for expected_warning in &expected_warning_substrings {
