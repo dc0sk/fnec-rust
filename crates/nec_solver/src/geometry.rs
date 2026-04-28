@@ -16,7 +16,7 @@
 //! - `tag_index`     — 1-based segment index within the tag
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GeCard, GmCard, GnCard, GrCard, GwCard};
+use nec_model::card::{Card, GeCard, GmCard, GrCard, GwCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -34,7 +34,13 @@ pub enum GroundModel {
     ///
     /// The current Phase-1 behavior is to fall back to free-space while
     /// emitting a runtime warning in the CLI.
-    Deferred { gn_type: i32 },
+    Deferred {
+        gn_type: i32,
+        /// Relative dielectric constant (EPSE) from the GN card, if present.
+        eps_r: Option<f64>,
+        /// Conductivity in S/m (SIG) from the GN card, if present.
+        sigma: Option<f64>,
+    },
 }
 
 /// Extract the ground model from a parsed deck.
@@ -50,10 +56,14 @@ pub enum GroundModel {
 pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
     // GN card takes priority.
     for card in &deck.cards {
-        if let Card::Gn(GnCard { ground_type }) = card {
-            return match ground_type {
+        if let Card::Gn(gn) = card {
+            return match gn.ground_type {
                 1 => GroundModel::PerfectConductor,
-                other => GroundModel::Deferred { gn_type: *other },
+                other => GroundModel::Deferred {
+                    gn_type: other,
+                    eps_r: gn.eps_r,
+                    sigma: gn.sigma,
+                },
             };
         }
     }
@@ -490,27 +500,65 @@ mod tests {
     #[test]
     fn ground_model_detects_perfect_conductor_gn1() {
         let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gn(GnCard { ground_type: 1 }));
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: 1,
+            eps_r: None,
+            sigma: None,
+        }));
         assert_eq!(ground_model_from_deck(&deck), GroundModel::PerfectConductor);
     }
 
     #[test]
     fn ground_model_marks_gn0_as_deferred() {
         let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gn(GnCard { ground_type: 0 }));
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: 0,
+            eps_r: None,
+            sigma: None,
+        }));
         assert_eq!(
             ground_model_from_deck(&deck),
-            GroundModel::Deferred { gn_type: 0 }
+            GroundModel::Deferred {
+                gn_type: 0,
+                eps_r: None,
+                sigma: None,
+            }
         );
     }
 
     #[test]
     fn ground_model_marks_gn2_as_deferred() {
         let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gn(GnCard { ground_type: 2 }));
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: 2,
+            eps_r: None,
+            sigma: None,
+        }));
         assert_eq!(
             ground_model_from_deck(&deck),
-            GroundModel::Deferred { gn_type: 2 }
+            GroundModel::Deferred {
+                gn_type: 2,
+                eps_r: None,
+                sigma: None,
+            }
+        );
+    }
+
+    #[test]
+    fn ground_model_carries_medium_params_from_gn_card() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: 2,
+            eps_r: Some(13.0),
+            sigma: Some(0.005),
+        }));
+        assert_eq!(
+            ground_model_from_deck(&deck),
+            GroundModel::Deferred {
+                gn_type: 2,
+                eps_r: Some(13.0),
+                sigma: Some(0.005),
+            }
         );
     }
 

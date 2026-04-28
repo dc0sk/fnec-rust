@@ -106,8 +106,6 @@ pub struct RpCard {
 /// GN — Ground definition card.
 ///
 /// Specifies the electrical ground model below the antenna geometry.
-/// Only the first integer field (ground type) is stored in Phase 1.
-/// Future phases can extend this struct with conductivity and permittivity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GnCard {
     /// Ground type:
@@ -116,6 +114,16 @@ pub struct GnCard {
     ///    1 = perfect electric conductor (image method)
     ///    2 = finite conductivity Sommerfeld/Norton (deferred Phase 2)
     pub ground_type: i32,
+    /// Relative dielectric constant (EPSE field), if specified on the card.
+    ///
+    /// Present when the GN card includes medium parameters (typically GN type
+    /// 0 or 2). `None` for bare cards such as `GN 1` or `GN 0`.
+    pub eps_r: Option<f64>,
+    /// Conductivity in S/m (SIG field), if specified on the card.
+    ///
+    /// Present alongside `eps_r` when the GN card specifies a finite-ground
+    /// medium. `None` for bare cards.
+    pub sigma: Option<f64>,
 }
 
 /// EN — End-of-data card.  Signals the end of a NEC deck.

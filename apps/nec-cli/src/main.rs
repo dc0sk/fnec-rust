@@ -645,10 +645,23 @@ fn find_or_insert_node(
 }
 
 fn warn_deferred_ground_model(ground: &GroundModel) {
-    let GroundModel::Deferred { gn_type } = ground else {
+    let GroundModel::Deferred {
+        gn_type,
+        eps_r,
+        sigma,
+    } = ground
+    else {
         return;
     };
-    eprintln!("warning: GN type {gn_type} is not yet supported; treating this deck as free-space");
+    let params = match (eps_r, sigma) {
+        (Some(e), Some(s)) => format!(" [parsed: EPSE={e}, SIG={s} S/m]"),
+        (Some(e), None) => format!(" [parsed: EPSE={e}]"),
+        (None, Some(s)) => format!(" [parsed: SIG={s} S/m]"),
+        (None, None) => String::new(),
+    };
+    eprintln!(
+        "warning: GN type {gn_type} is not yet supported; treating this deck as free-space{params}"
+    );
 }
 
 fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {

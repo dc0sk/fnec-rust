@@ -204,8 +204,24 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             "GN" => {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "GN", &fields, 1)?;
+                // GN I1 NRADL I3 I4 EPSE SIG
+                // Fields 0-3 are integer fields (I1, NRADL, I3, I4).
+                // Fields 4 and 5 (EPSE, SIG) are optional medium parameters
+                // used with GN types 0 and 2.
+                let eps_r = if fields.len() > 4 {
+                    Some(parse_f64(lineno, "GN", 5, &fields[4])?)
+                } else {
+                    None
+                };
+                let sigma = if fields.len() > 5 {
+                    Some(parse_f64(lineno, "GN", 6, &fields[5])?)
+                } else {
+                    None
+                };
                 deck.cards.push(Card::Gn(GnCard {
                     ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
+                    eps_r,
+                    sigma,
                 }));
             }
             "LD" => {
@@ -593,7 +609,48 @@ EN
             }
         });
         assert!(gn_card.is_some(), "GN card not found in deck");
-        assert_eq!(gn_card.unwrap().ground_type, 1);
+        let gn = gn_card.unwrap();
+        assert_eq!(gn.ground_type, 1);
+        assert_eq!(gn.eps_r, None, "bare GN 1 should have no eps_r");
+        assert_eq!(gn.sigma, None, "bare GN 1 should have no sigma");
+    }
+
+    #[test]
+    fn gn_card_with_medium_params_parses_eps_r_and_sigma() {
+        // GN 2 0 0 0 13.0 0.005 — average-ground parameters (EPSE=13, SIG=0.005 S/m)
+        let input =
+            "GW 1 3 0 0 1 0 0 4 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 2 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+        let gn_card = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gn(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        let gn = gn_card.expect("GN card not found");
+        assert_eq!(gn.ground_type, 2);
+        assert_eq!(gn.eps_r, Some(13.0));
+        assert_eq!(gn.sigma, Some(0.005));
+    }
+
+    #[test]
+    fn gn_card_without_medium_params_uses_none() {
+        // Bare GN 0 with no medium parameters — eps_r and sigma must be None
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGN 0\nEX 0 1 2 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        let gn_card = result.deck.cards.iter().find_map(|c| {
+            if let Card::Gn(g) = c {
+                Some(g.clone())
+            } else {
+                None
+            }
+        });
+        let gn = gn_card.expect("GN card not found");
+        assert_eq!(gn.ground_type, 0);
+        assert_eq!(gn.eps_r, None);
+        assert_eq!(gn.sigma, None);
     }
 
     #[test]
