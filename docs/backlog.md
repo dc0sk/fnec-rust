@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/backlog.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-04-28
 ---
 
 # Backlog
@@ -57,8 +57,9 @@ last_updated: 2026-04-24
 - [ ] **PAR-002 / Advanced ground parity plan / Owner: Solver / Target: Phase 2 / Issue: #15**
 	Resolution criteria: NEC-4-class ground scope document published; Sommerfeld validation corpus added; tolerance pass documented for supported near-ground cases.
 
-- [ ] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
+- [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
+	Resolution: Completed 2026-04-28. PAR-003 staged mainstream-card subset is documented in `docs/nec4-support.md`, integration coverage exists across card families (parser/solver/CLI/corpus), and portability checklist gate `par003_portability_checklist_cases_are_present_and_contracted` is passing.
 	- 2026-04-27 progress: LD load-family coverage expanded with LD type 1 (parallel RLC) solve support in `nec_solver::build_loads`, plus CLI integration regression (`apps/nec-cli/tests/ld_loads.rs`) and new corpus fixture `corpus/dipole-ld-loaded-51seg.nec`.
 	- 2026-04-27 progress: LD load-family coverage now also includes LD types 2 (series RL) and 3 (series RC) in `nec_solver::build_loads`, with CLI regression coverage in `apps/nec-cli/tests/ld_loads.rs`.
 	- 2026-04-27 progress: added corpus regression cases `dipole-ld-series-rl-51seg` and `dipole-ld-series-rc-51seg` to lock LD types 2/3 behavior in CI.
@@ -117,7 +118,7 @@ last_updated: 2026-04-24
 	- 2026-04-28 progress: added CLI warning-contract regression `nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds` to lock PT/NT deferred-warning behavior independent of card order.
 	- 2026-04-28 progress: added corpus regression case `dipole-nt-pt-freesp-51seg` to lock NT-then-PT card-order portability and warning contract in corpus validation CI.
 	- 2026-04-28 progress: added CLI warning-contract regression `repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family` and corpus case `dipole-nt-pt-repeated-freesp-51seg` to lock deduplicated deferred warnings for repeated reversed-order NT/PT cards.
-	- 2026-04-28 progress: enabled external impedance candidate gates for `tl-two-dipoles-linked` with conservative thresholds (`ExternalR_absolute_ohm=5.0`, `ExternalX_absolute_oPAR-003hm=20.0`) as external-impedance gate seed-2.
+	- 2026-04-28 progress: enabled external impedance candidate gates for `tl-two-dipoles-linked` with conservative thresholds (`ExternalR_absolute_ohm=5.0`, `ExternalX_absolute_ohm=20.0`) as external-impedance gate seed-2.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `multi-source` with conservative thresholds (`ExternalR_absolute_ohm=15.0`, `ExternalX_absolute_ohm=50.0`) as external-impedance gate seed-3.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `yagi-5elm-51seg` with conservative thresholds (`ExternalR_absolute_ohm=30.0`, `ExternalX_absolute_ohm=70.0`) as external-impedance gate seed-5.
 	- 2026-04-27 progress: added corpus validation case `tl-two-dipoles-linked` (`corpus/tl-two-dipoles-linked.nec`) to lock TL subset behavior in CI, with a first `nec2c` external impedance candidate captured for parity tracking.
