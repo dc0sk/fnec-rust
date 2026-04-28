@@ -542,9 +542,11 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 5.0,
+        "ExternalX_absolute_ohm": 20.0
       },
-      "status": "Regression lock for TL execution subset (type 0, NSEG=1; explicit or segment=0-mapped endpoints). External candidate is observational only for now; gating will be enabled after TL parity tightening."
+      "status": "Regression lock for TL execution subset (type 0, NSEG=1; explicit or segment=0-mapped endpoints). External candidate now also CI-gated with conservative absolute R/X thresholds for incremental parity tightening."
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
