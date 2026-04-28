@@ -44,7 +44,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 1 | Current source (magnetic dipole) | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 1 like EX type 0 and emits a warning that full current-source semantics are pending. |
 | EX type 2 | Incident plane wave | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 2 like EX type 0 and emits a warning that incident-plane-wave semantics are pending. |
 | EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path. Default runtime mode treats EX type 3 like EX type 0 and warns on non-default I4; optional CLI mode `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor normalization semantics. |
-| EX type 4 | Segment current | DEFERRED | NEC4 multi-port source. Phase 2. |
+| EX type 4 | Segment current | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 4 like EX type 0 and emits a warning that segment-current semantics are pending. |
 | EX type 5 | Electromagnetic current source (qdsrc) | DEFERRED | Complex source type. NEC2 machinery requires `tbf`/`sbf`/`trio`. Phase 2+. |
 | PT | Transmission line source | DEFERRED | Connected load impedance. Phase 2. |
 | LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
