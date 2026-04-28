@@ -56,6 +56,8 @@ last_updated: 2026-04-28
 
 - [ ] **PAR-002 / Advanced ground parity plan / Owner: Solver / Target: Phase 2 / Issue: #15**
 	Resolution criteria: NEC-4-class ground scope document published; Sommerfeld validation corpus added; tolerance pass documented for supported near-ground cases.
+	- 2026-04-28 progress: started PAR-002 docs-first discovery slice by adding a scoped finite-ground plan to `docs/nec4-support.md` (scope/non-goals/completion evidence).
+	- 2026-04-28 progress: added PAR-002 finite-ground validation workflow and closure checklist to `docs/corpus-validation-strategy.md` to define capture/gating expectations before solver expansion.
 
 - [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
