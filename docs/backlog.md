@@ -95,6 +95,7 @@ last_updated: 2026-04-24
 	- 2026-04-28 progress: added CLI warning-contract regression `nt_card_emits_deferred_warning_but_run_succeeds` and corpus regression case `dipole-nt-freesp-51seg` to lock NT staged portability behavior in CI.
 	- 2026-04-28 progress: added combined PT+NT warning-contract regression `pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds` and corpus case `dipole-pt-nt-freesp-51seg` to lock multi-card staged portability behavior in CI.
 	- 2026-04-28 progress: strengthened parser-level PT/NT regressions in `crates/nec_parser/src/lib.rs` to assert exact `raw_fields` preservation, locking staged portability token capture semantics in CI.
+	- 2026-04-28 progress: added CLI warning-contract regression `repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family` to lock current deduplicated warning behavior for repeated PT/NT cards.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `tl-two-dipoles-linked` with conservative thresholds (`ExternalR_absolute_ohm=5.0`, `ExternalX_absolute_ohm=20.0`) as external-impedance gate seed-2.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `multi-source` with conservative thresholds (`ExternalR_absolute_ohm=15.0`, `ExternalX_absolute_ohm=50.0`) as external-impedance gate seed-3.
 	- 2026-04-28 progress: enabled external impedance candidate gates for `yagi-5elm-51seg` with conservative thresholds (`ExternalR_absolute_ohm=30.0`, `ExternalX_absolute_ohm=70.0`) as external-impedance gate seed-5.
