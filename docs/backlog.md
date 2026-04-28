@@ -77,6 +77,7 @@ last_updated: 2026-04-24
 	- 2026-04-27 progress: corpus warning-contract coverage added for EX type 3 non-default `I4` via `dipole-ex3-i4-freesp-51seg` and `expected_warning_substrings` checks in `apps/nec-cli/tests/corpus_validation.rs`.
 	- 2026-04-27 progress: started EX type 3 normalization semantics branch with a non-breaking solver scaffold `Ex3NormalizationMode` in `crates/nec_solver/src/excitation.rs`; default behavior remains legacy (type 3 == type 0), and provisional `I4` divisor semantics are currently test-only.
 	- 2026-04-28 progress: wired runtime CLI flag `--ex3-i4-mode <legacy|divide-by-i4>` through solver and Hallen RHS paths; default remains legacy while `divide-by-i4` enables experimental EX3 I4-divisor semantics with explicit warning-contract coverage.
+	- 2026-04-28 progress: enabled external impedance candidate gates for `tl-two-dipoles-linked` with conservative thresholds (`ExternalR_absolute_ohm=5.0`, `ExternalX_absolute_ohm=20.0`) as external-impedance gate seed-2.
 	- 2026-04-27 progress: added corpus validation case `tl-two-dipoles-linked` (`corpus/tl-two-dipoles-linked.nec`) to lock TL subset behavior in CI, with a first `nec2c` external impedance candidate captured for parity tracking.
 
 - [ ] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**
