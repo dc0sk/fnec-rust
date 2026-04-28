@@ -59,6 +59,9 @@
       "expected_warning_substrings": [
         "EX type 1 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 1 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -83,6 +86,9 @@
       "expected_warning_substrings": [
         "EX type 2 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 2 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -107,6 +113,9 @@
       "expected_warning_substrings": [
         "EX type 4 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 4 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -131,6 +140,9 @@
       "expected_warning_substrings": [
         "EX type 5 is currently treated like EX type 0"
       ],
+      "expected_warning_counts": {
+        "EX type 5 is currently treated like EX type 0": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -155,6 +167,9 @@
       "expected_warning_substrings": [
         "PT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "PT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
@@ -179,6 +194,9 @@
       "expected_warning_substrings": [
         "NT card support is currently deferred"
       ],
+      "expected_warning_counts": {
+        "NT card support is currently deferred": 1
+      },
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.90
