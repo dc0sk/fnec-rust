@@ -582,6 +582,60 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 }
 
 #[test]
+fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-nt-pt-interleaved-{now}.nec"));
+
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 1 26 1 1 26 75.0 0.0\nPT 0 1 26 0 75.0 0.2 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck)
+        .expect("failed to write temporary deck with interleaved NT and PT cards");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env("FNEC_ACCEL_STUB_GPU", "0")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for interleaved NT+PT warning test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let nt_warning_count = stderr
+        .matches("NT card support is currently deferred")
+        .count();
+    let pt_warning_count = stderr
+        .matches("PT card support is currently deferred")
+        .count();
+
+    assert_eq!(
+        nt_warning_count, 1,
+        "expected NT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    );
+    assert_eq!(
+        pt_warning_count, 1,
+        "expected PT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
+        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+    );
+}
+
+#[test]
 fn ex_type3_runs_without_unsupported_error() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
