@@ -446,9 +446,11 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 30.0,
+        "ExternalX_absolute_ohm": 70.0
       },
-      "status": "Regression reference captured from corrected fnec multi-wire Hallen implementation; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy"
+      "status": "Regression reference captured from corrected fnec multi-wire Hallen implementation; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with conservative absolute external R/X thresholds for incremental parity tightening."
     },
     "dipole-ld-loaded-51seg": {
       "deck_file": "dipole-ld-loaded-51seg.nec",
