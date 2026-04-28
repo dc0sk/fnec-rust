@@ -40,6 +40,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Added missing `GE` cards to three corpus decks (`dipole-ld-series-rc-51seg`, `dipole-ld-series-rl-51seg`, `tl-two-dipoles-linked-seg0`) so `corpus_deck_sanity` passes consistently in local hooks and CI.
 - Native CLI startup now auto-selects execution mode when `--exec` is omitted by running a quick execution probe (CPU threads, frequency-point count, and accelerator dispatch availability) and choosing among `cpu`/`hybrid`/`gpu` heuristically for the current workload shape.
 - Consolidated benchmark documentation into a single canonical file (`docs/benchmarks.md`) and removed the duplicate `docs/benchmark.md` shim.
 - Benchmark docs now explicitly map reported numbers to four execution modes: CPU single-thread, CPU multithread, GPU, and hybrid (CPU multithread + GPU), with a dedicated local four-mode coverage result block.
