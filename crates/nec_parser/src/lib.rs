@@ -873,4 +873,38 @@ EN
             ]
         );
     }
+
+    #[test]
+    fn interleaved_nt_pt_cards_preserve_card_sequence() {
+        let input = "NT 1 1 26 1 1 26 50.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 1 26 1 1 26 75.0 0.0\nPT 0 1 26 0 75.0 0.2 1.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let sequence: Vec<(&str, Vec<&str>)> = result
+            .deck
+            .cards
+            .iter()
+            .filter_map(|card| match card {
+                Card::Nt(nt) => Some((
+                    "NT",
+                    nt.raw_fields.iter().map(String::as_str).collect::<Vec<_>>(),
+                )),
+                Card::Pt(pt) => Some((
+                    "PT",
+                    pt.raw_fields.iter().map(String::as_str).collect::<Vec<_>>(),
+                )),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            sequence,
+            vec![
+                ("NT", vec!["1", "1", "26", "1", "1", "26", "50.0", "0.0"]),
+                ("PT", vec!["0", "1", "26", "0", "50.0", "0.1", "1.0"]),
+                ("NT", vec!["1", "1", "26", "1", "1", "26", "75.0", "0.0"]),
+                ("PT", vec!["0", "1", "26", "0", "75.0", "0.2", "1.0"]),
+            ]
+        );
+    }
 }
