@@ -9,6 +9,7 @@
 //! Excitation types implemented in Phase 1:
 //! - type 0: series voltage source
 //! - type 1: staged portability fallback (currently treated as type 0)
+//! - type 2: staged portability fallback (currently treated as type 0)
 //! - type 3: normalized voltage source (currently treated as type 0)
 
 use num_complex::Complex64;
@@ -104,7 +105,7 @@ impl std::fmt::Display for ExcitationError {
             ),
             ExcitationError::DuplicateSourceTag { tag } => write!(
                 f,
-                "Hallén solver: two or more EX 0 cards target tag {tag}; use distinct tags for multiple feed points"
+                "Hallén solver: two or more supported EX cards target tag {tag}; use distinct tags for multiple feed points"
             ),
         }
     }
@@ -207,7 +208,11 @@ pub fn build_hallen_rhs_with_runtime_options(
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 0 && ex.excitation_type != 1 && ex.excitation_type != 3 {
+        if ex.excitation_type != 0
+            && ex.excitation_type != 1
+            && ex.excitation_type != 2
+            && ex.excitation_type != 3
+        {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
                 tag: ex.tag,
@@ -383,7 +388,11 @@ fn apply_ex(
     v: &mut [Complex64],
     ex3_mode: Ex3NormalizationMode,
 ) -> Result<(), ExcitationError> {
-    if ex.excitation_type != 0 && ex.excitation_type != 1 && ex.excitation_type != 3 {
+    if ex.excitation_type != 0
+        && ex.excitation_type != 1
+        && ex.excitation_type != 2
+        && ex.excitation_type != 3
+    {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
             tag: ex.tag,
@@ -623,6 +632,81 @@ mod tests {
             assert!(
                 (*a - *b).norm() < 1e-12,
                 "segment {i} mismatch: ex0={a}, ex1={b}"
+            );
+        }
+    }
+
+    #[test]
+    fn ex_type2_is_currently_accepted_like_type0() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: 2,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 1.1,
+            voltage_imag: -0.2,
+        }));
+
+        let segs = build_geometry(&deck).unwrap();
+        let v = build_excitation(&deck, &segs).expect("EX type 2 should be accepted");
+        let expected = Complex64::new(1.1, -0.2) / segs[1].length;
+        assert!((v[1] - expected).norm() < 1e-12);
+    }
+
+    #[test]
+    fn ex_type2_matches_ex_type0_vector() {
+        let mut deck_ex0 = NecDeck::new();
+        deck_ex0.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex0.cards.push(Card::Ex(ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let mut deck_ex2 = NecDeck::new();
+        deck_ex2.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck_ex2.cards.push(Card::Ex(ExCard {
+            excitation_type: 2,
+            tag: 1,
+            segment: 2,
+            i4: 0,
+            voltage_real: 0.8,
+            voltage_imag: -0.3,
+        }));
+
+        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
+        let segs_ex2 = build_geometry(&deck_ex2).unwrap();
+        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
+        let v_ex2 = build_excitation(&deck_ex2, &segs_ex2).expect("EX type 2 should be accepted");
+
+        assert_eq!(v_ex0.len(), v_ex2.len());
+        for (i, (a, b)) in v_ex0.iter().zip(v_ex2.iter()).enumerate() {
+            assert!(
+                (*a - *b).norm() < 1e-12,
+                "segment {i} mismatch: ex0={a}, ex2={b}"
             );
         }
     }
