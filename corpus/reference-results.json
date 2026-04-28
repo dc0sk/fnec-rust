@@ -291,6 +291,31 @@
       },
       "status": "Regression lock for repeated NT+PT card-order portability while runtime semantics remain deferred."
     },
+    "dipole-pt-nt-interleaved-freesp-51seg": {
+      "deck_file": "dipole-pt-nt-interleaved-freesp-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, interleaved PT and NT cards parsed with deferred runtime semantics",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (regression reference for interleaved PT+NT staged portability; PT/NT are parsed but ignored at runtime)",
+      "expected_warning_substrings": [
+        "PT card support is currently deferred",
+        "NT card support is currently deferred"
+      ],
+      "feedpoint_impedance": {
+        "real_ohm": 74.23,
+        "imag_ohm": 13.90
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for interleaved PT+NT deck portability while runtime semantics remain deferred."
+    },
     "dipole-ex3-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with non-default I4",
