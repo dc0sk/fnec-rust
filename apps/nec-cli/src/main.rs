@@ -949,7 +949,7 @@ fn warn_ex_type2_portability_semantics(deck: &nec_model::deck::NecDeck) {
     }
 }
 
-fn warn_ex_type4_portability_semantics(deck: &nec_model::deck::NecDeck) {
+fn warn_ex_type4_portability_semantics(deck: &nec_model::deck::NecDeck, solver_mode: SolverMode) {
     let has_ex_type4 = deck.cards.iter().any(|c| {
         if let Card::Ex(ex) = c {
             ex.excitation_type == 4
@@ -958,7 +958,7 @@ fn warn_ex_type4_portability_semantics(deck: &nec_model::deck::NecDeck) {
         }
     });
 
-    if has_ex_type4 {
+    if has_ex_type4 && !matches!(solver_mode, SolverMode::Pulse) {
         eprintln!(
             "warning: EX type 4 is currently treated like EX type 0; segment-current semantics are pending"
         );
@@ -1007,7 +1007,7 @@ fn collect_pulse_current_source_constraints(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 1 {
+        if ex.excitation_type != 1 && ex.excitation_type != 4 {
             continue;
         }
 
@@ -1080,7 +1080,9 @@ fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if ex.excitation_type == 1 && matches!(solver_mode, SolverMode::Pulse) {
+        let v_source = if (ex.excitation_type == 1 || ex.excitation_type == 4)
+            && matches!(solver_mode, SolverMode::Pulse)
+        {
             pulse_current_sources
                 .iter()
                 .find(|constraint| constraint.seg_index == idx)
@@ -1662,7 +1664,7 @@ fn main() -> ExitCode {
     warn_ge_ground_reflection_flag(deck);
     warn_ex_type1_portability_semantics(deck, solver_mode);
     warn_ex_type2_portability_semantics(deck);
-    warn_ex_type4_portability_semantics(deck);
+    warn_ex_type4_portability_semantics(deck, solver_mode);
     warn_ex_type5_portability_semantics(deck);
     warn_pt_card_deferred_support(deck);
     warn_nt_card_deferred_support(deck);
