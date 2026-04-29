@@ -1344,9 +1344,11 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 5.0,
+        "ExternalX_absolute_ohm": 35.0
       },
-      "status": "Regression lock for the experimental non-collinear Hallen path on the loaded top-hat case while full non-collinear basis support remains pending."
+      "status": "Regression lock for the experimental non-collinear Hallen path on the loaded top-hat case while full non-collinear basis support remains pending. External NEC2DXS500 candidate now CI-gated with conservative absolute R/X thresholds (5/35 ohm)."
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",

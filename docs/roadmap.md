@@ -107,6 +107,23 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [ ] Add geometry diagnostics and validation guardrails comparable to necpp's automation-oriented error detection so invalid or fragile models fail early with actionable messages.
 - [ ] Add a NEC-5 validation-manual coverage matrix for Phase 2 scope, explicitly mapping kernel, source, convergence, and ground/loop classes to reproducible corpus cases.
 
+### Phase 2 implementation checklist (EZNEC-informed)
+
+This checklist translates Phase 2 parity work into implementation slices with explicit validation artifacts. Each row maps to roadmap IDs and concrete test/corpus files.
+
+| Checklist ID | Roadmap IDs | Implementation target | Validation artifacts (existing/new) | Done signal |
+|:-------------|:------------|:----------------------|:------------------------------------|:------------|
+| PH2-CHK-001 | PRT-001, CP-002 | Implement GN2/GN3 runtime behavior beyond deferred-warning path, starting with one in-scope Sommerfeld case class and explicit non-goals. | Existing: `apps/nec-cli/tests/ground_diagnostics.rs`, `apps/nec-cli/tests/corpus_validation.rs`, `corpus/dipole-gn2-deferred.nec`. New: one implemented GN2 corpus fixture + reference gates in `corpus/reference-results.json`. | GN2 case solves without deferred warning for in-scope class; corpus/tolerance gate passes in CI. |
+| PH2-CHK-002 | PRT-001, PRT-008 | Add buried/near-ground validation slices with explicit guardrails when unsupported geometry classes are requested. | Existing: `apps/nec-cli/tests/ground_diagnostics.rs`. New: buried-wire diagnostics regression and at least one buried/near-ground corpus case with warning/forbidden-warning contracts. | Unsupported classes fail fast with actionable diagnostics; supported classes are corpus-gated. |
+| PH2-CHK-003 | PRT-002, CP-003 | Expand mainstream source/load/network behavior from portability fallback toward implemented semantics where currently deferred. | Existing: `apps/nec-cli/tests/ex_cards.rs`, `apps/nec-cli/tests/ld_loads.rs`, `apps/nec-cli/tests/tl_cards.rs`, `apps/nec-cli/tests/parser_warnings.rs`, `apps/nec-cli/tests/corpus_validation.rs`. | At least one deferred warning path per family is replaced by implemented semantics and locked by parity + corpus tests. |
+| PH2-CHK-004 | PRT-003, CP-001 | Extend report/table parity from feedpoint+sweep summary to richer operator tables (source/load table parity and stable section ordering). | Existing: `apps/nec-cli/tests/report_contract.rs`, `apps/nec-cli/tests/scriptability_contract.rs`. New: report-contract tests for additional table sections and ordering contracts. | New table sections are stable, machine-parseable, and CI-gated by report contract tests. |
+| PH2-CHK-005 | PRT-008, CP-001 | Extend corpus truth from impedance-heavy checks to broader pattern/current/phase classes and stricter external candidate gates where deltas permit. | Existing: `apps/nec-cli/tests/corpus_validation.rs`, `corpus/reference-results.json`, RP fixtures under `corpus/`. | New pattern/current cases added with tolerances; external gates tightened using measured-delta-plus-headroom pattern. |
+| PH2-CHK-006 | PRT-007, CP-007 | Add geometry diagnostics comparable to necpp-style early-fail checks (intersections, tiny-loop/source-risk, invalid junction topologies). | Existing: `apps/nec-cli/tests/topology_fallback.rs`. New: `apps/nec-cli/tests/geometry_diagnostics.rs` (or equivalent) with deterministic error/warning contracts. | Invalid geometry classes fail before solve with actionable messages and CI locks. |
+| PH2-CHK-007 | PRT-010 | Publish NEC-5-informed validation matrix with explicit corpus mapping and per-case status (in-scope implemented, in-scope deferred, out-of-scope). | Existing: `docs/corpus-validation-strategy.md` matrix section, `apps/nec-cli/tests/corpus_validation.rs`. | Matrix rows are traceable to corpus case IDs and enforced by checklist test(s). |
+| PH2-CHK-008 | PRT-003, PRT-007 | Preserve scriptability while expanding diagnostics/tables: stderr-only diagnostics and stable stdout machine stream remain hard contracts. | Existing: `apps/nec-cli/tests/scriptability_contract.rs`, `apps/nec-cli/tests/core_flags_contract.rs`. | No regression in stream separation/exit-code contracts after Phase 2 feature additions. |
+
+Execution order recommendation for smallest-risk progress: PH2-CHK-001 -> PH2-CHK-005 -> PH2-CHK-006 -> PH2-CHK-003 -> PH2-CHK-007 -> PH2-CHK-002 -> PH2-CHK-004 -> PH2-CHK-008.
+
 **Estimated completion**: Q3 2026 (end of July).
 
 ## Phase 3: UX and workflow productization
