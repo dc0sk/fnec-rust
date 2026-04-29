@@ -76,7 +76,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - ✅ FR sweep execution landed in CLI and tolerance-gated corpus validation (full multi-point solve path).
 - ✅ Hallen topology guardrail landed: non-collinear Hallen requests fail fast with explicit diagnostics instead of returning misleading impedance.
 - ✅ GM/GR parser + geometry-builder support landed and is corpus-validated via equivalence decks.
-- [ ] Expand remaining NEC-2/NEC-4 card execution breadth beyond the current wire/impedance workflow core (e.g., RP execution, additional EX families, TL/NT).
+- [x] Expand remaining NEC-2/NEC-4 card execution breadth beyond the current wire/impedance workflow core (RP execution, staged EX family support, TL subset, PT/NT staged handling).
 - [x] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source, GM/GR equivalence cases).
 - [ ] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix.
 - [x] Simple ground model (infinite, raised dielectric) working and tested (GN type 0 simple finite-ground model activated and regression-gated in corpus CI).
