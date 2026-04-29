@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn gn_deferred_type_emits_warning_and_falls_back_to_free_space() {
+fn gn0_is_active_without_deferred_warning() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -34,9 +34,27 @@ fn gn_deferred_type_emits_warning_and_falls_back_to_free_space() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("warning: GN type 0 is not yet supported; treating this deck as free-space"),
-        "expected deferred GN warning in stderr, got:\n{stderr}"
+        !stderr.contains("warning: GN type 0 is not yet supported"),
+        "GN0 should no longer use deferred-ground warning, got:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let z_re = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[6].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
+
+    // GN0 finite ground should not collapse to free-space (~74.23 Ohm real).
+    assert!(
+        (z_re - 74.23).abs() > 0.5,
+        "GN0 should alter impedance vs free-space, got Z_RE={z_re}"
     );
 }
 

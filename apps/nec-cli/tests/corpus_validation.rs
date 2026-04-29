@@ -835,6 +835,9 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
     let required_cases: &[(&str, bool, bool, bool)] = &[
         // GN=1 PEC image method: implemented; must have regression gate; no warning expected.
         ("dipole-ground-51seg", true, false, false),
+        // GN=0 finite-ground reflection coefficient method: implemented and
+        // regression-gated; old deferred warning must be forbidden.
+        ("dipole-gn0-fresnel-51seg", true, false, true),
         // GN=2 Sommerfeld/Norton finite-conductivity: deferred; must have
         // warning contract documenting fallback behavior.
         ("dipole-gn2-deferred", true, true, false),

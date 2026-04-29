@@ -30,6 +30,7 @@ use crate::geometry::{GroundModel, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
+const EPS0: f64 = 8.854_187_817e-12; // F/m
 
 // ---------------------------------------------------------------------------
 // 4-point Gauss-Legendre quadrature nodes and weights on [-1, 1]
@@ -147,16 +148,15 @@ pub fn assemble_z_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
 /// Assemble the N×N Hallén A-matrix for `segs` at frequency `freq_hz`,
 /// optionally including a ground-plane image contribution.
 ///
-/// For [`GroundModel::PerfectConductor`] each element A[i,j] gets an
-/// additional term from the mirror image of segment j across z = 0:
+/// For reflective ground models each element A[i,j] gets an additional term
+/// from the mirror image of segment j across z = 0:
 ///
 /// ```text
-/// A[i,j] = A_free[i,j] + A_free(segs[i], image(segs[j]))
+/// A[i,j] = A_free[i,j] + Γ · A_free(segs[i], image(segs[j]))
 /// ```
 ///
-/// where `image(seg)` has its z-coordinates negated and its z-direction
-/// component sign-flipped, which produces the correct ±1 reflection
-/// coefficient for horizontal (cos = +1) and vertical (cos = −1) currents.
+/// where `Γ = 1` for PEC and `Γ` is a simple complex Fresnel-style
+/// reflection factor for [`GroundModel::SimpleFiniteGround`].
 pub fn assemble_z_matrix_with_ground(
     segs: &[Segment],
     freq_hz: f64,
@@ -177,6 +177,11 @@ pub fn assemble_z_matrix_with_ground(
                     // Image is always at a different location than the
                     // observation segment, so never treat as self-element.
                     elem(&segs[i], &img, k, false)
+                }
+                GroundModel::SimpleFiniteGround { eps_r, sigma } => {
+                    let img = image_segment(&segs[j]);
+                    let gamma = fresnel_reflection_scalar(freq_hz, *eps_r, *sigma);
+                    gamma * elem(&segs[i], &img, k, false)
                 }
             };
             z.set(i, j, direct + image_contrib);
@@ -235,6 +240,19 @@ fn image_segment(seg: &Segment) -> Segment {
         length: seg.length,
         radius: seg.radius,
     }
+}
+
+/// Simple scalar reflection coefficient used by GN type 0 ground.
+///
+/// Uses a complex relative permittivity model:
+/// εr_complex = εr - j σ/(ω ε0)
+/// and a normal-incidence Fresnel factor:
+/// Γ = (sqrt(εr_complex) - 1) / (sqrt(εr_complex) + 1)
+fn fresnel_reflection_scalar(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
+    let omega = 2.0 * std::f64::consts::PI * freq_hz;
+    let eps_c = Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0));
+    let sqrt_eps_c = eps_c.sqrt();
+    (sqrt_eps_c - Complex64::new(1.0, 0.0)) / (sqrt_eps_c + Complex64::new(1.0, 0.0))
 }
 
 /// Compute the (obs, src) Hallén A-matrix element:
@@ -523,6 +541,26 @@ mod tests {
         assert!(
             delta.norm() > 1e-8,
             "PEC image term should modify A11, delta={delta}"
+        );
+    }
+
+    #[test]
+    fn gn0_ground_changes_hallen_matrix_element() {
+        let s = make_seg(1, 1, 0, [0.0, 0.0, 1.0], DIR_Z, SEG_LEN, RADIUS);
+        let z_free = assemble_z_matrix_with_ground(&[s.clone()], FREQ, &GroundModel::FreeSpace);
+        let z_gn0 = assemble_z_matrix_with_ground(
+            &[s],
+            FREQ,
+            &GroundModel::SimpleFiniteGround {
+                eps_r: 13.0,
+                sigma: 0.005,
+            },
+        );
+
+        let delta = z_gn0.get(0, 0) - z_free.get(0, 0);
+        assert!(
+            delta.norm() > 1e-8,
+            "GN0 finite-ground image term should modify A11, delta={delta}"
         );
     }
 

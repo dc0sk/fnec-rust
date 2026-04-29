@@ -30,6 +30,16 @@ pub enum GroundModel {
     /// Implemented via the image method: for each real segment a mirror image
     /// at z → −z is added to the Green's function kernel.
     PerfectConductor,
+    /// Simple finite-ground model (GN type 0) using medium parameters.
+    ///
+    /// This Phase-1 model is a pragmatic Fresnel-coefficient approximation
+    /// used to enable baseline non-PEC ground behavior in impedance solves.
+    SimpleFiniteGround {
+        /// Relative dielectric constant (EPSE).
+        eps_r: f64,
+        /// Conductivity in S/m (SIG).
+        sigma: f64,
+    },
     /// GN card was present, but the requested ground type is not implemented.
     ///
     /// The current Phase-1 behavior is to fall back to free-space while
@@ -49,6 +59,8 @@ pub enum GroundModel {
 /// 1. If a `GN` card is present it takes priority.
 ///    - `GN -1` → [`GroundModel::FreeSpace`] (null ground; equivalent to no GN card).
 ///    - `GN 1`  → [`GroundModel::PerfectConductor`].
+///    - `GN 0`  → [`GroundModel::SimpleFiniteGround`] using parsed EPSE/SIG
+///      (or conservative defaults when omitted).
 ///    - Other GN types → [`GroundModel::Deferred`].
 /// 2. If no `GN` card is present but a `GE` card has `ground_reflection_flag > 0`
 ///    (the standard NEC flag for "enable image-method PEC ground at z = 0"),
@@ -63,6 +75,13 @@ pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
                 // GN card — treat as free-space without emitting a warning.
                 -1 => GroundModel::FreeSpace,
                 1 => GroundModel::PerfectConductor,
+                0 => GroundModel::SimpleFiniteGround {
+                    // Keep GN0 usable even when medium params are omitted.
+                    // Values are the same "average ground" defaults commonly
+                    // used in NEC workflows.
+                    eps_r: gn.eps_r.unwrap_or(13.0),
+                    sigma: gn.sigma.unwrap_or(0.005),
+                },
                 other => GroundModel::Deferred {
                     gn_type: other,
                     eps_r: gn.eps_r,
@@ -513,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn ground_model_marks_gn0_as_deferred() {
+    fn ground_model_maps_gn0_to_simple_finite_ground() {
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Gn(GnCard {
             ground_type: 0,
@@ -522,10 +541,26 @@ mod tests {
         }));
         assert_eq!(
             ground_model_from_deck(&deck),
-            GroundModel::Deferred {
-                gn_type: 0,
-                eps_r: None,
-                sigma: None,
+            GroundModel::SimpleFiniteGround {
+                eps_r: 13.0,
+                sigma: 0.005,
+            }
+        );
+    }
+
+    #[test]
+    fn ground_model_gn0_uses_explicit_medium_params() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gn(GnCard {
+            ground_type: 0,
+            eps_r: Some(5.0),
+            sigma: Some(0.001),
+        }));
+        assert_eq!(
+            ground_model_from_deck(&deck),
+            GroundModel::SimpleFiniteGround {
+                eps_r: 5.0,
+                sigma: 0.001,
             }
         );
     }

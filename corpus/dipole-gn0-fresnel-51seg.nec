@@ -1,0 +1,7 @@
+CE Half-wave dipole over finite ground (GN type 0 simple Fresnel model)
+GW 1 51 0 0 4.718 0 0 15.282 0.001
+GE
+GN 0 0 0 0 13.0 0.005
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
