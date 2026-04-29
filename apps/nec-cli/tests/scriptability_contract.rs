@@ -49,6 +49,14 @@ fn report_headers_are_machine_parseable_on_stdout() {
     assert_eq!(lines[4], "PULSE_RHS Nec2");
     assert_eq!(lines[6], "FEEDPOINTS");
     assert_eq!(lines[7], "TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM");
+
+    let feed_idx = stdout.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
+    let sources_idx = stdout.find("SOURCES\n").expect("missing SOURCES");
+    let currents_idx = stdout.find("CURRENTS\n").expect("missing CURRENTS");
+    assert!(
+        feed_idx < sources_idx && sources_idx < currents_idx,
+        "stdout section ordering must remain FEEDPOINTS -> SOURCES -> CURRENTS for machine parsers"
+    );
 }
 
 #[test]
@@ -171,6 +179,43 @@ fn bench_csv_stays_on_stderr_not_stdout() {
     assert!(
         stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
         "stdout should begin with stable report header, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nXX 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck_path = write_temp_deck("scriptable-load-table-stream", deck);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for load-table stream test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stdout.contains("LOADS\n"));
+    assert!(stdout.contains("N_LOADS 1\n"));
+    assert!(
+        stderr.contains("warning: line 4: unknown card 'XX'"),
+        "expected parser warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("warning:"),
+        "stdout must remain report-only even when LOADS are present, got:\n{stdout}"
     );
 }
 
