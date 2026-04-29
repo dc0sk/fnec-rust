@@ -68,6 +68,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: advanced PH2-CHK-008 scriptability preservation by extending `apps/nec-cli/tests/scriptability_contract.rs` to lock `FEEDPOINTS -> SOURCES -> CURRENTS` stdout ordering and to assert `LOADS` table rendering remains stdout-only while parser warnings stay stderr-only.
 	- 2026-04-29 progress: tightened Phase 1 loaded-gap guardrails in `apps/nec-cli/tests/loaded_case_tracking.rs` with an explicit default-Hallen contract test on `dipole-loaded` that locks fail-fast non-collinear diagnostics, exit code 1, and no report emission on stdout.
 	- 2026-04-29 progress: started PH2-CHK-006 geometry diagnostics slice by adding an early-fail CLI guard for unsupported intersecting wire segments (non-endpoint crossings) before solve, with deterministic integration contracts in `apps/nec-cli/tests/geometry_diagnostics.rs` covering both failing crossing-wire geometry and allowed endpoint junctions.
+	- 2026-04-29 progress: extended PH2-CHK-006 geometry guardrails with a tiny source-segment early-fail contract (`EX` on `L/r < 2`), adding deterministic CLI diagnostics coverage in `apps/nec-cli/tests/geometry_diagnostics.rs`.
 
 ## Parity-driven backlog items
 
