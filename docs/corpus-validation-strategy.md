@@ -110,12 +110,15 @@ Rows are intentionally explicit about status:
 | Row ID | NEC-5 validation class | Status | Corpus case IDs |
 |:-------|:------------------------|:-------|:----------------|
 | PH2N5-001 | Thin-wire kernel behavior | in-scope implemented | `dipole-freesp-51seg` |
-| PH2N5-002 | Source model behavior (wire source classes) | in-scope implemented | `dipole-freesp-51seg`, `multi-source`, `dipole-ex1-pulse-current-freesp-51seg` |
+| PH2N5-002 | Source model behavior (wire source classes) | in-scope implemented | `dipole-freesp-51seg`, `multi-source`, `dipole-ex1-pulse-current-freesp-51seg`, `dipole-ex4-pulse-current-freesp-51seg`, `dipole-ex5-pulse-current-freesp-51seg` |
 | PH2N5-003 | Convergence for dipole antenna | in-scope implemented | `frequency-sweep-dipole` |
 | PH2N5-004 | Wires over ground | in-scope implemented | `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred` |
 | PH2N5-005 | Loop antennas over ground | in-scope deferred | `dipole-gn2-deferred` |
-| PH2N5-006 | Surface meshing and wire-surface junctions | out-of-scope | - |
-| PH2N5-007 | Monopole on finite box and patch-ground classes | out-of-scope | - |
+| PH2N5-006 | Lumped-load and conductivity behavior on wires | in-scope implemented | `dipole-ld-loaded-51seg`, `dipole-ld-series-rl-51seg`, `dipole-ld-series-rc-51seg` |
+| PH2N5-007 | Transmission-line network subset on wire models | in-scope implemented | `tl-two-dipoles-linked`, `tl-two-dipoles-linked-seg0`, `tl-two-dipoles-linked-nseg0`, `tl-two-dipoles-linked-seg0-even52` |
+| PH2N5-008 | PT/NT staged network portability behavior | in-scope deferred | `dipole-pt-freesp-51seg`, `dipole-nt-freesp-51seg`, `dipole-pt-nt-freesp-51seg`, `dipole-nt-pt-freesp-51seg` |
+| PH2N5-009 | Surface meshing and wire-surface junctions | out-of-scope | - |
+| PH2N5-010 | Monopole on finite box and patch-ground classes | out-of-scope | - |
 
 ## Validation workflow
 
