@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const C0: f64 = 299_792_458.0;
 const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
 
@@ -853,7 +854,7 @@ fn warn_ex_type3_normalization_semantics(deck: &nec_model::deck::NecDeck, ex3_i4
     }
 }
 
-fn warn_ex_type1_portability_semantics(deck: &nec_model::deck::NecDeck) {
+fn warn_ex_type1_portability_semantics(deck: &nec_model::deck::NecDeck, solver_mode: SolverMode) {
     let has_ex_type1 = deck.cards.iter().any(|c| {
         if let Card::Ex(ex) = c {
             ex.excitation_type == 1
@@ -862,7 +863,7 @@ fn warn_ex_type1_portability_semantics(deck: &nec_model::deck::NecDeck) {
         }
     });
 
-    if has_ex_type1 {
+    if has_ex_type1 && !matches!(solver_mode, SolverMode::Pulse) {
         eprintln!(
             "warning: EX type 1 is currently treated like EX type 0; current-source semantics are pending"
         );
@@ -933,6 +934,116 @@ fn warn_nt_card_deferred_support(deck: &nec_model::deck::NecDeck) {
             "warning: NT card support is currently deferred; NT cards are parsed for portability but ignored at runtime"
         );
     }
+}
+
+fn collect_pulse_current_source_constraints(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> Result<Vec<PulseCurrentSourceConstraint>, String> {
+    let mut out = Vec::new();
+
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        if ex.excitation_type != 1 {
+            continue;
+        }
+
+        let seg_index = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            .ok_or_else(|| format!("EX: no segment with tag {}, index {}", ex.tag, ex.segment))?;
+
+        out.push(PulseCurrentSourceConstraint {
+            seg_index,
+            source_current: Complex64::new(ex.voltage_real, ex.voltage_imag),
+            original_row: Vec::new(),
+        });
+    }
+
+    Ok(out)
+}
+
+fn apply_pulse_current_source_constraints(
+    z_mat: &mut ZMatrix,
+    rhs: &mut [Complex64],
+    constraints: &mut [PulseCurrentSourceConstraint],
+) {
+    for constraint in constraints {
+        constraint.original_row = (0..z_mat.n)
+            .map(|col| z_mat.get(constraint.seg_index, col))
+            .collect();
+
+        let mut replacement_row = vec![Complex64::new(0.0, 0.0); z_mat.n];
+        replacement_row[constraint.seg_index] = Complex64::new(1.0, 0.0);
+        z_mat.replace_row(constraint.seg_index, &replacement_row);
+        rhs[constraint.seg_index] = constraint.source_current;
+    }
+}
+
+fn pulse_current_source_voltage(
+    constraint: &PulseCurrentSourceConstraint,
+    i_vec: &[Complex64],
+    seg_length: f64,
+    freq_hz: f64,
+) -> Complex64 {
+    let impressed_field: Complex64 = constraint
+        .original_row
+        .iter()
+        .zip(i_vec.iter())
+        .map(|(z, i)| *z * *i)
+        .sum();
+    -(impressed_field * seg_length * (C0 / freq_hz))
+}
+
+fn build_feedpoint_rows(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+    v_vec: &[Complex64],
+    i_vec: &[Complex64],
+    pulse_current_sources: &[PulseCurrentSourceConstraint],
+    solver_mode: SolverMode,
+    freq_hz: f64,
+) -> Vec<FeedpointRow> {
+    let mut rows = Vec::new();
+
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        let Some((idx, seg)) = segs
+            .iter()
+            .enumerate()
+            .find(|(_, seg)| seg.tag == ex.tag && seg.tag_index == ex.segment)
+        else {
+            continue;
+        };
+
+        let current = i_vec[idx];
+        let v_source = if ex.excitation_type == 1 && matches!(solver_mode, SolverMode::Pulse) {
+            pulse_current_sources
+                .iter()
+                .find(|constraint| constraint.seg_index == idx)
+                .map(|constraint| {
+                    pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                })
+                .unwrap_or(v_vec[idx] * seg.length)
+        } else {
+            v_vec[idx] * seg.length
+        };
+        let z_in = if current.norm() > 1e-60 {
+            v_source / current
+        } else {
+            v_source
+        };
+
+        rows.push(FeedpointRow {
+            tag: seg.tag as usize,
+            seg: seg.tag_index as usize,
+            v_source,
+            current,
+            z_in,
+        });
+    }
+
+    rows
 }
 
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
@@ -1053,6 +1164,12 @@ struct SweepPointSummary {
     z_im: f64,
 }
 
+struct PulseCurrentSourceConstraint {
+    seg_index: usize,
+    source_current: Complex64,
+    original_row: Vec<Complex64>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn solve_frequency_point(
     deck: &nec_model::deck::NecDeck,
@@ -1070,7 +1187,7 @@ fn solve_frequency_point(
     enable_gpu_fr: bool,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
-    let v_vec_pulse = match pulse_rhs_mode {
+    let mut v_vec_pulse = match pulse_rhs_mode {
         PulseRhsMode::Raw => v_vec.to_vec(),
         PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(v_vec, freq_hz),
     };
@@ -1093,6 +1210,18 @@ fn solve_frequency_point(
     }
     for (row, col, delta) in &tl_stamps {
         z_mat.add_to_entry(*row, *col, *delta);
+    }
+    let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
+        collect_pulse_current_source_constraints(deck, segs)?
+    } else {
+        Vec::new()
+    };
+    if matches!(solver_mode, SolverMode::Pulse) {
+        apply_pulse_current_source_constraints(
+            &mut z_mat,
+            &mut v_vec_pulse,
+            &mut pulse_current_sources,
+        );
     }
     let diag_spread = matrix_diagonal_spread(&z_mat);
     let mut sin_rel_res: f64 = 0.0;
@@ -1215,27 +1344,15 @@ fn solve_frequency_point(
         }
     };
 
-    let mut rows: Vec<FeedpointRow> = Vec::new();
-    for (idx, seg) in segs.iter().enumerate() {
-        let v = v_vec[idx];
-        if v.norm() < 1e-30 {
-            continue;
-        }
-        let i = i_vec[idx];
-        let v_source = v * seg.length;
-        let z_in = if i.norm() > 1e-60 {
-            v_source / i
-        } else {
-            v_source
-        };
-        rows.push(FeedpointRow {
-            tag: seg.tag as usize,
-            seg: seg.tag_index as usize,
-            v_source,
-            current: i,
-            z_in,
-        });
-    }
+    let rows = build_feedpoint_rows(
+        deck,
+        segs,
+        v_vec,
+        &i_vec,
+        &pulse_current_sources,
+        solver_mode,
+        freq_hz,
+    );
 
     let current_table: Vec<CurrentRow> = segs
         .iter()
@@ -1440,7 +1557,7 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
-    warn_ex_type1_portability_semantics(deck);
+    warn_ex_type1_portability_semantics(deck, solver_mode);
     warn_ex_type2_portability_semantics(deck);
     warn_ex_type4_portability_semantics(deck);
     warn_ex_type5_portability_semantics(deck);

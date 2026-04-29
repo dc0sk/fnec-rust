@@ -211,7 +211,7 @@ EN
 | GM | Full | Geometry move: in-place or appended transformed copies |
 | GR | Full | Geometry repeat (arc repetition) |
 | EX type 0 | Full | Voltage source excitation |
-| EX type 1 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that current-source semantics are pending |
+| EX type 1 | Partial | Implemented for `--solver pulse` as a driven-segment current source. Other solver paths still use staged portability fallback and emit the pending-semantics warning |
 | EX type 2 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that incident-plane-wave semantics are pending |
 | EX type 3 | Partial | Accepted; default `legacy` mode treats it like EX type 0 (with non-default I4 warning). Optional `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
 | EX type 4 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that segment-current semantics are pending |
@@ -258,7 +258,7 @@ The TL card connects two segments with a transmission line; the current solver s
 
 - Multi-source decks (multiple EX cards) are supported; one output line per source.
 - The Hallén solver rejects non-collinear wire topologies by default. Use `--allow-noncollinear-hallen` only for experimental exploration.
-- Only EX type 0 (voltage source) is implemented.  EX type 5 (current source / NEC `qdsrc`) is not yet supported.
+- EX type 0 is implemented across supported solver paths. EX type 1 is also implemented for `--solver pulse`; Hallen and other non-pulse modes still keep EX type 1 on the staged portability path.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
 - `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
 - Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.

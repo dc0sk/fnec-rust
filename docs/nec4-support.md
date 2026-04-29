@@ -41,7 +41,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
 | EX type 0 | Voltage source (voltage-driven dipole) | FULL | Supported at any segment, with complex voltage. Primary excitation type. |
-| EX type 1 | Current source (magnetic dipole) | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 1 like EX type 0 and emits a warning that full current-source semantics are pending. |
+| EX type 1 | Current source (magnetic dipole) | PARTIAL | `--solver pulse` now enforces EX type 1 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
 | EX type 2 | Incident plane wave | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 2 like EX type 0 and emits a warning that incident-plane-wave semantics are pending. |
 | EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path. Default runtime mode treats EX type 3 like EX type 0 and warns on non-default I4; optional CLI mode `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor normalization semantics. |
 | EX type 4 | Segment current | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 4 like EX type 0 and emits a warning that segment-current semantics are pending. |
