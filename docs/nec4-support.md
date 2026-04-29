@@ -45,7 +45,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 2 | Incident plane wave | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 2 like EX type 0 and emits a warning that incident-plane-wave semantics are pending. |
 | EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path. Default runtime mode treats EX type 3 like EX type 0 and warns on non-default I4; optional CLI mode `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor normalization semantics. |
 | EX type 4 | Segment current | PARTIAL | `--solver pulse` now enforces EX type 4 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
-| EX type 5 | Electromagnetic current source (qdsrc) | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 5 like EX type 0 and emits a warning that qdsrc semantics are pending. |
+| EX type 5 | Electromagnetic current source (qdsrc) | PARTIAL | `--solver pulse` now enforces EX type 5 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
 | PT | Transmission line source | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores PT electrical semantics. |
 | LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
 
@@ -87,7 +87,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | Source Type | Status | Notes |
 |:------------|:-------|:------|
 | Voltage excitation (EX 0) | FULL | Complex voltage at any segment. Primary production mode. |
-| Current excitation (magnetic dipole) | PARTIAL | EX 1 and EX 5 are accepted as staged portability fallbacks, currently mapped to EX 0 behavior with explicit runtime warnings; full semantics remain deferred. |
+| Current excitation (magnetic dipole) | PARTIAL | `--solver pulse` now implements first slices for EX 1 and EX 5 using driven-segment current constraints. Hallen and other non-pulse paths still map both to EX 0 with explicit runtime warnings while broader semantics remain deferred. |
 | Plane wave incidence | PARTIAL | EX 2 is accepted as a staged portability fallback, currently mapped to EX 0 behavior with an explicit runtime warning; full scattering semantics remain deferred. |
 | Segment-current excitation | PARTIAL | `--solver pulse` now implements a first EX 4 segment-current slice using a driven-segment current constraint. Hallen and other non-pulse paths still map EX 4 to EX 0 with an explicit runtime warning while broader semantics remain deferred. |
 | Multi-port sources | PARTIAL | PT and NT are parsed for staged portability with explicit deferred-support warnings; electrical semantics remain deferred. |

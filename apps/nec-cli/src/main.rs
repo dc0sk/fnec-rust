@@ -965,7 +965,7 @@ fn warn_ex_type4_portability_semantics(deck: &nec_model::deck::NecDeck, solver_m
     }
 }
 
-fn warn_ex_type5_portability_semantics(deck: &nec_model::deck::NecDeck) {
+fn warn_ex_type5_portability_semantics(deck: &nec_model::deck::NecDeck, solver_mode: SolverMode) {
     let has_ex_type5 = deck.cards.iter().any(|c| {
         if let Card::Ex(ex) = c {
             ex.excitation_type == 5
@@ -974,7 +974,7 @@ fn warn_ex_type5_portability_semantics(deck: &nec_model::deck::NecDeck) {
         }
     });
 
-    if has_ex_type5 {
+    if has_ex_type5 && !matches!(solver_mode, SolverMode::Pulse) {
         eprintln!(
             "warning: EX type 5 is currently treated like EX type 0; qdsrc semantics are pending"
         );
@@ -1007,7 +1007,7 @@ fn collect_pulse_current_source_constraints(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 1 && ex.excitation_type != 4 {
+        if ex.excitation_type != 1 && ex.excitation_type != 4 && ex.excitation_type != 5 {
             continue;
         }
 
@@ -1080,19 +1080,20 @@ fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if (ex.excitation_type == 1 || ex.excitation_type == 4)
-            && matches!(solver_mode, SolverMode::Pulse)
-        {
-            pulse_current_sources
-                .iter()
-                .find(|constraint| constraint.seg_index == idx)
-                .map(|constraint| {
-                    pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
-                })
-                .unwrap_or(v_vec[idx] * seg.length)
-        } else {
-            v_vec[idx] * seg.length
-        };
+        let v_source =
+            if (ex.excitation_type == 1 || ex.excitation_type == 4 || ex.excitation_type == 5)
+                && matches!(solver_mode, SolverMode::Pulse)
+            {
+                pulse_current_sources
+                    .iter()
+                    .find(|constraint| constraint.seg_index == idx)
+                    .map(|constraint| {
+                        pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                    })
+                    .unwrap_or(v_vec[idx] * seg.length)
+            } else {
+                v_vec[idx] * seg.length
+            };
         let z_in = if current.norm() > 1e-60 {
             v_source / current
         } else {
@@ -1665,7 +1666,7 @@ fn main() -> ExitCode {
     warn_ex_type1_portability_semantics(deck, solver_mode);
     warn_ex_type2_portability_semantics(deck);
     warn_ex_type4_portability_semantics(deck, solver_mode);
-    warn_ex_type5_portability_semantics(deck);
+    warn_ex_type5_portability_semantics(deck, solver_mode);
     warn_pt_card_deferred_support(deck);
     warn_nt_card_deferred_support(deck);
     warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
