@@ -713,6 +713,103 @@
       },
       "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068)."
     },
+    "dipole-ground-rp-51seg": {
+      "deck_file": "dipole-ground-rp-51seg.nec",
+      "description": "Half-wave dipole over PEC ground, 51 segments, 14.2 MHz, RP theta sweep 10-90 deg",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "PEC",
+      "reference_source": "fnec Hallen solver (regression reference; PEC image far-field)",
+      "feedpoint_impedance": {
+        "real_ohm": 81.914743,
+        "imag_ohm": 16.416629
+      },
+      "pattern_samples": [
+        {
+          "theta_deg": 10.0,
+          "phi_deg": 0.0,
+          "gain_db": -8.9913,
+          "gain_v_db": -8.9913,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 20.0,
+          "phi_deg": 0.0,
+          "gain_db": -3.2428,
+          "gain_v_db": -3.2428,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 30.0,
+          "phi_deg": 0.0,
+          "gain_db": -0.5836,
+          "gain_v_db": -0.5836,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 40.0,
+          "phi_deg": 0.0,
+          "gain_db": -0.3009,
+          "gain_v_db": -0.3009,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 50.0,
+          "phi_deg": 0.0,
+          "gain_db": -4.1173,
+          "gain_v_db": -4.1173,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 60.0,
+          "phi_deg": 0.0,
+          "gain_db": -15.3003,
+          "gain_v_db": -15.3003,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 70.0,
+          "phi_deg": 0.0,
+          "gain_db": 2.0188,
+          "gain_v_db": 2.0188,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 80.0,
+          "phi_deg": 0.0,
+          "gain_db": 7.0069,
+          "gain_v_db": 7.0069,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        },
+        {
+          "theta_deg": 90.0,
+          "phi_deg": 0.0,
+          "gain_db": 8.422,
+          "gain_v_db": 8.422,
+          "gain_h_db": -999.99,
+          "axial_ratio": 0.0
+        }
+      ],
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05,
+        "Gain_absolute_dB": 0.05,
+        "AxialRatio_absolute": 0.0001
+      },
+      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29."
+    },
     "dipole-xaxis-rp-grid-51seg": {
       "deck_file": "dipole-xaxis-rp-grid-51seg.nec",
       "description": "Half-wave dipole rotated onto the x-axis, free space, 51 segments, 14.2 MHz, RP theta/phi grid",

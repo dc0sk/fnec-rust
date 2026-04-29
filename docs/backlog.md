@@ -49,6 +49,7 @@ last_updated: 2026-04-29
 	- 2026-04-27 progress: native CLI startup now auto-selects execution mode when `--exec` is omitted by running a quick startup probe and choosing the most suitable available mode (`cpu`/`hybrid`/`gpu`) for current frequency sweep shape and dispatch availability.
 	- 2026-04-29 progress: tightened external impedance gates for 5 corpus cases (`dipole-ground-51seg` R 10→8, `yagi-5elm-51seg` R/X 30/70→25/55, `tl-two-dipoles-linked` R/X 5/20→4/16, `frequency-sweep-dipole` R/X 15/50→14/47, `multi-source` R/X 15/50→12/40) based on actual fnec-vs-nec2c deltas plus 10–15% headroom.
 	- 2026-04-29 progress: tightened external RP gain gates for `dipole-freesp-rp-51seg` (0.1→0.08 dB, actual max |dGain|=0.068) and `dipole-xaxis-rp-grid-51seg` (0.1→0.04 dB, actual max |dGain|=0.034), matching the actual-delta-plus-headroom pattern used for impedance gates.
+	- 2026-04-29 progress: implemented PEC ground-aware RP far-field in `nec_solver::farfield` (image contribution + upper-hemisphere normalization + below-horizon null contract), wired CLI RP path through `ground` model, and added corpus regression fixture `corpus/dipole-ground-rp-51seg.nec` with reference pattern samples.
 
 ## Parity-driven backlog items
 

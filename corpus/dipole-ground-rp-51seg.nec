@@ -1,0 +1,8 @@
+CE dipole over PEC ground with RP theta sweep (upper hemisphere)
+GW 1 51 0 0 4.718 0 0 15.282 0.001
+GE
+GN 1
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+RP 0 9 1 10.0 0.0 10.0 0.0
+EN

@@ -21,6 +21,7 @@
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
+use crate::geometry::GroundModel;
 use crate::geometry::Segment;
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
@@ -56,6 +57,27 @@ pub struct FarFieldResult {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Convert (θ, φ) in degrees to the three spherical-coordinate unit vectors.
+fn pec_image_farfield(seg: &Segment) -> Segment {
+    // For far-field PEC image at z = 0 (Balanis Table 4-1):
+    //   position: (x, y, −z)
+    //   direction: (−dx, −dy, +dz)
+    // Horizontal components negate (opposite image) and vertical keeps sign
+    // (same-direction image). This ensures constructive interference for vertical
+    // sources and the standard pattern reinforcement above the ground plane.
+    Segment {
+        tag: seg.tag,
+        tag_index: seg.tag_index,
+        global_index: seg.global_index,
+        start: [seg.start[0], seg.start[1], -seg.start[2]],
+        end: [seg.end[0], seg.end[1], -seg.end[2]],
+        midpoint: [seg.midpoint[0], seg.midpoint[1], -seg.midpoint[2]],
+        direction: [-seg.direction[0], -seg.direction[1], seg.direction[2]],
+        length: seg.length,
+        radius: seg.radius,
+    }
+}
 
 /// Convert (θ, φ) in degrees to the three spherical-coordinate unit vectors.
 fn unit_vectors(theta_deg: f64, phi_deg: f64) -> ([f64; 3], [f64; 3], [f64; 3]) {
@@ -109,25 +131,27 @@ fn far_field_components(
 // ---------------------------------------------------------------------------
 
 /// Compute the total radiated power proportionality constant by integrating
-/// `(|F_θ|² + |F_φ|²) sin θ` over the sphere using a trapezoidal rule on a
-/// 1° × 1° grid.
+/// `(|F_θ|² + |F_φ|²) sin θ` over the sphere (or upper hemisphere for PEC).
+///
+/// For free space: integrates θ ∈ [0°, 180°] (full sphere).
+/// For PEC ground: integrates θ ∈ [0°, 90°] (upper hemisphere only, since
+/// no radiation exists below the ground plane).
 ///
 /// Returns the normalisation denominator `∫ U dΩ` (in sr × [|F|²] units).
-fn integrate_over_sphere(segs: &[Segment], i_vec: &[Complex64], k: f64) -> f64 {
-    // 1° resolution: θ ∈ [0°, 180°], φ ∈ [0°, 360°)
-    let n_theta = 181usize;
+fn integrate_power(segs: &[Segment], i_vec: &[Complex64], k: f64, pec_ground: bool) -> f64 {
+    let (n_theta, theta_max_deg): (usize, f64) = if pec_ground { (91, 90.0) } else { (181, 180.0) };
     let n_phi = 360usize;
-    let d_theta = PI / (n_theta as f64 - 1.0);
+    let d_theta = theta_max_deg.to_radians() / (n_theta as f64 - 1.0);
     let d_phi = 2.0 * PI / n_phi as f64;
 
     let mut total = 0.0_f64;
 
     for it in 0..n_theta {
-        let theta_deg = it as f64;
+        let theta_deg = it as f64 * theta_max_deg / (n_theta as f64 - 1.0);
         let th = theta_deg.to_radians();
         let sin_theta = th.sin();
         if sin_theta == 0.0 {
-            // θ = 0° or θ = 180°: singular edge, pattern vanishes for dipole.
+            // θ = 0° or θ = 90°/180°: singular edge, pattern vanishes for dipole.
             continue;
         }
         // θ weight (trapezoidal: half weight for endpoints)
@@ -139,13 +163,56 @@ fn integrate_over_sphere(segs: &[Segment], i_vec: &[Complex64], k: f64) -> f64 {
 
         for ip in 0..n_phi {
             let phi_deg = ip as f64;
-            let (f_t, f_p) = far_field_components(segs, i_vec, k, theta_deg, phi_deg);
+            let (f_t, f_p) = if pec_ground {
+                far_field_components_with_image(segs, i_vec, k, theta_deg, phi_deg)
+            } else {
+                far_field_components(segs, i_vec, k, theta_deg, phi_deg)
+            };
             let u = f_t.norm_sqr() + f_p.norm_sqr();
             total += u * sin_theta * w_theta * d_phi;
         }
     }
 
     total
+}
+
+/// Compute the complex far-field θ and φ components with PEC ground image.
+///
+/// Adds the image contribution for each segment using the far-field PEC
+/// image convention (position reflected about z=0, direction with x/y
+/// components negated and z kept — see `pec_image_farfield`).
+fn far_field_components_with_image(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    k: f64,
+    theta_deg: f64,
+    phi_deg: f64,
+) -> (Complex64, Complex64) {
+    let (r_hat, theta_hat, phi_hat) = unit_vectors(theta_deg, phi_deg);
+
+    let mut f_theta = Complex64::new(0.0, 0.0);
+    let mut f_phi = Complex64::new(0.0, 0.0);
+
+    for (n, seg) in segs.iter().enumerate() {
+        let i_n = i_vec[n];
+
+        // Direct contribution.
+        let phase_arg = k * dot3(seg.midpoint, r_hat);
+        let phase = Complex64::new(phase_arg.cos(), phase_arg.sin());
+        let weighted = i_n * (seg.length * phase);
+        f_theta += weighted * dot3(seg.direction, theta_hat);
+        f_phi += weighted * dot3(seg.direction, phi_hat);
+
+        // PEC image contribution.
+        let img = pec_image_farfield(seg);
+        let img_phase_arg = k * dot3(img.midpoint, r_hat);
+        let img_phase = Complex64::new(img_phase_arg.cos(), img_phase_arg.sin());
+        let img_weighted = i_n * (img.length * img_phase);
+        f_theta += img_weighted * dot3(img.direction, theta_hat);
+        f_phi += img_weighted * dot3(img.direction, phi_hat);
+    }
+
+    (f_theta, f_phi)
 }
 
 // ---------------------------------------------------------------------------
@@ -161,21 +228,41 @@ fn integrate_over_sphere(segs: &[Segment], i_vec: &[Complex64], k: f64) -> f64 {
 /// * `i_vec`    — solved current vector (one entry per segment).
 /// * `freq_hz`  — operating frequency in Hz.
 /// * `points`   — observation directions (θ, φ in degrees).
+/// * `ground`   — ground model; `PerfectConductor` adds PEC image contribution
+///               and restricts the pattern to the upper hemisphere (θ ≤ 90°).
 pub fn compute_radiation_pattern(
     segs: &[Segment],
     i_vec: &[Complex64],
     freq_hz: f64,
     points: &[FarFieldPoint],
+    ground: &GroundModel,
 ) -> Vec<FarFieldResult> {
     let lambda = SPEED_OF_LIGHT / freq_hz;
     let k = 2.0 * PI / lambda;
 
-    let total_radiated = integrate_over_sphere(segs, i_vec, k);
+    let pec = matches!(ground, GroundModel::PerfectConductor);
+    let total_radiated = integrate_power(segs, i_vec, k, pec);
 
     points
         .iter()
         .map(|pt| {
-            let (f_t, f_p) = far_field_components(segs, i_vec, k, pt.theta_deg, pt.phi_deg);
+            // Below-ground points are null for a PEC plane.
+            if pec && pt.theta_deg > 90.0 {
+                return FarFieldResult {
+                    theta_deg: pt.theta_deg,
+                    phi_deg: pt.phi_deg,
+                    gain_total_dbi: -999.99,
+                    gain_theta_dbi: -999.99,
+                    gain_phi_dbi: -999.99,
+                    axial_ratio: 0.0,
+                };
+            }
+
+            let (f_t, f_p) = if pec {
+                far_field_components_with_image(segs, i_vec, k, pt.theta_deg, pt.phi_deg)
+            } else {
+                far_field_components(segs, i_vec, k, pt.theta_deg, pt.phi_deg)
+            };
             let u_total = f_t.norm_sqr() + f_p.norm_sqr();
             let u_theta = f_t.norm_sqr();
             let u_phi = f_p.norm_sqr();
@@ -298,7 +385,8 @@ mod tests {
                 phi_deg: 0.0,
             },
         ];
-        let results = compute_radiation_pattern(&segs, &i_vec, freq_hz, &pts);
+        let results =
+            compute_radiation_pattern(&segs, &i_vec, freq_hz, &pts, &GroundModel::FreeSpace);
 
         // θ = 90° → maximum, should be close to Hertzian-dipole directivity ≈ 1.76 dBi.
         assert!(
@@ -321,7 +409,8 @@ mod tests {
             theta_deg: 90.0,
             phi_deg: 0.0,
         }];
-        let results = compute_radiation_pattern(&segs, &i_vec, 14.2e6, &pts);
+        let results =
+            compute_radiation_pattern(&segs, &i_vec, 14.2e6, &pts, &GroundModel::FreeSpace);
 
         // z-axis dipole at equator: all energy in E_θ, zero in E_φ.
         assert!(
@@ -352,5 +441,93 @@ mod tests {
         assert!((pts[1].phi_deg - 20.0).abs() < 1e-10);
         assert!((pts[2].theta_deg - 10.0).abs() < 1e-10);
         assert!((pts[2].phi_deg - 60.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn pec_ground_image_direction_vertical() {
+        let seg = Segment {
+            tag: 1,
+            tag_index: 1,
+            global_index: 0,
+            start: [0.0, 0.0, 1.0],
+            end: [0.0, 0.0, 3.0],
+            midpoint: [0.0, 0.0, 2.0],
+            direction: [0.0, 0.0, 1.0],
+            length: 2.0,
+            radius: 1e-4,
+        };
+        let img = pec_image_farfield(&seg);
+        // Position reflected about z = 0.
+        assert!((img.midpoint[2] + 2.0).abs() < 1e-12);
+        // Vertical component: same sign (+z → +z).
+        assert!((img.direction[2] - 1.0).abs() < 1e-12);
+        // Horizontal components: negated (0 → 0 here, trivially).
+        assert!(img.direction[0].abs() < 1e-12);
+    }
+
+    #[test]
+    fn pec_ground_image_direction_horizontal() {
+        let seg = Segment {
+            tag: 1,
+            tag_index: 1,
+            global_index: 0,
+            start: [-1.0, 0.0, 2.0],
+            end: [1.0, 0.0, 2.0],
+            midpoint: [0.0, 0.0, 2.0],
+            direction: [1.0, 0.0, 0.0],
+            length: 2.0,
+            radius: 1e-4,
+        };
+        let img = pec_image_farfield(&seg);
+        // Position reflected: z negated.
+        assert!((img.midpoint[2] + 2.0).abs() < 1e-12);
+        // Horizontal: x negated (−1), z unchanged (0).
+        assert!((img.direction[0] + 1.0).abs() < 1e-12);
+        assert!(img.direction[2].abs() < 1e-12);
+    }
+
+    #[test]
+    fn pec_ground_vertical_dipole_at_origin_doubles_field() {
+        // A z-directed Hertzian dipole at the origin above a PEC plane.
+        // The image is also at the origin (z=0) with the same direction (+z).
+        // At the equator (θ = 90°): field doubles compared to free space.
+        // Total radiated power integrates over upper hemisphere only, so
+        // the normalisation factor changes too; directivity is 2× the free-space
+        // value (≈ +3 dB), giving ≈ 4.77 dBi for a Hertzian dipole at z = 0.
+        let (segs, i_vec) = hertzian_segment(0.01);
+        let freq_hz = 14.2e6;
+        let pts = vec![FarFieldPoint {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+        }];
+        let free = compute_radiation_pattern(&segs, &i_vec, freq_hz, &pts, &GroundModel::FreeSpace);
+        let pec =
+            compute_radiation_pattern(&segs, &i_vec, freq_hz, &pts, &GroundModel::PerfectConductor);
+
+        // PEC directivity at equator should be ≈ free-space + 3 dB.
+        // Hertzian dipole free-space max ≈ 1.76 dBi; with PEC ≈ 4.77 dBi.
+        let delta_db = pec[0].gain_total_dbi - free[0].gain_total_dbi;
+        assert!(
+            (delta_db - 3.0).abs() < 0.1,
+            "expected PEC boost ≈ +3 dB at equator, got {:.3} dB",
+            delta_db
+        );
+    }
+
+    #[test]
+    fn pec_ground_below_horizon_returns_null() {
+        // Points below the ground plane (θ > 90°) must return −999.99 dB for PEC.
+        let (segs, i_vec) = hertzian_segment(0.01);
+        let pts = vec![FarFieldPoint {
+            theta_deg: 120.0,
+            phi_deg: 0.0,
+        }];
+        let results =
+            compute_radiation_pattern(&segs, &i_vec, 14.2e6, &pts, &GroundModel::PerfectConductor);
+        assert!(
+            (results[0].gain_total_dbi + 999.99).abs() < 1e-6,
+            "below-ground point should be -999.99 dB, got {}",
+            results[0].gain_total_dbi
+        );
     }
 }
