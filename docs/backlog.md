@@ -123,6 +123,7 @@ last_updated: 2026-04-29
 	- 2026-04-28 progress: EX type 4 is now accepted in the parser/solver path as a staged portability fallback; current runtime behavior treats it like EX type 0 and emits an explicit warning that segment-current semantics are pending.
 	- 2026-04-28 progress: added CLI warning-contract regression `ex_type4_runs_with_portability_warning_without_unsupported_error` and parity regression `ex_type4_matches_ex_type0_feedpoint_impedance` to lock current EX type 4 behavior.
 	- 2026-04-28 progress: added corpus regression case `dipole-ex4-freesp-51seg` with expected warning lock to keep EX type 4 deck portability covered in CI.
+	- 2026-04-29 progress: implemented the first EX type 4 semantics slice for `--solver pulse` via the same driven-segment current constraint path used by EX1; added pulse-specific no-warning/current-imposition regression coverage and corpus case `dipole-ex4-pulse-current-freesp-51seg`.
 	- 2026-04-28 progress: EX type 5 is now accepted in the parser/solver path as a staged portability fallback; current runtime behavior treats it like EX type 0 and emits an explicit warning that qdsrc semantics are pending.
 	- 2026-04-28 progress: added CLI warning-contract regression `ex_type5_runs_with_portability_warning_without_unsupported_error` and parity regression `ex_type5_matches_ex_type0_feedpoint_impedance` to lock current EX type 5 behavior.
 	- 2026-04-28 progress: added corpus regression case `dipole-ex5-freesp-51seg` with expected warning lock to keep EX type 5 deck portability covered in CI.

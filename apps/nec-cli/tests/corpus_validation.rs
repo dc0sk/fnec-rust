@@ -780,6 +780,7 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         ("dipole-ex3-i4-two-freesp-51seg", true),
         ("dipole-ex3-i4-two-divide-by-i4-freesp-51seg", true),
         ("dipole-ex4-freesp-51seg", true),
+        ("dipole-ex4-pulse-current-freesp-51seg", false),
         ("dipole-ex5-freesp-51seg", true),
         ("dipole-pt-freesp-51seg", true),
         ("dipole-nt-freesp-51seg", true),

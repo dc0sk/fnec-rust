@@ -211,6 +211,35 @@ fn ex_type1_pulse_imposes_requested_segment_current_without_portability_warning(
 }
 
 #[test]
+fn ex_type4_pulse_imposes_requested_segment_current_without_portability_warning() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let ex4_path = std::env::temp_dir().join(format!("fnec-ex4-pulse-{now}.nec"));
+    let ex4_deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&ex4_path, ex4_deck).expect("failed to write EX type 4 pulse deck");
+
+    let (out, err) = run_fnec_with_args(&ex4_path, &workspace_root, &["--solver", "pulse"]);
+
+    let _ = fs::remove_file(&ex4_path);
+
+    assert!(
+        !err.contains("EX type 4 is currently treated like EX type 0"),
+        "pulse-mode EX type 4 should not emit portability warning, got stderr:\n{err}"
+    );
+
+    let (_v_re, _v_im, i_re, i_im) = first_feedpoint_source_and_current(&out);
+    assert!(
+        (i_re - 1.0).abs() < 1e-9 && i_im.abs() < 1e-9,
+        "pulse-mode EX type 4 should impose 1+0j A at the driven segment; got I=({i_re}, {i_im})"
+    );
+}
+
+#[test]
 fn ex_type2_matches_ex_type0_feedpoint_impedance() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
