@@ -1033,6 +1033,67 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
     );
 }
 
+#[test]
+fn phase2_current_phase_corpus_contract_is_present_and_contracted() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    let case_obj = cases
+        .get("dipole-freesp-51seg")
+        .and_then(Value::as_object)
+        .expect("PH2 current/phase checklist case 'dipole-freesp-51seg' missing");
+
+    let deck_file = case_obj
+        .get("deck_file")
+        .and_then(Value::as_str)
+        .expect("'dipole-freesp-51seg' missing 'deck_file'");
+    let deck_path = corpus_root.join(deck_file);
+    assert!(
+        deck_path.exists(),
+        "PH2 current/phase checklist deck missing: {}",
+        deck_path.display()
+    );
+
+    let gates = case_obj
+        .get("tolerance_gates")
+        .and_then(Value::as_object)
+        .expect("'dipole-freesp-51seg' missing 'tolerance_gates'");
+    assert!(
+        gates
+            .get("Current_amplitude_dB")
+            .and_then(Value::as_f64)
+            .is_some(),
+        "'dipole-freesp-51seg' must define Current_amplitude_dB tolerance gate"
+    );
+    assert!(
+        gates
+            .get("Current_phase_deg")
+            .and_then(Value::as_f64)
+            .is_some(),
+        "'dipole-freesp-51seg' must define Current_phase_deg tolerance gate"
+    );
+
+    let current_samples = case_obj
+        .get("current_samples")
+        .and_then(Value::as_array)
+        .expect("'dipole-freesp-51seg' missing 'current_samples' array");
+    assert!(
+        current_samples.len() >= 3,
+        "'dipole-freesp-51seg' should include at least 3 current sample contracts"
+    );
+}
+
 fn collect_expected_sources(
     case_obj: &Map<String, Value>,
     feed: &Map<String, Value>,
@@ -1290,8 +1351,8 @@ fn parse_current_rows(stdout: &str) -> Vec<(usize, usize, f64, f64)> {
         }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        // Format: TAG SEG I_MAG I_PHASE ...
-        if parts.len() < 4 {
+        // Format: TAG SEG I_RE I_IM I_MAG I_PHASE
+        if parts.len() < 6 {
             continue;
         }
 
@@ -1301,10 +1362,10 @@ fn parse_current_rows(stdout: &str) -> Vec<(usize, usize, f64, f64)> {
         let Ok(seg) = parts[1].parse::<usize>() else {
             continue;
         };
-        let Ok(magnitude_db) = parts[2].parse::<f64>() else {
+        let Ok(magnitude_db) = parts[4].parse::<f64>() else {
             continue;
         };
-        let Ok(phase_deg) = parts[3].parse::<f64>() else {
+        let Ok(phase_deg) = parts[5].parse::<f64>() else {
             continue;
         };
 
