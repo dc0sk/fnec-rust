@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-27
+last_updated: 2026-04-29
 ---
 
 # Roadmap
@@ -79,7 +79,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [ ] Expand remaining NEC-2/NEC-4 card execution breadth beyond the current wire/impedance workflow core (e.g., RP execution, additional EX families, TL/NT).
 - [x] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source, GM/GR equivalence cases).
 - [ ] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix.
-- [ ] Simple ground model (infinite, raised dielectric) working and tested.
+- [x] Simple ground model (infinite, raised dielectric) working and tested (GN type 0 simple finite-ground model activated and regression-gated in corpus CI).
 - [ ] CLI-first execution flow complete with all core flags (solver mode, solver options).
 - [ ] Produce 4nec2/EZNEC-grade text outputs for impedance, sweep points, gain, pattern, and current tables so the CLI is immediately usable as a daily comparison tool.
 - [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and broader non-collinear support) so the parity claim is not limited to only the easy cases. Current blocker: Hallen correctly rejects the `dipole-loaded` top-hat geometry as non-collinear, while pulse/continuity/sinusoidal all collapse to the same inaccurate pulse result (`-13.778 + j374.425 Ω` vs external candidate `13.463 - j896.032 Ω` at 7.1 MHz).
