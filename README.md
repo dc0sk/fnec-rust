@@ -19,7 +19,10 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
-	- GN types other than 1 are currently deferred; fnec warns and falls back to free-space behavior
+	- GN 0 (simple finite-ground reflection coefficient path) is supported; `dipole-gn0-fresnel-51seg` is regression-gated
+	- GN 2 low above-ground finite-conductivity cases are supported on the current scoped path; `dipole-gn2-deferred` and `dipole-gn2-near-ground-51seg` are regression-gated
+	- Buried active-ground wire classes (`z < 0`) remain deferred and fail fast with an actionable error instead of silently falling back
+	- GN types outside the current scoped subset still remain deferred
 	- GE ground-reflection flag: `1` = PEC image (handled); `-1` = below-ground (warns); other values warn with valid range hint
 	- Multi-wire Hallen: per-wire homogeneous constants and endpoint constraints; correct passive-wire (zero) RHS
 - Segment current distribution table in CLI output (`CURRENTS` section after feedpoint table)

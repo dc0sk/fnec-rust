@@ -118,6 +118,11 @@ Planned PAR-002 scope:
 
 1. Add an explicit finite-conductivity GN subset in runtime behavior (while keeping unsupported GN variants as warning+fallback paths).
 2. Add near-ground corpus fixtures that isolate finite-conductivity effects from unrelated feature changes.
+
+Current scoped coverage:
+
+- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`.
+- Buried `z < 0` active-ground wire classes remain out of scope for now and fail fast with actionable diagnostics (`corpus/dipole-gn2-buried-unsupported.nec`).
 3. Add tolerance-gated external-reference comparisons for those fixtures in `corpus/reference-results.json` and `apps/nec-cli/tests/corpus_validation.rs`.
 4. Keep existing GN type 1 PEC behavior unchanged and regression-protected while finite-ground support expands.
 

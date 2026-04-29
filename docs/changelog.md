@@ -13,6 +13,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Added a supported low above-ground GN2 near-ground corpus contract (`dipole-gn2-near-ground-51seg`) and tightened PH2-CHK-002 docs/tests so supported near-ground coverage is distinguished from buried active-ground fail-fast guardrails.
 - Geometry diagnostics now also fail fast for source-risk tiny segments: `EX` requests on `L/r < 2` emit an actionable deferred-class error before solve.
 - GN type 0 is now active as a simple finite-ground model in Hallen impedance assembly (complex Fresnel-style image scaling from EPSE/SIG) instead of the prior deferred free-space fallback warning path.
 - Phase 2 current/phase corpus coverage now includes both `dipole-freesp-51seg` and `dipole-ground-51seg`, so CI locks representative free-space and PEC-ground current magnitude/phase samples instead of only the base dipole case.
