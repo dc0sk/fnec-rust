@@ -1020,6 +1020,32 @@
       },
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12)."
     },
+    "dipole-gn0-fresnel-51seg": {
+      "deck_file": "dipole-gn0-fresnel-51seg.nec",
+      "description": "Half-wave dipole, 10 m AGL, GN type 0 finite ground (simple Fresnel model), 51 segments, 14.2 MHz",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "finite ground GN0 (simple Fresnel approximation)",
+      "reference_source": "fnec Hallen solver with GN=0 simple finite-ground model (regression)",
+      "feedpoint_impedance": {
+        "real_ohm": 78.170459,
+        "imag_ohm": 14.95465
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
+        "GN type 0 is not yet supported; treating this deck as free-space"
+      ],
+      "expected_warning_counts": {},
+      "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract."
+    },
     "dipole-gn2-deferred": {
       "deck_file": "dipole-gn2-deferred.nec",
       "description": "Half-wave dipole, GN type 2 (Sommerfeld/Norton finite-conductivity; deferred), 51 segments, 14.2 MHz. Falls back to free-space with a runtime warning.",
