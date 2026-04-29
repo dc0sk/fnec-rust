@@ -7,7 +7,9 @@ use nec_accel::{
 };
 use nec_model::card::Card;
 use nec_parser::parse;
-use nec_report::{render_text_report, CurrentRow, FeedpointRow, PatternRow, ReportInput};
+use nec_report::{
+    render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
+};
 use nec_solver::build_loads;
 use nec_solver::build_tl_stamps;
 use nec_solver::{
@@ -1074,6 +1076,41 @@ fn build_feedpoint_rows(
     rows
 }
 
+fn build_source_rows(deck: &nec_model::deck::NecDeck) -> Vec<SourceRow> {
+    deck.cards
+        .iter()
+        .filter_map(|card| {
+            let Card::Ex(ex) = card else { return None };
+            Some(SourceRow {
+                excitation_type: ex.excitation_type,
+                tag: ex.tag,
+                seg: ex.segment,
+                i4: ex.i4,
+                voltage_real: ex.voltage_real,
+                voltage_imag: ex.voltage_imag,
+            })
+        })
+        .collect()
+}
+
+fn build_load_rows(deck: &nec_model::deck::NecDeck) -> Vec<LoadRow> {
+    deck.cards
+        .iter()
+        .filter_map(|card| {
+            let Card::Ld(ld) = card else { return None };
+            Some(LoadRow {
+                load_type: ld.load_type,
+                tag: ld.tag,
+                seg_first: ld.seg_first,
+                seg_last: ld.seg_last,
+                f1: ld.f1,
+                f2: ld.f2,
+                f3: ld.f3,
+            })
+        })
+        .collect()
+}
+
 fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     let Some(fr) = deck
         .cards
@@ -1392,6 +1429,9 @@ fn solve_frequency_point(
         })
         .collect();
 
+    let source_table = build_source_rows(deck);
+    let load_table = build_load_rows(deck);
+
     let pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
     } else {
@@ -1458,6 +1498,8 @@ fn solve_frequency_point(
         pulse_rhs: pulse_rhs_mode.as_contract_str(),
         frequency_hz: freq_hz,
         rows: &rows,
+        source_table: &source_table,
+        load_table: &load_table,
         current_table: &current_table,
         pattern_table: &pattern_table,
     });

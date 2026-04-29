@@ -28,8 +28,19 @@ fn report_contract_v1_headers_and_rows() {
     assert!(stdout.contains("PULSE_RHS Nec2\n"));
     assert!(stdout.contains("FEEDPOINTS\n"));
     assert!(stdout.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));
+    assert!(stdout.contains("SOURCES\n"));
+    assert!(stdout.contains("N_SOURCES 1\n"));
+    assert!(stdout.contains("TYPE TAG SEG I4 V_RE V_IM\n"));
     assert!(stdout.contains("CURRENTS\n"));
     assert!(stdout.contains("TAG SEG I_RE I_IM I_MAG I_PHASE\n"));
+
+    let feed_idx = stdout.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
+    let source_idx = stdout.find("SOURCES\n").expect("missing SOURCES");
+    let currents_idx = stdout.find("CURRENTS\n").expect("missing CURRENTS");
+    assert!(
+        feed_idx < source_idx && source_idx < currents_idx,
+        "expected section order FEEDPOINTS -> SOURCES -> CURRENTS"
+    );
 
     let mut data_rows = 0usize;
     for line in stdout.lines() {
@@ -187,4 +198,36 @@ fn report_contract_includes_sweep_points_table_for_multi_frequency_runs() {
 
     assert_eq!(sweep_rows, 5, "expected 5 sweep rows, got {sweep_rows}");
     assert_eq!(freqs, vec![10.0, 12.0, 14.0, 16.0, 18.0]);
+}
+
+#[test]
+fn report_contract_includes_load_table_when_ld_cards_exist() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-ld-series-rl-51seg.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for load-table contract test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("LOADS\n"));
+    assert!(stdout.contains("N_LOADS 1\n"));
+    assert!(stdout.contains("TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3\n"));
+
+    let source_idx = stdout.find("SOURCES\n").expect("missing SOURCES");
+    let load_idx = stdout.find("LOADS\n").expect("missing LOADS");
+    let currents_idx = stdout.find("CURRENTS\n").expect("missing CURRENTS");
+    assert!(
+        source_idx < load_idx && load_idx < currents_idx,
+        "expected section order SOURCES -> LOADS -> CURRENTS"
+    );
 }

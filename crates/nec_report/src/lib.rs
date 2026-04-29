@@ -20,6 +20,29 @@ pub struct FeedpointRow {
     pub z_in: Complex64,
 }
 
+/// One row in the source-definition table.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SourceRow {
+    pub excitation_type: u32,
+    pub tag: u32,
+    pub seg: u32,
+    pub i4: u32,
+    pub voltage_real: f64,
+    pub voltage_imag: f64,
+}
+
+/// One row in the load-definition table.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoadRow {
+    pub load_type: i32,
+    pub tag: u32,
+    pub seg_first: u32,
+    pub seg_last: u32,
+    pub f1: f64,
+    pub f2: f64,
+    pub f3: f64,
+}
+
 /// One row in the radiation-pattern table (one (θ, φ) point).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PatternRow {
@@ -43,6 +66,10 @@ pub struct ReportInput<'a> {
     pub pulse_rhs: &'a str,
     pub frequency_hz: f64,
     pub rows: &'a [FeedpointRow],
+    /// Source-definition table captured from EX cards.
+    pub source_table: &'a [SourceRow],
+    /// Load-definition table captured from LD cards.
+    pub load_table: &'a [LoadRow],
     /// Segment current distribution table.  When non-empty, appended after the
     /// feedpoint section as `CURRENTS / TAG SEG I_RE I_IM I_MAG I_PHASE` rows.
     pub current_table: &'a [CurrentRow],
@@ -66,6 +93,28 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
     for row in input.rows {
         out.push_str(&format_feedpoint_row(row));
         out.push('\n');
+    }
+
+    if !input.source_table.is_empty() {
+        out.push('\n');
+        out.push_str("SOURCES\n");
+        out.push_str(&format!("N_SOURCES {}\n", input.source_table.len()));
+        out.push_str("TYPE TAG SEG I4 V_RE V_IM\n");
+        for row in input.source_table {
+            out.push_str(&format_source_row(row));
+            out.push('\n');
+        }
+    }
+
+    if !input.load_table.is_empty() {
+        out.push('\n');
+        out.push_str("LOADS\n");
+        out.push_str(&format!("N_LOADS {}\n", input.load_table.len()));
+        out.push_str("TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3\n");
+        for row in input.load_table {
+            out.push_str(&format_load_row(row));
+            out.push('\n');
+        }
     }
 
     if !input.current_table.is_empty() {
@@ -112,6 +161,20 @@ pub fn format_current_row(row: &CurrentRow) -> String {
     format!(
         "{} {} {:.6e} {:.6e} {:.6e} {:.4}",
         row.tag, row.seg, row.current.re, row.current.im, mag, phase
+    )
+}
+
+pub fn format_source_row(row: &SourceRow) -> String {
+    format!(
+        "{} {} {} {} {:.6} {:.6}",
+        row.excitation_type, row.tag, row.seg, row.i4, row.voltage_real, row.voltage_imag,
+    )
+}
+
+pub fn format_load_row(row: &LoadRow) -> String {
+    format!(
+        "{} {} {} {} {:.6} {:.6} {:.6}",
+        row.load_type, row.tag, row.seg_first, row.seg_last, row.f1, row.f2, row.f3,
     )
 }
 
@@ -162,6 +225,8 @@ mod tests {
             pulse_rhs: "Nec2",
             frequency_hz: 14_200_000.0,
             rows: &rows,
+            source_table: &[],
+            load_table: &[],
             current_table: &[],
             pattern_table: &[],
         });
@@ -203,6 +268,8 @@ mod tests {
             pulse_rhs: "Nec2",
             frequency_hz: 14_200_000.0,
             rows: &rows,
+            source_table: &[],
+            load_table: &[],
             current_table: &current_table,
             pattern_table: &[],
         });
@@ -284,11 +351,61 @@ mod tests {
             pulse_rhs: "Nec2",
             frequency_hz: 14_200_000.0,
             rows: &rows,
+            source_table: &[],
+            load_table: &[],
             current_table: &[],
             pattern_table: &pattern,
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
         assert!(report.contains("THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO\n"));
+    }
+
+    #[test]
+    fn report_includes_sources_and_loads_in_stable_section_order() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 26,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.013471, -0.002522),
+            z_in: Complex64::new(74.242874, 13.899516),
+        }];
+        let source_table = [SourceRow {
+            excitation_type: 0,
+            tag: 1,
+            seg: 26,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+        }];
+        let load_table = [LoadRow {
+            load_type: 2,
+            tag: 1,
+            seg_first: 26,
+            seg_last: 26,
+            f1: 5.0,
+            f2: 1e-6,
+            f3: 0.0,
+        }];
+        let report = render_text_report(&ReportInput {
+            solver_mode: "hallen",
+            pulse_rhs: "Nec2",
+            frequency_hz: 14_200_000.0,
+            rows: &rows,
+            source_table: &source_table,
+            load_table: &load_table,
+            current_table: &[],
+            pattern_table: &[],
+        });
+
+        let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
+        let source_idx = report.find("SOURCES\n").expect("missing SOURCES");
+        let load_idx = report.find("LOADS\n").expect("missing LOADS");
+        assert!(feed_idx < source_idx);
+        assert!(source_idx < load_idx);
+        assert!(report.contains("N_SOURCES 1\n"));
+        assert!(report.contains("TYPE TAG SEG I4 V_RE V_IM\n"));
+        assert!(report.contains("N_LOADS 1\n"));
+        assert!(report.contains("TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3\n"));
     }
 }

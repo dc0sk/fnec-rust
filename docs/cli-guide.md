@@ -110,6 +110,16 @@ TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
 <tag> <seg> <v_re> <v_im> <i_re> <i_im> <z_re> <z_im>
 ...
 
+SOURCES
+N_SOURCES <n>
+TYPE TAG SEG I4 V_RE V_IM
+...
+
+LOADS
+N_LOADS <n>
+TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3
+...
+
 CURRENTS
 TAG SEG I_RE I_IM I_MAG I_PHASE
 ...
@@ -138,6 +148,8 @@ Formatting and ordering rules:
 - Fixed-point numeric formatting with 6 decimals
 - Exactly 8 whitespace-separated numeric columns per data row
 - One data row per driven segment (zero-excitation segments skipped)
+- `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
+- `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 
 ## Diagnostics (stderr)
