@@ -1316,6 +1316,38 @@
       },
       "status": "Hallen path now rejects this case as unsupported because the loaded loop is non-collinear with the driven wire axis. External candidate captured via NEC2DXS500+XQ; full non-collinear solver support is still pending."
     },
+    "dipole-loaded-noncollinear-hallen": {
+      "deck_file": "dipole-loaded.nec",
+      "description": "14.2 MHz dipole driven at 7.1 MHz with top-hat loading loop, using --allow-noncollinear-hallen",
+      "cli_args": [
+        "--allow-noncollinear-hallen"
+      ],
+      "frequency_mhz": 7.1,
+      "segments": null,
+      "wires": 5,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen solver (experimental non-collinear projection path regression lock)",
+      "expected_warning_substrings": [
+        "--allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries"
+      ],
+      "feedpoint_impedance": {
+        "real_ohm": 12.386579,
+        "imag_ohm": -918.149412
+      },
+      "external_reference_candidate": {
+        "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
+        "real_ohm": 13.4632,
+        "imag_ohm": -896.032
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "Regression lock for the experimental non-collinear Hallen path on the loaded top-hat case while full non-collinear basis support remains pending."
+    },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",
       "description": "Half-wave dipole, frequency sweep: 10, 12, 14, 16, 18 MHz (FR step 2.0 MHz from 10.0)",
