@@ -13,6 +13,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Continued CLI decomposition by extracting execution-profile policy logic (4nec2 drop-in detection/steering and startup auto-probe mode selection) from `apps/nec-cli/src/main.rs` into `apps/nec-cli/src/exec_profile.rs`.
 - Started three accepted review follow-ups: parser fuzz scaffolding now exists under `fuzz/`, CLI argument parsing/usage text now lives in `apps/nec-cli/src/cli_args.rs`, and `nec_solver` now carries a first property-based Hallen reciprocity invariant test.
 - Review follow-up triage now assigns owners and concrete closure criteria for the remaining GAP items, adds measurable Phase 3 usability minima, documents experimental residual budgets and the scoped GN0/GN2 finite-ground validity envelope, and starts documenting crate-level public surfaces for `nec_report` and `nec_project`.
 - Report contract coverage now locks combined sweep-plus-operator-table ordering on stdout: multi-frequency runs with `LD` cards must emit one full per-frequency block in `FEEDPOINTS -> SOURCES -> LOADS -> CURRENTS` order before the final `SWEEP_POINTS` summary.
