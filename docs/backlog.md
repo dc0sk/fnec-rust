@@ -79,6 +79,7 @@ last_updated: 2026-04-29
 - [ ] **CLI orchestration extraction / Owner: CLI+Core APIs / Target: Phase 2-3**
 	Resolution criteria: `apps/nec-cli/src/main.rs` is reduced to frontend wiring; argument parsing, solve-session orchestration, and FR sweep coordination are extracted into reusable units that can be tested without spawning the CLI binary.
 	- 2026-04-29 progress: started the extraction by moving CLI option parsing and usage-contract text into `apps/nec-cli/src/cli_args.rs`, leaving `main.rs` with a narrower frontend-wiring role.
+	- 2026-04-29 progress: extracted compatibility-profile detection/steering and startup execution auto-probe policy into `apps/nec-cli/src/exec_profile.rs`, further shrinking policy logic embedded in `main.rs`.
 
 - [ ] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
 	Resolution criteria: a `cargo-fuzz` target exists for `nec_parser`, seed inputs are checked in, and contributor docs describe how to run the fuzz target locally.
