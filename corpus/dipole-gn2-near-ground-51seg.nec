@@ -1,0 +1,12 @@
+CE PAR-002 PH2-CHK-002 supported near-ground fixture: GN type 2 finite ground
+CE Uses a low-height above-ground dipole (lowest point z=0.5 m) to lock the
+CE currently supported near-ground active-ground class separately from the
+CE buried-wire fail-fast guardrail.
+CE Medium parameters (EPSE=13, SIG=0.005 S/m — "average ground") drive the
+CE current scoped finite-ground approximation path.
+GW 1 51 0 0 0.5 0 0 11.064 0.001
+GE
+GN 2 0 0 0 13.0 0.005
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

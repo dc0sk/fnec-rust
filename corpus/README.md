@@ -188,6 +188,25 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Why this case**: Ground effects are critical for practical antennas. Validates GN=1 perfect-ground image-method behavior.
 
+### 2b. `dipole-gn2-near-ground-51seg.nec` — Low dipole over finite-conductivity ground
+
+**Purpose**: Validate the currently supported low above-ground `GN 2` near-ground class separately from buried-wire guardrails.
+
+**Geometry**:
+- Frequency: 14.2 MHz
+- Wire: same canonical 51-segment half-wave dipole length as case 1, lowered so the wire spans `z=0.5 m` to `z=11.064 m`
+- Feed: Center segment, 1.0 V
+- Ground: `GN 2` with `EPSE=13.0`, `SIG=0.005 S/m`
+
+**Expected results** (current regression gate):
+- Z_in = 69.436745 + j16.705598 Ω
+- No deferred-ground warning
+- No buried-wire guardrail error
+
+**Tolerance gates**: Same as the canonical impedance gates (`R_absolute_ohm`, `X_absolute_ohm`, `R_percent_rel`, `X_percent_rel`).
+
+**Why this case**: It closes the PH2-CHK-002 supported-path gap by proving the active-ground runtime still accepts low above-ground geometry while buried active-ground geometry remains explicitly blocked.
+
 ### 3. `yagi-5elm-51seg.nec` — 5-element Yagi array
 
 **Purpose**: Validate multi-wire geometry, mutual coupling, and array gain.

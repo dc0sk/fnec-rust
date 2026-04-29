@@ -408,3 +408,79 @@ fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
         "did not expect deferred GN2 warning for active buried-wire guardrail failure, got:\n{stderr}"
     );
 }
+
+#[test]
+fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
+    // PH2-CHK-002 supported class: low above-ground geometry on active GN2
+    // should remain solveable and regression-gated separately from the buried
+    // z < 0 guardrail path.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-near-ground-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 0.5 0 0 11.064 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary near-ground deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for near-ground GN2 test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "near-ground active-ground deck should succeed, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("GN type 2 is not yet supported"),
+        "did not expect deferred GN2 warning for supported near-ground case, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("unsupported buried-wire geometry for active ground model"),
+        "near-ground z >= 0 geometry should not trip buried-wire guardrail, got:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let z_re = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[6].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
+    let z_im = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[7].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
+
+    assert!(
+        (z_re - 69.436745).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~69.44"
+    );
+    assert!(
+        (z_im - 16.705598).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_IM={z_im}, expected ~16.71"
+    );
+}

@@ -890,6 +890,10 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
         // GN=2 finite-conductivity scoped runtime path: must be regression-
         // gated and explicitly forbid the old deferred-ground warning text.
         ("dipole-gn2-deferred", true, false, true),
+        // GN=2 low above-ground geometry: supported near-ground class; must be
+        // regression-gated and explicitly forbid both the old deferred-ground
+        // warning and the buried-wire guardrail error path.
+        ("dipole-gn2-near-ground-51seg", true, false, true),
         // GN=-1 null ground: maps to free-space silently; must have a
         // forbidden-warning contract ensuring no deferred-ground warning fires.
         ("dipole-gn-1-null", true, false, true),
@@ -996,6 +1000,21 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
                     .and_then(Value::as_str)
                     .is_some(),
                 "PAR-002 checklist case '{}' must define expected_hallen_error_contains",
+                case_name
+            );
+        }
+
+        if *case_name == "dipole-gn2-near-ground-51seg" {
+            let forbidden_warning_substrings = case_obj
+                .get("forbidden_warning_substrings")
+                .and_then(Value::as_array)
+                .expect("near-ground GN2 case missing forbidden warning contract");
+            let has_buried_guardrail_forbidden = forbidden_warning_substrings.iter().any(|value| {
+                value.as_str() == Some("unsupported buried-wire geometry for active ground model")
+            });
+            assert!(
+                has_buried_guardrail_forbidden,
+                "PAR-002 checklist case '{}' must forbid the buried-wire guardrail text",
                 case_name
             );
         }
