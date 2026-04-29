@@ -1123,6 +1123,24 @@
       "expected_warning_counts": {},
       "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract."
     },
+    "dipole-gn2-buried-unsupported": {
+      "deck_file": "dipole-gn2-buried-unsupported.nec",
+      "description": "Buried dipole with active GN type 2 finite ground. This geometry class is currently unsupported and must fail fast with actionable diagnostics.",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "finite conductivity GN2 buried-wire class (unsupported guardrail)",
+      "reference_source": "fnec runtime guardrail contract (PH2-CHK-002)",
+      "expected_hallen_error_contains": "unsupported buried-wire geometry for active ground model",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
+        "GN type 2 is not yet supported; treating this deck as free-space"
+      ],
+      "expected_warning_counts": {},
+      "tolerance_gates": {},
+      "status": "PH2-CHK-002 unsupported-class guardrail contract: buried-wire active-ground requests fail fast with actionable diagnostics instead of silently solving."
+    },
     "dipole-gn-1-null": {
       "deck_file": "dipole-gn-1-null.nec",
       "description": "Half-wave dipole, GN -1 (null ground — cancels previous GN per NEC spec §3.3), 51 segments, 14.2 MHz. Must produce free-space results with NO deferred-ground warning.",

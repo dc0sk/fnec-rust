@@ -1,0 +1,8 @@
+CE PAR-002 PH2-CHK-002 guardrail fixture: buried wire with active GN2 ground
+CE This class is currently unsupported and must fail fast with actionable diagnostics.
+GW 1 51 0 0 -15.282 0 0 -4.718 0.001
+GE
+GN 2 0 0 0 13.0 0.005
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

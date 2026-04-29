@@ -12,8 +12,10 @@ fn gn0_is_active_without_deferred_warning() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-gn0-{now}.nec"));
 
+    // Keep GN0 validation in the supported above-ground class; buried/near-ground
+    // classes are covered by dedicated fail-fast guardrail tests.
     let deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGN 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary GN deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -362,5 +364,47 @@ fn gn_negative1_null_ground_is_silent_free_space() {
     assert!(
         (z_re - 74.23).abs() < 0.1,
         "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~74.23 (free-space)"
+    );
+}
+
+#[test]
+fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
+    // PH2-CHK-002 guardrail: buried-wire classes are deferred for active
+    // finite/PEC ground paths and should fail fast with an actionable error.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-buried-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 -15.282 0 0 -4.718 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary buried-wire deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for buried-wire guardrail test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        !output.status.success(),
+        "buried-wire active-ground deck should fail, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: unsupported buried-wire geometry for active ground model"),
+        "expected buried-wire actionable error in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("GN type 2 is not yet supported"),
+        "did not expect deferred GN2 warning for active buried-wire guardrail failure, got:\n{stderr}"
     );
 }
