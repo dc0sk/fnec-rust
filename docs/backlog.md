@@ -51,6 +51,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: tightened external RP gain gates for `dipole-freesp-rp-51seg` (0.1→0.08 dB, actual max |dGain|=0.068) and `dipole-xaxis-rp-grid-51seg` (0.1→0.04 dB, actual max |dGain|=0.034), matching the actual-delta-plus-headroom pattern used for impedance gates.
 	- 2026-04-29 progress: implemented PEC ground-aware RP far-field in `nec_solver::farfield` (image contribution + upper-hemisphere normalization + below-horizon null contract), wired CLI RP path through `ground` model, and added corpus regression fixture `corpus/dipole-ground-rp-51seg.nec` with reference pattern samples.
 	- 2026-04-29 progress: activated GN type 0 simple finite-ground model in Hallen matrix assembly using a complex Fresnel-style reflection factor from EPSE/SIG, replaced the prior deferred GN0 warning path, and added corpus regression fixture `corpus/dipole-gn0-fresnel-51seg.nec`.
+	- 2026-04-29 progress: added CLI scriptability regression tests (`apps/nec-cli/tests/scriptability_contract.rs`) to lock stable machine-parseable report headers on stdout and enforce warning/output stream separation (warnings on stderr, report-only stdout).
 
 ## Parity-driven backlog items
 
