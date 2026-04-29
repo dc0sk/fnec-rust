@@ -1066,9 +1066,31 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
+        "Current_amplitude_dB": 0.0001,
+        "Current_phase_deg": 0.1,
         "ExternalR_absolute_ohm": 8.0,
         "ExternalX_absolute_ohm": 30.0
       },
+      "current_samples": [
+        {
+          "wire_id": 1,
+          "segment_id": 1,
+          "amplitude_db": 2.022629e-4,
+          "phase_deg": 106.7530
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 26,
+          "amplitude_db": 1.196980e-2,
+          "phase_deg": -11.3326
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 51,
+          "amplitude_db": 3.026640e-4,
+          "phase_deg": -78.3656
+        }
+      ],
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12)."
     },
     "dipole-gn0-fresnel-51seg": {
