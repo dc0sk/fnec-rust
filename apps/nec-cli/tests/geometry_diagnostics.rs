@@ -1,0 +1,75 @@
+use std::fs;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[test]
+fn crossing_wires_fail_fast_with_actionable_error() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-crossing-{now}.nec"));
+
+    // Two wires crossing at interior points (origin) are currently unsupported
+    // and should fail before solve with an actionable geometry error.
+    let deck = "GW 1 11 -1.0 0.0 0.0 1.0 0.0 0.0 0.001\nGW 2 11 0.0 -1.0 0.0 0.0 1.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary crossing-wires deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--allow-noncollinear-hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for crossing-wires test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        !output.status.success(),
+        "crossing-wire deck should fail, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: unsupported intersecting-wire geometry"),
+        "expected intersection geometry error in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn endpoint_wire_junction_is_not_rejected_as_intersection() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-endpoint-{now}.nec"));
+
+    // Endpoint junction (shared wire endpoint) is allowed by current geometry
+    // diagnostics; this case guards against over-rejecting legal joins.
+    let deck = "GW 1 11 0.0 0.0 0.0 1.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 0.0 0.0 1.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary endpoint-junction deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--allow-noncollinear-hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for endpoint-junction test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "endpoint-junction deck should solve, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unsupported intersecting-wire geometry"),
+        "did not expect intersection geometry error for endpoint join, got:\n{stderr}"
+    );
+}
