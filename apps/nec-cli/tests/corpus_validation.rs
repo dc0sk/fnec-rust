@@ -751,6 +751,7 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
     // PAR-003 portability checklist: selected mainstream staged cards and order variants.
     let required_cases = [
         ("dipole-ex1-freesp-51seg", true),
+        ("dipole-ex1-pulse-current-freesp-51seg", false),
         ("dipole-ex2-freesp-51seg", true),
         ("dipole-ex3-freesp-51seg", false),
         ("dipole-ex3-i4-freesp-51seg", true),
@@ -809,6 +810,19 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
             );
         }
     }
+
+    let ex1_pulse_case = cases
+        .get("dipole-ex1-pulse-current-freesp-51seg")
+        .and_then(Value::as_object)
+        .expect("PAR-003 implemented EX1 pulse case missing");
+    let forbidden_warning_substrings = ex1_pulse_case
+        .get("forbidden_warning_substrings")
+        .and_then(Value::as_array)
+        .expect("PAR-003 implemented EX1 pulse case missing 'forbidden_warning_substrings'");
+    assert!(
+        !forbidden_warning_substrings.is_empty(),
+        "PAR-003 implemented EX1 pulse case should forbid the legacy portability warning"
+    );
 }
 
 #[test]

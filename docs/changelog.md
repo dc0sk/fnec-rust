@@ -14,7 +14,7 @@ All notable documentation process changes are recorded here.
 ### Changed
 
 - GN type 0 is now active as a simple finite-ground model in Hallen impedance assembly (complex Fresnel-style image scaling from EPSE/SIG) instead of the prior deferred free-space fallback warning path.
-- EX type 1 is now accepted as a staged portability fallback: the CLI warns that current-source semantics are still pending, and current runtime behavior treats EX type 1 like EX type 0 until a dedicated implementation lands.
+- EX type 1 now has a first real implementation slice for `--solver pulse`: the pulse solver enforces the requested driven-segment current and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still keep the staged portability fallback warning.
 - EX type 2 is now accepted as a staged portability fallback: the CLI warns that incident-plane-wave semantics are still pending, and current runtime behavior treats EX type 2 like EX type 0 until a dedicated implementation lands.
 - EX type 4 is now accepted as a staged portability fallback: the CLI warns that segment-current semantics are still pending, and current runtime behavior treats EX type 4 like EX type 0 until a dedicated implementation lands.
 - EX type 5 is now accepted as a staged portability fallback: the CLI warns that qdsrc semantics are still pending, and current runtime behavior treats EX type 5 like EX type 0 until a dedicated implementation lands.

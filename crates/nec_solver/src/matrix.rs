@@ -131,6 +131,18 @@ impl ZMatrix {
         let idx = row * self.n + col;
         self.data[idx] += delta;
     }
+
+    /// Replace one matrix row with explicit values.
+    pub fn replace_row(&mut self, row: usize, values: &[Complex64]) {
+        debug_assert_eq!(
+            values.len(),
+            self.n,
+            "row length must equal matrix dimension"
+        );
+        for (col, &value) in values.iter().enumerate() {
+            self.data[row * self.n + col] = value;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
