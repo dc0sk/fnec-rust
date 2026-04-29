@@ -122,3 +122,33 @@ Recover segment currents by I_seg = T*a after solve.
   with analytic integral for 1/R_eff part.
 - Direct normal equations amplify conditioning issues; QR/SVD is typically more robust for overdetermined augmented systems.
 - Constraint enforcement (tip current, symmetry, feed normalization) should be explicit and unit-tested.
+
+## Experimental solver residual budgets
+
+The fallback-capable experimental modes use explicit residual budgets as safety rails, not as parity claims.
+
+- `continuity`: relative L2 residual budget is `1e-3` (`CONTINUITY_REL_RESIDUAL_MAX` in `apps/nec-cli/src/main.rs`). If the continuity-basis solve exceeds this threshold, the CLI emits a warning and falls back to the pulse solution path.
+- `sinusoidal`: relative L2 residual budget is `1e-2` (`SINUSOIDAL_REL_RESIDUAL_MAX` in `apps/nec-cli/src/main.rs`). If the projected sinusoidal-basis solve exceeds this threshold on a topology that otherwise passes the A4 topology gate, the CLI emits a warning and falls back to Hallen.
+- `sin_rel_res` in CLI diagnostics records the pre-fallback sinusoidal residual so automation can distinguish a successful sinusoidal solve from a guarded fallback.
+
+These thresholds are intentionally stricter than "solver did not crash" but looser than the compatibility tolerance matrix. They exist to prevent experimental modes from silently returning numerically poor results while a more stable fallback exists.
+
+## Scoped finite-ground approximation (GN0/GN2)
+
+The current GN0/GN2 implementation is a scoped finite-ground approximation, not a full Sommerfeld/Norton ground solver.
+
+- Runtime model: Hallen image contribution is scaled by a complex Fresnel-style reflection factor derived from `EPSE` and `SIG`.
+- Current validation scope: above-ground wire cases that are explicitly locked in corpus CI (`dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred`, and `dipole-gn2-near-ground-51seg`).
+- Current non-goals: buried conductors (`z < 0`), loop/patch/surface classes, and broad claims of NEC-4-class accuracy outside the contracted corpus cases.
+
+Known limitations of this approximation class:
+
+- very low-height conductors where full Sommerfeld current distribution and surface-wave effects dominate
+- strongly conductive or highly frequency-sensitive soil cases beyond the current regression set
+- geometries whose ground interaction is not well captured by a single image/reflection-factor correction
+
+Promotion path:
+
+1. Keep expanding externally captured near-ground and finite-conductivity corpus fixtures.
+2. Document the validity envelope of the Fresnel-style approximation against those fixtures.
+3. Replace or complement the current approximation with a fuller Sommerfeld/Norton implementation when Phase 2 ground scope requires it.

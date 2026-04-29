@@ -1,3 +1,15 @@
+//! Stable report-format helpers shared by frontends.
+//!
+//! The primary public surface is [`ReportInput`], which accepts already-solved
+//! numerical results plus optional operator tables and radiation-pattern rows.
+//! [`render_text_report`] renders those inputs into the versioned text contract
+//! currently used by the CLI (`FORMAT_VERSION 1`).
+//!
+//! This crate intentionally owns report formatting only. It does not solve,
+//! postprocess, or discover data on its own; callers provide structured rows so
+//! future frontends can share the same report contract without duplicating the
+//! formatting rules ad hoc.
+//!
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
