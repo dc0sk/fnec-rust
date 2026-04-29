@@ -100,27 +100,47 @@ fn corpus_validation_cases_with_references() {
             deck_path.display()
         );
 
-        let feed = case_obj
-            .get("feedpoint_impedance")
-            .and_then(Value::as_object)
-            .unwrap_or_else(|| panic!("case '{case_name}' missing 'feedpoint_impedance' object"));
+        let (
+            expected_sources,
+            expected_freq_points,
+            expected_pattern_samples,
+            expected_current_samples,
+            expected_scalar,
+        ) = if expected_hallen_error_contains.is_some() {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), (0.0, 0.0))
+        } else {
+            let feed = case_obj
+                .get("feedpoint_impedance")
+                .and_then(Value::as_object)
+                .unwrap_or_else(|| {
+                    panic!("case '{case_name}' missing 'feedpoint_impedance' object")
+                });
 
-        let expected_real = feed.get("real_ohm").and_then(Value::as_f64);
-        let expected_imag = feed.get("imag_ohm").and_then(Value::as_f64);
-        let expected_sources = collect_expected_sources(case_obj, feed);
-        let expected_freq_points = collect_expected_frequency_points(feed);
-        let expected_pattern_samples = collect_expected_pattern_samples(case_obj);
-        let expected_current_samples = collect_expected_current_samples(case_obj);
+            let expected_real = feed.get("real_ohm").and_then(Value::as_f64);
+            let expected_imag = feed.get("imag_ohm").and_then(Value::as_f64);
+            let expected_sources = collect_expected_sources(case_obj, feed);
+            let expected_freq_points = collect_expected_frequency_points(feed);
+            let expected_pattern_samples = collect_expected_pattern_samples(case_obj);
+            let expected_current_samples = collect_expected_current_samples(case_obj);
 
-        let expected_scalar = match (expected_real, expected_imag) {
-            (Some(r), Some(x)) => (r, x),
-            _ => {
-                if expected_sources.is_empty() && expected_freq_points.is_empty() {
-                    skipped += 1;
-                    continue;
+            let expected_scalar = match (expected_real, expected_imag) {
+                (Some(r), Some(x)) => (r, x),
+                _ => {
+                    if expected_sources.is_empty() && expected_freq_points.is_empty() {
+                        skipped += 1;
+                        continue;
+                    }
+                    (0.0, 0.0)
                 }
-                (0.0, 0.0)
-            }
+            };
+
+            (
+                expected_sources,
+                expected_freq_points,
+                expected_pattern_samples,
+                expected_current_samples,
+                expected_scalar,
+            )
         };
 
         let gates = case_obj
@@ -199,28 +219,6 @@ fn corpus_validation_cases_with_references() {
 
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-        if let Some(expected_msg) = expected_hallen_error_contains {
-            assert!(
-                !output.status.success(),
-                "case '{}' expected Hallen failure containing '{}', but command succeeded",
-                case_name,
-                expected_msg
-            );
-            assert!(
-                stderr.contains(expected_msg),
-                "case '{}' expected Hallen error containing '{}', got stderr:\n{}",
-                case_name,
-                expected_msg,
-                stderr
-            );
-            validated += 1;
-            continue;
-        }
-
-        if !output.status.success() {
-            panic!("fnec failed for case '{}': {}", case_name, stderr);
-        }
-
         for expected_warning in &expected_warning_substrings {
             assert!(
                 stderr.contains(expected_warning),
@@ -246,6 +244,28 @@ fn corpus_validation_cases_with_references() {
                 "Case '{}' expected warning '{}' to appear {} time(s), got {} occurrence(s) in stderr:\n{}",
                 case_name, warning, expected_count, actual_count, stderr
             );
+        }
+
+        if let Some(expected_msg) = expected_hallen_error_contains {
+            assert!(
+                !output.status.success(),
+                "case '{}' expected Hallen failure containing '{}', but command succeeded",
+                case_name,
+                expected_msg
+            );
+            assert!(
+                stderr.contains(expected_msg),
+                "case '{}' expected Hallen error containing '{}', got stderr:\n{}",
+                case_name,
+                expected_msg,
+                stderr
+            );
+            validated += 1;
+            continue;
+        }
+
+        if !output.status.success() {
+            panic!("fnec failed for case '{}': {}", case_name, stderr);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -858,6 +878,9 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
         // GN=-1 null ground: maps to free-space silently; must have a
         // forbidden-warning contract ensuring no deferred-ground warning fires.
         ("dipole-gn-1-null", true, false, true),
+        // GN=2 buried-wire class: unsupported for active ground path; must
+        // retain explicit guardrail contracts (error + forbidden old warning).
+        ("dipole-gn2-buried-unsupported", false, false, true),
     ];
 
     for (case_name, expect_regression_gate, expect_warning_contract, expect_forbidden_contract) in
@@ -947,6 +970,17 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
             assert!(
                 !forbidden_warning_substrings.is_empty(),
                 "PAR-002 checklist case '{}' has empty forbidden-warning contract",
+                case_name
+            );
+        }
+
+        if *case_name == "dipole-gn2-buried-unsupported" {
+            assert!(
+                case_obj
+                    .get("expected_hallen_error_contains")
+                    .and_then(Value::as_str)
+                    .is_some(),
+                "PAR-002 checklist case '{}' must define expected_hallen_error_contains",
                 case_name
             );
         }

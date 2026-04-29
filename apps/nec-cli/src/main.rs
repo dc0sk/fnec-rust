@@ -662,6 +662,34 @@ fn segment_intersection_error(segs: &[nec_solver::Segment]) -> Option<String> {
     None
 }
 
+fn buried_wire_geometry_error(
+    segs: &[nec_solver::Segment],
+    ground: &GroundModel,
+) -> Option<String> {
+    const BURIED_Z_EPS: f64 = 1.0e-9;
+
+    // PH2-CHK-002 guardrail: buried-wire handling is not yet supported for
+    // active image/finite-ground paths. Keep deferred/free-space behavior
+    // unchanged so existing deferred contracts remain stable.
+    if !matches!(
+        ground,
+        GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
+    ) {
+        return None;
+    }
+
+    for seg in segs {
+        if seg.start[2] < -BURIED_Z_EPS || seg.end[2] < -BURIED_Z_EPS {
+            return Some(format!(
+                "unsupported buried-wire geometry for active ground model on tag {} seg {} (z < 0). Use free-space or move geometry to z >= 0; buried/near-ground classes are deferred",
+                seg.tag, seg.tag_index
+            ));
+        }
+    }
+
+    None
+}
+
 fn segments_share_endpoint(a: &nec_solver::Segment, b: &nec_solver::Segment, eps: f64) -> bool {
     points_close(a.start, b.start, eps)
         || points_close(a.start, b.end, eps)
@@ -1611,6 +1639,10 @@ fn main() -> ExitCode {
     };
 
     let ground = ground_model_from_deck(deck);
+    if let Some(err) = buried_wire_geometry_error(&segs, &ground) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
     warn_deferred_ground_model(&ground);
 
     let pattern_points: Vec<FarFieldPoint> = deck
