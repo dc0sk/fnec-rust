@@ -939,6 +939,81 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
     }
 }
 
+#[test]
+fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    let blocked_case = cases
+        .get("dipole-loaded")
+        .and_then(Value::as_object)
+        .expect("Phase 1 loaded-gap case 'dipole-loaded' missing");
+    assert!(
+        blocked_case
+            .get("expected_hallen_error_contains")
+            .and_then(Value::as_str)
+            .is_some(),
+        "Phase 1 loaded-gap case 'dipole-loaded' must keep expected Hallen failure contract"
+    );
+
+    let experimental_case = cases
+        .get("dipole-loaded-noncollinear-hallen")
+        .and_then(Value::as_object)
+        .expect("Phase 1 loaded-gap case 'dipole-loaded-noncollinear-hallen' missing");
+
+    let deck_file = experimental_case
+        .get("deck_file")
+        .and_then(Value::as_str)
+        .expect("'dipole-loaded-noncollinear-hallen' missing 'deck_file'");
+    let deck_path = corpus_root.join(deck_file);
+    assert!(
+        deck_path.exists(),
+        "Phase 1 loaded-gap deck missing for case 'dipole-loaded-noncollinear-hallen': {}",
+        deck_path.display()
+    );
+
+    let cli_args = experimental_case
+        .get("cli_args")
+        .and_then(Value::as_array)
+        .expect("'dipole-loaded-noncollinear-hallen' missing 'cli_args'");
+    assert!(
+        cli_args
+            .iter()
+            .any(|v| v.as_str() == Some("--allow-noncollinear-hallen")),
+        "'dipole-loaded-noncollinear-hallen' must include --allow-noncollinear-hallen in cli_args"
+    );
+
+    let warning_contract = experimental_case
+        .get("expected_warning_substrings")
+        .and_then(Value::as_array)
+        .expect("'dipole-loaded-noncollinear-hallen' missing expected warning contract");
+    assert!(
+        !warning_contract.is_empty(),
+        "'dipole-loaded-noncollinear-hallen' expected warning contract must not be empty"
+    );
+
+    let feed = experimental_case
+        .get("feedpoint_impedance")
+        .and_then(Value::as_object)
+        .expect("'dipole-loaded-noncollinear-hallen' missing 'feedpoint_impedance'");
+    assert!(
+        feed.get("real_ohm").and_then(Value::as_f64).is_some()
+            && feed.get("imag_ohm").and_then(Value::as_f64).is_some(),
+        "'dipole-loaded-noncollinear-hallen' must have numeric real_ohm and imag_ohm"
+    );
+}
+
 fn collect_expected_sources(
     case_obj: &Map<String, Value>,
     feed: &Map<String, Value>,
