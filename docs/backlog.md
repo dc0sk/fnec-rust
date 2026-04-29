@@ -74,6 +74,26 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: advanced PH2-CHK-003 source-card semantics by implementing an EX type 5 pulse-mode driven-segment current path (suppressing the legacy EX5 portability warning on `--solver pulse`), with regression locks in `apps/nec-cli/tests/ex_cards.rs` and corpus case `dipole-ex5-pulse-current-freesp-51seg`.
 	- 2026-04-29 progress: tightened the PH2-CHK-007 enforced traceability matrix in `docs/corpus-validation-strategy.md` and `apps/nec-cli/tests/corpus_validation.rs` so newer EX current-source, LD load-family, TL subset, and PT/NT deferred-portability corpus classes are explicitly mapped and CI-required.
 
+## Review-driven follow-ups (2026-04-29)
+
+- [ ] **CLI orchestration extraction / Owner: CLI+Core APIs / Target: Phase 2-3**
+	Resolution criteria: `apps/nec-cli/src/main.rs` is reduced to frontend wiring; argument parsing, solve-session orchestration, and FR sweep coordination are extracted into reusable units that can be tested without spawning the CLI binary.
+	- 2026-04-29 progress: started the extraction by moving CLI option parsing and usage-contract text into `apps/nec-cli/src/cli_args.rs`, leaving `main.rs` with a narrower frontend-wiring role.
+
+- [ ] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
+	Resolution criteria: a `cargo-fuzz` target exists for `nec_parser`, seed inputs are checked in, and contributor docs describe how to run the fuzz target locally.
+	- 2026-04-29 progress: added initial `fuzz/` scaffold outside the Cargo workspace with a `nec_parser_parse` target and a canonical dipole seed corpus input.
+
+- [ ] **Property-based solver invariants / Owner: Solver+Validation / Target: Phase 2**
+	Resolution criteria: at least one property-based invariant test is present in `nec_solver` for a physical reciprocity or symmetry law and is part of the normal test matrix.
+	- 2026-04-29 progress: added the first randomized Hallen reciprocity invariant in `crates/nec_solver/src/matrix.rs`, checking `A_ij = A_ji` across randomly parameterized collinear two-segment cases.
+
+- [ ] **Benchmark history trend capture / Owner: Performance / Target: Phase 5 prep**
+	Resolution criteria: repeated benchmark runs can be appended to a persistent history format and summarized by a tracked script without relying on ad hoc files in `tmp/`.
+
+- [ ] **FR-004 project format scope (`nec_project`) / Owner: Project+Core APIs / Target: Phase 3**
+	Resolution criteria: `nec_project` has a documented crate scope covering Markdown project structure, run metadata, and result-storage responsibilities, and roadmap/backlog work items explicitly track Markdown import/export delivery.
+
 ## Parity-driven backlog items
 
 - [x] **PAR-001 / 4nec2-EZNEC text-report parity contract / Owner: CLI+Reporting / Target: Phase 1 / Issue: #14**

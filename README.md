@@ -107,7 +107,7 @@ docs/
 Install the required cargo tools:
 
 ```bash
-cargo install cargo-audit cargo-sbom
+cargo install cargo-audit cargo-sbom cargo-fuzz
 ```
 
 Install the local git hooks:
@@ -122,7 +122,8 @@ This configures `core.hooksPath` to use `.githooks/`.
 
 - Pre-commit: `cargo fmt --all -- --check`, `cargo test --workspace`
 - Pre-push: `cargo audit`
-- Docs validation: `./scripts/validate-docs-frontmatter.sh`
+- Docs validation: `./scripts/validate-doc-frontmatter.sh`
+- Parser fuzz scaffold: `(cd fuzz && cargo fuzz run nec_parser_parse corpus/nec_parser_parse)`
 - Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
 - Remote ARM64 benchmark CSV (Pi over SSH): `bash ./scripts/pi-remote-benchmark.sh <user@host>`
 - Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`

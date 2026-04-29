@@ -83,6 +83,8 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [x] CLI-first execution flow complete with all core flags (solver mode, solver options).
 - [x] Produce 4nec2/EZNEC-grade text outputs for impedance, sweep points, gain, pattern, and current tables so the CLI is immediately usable as a daily comparison tool.
 - [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and broader non-collinear support) so the parity claim is not limited to only the easy cases. Current blocker: Hallen correctly rejects the `dipole-loaded` top-hat geometry as non-collinear, while pulse/continuity/sinusoidal all collapse to the same inaccurate pulse result (`-13.778 + j374.425 Ω` vs external candidate `13.463 - j896.032 Ω` at 7.1 MHz).
+	- Phase 2 remediation path: keep the default Hallen hard-fail contract and the experimental `--allow-noncollinear-hallen` tracking path in CI, but require an explicit formulation decision before Phase 3 GUI/product work broadens the parity claim.
+	- Decision gate: choose and document one path for non-collinear wire classes by Phase 2 end: `(a)` generalized sinusoidal/Pocklington-class solver work, `(b)` hybrid formulation split for collinear vs non-collinear classes, or `(c)` explicit deferral of geometric-load/top-hat classes from parity claims with rationale in `docs/solver-findings.md`.
 - [x] Ensure the CLI remains at least as scriptable and batch-friendly as open NEC2 tools like yeti01/nec2, including predictable stdin/stdout behavior and stable machine-parseable reporting conventions.
 
 **Blocker dependencies**: BLK-002 (NEC-4 feature boundary).
@@ -141,6 +143,12 @@ Execution order recommendation for smallest-risk progress: PH2-CHK-001 -> PH2-CH
 - [ ] Provide an open-source workbench story competitive with xnec2c on Linux: integrated deck editing, fast rerun loops, and direct graphical inspection of sweep and field results.
 - [ ] Add AutoEZ-class automation primitives: variable sweeps, resonance targeting, segmentation/convergence studies, and matching-network workflow helpers.
 - [ ] Ensure external optimizer-loop interoperability comparable to xnec2c-optimize, including deterministic objective evaluation runs and stable machine-readable outputs.
+
+### Phase 3 usability acceptance minima
+
+- [ ] A saved 5-point FR sweep can be created from a blank GUI project in 7 or fewer explicit user actions, with the action sequence documented for review.
+- [ ] Editing an existing sweep project and rerunning it requires one explicit Run action and reaches an inspectable result view without modal wizard flow.
+- [ ] At least one benchmarked edit-run-inspect workflow is recorded against a legacy comparator (4nec2, EZNEC, or xnec2c) using elapsed time and explicit step count.
 
 **Estimated completion**: Q4 2026 (end of October).
 
@@ -203,13 +211,19 @@ Required benchmark outputs per target/mode:
 
 | Gap | Title | Priority | Target | Owner | Resolution criteria |
 |:---|:------|:---------|:-------|:------|:-------------------|
-| GAP-002 | NEC-4 feature boundary | **CRITICAL** | Phase 2 end | (TBD) | BLK-002: Explicit list of supported/deferred NEC-4 cards/features in docs/nec4-support.md |
-| GAP-003 | MVP ground model set | **HIGH** | Phase 1 end | (TBD) | Simple (infinite, raised dielectric) implemented; advanced (Sommerfeld, buried) in Phase 2 plan |
-| GAP-004 | Plugin/scripting interface | **HIGH** | Phase 3 end | (TBD) | BLK-004: API design, safety model, first two extension points documented and working |
-| GAP-005 | 4nec2-like text report format | **HIGH** | Phase 1 end | CLI+Reporting | **Resolved 2026-04-23** via PAR-001 v1 contract and CI gate |
-| GAP-006 | GUI information architecture | **MEDIUM** | Phase 3 end | (TBD) | IA document, wireframes, and user testing feedback collected |
-| GAP-007 | GPU rollout criteria | **MEDIUM** | Phase 5 end | (TBD) | Framework selection follows DEC-008 (FOSS-first, AMD-preferred); benchmarks published |
-| GAP-008 | Dependency/license policy | **MEDIUM** | Phase 2 end | (TBD) | BLK-005: Policy thresholds, exception process, GPLv2 compatibility rules documented |
+| GAP-002 | NEC-4 feature boundary | **CRITICAL** | Phase 2 end | Parser+Solver | BLK-002: explicit list of supported/deferred NEC-4 cards/features is current in `docs/nec4-support.md` and referenced from roadmap + CLI docs. |
+| GAP-003 | MVP ground model set | **HIGH** | Phase 2 end | Solver | `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred`, and `dipole-gn2-near-ground-51seg` pass CI tolerance/contract gates, and `docs/nec4-support.md` documents the in-scope GN subset plus deferred Sommerfeld/buried rationale. |
+| GAP-004 | Plugin/scripting interface | **HIGH** | Phase 3 end | Core APIs+Automation | BLK-004: extension API design, safety model, and first two working extension points are documented and exercised by at least one integration example. |
+| GAP-005 | 4nec2-like text report format | **HIGH** | Phase 1 end | CLI+Reporting | **Resolved 2026-04-23** via PAR-001 v1 contract and CI gate. |
+| GAP-006 | GUI information architecture | **MEDIUM** | Phase 3 end | GUI+UX | IA document, task flow wireframes, and at least one round of workflow-feedback notes exist for sweep setup, result inspection, and rerun workflows. |
+| GAP-007 | GPU rollout criteria | **MEDIUM** | Phase 5 end | Acceleration | Architecture docs define the OpenCL/ROCm/Vulkan target matrix, first-offload candidate, and real-hardware validation minimum before matrix-fill/solve kernels land. |
+| GAP-008 | Dependency/license policy | **MEDIUM** | Phase 2 end | Build+Release | BLK-005: policy thresholds, exception process, and GPLv2 compatibility rules are documented and referenced by release/process docs. |
+| GAP-009 | Workflow parity acceptance criteria | **HIGH** | Phase 3 start | Product+GUI/CLI | At least one measurable usability benchmark exists per Phase 3 milestone, with explicit step-count or elapsed-time acceptance criteria against a named incumbent workflow. |
+| GAP-010 | Automation and embedding strategy | **HIGH** | Phase 3 start | Core APIs | A documented automation surface exists for non-GUI consumers, including error model, stability expectations, and planned bindings/embedding path. |
+| GAP-011 | Classic batch-CLI parity definition | **MEDIUM** | Phase 2 end | CLI | Batch-CLI contract explicitly covers exit codes, stdout/stderr behavior, machine-parseable report structure, and non-interactive sweep/bench workflows relative to open NEC2 tools. |
+| GAP-012 | AutoEZ-class automation acceptance | **HIGH** | Phase 3 end | Automation | Acceptance checklist covers variable sweeps, resonance targeting, convergence studies, and matching-network helpers with at least one documented end-to-end workflow per class. |
+| GAP-013 | NEC-5-informed validation matrix | **HIGH** | Phase 2 end | Validation | Validation-manual-informed case matrix is maintained with owner, corpus mapping, and tolerance-gated status for each in-scope class. |
+| GAP-014 | External optimizer-loop compatibility | **MEDIUM** | Phase 3 end | Automation+CLI | Deterministic objective-evaluation CLI/API contract is documented and at least one xnec2c-optimize-style loop is reproduced end-to-end with stable machine-readable outputs. |
 
 ## Competitive parity work items
 

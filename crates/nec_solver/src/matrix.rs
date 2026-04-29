@@ -402,6 +402,7 @@ pub(crate) fn mad3(base: [f64; 3], scale: f64, dir: [f64; 3]) -> [f64; 3] {
 mod tests {
     use super::*;
     use crate::geometry::Segment;
+    use proptest::prelude::*;
 
     fn make_seg(
         tag: u32,
@@ -462,6 +463,38 @@ mod tests {
             z01.im,
             z10.im
         );
+    }
+
+    proptest! {
+        #[test]
+        fn reciprocity_holds_for_random_collinear_hallen_pairs(
+            freq_mhz in 10.0f64..60.0,
+            seg_len in 0.05f64..2.0,
+            radius in 1.0e-4f64..5.0e-3,
+            gap in 0.01f64..3.0,
+        ) {
+            prop_assume!(radius < seg_len * 0.25);
+
+            let midpoint_offset = (seg_len + gap) * 0.5;
+            let s0 = make_seg(1, 1, 0, [0.0, 0.0, -midpoint_offset], DIR_Z, seg_len, radius);
+            let s1 = make_seg(1, 2, 1, [0.0, 0.0, midpoint_offset], DIR_Z, seg_len, radius);
+            let z = assemble_z_matrix(&[s0, s1], freq_mhz * 1.0e6);
+            let z01 = z.get(0, 1);
+            let z10 = z.get(1, 0);
+
+            prop_assert!(
+                (z01.re - z10.re).abs() < 1e-6,
+                "A01.re={:.8} ≠ A10.re={:.8} for freq_mhz={freq_mhz:.3}, seg_len={seg_len:.6}, radius={radius:.6}, gap={gap:.6}",
+                z01.re,
+                z10.re
+            );
+            prop_assert!(
+                (z01.im - z10.im).abs() < 1e-6,
+                "A01.im={:.8} ≠ A10.im={:.8} for freq_mhz={freq_mhz:.3}, seg_len={seg_len:.6}, radius={radius:.6}, gap={gap:.6}",
+                z01.im,
+                z10.im
+            );
+        }
     }
 
     /// Identical segments far apart should have the same self element.

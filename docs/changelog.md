@@ -13,6 +13,8 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Started three accepted review follow-ups: parser fuzz scaffolding now exists under `fuzz/`, CLI argument parsing/usage text now lives in `apps/nec-cli/src/cli_args.rs`, and `nec_solver` now carries a first property-based Hallen reciprocity invariant test.
+- Review follow-up triage now assigns owners and concrete closure criteria for the remaining GAP items, adds measurable Phase 3 usability minima, documents experimental residual budgets and the scoped GN0/GN2 finite-ground validity envelope, and starts documenting crate-level public surfaces for `nec_report` and `nec_project`.
 - Report contract coverage now locks combined sweep-plus-operator-table ordering on stdout: multi-frequency runs with `LD` cards must emit one full per-frequency block in `FEEDPOINTS -> SOURCES -> LOADS -> CURRENTS` order before the final `SWEEP_POINTS` summary.
 - Added a supported low above-ground GN2 near-ground corpus contract (`dipole-gn2-near-ground-51seg`) and tightened PH2-CHK-002 docs/tests so supported near-ground coverage is distinguished from buried active-ground fail-fast guardrails.
 - Geometry diagnostics now also fail fast for source-risk tiny segments: `EX` requests on `L/r < 2` emit an actionable deferred-class error before solve.
