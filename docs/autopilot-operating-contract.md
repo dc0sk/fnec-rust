@@ -40,6 +40,12 @@ Without additional approval, the agent may:
 - Open PRs
 - Merge PRs when checks pass and policy allows
 
+## GitHub PR And Merge Execution
+
+- PR creation and merge operations must be executed via GitHub (`gh` CLI / GitHub API), not local-only git state transitions
+- Source of truth for merge eligibility is the GitHub PR checks/status view
+- Local branch updates after merge must follow from the GitHub merge result (including source-branch deletion when allowed)
+
 ## Autonomous PR Merge Authority
 
 - Delegated authority: the agent may merge eligible PRs without additional confirmation
