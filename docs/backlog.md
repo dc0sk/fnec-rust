@@ -61,6 +61,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: closed the Phase 1 CLI scriptability/batch-friendliness checklist item using the expanded contract suite (`apps/nec-cli/tests/scriptability_contract.rs` and `apps/nec-cli/tests/core_flags_contract.rs`) that locks stable stdout report headers, stderr-only warnings/bench records (`bench_json:`/`bench_csv:`), deterministic parse-error exit codes, and no-arg/missing-deck stream behavior.
 	- 2026-04-29 progress: strengthened loaded-case parity tracking by adding external impedance gates to `dipole-loaded-noncollinear-hallen` (`ExternalR_absolute_ohm=5`, `ExternalX_absolute_ohm=35`) and extending `phase1_loaded_corpus_gap_cases_are_present_and_contracted` to require those external gates.
 	- 2026-04-29 progress: added an EZNEC-informed concrete Phase 2 implementation checklist to `docs/roadmap.md` (`PH2-CHK-001..008`), explicitly mapping roadmap parity IDs (`PRT-*`, `CP-*`) to implementation targets and validation artifacts (test/corpus files).
+	- 2026-04-29 progress: started PH2-CHK-005 corpus truth expansion for current/phase classes by adding deterministic `current_samples` and current/phase tolerance gates to `dipole-freesp-51seg` in `corpus/reference-results.json`, plus checklist gate `phase2_current_phase_corpus_contract_is_present_and_contracted` in `apps/nec-cli/tests/corpus_validation.rs`.
 
 ## Parity-driven backlog items
 

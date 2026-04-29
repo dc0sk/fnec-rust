@@ -22,8 +22,30 @@
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "X_absolute_ohm": 0.05,
+        "Current_amplitude_dB": 0.0001,
+        "Current_phase_deg": 0.1
       },
+      "current_samples": [
+        {
+          "wire_id": 1,
+          "segment_id": 1,
+          "amplitude_db": 2.167828e-7,
+          "phase_deg": -86.2964
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 26,
+          "amplitude_db": 0.01323928,
+          "phase_deg": -10.6040
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 51,
+          "amplitude_db": 2.167828e-7,
+          "phase_deg": -86.2964
+        }
+      ],
       "status": "Reference captured from Python study; xnec2c validation TBD"
     },
     "dipole-ex3-freesp-51seg": {
