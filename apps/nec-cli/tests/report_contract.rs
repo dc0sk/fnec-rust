@@ -1,5 +1,17 @@
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn write_temp_deck(prefix: &str, body: &str) -> PathBuf {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("fnec-{prefix}-{now}.nec"));
+    fs::write(&path, body).expect("failed to write temporary deck");
+    path
+}
 
 #[test]
 fn report_contract_v1_headers_and_rows() {
@@ -230,4 +242,61 @@ fn report_contract_includes_load_table_when_ld_cards_exist() {
         source_idx < load_idx && load_idx < currents_idx,
         "expected section order SOURCES -> LOADS -> CURRENTS"
     );
+}
+
+#[test]
+fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 3 0 0 14.0 0.1\nEN\n";
+    let deck_path = write_temp_deck("report-sweep-load-order", deck);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for sweep/load report contract test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let block_starts: Vec<usize> = stdout
+        .match_indices("FNEC FEEDPOINT REPORT\n")
+        .map(|(idx, _)| idx)
+        .collect();
+    assert_eq!(
+        block_starts.len(),
+        3,
+        "expected one full report block per frequency point, got:\n{stdout}"
+    );
+    assert_eq!(stdout.matches("SOURCES\n").count(), 3);
+    assert_eq!(stdout.matches("LOADS\n").count(), 3);
+    assert_eq!(stdout.matches("CURRENTS\n").count(), 3);
+
+    let sweep_idx = stdout.find("SWEEP_POINTS\n").expect("missing SWEEP_POINTS");
+    assert!(stdout.contains("N_POINTS 3\n"));
+    assert!(
+        sweep_idx > stdout.rfind("CURRENTS\n").expect("missing final CURRENTS"),
+        "expected SWEEP_POINTS after the last per-frequency report block"
+    );
+
+    for (index, start) in block_starts.iter().enumerate() {
+        let end = block_starts.get(index + 1).copied().unwrap_or(sweep_idx);
+        let block = &stdout[*start..end];
+        let feed_idx = block.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
+        let source_idx = block.find("SOURCES\n").expect("missing SOURCES");
+        let load_idx = block.find("LOADS\n").expect("missing LOADS");
+        let currents_idx = block.find("CURRENTS\n").expect("missing CURRENTS");
+        assert!(
+            feed_idx < source_idx && source_idx < load_idx && load_idx < currents_idx,
+            "expected per-frequency order FEEDPOINTS -> SOURCES -> LOADS -> CURRENTS in block:\n{block}"
+        );
+    }
 }
