@@ -782,6 +782,7 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         ("dipole-ex4-freesp-51seg", true),
         ("dipole-ex4-pulse-current-freesp-51seg", false),
         ("dipole-ex5-freesp-51seg", true),
+        ("dipole-ex5-pulse-current-freesp-51seg", false),
         ("dipole-pt-freesp-51seg", true),
         ("dipole-nt-freesp-51seg", true),
         ("dipole-pt-nt-freesp-51seg", true),
@@ -843,6 +844,19 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
     assert!(
         !forbidden_warning_substrings.is_empty(),
         "PAR-003 implemented EX1 pulse case should forbid the legacy portability warning"
+    );
+
+    let ex5_pulse_case = cases
+        .get("dipole-ex5-pulse-current-freesp-51seg")
+        .and_then(Value::as_object)
+        .expect("PAR-003 implemented EX5 pulse case missing");
+    let forbidden_warning_substrings = ex5_pulse_case
+        .get("forbidden_warning_substrings")
+        .and_then(Value::as_array)
+        .expect("PAR-003 implemented EX5 pulse case missing 'forbidden_warning_substrings'");
+    assert!(
+        !forbidden_warning_substrings.is_empty(),
+        "PAR-003 implemented EX5 pulse case should forbid the legacy portability warning"
     );
 }
 
