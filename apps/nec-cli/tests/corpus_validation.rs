@@ -1108,6 +1108,134 @@ fn phase2_current_phase_corpus_contract_is_present_and_contracted() {
     );
 }
 
+#[test]
+fn phase2_nec5_matrix_rows_are_traceable_to_corpus_cases() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+    let strategy_path = workspace_root.join("docs/corpus-validation-strategy.md");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    let strategy_text = std::fs::read_to_string(&strategy_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", strategy_path.display()));
+
+    let mut in_section = false;
+    let mut row_count = 0usize;
+    let mut row_ids: Vec<String> = Vec::new();
+    let mut has_implemented = false;
+    let mut has_deferred = false;
+    let mut has_out_of_scope = false;
+
+    for line in strategy_text.lines() {
+        let trimmed = line.trim();
+        if trimmed == "### PH2-CHK-007 traceability matrix (enforced)" {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with("### ") {
+            break;
+        }
+        if !in_section || !trimmed.starts_with("| PH2N5-") {
+            continue;
+        }
+
+        let cols: Vec<String> = trimmed
+            .split('|')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        assert!(
+            cols.len() >= 4,
+            "PH2-CHK-007 row must have at least 4 columns, got: {}",
+            trimmed
+        );
+
+        let row_id = cols[0].clone();
+        let status = cols[2].as_str();
+        let corpus_cell = cols[3].as_str();
+
+        row_count += 1;
+        row_ids.push(row_id.clone());
+
+        match status {
+            "in-scope implemented" => {
+                has_implemented = true;
+                assert!(
+                    corpus_cell != "-",
+                    "PH2-CHK-007 row '{}' is implemented and must map to corpus case IDs",
+                    row_id
+                );
+            }
+            "in-scope deferred" => {
+                has_deferred = true;
+                assert!(
+                    corpus_cell != "-",
+                    "PH2-CHK-007 row '{}' is deferred and must map to locking corpus case IDs",
+                    row_id
+                );
+            }
+            "out-of-scope" => {
+                has_out_of_scope = true;
+                assert_eq!(
+                    corpus_cell, "-",
+                    "PH2-CHK-007 row '{}' is out-of-scope and must use '-' corpus mapping",
+                    row_id
+                );
+                continue;
+            }
+            other => panic!(
+                "PH2-CHK-007 row '{}' has invalid status '{}'; expected one of: in-scope implemented | in-scope deferred | out-of-scope",
+                row_id, other
+            ),
+        }
+
+        let case_ids: Vec<String> = corpus_cell
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_matches('`').to_string())
+            .collect();
+        assert!(
+            !case_ids.is_empty(),
+            "PH2-CHK-007 row '{}' has empty corpus case mapping",
+            row_id
+        );
+        for case_id in &case_ids {
+            assert!(
+                cases.contains_key(case_id),
+                "PH2-CHK-007 row '{}' references missing corpus case '{}'",
+                row_id,
+                case_id
+            );
+        }
+    }
+
+    assert!(
+        row_count > 0,
+        "PH2-CHK-007 traceability matrix section missing or empty in docs/corpus-validation-strategy.md"
+    );
+    row_ids.sort();
+    row_ids.dedup();
+    assert_eq!(
+        row_ids.len(),
+        row_count,
+        "PH2-CHK-007 traceability matrix row IDs must be unique"
+    );
+    assert!(
+        has_implemented && has_deferred && has_out_of_scope,
+        "PH2-CHK-007 traceability matrix must include implemented, deferred, and out-of-scope rows"
+    );
+}
+
 fn collect_expected_sources(
     case_obj: &Map<String, Value>,
     feed: &Map<String, Value>,
