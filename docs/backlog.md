@@ -70,6 +70,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: started PH2-CHK-006 geometry diagnostics slice by adding an early-fail CLI guard for unsupported intersecting wire segments (non-endpoint crossings) before solve, with deterministic integration contracts in `apps/nec-cli/tests/geometry_diagnostics.rs` covering both failing crossing-wire geometry and allowed endpoint junctions.
 	- 2026-04-29 progress: extended PH2-CHK-006 geometry guardrails with a tiny source-segment early-fail contract (`EX` on `L/r < 2`), adding deterministic CLI diagnostics coverage in `apps/nec-cli/tests/geometry_diagnostics.rs`.
 	- 2026-04-29 progress: advanced PH2-CHK-003 source-card semantics by implementing an EX type 5 pulse-mode driven-segment current path (suppressing the legacy EX5 portability warning on `--solver pulse`), with regression locks in `apps/nec-cli/tests/ex_cards.rs` and corpus case `dipole-ex5-pulse-current-freesp-51seg`.
+	- 2026-04-29 progress: tightened the PH2-CHK-007 enforced traceability matrix in `docs/corpus-validation-strategy.md` and `apps/nec-cli/tests/corpus_validation.rs` so newer EX current-source, LD load-family, TL subset, and PT/NT deferred-portability corpus classes are explicitly mapped and CI-required.
 
 ## Parity-driven backlog items
 

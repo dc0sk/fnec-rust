@@ -1182,6 +1182,18 @@ fn phase2_nec5_matrix_rows_are_traceable_to_corpus_cases() {
     let mut in_section = false;
     let mut row_count = 0usize;
     let mut row_ids: Vec<String> = Vec::new();
+    let mut required_row_ids = std::collections::BTreeSet::from([
+        "PH2N5-001".to_string(),
+        "PH2N5-002".to_string(),
+        "PH2N5-003".to_string(),
+        "PH2N5-004".to_string(),
+        "PH2N5-005".to_string(),
+        "PH2N5-006".to_string(),
+        "PH2N5-007".to_string(),
+        "PH2N5-008".to_string(),
+        "PH2N5-009".to_string(),
+        "PH2N5-010".to_string(),
+    ]);
     let mut has_implemented = false;
     let mut has_deferred = false;
     let mut has_out_of_scope = false;
@@ -1217,6 +1229,7 @@ fn phase2_nec5_matrix_rows_are_traceable_to_corpus_cases() {
 
         row_count += 1;
         row_ids.push(row_id.clone());
+        required_row_ids.remove(&row_id);
 
         match status {
             "in-scope implemented" => {
@@ -1281,6 +1294,11 @@ fn phase2_nec5_matrix_rows_are_traceable_to_corpus_cases() {
         row_ids.len(),
         row_count,
         "PH2-CHK-007 traceability matrix row IDs must be unique"
+    );
+    assert!(
+        required_row_ids.is_empty(),
+        "PH2-CHK-007 traceability matrix is missing required row IDs: {:?}",
+        required_row_ids
     );
     assert!(
         has_implemented && has_deferred && has_out_of_scope,
