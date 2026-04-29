@@ -78,7 +78,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - ✅ GM/GR parser + geometry-builder support landed and is corpus-validated via equivalence decks.
 - [x] Expand remaining NEC-2/NEC-4 card execution breadth beyond the current wire/impedance workflow core (RP execution, staged EX family support, TL subset, PT/NT staged handling).
 - [x] Assemble golden reference corpus (half-wave dipole free-space/over-ground, Yagi, loaded element, frequency sweep, multi-source, GM/GR equivalence cases).
-- [ ] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix.
+- [x] Run corpus through reference and fnec-rust; validate all in-scope results within tolerance matrix (CI corpus-validation gate active for contracted in-scope fixtures).
 - [x] Simple ground model (infinite, raised dielectric) working and tested (GN type 0 simple finite-ground model activated and regression-gated in corpus CI).
 - [ ] CLI-first execution flow complete with all core flags (solver mode, solver options).
 - [ ] Produce 4nec2/EZNEC-grade text outputs for impedance, sweep points, gain, pattern, and current tables so the CLI is immediately usable as a daily comparison tool.
