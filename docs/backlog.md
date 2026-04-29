@@ -54,6 +54,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: added CLI scriptability regression tests (`apps/nec-cli/tests/scriptability_contract.rs`) to lock stable machine-parseable report headers on stdout and enforce warning/output stream separation (warnings on stderr, report-only stdout).
 	- 2026-04-29 progress: added CLI core-flags contract tests (`apps/nec-cli/tests/core_flags_contract.rs`) covering parse-error contracts (missing/invalid values, unknown options, missing deck path) and a full core-flag success invocation path.
 	- 2026-04-29 progress: extended scriptability contracts to bench mode by locking that `bench_json:` records remain on stderr while stdout keeps the stable report stream for machine parsers.
+	- 2026-04-29 progress: hardened scriptability contracts with three additional locks: bench CSV records remain on stderr (`bench_csv:` prefix absent from stdout), nonexistent deck exits with code 1 and "cannot read" on stderr (no report on stdout), and no-arg invocation exits with code 2 and usage on stderr (no report on stdout).
 
 ## Parity-driven backlog items
 

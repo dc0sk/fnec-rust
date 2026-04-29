@@ -131,3 +131,105 @@ fn benchmark_json_stays_on_stderr_not_stdout() {
         "stdout should begin with stable report header, got:\n{stdout}"
     );
 }
+
+#[test]
+fn bench_csv_stays_on_stderr_not_stdout() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck_path = write_temp_deck("scriptable-bench-csv", deck);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--bench-format")
+        .arg("csv")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for bench csv stream test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("bench_csv:"),
+        "expected bench csv records in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("bench_csv:"),
+        "stdout must stay report-only for parsers, got:\n{stdout}"
+    );
+    assert!(
+        stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+        "stdout should begin with stable report header, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn nonexistent_deck_exits_with_code_1_and_error_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bogus_path = std::env::temp_dir().join("fnec-definitely-does-not-exist.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&bogus_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for missing-file test: {e}"));
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit code 1 for missing deck file"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("cannot read"),
+        "expected file-read error in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("FNEC FEEDPOINT REPORT"),
+        "stdout must be empty on file-read error, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for no-arg test: {e}"));
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "expected exit code 2 for no-arg invocation"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("Usage: fnec"),
+        "expected usage text in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("FNEC FEEDPOINT REPORT"),
+        "stdout must have no report output on no-arg invocation, got:\n{stdout}"
+    );
+}
