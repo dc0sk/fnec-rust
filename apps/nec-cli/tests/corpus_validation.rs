@@ -838,9 +838,9 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
         // GN=0 finite-ground reflection coefficient method: implemented and
         // regression-gated; old deferred warning must be forbidden.
         ("dipole-gn0-fresnel-51seg", true, false, true),
-        // GN=2 Sommerfeld/Norton finite-conductivity: deferred; must have
-        // warning contract documenting fallback behavior.
-        ("dipole-gn2-deferred", true, true, false),
+        // GN=2 finite-conductivity scoped runtime path: must be regression-
+        // gated and explicitly forbid the old deferred-ground warning text.
+        ("dipole-gn2-deferred", true, false, true),
         // GN=-1 null ground: maps to free-space silently; must have a
         // forbidden-warning contract ensuring no deferred-ground warning fires.
         ("dipole-gn-1-null", true, false, true),

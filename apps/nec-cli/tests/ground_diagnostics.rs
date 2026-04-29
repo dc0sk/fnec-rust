@@ -173,10 +173,10 @@ fn ge_negative_flag_emits_unsupported_warning() {
 }
 
 #[test]
-fn gn_type2_deferred_emits_warning_and_falls_back_to_free_space() {
-    // GN type 2 (Sommerfeld/Norton finite-conductivity) is deferred; the
-    // solver must warn and fall back to free-space, not fail or produce PEC
-    // results.
+fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
+    // Phase-2 scoped behavior: GN type 2 uses the simple finite-ground path.
+    // It should no longer emit the old deferred warning and should not
+    // collapse to free-space impedance.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -184,10 +184,9 @@ fn gn_type2_deferred_emits_warning_and_falls_back_to_free_space() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-gn2-{now}.nec"));
 
-    // Average-ground parameters (EPSE=13, SIG=0.005 S/m); the parser now reads
-    // and stores these fields, and the CLI warning appends them.
+    // In-scope above-ground GN2 class with average-ground parameters.
     let deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary GN-2 deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -208,9 +207,26 @@ fn gn_type2_deferred_emits_warning_and_falls_back_to_free_space() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("warning: GN type 2 is not yet supported; treating this deck as free-space"),
-        "expected deferred GN type 2 warning in stderr, got:\n{stderr}"
+        !stderr.contains("GN type 2 is not yet supported"),
+        "GN2 should no longer use deferred-ground warning, got:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let z_re = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[6].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
+
+    assert!(
+        (z_re - 78.170459).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~78.17"
     );
 }
 
@@ -254,9 +270,9 @@ fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
 }
 
 #[test]
-fn gn_type2_warning_includes_parsed_medium_params() {
-    // When a GN card includes medium parameters (EPSE, SIG), the deferred
-    // warning must append them so the user sees what was parsed.
+fn gn_type2_medium_params_run_without_deferred_warning() {
+    // GN2 with explicit medium params should run on the active finite-ground
+    // path and must not emit the deferred-ground warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -265,7 +281,7 @@ fn gn_type2_warning_includes_parsed_medium_params() {
     let deck_path = std::env::temp_dir().join(format!("fnec-gn2-params-{now}.nec"));
 
     let deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary GN-2 params deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -286,8 +302,8 @@ fn gn_type2_warning_includes_parsed_medium_params() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("[parsed: EPSE=13, SIG=0.005 S/m]"),
-        "expected medium params in deferred warning, got:\n{stderr}"
+        !stderr.contains("GN type 2 is not yet supported"),
+        "GN2 with medium params should not use deferred warning, got:\n{stderr}"
     );
 }
 
