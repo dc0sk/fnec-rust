@@ -59,6 +59,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: extended CLI report output for multi-frequency FR runs with a machine-parseable `SWEEP_POINTS` summary section (`N_POINTS`, `FREQ_MHZ TAG SEG Z_RE Z_IM`) and locked the format via `apps/nec-cli/tests/report_contract.rs`.
 	- 2026-04-29 progress: added corpus case `dipole-loaded-noncollinear-hallen` (with `--allow-noncollinear-hallen`) to lock the experimental non-collinear Hallen path on the top-hat loaded deck, and added checklist test `phase1_loaded_corpus_gap_cases_are_present_and_contracted` to keep both loaded-case contracts (`dipole-loaded` blocked path + experimental opt-in path) present in CI.
 	- 2026-04-29 progress: closed the Phase 1 CLI scriptability/batch-friendliness checklist item using the expanded contract suite (`apps/nec-cli/tests/scriptability_contract.rs` and `apps/nec-cli/tests/core_flags_contract.rs`) that locks stable stdout report headers, stderr-only warnings/bench records (`bench_json:`/`bench_csv:`), deterministic parse-error exit codes, and no-arg/missing-deck stream behavior.
+	- 2026-04-29 progress: strengthened loaded-case parity tracking by adding external impedance gates to `dipole-loaded-noncollinear-hallen` (`ExternalR_absolute_ohm=5`, `ExternalX_absolute_ohm=35`) and extending `phase1_loaded_corpus_gap_cases_are_present_and_contracted` to require those external gates.
 
 ## Parity-driven backlog items
 

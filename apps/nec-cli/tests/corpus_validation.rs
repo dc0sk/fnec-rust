@@ -1012,6 +1012,25 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
             && feed.get("imag_ohm").and_then(Value::as_f64).is_some(),
         "'dipole-loaded-noncollinear-hallen' must have numeric real_ohm and imag_ohm"
     );
+
+    let gates = experimental_case
+        .get("tolerance_gates")
+        .and_then(Value::as_object)
+        .expect("'dipole-loaded-noncollinear-hallen' missing 'tolerance_gates'");
+    assert!(
+        gates
+            .get("ExternalR_absolute_ohm")
+            .and_then(Value::as_f64)
+            .is_some(),
+        "'dipole-loaded-noncollinear-hallen' must define ExternalR_absolute_ohm gate"
+    );
+    assert!(
+        gates
+            .get("ExternalX_absolute_ohm")
+            .and_then(Value::as_f64)
+            .is_some(),
+        "'dipole-loaded-noncollinear-hallen' must define ExternalX_absolute_ohm gate"
+    );
 }
 
 fn collect_expected_sources(
