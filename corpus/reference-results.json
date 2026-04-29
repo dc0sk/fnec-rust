@@ -1048,16 +1048,16 @@
     },
     "dipole-gn2-deferred": {
       "deck_file": "dipole-gn2-deferred.nec",
-      "description": "Half-wave dipole, GN type 2 (Sommerfeld/Norton finite-conductivity; deferred), 51 segments, 14.2 MHz. Falls back to free-space with a runtime warning.",
+      "description": "Half-wave dipole, GN type 2 finite-conductivity, 51 segments, 14.2 MHz. Uses the scoped finite-ground runtime path (currently aligned to the simple GN0 approximation).",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
-      "ground": "finite conductivity Sommerfeld/Norton (deferred, falls back to free-space)",
-      "reference_source": "fnec Hallén solver free-space fallback (regression); GN type 2 ground parameters parsed but not yet applied",
+      "ground": "finite conductivity GN2 (scoped runtime path; simple finite-ground approximation)",
+      "reference_source": "fnec Hallén solver with GN2 scoped finite-ground path (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.90
+        "real_ohm": 78.170459,
+        "imag_ohm": 14.95465
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1065,14 +1065,12 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "expected_warning_substrings": [
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
         "GN type 2 is not yet supported; treating this deck as free-space"
       ],
-      "forbidden_warning_substrings": [],
-      "expected_warning_counts": {
-        "warning: GN type 2 is not yet supported; treating this deck as free-space": 1
-      },
-      "status": "PAR-002 deferred-ground fixture. GN 2 (Sommerfeld/Norton) is not implemented; runtime warns and falls back to free-space. Impedance gated on known free-space reference. Once Sommerfeld is implemented, reference values and gates will be updated."
+      "expected_warning_counts": {},
+      "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract."
     },
     "dipole-gn-1-null": {
       "deck_file": "dipole-gn-1-null.nec",
