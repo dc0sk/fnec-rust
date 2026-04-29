@@ -1127,7 +1127,7 @@ fn solve_frequency_point(
 
             // Use standard CPU path once to get normalization, then switch to GPU stub for pattern eval
             // (In production, the GPU would compute this on-device)
-            let _ = compute_radiation_pattern(segs, &i_vec, freq_hz, &[pattern_points[0]]);
+            let _ = compute_radiation_pattern(segs, &i_vec, freq_hz, &[pattern_points[0]], ground);
 
             // For stub, use a simple normalized reference (total current squared)
             let norm_ref = i_vec.iter().map(|i| i.norm_sqr()).sum::<f64>();
@@ -1156,7 +1156,7 @@ fn solve_frequency_point(
                 .collect()
         } else {
             // Standard CPU path
-            let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points);
+            let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
             results
                 .iter()
                 .map(|r| PatternRow {
