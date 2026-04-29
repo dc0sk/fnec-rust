@@ -34,6 +34,62 @@ fn missing_solver_value_reports_contract_error_and_usage() {
 }
 
 #[test]
+fn invalid_solver_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&[
+        "--solver",
+        "bogus",
+        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid --solver value 'bogus'"),
+        "missing invalid solver detail in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: hallen|pulse|continuity|sinusoidal"),
+        "missing expected solver values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn missing_pulse_rhs_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&["--pulse-rhs"]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing value after --pulse-rhs"),
+        "missing pulse-rhs parse error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: raw|nec2"),
+        "missing expected pulse-rhs values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn invalid_pulse_rhs_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&[
+        "--pulse-rhs",
+        "bogus",
+        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid --pulse-rhs value 'bogus'"),
+        "missing invalid pulse-rhs detail in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: raw|nec2"),
+        "missing expected pulse-rhs values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn invalid_exec_value_reports_contract_error_and_usage() {
     let output = run_fnec(&[
         "--exec",
@@ -54,6 +110,78 @@ fn invalid_exec_value_reports_contract_error_and_usage() {
 }
 
 #[test]
+fn missing_bench_format_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&["--bench-format"]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing value after --bench-format"),
+        "missing bench-format parse error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: human|csv|json"),
+        "missing expected bench-format values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn invalid_bench_format_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&[
+        "--bench-format",
+        "bogus",
+        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid --bench-format value 'bogus'"),
+        "missing invalid bench-format detail in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: human|csv|json"),
+        "missing expected bench-format values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn missing_ex3_i4_mode_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&["--ex3-i4-mode"]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing value after --ex3-i4-mode"),
+        "missing ex3-i4-mode parse error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: legacy|divide-by-i4"),
+        "missing expected ex3-i4-mode values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn invalid_ex3_i4_mode_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&[
+        "--ex3-i4-mode",
+        "bogus",
+        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid --ex3-i4-mode value 'bogus'"),
+        "missing invalid ex3-i4-mode detail in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: legacy|divide-by-i4"),
+        "missing expected ex3-i4-mode values in stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn unknown_option_reports_contract_error() {
     let output = run_fnec(&["--definitely-not-a-flag"]);
     assert_eq!(output.status.code(), Some(2));
@@ -62,6 +190,24 @@ fn unknown_option_reports_contract_error() {
     assert!(
         stderr.contains("unknown option: --definitely-not-a-flag"),
         "missing unknown-option error in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn unexpected_extra_argument_reports_contract_error() {
+    let deck = fixture_deck("dipole-freesp-51seg.nec");
+    let output = run_fnec(&[
+        "--solver",
+        "hallen",
+        deck.to_str().unwrap(),
+        deck.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unexpected extra argument:"),
+        "missing extra-argument parse error in stderr:\n{stderr}"
     );
 }
 
