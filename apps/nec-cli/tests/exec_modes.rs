@@ -69,7 +69,10 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     let report_blocks = stdout.matches("FNEC FEEDPOINT REPORT").count();
-    let freq_headers = stdout.matches("FREQ_MHZ ").count();
+    let freq_headers = stdout
+        .lines()
+        .filter(|line| line.starts_with("FREQ_MHZ ") && line.split_whitespace().count() == 2)
+        .count();
     assert_eq!(
         report_blocks, 5,
         "expected 5 report blocks, got {report_blocks}"
@@ -143,7 +146,11 @@ fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
 
     // Contract remains unchanged: one ordered report block per FR point.
     assert_eq!(stdout.matches("FNEC FEEDPOINT REPORT").count(), 5);
-    assert_eq!(stdout.matches("FREQ_MHZ ").count(), 5);
+    let freq_headers = stdout
+        .lines()
+        .filter(|line| line.starts_with("FREQ_MHZ ") && line.split_whitespace().count() == 2)
+        .count();
+    assert_eq!(freq_headers, 5);
 }
 
 #[test]

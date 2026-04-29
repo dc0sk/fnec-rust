@@ -914,6 +914,15 @@ struct FrequencySolveResult {
     report: String,
     diag_line: String,
     bench: BenchRecord,
+    sweep_summary: Option<SweepPointSummary>,
+}
+
+struct SweepPointSummary {
+    freq_mhz: f64,
+    tag: usize,
+    seg: usize,
+    z_re: f64,
+    z_im: f64,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1179,6 +1188,13 @@ fn solve_frequency_point(
         current_table: &current_table,
         pattern_table: &pattern_table,
     });
+    let sweep_summary = rows.first().map(|row| SweepPointSummary {
+        freq_mhz: freq_hz / 1e6,
+        tag: row.tag,
+        seg: row.seg,
+        z_re: row.z_in.re,
+        z_im: row.z_in.im,
+    });
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e}",
         pulse_rhs_mode,
@@ -1205,6 +1221,7 @@ fn solve_frequency_point(
         report,
         diag_line,
         bench,
+        sweep_summary,
     })
 }
 
@@ -1486,6 +1503,7 @@ fn main() -> ExitCode {
         .unwrap_or_else(|_| "unknown".to_string());
     let bench_deck = path.display().to_string();
     let bench_solver = solver_mode.as_str().to_string();
+    let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
 
     for (fidx, result, elapsed_ms) in solved {
         let solved_point = match result {
@@ -1500,6 +1518,9 @@ fn main() -> ExitCode {
             println!();
         }
         print!("{}", solved_point.report);
+        if let Some(summary) = solved_point.sweep_summary {
+            sweep_rows.push(summary);
+        }
         eprintln!("{}", solved_point.diag_line);
 
         if enable_benchmarking {
@@ -1523,6 +1544,19 @@ fn main() -> ExitCode {
                     &solved_point.bench,
                 ),
             }
+        }
+    }
+
+    if sweep_rows.len() > 1 {
+        println!();
+        println!("SWEEP_POINTS");
+        println!("N_POINTS {}", sweep_rows.len());
+        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
+        for row in sweep_rows {
+            println!(
+                "{:.6} {} {} {:.6} {:.6}",
+                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
+            );
         }
     }
 
