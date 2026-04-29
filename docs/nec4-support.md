@@ -70,7 +70,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:------------|:-------|:------|
 | CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
 | SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
-| TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG=0` or `1`) contributes a 2-port impedance stamp to the matrix. Endpoint `segment=0` is mapped to the tag center segment with a warning; for even segment counts, the lower center segment is chosen deterministically. Unsupported TL variants emit runtime warnings and are ignored. |
+| TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG>=0`, with `NSEG=0` treated as a single-section shorthand) contributes a 2-port impedance stamp to the matrix. Endpoint `segment=0` is mapped to the tag center segment with a warning; for even segment counts, the lower center segment is chosen deterministically. Unsupported TL variants emit runtime warnings and are ignored. |
 | NT | Network definition | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores NT electrical semantics. |
 | CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
 | MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |
@@ -158,7 +158,7 @@ PAR-002 completion evidence (document-level):
 
 | Phase | Cumulative Support |
 |:------|:------------------|
-| Phase 1 (current) | GW, partial GM/GR, EX type 0, staged EX types 1/2/4/5 and EX3 mode-gated normalization path, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/1/2/3/4/5, TL subset (`type=0`, `NSEG=0/1`, segment-0 center mapping), PT/NT staged parsing, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
+| Phase 1 (current) | GW, partial GM/GR, EX type 0, staged EX types 1/2/4/5 and EX3 mode-gated normalization path, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/1/2/3/4/5, TL subset (`type=0`, `NSEG>=0`, segment-0 center mapping), PT/NT staged parsing, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
 | Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, sinusoidal Pocklington basis, GF (geometry scaling), richer pattern/gain parity |
 | Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
 | Phase 4+ | Additional NEC-4 specialty features as demanded |

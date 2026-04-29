@@ -103,6 +103,7 @@ last_updated: 2026-04-29
 	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-seg0` (`corpus/tl-two-dipoles-linked-seg0.nec`) to lock TL segment=0 center-mapping behavior in CI.
 	- 2026-04-27 progress: TL segment=0 mapping now resolves even-segment tags deterministically to the lower center segment, with explicit warning text and solver regression coverage in `nec_solver::tl` tests.
 	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-nseg0` (`corpus/tl-two-dipoles-linked-nseg0.nec`) to lock TL `NSEG=0` single-section shorthand behavior in CI.
+	- 2026-04-29 progress: expanded TL execution subset to accept lossless `NSEG>1` cards with the same uniform-line stamp semantics as `NSEG=1`, removing the deferred "TL with NSEG=... not yet supported" runtime path and adding solver/CLI regression locks (`crates/nec_solver/src/tl.rs`, `apps/nec-cli/tests/tl_cards.rs`).
 	- 2026-04-27 progress: added corpus regression case `tl-two-dipoles-linked-seg0-even52` (`corpus/tl-two-dipoles-linked-seg0-even52.nec`) to lock TL segment=0 lower-center mapping on even-segment tags in CI.
 	- 2026-04-27 progress: EX type 3 is now accepted in the excitation path (currently treated as EX type 0 semantics), unblocking mainstream deck portability while full normalization semantics remain pending.
 	- 2026-04-27 progress: added CLI warning-contract regression `ex_type3_runs_without_unsupported_error` in `apps/nec-cli/tests/parser_warnings.rs` to lock EX type 3 acceptance behavior.

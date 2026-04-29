@@ -130,3 +130,42 @@ fn supported_tl_card_with_nseg_zero_changes_feedpoint_impedance() {
         "expected TL NSEG=0 network to change impedance, but delta was too small: dR={dr:.6}, dX={dx:.6}; base=({base_r:.6}, {base_x:.6}) tl=({tl_r:.6}, {tl_x:.6}); base stderr:\n{base_err}\ntl stderr:\n{tl_err}"
     );
 }
+
+#[test]
+fn supported_tl_card_with_nseg_gt_one_changes_feedpoint_impedance() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-nseg3-{now}.nec"));
+    let tl_path = std::env::temp_dir().join(format!("fnec-tl-linked-nseg3-{now}.nec"));
+
+    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 3 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    fs::write(&base_path, base_deck).expect("failed to write base deck");
+    fs::write(&tl_path, tl_deck).expect("failed to write TL deck with NSEG=3");
+
+    let (base_out, base_err) = run_fnec(&base_path, &workspace_root);
+    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
+
+    let _ = fs::remove_file(&base_path);
+    let _ = fs::remove_file(&tl_path);
+
+    assert!(
+        !tl_err.contains("TL with NSEG=3") && !tl_err.contains("TL card ignored"),
+        "supported TL NSEG=3 card should not be ignored, got stderr:\n{tl_err}"
+    );
+
+    let (base_r, base_x) = first_feedpoint_impedance(&base_out);
+    let (tl_r, tl_x) = first_feedpoint_impedance(&tl_out);
+
+    let dr = (tl_r - base_r).abs();
+    let dx = (tl_x - base_x).abs();
+    assert!(
+        dr > 1e-2 || dx > 1e-2,
+        "expected TL NSEG=3 network to change impedance, but delta was too small: dR={dr:.6}, dX={dx:.6}; base=({base_r:.6}, {base_x:.6}) tl=({tl_r:.6}, {tl_x:.6}); base stderr:\n{base_err}\ntl stderr:\n{tl_err}"
+    );
+}

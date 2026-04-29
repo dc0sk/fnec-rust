@@ -5,7 +5,7 @@
 //!
 //! Supported subset (initial executable semantics):
 //! - `tl_type = 0` (lossless)
-//! - `num_segments = 0` or `1` (`0` is treated as a single-section shorthand)
+//! - `num_segments >= 0` (`0` is treated as a single-section shorthand)
 //! - endpoint segments (`segment=0` is accepted and mapped to the tag center;
 //!   for even segment counts, the lower of the two center segments is used)
 //! - positive characteristic impedance `z0 > 0`
@@ -66,20 +66,13 @@ pub fn build_tl_stamps(
             });
             continue;
         }
-        let effective_num_segments = if tl.num_segments == 0 {
+        // NSEG>1 cards are accepted using the same uniform-line stamp semantics
+        // as a single-section card; NSEG=0 remains a single-section shorthand.
+        let _effective_num_segments = if tl.num_segments == 0 {
             1
         } else {
             tl.num_segments
         };
-        if effective_num_segments != 1 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL with NSEG={} between ({}, {}) and ({}, {}) is not yet supported; TL card ignored",
-                    tl.num_segments, tl.tag1, tl.segment1, tl.tag2, tl.segment2
-                ),
-            });
-            continue;
-        }
 
         let Some((i1, resolved_seg1, center_warn1)) =
             find_segment_index(segs, tl.tag1, tl.segment1)
@@ -327,6 +320,44 @@ mod tests {
         let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
         assert!(warns.is_empty());
         assert_eq!(stamps.len(), 4);
+    }
+
+    #[test]
+    fn nseg_gt_one_is_accepted_like_single_section() {
+        let segs = segs_two_wire_geometry();
+
+        let mut deck_nseg1 = NecDeck::new();
+        deck_nseg1.cards.push(Card::Tl(TlCard {
+            tag1: 1,
+            segment1: 2,
+            tag2: 2,
+            segment2: 2,
+            num_segments: 1,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }));
+
+        let mut deck_nseg3 = NecDeck::new();
+        deck_nseg3.cards.push(Card::Tl(TlCard {
+            tag1: 1,
+            segment1: 2,
+            tag2: 2,
+            segment2: 2,
+            num_segments: 3,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }));
+
+        let (stamps_nseg1, warns_nseg1) = build_tl_stamps(&deck_nseg1, &segs, 14.2e6);
+        let (stamps_nseg3, warns_nseg3) = build_tl_stamps(&deck_nseg3, &segs, 14.2e6);
+
+        assert!(warns_nseg1.is_empty());
+        assert!(warns_nseg3.is_empty());
+        assert_eq!(stamps_nseg1, stamps_nseg3);
     }
 
     #[test]
