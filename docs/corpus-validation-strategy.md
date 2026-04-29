@@ -98,6 +98,25 @@ The intent is not to claim full NEC-5 capability; it is to make coverage explici
 - Out-of-scope NEC-5 classes are documented with rationale and retained in roadmap/backlog for later phases.
 - PAR-008 is therefore considered complete as a coverage-matrix deliverable; deeper external-reference parity work continues under class-specific parity items.
 
+### PH2-CHK-007 traceability matrix (enforced)
+
+This table is the CI-enforced mapping used by `apps/nec-cli/tests/corpus_validation.rs`.
+Rows are intentionally explicit about status:
+
+- `in-scope implemented`: must map to one or more existing corpus case IDs.
+- `in-scope deferred`: must map to one or more existing corpus case IDs that currently lock deferred/partial behavior.
+- `out-of-scope`: must use `-` for corpus mapping.
+
+| Row ID | NEC-5 validation class | Status | Corpus case IDs |
+|:-------|:------------------------|:-------|:----------------|
+| PH2N5-001 | Thin-wire kernel behavior | in-scope implemented | `dipole-freesp-51seg` |
+| PH2N5-002 | Source model behavior (wire source classes) | in-scope implemented | `dipole-freesp-51seg`, `multi-source`, `dipole-ex1-pulse-current-freesp-51seg` |
+| PH2N5-003 | Convergence for dipole antenna | in-scope implemented | `frequency-sweep-dipole` |
+| PH2N5-004 | Wires over ground | in-scope implemented | `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred` |
+| PH2N5-005 | Loop antennas over ground | in-scope deferred | `dipole-gn2-deferred` |
+| PH2N5-006 | Surface meshing and wire-surface junctions | out-of-scope | - |
+| PH2N5-007 | Monopole on finite box and patch-ground classes | out-of-scope | - |
+
 ## Validation workflow
 
 ### Step 1: Reference capture (manual, one-time per case)
