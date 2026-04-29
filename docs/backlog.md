@@ -53,6 +53,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: activated GN type 0 simple finite-ground model in Hallen matrix assembly using a complex Fresnel-style reflection factor from EPSE/SIG, replaced the prior deferred GN0 warning path, and added corpus regression fixture `corpus/dipole-gn0-fresnel-51seg.nec`.
 	- 2026-04-29 progress: added CLI scriptability regression tests (`apps/nec-cli/tests/scriptability_contract.rs`) to lock stable machine-parseable report headers on stdout and enforce warning/output stream separation (warnings on stderr, report-only stdout).
 	- 2026-04-29 progress: added CLI core-flags contract tests (`apps/nec-cli/tests/core_flags_contract.rs`) covering parse-error contracts (missing/invalid values, unknown options, missing deck path) and a full core-flag success invocation path.
+	- 2026-04-29 progress: extended scriptability contracts to bench mode by locking that `bench_json:` records remain on stderr while stdout keeps the stable report stream for machine parsers.
 
 ## Parity-driven backlog items
 
