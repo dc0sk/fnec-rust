@@ -22,6 +22,7 @@ All notable documentation process changes are recorded here.
 - NT cards are now parsed for staged portability and emit an explicit deferred-support warning at runtime; NT electrical semantics are still pending and currently ignored.
 - CLI report contract v1 now includes stable operator tables for source/load definitions: `SOURCES` (`TYPE TAG SEG I4 V_RE V_IM`) and `LOADS` (`TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3`) sections, emitted in deterministic order between `FEEDPOINTS` and `CURRENTS`.
 - Scriptability contracts now explicitly lock stdout ordering around the new tables (`FEEDPOINTS -> SOURCES -> CURRENTS`) and enforce that `LOADS` table output stays report-only on stdout while warnings remain stderr-only.
+- Loaded-case tracking now also locks the default Hallen hard-fail contract on `dipole-loaded` (non-collinear topology error, exit code 1, and no report on stdout) to keep Phase 1 gap behavior explicit and deterministic.
 
 ### Added
 

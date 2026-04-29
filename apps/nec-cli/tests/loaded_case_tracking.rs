@@ -76,3 +76,26 @@ fn loaded_case_experimental_hallen_reduces_reactance_error_vs_pulse() {
         "expected experimental hallen to reduce |dX| vs pulse; got dX_hallen_exp={hallen_dx:.6}, dX_pulse={pulse_dx:.6}"
     );
 }
+
+#[test]
+fn loaded_case_default_hallen_fails_fast_with_noncollinear_error_contract() {
+    let out = run_loaded_case(&["--solver", "hallen"]);
+
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "default hallen on dipole-loaded should fail fast with exit code 1"
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("error: Hallén solver currently supports only collinear wire topologies"),
+        "expected non-collinear Hallen contract error in stderr, got:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("FNEC FEEDPOINT REPORT"),
+        "no report should be emitted on Hallen topology hard-fail path, got:\n{stdout}"
+    );
+}
