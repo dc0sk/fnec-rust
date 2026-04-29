@@ -19,3 +19,6 @@ gpu = ["dep:nec_accel"]
 nec_model   = { workspace = true }
 num-complex = { workspace = true }
 nec_accel   = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = "1"
