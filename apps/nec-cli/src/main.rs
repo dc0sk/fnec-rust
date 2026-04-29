@@ -628,6 +628,134 @@ fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
     (dx * dx + dy * dy + dz * dz).sqrt() <= eps
 }
 
+fn segment_intersection_error(segs: &[nec_solver::Segment]) -> Option<String> {
+    const TOUCH_EPS: f64 = 1.0e-9;
+    const CROSS_EPS: f64 = 1.0e-7;
+    const INTERIOR_EPS: f64 = 1.0e-6;
+
+    for i in 0..segs.len() {
+        for j in (i + 1)..segs.len() {
+            let a = &segs[i];
+            let b = &segs[j];
+
+            // Ignore same-wire neighboring segments and endpoint junctions.
+            if a.tag == b.tag {
+                continue;
+            }
+            if segments_share_endpoint(a, b, TOUCH_EPS) {
+                continue;
+            }
+
+            let (dist, s, t) = segment_closest_distance_and_params(a.start, a.end, b.start, b.end);
+            let a_interior = s > INTERIOR_EPS && s < 1.0 - INTERIOR_EPS;
+            let b_interior = t > INTERIOR_EPS && t < 1.0 - INTERIOR_EPS;
+            if dist <= CROSS_EPS && a_interior && b_interior {
+                return Some(format!(
+                    "unsupported intersecting-wire geometry between tag {} seg {} and tag {} seg {}; only endpoint junctions are currently supported",
+                    a.tag, a.tag_index, b.tag, b.tag_index
+                ));
+            }
+        }
+    }
+
+    None
+}
+
+fn segments_share_endpoint(a: &nec_solver::Segment, b: &nec_solver::Segment, eps: f64) -> bool {
+    points_close(a.start, b.start, eps)
+        || points_close(a.start, b.end, eps)
+        || points_close(a.end, b.start, eps)
+        || points_close(a.end, b.end, eps)
+}
+
+fn segment_closest_distance_and_params(
+    p1: [f64; 3],
+    q1: [f64; 3],
+    p2: [f64; 3],
+    q2: [f64; 3],
+) -> (f64, f64, f64) {
+    const SMALL_NUM: f64 = 1.0e-12;
+
+    let u = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]];
+    let v = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]];
+    let w = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+
+    let a = dot3(u, u);
+    let b = dot3(u, v);
+    let c = dot3(v, v);
+    let d = dot3(u, w);
+    let e = dot3(v, w);
+    let mut s_d = a * c - b * b;
+    let mut t_d = s_d;
+
+    let mut s_n;
+    let mut t_n;
+
+    if s_d < SMALL_NUM {
+        s_n = 0.0;
+        s_d = 1.0;
+        t_n = e;
+        t_d = c;
+    } else {
+        s_n = b * e - c * d;
+        t_n = a * e - b * d;
+
+        if s_n < 0.0 {
+            s_n = 0.0;
+            t_n = e;
+            t_d = c;
+        } else if s_n > s_d {
+            s_n = s_d;
+            t_n = e + b;
+            t_d = c;
+        }
+    }
+
+    if t_n < 0.0 {
+        t_n = 0.0;
+        if -d < 0.0 {
+            s_n = 0.0;
+        } else if -d > a {
+            s_n = s_d;
+        } else {
+            s_n = -d;
+            s_d = a;
+        }
+    } else if t_n > t_d {
+        t_n = t_d;
+        if -d + b < 0.0 {
+            s_n = 0.0;
+        } else if -d + b > a {
+            s_n = s_d;
+        } else {
+            s_n = -d + b;
+            s_d = a;
+        }
+    }
+
+    let s_c = if s_n.abs() < SMALL_NUM {
+        0.0
+    } else {
+        s_n / s_d
+    };
+    let t_c = if t_n.abs() < SMALL_NUM {
+        0.0
+    } else {
+        t_n / t_d
+    };
+
+    let dx = w[0] + s_c * u[0] - t_c * v[0];
+    let dy = w[1] + s_c * u[1] - t_c * v[1];
+    let dz = w[2] + s_c * u[2] - t_c * v[2];
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+    (dist, s_c, t_c)
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 fn find_or_insert_node(
     nodes: &mut Vec<[f64; 3]>,
     degree: &mut Vec<usize>,
@@ -1348,6 +1476,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Some(err) = segment_intersection_error(&segs) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
     // Per-wire basis solve requires every wire to have >= 2 segments.
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
