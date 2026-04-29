@@ -56,6 +56,7 @@ last_updated: 2026-04-29
 	- 2026-04-29 progress: extended scriptability contracts to bench mode by locking that `bench_json:` records remain on stderr while stdout keeps the stable report stream for machine parsers.
 	- 2026-04-29 progress: hardened scriptability contracts with three additional locks: bench CSV records remain on stderr (`bench_csv:` prefix absent from stdout), nonexistent deck exits with code 1 and "cannot read" on stderr (no report on stdout), and no-arg invocation exits with code 2 and usage on stderr (no report on stdout).
 	- 2026-04-29 progress: completed Phase 1 core-flag CLI contract coverage by locking the remaining parser branches in `apps/nec-cli/tests/core_flags_contract.rs` (invalid `--solver`, missing/invalid `--pulse-rhs`, missing/invalid `--bench-format`, missing/invalid `--ex3-i4-mode`, and unexpected extra argument handling).
+	- 2026-04-29 progress: extended CLI report output for multi-frequency FR runs with a machine-parseable `SWEEP_POINTS` summary section (`N_POINTS`, `FREQ_MHZ TAG SEG Z_RE Z_IM`) and locked the format via `apps/nec-cli/tests/report_contract.rs`.
 
 ## Parity-driven backlog items
 

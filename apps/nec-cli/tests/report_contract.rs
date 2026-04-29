@@ -121,3 +121,70 @@ fn report_contract_includes_radiation_pattern_when_rp_present() {
     assert!(stdout.contains("0.0000 0.0000 -999.9900"));
     assert!(stdout.contains("90.0000 0.0000"));
 }
+
+#[test]
+fn report_contract_includes_sweep_points_table_for_multi_frequency_runs() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for sweep report contract test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("SWEEP_POINTS\n"));
+    assert!(stdout.contains("N_POINTS 5\n"));
+    assert!(stdout.contains("FREQ_MHZ TAG SEG Z_RE Z_IM\n"));
+
+    let mut in_sweep = false;
+    let mut sweep_rows = 0usize;
+    let mut freqs: Vec<f64> = Vec::new();
+    for line in stdout.lines() {
+        if line == "SWEEP_POINTS" {
+            in_sweep = true;
+            continue;
+        }
+        if !in_sweep {
+            continue;
+        }
+        if line.starts_with("N_POINTS") || line == "FREQ_MHZ TAG SEG Z_RE Z_IM" {
+            continue;
+        }
+        if line.is_empty() {
+            break;
+        }
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.len() != 5 {
+            continue;
+        }
+        let freq = cols[0]
+            .parse::<f64>()
+            .unwrap_or_else(|e| panic!("invalid sweep frequency '{}': {e}", cols[0]));
+        cols[1]
+            .parse::<usize>()
+            .unwrap_or_else(|e| panic!("invalid sweep tag '{}': {e}", cols[1]));
+        cols[2]
+            .parse::<usize>()
+            .unwrap_or_else(|e| panic!("invalid sweep segment '{}': {e}", cols[2]));
+        cols[3]
+            .parse::<f64>()
+            .unwrap_or_else(|e| panic!("invalid sweep Z_RE '{}': {e}", cols[3]));
+        cols[4]
+            .parse::<f64>()
+            .unwrap_or_else(|e| panic!("invalid sweep Z_IM '{}': {e}", cols[4]));
+        freqs.push(freq);
+        sweep_rows += 1;
+    }
+
+    assert_eq!(sweep_rows, 5, "expected 5 sweep rows, got {sweep_rows}");
+    assert_eq!(freqs, vec![10.0, 12.0, 14.0, 16.0, 18.0]);
+}
