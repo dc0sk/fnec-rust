@@ -664,6 +664,39 @@ fn segment_intersection_error(segs: &[nec_solver::Segment]) -> Option<String> {
     None
 }
 
+fn source_risk_geometry_error(cards: &[Card], segs: &[nec_solver::Segment]) -> Option<String> {
+    const MIN_SOURCE_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
+
+    for card in cards {
+        if let Card::Ex(ex) = card {
+            let Some(seg) = segs
+                .iter()
+                .find(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            else {
+                continue;
+            };
+
+            if seg.radius <= 0.0 {
+                continue;
+            }
+
+            let length_to_radius = seg.length / seg.radius;
+            if length_to_radius < MIN_SOURCE_LENGTH_TO_RADIUS_RATIO {
+                return Some(format!(
+                    "unsupported source-risk geometry: EX on tiny segment tag {} seg {} (length={:.6e} m, radius={:.6e} m, L/r={:.3}). Increase segment length or reduce wire radius; tiny-loop/source-risk classes are deferred",
+                    ex.tag,
+                    ex.segment,
+                    seg.length,
+                    seg.radius,
+                    length_to_radius,
+                ));
+            }
+        }
+    }
+
+    None
+}
+
 fn buried_wire_geometry_error(
     segs: &[nec_solver::Segment],
     ground: &GroundModel,
@@ -1664,6 +1697,10 @@ fn main() -> ExitCode {
         }
     };
     if let Some(err) = segment_intersection_error(&segs) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Some(err) = source_risk_geometry_error(&deck.cards, &segs) {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;
     }
