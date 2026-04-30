@@ -55,9 +55,9 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
-    build_tl_stamps, compute_radiation_pattern, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
-    FarFieldPoint, GroundModel, Segment, ZMatrix,
+    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions,
+    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_with_continuity_basis_per_wire,
+    solve_with_sinusoidal_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -437,8 +437,21 @@ pub(super) fn solve_frequency_point(
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
             let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-            let sol = solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec, wire_endpoints)
-                .map_err(|e| e.to_string())?;
+            // Detect wire junctions for continuity constraints.
+            // Tolerance: 1e-6 m — well below any practical segment length.
+            let wire_junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
+            let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
+                .iter()
+                .map(|j| (j.seg_a, j.seg_b, j.sign))
+                .collect();
+            let sol = solve_hallen(
+                &z_mat,
+                &hallen_rhs.rhs,
+                &hallen_rhs.cos_vec,
+                wire_endpoints,
+                &junction_tuples,
+            )
+            .map_err(|e| e.to_string())?;
             let (a, r) = residual_hallen(
                 &z_mat,
                 &sol.currents,
@@ -518,6 +531,7 @@ pub(super) fn solve_frequency_point(
                         &hallen_rhs.rhs,
                         &hallen_rhs.cos_vec,
                         wire_endpoints,
+                        &[],
                     )
                     .map_err(|e| e.to_string())?;
                     let (a2, r2) = residual_hallen(

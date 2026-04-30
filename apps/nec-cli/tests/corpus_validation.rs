@@ -1041,19 +1041,28 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
     let blocked_case = cases
         .get("dipole-loaded")
         .and_then(Value::as_object)
-        .expect("Phase 1 loaded-gap case 'dipole-loaded' missing");
+        .expect("Phase 2 loaded case 'dipole-loaded' missing");
+    // Phase-2: non-collinear Hallen is now supported; no longer expects a failure.
     assert!(
         blocked_case
             .get("expected_hallen_error_contains")
-            .and_then(Value::as_str)
+            .is_none(),
+        "Phase 2 loaded case 'dipole-loaded' should NOT have expected_hallen_error_contains (non-collinear now supported)"
+    );
+    assert!(
+        blocked_case
+            .get("feedpoint_impedance")
+            .and_then(Value::as_object)
+            .and_then(|fp| fp.get("real_ohm"))
+            .and_then(Value::as_f64)
             .is_some(),
-        "Phase 1 loaded-gap case 'dipole-loaded' must keep expected Hallen failure contract"
+        "Phase 2 loaded case 'dipole-loaded' must have a numeric feedpoint_impedance.real_ohm"
     );
 
     let experimental_case = cases
         .get("dipole-loaded-noncollinear-hallen")
         .and_then(Value::as_object)
-        .expect("Phase 1 loaded-gap case 'dipole-loaded-noncollinear-hallen' missing");
+        .expect("Phase 2 loaded case 'dipole-loaded-noncollinear-hallen' missing");
 
     let deck_file = experimental_case
         .get("deck_file")
@@ -1062,7 +1071,7 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
     let deck_path = corpus_root.join(deck_file);
     assert!(
         deck_path.exists(),
-        "Phase 1 loaded-gap deck missing for case 'dipole-loaded-noncollinear-hallen': {}",
+        "Phase 2 loaded deck missing for case 'dipole-loaded-noncollinear-hallen': {}",
         deck_path.display()
     );
 
@@ -1077,15 +1086,13 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
         "'dipole-loaded-noncollinear-hallen' must include --allow-noncollinear-hallen in cli_args"
     );
 
-    // Phase-1 simplification: --allow-noncollinear-hallen is now silently ignored.
-    // The deck always fails with the Hallen collinear topology error.
+    // Phase-2: --allow-noncollinear-hallen is silently ignored; non-collinear is
+    // now supported by default. No failure expected.
     assert!(
         experimental_case
             .get("expected_hallen_error_contains")
-            .and_then(Value::as_str)
-            .is_some(),
-        "'dipole-loaded-noncollinear-hallen' must define expected_hallen_error_contains \
-         (--allow-noncollinear-hallen is silently ignored in Phase-1)"
+            .is_none(),
+        "'dipole-loaded-noncollinear-hallen' must NOT define expected_hallen_error_contains (Phase-2)"
     );
 
     let feed = experimental_case

@@ -10,7 +10,6 @@
 
 use num_complex::Complex64;
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 
 use nec_model::card::{Card, ExCard};
 use nec_model::deck::NecDeck;
@@ -42,15 +41,6 @@ pub enum ExcitationError {
         segment: u32,
         i4: u32,
     },
-    /// Hallen RHS currently assumes all wires are collinear with the feed axis.
-    UnsupportedHallenTopology {
-        /// Wire tags that are not collinear with the feed segment axis.
-        non_collinear_tags: Vec<u32>,
-        /// Absolute cosine alignment per non-collinear tag.
-        ///
-        /// 1.0 means collinear, 0.0 means orthogonal.
-        tag_abs_alignment_cos: Vec<(u32, f64)>,
-    },
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -70,15 +60,6 @@ impl std::fmt::Display for ExcitationError {
                     "EX: excitation type {ex_type} at tag {tag}, segment {segment}, I4={i4} is not yet supported"
                 )
             }
-            ExcitationError::UnsupportedHallenTopology {
-                non_collinear_tags,
-                tag_abs_alignment_cos,
-            } => write!(
-                f,
-                "Hallén solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: {:?}; abs(cos)-alignment by tag: {:?}",
-                non_collinear_tags,
-                tag_abs_alignment_cos
-            ),
         }
     }
 }
@@ -115,12 +96,21 @@ pub fn scale_excitation_for_pulse_rhs(v: &[Complex64], freq_hz: f64) -> Vec<Comp
 
 /// Build Hallén RHS data (b and cos(k·s)) for the current geometry.
 ///
-/// This uses the first type-0 EX source as the feed reference. The coordinate
-/// s is measured along the driven segment direction with s=0 at the feed
-/// segment midpoint.
+/// For the **driven wire** (the one containing the first type-0 EX source):
+/// - `s` is measured along the wire's axis with s=0 at the feed segment midpoint.
+/// - `b_m = -j * (2π/η₀) * V_source * sin(k * |s_m|)`
+/// - `cos_vec[m] = cos(k * s_m)`
 ///
-/// b_m = -j * (2π/η0) * V_source * sin(k * |s_m|)
-/// cos_vec[m] = cos(k * s_m)
+/// For **non-driven wires** (no EX source on the wire):
+/// - They are coupled only through the Z-matrix; no incident driving field.
+/// - `b_m = 0`
+/// - `cos_vec[m] = cos(k * s_local_m)` where `s_local` is measured along
+///   that wire's own axis with s=0 at the wire's midpoint.
+///
+/// This formulation supports non-collinear and junctioned multi-wire geometries.
+/// The cos_vec column in the Hallén augmented system is shared across all
+/// segments; per-wire C constants are handled in `solve_hallen` via the
+/// `wire_endpoints` argument (one C column per wire).
 pub fn build_hallen_rhs(
     deck: &NecDeck,
     segs: &[Segment],
@@ -159,44 +149,72 @@ pub fn build_hallen_rhs(
 
     let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let feed_dir = segs[feed_idx].direction;
-    let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
+    let driven_tag = segs[feed_idx].tag;
 
-    let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
-    let mut tag_abs_alignment_cos: BTreeMap<u32, f64> = BTreeMap::new();
-    for seg in segs {
-        let dot = seg.direction[0] * feed_dir[0]
-            + seg.direction[1] * feed_dir[1]
-            + seg.direction[2] * feed_dir[2];
-        let abs_dot = dot.abs();
-        if abs_dot < 1.0 - 1e-9 {
-            non_collinear_tags.insert(seg.tag);
-            // Keep the best alignment observed for the tag.
-            tag_abs_alignment_cos
-                .entry(seg.tag)
-                .and_modify(|v| *v = v.max(abs_dot))
-                .or_insert(abs_dot);
+    // Build a map from wire tag → (feed_seg_idx, v_source) for every type-0 EX card.
+    // This handles multi-source decks where multiple wires each have an excitation.
+    let mut source_by_tag: BTreeMap<u32, (usize, Complex64)> =
+        BTreeMap::from([(driven_tag, (feed_idx, v_source))]);
+    for card in &deck.cards {
+        let Card::Ex(ex2) = card else { continue };
+        if ex2.excitation_type != 0 || ex2.tag == driven_tag {
+            continue;
+        }
+        if let Some(idx) = segs
+            .iter()
+            .position(|s| s.tag == ex2.tag && s.tag_index == ex2.segment)
+        {
+            source_by_tag.insert(
+                ex2.tag,
+                (idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)),
+            );
         }
     }
-    if !non_collinear_tags.is_empty() {
-        return Err(ExcitationError::UnsupportedHallenTopology {
-            non_collinear_tags: non_collinear_tags.into_iter().collect(),
-            tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
-        });
+
+    // Group segment indices by tag to compute per-wire geometry.
+    let mut wire_first_by_tag: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut wire_last_by_tag: BTreeMap<u32, usize> = BTreeMap::new();
+    for (i, seg) in segs.iter().enumerate() {
+        wire_first_by_tag.entry(seg.tag).or_insert(i);
+        wire_last_by_tag.insert(seg.tag, i);
     }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
+
     for (m, seg) in segs.iter().enumerate() {
-        let d = [
-            seg.midpoint[0] - feed_mid[0],
-            seg.midpoint[1] - feed_mid[1],
-            seg.midpoint[2] - feed_mid[2],
+        let first = wire_first_by_tag[&seg.tag];
+        let last = wire_last_by_tag[&seg.tag];
+        let wire_dir = segs[first].direction;
+        // Geometric midpoint of the wire (average of first and last segment midpoints).
+        let wire_mid = [
+            (segs[first].midpoint[0] + segs[last].midpoint[0]) / 2.0,
+            (segs[first].midpoint[1] + segs[last].midpoint[1]) / 2.0,
+            (segs[first].midpoint[2] + segs[last].midpoint[2]) / 2.0,
         ];
-        let s = d[0] * feed_dir[0] + d[1] * feed_dir[1] + d[2] * feed_dir[2];
-        rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * v_source;
-        cos_vec[m] = (k * s).cos();
+        // s_local: coordinate along the wire's own axis, s=0 at wire midpoint.
+        let dl = [
+            seg.midpoint[0] - wire_mid[0],
+            seg.midpoint[1] - wire_mid[1],
+            seg.midpoint[2] - wire_mid[2],
+        ];
+        let s_local = dl[0] * wire_dir[0] + dl[1] * wire_dir[1] + dl[2] * wire_dir[2];
+        cos_vec[m] = (k * s_local).cos();
+
+        if let Some(&(fi, vsrc)) = source_by_tag.get(&seg.tag) {
+            // Driven wire: rhs uses s measured from this wire's source segment midpoint.
+            let src_mid = segs[fi].midpoint;
+            let src_dir = segs[fi].direction;
+            let d = [
+                seg.midpoint[0] - src_mid[0],
+                seg.midpoint[1] - src_mid[1],
+                seg.midpoint[2] - src_mid[2],
+            ];
+            let s = d[0] * src_dir[0] + d[1] * src_dir[1] + d[2] * src_dir[2];
+            rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * vsrc;
+        }
+        // else: non-driven wire — rhs[m] stays 0.0.
     }
 
     Ok(HallenRhs { rhs, cos_vec })
@@ -446,7 +464,9 @@ mod tests {
     }
 
     #[test]
-    fn hallen_rhs_rejects_non_collinear_topology() {
+    fn hallen_rhs_accepts_non_collinear_topology() {
+        // Non-collinear multi-wire geometries are now supported; build_hallen_rhs
+        // should succeed and return per-wire local cos_vec values.
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Gw(GwCard {
             tag: 1,
@@ -479,14 +499,16 @@ mod tests {
         }));
 
         let segs = build_geometry(&deck).unwrap();
-        let err = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap_err();
-        assert_eq!(
-            err,
-            ExcitationError::UnsupportedHallenTopology {
-                non_collinear_tags: vec![2],
-                tag_abs_alignment_cos: vec![(2, 0.0)],
+        let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
+        assert_eq!(h.rhs.len(), segs.len());
+        assert_eq!(h.cos_vec.len(), segs.len());
+        // Non-driven segments should have zero RHS.
+        for (idx, seg) in segs.iter().enumerate() {
+            if seg.tag != 1 {
+                assert_eq!(h.rhs[idx].re, 0.0);
+                assert_eq!(h.rhs[idx].im, 0.0);
             }
-        );
+        }
     }
 
     #[test]

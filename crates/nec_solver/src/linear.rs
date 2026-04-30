@@ -409,12 +409,19 @@ pub struct HallenSolution {
 ///
 /// Overdetermined augmented system:
 ///   A · I - C_w(row)·cos_vec = rhs
-///   I_{wire_k_first} = 0  (for each wire k)
-///   I_{wire_k_last}  = 0  (for each wire k)
+///   I[seg] = 0  (for each free wire endpoint not in a junction)
+///   I[seg_a] + sign·I[seg_b] = 0  (for each junction)
 ///
 /// `wire_endpoints` is a slice of `(first_seg_idx, last_seg_idx)` per wire.
 /// An empty slice falls back to constraining only the global first and last segment,
 /// which is correct for single-wire decks.
+///
+/// `junction_constraints` is a slice of `(seg_a, seg_b, sign)` where each entry
+/// encodes a current-continuity constraint `I[seg_a] + sign * I[seg_b] = 0` at a
+/// geometric wire junction. Wire endpoint indices that appear in at least one
+/// junction constraint will NOT receive the default `I = 0` constraint; free
+/// endpoints (not in any junction) still receive `I = 0`.
+/// Pass an empty slice for the single-wire or collinear-multi-wire case.
 ///
 /// Solved via regularized normal equations:
 ///   (MᴴM + λI) x = Mᴴy
@@ -423,6 +430,7 @@ pub fn solve_hallen(
     rhs: &[Complex64],
     cos_vec: &[f64],
     wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n {
@@ -443,8 +451,31 @@ pub fn solve_hallen(
         endpoints = wire_endpoints;
     }
 
+    // Build the set of endpoint segment indices that participate in at least one
+    // junction constraint. These will receive a continuity constraint rather than
+    // the default I = 0 free-endpoint constraint.
+    let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
+        .iter()
+        .flat_map(|&(a, b, _)| [a, b])
+        .collect();
+
+    // Count constraint rows:
+    //   - one per wire endpoint NOT in a junction (I = 0)
+    //   - one per junction pair (I[a] + sign * I[b] = 0)
+    let mut free_endpoint_count = 0usize;
+    for &(first, last) in endpoints.iter() {
+        if !junction_endpoint_set.contains(&first) {
+            free_endpoint_count += 1;
+        }
+        if !junction_endpoint_set.contains(&last) {
+            free_endpoint_count += 1;
+        }
+    }
+    let jc = junction_constraints.len();
+    let constraint_rows = free_endpoint_count + jc;
+
     let w = endpoints.len();
-    let rows = n + 2 * w;
+    let rows = n + constraint_rows;
     let cols = n + w;
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y = vec![Complex64::new(0.0, 0.0); rows];
@@ -466,9 +497,24 @@ pub fn solve_hallen(
         y[r] = rhs[r];
     }
 
-    for (w, &(first, last)) in endpoints.iter().enumerate() {
-        m[n + 2 * w][first] = Complex64::new(1.0, 0.0);
-        m[n + 2 * w + 1][last] = Complex64::new(1.0, 0.0);
+    // Add free-endpoint I = 0 constraints (skip junction endpoints).
+    let mut crow = n;
+    for &(first, last) in endpoints.iter() {
+        if !junction_endpoint_set.contains(&first) {
+            m[crow][first] = Complex64::new(1.0, 0.0);
+            crow += 1;
+        }
+        if !junction_endpoint_set.contains(&last) {
+            m[crow][last] = Complex64::new(1.0, 0.0);
+            crow += 1;
+        }
+    }
+
+    // Add junction continuity constraints: I[seg_a] + sign * I[seg_b] = 0.
+    for &(seg_a, seg_b, sign) in junction_constraints.iter() {
+        m[crow][seg_a] = Complex64::new(1.0, 0.0);
+        m[crow][seg_b] = Complex64::new(sign, 0.0);
+        crow += 1;
     }
 
     // Normal equations with light Tikhonov regularization.
@@ -730,7 +776,7 @@ mod tests {
         let rhs = vec![c(1.0, 0.0)];
         let cos_vec = vec![1.0, 1.0];
         assert!(matches!(
-            solve_hallen(&z, &rhs, &cos_vec, &[]),
+            solve_hallen(&z, &rhs, &cos_vec, &[], &[]),
             Err(SolveError::HallenDimensionMismatch {
                 z_n: 2,
                 rhs_len: 1,
@@ -751,8 +797,8 @@ mod tests {
         let rhs_a = vec![c(0.0, 0.0), c(0.0, 0.0), c(0.0, 0.0)];
         let rhs_b = vec![c(0.0, -0.1), c(0.0, -0.2), c(0.0, -0.1)];
 
-        let a = solve_hallen(&z, &rhs_a, &cos_vec, &[]).unwrap();
-        let b = solve_hallen(&z, &rhs_b, &cos_vec, &[]).unwrap();
+        let a = solve_hallen(&z, &rhs_a, &cos_vec, &[], &[]).unwrap();
+        let b = solve_hallen(&z, &rhs_b, &cos_vec, &[], &[]).unwrap();
 
         let mut diff = 0.0;
         for i in 0..3 {

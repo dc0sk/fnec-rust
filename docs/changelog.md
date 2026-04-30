@@ -11,6 +11,16 @@ All notable documentation process changes are recorded here.
 
 ## Unreleased
 
+### Added
+
+- **Non-collinear multi-wire Hallen support (Phase 2)**: The Hallen solver now handles junctioned and non-collinear multi-wire topologies (e.g. `dipole-loaded` top-hat geometry, inverted-V, Yagi with passive elements) via a segmented hybrid reformulation:
+  - `build_hallen_rhs` now computes per-wire local cos(k·s) homogeneous vectors using each wire's own midpoint as s=0, replacing the old global s-axis.
+  - Passive (non-driven) wires receive rhs=0; all EX cards contribute to the source map (multi-source support).
+  - `detect_wire_junctions()` in `geometry.rs` identifies shared wire endpoints; `solve_hallen` enforces KCL continuity rows for junction segments instead of the default I=0 endpoint condition.
+  - `--allow-noncollinear-hallen` flag is now silently accepted (no-op) rather than deferred; non-collinear geometries are supported by default.
+  - `dipole-loaded` corpus gate now passes: Z ≈ 12.39 − j918 Ω (external NEC2 reference: 13.46 − j896 Ω).
+  - References for TL-coupled multi-dipole cases and Yagi 5-element case updated to reflect correct passive-wire rhs=0 behavior.
+
 ### Changed
 
 - Extracted geometry validation helpers (`sinusoidal_a4_topology_supported`, `segment_intersection_error`, `source_risk_geometry_error`, `buried_wire_geometry_error`, and private math/graph helpers) into `apps/nec-cli/src/geometry_validation.rs`, and extracted all warning functions into `apps/nec-cli/src/warnings.rs`. `main.rs` is now reduced to frontend wiring, enums/constants, bench-emit helpers, and `fn main()`.

@@ -424,33 +424,36 @@ fn residual_diag_fields_are_finite_and_nonnegative() {
 }
 
 #[test]
-fn hallen_non_collinear_fails_without_opt_in_flag() {
+fn hallen_non_collinear_succeeds_without_opt_in_flag() {
+    // Phase-2: non-collinear multi-wire topologies are now supported by default.
     let output = run_hallen_on_loaded_case(false);
 
     assert!(
-        !output.status.success(),
-        "expected hallen to fail on non-collinear loaded case without opt-in flag"
+        output.status.success(),
+        "expected hallen to succeed on non-collinear loaded case; got stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("solver currently supports only collinear wire topologies aligned with the driven segment"),
-        "expected non-collinear topology error in stderr, got:\n{stderr}"
+        stdout.contains("FNEC FEEDPOINT REPORT"),
+        "expected feedpoint report, got stdout:\n{stdout}"
     );
 }
 
 #[test]
-fn hallen_non_collinear_opt_in_flag_runs_experimental_path() {
-    // Phase-1: --allow-noncollinear-hallen is silently ignored; non-collinear
-    // decks still fail with topology error even when the flag is passed.
+fn hallen_non_collinear_opt_in_flag_is_silently_ignored() {
+    // Phase-2: --allow-noncollinear-hallen is silently ignored; non-collinear
+    // decks succeed regardless of whether the flag is passed.
     let output = run_hallen_on_loaded_case(true);
 
     assert!(
-        !output.status.success(),
-        "expected non-collinear hallen to fail even with --allow-noncollinear-hallen in Phase-1"
+        output.status.success(),
+        "expected non-collinear hallen to succeed even with --allow-noncollinear-hallen; got stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("non-collinear") || stderr.contains("collinear"),
-        "expected topology error in stderr, got:\n{stderr}"
+        !stderr.contains("collinear"),
+        "unexpected collinear-topology message in stderr:\n{stderr}"
     );
 }
