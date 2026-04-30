@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-04-29
+last_updated: 2026-04-30
 ---
 
 # Roadmap
@@ -82,8 +82,9 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [x] Simple ground model (infinite, raised dielectric) working and tested (GN type 0 simple finite-ground model activated and regression-gated in corpus CI).
 - [x] CLI-first execution flow complete with all core flags (solver mode, solver options).
 - [x] Produce 4nec2/EZNEC-grade text outputs for impedance, sweep points, gain, pattern, and current tables so the CLI is immediately usable as a daily comparison tool.
-- [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and broader non-collinear support) so the parity claim is not limited to only the easy cases. Current blocker: Hallen correctly rejects the `dipole-loaded` top-hat geometry as non-collinear, while pulse/continuity/sinusoidal all collapse to the same inaccurate pulse result (`-13.778 + j374.425 Ω` vs external candidate `13.463 - j896.032 Ω` at 7.1 MHz).
-	- Phase 2 remediation path: keep the default Hallen hard-fail contract and the experimental `--allow-noncollinear-hallen` tracking path in CI, but require an explicit formulation decision before Phase 3 GUI/product work broadens the parity claim.
+
+- [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and non-collinear or junctioned multi-wire breadth) so the parity claim is not limited to only the easy cases. Current blocker: Hallen correctly rejects the `dipole-loaded` top-hat geometry as non-collinear, while pulse/continuity/sinusoidal all collapse to the same inaccurate pulse result (`-13.778 + j374.425 Ω` vs external candidate `13.463 - j896.032 Ω` at 7.1 MHz). Parallel collinear multi-wire arrays are already in-scope for Hallen, so the remaining breadth gap is specifically the non-collinear or junctioned class rather than all multi-wire geometry.
+	- Phase 2 remediation path: keep the default Hallen hard-fail contract in CI, treat `--allow-noncollinear-hallen` as a currently ignored compatibility placeholder rather than an active experimental path, and require an explicit formulation decision before Phase 3 GUI/product work broadens the parity claim.
 	- Decision gate: choose and document one path for non-collinear wire classes by Phase 2 end: `(a)` generalized sinusoidal/Pocklington-class solver work, `(b)` hybrid formulation split for collinear vs non-collinear classes, or `(c)` explicit deferral of geometric-load/top-hat classes from parity claims with rationale in `docs/solver-findings.md`.
 - [x] Ensure the CLI remains at least as scriptable and batch-friendly as open NEC2 tools like yeti01/nec2, including predictable stdin/stdout behavior and stable machine-parseable reporting conventions.
 

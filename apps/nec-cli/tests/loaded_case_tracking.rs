@@ -40,7 +40,7 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 }
 
 #[test]
-fn loaded_case_experimental_hallen_reduces_reactance_error_vs_pulse() {
+fn loaded_case_allow_noncollinear_flag_is_ignored_and_topology_error_remains() {
     // Phase-1: --allow-noncollinear-hallen is silently ignored; the loaded case
     // (multi-wire, non-collinear) fails with the topology error regardless.
     // This test now verifies that the flag is silently ignored and the topology
