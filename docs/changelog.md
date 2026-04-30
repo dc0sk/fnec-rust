@@ -13,6 +13,8 @@ All notable documentation process changes are recorded here.
 
 ### Added
 
+- **PH3-CHK-001 (card-status index)**: Added `## PH3-CHK-001 complete card status index` section to `docs/nec4-support.md` with a 25-row flat table listing every known NEC-2/NEC-4 mnemonic, its parser status (`recognized` / `unknown`), and functional status. Documents the GM/GR gap (geometry builder implemented but parser not yet wired). `par001_card_status_table_complete` test in `apps/nec-cli/tests/corpus_validation.rs` enforces all 12 parser-recognized mnemonics and 3 out-of-scope entries are present in CI.
+
 - **Non-collinear multi-wire Hallen support (Phase 2)**: The Hallen solver now handles junctioned and non-collinear multi-wire topologies (e.g. `dipole-loaded` top-hat geometry, inverted-V, Yagi with passive elements) via a segmented hybrid reformulation:
   - `build_hallen_rhs` now computes per-wire local cos(k·s) homogeneous vectors using each wire's own midpoint as s=0, replacing the old global s-axis.
   - Passive (non-driven) wires receive rhs=0; all EX cards contribute to the source map (multi-source support).

@@ -1731,7 +1731,6 @@ fn tolerance_with_floor(expected: f64, abs_floor: f64, rel_percent: f64) -> f64 
 fn parse_complex_impedance(s: &str) -> Option<(f64, f64)> {
     let s = s.trim_end_matches('j').trim();
 
-    // Find the operator between real and imag parts
     let plus_pos = s.rfind('+');
     let minus_pos = s.rfind('-');
 
@@ -1750,4 +1749,59 @@ fn parse_complex_impedance(s: &str) -> Option<(f64, f64)> {
     let imag = if is_positive { imag } else { -imag };
 
     Some((real, imag))
+}
+
+// ---------------------------------------------------------------------------
+// PH3-CHK-001: card-status index completeness
+// ---------------------------------------------------------------------------
+
+/// Verifies that docs/nec4-support.md contains the PH3-CHK-001 card-status
+/// index table and that every parser-recognized mnemonic has an entry.
+///
+/// Parser-recognized mnemonics are those with explicit match arms in
+/// `crates/nec_parser/src/lib.rs` (not the unknown-card fallback path).
+#[test]
+fn par001_card_status_table_complete() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let doc_path = workspace_root.join("docs/nec4-support.md");
+
+    let doc_text = std::fs::read_to_string(&doc_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", doc_path.display()));
+
+    // The section header that guards the table.
+    assert!(
+        doc_text.contains("## PH3-CHK-001 complete card status index"),
+        "docs/nec4-support.md must contain '## PH3-CHK-001 complete card status index' section"
+    );
+
+    // Every mnemonic with an explicit match arm in nec_parser must appear in
+    // the table with a `recognized` parser-status cell.
+    let parser_recognized: &[&str] = &[
+        "CM", "CE", "GW", "GE", "GN", "EX", "FR", "RP", "LD", "TL", "NT", "EN",
+    ];
+
+    for mnemonic in parser_recognized {
+        // Look for a table row that starts with the mnemonic and contains `recognized`.
+        let found = doc_text.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with(&format!("| {mnemonic} ")) && trimmed.contains("`recognized`")
+        });
+        assert!(
+            found,
+            "docs/nec4-support.md card-status table is missing a `recognized` entry for mnemonic '{mnemonic}'"
+        );
+    }
+
+    // The table must also include entries for at least the out-of-scope cards.
+    let out_of_scope: &[&str] = &["CP", "SP", "SY"];
+    for mnemonic in out_of_scope {
+        let found = doc_text.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with(&format!("| {mnemonic} "))
+        });
+        assert!(
+            found,
+            "docs/nec4-support.md card-status table is missing an entry for mnemonic '{mnemonic}'"
+        );
+    }
 }
