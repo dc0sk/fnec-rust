@@ -13,6 +13,8 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Extracted per-frequency solve-session logic from `apps/nec-cli/src/main.rs` into a new `apps/nec-cli/src/solve_session.rs` module: all math helpers (`l2_norm`, `matrix_diagonal_spread`, `residual_zi_minus_v`, `residual_hallen`), pulse-source constraint helpers, report builders (`build_feedpoint_rows`, `build_source_rows`, `build_load_rows`), frequency/dispatch helpers (`frequencies_from_fr`, `build_hybrid_lane_plan`), all four structs (`FrequencySolveResult`, `SweepPointSummary`, `PulseCurrentSourceConstraint`, `HybridLanePlan`), and `solve_frequency_point` now live in `solve_session`. The function gains an explicit `sinusoidal_topology_supported: bool` parameter, computed once in `main()` before the solve closure, replacing the internal call to `sinusoidal_a4_topology_supported` inside the solve path.
+
 - Continued CLI decomposition by extracting execution-profile policy logic (4nec2 drop-in detection/steering and startup auto-probe mode selection) from `apps/nec-cli/src/main.rs` into `apps/nec-cli/src/exec_profile.rs`.
 - Started three accepted review follow-ups: parser fuzz scaffolding now exists under `fuzz/`, CLI argument parsing/usage text now lives in `apps/nec-cli/src/cli_args.rs`, and `nec_solver` now carries a first property-based Hallen reciprocity invariant test.
 - Review follow-up triage now assigns owners and concrete closure criteria for the remaining GAP items, adds measurable Phase 3 usability minima, documents experimental residual budgets and the scoped GN0/GN2 finite-ground validity envelope, and starts documenting crate-level public surfaces for `nec_report` and `nec_project`.
