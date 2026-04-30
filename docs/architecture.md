@@ -104,3 +104,8 @@ These references are supplementary, but not irrelevant. 4nec2 compatibility rema
 
 - Docs updates flow through PRs only due to protected main.
 - Frontmatter validation and stamping automation remain required quality gates.
+
+## Contributor orientation
+
+New contributors should read [docs/contributing.md](contributing.md) for build instructions,
+branch conventions, the pre-push sequence, and corpus-gate requirements before opening a PR.

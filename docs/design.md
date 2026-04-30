@@ -51,3 +51,8 @@ last_updated: 2026-04-22
 
 - Docs files must keep standard frontmatter and PR-based update flow.
 - last_updated remains CI-managed.
+
+## Contributor orientation
+
+New contributors should read [docs/contributing.md](contributing.md) for build instructions,
+branch conventions, the pre-push sequence, and corpus-gate requirements before opening a PR.
