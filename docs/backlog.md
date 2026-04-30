@@ -83,13 +83,15 @@ last_updated: 2026-04-30
 	- 2026-04-30 progress: extracted per-frequency solve-session logic (all math helpers, pulse-source constraint helpers, report builders, `FrequencySolveResult`, `SweepPointSummary`, `PulseCurrentSourceConstraint`, `HybridLanePlan`, `frequencies_from_fr`, `build_hybrid_lane_plan`, and `solve_frequency_point`) into `apps/nec-cli/src/solve_session.rs`; `main.rs` now contains only frontend wiring, geometry validation, and warning helpers.
 	- 2026-04-30 progress: extracted geometry validation helpers (`sinusoidal_a4_topology_supported`, `points_close`, `segment_intersection_error`, `source_risk_geometry_error`, `buried_wire_geometry_error`, and private math helpers `segments_share_endpoint`, `segment_closest_distance_and_params`, `dot3`, `find_or_insert_node`) into `apps/nec-cli/src/geometry_validation.rs`; extracted all warning functions into `apps/nec-cli/src/warnings.rs`; `main.rs` now contains only frontend wiring, enums/constants, bench-emit helpers, and `fn main()`.
 
-- [ ] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
+- [x] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
 	Resolution criteria: a `cargo-fuzz` target exists for `nec_parser`, seed inputs are checked in, and contributor docs describe how to run the fuzz target locally.
 	- 2026-04-29 progress: added initial `fuzz/` scaffold outside the Cargo workspace with a `nec_parser_parse` target and a canonical dipole seed corpus input.
+	- 2026-04-30 resolution: all three criteria met. Target: `fuzz/fuzz_targets/nec_parser_parse.rs`. Seed corpus: `fuzz/corpus/nec_parser_parse/basic-dipole.nec`. Contributor docs: `README.md` § "Local workflow checks" documents the run command `(cd fuzz && cargo fuzz run nec_parser_parse corpus/nec_parser_parse)`.
 
-- [ ] **Property-based solver invariants / Owner: Solver+Validation / Target: Phase 2**
+- [x] **Property-based solver invariants / Owner: Solver+Validation / Target: Phase 2**
 	Resolution criteria: at least one property-based invariant test is present in `nec_solver` for a physical reciprocity or symmetry law and is part of the normal test matrix.
 	- 2026-04-29 progress: added the first randomized Hallen reciprocity invariant in `crates/nec_solver/src/matrix.rs`, checking `A_ij = A_ji` across randomly parameterized collinear two-segment cases.
+	- 2026-04-30 resolution: criteria met. `matrix::tests::reciprocity_holds_for_random_collinear_hallen_pairs` runs in the normal `cargo test` matrix and passes (confirmed in CI on PRs #144–#146).
 
 - [x] **Hallen non-collinear multi-wire breadth investigation / Owner: Solver / Target: Phase 2**
 	Resolution criteria: document the exact Hallen topology boundary for current support (single-wire chains vs parallel collinear multi-wire arrays vs junctioned or non-collinear classes), capture at least one representative blocked corpus class plus one representative still-supported multi-wire class, and record a formulation decision for Phase 3 parity claims.
