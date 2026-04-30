@@ -5,9 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn gn0_is_active_without_deferred_warning() {
-    // Phase-1: GN is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  The old "GN type 0 is not yet supported" deferred
-    // warning must NOT appear.
+    // GN0 is active and should not emit deferred/unknown warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -36,18 +34,16 @@ fn gn0_is_active_without_deferred_warning() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Phase-1 parser does not emit the old deferred-ground warning.
     assert!(
         !stderr.contains("GN type 0 is not yet supported"),
-        "did not expect deferred-ground warning for GN0 in Phase-1, got:\n{stderr}"
+        "GN0 should not emit deferred-ground warning, got:\n{stderr}"
     );
-    // Phase-1 parser emits 'unknown card' for unrecognised cards.
     assert!(
-        stderr.contains("unknown card 'GN'"),
-        "expected unknown-card warning for GN, got:\n{stderr}"
+        !stderr.contains("unknown card 'GN'"),
+        "GN should be parsed and not reported as unknown, got:\n{stderr}"
     );
 
-    // Phase-1: runs as free-space → Z_RE ≈ 74.24 Ω.
+    // GN0 finite ground should alter impedance vs free-space.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let z_re = stdout
         .lines()
@@ -62,15 +58,14 @@ fn gn0_is_active_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.23).abs() < 0.5,
-        "Phase-1 GN0 deck should run as free-space (~74.23 Ω), got Z_RE={z_re}"
+        (z_re - 74.23).abs() > 0.5,
+        "GN0 should alter impedance vs free-space (~74.23 Ω), got Z_RE={z_re}"
     );
 }
 
 #[test]
 fn ge1_without_gn_infers_pec_ground() {
-    // Phase-1: GE is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  The old GE1 PEC-inference path is deferred.
+    // GE 1 without an explicit GN card should infer PEC image-method ground.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -100,11 +95,10 @@ fn ge1_without_gn_infers_pec_ground() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("unknown card 'GE'"),
-        "expected unknown-card warning for GE, got:\n{stderr}"
+        !stderr.contains("unknown card 'GE'"),
+        "GE should be parsed and not reported as unknown, got:\n{stderr}"
     );
 
-    // Phase-1: runs as free-space → Z_RE ≈ 74.24 Ω (not PEC 81.91 Ω).
     let stdout = String::from_utf8_lossy(&output.stdout);
     let z_re = stdout
         .lines()
@@ -117,17 +111,31 @@ fn ge1_without_gn_infers_pec_ground() {
             }
         })
         .expect("no feedpoint row in output");
+    let z_im = stdout
+        .lines()
+        .find_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 8 && parts[0] == "1" && parts[1] == "26" {
+                parts[7].parse::<f64>().ok()
+            } else {
+                None
+            }
+        })
+        .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.24).abs() < 0.5,
-        "Phase-1 GE1 deck should run as free-space (~74.24 Ω), got Z_RE={z_re}"
+        (z_re - 81.914743).abs() < 0.05,
+        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~81.91"
+    );
+    assert!(
+        (z_im - 16.416629).abs() < 0.05,
+        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~16.42"
     );
 }
 
 #[test]
 fn ge_negative_flag_emits_unsupported_warning() {
-    // Phase-1: GE is not parsed; card produces 'unknown card' warning.
-    // The old "GE I1=-1 requests below-ground wire handling" warning no longer fires.
+    // GE I1=-1 is parsed and should emit the explicit unsupported warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -156,22 +164,16 @@ fn ge_negative_flag_emits_unsupported_warning() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Phase-1: unknown card warning replaces the old specific warning.
     assert!(
-        stderr.contains("unknown card 'GE'"),
-        "expected unknown-card warning for GE, got:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("GE I1=-1 requests below-ground wire handling"),
-        "Phase-1 should not emit the old GE below-ground warning, got:\n{stderr}"
+        stderr.contains("GE I1=-1 requests below-ground wire handling"),
+        "expected GE I1=-1 warning in stderr, got:\n{stderr}"
     );
 }
 
 #[test]
 fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
-    // Phase-1: GN is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  The old "GN type 2 is not yet supported" deferred
-    // warning must NOT appear.
+    // GN type 2 is mapped to the simple finite-ground path and must not use
+    // the deferred-ground warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -205,7 +207,6 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         "Phase-1 should not emit old deferred GN2 warning, got:\n{stderr}"
     );
 
-    // Phase-1: runs as free-space → Z_RE ≈ 74.24 Ω.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let z_re = stdout
         .lines()
@@ -220,16 +221,14 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.24).abs() < 0.5,
-        "Phase-1 GN2 deck should run as free-space (~74.24 Ω), got Z_RE={z_re}"
+        (z_re - 78.170459).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~78.17"
     );
 }
 
 #[test]
 fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
-    // Phase-1: GN is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  The old "GN type 3 is not yet supported; treating
-    // this deck as free-space" deferred warning no longer fires.
+    // GN type 3 is deferred and should emit the deferred-ground warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -258,15 +257,9 @@ fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Phase-1: unknown card warning.
     assert!(
-        stderr.contains("unknown card 'GN'"),
-        "expected unknown-card warning for GN, got:\n{stderr}"
-    );
-    // Old deferred-ground warning must not fire.
-    assert!(
-        !stderr.contains("GN type 3 is not yet supported; treating this deck as free-space"),
-        "Phase-1 should not emit old deferred GN3 warning, got:\n{stderr}"
+        stderr.contains("GN type 3 is not yet supported; treating this deck as free-space"),
+        "expected deferred GN3 warning, got:\n{stderr}"
     );
 }
 
@@ -368,10 +361,7 @@ fn gn_negative1_null_ground_is_silent_free_space() {
 
 #[test]
 fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
-    // Phase-1: GN and GE are not parsed; they produce 'unknown card' warnings.
-    // With no active ground model, the deck runs as free-space and succeeds.
-    // The old "unsupported buried-wire geometry for active ground model" fail-fast
-    // guardrail no longer fires because the ground model is never activated.
+    // Buried wire with active ground must fail fast with actionable diagnostics.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -393,28 +383,22 @@ fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
 
     let _ = fs::remove_file(&deck_path);
 
-    // Phase-1: runs as free-space, succeeds.
     assert!(
-        output.status.success(),
-        "Phase-1 buried-wire deck should succeed (no active ground), stderr:\n{}",
+        !output.status.success(),
+        "buried-wire deck with active ground should fail, stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("error: unsupported buried-wire geometry for active ground model"),
-        "Phase-1 should not emit buried-wire guardrail error (no active ground), got:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("GN type 2 is not yet supported"),
-        "Phase-1 should not emit deferred GN2 warning, got:\n{stderr}"
+        stderr.contains("error: unsupported buried-wire geometry for active ground model"),
+        "expected buried-wire guardrail error, got:\n{stderr}"
     );
 }
 
 #[test]
 fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
-    // Phase-1: GN is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  Impedance is the free-space result (~74.24 Ω).
+    // Near-ground wire with GN2 is a supported active-ground path.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -452,7 +436,6 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         "Phase-1 should not emit buried-wire error (no active ground), got:\n{stderr}"
     );
 
-    // Phase-1: runs as free-space → Z_RE ≈ 74.24 Ω.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let z_re = stdout
         .lines()
@@ -467,7 +450,7 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.24).abs() < 0.5,
-        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~74.24 (free-space)"
+        (z_re - 69.436745).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~69.44"
     );
 }
