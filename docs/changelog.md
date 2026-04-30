@@ -13,6 +13,7 @@ All notable documentation process changes are recorded here.
 
 ### Changed
 
+- Extracted geometry validation helpers (`sinusoidal_a4_topology_supported`, `segment_intersection_error`, `source_risk_geometry_error`, `buried_wire_geometry_error`, and private math/graph helpers) into `apps/nec-cli/src/geometry_validation.rs`, and extracted all warning functions into `apps/nec-cli/src/warnings.rs`. `main.rs` is now reduced to frontend wiring, enums/constants, bench-emit helpers, and `fn main()`.
 - Extracted per-frequency solve-session logic from `apps/nec-cli/src/main.rs` into a new `apps/nec-cli/src/solve_session.rs` module: all math helpers (`l2_norm`, `matrix_diagonal_spread`, `residual_zi_minus_v`, `residual_hallen`), pulse-source constraint helpers, report builders (`build_feedpoint_rows`, `build_source_rows`, `build_load_rows`), frequency/dispatch helpers (`frequencies_from_fr`, `build_hybrid_lane_plan`), all four structs (`FrequencySolveResult`, `SweepPointSummary`, `PulseCurrentSourceConstraint`, `HybridLanePlan`), and `solve_frequency_point` now live in `solve_session`. The function gains an explicit `sinusoidal_topology_supported: bool` parameter, computed once in `main()` before the solve closure, replacing the internal call to `sinusoidal_a4_topology_supported` inside the solve path.
 
 - Continued CLI decomposition by extracting execution-profile policy logic (4nec2 drop-in detection/steering and startup auto-probe mode selection) from `apps/nec-cli/src/main.rs` into `apps/nec-cli/src/exec_profile.rs`.
