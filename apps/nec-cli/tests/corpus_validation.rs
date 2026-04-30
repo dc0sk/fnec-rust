@@ -1126,6 +1126,110 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
 }
 
 #[test]
+fn par005_pattern_current_corpus_contracted() {
+    // PAR-005 / PH2-CHK-005: Corpus truth extended from impedance-only checks to
+    // pattern/current/phase classes.  This test verifies that each RP corpus case
+    // has a non-empty pattern_samples array, the required Gain_absolute_dB and
+    // AxialRatio_absolute tolerance gates, and that the corpus_validation runner
+    // exercises them (i.e. the data actually feeds into CI execution).
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let corpus_root = workspace_root.join("corpus");
+    let reference_path = corpus_root.join("reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    // PAR-005 checklist: (case_name, min_pattern_samples, has_external_gain_gate)
+    let rp_cases: &[(&str, usize, bool)] = &[
+        ("dipole-freesp-rp-51seg", 3, true),
+        ("dipole-ground-rp-51seg", 3, false),
+        ("dipole-xaxis-rp-grid-51seg", 3, true),
+    ];
+
+    for (case_name, min_samples, has_external_gain_gate) in rp_cases {
+        let case_obj = cases
+            .get(*case_name)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| {
+                panic!("PAR-005 RP case '{case_name}' missing from reference-results.json")
+            });
+
+        // Deck file must exist on disk
+        let deck_file = case_obj
+            .get("deck_file")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("PAR-005 case '{case_name}' missing 'deck_file'"));
+        let deck_path = corpus_root.join(deck_file);
+        assert!(
+            deck_path.exists(),
+            "PAR-005 deck missing for '{case_name}': {}",
+            deck_path.display()
+        );
+
+        // Must have a pattern_samples array with at least min_samples entries
+        let pattern_samples = case_obj
+            .get("pattern_samples")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| {
+                panic!("PAR-005 case '{case_name}' missing 'pattern_samples' array")
+            });
+        assert!(
+            pattern_samples.len() >= *min_samples,
+            "PAR-005 case '{case_name}' must have >= {min_samples} pattern_samples (found {})",
+            pattern_samples.len()
+        );
+
+        // Each pattern sample must have the required fields
+        for (i, sample) in pattern_samples.iter().enumerate() {
+            let s = sample.as_object().unwrap_or_else(|| {
+                panic!("PAR-005 case '{case_name}' pattern_samples[{i}] is not an object")
+            });
+            for field in ["theta_deg", "phi_deg", "gain_db"] {
+                assert!(
+                    s.get(field).and_then(Value::as_f64).is_some(),
+                    "PAR-005 case '{case_name}' pattern_samples[{i}] missing numeric field '{field}'"
+                );
+            }
+        }
+
+        // Must have Gain_absolute_dB and AxialRatio_absolute tolerance gates
+        let gates = case_obj
+            .get("tolerance_gates")
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("PAR-005 case '{case_name}' missing 'tolerance_gates'"));
+        assert!(
+            gates
+                .get("Gain_absolute_dB")
+                .and_then(Value::as_f64)
+                .is_some(),
+            "PAR-005 case '{case_name}' must define Gain_absolute_dB tolerance gate"
+        );
+        assert!(
+            gates
+                .get("AxialRatio_absolute")
+                .and_then(Value::as_f64)
+                .is_some(),
+            "PAR-005 case '{case_name}' must define AxialRatio_absolute tolerance gate"
+        );
+
+        // If external reference exists, ExternalGain_absolute_dB must be present
+        if *has_external_gain_gate {
+            assert!(
+                gates.get("ExternalGain_absolute_dB").and_then(Value::as_f64).is_some(),
+                "PAR-005 case '{case_name}' has external_reference_candidate but missing ExternalGain_absolute_dB gate"
+            );
+        }
+    }
+}
+
+#[test]
 fn phase2_current_phase_corpus_contract_is_present_and_contracted() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let corpus_root = workspace_root.join("corpus");
