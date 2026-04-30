@@ -115,6 +115,7 @@ All notable documentation process changes are recorded here.
 - Explicitly postponed PAR-011 compatibility harness-skeleton work in current scope (option 3 deferred).
 - Explicitly postponed PAR-011 compatibility harness-skeleton work in current scope (option 3 deferred).
 - **PH2-CHK-003 — LD/TL/NT implemented semantics (2026-05-10)**: LD cards (types 0–5) and TL lossless-line cards (`type=0`) are now parsed in `nec_parser` and applied as impedance stamps in the solver; NT cards are parsed for staged portability and emit a deferred-support warning instead of an unknown-card warning. 5 `ld_loads.rs` and 3 `tl_cards.rs` integration tests updated to Phase-2 assertions; 14 corpus reference entries in `reference-results.json` updated (3 LD loaded-value cases, 4 TL coupled-dipole cases, 7 NT deferred-warning cases); `parser_warnings.rs`, `report_contract.rs`, and `scriptability_contract.rs` tests updated to Phase-2 contracts.
+- **PH2-CHK-007 — NEC-5 validation matrix ticked done (2026-04-30)**: The PH2-CHK-007 traceability matrix in `docs/corpus-validation-strategy.md` (row IDs `PH2N5-001` … `PH2N5-010`) carries explicit `in-scope implemented` / `in-scope deferred` / `out-of-scope` statuses with corpus case mappings, and `phase2_nec5_matrix_rows_are_traceable_to_corpus_cases` in `apps/nec-cli/tests/corpus_validation.rs` enforces row-ID presence, status validity, and corpus-case existence in CI. The PH2-CHK-007 done signal is therefore already met by prior PH2-CHK-005 work; this entry records the roadmap tick.
 
 ## 0.2.0 — 2026-05-01
 
