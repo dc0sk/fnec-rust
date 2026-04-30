@@ -80,6 +80,7 @@ last_updated: 2026-04-29
 	Resolution criteria: `apps/nec-cli/src/main.rs` is reduced to frontend wiring; argument parsing, solve-session orchestration, and FR sweep coordination are extracted into reusable units that can be tested without spawning the CLI binary.
 	- 2026-04-29 progress: started the extraction by moving CLI option parsing and usage-contract text into `apps/nec-cli/src/cli_args.rs`, leaving `main.rs` with a narrower frontend-wiring role.
 	- 2026-04-29 progress: extracted compatibility-profile detection/steering and startup execution auto-probe policy into `apps/nec-cli/src/exec_profile.rs`, further shrinking policy logic embedded in `main.rs`.
+	- 2026-04-30 progress: extracted per-frequency solve-session logic (all math helpers, pulse-source constraint helpers, report builders, `FrequencySolveResult`, `SweepPointSummary`, `PulseCurrentSourceConstraint`, `HybridLanePlan`, `frequencies_from_fr`, `build_hybrid_lane_plan`, and `solve_frequency_point`) into `apps/nec-cli/src/solve_session.rs`; `main.rs` now contains only frontend wiring, geometry validation, and warning helpers.
 
 - [ ] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
 	Resolution criteria: a `cargo-fuzz` target exists for `nec_parser`, seed inputs are checked in, and contributor docs describe how to run the fuzz target locally.
