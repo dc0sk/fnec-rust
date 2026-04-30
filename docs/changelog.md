@@ -2,14 +2,14 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-01
+last_updated: 2026-04-30
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
 
-## Unreleased
+## [0.3.0] — 2026-04-30
 
 ### Added
 

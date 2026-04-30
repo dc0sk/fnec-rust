@@ -1,6 +1,6 @@
 # fnec-rust
 
-![version](https://img.shields.io/badge/version-0.2.0-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![license](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.
@@ -24,7 +24,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 	- Buried active-ground wire classes (`z < 0`) remain deferred and fail fast with an actionable error instead of silently falling back
 	- GN types outside the current scoped subset still remain deferred
 	- GE ground-reflection flag: `1` = PEC image (handled); `-1` = below-ground (warns); other values warn with valid range hint
-	- Multi-wire Hallen: per-wire homogeneous constants and endpoint constraints; correct passive-wire (zero) RHS
+	- **Multi-wire junctioned / non-collinear Hallen** (unique to fnec-rust): per-wire local cos(k·s) homogeneous vectors, KCL junction continuity rows, and correct passive-wire (zero) RHS — no other NEC2-compatible tool handles junctioned wire topologies via the Hallen integral equation; validated against NEC2 on `dipole-loaded` top-hat geometry (Z ≈ 12.4−j918 Ω, NEC2 ref 13.5−j896 Ω); external cross-check recommended for novel geometries
 - Segment current distribution table in CLI output (`CURRENTS` section after feedpoint table)
 - RP radiation-pattern execution in CLI output (`RADIATION_PATTERN` section with theta/phi gain rows)
 - Corpus validation can track and optionally gate external parity candidates (RP and impedance) recorded in `corpus/reference-results.json`
