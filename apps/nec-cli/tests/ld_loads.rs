@@ -55,8 +55,8 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 
 #[test]
 fn ld_type4_changes_feedpoint_impedance() {
-    // Phase-1: LD is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  The loaded impedance equals free-space (no LD effect).
+    // Phase-2: LD is parsed and applied.  LD type 4 (series impedance R=100, X=50)
+    // stamps directly into the Z matrix at seg 26, shifting Z_RE well above free-space.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -70,23 +70,28 @@ fn ld_type4_changes_feedpoint_impedance() {
     let (loaded_out, loaded_err) = run_fnec(&loaded_path, &workspace_root);
     let _ = fs::remove_file(&loaded_path);
 
-    // Phase-1: LD produces unknown-card warning, deck runs as free-space.
+    // Phase-2: LD is parsed — no unknown-card warning.
     assert!(
-        loaded_err.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{loaded_err}"
+        !loaded_err.contains("unknown card 'LD'"),
+        "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
-    let (loaded_r, _) = first_feedpoint_impedance(&loaded_out);
+    // LD type 4 (R=100, X=50) shifts Z_RE to ~706.7 Ω (vs free-space ~74.2 Ω).
+    let (loaded_r, loaded_x) = first_feedpoint_impedance(&loaded_out);
     assert!(
-        (loaded_r - 74.24).abs() < 0.5,
-        "Phase-1 LD4 deck should run as free-space (~74.24 Ω), got Z_RE={loaded_r}"
+        (loaded_r - 706.724).abs() < 1.0,
+        "Phase-2 LD4 Z_RE should be ~706.7 Ω, got {loaded_r}"
+    );
+    assert!(
+        (loaded_x - 498.586).abs() < 1.0,
+        "Phase-2 LD4 Z_IM should be ~498.6 Ω, got {loaded_x}"
     );
 }
 
 #[test]
 fn unsupported_ld_type_emits_warning_and_continues() {
-    // Phase-1: LD is not parsed; all LD cards produce 'unknown card 'LD'' warning.
-    // The old per-type "LD type N … is not yet supported; load ignored" message
-    // no longer fires.
+    // Phase-2: LD is parsed.  LD type 9 is still not implemented in the solver;
+    // the solver emits "LD type 9 on tag 1 is not yet supported; load ignored"
+    // and the deck runs without the load (free-space impedance).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -100,20 +105,22 @@ fn unsupported_ld_type_emits_warning_and_continues() {
     let (_, stderr) = run_fnec(&deck_path, &workspace_root);
     let _ = fs::remove_file(&deck_path);
 
+    // Phase-2: no more generic "unknown card 'LD'" — the card is parsed.
     assert!(
-        stderr.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{stderr}"
+        !stderr.contains("unknown card 'LD'"),
+        "Phase-2: LD card should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
+    // The solver emits a specific warning for unsupported type 9.
     assert!(
-        !stderr.contains("LD type 9 on tag 1 is not yet supported; load ignored"),
-        "Phase-1 should not emit per-type LD warning, got:\n{stderr}"
+        stderr.contains("LD type 9 on tag 1 is not yet supported; load ignored"),
+        "expected solver warning for unsupported LD type 9, got:\n{stderr}"
     );
 }
 
 #[test]
 fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
-    // Phase-1: LD is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.
+    // Phase-2: LD type 1 (parallel RLC) is parsed and applied.
+    // R=1000 Ω parallel raises Z_RE to ~7072 Ω (vs free-space ~74.2 Ω).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -128,20 +135,21 @@ fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
     let _ = fs::remove_file(&loaded_path);
 
     assert!(
-        loaded_err.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{loaded_err}"
+        !loaded_err.contains("unknown card 'LD'"),
+        "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
     let (loaded_r, _) = first_feedpoint_impedance(&loaded_out);
     assert!(
-        (loaded_r - 74.24).abs() < 0.5,
-        "Phase-1 LD1 deck should run as free-space (~74.24 Ω), got Z_RE={loaded_r}"
+        (loaded_r - 7072.840).abs() < 5.0,
+        "Phase-2 LD1 (R=1000 Ω parallel) Z_RE should be ~7072.8 Ω, got {loaded_r}"
     );
 }
 
 #[test]
 fn ld_type2_series_rl_is_supported_and_changes_impedance() {
-    // Phase-1: LD is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.
+    // Phase-2: LD type 2 (series RL) is parsed and applied.
+    // R=10 Ω, L=1 µH at 14.2 MHz: X_L = ωL ≈ 89.1 Ω added to seg 26.
+    // Z_IM shifts from ~13.9 Ω (free-space) to ~651.8 Ω.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -156,20 +164,21 @@ fn ld_type2_series_rl_is_supported_and_changes_impedance() {
     let _ = fs::remove_file(&loaded_path);
 
     assert!(
-        loaded_err.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{loaded_err}"
+        !loaded_err.contains("unknown card 'LD'"),
+        "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
     let (_, loaded_x) = first_feedpoint_impedance(&loaded_out);
     assert!(
-        (loaded_x - 13.9).abs() < 0.5,
-        "Phase-1 LD2 deck should run as free-space (X≈13.9 Ω), got Z_IM={loaded_x}"
+        (loaded_x - 651.799).abs() < 2.0,
+        "Phase-2 LD2 (series RL) Z_IM should be ~651.8 Ω, got {loaded_x}"
     );
 }
 
 #[test]
 fn ld_type3_series_rc_is_supported_and_changes_impedance() {
-    // Phase-1: LD is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.
+    // Phase-2: LD type 3 (series RC) is parsed and applied.
+    // R=10 Ω, C=1 pF at 14.2 MHz: X_C = 1/(ωC) ≈ 11.2 kΩ — highly capacitive load.
+    // Z_IM shifts to ~ -78413 Ω (strongly capacitive).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -184,12 +193,13 @@ fn ld_type3_series_rc_is_supported_and_changes_impedance() {
     let _ = fs::remove_file(&loaded_path);
 
     assert!(
-        loaded_err.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{loaded_err}"
+        !loaded_err.contains("unknown card 'LD'"),
+        "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
     let (_, loaded_x) = first_feedpoint_impedance(&loaded_out);
+    // Strongly capacitive: Z_IM << 0
     assert!(
-        (loaded_x - 13.9).abs() < 0.5,
-        "Phase-1 LD3 deck should run as free-space (X≈13.9 Ω), got Z_IM={loaded_x}"
+        loaded_x < -1000.0,
+        "Phase-2 LD3 (series RC, 1 pF) Z_IM should be strongly negative (got {loaded_x})"
     );
 }

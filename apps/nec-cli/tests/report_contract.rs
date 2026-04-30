@@ -214,8 +214,7 @@ fn report_contract_includes_sweep_points_table_for_multi_frequency_runs() {
 
 #[test]
 fn report_contract_includes_load_table_when_ld_cards_exist() {
-    // Phase-1: LD is not parsed; card produces 'unknown card' warning.
-    // The LOADS section does not appear in the report (no loads are active).
+    // Phase-2: LD is parsed and applied; the LOADS section appears in the report.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-ld-series-rl-51seg.nec");
 
@@ -234,22 +233,22 @@ fn report_contract_includes_load_table_when_ld_cards_exist() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("unknown card 'LD'"),
-        "expected unknown-card warning for LD, got:\n{stderr}"
+        !stderr.contains("unknown card 'LD'"),
+        "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
 
-    // Phase-1: no LOADS section since LD is not parsed.
+    // Phase-2: LOADS section IS present since LD is parsed and applied.
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        !stdout.contains("LOADS\n"),
-        "Phase-1: no LOADS section expected when LD is not parsed, got:\n{stdout}"
+        stdout.contains("LOADS\n"),
+        "Phase-2: LOADS section expected in report when LD is parsed, got:\n{stdout}"
     );
 }
 
 #[test]
 fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
-    // Phase-1: LD and GE are not parsed; they produce 'unknown card' warnings.
-    // The LOADS section no longer appears in the report.
+    // Phase-2: LD is parsed; LOADS section appears once per frequency point.
+    // GE is still unknown-card (not in the parser).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 3 0 0 14.0 0.1\nEN\n";
     let deck_path = write_temp_deck("report-sweep-load-order", deck);
@@ -281,11 +280,11 @@ fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
         "expected one full report block per frequency point, got:\n{stdout}"
     );
     assert_eq!(stdout.matches("SOURCES\n").count(), 3);
-    // Phase-1: no LOADS section.
+    // Phase-2: LOADS section appears once per frequency point (3 total).
     assert_eq!(
         stdout.matches("LOADS\n").count(),
-        0,
-        "Phase-1: LOADS section should not appear when LD is not parsed"
+        3,
+        "Phase-2: expected one LOADS section per frequency point, got:\n{stdout}"
     );
     assert_eq!(stdout.matches("CURRENTS\n").count(), 3);
 
@@ -302,9 +301,10 @@ fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
         let feed_idx = block.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
         let source_idx = block.find("SOURCES\n").expect("missing SOURCES");
         let currents_idx = block.find("CURRENTS\n").expect("missing CURRENTS");
+        let loads_idx = block.find("LOADS\n").expect("missing LOADS in block");
         assert!(
-            feed_idx < source_idx && source_idx < currents_idx,
-            "expected per-frequency order FEEDPOINTS -> SOURCES -> CURRENTS in block:\n{block}"
+            feed_idx < source_idx && source_idx < loads_idx && loads_idx < currents_idx,
+            "expected per-frequency order FEEDPOINTS -> SOURCES -> LOADS -> CURRENTS in block:\n{block}"
         );
     }
 }
