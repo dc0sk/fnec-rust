@@ -61,7 +61,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 
 | Card | Description | Status | Notes |
 |:-----|:------------|:-------|:------|
-| GN | Ground definition | PARTIAL | Type 1 (perfect conductor, z=0 PEC image method) supported: $$\text{GN type }1 \Rightarrow \text{PEC image method at } z=0$$. Other types currently emit a runtime warning and fall back to free-space. Finite-conductivity Sommerfeld/Norton variants are DEFERRED (Phase 2+). |
+| GN | Ground definition | PARTIAL | Types 0/2 (finite conductivity, scoped simple approximation) and type 1 (perfect conductor, z=0 PEC image method) supported. Types 0 and 2 share the same scoped `SimpleFiniteGround` path using the parsed `EPSE`/`SIG` medium parameters (or defaults 13.0/0.005 when omitted). GN type -1 is treated as free-space per spec. Other types (`GN 3`, etc.) emit a runtime warning and fall back to free-space. Full Sommerfeld/Norton ground-wave correction is DEFERRED (Phase 2+). |
 | EN | End of input | FULL | Terminates deck parse. |
 
 ### Advanced/specialized cards
@@ -106,7 +106,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:-------|:------|
 | Free space (no ground) | FULL | Baseline. No coupling to ground plane. |
 | Perfect conductor (infinite, ideal) | PARTIAL | Implemented via image method. Phase 1. Sommerfeld corrections (Phase 2) for accuracy near ground. |
-| Finite conductivity (Sommerfeld) | DEFERRED | Includes earth losses, frequency-dependent coupling. Phase 2. |
+| Finite conductivity (simple scoped model) | PARTIAL | GN types 0 and 2 map to the scoped `SimpleFiniteGround` path using Fresnel-reflection approximation with parsed EPSE/SIG. Above-ground wire classes are in-scope and corpus-gated. Full Sommerfeld/Norton ground-wave integrals deferred to Phase 2+. |
 | Layered earth | DEFERRED | Multi-layer soil models. Phase 3. |
 | Seawater effects | DEFERRED | Conductive media. Phase 3. |
 
