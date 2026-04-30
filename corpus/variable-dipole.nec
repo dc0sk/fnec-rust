@@ -1,0 +1,15 @@
+CM Variable-length half-wave dipole template
+CM
+CM Use with --vars to substitute HALF_LENGTH_M and FREQ_MHZ at run time.
+CM Example:
+CM   fnec --vars corpus/dipole-vars.toml corpus/variable-dipole.nec
+CM
+CM Variables:
+CM   HALF_LENGTH_M  — half-length of dipole arm in metres (e.g. 5.282 for 14.2 MHz)
+CM   FREQ_MHZ       — excitation frequency in MHz
+CE
+GW 1 51 0 0 -$HALF_LENGTH_M 0 0 $HALF_LENGTH_M 0.001
+GE
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 $FREQ_MHZ 0.0
+EN

@@ -9,6 +9,8 @@
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
+pub mod template;
+
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, LdCard, NtCard, RpCard,
     TlCard,

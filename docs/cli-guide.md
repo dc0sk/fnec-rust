@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -40,6 +40,8 @@ Compatibility profile note:
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
 | `--gpu-fr` | flag | off | Route RP far-field evaluation through accelerator stub path |
+| `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list); overrides the `FR` card frequency list for a batch solve. See `examples/sweep-spec.toml`. |
+| `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
 
 ## Solver modes
 

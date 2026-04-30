@@ -7,6 +7,7 @@ mod exec_profile;
 mod geometry_validation;
 mod solve_session;
 mod sweep_config;
+mod vars_config;
 mod warnings;
 
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
@@ -55,6 +56,7 @@ fn main() -> ExitCode {
         bench_format,
         enable_gpu_fr,
         sweep_config_path,
+        vars_path,
         path,
     } = match parse_args(&args) {
         Ok(v) => v,
@@ -90,6 +92,25 @@ fn main() -> ExitCode {
             eprintln!("error: cannot read '{}': {e}", path.display());
             return ExitCode::FAILURE;
         }
+    };
+
+    let input = if let Some(ref vp) = vars_path {
+        let vars = match vars_config::load_vars(vp) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        match nec_parser::template::substitute(&input, &vars) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        input
     };
 
     let result = match parse(&input) {
