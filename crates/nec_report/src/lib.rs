@@ -90,6 +90,54 @@ pub struct ReportInput<'a> {
     pub pattern_table: &'a [PatternRow],
 }
 
+/// **Extension point EP-2 — feedpoint result filter.**
+///
+/// Implementors receive the slice of [`FeedpointRow`] values computed for a
+/// single frequency point and return a filtered or transformed
+/// `Vec<FeedpointRow>`.  The hook runs after solve and before report
+/// rendering, so it cannot affect solver behaviour.
+///
+/// # Safety model
+///
+/// Implementations are plain in-process Rust.  All values passed through
+/// `rows` are plain numeric data; no network, filesystem, or FFI access is
+/// reachable through this interface.
+///
+/// # Example
+///
+/// ```
+/// use nec_report::{ResultFilter, FeedpointRow};
+/// use num_complex::Complex64;
+///
+/// struct DropHighImpedance { threshold_ohms: f64 }
+///
+/// impl ResultFilter for DropHighImpedance {
+///     fn filter(&self, rows: &[FeedpointRow]) -> Vec<FeedpointRow> {
+///         rows.iter()
+///             .filter(|r| r.z_in.re.abs() < self.threshold_ohms)
+///             .copied()
+///             .collect()
+///     }
+/// }
+///
+/// let row = FeedpointRow {
+///     tag: 1, seg: 1,
+///     v_source: Complex64::new(1.0, 0.0),
+///     current: Complex64::new(0.01, 0.0),
+///     z_in: Complex64::new(50.0, 0.0),
+/// };
+/// let f = DropHighImpedance { threshold_ohms: 200.0 };
+/// assert_eq!(f.filter(&[row]).len(), 1);
+///
+/// let big = FeedpointRow { z_in: Complex64::new(300.0, 0.0), ..row };
+/// assert_eq!(f.filter(&[big]).len(), 0);
+/// ```
+pub trait ResultFilter {
+    /// Returns a filtered or transformed copy of `rows`.  The original
+    /// report pipeline is unaffected; callers may discard the result.
+    fn filter(&self, rows: &[FeedpointRow]) -> Vec<FeedpointRow>;
+}
+
 pub fn render_text_report(input: &ReportInput<'_>) -> String {
     let mut out = String::new();
 
