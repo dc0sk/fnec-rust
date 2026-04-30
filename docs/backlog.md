@@ -244,3 +244,35 @@ last_updated: 2026-04-30
 		- Compatibility fixtures: archive representative external-kernel call traces and outputs for each binary variant as regression fixtures.
 		- Benchmark method: define throughput comparison protocol against the legacy single-thread kernel on identical decks, with per-variant segment-count bands.
 		- Reference sources: index `nec2mp-readme.pdf` notes, the cited URL (`http://users.otenet.gr/~jmsp`), and GNU NEC SourceForge project notes (`https://sourceforge.net/projects/gnu-nec/`) into the evidence memo (`docs/par011-dropin-evidence-memo.md`) for future PAR-011 kickoff.
+
+## Identified improvements (2026-04-30 review)
+
+The following items were identified during a project-wide review on 2026-04-30 and accepted for backlog tracking. They are deliberately scoped to be incremental improvements that do not duplicate the explicit `PH2-CHK-*` Phase-2 checklist items.
+
+### Code quality & robustness
+
+- [ ] **BL-IMPR-001 / Reduce `unwrap`/`expect` in core solver paths**: Audit `crates/nec_solver/src/{linear.rs,matrix.rs,excitation.rs,loads.rs}` and convert non-test `unwrap()` / `expect()` call sites to `Result` propagation or explicit panics with documented invariants. Resolution criteria: no `.unwrap()` / `.expect()` outside `#[cfg(test)]` in `nec_solver` core modules without an accompanying invariant comment; CI lint check optional.
+- [ ] **BL-IMPR-002 / Workspace `[lints]` table**: Add a workspace-level `[lints]` table in the root `Cargo.toml` that pins clippy and rustc warning levels, and selectively opts in to a curated `clippy::pedantic` subset. Resolution criteria: `cargo clippy --workspace --all-targets` runs clean under the new lints; per-crate overrides documented.
+
+### Test coverage
+
+- [ ] **BL-IMPR-003 / Add unit tests to `nec_project` crate**: Crate currently has only `lib.rs` skeleton. Resolution criteria: at least one unit-test module exercising the public API surface; CI gate on `cargo test -p nec_project`. Precondition for FR-004 Markdown project-workflow work.
+- [ ] **BL-IMPR-004 / Add unit tests to `nec_report` crate**: Crate is exercised today only via CLI integration tests. Resolution criteria: unit tests for table-render corner cases (NaN, empty rows, very wide columns, pattern row filtering) directly against the public render API.
+- [ ] **BL-IMPR-005 / Property-based tests for excitation/loads**: Add `proptest`-driven sweeps over LD types 0–5 and EX types 1–5 to cover staged/portability paths and randomized card field values. Resolution criteria: at least one proptest in `nec_solver/src/excitation.rs` and `nec_solver/src/loads.rs` test modules with a stable seed configuration in CI.
+- [ ] **BL-IMPR-006 / GPU kernel edge-case tests**: Extend `crates/nec_accel/src/gpu_kernels` unit tests to cover 1-segment cases, very small/large frequencies, NaN-source handling, and pattern interpolation near the poles (θ=0, θ=π). Resolution criteria: dedicated edge-case tests added; existing happy-path tests untouched.
+
+### Documentation
+
+- [ ] **BL-IMPR-007 / Single staged-card status table**: Document one canonical table (likely under `docs/cli-guide.md` or a new `docs/card-support-matrix.md`) of supported vs deferred behavior for EX types, PT, NT, LD types, TL types, and GN types, with links to the corresponding solver/parser entry points. Resolution criteria: table exists, is referenced from `docs/cli-guide.md` and `README.md`, and is covered by a frontmatter validation hook if practical.
+- [ ] **BL-IMPR-008 / Clarify GPU stub state in `nec_accel` README**: The `crates/nec_accel` GPU dispatch path is currently a stub; today only the roadmap notes this. Resolution criteria: a short README in `crates/nec_accel/` (or a doc comment in `lib.rs`) explicitly states which kernels are stubs vs implemented and links to the roadmap entry that tracks the real-kernel work.
+
+### Performance & parallelism
+
+- [ ] **BL-IMPR-009 / CPU single-thread benchmark baseline in CI**: Add a `RAYON_NUM_THREADS=1` benchmark scenario to the existing benchmark harness so parallel scaling can be measured against a stable single-thread baseline. Resolution criteria: single-thread baseline CSV captured by the existing benchmark scripts and gated by an existing comparison workflow; no regressions in current benchmark coverage.
+
+### Feature gaps
+
+- [ ] **BL-IMPR-010 / Pattern-interpolation accuracy property test**: Add a property-based test that asserts interpolated gain values at arbitrary (θ, φ) stay within a stated tolerance of the surrounding RP grid samples for the existing RP corpus cases. Resolution criteria: proptest added under `apps/nec-cli/tests/` (or a relevant crate) with a documented tolerance derived from current RP grid spacing.
+- [ ] **BL-IMPR-011 / Document/extend TL `NSEG` support range**: TL lossless support is implemented for NSEG=0/1/>1 with a single-section stamp; the supported `NSEG` range and any per-segment subdivision plan is not explicitly documented for users. Resolution criteria: `docs/cli-guide.md` and the staged-card status table (BL-IMPR-007) state the supported `NSEG` range; if subdivision becomes a stretch goal it is captured here as a follow-up sub-item.
+- [ ] **BL-IMPR-012 / Buried-wire detection extension**: Extend `buried_wire_geometry_error` in `apps/nec-cli/src/geometry_validation.rs` beyond the simple `z<0` test to also account for the active ground model parameters (e.g. interface depth, dielectric properties) where applicable. Resolution criteria: at least one additional regression case in `apps/nec-cli/tests/ground_diagnostics.rs` covering the extended detection path; existing buried/near-ground contracts remain green.
+- [ ] **BL-IMPR-013 / User-tunable sinusoidal→Hallen residual fallback threshold**: The sinusoidal-mode residual threshold that triggers the Hallen fallback is currently hardcoded. Resolution criteria: a CLI flag (or environment variable, with CLI flag taking precedence) exposes the threshold; default behavior unchanged; diagnostic field documents the active threshold value; regression test added.
