@@ -83,9 +83,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [x] CLI-first execution flow complete with all core flags (solver mode, solver options).
 - [x] Produce 4nec2/EZNEC-grade text outputs for impedance, sweep points, gain, pattern, and current tables so the CLI is immediately usable as a daily comparison tool.
 
-- [ ] Close the remaining Phase 1 corpus gaps (loaded element reference parity and non-collinear or junctioned multi-wire breadth) so the parity claim is not limited to only the easy cases. Current blocker: Hallen correctly rejects the `dipole-loaded` top-hat geometry as non-collinear, while pulse/continuity/sinusoidal all collapse to the same inaccurate pulse result (`-13.778 + j374.425 Ω` vs external candidate `13.463 - j896.032 Ω` at 7.1 MHz). Parallel collinear multi-wire arrays are already in-scope for Hallen, so the remaining breadth gap is specifically the non-collinear or junctioned class rather than all multi-wire geometry.
-	- Phase 2 remediation path: keep the default Hallen hard-fail contract in CI, treat `--allow-noncollinear-hallen` as a currently ignored compatibility placeholder rather than an active experimental path, and require an explicit formulation decision before Phase 3 GUI/product work broadens the parity claim.
-	- Decision gate: choose and document one path for non-collinear wire classes by Phase 2 end: `(a)` generalized sinusoidal/Pocklington-class solver work, `(b)` hybrid formulation split for collinear vs non-collinear classes, or `(c)` explicit deferral of geometric-load/top-hat classes from parity claims with rationale in `docs/solver-findings.md`.
+- [x] Close the remaining Phase 1 corpus gaps (loaded element reference parity and non-collinear or junctioned multi-wire breadth) so the parity claim is not limited to only the easy cases. Closed by v0.3.0 (2026-04-30): segmented hybrid Hallen reformulation supports junctioned/non-collinear topologies via per-wire local cos(k·s) vectors and KCL junction rows; `dipole-loaded` corpus gate passes (Z ≈ 12.4−j918 Ω, NEC2 ref 13.5−j896 Ω). Decision gate resolved: option (b) hybrid formulation implemented.
 - [x] Ensure the CLI remains at least as scriptable and batch-friendly as open NEC2 tools like yeti01/nec2, including predictable stdin/stdout behavior and stable machine-parseable reporting conventions.
 
 **Blocker dependencies**: BLK-002 (NEC-4 feature boundary).
@@ -97,7 +95,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 **Goals**: NEC-4 subset, golden corpus pass, production readiness.
 
 **Key deliverables**:
-- [ ] NEC-4 feature boundary clearly defined and documented (BLK-002).
+- [x] NEC-4 feature boundary clearly defined and documented (BLK-002). Closed: `docs/nec4-support.md` documents supported/deferred card set; referenced from roadmap and CLI docs.
 - [ ] NEC-4 subset implemented (e.g., loads, sources, excitation types; exclude: near fields, extended patterns).
 - [ ] Golden test corpus corpus passes all fnec-rust solvers within tolerance matrix (BLK-001).
 - [ ] CI enforces corpus tolerance pass as a gate on every commit.
