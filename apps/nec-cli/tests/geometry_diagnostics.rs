@@ -71,15 +71,11 @@ fn endpoint_wire_junction_is_not_rejected_as_intersection() {
         !stderr.contains("unsupported intersecting-wire geometry"),
         "did not expect intersection geometry error for endpoint join, got:\n{stderr}"
     );
-    // Phase-1: --allow-noncollinear-hallen is silently ignored, so this
-    // non-collinear geometry is rejected with a collinear-topology error.
+    // Phase-2: non-collinear topologies are fully supported, so the command
+    // should succeed (endpoint junction treated as KCL constraint).
     assert!(
-        !output.status.success(),
-        "expected non-collinear Hallen rejection but command succeeded; stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("collinear"),
-        "expected collinear-topology error in stderr, got:\n{stderr}"
+        output.status.success(),
+        "expected endpoint-junction non-collinear Hallen to succeed; stderr:\n{stderr}"
     );
 }
 

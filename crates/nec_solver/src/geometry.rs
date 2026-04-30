@@ -183,7 +183,104 @@ pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
     out
 }
 
-/// Build the flat segment list from all `GW`, `GM`, and `GR` cards in `deck`.
+/// A detected physical junction between two wire endpoints.
+///
+/// Encodes the current-continuity constraint that must be applied in
+/// the Hallén augmented system instead of an I = 0 endpoint constraint.
+///
+/// The constraint is: `I[seg_a] + sign * I[seg_b] = 0`
+///
+/// - `sign = -1.0` for an end-to-start connection (current flows continuously
+///   from wire A into wire B): `I[A_last] - I[B_first] = 0`.
+/// - `sign = +1.0` for an end-to-end or start-to-start connection (current
+///   reverses at the junction): `I[A_last] + I[B_last] = 0`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WireJunction {
+    /// Segment index of the endpoint on wire A (first or last segment of A).
+    pub seg_a: usize,
+    /// Segment index of the endpoint on wire B (first or last segment of B).
+    pub seg_b: usize,
+    /// Sign for the continuity constraint. See struct-level docs.
+    pub sign: f64,
+}
+
+/// Detect physical wire junctions from segment geometry and wire endpoints.
+///
+/// Two wire endpoints are considered a junction when the physical point
+/// represented by each endpoint is within `tol` metres of the other.
+/// For segment index `first`, the physical point is `segs[first].start`.
+/// For segment index `last`, the physical point is `segs[last].end`.
+///
+/// Returns one `WireJunction` per detected junction pair. Each (seg_a, seg_b)
+/// pair appears at most once. Self-junctions (wire A connecting to itself
+/// for a degenerate single-segment wire) are not emitted.
+pub fn detect_wire_junctions(
+    segs: &[Segment],
+    wire_endpoints: &[(usize, usize)],
+    tol: f64,
+) -> Vec<WireJunction> {
+    // Build the list of (segment_index, point, is_start) for every wire endpoint.
+    // is_start = true  → this is the first segment of a wire; its physical node
+    //                     is segs[seg].start.
+    // is_start = false → this is the last segment of a wire; its physical node
+    //                     is segs[seg].end.
+    struct EndpointNode {
+        seg: usize,
+        point: [f64; 3],
+        is_start: bool,
+    }
+
+    let mut nodes: Vec<EndpointNode> = Vec::with_capacity(wire_endpoints.len() * 2);
+    for &(first, last) in wire_endpoints {
+        nodes.push(EndpointNode {
+            seg: first,
+            point: segs[first].start,
+            is_start: true,
+        });
+        nodes.push(EndpointNode {
+            seg: last,
+            point: segs[last].end,
+            is_start: false,
+        });
+    }
+
+    let pt_dist = |a: &[f64; 3], b: &[f64; 3]| {
+        let dx = a[0] - b[0];
+        let dy = a[1] - b[1];
+        let dz = a[2] - b[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    let mut junctions: Vec<WireJunction> = Vec::new();
+
+    for i in 0..nodes.len() {
+        for j in (i + 1)..nodes.len() {
+            // Skip two endpoints that belong to the same segment (degenerate wire).
+            if nodes[i].seg == nodes[j].seg {
+                continue;
+            }
+            if pt_dist(&nodes[i].point, &nodes[j].point) > tol {
+                continue;
+            }
+            // Determine sign from the endpoint types.
+            //   end-to-start or start-to-end → sign = -1.0 (continuous flow)
+            //   end-to-end or start-to-start → sign = +1.0 (anti-parallel)
+            let sign = if nodes[i].is_start == nodes[j].is_start {
+                1.0_f64
+            } else {
+                -1.0_f64
+            };
+            junctions.push(WireJunction {
+                seg_a: nodes[i].seg,
+                seg_b: nodes[j].seg,
+                sign,
+            });
+        }
+    }
+
+    junctions
+}
+
 ///
 /// Cards are processed in deck order:
 /// - `GW` appends new segments.

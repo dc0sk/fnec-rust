@@ -16,8 +16,8 @@ pub use excitation::{
 };
 pub use farfield::{compute_radiation_pattern, rp_card_points, FarFieldPoint, FarFieldResult};
 pub use geometry::{
-    build_geometry, ground_model_from_deck, wire_endpoints_from_segs, GeometryError, GroundModel,
-    Segment,
+    build_geometry, detect_wire_junctions, ground_model_from_deck, wire_endpoints_from_segs,
+    GeometryError, GroundModel, Segment, WireJunction,
 };
 pub use linear::{
     solve, solve_hallen, solve_with_continuity_basis, solve_with_continuity_basis_per_wire,

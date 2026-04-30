@@ -1,0 +1,6 @@
+warning: --exec gpu requested, but GPU kernels are not yet wired; using CPU solve path
+warning: pulse/continuity/sinusoidal solver modes are EXPERIMENTAL and known-inaccurate for thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution as segment count increases. Use --solver hallen for accurate results. (Sinusoidal-basis EFIE fix tracked in backlog.)
+warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse
+bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res
+diag: mode=sinusoidal->pulse(topology) pulse_rhs=Nec2 exec=gpu(cpu-fallback) freq_mhz=14.200000 abs_res=8.869452e-15 rel_res=3.878710e-14 diag_spread=1.178589e0 sin_rel_res=0.000000e0
+bench_csv:1777288247393,unknown,corpus/yagi-5elm-51seg.nec,sinusoidal,1,ok,366,sinusoidal->pulse(topology),Nec2,gpu(cpu-fallback),14.200000,8.869452e-15,3.878710e-14,1.178589e0,0.000000e0

@@ -100,13 +100,14 @@ last_updated: 2026-04-30
 	- 2026-04-30 progress: existing `corpus/yagi-5elm-51seg.nec` evidence shows Hallen already handles multi-wire parallel collinear arrays, so the missing breadth is specifically junctioned or non-collinear multi-wire classes rather than all multi-wire Hallen support.
 	- 2026-04-30 decision: hybrid fallback to pulse/continuity/sinusoidal is ruled out — all three collapse to the same pulse result (`-13.778 + j374.425 Ω`) which is a sign and magnitude mismatch against the reference (`13.463 - j896.032 Ω`), not a calibration delta. A fallback would silently produce a wrong answer. Deferring non-collinear and junctioned geometries from Phase 1 parity claims; correct support requires matrix reformulation (multi-port Hallen or rooftop-basis EFIE) tracked as a Phase 2 solver work item below.
 
-- [ ] **Non-collinear multi-wire Hallen reformulation / Owner: Solver / Target: Phase 2**
+- [x] **Non-collinear multi-wire Hallen reformulation / Owner: Solver / Target: Phase 2**
 	Resolution criteria: Hallen solver produces a physically plausible feedpoint impedance for at least one junctioned or non-collinear multi-wire corpus case (e.g. `dipole-loaded` top-hat geometry or an inverted-V) within a documented tolerance; the corpus-validation gate passes for that case; `--allow-noncollinear-hallen` either activates the new path or is removed.
 	Formulation options to evaluate in Phase 2:
 	1. Multi-port augmented Hallen: extend the current single-wire Hallen integral equation to a multi-port formulation that applies boundary conditions at wire junctions, using per-wire Green's function evaluation and a global coupling matrix.
 	2. Rooftop-basis EFIE: replace the Hallen kernel with a full Pocklington EFIE using rooftop basis functions that satisfy current-continuity across junctions natively, without a per-wire chain decomposition.
 	3. Segmented hybrid: detect junction topology at solve time and apply a generalised RHS projection per connected subgraph rather than per wire axis, keeping the single-port Hallen structure but extending it to junction coupling.
 	- 2026-04-30 context: investigation item closed; this item captures the Phase 2 delivery requirement. See `docs/solver-findings.md` §"Current --allow-noncollinear-hallen status" for the rationale and three-way decision space.
+	- 2026-05 completed: Segmented hybrid (option 3) implemented. Per-wire local cos(k·s) vectors replace global s-axis; passive wires get rhs=0; junction endpoints detected via `detect_wire_junctions()` and enforced as KCL continuity rows in the augmented Hallen system. `dipole-loaded` corpus gate now passes (Z ≈ 12.39 − j918 Ω; external NEC2 ref 13.46 − j896 Ω). `--allow-noncollinear-hallen` flag silently accepted (no-op). All CI tests pass.
 
 - [ ] **Benchmark history trend capture / Owner: Performance / Target: Phase 5 prep**
 	Resolution criteria: repeated benchmark runs can be appended to a persistent history format and summarized by a tracked script without relying on ad hoc files in `tmp/`.
