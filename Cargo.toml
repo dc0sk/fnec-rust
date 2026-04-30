@@ -35,3 +35,5 @@ nec_project = { path = "crates/nec_project" }
 # External crates
 num-complex = "0.4"
 rayon = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
