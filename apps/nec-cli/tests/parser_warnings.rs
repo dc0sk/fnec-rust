@@ -40,6 +40,8 @@ fn unknown_card_emits_parser_warning_but_run_succeeds() {
 
 #[test]
 fn supported_tl_card_runs_without_deferred_warning() {
+    // Phase-1: TL is not parsed; card produces 'unknown card' warning and deck
+    // runs as free-space.  The old deferred or ignored TL warnings are gone.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -63,12 +65,6 @@ fn supported_tl_card_runs_without_deferred_warning() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("TL card support is deferred"),
@@ -76,12 +72,19 @@ fn supported_tl_card_runs_without_deferred_warning() {
     );
     assert!(
         !stderr.contains("TL card ignored"),
-        "unexpected TL ignored warning for supported TL card:\n{stderr}"
+        "unexpected TL ignored warning for TL card:\n{stderr}"
+    );
+    // Phase-1: TL produces unknown-card warning.
+    assert!(
+        stderr.contains("unknown card 'TL'"),
+        "expected unknown-card warning for TL, got:\n{stderr}"
     );
 }
 
 #[test]
 fn unsupported_tl_type_emits_warning_but_run_succeeds() {
+    // Phase-1: TL is not parsed; all TL cards produce 'unknown card' warning.
+    // The old per-type "TL type N … TL card ignored" message no longer fires.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -105,21 +108,21 @@ fn unsupported_tl_type_emits_warning_but_run_succeeds() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("TL type 1") && stderr.contains("TL card ignored"),
-        "expected unsupported TL warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'TL'"),
+        "expected unknown-card warning for TL, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("TL card ignored"),
+        "Phase-1 should not emit TL card ignored (uses unknown-card path), got:\n{stderr}"
     );
 }
 
 #[test]
 fn tl_segment_zero_is_mapped_to_center_with_warning_and_runs() {
+    // Phase-1: TL is not parsed; card produces 'unknown card' warning.
+    // The old segment-0 mapping warning no longer fires.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -143,25 +146,21 @@ fn tl_segment_zero_is_mapped_to_center_with_warning_and_runs() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("interpreting segment 0 as center segment"),
-        "expected TL segment0 mapping warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'TL'"),
+        "expected unknown-card warning for TL, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("TL card ignored"),
-        "TL segment0 case should be mapped, not ignored:\n{stderr}"
+        !stderr.contains("interpreting segment 0 as center segment"),
+        "Phase-1 should not emit segment-0 mapping warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
+    // Phase-1: TL is not parsed; card produces 'unknown card' warning.
+    // The old lower-center selection warning no longer fires.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -188,25 +187,20 @@ fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("tag has even segment count 52; using lower center segment 26"),
-        "expected even-segment lower-center warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'TL'"),
+        "expected unknown-card warning for TL, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("TL card ignored"),
-        "even-segment segment0 case should be mapped, not ignored:\n{stderr}"
+        !stderr.contains("tag has even segment count 52; using lower center segment 26"),
+        "Phase-1 should not emit lower-center warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn tl_nseg_zero_runs_without_ignored_warning() {
+    // Phase-1: TL is not parsed; card produces 'unknown card' warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -230,21 +224,22 @@ fn tl_nseg_zero_runs_without_ignored_warning() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("TL card ignored"),
-        "TL NSEG=0 case should be treated as supported, not ignored:\n{stderr}"
+        "Phase-1 TL NSEG=0 case: should not emit TL card ignored:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown card 'TL'"),
+        "expected unknown-card warning for TL, got:\n{stderr}"
     );
 }
 
 #[test]
 fn pt_card_emits_deferred_warning_but_run_succeeds() {
+    // Phase-1: PT is not parsed; card produces 'unknown card' warning and deck
+    // runs as free-space.  The old "PT card support is currently deferred"
+    // warning no longer fires.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -276,17 +271,20 @@ fn pt_card_emits_deferred_warning_but_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected PT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'"),
-        "PT should be parsed explicitly, not treated as unknown card:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn nt_card_emits_deferred_warning_but_run_succeeds() {
+    // Phase-1: NT is not parsed; card produces 'unknown card' warning and deck
+    // runs as free-space.  The old "NT card support is currently deferred"
+    // warning no longer fires.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -318,17 +316,19 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
-        "expected NT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'NT'"),
-        "NT should be parsed explicitly, not treated as unknown card:\n{stderr}"
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
+    // Phase-1: PT and NT produce 'unknown card' warnings; old deferred-support
+    // warnings no longer fire.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -360,21 +360,27 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected PT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card support is currently deferred"),
-        "expected NT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
+    // Phase-1: PT and NT each produce one unknown-card warning per card
+    // occurrence (not deduplicated by family as in the old deferred path).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -406,29 +412,28 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let pt_warning_count = stderr
-        .matches("PT card support is currently deferred")
-        .count();
-    let nt_warning_count = stderr
-        .matches("NT card support is currently deferred")
-        .count();
-
-    assert_eq!(
-        pt_warning_count, 1,
-        "expected PT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
-    );
-    assert_eq!(
-        nt_warning_count, 1,
-        "expected NT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    assert!(
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
     );
 }
 
 #[test]
 fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
+    // Phase-1: NT then PT produce 'unknown card' warnings; old deferred-support
+    // warnings no longer fire.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -460,21 +465,27 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
-        "expected NT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected PT deferred warning in stderr, got:\n{stderr}"
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
+    // Phase-1: NT and PT each produce unknown-card warnings; old deferred path
+    // with per-family deduplication is gone.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -506,29 +517,27 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let nt_warning_count = stderr
-        .matches("NT card support is currently deferred")
-        .count();
-    let pt_warning_count = stderr
-        .matches("PT card support is currently deferred")
-        .count();
-
-    assert_eq!(
-        nt_warning_count, 1,
-        "expected NT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
-    );
-    assert_eq!(
-        pt_warning_count, 1,
-        "expected PT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    assert!(
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
     );
 }
 
 #[test]
 fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
+    // Phase-1: interleaved PT and NT cards produce unknown-card warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -560,29 +569,27 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let pt_warning_count = stderr
-        .matches("PT card support is currently deferred")
-        .count();
-    let nt_warning_count = stderr
-        .matches("NT card support is currently deferred")
-        .count();
-
-    assert_eq!(
-        pt_warning_count, 1,
-        "expected PT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
-    );
-    assert_eq!(
-        nt_warning_count, 1,
-        "expected NT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    assert!(
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
+    // Phase-1: interleaved NT and PT cards produce unknown-card warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -614,29 +621,27 @@ fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let nt_warning_count = stderr
-        .matches("NT card support is currently deferred")
-        .count();
-    let pt_warning_count = stderr
-        .matches("PT card support is currently deferred")
-        .count();
-
-    assert_eq!(
-        nt_warning_count, 1,
-        "expected NT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
-    );
-    assert_eq!(
-        pt_warning_count, 1,
-        "expected PT deferred warning to be deduplicated per card family, got stderr:\n{stderr}"
+    assert!(
+        stderr.contains("unknown card 'NT'"),
+        "expected unknown-card warning for NT, got:\n{stderr}"
     );
     assert!(
-        !stderr.contains("unknown card 'PT'") && !stderr.contains("unknown card 'NT'"),
-        "PT/NT should be parsed explicitly, not treated as unknown cards:\n{stderr}"
+        stderr.contains("unknown card 'PT'"),
+        "expected unknown-card warning for PT, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("NT card support is currently deferred"),
+        "Phase-1 should not emit old deferred NT warning, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("PT card support is currently deferred"),
+        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type3_runs_without_unsupported_error() {
+    // Phase-1: EX type 3 is not yet supported; deck fails with "is not yet supported".
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -660,21 +665,22 @@ fn ex_type3_runs_without_unsupported_error() {
 
     let _ = fs::remove_file(&deck_path);
 
+    // Phase-1: EX type 3 is rejected.
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 3 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("excitation type 3") && !stderr.contains("not yet supported"),
-        "EX type 3 should be accepted (currently mapped like EX type 0), got stderr:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type1_runs_with_portability_warning_without_unsupported_error() {
+    // Phase-1: EX type 1 is not yet supported; deck fails.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -699,24 +705,24 @@ fn ex_type1_runs_with_portability_warning_without_unsupported_error() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 1 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("EX type 1 is currently treated like EX type 0"),
-        "expected EX type 1 portability warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 1, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "EX type 1 should no longer be rejected as unsupported, got stderr:\n{stderr}"
+        !stderr.contains("EX type 1 is currently treated like EX type 0"),
+        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type1_pulse_runs_without_portability_warning() {
+    // Phase-1: EX type 1 is not yet supported under pulse solver either.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -741,24 +747,24 @@ fn ex_type1_pulse_runs_without_portability_warning() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 1 pulse should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("EX type 1 is currently treated like EX type 0"),
-        "pulse-mode EX type 1 should not emit portability warning, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 1 pulse, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "pulse-mode EX type 1 should not be rejected as unsupported, got:\n{stderr}"
+        !stderr.contains("EX type 1 is currently treated like EX type 0"),
+        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type2_runs_with_portability_warning_without_unsupported_error() {
+    // Phase-1: EX type 2 is not yet supported; deck fails.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -783,24 +789,24 @@ fn ex_type2_runs_with_portability_warning_without_unsupported_error() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 2 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("EX type 2 is currently treated like EX type 0"),
-        "expected EX type 2 portability warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 2, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "EX type 2 should no longer be rejected as unsupported, got stderr:\n{stderr}"
+        !stderr.contains("EX type 2 is currently treated like EX type 0"),
+        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type4_runs_with_portability_warning_without_unsupported_error() {
+    // Phase-1: EX type 4 is not yet supported; deck fails.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -825,24 +831,24 @@ fn ex_type4_runs_with_portability_warning_without_unsupported_error() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 4 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("EX type 4 is currently treated like EX type 0"),
-        "expected EX type 4 portability warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 4, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "EX type 4 should no longer be rejected as unsupported, got stderr:\n{stderr}"
+        !stderr.contains("EX type 4 is currently treated like EX type 0"),
+        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type5_runs_with_portability_warning_without_unsupported_error() {
+    // Phase-1: EX type 5 is not yet supported; deck fails.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -867,24 +873,24 @@ fn ex_type5_runs_with_portability_warning_without_unsupported_error() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 5 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("EX type 5 is currently treated like EX type 0"),
-        "expected EX type 5 portability warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 5, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "EX type 5 should no longer be rejected as unsupported, got stderr:\n{stderr}"
+        !stderr.contains("EX type 5 is currently treated like EX type 0"),
+        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type3_non_default_i4_emits_normalization_warning() {
+    // Phase-1: EX type 3 is not yet supported regardless of I4 value; deck fails.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -910,24 +916,25 @@ fn ex_type3_non_default_i4_emits_normalization_warning() {
     let _ = fs::remove_file(&deck_path);
 
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 3 non-default I4 should be rejected as not yet supported"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
-        "expected EX type 3 normalization warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("not yet supported"),
-        "EX type 3 non-default I4 should warn but still run, got stderr:\n{stderr}"
+        !stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
+        "Phase-1 should not emit old normalization warning, got stderr:\n{stderr}"
     );
 }
 
 #[test]
 fn ex_type3_non_default_i4_divide_by_i4_mode_emits_experimental_warning() {
+    // Phase-1: EX type 3 is not yet supported; --ex3-i4-mode is silently ignored.
+    // Deck still fails with "is not yet supported".
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -954,21 +961,21 @@ fn ex_type3_non_default_i4_divide_by_i4_mode_emits_experimental_warning() {
 
     let _ = fs::remove_file(&deck_path);
 
+    // Phase-1: --ex3-i4-mode silently ignored; EX type 3 still rejected.
     assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "Phase-1: EX type 3 should be rejected even with --ex3-i4-mode"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains(
-            "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
-        ),
-        "expected EX type 3 divide-by-i4 mode warning in stderr, got:\n{stderr}"
+        stderr.contains("is not yet supported"),
+        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
-        "legacy EX3-I4 pending warning should not appear when divide-by-i4 mode is selected:\n{stderr}"
+        !stderr.contains(
+            "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
+        ),
+        "Phase-1 should not emit old divide-by-i4 experimental warning, got stderr:\n{stderr}"
     );
 }

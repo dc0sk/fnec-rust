@@ -146,42 +146,6 @@ fn invalid_bench_format_value_reports_contract_error_and_usage() {
 }
 
 #[test]
-fn missing_ex3_i4_mode_value_reports_contract_error_and_usage() {
-    let output = run_fnec(&["--ex3-i4-mode"]);
-    assert_eq!(output.status.code(), Some(2));
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("missing value after --ex3-i4-mode"),
-        "missing ex3-i4-mode parse error in stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("expected: legacy|divide-by-i4"),
-        "missing expected ex3-i4-mode values in stderr:\n{stderr}"
-    );
-}
-
-#[test]
-fn invalid_ex3_i4_mode_value_reports_contract_error_and_usage() {
-    let output = run_fnec(&[
-        "--ex3-i4-mode",
-        "bogus",
-        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
-    ]);
-    assert_eq!(output.status.code(), Some(2));
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("invalid --ex3-i4-mode value 'bogus'"),
-        "missing invalid ex3-i4-mode detail in stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("expected: legacy|divide-by-i4"),
-        "missing expected ex3-i4-mode values in stderr:\n{stderr}"
-    );
-}
-
-#[test]
 fn unknown_option_reports_contract_error() {
     let output = run_fnec(&["--definitely-not-a-flag"]);
     assert_eq!(output.status.code(), Some(2));
@@ -233,11 +197,8 @@ fn all_core_flags_combination_runs_successfully() {
         "raw",
         "--exec",
         "cpu",
-        "--allow-noncollinear-hallen",
         "--bench-format",
         "json",
-        "--ex3-i4-mode",
-        "legacy",
         "--gpu-fr",
         deck.to_str().unwrap(),
     ]);

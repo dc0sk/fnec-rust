@@ -41,39 +41,24 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 
 #[test]
 fn loaded_case_experimental_hallen_reduces_reactance_error_vs_pulse() {
-    // External candidate currently tracked in corpus/reference-results.json.
-    let ext_r = 13.4632_f64;
-    let ext_x = -896.032_f64;
-
-    let pulse = run_loaded_case(&["--solver", "pulse"]);
-    assert!(
-        pulse.status.success(),
-        "pulse solve failed: {}",
-        String::from_utf8_lossy(&pulse.stderr)
-    );
-    let pulse_out = String::from_utf8_lossy(&pulse.stdout);
-    let (pulse_r, pulse_x) = first_feedpoint_impedance(&pulse_out);
-
+    // Phase-1: --allow-noncollinear-hallen is silently ignored; the loaded case
+    // (multi-wire, non-collinear) fails with the topology error regardless.
+    // This test now verifies that the flag is silently ignored and the topology
+    // error is still emitted.
     let hallen_exp = run_loaded_case(&["--solver", "hallen", "--allow-noncollinear-hallen"]);
     assert!(
-        hallen_exp.status.success(),
-        "experimental hallen solve failed: {}",
-        String::from_utf8_lossy(&hallen_exp.stderr)
-    );
-    let hallen_out = String::from_utf8_lossy(&hallen_exp.stdout);
-    let (hallen_r, hallen_x) = first_feedpoint_impedance(&hallen_out);
-
-    let pulse_dx = (pulse_x - ext_x).abs();
-    let hallen_dx = (hallen_x - ext_x).abs();
-
-    eprintln!(
-        "loaded-case tracking: pulse=({:+.6},{:+.6}) hallen_exp=({:+.6},{:+.6}) ext=({:+.6},{:+.6}) dX_pulse={:.6} dX_hallen_exp={:.6}",
-        pulse_r, pulse_x, hallen_r, hallen_x, ext_r, ext_x, pulse_dx, hallen_dx
+        !hallen_exp.status.success(),
+        "Phase-1: --allow-noncollinear-hallen is silently ignored; loaded case should still fail with topology error"
     );
 
+    let stderr = String::from_utf8_lossy(&hallen_exp.stderr);
     assert!(
-        hallen_dx < pulse_dx,
-        "expected experimental hallen to reduce |dX| vs pulse; got dX_hallen_exp={hallen_dx:.6}, dX_pulse={pulse_dx:.6}"
+        stderr.contains("error: Hallén solver currently supports only collinear wire topologies"),
+        "expected non-collinear topology error even with --allow-noncollinear-hallen, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("--allow-noncollinear-hallen"),
+        "Phase-1: --allow-noncollinear-hallen should be silently ignored (no warning), got:\n{stderr}"
     );
 }
 

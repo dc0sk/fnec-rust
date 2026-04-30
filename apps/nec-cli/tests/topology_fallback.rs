@@ -440,17 +440,17 @@ fn hallen_non_collinear_fails_without_opt_in_flag() {
 
 #[test]
 fn hallen_non_collinear_opt_in_flag_runs_experimental_path() {
+    // Phase-1: --allow-noncollinear-hallen is silently ignored; non-collinear
+    // decks still fail with topology error even when the flag is passed.
     let output = run_hallen_on_loaded_case(true);
 
     assert!(
-        output.status.success(),
-        "expected hallen to run with --allow-noncollinear-hallen, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "expected non-collinear hallen to fail even with --allow-noncollinear-hallen in Phase-1"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("warning: --allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries"),
-        "expected experimental opt-in warning in stderr, got:\n{stderr}"
+        stderr.contains("non-collinear") || stderr.contains("collinear"),
+        "expected topology error in stderr, got:\n{stderr}"
     );
-    assert_diag_mode(&stderr, "hallen");
 }

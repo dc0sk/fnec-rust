@@ -4,7 +4,7 @@
 use nec_model::card::Card;
 use nec_solver::GroundModel;
 
-use super::{Ex3I4Mode, ExecutionMode, SolverMode};
+use super::{ExecutionMode, SolverMode};
 
 pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
     match execution_mode {
@@ -88,39 +88,6 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
                  treating as free-space"
             );
         }
-    }
-}
-
-pub(super) fn warn_ex_type3_normalization_semantics(
-    deck: &nec_model::deck::NecDeck,
-    ex3_i4_mode: Ex3I4Mode,
-) {
-    let has_non_default_i4 = deck.cards.iter().any(|c| {
-        if let Card::Ex(ex) = c {
-            ex.excitation_type == 3 && ex.i4 != 0
-        } else {
-            false
-        }
-    });
-
-    let has_ex_type3 = deck.cards.iter().any(|c| {
-        if let Card::Ex(ex) = c {
-            ex.excitation_type == 3
-        } else {
-            false
-        }
-    });
-
-    if has_ex_type3 && matches!(ex3_i4_mode, Ex3I4Mode::DivideByI4) {
-        eprintln!(
-            "warning: --ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics (I4 divisor when I4>0)"
-        );
-    }
-
-    if has_non_default_i4 && matches!(ex3_i4_mode, Ex3I4Mode::Legacy) {
-        eprintln!(
-            "warning: EX type 3 with non-default I4 is currently treated like EX type 0; full normalization semantics are pending"
-        );
     }
 }
 

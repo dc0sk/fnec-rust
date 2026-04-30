@@ -12,9 +12,7 @@ pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
-    build_excitation, build_excitation_with_options, build_hallen_rhs,
-    build_hallen_rhs_with_options, build_hallen_rhs_with_runtime_options,
-    scale_excitation_for_pulse_rhs, Ex3NormalizationMode, ExcitationError, HallenRhs,
+    build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use farfield::{compute_radiation_pattern, rp_card_points, FarFieldPoint, FarFieldResult};
 pub use geometry::{

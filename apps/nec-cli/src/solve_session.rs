@@ -7,11 +7,10 @@ use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
 };
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix_with_ground,
-    build_hallen_rhs_with_runtime_options, build_loads, build_tl_stamps, compute_radiation_pattern,
-    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_with_continuity_basis_per_wire,
-    solve_with_sinusoidal_basis_per_wire, Ex3NormalizationMode, FarFieldPoint, GroundModel,
-    Segment, ZMatrix,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
+    build_tl_stamps, compute_radiation_pattern, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis_per_wire,
+    FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -346,8 +345,6 @@ pub(super) fn solve_frequency_point(
     solver_mode: SolverMode,
     pulse_rhs_mode: PulseRhsMode,
     execution_mode: ExecutionMode,
-    hallen_allow_non_collinear: bool,
-    ex3_mode: Ex3NormalizationMode,
     enable_gpu_fr: bool,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
@@ -392,28 +389,16 @@ pub(super) fn solve_frequency_point(
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
-            let hallen_rhs = build_hallen_rhs_with_runtime_options(
-                deck,
-                segs,
-                freq_hz,
-                hallen_allow_non_collinear,
-                ex3_mode,
-            )
-            .map_err(|e| e.to_string())?;
-            let sol = solve_hallen(
-                &z_mat,
-                &hallen_rhs.rhs,
-                &hallen_rhs.cos_vec,
-                &hallen_rhs.wire_endpoints,
-            )
-            .map_err(|e| e.to_string())?;
+            let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+            let sol = solve_hallen(&z_mat, &hallen_rhs.rhs, &hallen_rhs.cos_vec, wire_endpoints)
+                .map_err(|e| e.to_string())?;
             let (a, r) = residual_hallen(
                 &z_mat,
                 &sol.currents,
                 &sol.c_hom_per_wire,
                 &hallen_rhs.cos_vec,
                 &hallen_rhs.rhs,
-                &hallen_rhs.wire_endpoints,
+                wire_endpoints,
             );
             (sol.currents, a, r, "hallen")
         }
@@ -474,14 +459,8 @@ pub(super) fn solve_frequency_point(
                         "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
                         r, SINUSOIDAL_REL_RESIDUAL_MAX
                     );
-                    let hallen_rhs = build_hallen_rhs_with_runtime_options(
-                        deck,
-                        segs,
-                        freq_hz,
-                        hallen_allow_non_collinear,
-                        ex3_mode,
-                    )
-                    .map_err(|e| e.to_string())?;
+                    let hallen_rhs =
+                        build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
                     let mut hallen_z = assemble_z_matrix_with_ground(segs, freq_hz, ground);
                     hallen_z.add_to_diagonal(&load_vec);
                     for (row, col, delta) in &tl_stamps {
@@ -491,7 +470,7 @@ pub(super) fn solve_frequency_point(
                         &hallen_z,
                         &hallen_rhs.rhs,
                         &hallen_rhs.cos_vec,
-                        &hallen_rhs.wire_endpoints,
+                        wire_endpoints,
                     )
                     .map_err(|e| e.to_string())?;
                     let (a2, r2) = residual_hallen(
@@ -500,7 +479,7 @@ pub(super) fn solve_frequency_point(
                         &sol.c_hom_per_wire,
                         &hallen_rhs.cos_vec,
                         &hallen_rhs.rhs,
-                        &hallen_rhs.wire_endpoints,
+                        wire_endpoints,
                     );
                     (sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                 }
