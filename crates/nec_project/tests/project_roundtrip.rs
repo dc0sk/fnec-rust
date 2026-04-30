@@ -3,7 +3,9 @@
 
 //! Integration tests for `ProjectFile` TOML round-trip and error handling.
 
-use nec_project::{NamedRun, ProjectError, ProjectFile, SolverConfig};
+use nec_project::{
+    NamedRun, ProjectError, ProjectFile, ResultSummary, RunHistory, RunRecord, SolverConfig,
+};
 use std::path::PathBuf;
 
 fn minimal_project() -> ProjectFile {
@@ -13,6 +15,7 @@ fn minimal_project() -> ProjectFile {
         deck_path: PathBuf::from("corpus/dipole-freesp-51seg.nec"),
         solver: SolverConfig::default(),
         runs: vec![],
+        history: RunHistory::default(),
     }
 }
 
@@ -147,4 +150,124 @@ pulse_rhs = "auto"
         Err(ProjectError::DeserialiseError(_)) => {}
         other => panic!("expected DeserialiseError, got {other:?}"),
     }
+}
+
+// --- run history tests ------------------------------------------------------
+
+fn make_record(
+    timestamp: &str,
+    mode: &str,
+    re: f64,
+    im: f64,
+    gain: Option<f64>,
+    sweep: usize,
+) -> RunRecord {
+    RunRecord {
+        timestamp: timestamp.to_string(),
+        solver: SolverConfig {
+            mode: mode.to_string(),
+            pulse_rhs: "auto".to_string(),
+        },
+        result: ResultSummary {
+            impedance_re: re,
+            impedance_im: im,
+            peak_gain_dbi: gain,
+            sweep_point_count: sweep,
+        },
+    }
+}
+
+#[test]
+fn history_query_api_empty() {
+    let project = minimal_project();
+    assert_eq!(project.run_count(), 0);
+    assert!(project.last_run().is_none());
+    assert!(project.run_by_index(0).is_none());
+}
+
+#[test]
+fn history_query_api_after_push() {
+    let mut project = minimal_project();
+    project.history.push(make_record(
+        "2026-04-30T10:00:00Z",
+        "hallen",
+        72.1,
+        -3.5,
+        Some(2.1),
+        1,
+    ));
+    project.history.push(make_record(
+        "2026-04-30T11:00:00Z",
+        "continuity",
+        68.4,
+        0.2,
+        None,
+        5,
+    ));
+
+    assert_eq!(project.run_count(), 2);
+    assert_eq!(
+        project.last_run().unwrap().timestamp,
+        "2026-04-30T11:00:00Z"
+    );
+    assert_eq!(
+        project.run_by_index(0).unwrap().timestamp,
+        "2026-04-30T10:00:00Z"
+    );
+    assert!(project.run_by_index(2).is_none());
+}
+
+#[test]
+fn history_roundtrip_toml() {
+    let mut project = minimal_project();
+    project.history.push(make_record(
+        "2026-04-30T09:00:00Z",
+        "hallen",
+        50.0,
+        25.0,
+        Some(3.5),
+        1,
+    ));
+
+    let toml_str = project.to_toml().unwrap();
+    let loaded = ProjectFile::from_toml(&toml_str).unwrap();
+
+    assert_eq!(loaded.run_count(), 1);
+    let rec = loaded.run_by_index(0).unwrap();
+    assert_eq!(rec.timestamp, "2026-04-30T09:00:00Z");
+    assert_eq!(rec.solver.mode, "hallen");
+    assert!((rec.result.impedance_re - 50.0).abs() < 1e-9);
+    assert_eq!(rec.result.sweep_point_count, 1);
+    assert!((rec.result.peak_gain_dbi.unwrap() - 3.5).abs() < 1e-9);
+}
+
+#[test]
+fn history_peak_gain_optional_omitted_when_none() {
+    let mut project = minimal_project();
+    project.history.push(make_record(
+        "2026-04-30T08:00:00Z",
+        "hallen",
+        70.0,
+        -10.0,
+        None,
+        1,
+    ));
+
+    let toml_str = project.to_toml().unwrap();
+    assert!(!toml_str.contains("peak_gain_dbi"));
+
+    let loaded = ProjectFile::from_toml(&toml_str).unwrap();
+    assert!(loaded
+        .run_by_index(0)
+        .unwrap()
+        .result
+        .peak_gain_dbi
+        .is_none());
+}
+
+#[test]
+fn history_empty_omitted_from_toml() {
+    let project = minimal_project();
+    let toml_str = project.to_toml().unwrap();
+    assert!(!toml_str.contains("history"));
 }

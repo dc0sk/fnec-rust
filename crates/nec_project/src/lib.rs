@@ -79,6 +79,7 @@ pub struct NamedRun {
 ///             solver: None,
 ///         },
 ///     ],
+///     history: Default::default(),
 /// };
 ///
 /// let toml_str = project.to_toml().unwrap();
@@ -98,6 +99,9 @@ pub struct ProjectFile {
     /// Named run variants.  May be empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub runs: Vec<NamedRun>,
+    /// Completed-run history.  Absent from the TOML file when empty.
+    #[serde(default, skip_serializing_if = "RunHistory::is_empty")]
+    pub history: RunHistory,
 }
 
 /// The only supported project file format version.
@@ -159,5 +163,87 @@ impl ProjectFile {
             return Err(ProjectError::UnsupportedVersion(project.version));
         }
         Ok(project)
+    }
+
+    // --- run-history query API -------------------------------------------
+
+    /// Number of completed runs recorded in the history.
+    pub fn run_count(&self) -> usize {
+        self.history.run_count()
+    }
+
+    /// The most recent run record, or `None` when the history is empty.
+    pub fn last_run(&self) -> Option<&RunRecord> {
+        self.history.last_run()
+    }
+
+    /// The run record at `index` (zero-based insertion order), or `None`
+    /// when `index` is out of range.
+    pub fn run_by_index(&self, index: usize) -> Option<&RunRecord> {
+        self.history.run_by_index(index)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Run history types
+// ---------------------------------------------------------------------------
+
+/// A compact result summary stored with each history entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResultSummary {
+    /// Real part of the feedpoint impedance (Ω).
+    pub impedance_re: f64,
+    /// Imaginary part of the feedpoint impedance (Ω).
+    pub impedance_im: f64,
+    /// Peak total gain (dBi).  `None` when no RP card was present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_gain_dbi: Option<f64>,
+    /// Number of frequency-sweep points solved.  `1` for single-frequency runs.
+    pub sweep_point_count: usize,
+}
+
+/// A single completed-run record stored in the project history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunRecord {
+    /// UTC timestamp in ISO 8601 format (`YYYY-MM-DDTHH:MM:SSZ`).
+    pub timestamp: String,
+    /// Solver configuration snapshot used for this run.
+    pub solver: SolverConfig,
+    /// Compact result summary.
+    pub result: ResultSummary,
+}
+
+/// Ordered collection of [`RunRecord`] entries with query helpers.
+///
+/// Stored in the project file as a TOML array of tables (`[[history]]`).
+/// Absent (default) when no runs have been recorded yet.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RunHistory(pub Vec<RunRecord>);
+
+impl RunHistory {
+    /// Number of recorded runs.
+    pub fn run_count(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Most recent run record, or `None` when empty.
+    pub fn last_run(&self) -> Option<&RunRecord> {
+        self.0.last()
+    }
+
+    /// Run record at zero-based `index`, or `None` when out of range.
+    pub fn run_by_index(&self, index: usize) -> Option<&RunRecord> {
+        self.0.get(index)
+    }
+
+    /// `true` when no runs have been recorded.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Append a run record to the history.
+    pub fn push(&mut self, record: RunRecord) {
+        self.0.push(record);
     }
 }

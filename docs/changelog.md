@@ -13,6 +13,8 @@ All notable documentation process changes are recorded here.
 
 ### Added
 
+- **PH3-CHK-005 (run history API)**: Extended `nec_project` with `RunHistory` (transparent `Vec<RunRecord>`), `RunRecord` (ISO 8601 timestamp, `SolverConfig` snapshot, `ResultSummary`), and `ResultSummary` (impedance Re/Im, optional peak gain dBi, sweep point count). `ProjectFile` gains `run_count()`, `last_run()`, and `run_by_index()` query methods plus `RunHistory::push`. History is absent from TOML when empty; `peak_gain_dbi` is omitted when `None`. 5 history tests added (13 integration + 1 doctest total).
+
 - **PH3-CHK-004 (nec_project TOML format)**: Implemented `ProjectFile`, `SolverConfig`, and `NamedRun` structs with serde/toml round-trip in `crates/nec_project/src/lib.rs`. Public API: `ProjectFile::from_toml` / `to_toml`; `ProjectError` with version-guard (`UnsupportedVersion`). 8 integration tests + 1 doctest in `crates/nec_project/tests/project_roundtrip.rs`. Project TOML format documented in `docs/project-format.md`.
 
 - **PH3-CHK-003 (plugin API design)**: Added `docs/plugin-api-design.md` covering the extension surface, safety model (no network/filesystem/FFI through the trait interface), pipeline diagram, and future EP-3..5 scope. Implemented two working extension points: `DeckPostProcessor` trait (EP-1) in `crates/nec_model/src/lib.rs` (called after parse, before geometry build) and `ResultFilter` trait (EP-2) in `crates/nec_report/src/lib.rs` (called after solve, before report rendering). Both are exercised by doctests. BLK-004 updated to resolved.
