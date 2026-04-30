@@ -1,8 +1,55 @@
-use super::{
-    BenchRecord, ExecutionMode, PulseRhsMode, SolverMode, C0, CONTINUITY_REL_RESIDUAL_MAX,
-    SINUSOIDAL_REL_RESIDUAL_MAX,
-};
+use super::exec_profile::ExecutionMode;
 use nec_model::card::Card;
+
+pub(super) const C0: f64 = 299_792_458.0;
+pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
+pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SolverMode {
+    Hallen,
+    Pulse,
+    Continuity,
+    Sinusoidal,
+}
+
+impl SolverMode {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            SolverMode::Hallen => "hallen",
+            SolverMode::Pulse => "pulse",
+            SolverMode::Continuity => "continuity",
+            SolverMode::Sinusoidal => "sinusoidal",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PulseRhsMode {
+    Raw,
+    Nec2,
+}
+
+impl PulseRhsMode {
+    pub(super) fn as_contract_str(self) -> &'static str {
+        match self {
+            PulseRhsMode::Raw => "Raw",
+            PulseRhsMode::Nec2 => "Nec2",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct BenchRecord {
+    pub(super) mode: String,
+    pub(super) pulse_rhs: String,
+    pub(super) exec: String,
+    pub(super) freq_mhz: f64,
+    pub(super) abs_res: f64,
+    pub(super) rel_res: f64,
+    pub(super) diag_spread: f64,
+    pub(super) sin_rel_res: f64,
+}
 use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
 };
@@ -614,4 +661,104 @@ pub(super) fn solve_frequency_point(
         bench,
         sweep_summary,
     })
+}
+
+/// Execute a frequency sweep, handling both sequential and hybrid-parallel dispatch.
+///
+/// Returns results indexed by frequency position, unsorted. The caller is responsible
+/// for sorting by index and emitting per-result warnings.
+pub(super) fn execute_frequency_sweep<F>(
+    freqs_hz: &[f64],
+    execution_mode: ExecutionMode,
+    solve_one: F,
+) -> (
+    Vec<(usize, Result<FrequencySolveResult, String>, u128)>,
+    usize,
+    usize,
+)
+where
+    F: Fn(f64) -> Result<FrequencySolveResult, String> + Sync,
+{
+    use nec_accel::{
+        dispatch_frequency_point, execute_frequency_point, AccelRequestKind, ExecutionPath,
+    };
+    use rayon::prelude::*;
+
+    let timed_solve_one = |freq_hz: f64| {
+        let t0 = std::time::Instant::now();
+        let result = solve_one(freq_hz);
+        (result, t0.elapsed().as_millis())
+    };
+
+    if matches!(execution_mode, ExecutionMode::Hybrid) && freqs_hz.len() > 1 {
+        let lane_plan = build_hybrid_lane_plan(freqs_hz.len());
+
+        let mut solved = Vec::with_capacity(freqs_hz.len());
+
+        let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>, u128)> = lane_plan
+            .cpu_indices
+            .par_iter()
+            .copied()
+            .map(|idx| {
+                let (result, elapsed_ms) = timed_solve_one(freqs_hz[idx]);
+                (idx, result, elapsed_ms)
+            })
+            .collect();
+        solved.extend(cpu_results);
+
+        let gpu_dispatch: Vec<(usize, nec_accel::DispatchDecision)> = lane_plan
+            .gpu_candidate_indices
+            .iter()
+            .copied()
+            .map(|idx| {
+                (
+                    idx,
+                    dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]),
+                )
+            })
+            .collect();
+
+        let gpu_fallback_results: Vec<(
+            usize,
+            ExecutionPath,
+            Result<FrequencySolveResult, String>,
+            u128,
+        )> = gpu_dispatch
+            .into_iter()
+            .map(|(idx, decision)| {
+                let t0 = std::time::Instant::now();
+                let (path, result) = execute_frequency_point(decision, || solve_one(freqs_hz[idx]));
+                let elapsed_ms = t0.elapsed().as_millis();
+                (idx, path, result, elapsed_ms)
+            })
+            .collect();
+
+        let gpu_fallback_count = gpu_fallback_results
+            .iter()
+            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::CpuFallback))
+            .count();
+        let gpu_stub_count = gpu_fallback_results
+            .iter()
+            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::GpuStubEmulation))
+            .count();
+
+        solved.extend(
+            gpu_fallback_results
+                .into_iter()
+                .map(|(idx, _, result, elapsed_ms)| (idx, result, elapsed_ms)),
+        );
+
+        (solved, gpu_fallback_count, gpu_stub_count)
+    } else {
+        let solved = freqs_hz
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(idx, freq_hz)| {
+                let (result, elapsed_ms) = timed_solve_one(freq_hz);
+                (idx, result, elapsed_ms)
+            })
+            .collect();
+        (solved, 0, 0)
+    }
 }

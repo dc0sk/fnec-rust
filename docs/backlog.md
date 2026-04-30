@@ -76,12 +76,13 @@ last_updated: 2026-04-30
 
 ## Review-driven follow-ups (2026-04-29)
 
-- [ ] **CLI orchestration extraction / Owner: CLI+Core APIs / Target: Phase 2-3**
+- [x] **CLI orchestration extraction / Owner: CLI+Core APIs / Target: Phase 2-3**
 	Resolution criteria: `apps/nec-cli/src/main.rs` is reduced to frontend wiring; argument parsing, solve-session orchestration, and FR sweep coordination are extracted into reusable units that can be tested without spawning the CLI binary.
 	- 2026-04-29 progress: started the extraction by moving CLI option parsing and usage-contract text into `apps/nec-cli/src/cli_args.rs`, leaving `main.rs` with a narrower frontend-wiring role.
 	- 2026-04-29 progress: extracted compatibility-profile detection/steering and startup execution auto-probe policy into `apps/nec-cli/src/exec_profile.rs`, further shrinking policy logic embedded in `main.rs`.
 	- 2026-04-30 progress: extracted per-frequency solve-session logic (all math helpers, pulse-source constraint helpers, report builders, `FrequencySolveResult`, `SweepPointSummary`, `PulseCurrentSourceConstraint`, `HybridLanePlan`, `frequencies_from_fr`, `build_hybrid_lane_plan`, and `solve_frequency_point`) into `apps/nec-cli/src/solve_session.rs`; `main.rs` now contains only frontend wiring, geometry validation, and warning helpers.
 	- 2026-04-30 progress: extracted geometry validation helpers (`sinusoidal_a4_topology_supported`, `points_close`, `segment_intersection_error`, `source_risk_geometry_error`, `buried_wire_geometry_error`, and private math helpers `segments_share_endpoint`, `segment_closest_distance_and_params`, `dot3`, `find_or_insert_node`) into `apps/nec-cli/src/geometry_validation.rs`; extracted all warning functions into `apps/nec-cli/src/warnings.rs`; `main.rs` now contains only frontend wiring, enums/constants, bench-emit helpers, and `fn main()`.
+	- 2026-04-30 resolution: all resolution criteria met. Moved shared types (`SolverMode`, `PulseRhsMode`, `BenchRecord`, constants) to `solve_session.rs`; moved `ExecutionMode` to `exec_profile.rs`; extracted bench-emit helpers into new `bench.rs`; extracted hybrid-parallel sweep dispatch into `execute_frequency_sweep()` in `solve_session.rs`. `main.rs` is now 393 lines (down from 628) containing only `fn main()` frontend wiring and unit tests. All six extracted modules are independently importable and testable without spawning the CLI binary.
 
 - [x] **Parser fuzz harness / Owner: Parser / Target: Phase 2**
 	Resolution criteria: a `cargo-fuzz` target exists for `nec_parser`, seed inputs are checked in, and contributor docs describe how to run the fuzz target locally.

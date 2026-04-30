@@ -4,7 +4,8 @@
 use nec_model::card::Card;
 use nec_solver::GroundModel;
 
-use super::{ExecutionMode, SolverMode};
+use super::exec_profile::ExecutionMode;
+use super::solve_session::SolverMode;
 
 pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
     match execution_mode {
