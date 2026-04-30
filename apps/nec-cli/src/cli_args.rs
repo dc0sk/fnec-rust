@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] <deck.nec>";
 
 #[derive(Debug, Clone)]
 pub struct ParsedArgs {
@@ -14,6 +14,7 @@ pub struct ParsedArgs {
     pub enable_benchmarking: bool,
     pub bench_format: BenchFormat,
     pub enable_gpu_fr: bool,
+    pub sweep_config_path: Option<PathBuf>,
     pub path: PathBuf,
 }
 
@@ -24,6 +25,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut enable_benchmarking = false;
     let mut bench_format = BenchFormat::Human;
     let mut enable_gpu_fr = false;
+    let mut sweep_config_path: Option<PathBuf> = None;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -114,6 +116,16 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--gpu-fr" => {
                 enable_gpu_fr = true;
             }
+            "--sweep-config" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --sweep-config (expected: path to .toml file)"
+                            .to_string(),
+                    );
+                }
+                sweep_config_path = Some(PathBuf::from(&args[i]));
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -135,6 +147,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         enable_benchmarking,
         bench_format,
         enable_gpu_fr,
+        sweep_config_path,
         path,
     })
 }
