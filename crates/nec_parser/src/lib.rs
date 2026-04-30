@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! Minimal Phase-1 NEC deck parser.
+//! NEC deck parser.
 //!
-//! Parses the cards required to run a basic dipole simulation:
-//! `CM`, `CE`, `GW`, `GE`, `GN`, `EX`, `FR`, `RP`, `EN`.
+//! Parses geometry, program-control, and loading cards:
+//! `CM`, `CE`, `GW`, `GE`, `GN`, `EX`, `FR`, `RP`, `LD`, `TL`, `NT`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
-use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, RpCard};
+use nec_model::card::{
+    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, LdCard, NtCard, RpCard,
+    TlCard,
+};
 use nec_model::deck::NecDeck;
 
 /// A parse error.
@@ -212,6 +215,70 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     phi0: parse_f64(lineno, "RP", 5, &fields[4])?,
                     d_theta: parse_f64(lineno, "RP", 6, &fields[5])?,
                     d_phi: parse_f64(lineno, "RP", 7, &fields[6])?,
+                }));
+            }
+            "LD" => {
+                // LD I1 I2 I3 I4 F1 F2 F3
+                // I1=load_type, I2=tag, I3=seg_first, I4=seg_last
+                // F1–F3 default to 0.0 when absent.
+                let fields = parse_fields(rest);
+                require_fields(lineno, "LD", &fields, 4)?;
+                let f1 = if fields.len() > 4 {
+                    parse_f64(lineno, "LD", 5, &fields[4])?
+                } else {
+                    0.0
+                };
+                let f2 = if fields.len() > 5 {
+                    parse_f64(lineno, "LD", 6, &fields[5])?
+                } else {
+                    0.0
+                };
+                let f3 = if fields.len() > 6 {
+                    parse_f64(lineno, "LD", 7, &fields[6])?
+                } else {
+                    0.0
+                };
+                deck.cards.push(Card::Ld(LdCard {
+                    load_type: parse_i32(lineno, "LD", 1, &fields[0])?,
+                    tag: parse_u32(lineno, "LD", 2, &fields[1])?,
+                    seg_first: parse_u32(lineno, "LD", 3, &fields[2])?,
+                    seg_last: parse_u32(lineno, "LD", 4, &fields[3])?,
+                    f1,
+                    f2,
+                    f3,
+                }));
+            }
+            "TL" => {
+                // TL I1 I2 I3 I4 I5 I6 F1 F2 [F3]
+                // I1=tag1, I2=seg1, I3=tag2, I4=seg2, I5=num_segs, I6=tl_type
+                // F1=z0, F2=length, F3=velocity_factor (default 1.0)
+                let fields = parse_fields(rest);
+                require_fields(lineno, "TL", &fields, 8)?;
+                let f3 = if fields.len() > 8 {
+                    parse_f64(lineno, "TL", 9, &fields[8])?
+                } else {
+                    1.0
+                };
+                deck.cards.push(Card::Tl(TlCard {
+                    tag1: parse_u32(lineno, "TL", 1, &fields[0])?,
+                    segment1: parse_u32(lineno, "TL", 2, &fields[1])?,
+                    tag2: parse_u32(lineno, "TL", 3, &fields[2])?,
+                    segment2: parse_u32(lineno, "TL", 4, &fields[3])?,
+                    num_segments: parse_u32(lineno, "TL", 5, &fields[4])?,
+                    tl_type: parse_u32(lineno, "TL", 6, &fields[5])?,
+                    z0: parse_f64(lineno, "TL", 7, &fields[6])?,
+                    length: parse_f64(lineno, "TL", 8, &fields[7])?,
+                    f3,
+                }));
+            }
+            "NT" => {
+                // NT — network definition card.
+                // Semantics are not yet implemented in the solver; the card is
+                // parsed and stored for explicit deferred-support warnings at
+                // solve time (replaces the previous "unknown card 'NT'" path).
+                let fields = parse_fields(rest);
+                deck.cards.push(Card::Nt(NtCard {
+                    raw_fields: fields.into_iter().map(|s| s.to_string()).collect(),
                 }));
             }
             "EN" => {
