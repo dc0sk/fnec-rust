@@ -760,81 +760,81 @@
       "wires": 1,
       "sources": 1,
       "ground": "PEC",
-      "reference_source": "fnec Hallen solver (regression reference; PEC image far-field); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (regression reference; PEC image far-field)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 81.914743,
+        "imag_ohm": 16.416629
       },
       "pattern_samples": [
         {
           "theta_deg": 10.0,
           "phi_deg": 0.0,
-          "gain_db": -15.0778,
-          "gain_v_db": -15.0778,
+          "gain_db": -8.9913,
+          "gain_v_db": -8.9913,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 20.0,
           "phi_deg": 0.0,
-          "gain_db": -9.0037,
-          "gain_v_db": -9.0037,
+          "gain_db": -3.2428,
+          "gain_v_db": -3.2428,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 30.0,
           "phi_deg": 0.0,
-          "gain_db": -5.422,
-          "gain_v_db": -5.422,
+          "gain_db": -0.5836,
+          "gain_v_db": -0.5836,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 40.0,
           "phi_deg": 0.0,
-          "gain_db": -2.8961,
-          "gain_v_db": -2.8961,
+          "gain_db": -0.3009,
+          "gain_v_db": -0.3009,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 50.0,
           "phi_deg": 0.0,
-          "gain_db": -1.0106,
-          "gain_v_db": -1.0106,
+          "gain_db": -4.1173,
+          "gain_v_db": -4.1173,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 60.0,
           "phi_deg": 0.0,
-          "gain_db": 0.391,
-          "gain_v_db": 0.391,
+          "gain_db": -15.3003,
+          "gain_v_db": -15.3003,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 70.0,
           "phi_deg": 0.0,
-          "gain_db": 1.3714,
-          "gain_v_db": 1.3714,
+          "gain_db": 2.0188,
+          "gain_v_db": 2.0188,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 80.0,
           "phi_deg": 0.0,
-          "gain_db": 1.9545,
-          "gain_v_db": 1.9545,
+          "gain_db": 7.0069,
+          "gain_v_db": 7.0069,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 0.0,
-          "gain_db": 2.1483,
-          "gain_v_db": 2.1483,
+          "gain_db": 8.422,
+          "gain_v_db": 8.422,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         }
@@ -1038,10 +1038,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "perfect conductor (infinite)",
-      "reference_source": "fnec Hall\u00e9n solver with GN=1 PEC image-method ground (regression); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hall\u00e9n solver with GN=1 PEC image-method ground (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 81.914743,
+        "imag_ohm": 16.416629
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended)",
@@ -1054,26 +1054,28 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "Current_amplitude_dB": 0.0001,
-        "Current_phase_deg": 0.1
+        "Current_phase_deg": 0.1,
+        "ExternalR_absolute_ohm": 8.0,
+        "ExternalX_absolute_ohm": 30.0
       },
       "current_samples": [
         {
           "wire_id": 1,
           "segment_id": 1,
-          "amplitude_db": 2.167828e-07,
-          "phase_deg": -86.2964
+          "amplitude_db": 2.022629e-4,
+          "phase_deg": 106.7530
         },
         {
           "wire_id": 1,
           "segment_id": 26,
-          "amplitude_db": 0.01323928,
-          "phase_deg": -10.604
+          "amplitude_db": 1.196980e-2,
+          "phase_deg": -11.3326
         },
         {
           "wire_id": 1,
           "segment_id": 51,
-          "amplitude_db": 2.167828e-07,
-          "phase_deg": -86.2964
+          "amplitude_db": 3.026640e-4,
+          "phase_deg": -78.3656
         }
       ],
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10\u21928 on 2026-04-29 (actual |dR|=7.12)."
@@ -1086,10 +1088,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite ground GN0 (simple Fresnel approximation)",
-      "reference_source": "fnec Hallen solver with GN=0 simple finite-ground model (regression); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver with GN=0 simple finite-ground model (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.170459,
+        "imag_ohm": 14.95465
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1112,10 +1114,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 (scoped runtime path; simple finite-ground approximation)",
-      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path (regression); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.170459,
+        "imag_ohm": 14.95465
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1138,23 +1140,15 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 buried-wire class (unsupported guardrail)",
-      "reference_source": "fnec runtime guardrail contract (PH2-CHK-002); updated to free-space (GN type 2 not parsed in Phase-1 parser)",
+      "reference_source": "fnec runtime guardrail contract (PH2-CHK-002)",
+      "expected_hallen_error_contains": "unsupported buried-wire geometry for active ground model",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [
-        "unsupported buried-wire geometry for active ground model"
+        "GN type 2 is not yet supported; treating this deck as free-space"
       ],
       "expected_warning_counts": {},
-      "tolerance_gates": {
-        "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05,
-        "R_percent_rel": 0.1,
-        "X_percent_rel": 0.1
-      },
-      "status": "PH2-CHK-002 unsupported-class guardrail contract: buried-wire active-ground requests fail fast with actionable diagnostics instead of silently solving.",
-      "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
-      }
+      "tolerance_gates": {},
+      "status": "PH2-CHK-002 unsupported-class guardrail contract: buried-wire active-ground requests fail fast with actionable diagnostics instead of silently solving."
     },
     "dipole-gn2-near-ground-51seg": {
       "deck_file": "dipole-gn2-near-ground-51seg.nec",
@@ -1164,10 +1158,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 near-ground class",
-      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path on low above-ground geometry (regression); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path on low above-ground geometry (regression)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 69.436745,
+        "imag_ohm": 16.705598
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,

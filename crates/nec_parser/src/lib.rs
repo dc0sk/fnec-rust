@@ -4,12 +4,12 @@
 //! Minimal Phase-1 NEC deck parser.
 //!
 //! Parses the cards required to run a basic dipole simulation:
-//! `CM`, `CE`, `GW`, `EX`, `FR`, `RP`, `EN`.
+//! `CM`, `CE`, `GW`, `GE`, `GN`, `EX`, `FR`, `RP`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
 
-use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
+use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, RpCard};
 use nec_model::deck::NecDeck;
 
 /// A parse error.
@@ -121,6 +121,39 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         parse_f64(lineno, "GW", 8, &fields[7])?,
                     ],
                     radius: parse_f64(lineno, "GW", 9, &fields[8])?,
+                }));
+            }
+            "GE" => {
+                let fields = parse_fields(rest);
+                let ground_reflection_flag = if fields.is_empty() {
+                    0
+                } else {
+                    parse_i32(lineno, "GE", 1, &fields[0])?
+                };
+                deck.cards.push(Card::Ge(GeCard {
+                    ground_reflection_flag,
+                }));
+            }
+            "GN" => {
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GN", &fields, 1)?;
+                // GN I1 NRADL I3 I4 EPSE SIG
+                // We currently only consume I1 and optional EPSE/SIG.
+                let eps_r = if fields.len() > 4 {
+                    Some(parse_f64(lineno, "GN", 5, &fields[4])?)
+                } else {
+                    None
+                };
+                let sigma = if fields.len() > 5 {
+                    Some(parse_f64(lineno, "GN", 6, &fields[5])?)
+                } else {
+                    None
+                };
+
+                deck.cards.push(Card::Gn(GnCard {
+                    ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
+                    eps_r,
+                    sigma,
                 }));
             }
             "EX" => {
@@ -243,6 +276,17 @@ fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, Pa
         })
 }
 
+fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
+    s.parse::<f64>()
+        .map(|v| v as i32)
+        .map_err(|_| ParseError::BadField {
+            line: lineno,
+            card: card.to_string(),
+            field,
+            raw: s.to_string(),
+        })
+}
+
 fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, ParseError> {
     s.parse::<f64>().map_err(|_| ParseError::BadField {
         line: lineno,
@@ -259,7 +303,9 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{Card, CommentCard, EnCard, ExCard, FrCard, GwCard, RpCard};
+    use nec_model::card::{
+        Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, RpCard,
+    };
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
     /// EX format: I1=type I2=tag I3=seg I4=aux-int F1=vr F2=vi
@@ -398,6 +444,56 @@ EN
                 i4: 3,
                 voltage_real: 1.5,
                 voltage_imag: -0.25,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_gn_type_and_optional_medium_params() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGN 2 0 0 0 13.0 0.005\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let gn =
+            result.deck.cards.iter().find_map(
+                |c| {
+                    if let Card::Gn(gn) = c {
+                        Some(gn)
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert_eq!(
+            gn,
+            Some(&GnCard {
+                ground_type: 2,
+                eps_r: Some(13.0),
+                sigma: Some(0.005),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_ge_defaults_flag_to_zero_when_omitted() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGE\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let ge =
+            result.deck.cards.iter().find_map(
+                |c| {
+                    if let Card::Ge(ge) = c {
+                        Some(ge)
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert_eq!(
+            ge,
+            Some(&GeCard {
+                ground_reflection_flag: 0
             })
         );
     }
