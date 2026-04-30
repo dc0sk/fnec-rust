@@ -1,6 +1,30 @@
-use super::ExecutionMode;
 use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
 use std::path::Path;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ExecutionMode {
+    Cpu,
+    Hybrid,
+    Gpu,
+}
+
+impl ExecutionMode {
+    pub(crate) fn as_cli_str(self) -> &'static str {
+        match self {
+            ExecutionMode::Cpu => "cpu",
+            ExecutionMode::Hybrid => "hybrid",
+            ExecutionMode::Gpu => "gpu",
+        }
+    }
+
+    pub(crate) fn as_diag_str(self) -> &'static str {
+        match self {
+            ExecutionMode::Cpu => "cpu",
+            ExecutionMode::Hybrid => "hybrid",
+            ExecutionMode::Gpu => "gpu(cpu-fallback)",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CompatibilityProfile {

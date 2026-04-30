@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use super::{BenchFormat, ExecutionMode, PulseRhsMode, SolverMode};
+use super::bench::BenchFormat;
+use super::exec_profile::ExecutionMode;
+use super::solve_session::{PulseRhsMode, SolverMode};
 
 pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>";
 

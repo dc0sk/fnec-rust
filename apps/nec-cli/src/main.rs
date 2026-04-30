@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
+mod bench;
 mod cli_args;
 mod exec_profile;
 mod geometry_validation;
 mod solve_session;
 mod warnings;
 
+use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
 use cli_args::{parse_args, ParsedArgs, USAGE};
 use exec_profile::{
     auto_select_execution_mode, detect_compatibility_profile, startup_execution_probe,
     steer_execution_mode_by_profile, warn_compatibility_profile, CompatibilityProfile,
+    ExecutionMode,
 };
 use geometry_validation::{
     buried_wire_geometry_error, segment_intersection_error, sinusoidal_a4_topology_supported,
     source_risk_geometry_error,
-};
-use nec_accel::{
-    dispatch_frequency_point, execute_frequency_point, AccelRequestKind, DispatchDecision,
-    ExecutionPath,
 };
 use nec_model::card::Card;
 use nec_parser::parse;
@@ -26,170 +25,15 @@ use nec_solver::{
     build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
     wire_endpoints_from_segs, FarFieldPoint,
 };
-use rayon::prelude::*;
 use solve_session::{
-    build_hybrid_lane_plan, frequencies_from_fr, solve_frequency_point, FrequencySolveResult,
+    execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, PulseRhsMode, SolverMode,
     SweepPointSummary,
 };
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
 use warnings::{
     warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
     warn_pulse_mode_experimental,
 };
-
-const C0: f64 = 299_792_458.0;
-const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
-const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SolverMode {
-    Hallen,
-    Pulse,
-    Continuity,
-    Sinusoidal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PulseRhsMode {
-    Raw,
-    Nec2,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExecutionMode {
-    Cpu,
-    Hybrid,
-    Gpu,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BenchFormat {
-    Human,
-    Csv,
-    Json,
-}
-
-impl SolverMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            SolverMode::Hallen => "hallen",
-            SolverMode::Pulse => "pulse",
-            SolverMode::Continuity => "continuity",
-            SolverMode::Sinusoidal => "sinusoidal",
-        }
-    }
-}
-
-impl ExecutionMode {
-    pub(crate) fn as_cli_str(self) -> &'static str {
-        match self {
-            ExecutionMode::Cpu => "cpu",
-            ExecutionMode::Hybrid => "hybrid",
-            ExecutionMode::Gpu => "gpu",
-        }
-    }
-
-    pub(crate) fn as_diag_str(self) -> &'static str {
-        match self {
-            ExecutionMode::Cpu => "cpu",
-            ExecutionMode::Hybrid => "hybrid",
-            ExecutionMode::Gpu => "gpu(cpu-fallback)",
-        }
-    }
-}
-
-impl PulseRhsMode {
-    fn as_contract_str(self) -> &'static str {
-        match self {
-            PulseRhsMode::Raw => "Raw",
-            PulseRhsMode::Nec2 => "Nec2",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct BenchRecord {
-    mode: String,
-    pulse_rhs: String,
-    exec: String,
-    freq_mhz: f64,
-    abs_res: f64,
-    rel_res: f64,
-    diag_spread: f64,
-    sin_rel_res: f64,
-}
-
-fn epoch_millis_now() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
-}
-
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-fn emit_bench_csv_header() {
-    eprintln!(
-        "bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res"
-    );
-}
-
-fn emit_bench_record_csv(
-    target: &str,
-    deck: &str,
-    solver: &str,
-    run: usize,
-    elapsed_ms: u128,
-    bench: &BenchRecord,
-) {
-    eprintln!(
-        "bench_csv:{},{},{},{},{},ok,{},{},{},{},{:.6},{:.6e},{:.6e},{:.6e},{:.6e}",
-        epoch_millis_now(),
-        target,
-        deck,
-        solver,
-        run,
-        elapsed_ms,
-        bench.mode,
-        bench.pulse_rhs,
-        bench.exec,
-        bench.freq_mhz,
-        bench.abs_res,
-        bench.rel_res,
-        bench.diag_spread,
-        bench.sin_rel_res
-    );
-}
-
-fn emit_bench_record_json(
-    target: &str,
-    deck: &str,
-    solver: &str,
-    run: usize,
-    elapsed_ms: u128,
-    bench: &BenchRecord,
-) {
-    eprintln!(
-        "bench_json:{{\"timestamp_unix_ms\":{},\"target\":\"{}\",\"deck\":\"{}\",\"solver\":\"{}\",\"run\":{},\"status\":\"ok\",\"elapsed_ms\":{},\"diag_mode\":\"{}\",\"pulse_rhs\":\"{}\",\"exec\":\"{}\",\"freq_mhz\":{:.6},\"abs_res\":{:.6e},\"rel_res\":{:.6e},\"diag_spread\":{:.6e},\"sin_rel_res\":{:.6e}}}",
-        epoch_millis_now(),
-        json_escape(target),
-        json_escape(deck),
-        json_escape(solver),
-        run,
-        elapsed_ms,
-        json_escape(&bench.mode),
-        json_escape(&bench.pulse_rhs),
-        json_escape(&bench.exec),
-        bench.freq_mhz,
-        bench.abs_res,
-        bench.rel_res,
-        bench.diag_spread,
-        bench.sin_rel_res
-    );
-}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -353,101 +197,20 @@ fn main() -> ExitCode {
         )
     };
 
-    let timed_solve_one = |freq_hz: f64| {
-        let t0 = std::time::Instant::now();
-        let result = solve_one(freq_hz);
-        (result, t0.elapsed().as_millis())
-    };
-
-    let solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)> = if matches!(
-        execution_mode,
-        ExecutionMode::Hybrid
-    ) && freqs_hz.len()
-        > 1
-    {
-        let lane_plan = build_hybrid_lane_plan(freqs_hz.len());
-
-        let mut solved = Vec::with_capacity(freqs_hz.len());
-
-        let cpu_results: Vec<(usize, Result<FrequencySolveResult, String>, u128)> = lane_plan
-            .cpu_indices
-            .par_iter()
-            .copied()
-            .map(|idx| {
-                let (result, elapsed_ms) = timed_solve_one(freqs_hz[idx]);
-                (idx, result, elapsed_ms)
-            })
-            .collect();
-        solved.extend(cpu_results);
-
-        let gpu_dispatch: Vec<(usize, DispatchDecision)> = lane_plan
-            .gpu_candidate_indices
-            .iter()
-            .copied()
-            .map(|idx| {
-                (
-                    idx,
-                    dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]),
-                )
-            })
-            .collect();
-
-        let gpu_fallback_results: Vec<(
-            usize,
-            ExecutionPath,
-            Result<FrequencySolveResult, String>,
-            u128,
-        )> = gpu_dispatch
-            .into_iter()
-            .map(|(idx, decision)| {
-                let t0 = std::time::Instant::now();
-                let (path, result) = execute_frequency_point(decision, || solve_one(freqs_hz[idx]));
-                let elapsed_ms = t0.elapsed().as_millis();
-                (idx, path, result, elapsed_ms)
-            })
-            .collect();
-
-        let gpu_fallback_count = gpu_fallback_results
-            .iter()
-            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::CpuFallback))
-            .count();
-        let gpu_stub_count = gpu_fallback_results
-            .iter()
-            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::GpuStubEmulation))
-            .count();
-
-        if gpu_fallback_count > 0 {
-            eprintln!(
-                "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
-            );
-        }
-        if gpu_stub_count > 0 {
-            eprintln!(
-                "warning: --exec hybrid dispatched {gpu_stub_count} frequency point(s) to accelerator stub backend; solving with CPU emulation"
-            );
-        }
-
-        solved.extend(
-            gpu_fallback_results
-                .into_iter()
-                .map(|(idx, _, result, elapsed_ms)| (idx, result, elapsed_ms)),
-        );
-
-        solved
-    } else {
-        freqs_hz
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(idx, freq_hz)| {
-                let (result, elapsed_ms) = timed_solve_one(freq_hz);
-                (idx, result, elapsed_ms)
-            })
-            .collect()
-    };
-
-    let mut solved = solved;
+    let (mut solved, gpu_fallback_count, gpu_stub_count) =
+        execute_frequency_sweep(&freqs_hz, execution_mode, solve_one);
     solved.sort_by_key(|(idx, _, _)| *idx);
+
+    if gpu_fallback_count > 0 {
+        eprintln!(
+            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
+        );
+    }
+    if gpu_stub_count > 0 {
+        eprintln!(
+            "warning: --exec hybrid dispatched {gpu_stub_count} frequency point(s) to accelerator stub backend; solving with CPU emulation"
+        );
+    }
 
     if enable_benchmarking && bench_format == BenchFormat::Csv {
         emit_bench_csv_header();
