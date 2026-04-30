@@ -23,8 +23,8 @@ use nec_accel::{
 use nec_model::card::Card;
 use nec_parser::parse;
 use nec_solver::{
-    build_excitation_with_options, build_geometry, ground_model_from_deck, rp_card_points,
-    wire_endpoints_from_segs, Ex3NormalizationMode, FarFieldPoint,
+    build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
+    wire_endpoints_from_segs, FarFieldPoint,
 };
 use rayon::prelude::*;
 use solve_session::{
@@ -34,11 +34,8 @@ use solve_session::{
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 use warnings::{
-    warn_deferred_ground_model, warn_ex_type1_portability_semantics,
-    warn_ex_type2_portability_semantics, warn_ex_type3_normalization_semantics,
-    warn_ex_type4_portability_semantics, warn_ex_type5_portability_semantics,
-    warn_execution_mode_fallback, warn_ge_ground_reflection_flag, warn_nt_card_deferred_support,
-    warn_pt_card_deferred_support, warn_pulse_mode_experimental,
+    warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
+    warn_pulse_mode_experimental,
 };
 
 const C0: f64 = 299_792_458.0;
@@ -71,21 +68,6 @@ enum BenchFormat {
     Human,
     Csv,
     Json,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ex3I4Mode {
-    Legacy,
-    DivideByI4,
-}
-
-impl Ex3I4Mode {
-    fn as_solver_mode(self) -> Ex3NormalizationMode {
-        match self {
-            Ex3I4Mode::Legacy => Ex3NormalizationMode::LegacyTreatAsType0,
-            Ex3I4Mode::DivideByI4 => Ex3NormalizationMode::ProvisionalDivideByI4,
-        }
-    }
 }
 
 impl SolverMode {
@@ -224,10 +206,8 @@ fn main() -> ExitCode {
         solver_mode,
         pulse_rhs_mode,
         mut execution_mode,
-        hallen_allow_non_collinear,
         enable_benchmarking,
         bench_format,
-        ex3_i4_mode,
         enable_gpu_fr,
         path,
     } = match parse_args(&args) {
@@ -258,18 +238,6 @@ fn main() -> ExitCode {
         exec_flag_explicitly_set,
     );
 
-    if hallen_allow_non_collinear && solver_mode != SolverMode::Hallen {
-        eprintln!(
-            "warning: --allow-noncollinear-hallen is ignored unless --solver hallen is selected"
-        );
-    }
-
-    if hallen_allow_non_collinear {
-        eprintln!(
-            "warning: --allow-noncollinear-hallen enables an EXPERIMENTAL Hallen RHS projection on non-collinear geometries; results may be inaccurate"
-        );
-    }
-
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
@@ -294,13 +262,6 @@ fn main() -> ExitCode {
 
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
-    warn_ex_type1_portability_semantics(deck, solver_mode);
-    warn_ex_type2_portability_semantics(deck);
-    warn_ex_type4_portability_semantics(deck, solver_mode);
-    warn_ex_type5_portability_semantics(deck, solver_mode);
-    warn_pt_card_deferred_support(deck);
-    warn_nt_card_deferred_support(deck);
-    warn_ex_type3_normalization_semantics(deck, ex3_i4_mode);
 
     let freqs_hz = frequencies_from_fr(deck);
     if freqs_hz.is_empty() {
@@ -342,8 +303,7 @@ fn main() -> ExitCode {
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
-    let ex3_mode = ex3_i4_mode.as_solver_mode();
-    let v_vec = match build_excitation_with_options(deck, &segs, ex3_mode) {
+    let v_vec = match build_excitation(deck, &segs) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("error: {e}");
@@ -388,8 +348,6 @@ fn main() -> ExitCode {
             solver_mode,
             pulse_rhs_mode,
             execution_mode,
-            hallen_allow_non_collinear,
-            ex3_mode,
             enable_gpu_fr,
             freq_hz,
         )

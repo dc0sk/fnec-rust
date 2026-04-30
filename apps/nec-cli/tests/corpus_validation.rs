@@ -769,19 +769,22 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         .expect("reference-results.json missing 'cases' object");
 
     // PAR-003 portability checklist: selected mainstream staged cards and order variants.
+    // Phase-1 simplification: EX types 1-5 now hard-error (no longer accepted by solver),
+    // so their expected_warning_substrings are empty (false). PT/NT are still expected to
+    // emit unknown-card warnings (true).
     let required_cases = [
-        ("dipole-ex1-freesp-51seg", true),
+        ("dipole-ex1-freesp-51seg", false),
         ("dipole-ex1-pulse-current-freesp-51seg", false),
-        ("dipole-ex2-freesp-51seg", true),
+        ("dipole-ex2-freesp-51seg", false),
         ("dipole-ex3-freesp-51seg", false),
-        ("dipole-ex3-i4-freesp-51seg", true),
-        ("dipole-ex3-divide-by-i4-freesp-51seg", true),
-        ("dipole-ex3-i4-divide-by-i4-freesp-51seg", true),
-        ("dipole-ex3-i4-two-freesp-51seg", true),
-        ("dipole-ex3-i4-two-divide-by-i4-freesp-51seg", true),
-        ("dipole-ex4-freesp-51seg", true),
+        ("dipole-ex3-i4-freesp-51seg", false),
+        ("dipole-ex3-divide-by-i4-freesp-51seg", false),
+        ("dipole-ex3-i4-divide-by-i4-freesp-51seg", false),
+        ("dipole-ex3-i4-two-freesp-51seg", false),
+        ("dipole-ex3-i4-two-divide-by-i4-freesp-51seg", false),
+        ("dipole-ex4-freesp-51seg", false),
         ("dipole-ex4-pulse-current-freesp-51seg", false),
-        ("dipole-ex5-freesp-51seg", true),
+        ("dipole-ex5-freesp-51seg", false),
         ("dipole-ex5-pulse-current-freesp-51seg", false),
         ("dipole-pt-freesp-51seg", true),
         ("dipole-nt-freesp-51seg", true),
@@ -833,31 +836,36 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         }
     }
 
-    let ex1_pulse_case = cases
-        .get("dipole-ex1-pulse-current-freesp-51seg")
-        .and_then(Value::as_object)
-        .expect("PAR-003 implemented EX1 pulse case missing");
-    let forbidden_warning_substrings = ex1_pulse_case
-        .get("forbidden_warning_substrings")
-        .and_then(Value::as_array)
-        .expect("PAR-003 implemented EX1 pulse case missing 'forbidden_warning_substrings'");
-    assert!(
-        !forbidden_warning_substrings.is_empty(),
-        "PAR-003 implemented EX1 pulse case should forbid the legacy portability warning"
-    );
-
-    let ex5_pulse_case = cases
-        .get("dipole-ex5-pulse-current-freesp-51seg")
-        .and_then(Value::as_object)
-        .expect("PAR-003 implemented EX5 pulse case missing");
-    let forbidden_warning_substrings = ex5_pulse_case
-        .get("forbidden_warning_substrings")
-        .and_then(Value::as_array)
-        .expect("PAR-003 implemented EX5 pulse case missing 'forbidden_warning_substrings'");
-    assert!(
-        !forbidden_warning_substrings.is_empty(),
-        "PAR-003 implemented EX5 pulse case should forbid the legacy portability warning"
-    );
+    // Phase-1 simplification: EX types 1 and 5 are no longer accepted by the solver.
+    // The pulse-current variants must now have an expected_hallen_error_contains contract
+    // documenting the hard error, and a forbidden_warning_substrings list ensuring the
+    // old portability fallback warning text is not present.
+    for (case_key, label) in [
+        ("dipole-ex1-pulse-current-freesp-51seg", "EX1"),
+        ("dipole-ex5-pulse-current-freesp-51seg", "EX5"),
+    ] {
+        let pulse_case = cases
+            .get(case_key)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("PAR-003 {label} pulse case missing"));
+        assert!(
+            pulse_case
+                .get("expected_hallen_error_contains")
+                .and_then(Value::as_str)
+                .is_some(),
+            "PAR-003 {label} pulse case must define expected_hallen_error_contains (EX type is now unsupported)"
+        );
+        let fws = pulse_case
+            .get("forbidden_warning_substrings")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| {
+                panic!("PAR-003 {label} pulse case missing 'forbidden_warning_substrings'")
+            });
+        assert!(
+            !fws.is_empty(),
+            "PAR-003 {label} pulse case must forbid the legacy portability warning text"
+        );
+    }
 }
 
 #[test]
@@ -897,8 +905,9 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
         // GN=-1 null ground: maps to free-space silently; must have a
         // forbidden-warning contract ensuring no deferred-ground warning fires.
         ("dipole-gn-1-null", true, false, true),
-        // GN=2 buried-wire class: unsupported for active ground path; must
-        // retain explicit guardrail contracts (error + forbidden old warning).
+        // GN=2 buried-wire class: GN is no longer parsed (Phase-1 simplified parser),
+        // so this deck runs as free-space and succeeds. The forbidden_warning_substrings
+        // contract ensures the old buried-wire guardrail error is not triggered.
         ("dipole-gn2-buried-unsupported", false, false, true),
     ];
 
@@ -993,16 +1002,8 @@ fn par002_ground_checklist_cases_are_present_and_contracted() {
             );
         }
 
-        if *case_name == "dipole-gn2-buried-unsupported" {
-            assert!(
-                case_obj
-                    .get("expected_hallen_error_contains")
-                    .and_then(Value::as_str)
-                    .is_some(),
-                "PAR-002 checklist case '{}' must define expected_hallen_error_contains",
-                case_name
-            );
-        }
+        // Note: dipole-gn2-buried-unsupported no longer errors in Phase-1 since GN
+        // cards are not parsed. The forbidden_warning contract is sufficient.
 
         if *case_name == "dipole-gn2-near-ground-51seg" {
             let forbidden_warning_substrings = case_obj
@@ -1076,13 +1077,15 @@ fn phase1_loaded_corpus_gap_cases_are_present_and_contracted() {
         "'dipole-loaded-noncollinear-hallen' must include --allow-noncollinear-hallen in cli_args"
     );
 
-    let warning_contract = experimental_case
-        .get("expected_warning_substrings")
-        .and_then(Value::as_array)
-        .expect("'dipole-loaded-noncollinear-hallen' missing expected warning contract");
+    // Phase-1 simplification: --allow-noncollinear-hallen is now silently ignored.
+    // The deck always fails with the Hallen collinear topology error.
     assert!(
-        !warning_contract.is_empty(),
-        "'dipole-loaded-noncollinear-hallen' expected warning contract must not be empty"
+        experimental_case
+            .get("expected_hallen_error_contains")
+            .and_then(Value::as_str)
+            .is_some(),
+        "'dipole-loaded-noncollinear-hallen' must define expected_hallen_error_contains \
+         (--allow-noncollinear-hallen is silently ignored in Phase-1)"
     );
 
     let feed = experimental_case

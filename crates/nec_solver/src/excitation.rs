@@ -6,13 +6,7 @@
 //! Converts `EX` cards from the parsed deck into a complex right-hand-side
 //! vector V, where V[i] is the impressed voltage on segment i (0 elsewhere).
 //!
-//! Excitation types implemented in Phase 1:
-//! - type 0: series voltage source
-//! - type 1: staged portability fallback (currently treated as type 0)
-//! - type 2: staged portability fallback (currently treated as type 0)
-//! - type 3: normalized voltage source (currently treated as type 0)
-//! - type 4: staged portability fallback (currently treated as type 0)
-//! - type 5: staged portability fallback (currently treated as type 0)
+//! Only excitation type 0 (series voltage source) is implemented in Phase 1.
 
 use num_complex::Complex64;
 use std::collections::BTreeMap;
@@ -21,21 +15,11 @@ use std::collections::BTreeSet;
 use nec_model::card::{Card, ExCard};
 use nec_model::deck::NecDeck;
 
-use crate::geometry::{wire_endpoints_from_segs, Segment};
+use crate::geometry::Segment;
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
-
-/// EX type 3 normalization mode.
-///
-/// `LegacyTreatAsType0` preserves the current production behavior.
-/// `ProvisionalDivideByI4` is an experimental scaffold for future semantics work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ex3NormalizationMode {
-    LegacyTreatAsType0,
-    ProvisionalDivideByI4,
-}
 
 /// Right-hand side data for Hallén's integral equation.
 #[derive(Debug)]
@@ -44,11 +28,6 @@ pub struct HallenRhs {
     pub rhs: Vec<Complex64>,
     /// cos(k·s_m) samples for the homogeneous-term column.
     pub cos_vec: Vec<f64>,
-    /// Per-wire endpoint indices: (first_seg_idx, last_seg_idx) for each wire.
-    ///
-    /// Used by the solver to enforce zero tip-current at each wire end.
-    /// Derived from the geometry; empty only when there are no segments.
-    pub wire_endpoints: Vec<(usize, usize)>,
 }
 
 /// Error from the excitation builder.
@@ -72,11 +51,6 @@ pub enum ExcitationError {
         /// 1.0 means collinear, 0.0 means orthogonal.
         tag_abs_alignment_cos: Vec<(u32, f64)>,
     },
-    /// Two or more supported EX cards target the same wire tag.
-    ///
-    /// The Hallén path uses per-tag source data and cannot correctly represent
-    /// multiple feed points on the same tag. Use distinct tags for each source.
-    DuplicateSourceTag { tag: u32 },
 }
 
 impl std::fmt::Display for ExcitationError {
@@ -105,10 +79,6 @@ impl std::fmt::Display for ExcitationError {
                 non_collinear_tags,
                 tag_abs_alignment_cos
             ),
-            ExcitationError::DuplicateSourceTag { tag } => write!(
-                f,
-                "Hallén solver: two or more supported EX cards target tag {tag}; use distinct tags for multiple feed points"
-            ),
         }
     }
 }
@@ -123,24 +93,11 @@ pub fn build_excitation(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Result<Vec<Complex64>, ExcitationError> {
-    build_excitation_with_options(deck, segs, Ex3NormalizationMode::LegacyTreatAsType0)
-}
-
-/// Build excitation vector with explicit EX type 3 normalization mode.
-///
-/// This is primarily intended to stage incremental EX type 3 normalization work
-/// while keeping the default path behavior-stable. EX type 1 currently follows
-/// the same staged-portability fallback as EX type 0 on this path.
-pub fn build_excitation_with_options(
-    deck: &NecDeck,
-    segs: &[Segment],
-    ex3_mode: Ex3NormalizationMode,
-) -> Result<Vec<Complex64>, ExcitationError> {
     let mut v = vec![Complex64::new(0.0, 0.0); segs.len()];
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        apply_ex(&ex, segs, &mut v, ex3_mode)?;
+        apply_ex(&ex, segs, &mut v)?;
     }
 
     Ok(v)
@@ -158,7 +115,7 @@ pub fn scale_excitation_for_pulse_rhs(v: &[Complex64], freq_hz: f64) -> Vec<Comp
 
 /// Build Hallén RHS data (b and cos(k·s)) for the current geometry.
 ///
-/// This uses the first supported EX source as the feed reference. The coordinate
+/// This uses the first type-0 EX source as the feed reference. The coordinate
 /// s is measured along the driven segment direction with s=0 at the feed
 /// segment midpoint.
 ///
@@ -169,54 +126,10 @@ pub fn build_hallen_rhs(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<HallenRhs, ExcitationError> {
-    build_hallen_rhs_with_runtime_options(
-        deck,
-        segs,
-        freq_hz,
-        false,
-        Ex3NormalizationMode::LegacyTreatAsType0,
-    )
-}
-
-/// Build Hallén RHS data with optional non-collinear topology allowance.
-///
-/// When `allow_non_collinear` is `false` (default behavior), non-collinear
-/// segment directions are rejected with [`ExcitationError::UnsupportedHallenTopology`].
-/// When it is `true`, the RHS is still built using feed-axis projection and
-/// should be treated as experimental for non-collinear decks.
-pub fn build_hallen_rhs_with_options(
-    deck: &NecDeck,
-    segs: &[Segment],
-    freq_hz: f64,
-    allow_non_collinear: bool,
-) -> Result<HallenRhs, ExcitationError> {
-    build_hallen_rhs_with_runtime_options(
-        deck,
-        segs,
-        freq_hz,
-        allow_non_collinear,
-        Ex3NormalizationMode::LegacyTreatAsType0,
-    )
-}
-
-/// Build Hallén RHS data with runtime normalization options.
-pub fn build_hallen_rhs_with_runtime_options(
-    deck: &NecDeck,
-    segs: &[Segment],
-    freq_hz: f64,
-    allow_non_collinear: bool,
-    ex3_mode: Ex3NormalizationMode,
-) -> Result<HallenRhs, ExcitationError> {
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 0
-            && ex.excitation_type != 1
-            && ex.excitation_type != 2
-            && ex.excitation_type != 3
-            && ex.excitation_type != 4
-            && ex.excitation_type != 5
-        {
+        if ex.excitation_type != 0 {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
                 tag: ex.tag,
@@ -233,7 +146,6 @@ pub fn build_hallen_rhs_with_runtime_options(
         return Ok(HallenRhs {
             rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
             cos_vec: vec![0.0; segs.len()],
-            wire_endpoints: wire_endpoints_from_segs(segs),
         });
     };
 
@@ -245,8 +157,10 @@ pub fn build_hallen_rhs_with_runtime_options(
             segment: ex.segment,
         })?;
 
+    let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
     let feed_dir = segs[feed_idx].direction;
+    let feed_mid = segs[feed_idx].midpoint;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     let mut non_collinear_tags: BTreeSet<u32> = BTreeSet::new();
@@ -265,140 +179,31 @@ pub fn build_hallen_rhs_with_runtime_options(
                 .or_insert(abs_dot);
         }
     }
-    if !allow_non_collinear && !non_collinear_tags.is_empty() {
+    if !non_collinear_tags.is_empty() {
         return Err(ExcitationError::UnsupportedHallenTopology {
             non_collinear_tags: non_collinear_tags.into_iter().collect(),
             tag_abs_alignment_cos: tag_abs_alignment_cos.into_iter().collect(),
         });
     }
 
-    // Reject decks with two or more EX 0 cards on the same tag.
-    // The Hallén path stores a single per-tag source; silently ignoring a
-    // second feed on the same wire would produce an incorrect drive vector.
-    {
-        let mut seen_tags: BTreeSet<u32> = BTreeSet::new();
-        for card in &deck.cards {
-            let Card::Ex(ex) = card else { continue };
-            if !seen_tags.insert(ex.tag) {
-                return Err(ExcitationError::DuplicateSourceTag { tag: ex.tag });
-            }
-        }
-    }
-
-    // Collect per-tag source data for every driven wire (all currently accepted EX cards).
-    //
-    // Map: tag → (feed_midpoint, feed_direction, source_voltage)
-    let mut tag_sources: BTreeMap<u32, ([f64; 3], [f64; 3], Complex64)> = BTreeMap::new();
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        if tag_sources.contains_key(&ex.tag) {
-            continue; // unreachable after the check above, kept for safety
-        }
-        let seg_idx = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            .ok_or(ExcitationError::SegmentNotFound {
-                tag: ex.tag,
-                segment: ex.segment,
-            })?;
-        tag_sources.insert(
-            ex.tag,
-            (
-                segs[seg_idx].midpoint,
-                segs[seg_idx].direction,
-                ex_source_voltage(ex, ex3_mode),
-            ),
-        );
-    }
-
-    // Build per-wire local coordinates for cos(k*s):
-    // - driven wires are referenced to their own source segment midpoint
-    // - passive wires are referenced to the wire centre midpoint
-    let mut tag_axis: BTreeMap<u32, ([f64; 3], [f64; 3])> = BTreeMap::new();
-    let mut i = 0usize;
-    while i < segs.len() {
-        let tag = segs[i].tag;
-        let first = i;
-        while i + 1 < segs.len() && segs[i + 1].tag == tag {
-            i += 1;
-        }
-        let last = i;
-
-        if let Some(&(src_mid, src_dir, _)) = tag_sources.get(&tag) {
-            tag_axis.insert(tag, (src_mid, src_dir));
-        } else {
-            let a = segs[first].midpoint;
-            let b = segs[last].midpoint;
-            let center = [
-                0.5 * (a[0] + b[0]),
-                0.5 * (a[1] + b[1]),
-                0.5 * (a[2] + b[2]),
-            ];
-            tag_axis.insert(tag, (center, segs[first].direction));
-        }
-        i += 1;
-    }
-
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
     for (m, seg) in segs.iter().enumerate() {
-        let (axis_origin, axis_dir) = tag_axis
-            .get(&seg.tag)
-            .copied()
-            .unwrap_or((seg.midpoint, seg.direction));
-        let ds_axis = [
-            seg.midpoint[0] - axis_origin[0],
-            seg.midpoint[1] - axis_origin[1],
-            seg.midpoint[2] - axis_origin[2],
+        let d = [
+            seg.midpoint[0] - feed_mid[0],
+            seg.midpoint[1] - feed_mid[1],
+            seg.midpoint[2] - feed_mid[2],
         ];
-        let s_axis = ds_axis[0] * axis_dir[0] + ds_axis[1] * axis_dir[1] + ds_axis[2] * axis_dir[2];
-        cos_vec[m] = (k * s_axis).cos();
-
-        if let Some(&(src_mid, src_dir, src_v)) = tag_sources.get(&seg.tag) {
-            // Driven wire: RHS uses arc-length from this wire's own feed point.
-            let ds = [
-                seg.midpoint[0] - src_mid[0],
-                seg.midpoint[1] - src_mid[1],
-                seg.midpoint[2] - src_mid[2],
-            ];
-            let s = ds[0] * src_dir[0] + ds[1] * src_dir[1] + ds[2] * src_dir[2];
-            rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * src_v;
-        }
-        // Passive wire: rhs[m] stays zero.
+        let s = d[0] * feed_dir[0] + d[1] * feed_dir[1] + d[2] * feed_dir[2];
+        rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * v_source;
+        cos_vec[m] = (k * s).cos();
     }
 
-    Ok(HallenRhs {
-        rhs,
-        cos_vec,
-        wire_endpoints: wire_endpoints_from_segs(segs),
-    })
+    Ok(HallenRhs { rhs, cos_vec })
 }
 
-fn ex_source_voltage(ex: &ExCard, ex3_mode: Ex3NormalizationMode) -> Complex64 {
-    let mut source_voltage = Complex64::new(ex.voltage_real, ex.voltage_imag);
-    if ex.excitation_type == 3
-        && matches!(ex3_mode, Ex3NormalizationMode::ProvisionalDivideByI4)
-        && ex.i4 > 0
-    {
-        // Experimental scaffold: treat I4 as a normalization divisor.
-        source_voltage /= ex.i4 as f64;
-    }
-    source_voltage
-}
-
-fn apply_ex(
-    ex: &ExCard,
-    segs: &[Segment],
-    v: &mut [Complex64],
-    ex3_mode: Ex3NormalizationMode,
-) -> Result<(), ExcitationError> {
-    if ex.excitation_type != 0
-        && ex.excitation_type != 1
-        && ex.excitation_type != 2
-        && ex.excitation_type != 3
-        && ex.excitation_type != 4
-        && ex.excitation_type != 5
-    {
+fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
+    if ex.excitation_type != 0 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
             tag: ex.tag,
@@ -420,8 +225,7 @@ fn apply_ex(
     // source of voltage V over a segment of length Δl impresses a tangential
     // field E = V / Δl at the midpoint of that segment.
     let delta_l = segs[idx].length;
-    let source_voltage = ex_source_voltage(ex, ex3_mode);
-    v[idx] += source_voltage / delta_l;
+    v[idx] += Complex64::new(ex.voltage_real, ex.voltage_imag) / delta_l;
     Ok(())
 }
 
@@ -523,7 +327,7 @@ mod tests {
             radius: 0.001,
         }));
         deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 6, // not supported
+            excitation_type: 5, // not supported
             tag: 1,
             segment: 2,
             i4: 0,
@@ -534,474 +338,12 @@ mod tests {
         assert!(matches!(
             build_excitation(&deck, &segs),
             Err(ExcitationError::UnsupportedType {
-                ex_type: 6,
+                ex_type: 5,
                 tag: 1,
                 segment: 2,
                 i4: 0,
             })
         ));
-    }
-
-    #[test]
-    fn ex_type3_is_currently_accepted_like_type0() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 3,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 1.5,
-            voltage_imag: -0.25,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v = build_excitation(&deck, &segs).expect("EX type 3 should be accepted");
-        let expected = Complex64::new(1.5, -0.25) / segs[1].length;
-        assert!((v[1] - expected).norm() < 1e-12);
-    }
-
-    #[test]
-    fn ex_type1_is_currently_accepted_like_type0() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 1,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 1.25,
-            voltage_imag: -0.1,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v = build_excitation(&deck, &segs).expect("EX type 1 should be accepted");
-        let expected = Complex64::new(1.25, -0.1) / segs[1].length;
-        assert!((v[1] - expected).norm() < 1e-12);
-    }
-
-    #[test]
-    fn ex_type1_matches_ex_type0_vector() {
-        let mut deck_ex0 = NecDeck::new();
-        deck_ex0.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex0.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let mut deck_ex1 = NecDeck::new();
-        deck_ex1.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex1.cards.push(Card::Ex(ExCard {
-            excitation_type: 1,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
-        let segs_ex1 = build_geometry(&deck_ex1).unwrap();
-        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
-        let v_ex1 = build_excitation(&deck_ex1, &segs_ex1).expect("EX type 1 should be accepted");
-
-        assert_eq!(v_ex0.len(), v_ex1.len());
-        for (i, (a, b)) in v_ex0.iter().zip(v_ex1.iter()).enumerate() {
-            assert!(
-                (*a - *b).norm() < 1e-12,
-                "segment {i} mismatch: ex0={a}, ex1={b}"
-            );
-        }
-    }
-
-    #[test]
-    fn ex_type2_is_currently_accepted_like_type0() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 2,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 1.1,
-            voltage_imag: -0.2,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v = build_excitation(&deck, &segs).expect("EX type 2 should be accepted");
-        let expected = Complex64::new(1.1, -0.2) / segs[1].length;
-        assert!((v[1] - expected).norm() < 1e-12);
-    }
-
-    #[test]
-    fn ex_type2_matches_ex_type0_vector() {
-        let mut deck_ex0 = NecDeck::new();
-        deck_ex0.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex0.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let mut deck_ex2 = NecDeck::new();
-        deck_ex2.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex2.cards.push(Card::Ex(ExCard {
-            excitation_type: 2,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
-        let segs_ex2 = build_geometry(&deck_ex2).unwrap();
-        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
-        let v_ex2 = build_excitation(&deck_ex2, &segs_ex2).expect("EX type 2 should be accepted");
-
-        assert_eq!(v_ex0.len(), v_ex2.len());
-        for (i, (a, b)) in v_ex0.iter().zip(v_ex2.iter()).enumerate() {
-            assert!(
-                (*a - *b).norm() < 1e-12,
-                "segment {i} mismatch: ex0={a}, ex2={b}"
-            );
-        }
-    }
-
-    #[test]
-    fn ex_type4_is_currently_accepted_like_type0() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 4,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 1.2,
-            voltage_imag: -0.15,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v = build_excitation(&deck, &segs).expect("EX type 4 should be accepted");
-        let expected = Complex64::new(1.2, -0.15) / segs[1].length;
-        assert!((v[1] - expected).norm() < 1e-12);
-    }
-
-    #[test]
-    fn ex_type4_matches_ex_type0_vector() {
-        let mut deck_ex0 = NecDeck::new();
-        deck_ex0.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex0.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let mut deck_ex4 = NecDeck::new();
-        deck_ex4.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex4.cards.push(Card::Ex(ExCard {
-            excitation_type: 4,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
-        let segs_ex4 = build_geometry(&deck_ex4).unwrap();
-        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
-        let v_ex4 = build_excitation(&deck_ex4, &segs_ex4).expect("EX type 4 should be accepted");
-
-        assert_eq!(v_ex0.len(), v_ex4.len());
-        for (i, (a, b)) in v_ex0.iter().zip(v_ex4.iter()).enumerate() {
-            assert!(
-                (*a - *b).norm() < 1e-12,
-                "segment {i} mismatch: ex0={a}, ex4={b}"
-            );
-        }
-    }
-
-    #[test]
-    fn ex_type5_is_currently_accepted_like_type0() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 5,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.9,
-            voltage_imag: -0.2,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v = build_excitation(&deck, &segs).expect("EX type 5 should be accepted");
-        let expected = Complex64::new(0.9, -0.2) / segs[1].length;
-        assert!((v[1] - expected).norm() < 1e-12);
-    }
-
-    #[test]
-    fn ex_type5_matches_ex_type0_vector() {
-        let mut deck_ex0 = NecDeck::new();
-        deck_ex0.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex0.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let mut deck_ex5 = NecDeck::new();
-        deck_ex5.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex5.cards.push(Card::Ex(ExCard {
-            excitation_type: 5,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
-        let segs_ex5 = build_geometry(&deck_ex5).unwrap();
-        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
-        let v_ex5 = build_excitation(&deck_ex5, &segs_ex5).expect("EX type 5 should be accepted");
-
-        assert_eq!(v_ex0.len(), v_ex5.len());
-        for (i, (a, b)) in v_ex0.iter().zip(v_ex5.iter()).enumerate() {
-            assert!(
-                (*a - *b).norm() < 1e-12,
-                "segment {i} mismatch: ex0={a}, ex5={b}"
-            );
-        }
-    }
-
-    #[test]
-    fn ex_type3_matches_ex_type0_vector() {
-        let mut deck_ex0 = NecDeck::new();
-        deck_ex0.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex0.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let mut deck_ex3 = NecDeck::new();
-        deck_ex3.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck_ex3.cards.push(Card::Ex(ExCard {
-            excitation_type: 3,
-            tag: 1,
-            segment: 2,
-            i4: 0,
-            voltage_real: 0.8,
-            voltage_imag: -0.3,
-        }));
-
-        let segs_ex0 = build_geometry(&deck_ex0).unwrap();
-        let segs_ex3 = build_geometry(&deck_ex3).unwrap();
-        let v_ex0 = build_excitation(&deck_ex0, &segs_ex0).expect("EX type 0 should be accepted");
-        let v_ex3 = build_excitation(&deck_ex3, &segs_ex3).expect("EX type 3 should be accepted");
-
-        assert_eq!(v_ex0.len(), v_ex3.len());
-        for (i, (a, b)) in v_ex0.iter().zip(v_ex3.iter()).enumerate() {
-            assert!(
-                (*a - *b).norm() < 1e-12,
-                "segment {i} mismatch: ex0={a}, ex3={b}"
-            );
-        }
-    }
-
-    #[test]
-    fn ex_type3_provisional_mode_divides_by_i4() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 3,
-            tag: 1,
-            segment: 2,
-            i4: 2,
-            voltage_real: 1.0,
-            voltage_imag: 0.0,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let v_legacy =
-            build_excitation_with_options(&deck, &segs, Ex3NormalizationMode::LegacyTreatAsType0)
-                .expect("legacy EX type 3 should be accepted");
-        let v_provisional = build_excitation_with_options(
-            &deck,
-            &segs,
-            Ex3NormalizationMode::ProvisionalDivideByI4,
-        )
-        .expect("provisional EX type 3 should be accepted");
-
-        let expected_ratio = 0.5_f64;
-        assert!(
-            (v_provisional[1].norm() / v_legacy[1].norm() - expected_ratio).abs() < 1e-12,
-            "expected provisional/legacy ratio {expected_ratio}, got {}",
-            v_provisional[1].norm() / v_legacy[1].norm()
-        );
-    }
-
-    #[test]
-    fn hallen_rhs_runtime_mode_scales_type3_source_by_i4() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 3,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 3,
-            tag: 1,
-            segment: 2,
-            i4: 2,
-            voltage_real: 1.0,
-            voltage_imag: 0.0,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let h_legacy = build_hallen_rhs_with_runtime_options(
-            &deck,
-            &segs,
-            TEST_FREQ_HZ,
-            false,
-            Ex3NormalizationMode::LegacyTreatAsType0,
-        )
-        .expect("legacy EX type 3 should be accepted in Hallen RHS");
-        let h_provisional = build_hallen_rhs_with_runtime_options(
-            &deck,
-            &segs,
-            TEST_FREQ_HZ,
-            false,
-            Ex3NormalizationMode::ProvisionalDivideByI4,
-        )
-        .expect("provisional EX type 3 should be accepted in Hallen RHS");
-
-        let sample_idx = 0usize;
-        let expected_ratio = 0.5_f64;
-        assert!(
-            (h_provisional.rhs[sample_idx].norm() / h_legacy.rhs[sample_idx].norm()
-                - expected_ratio)
-                .abs()
-                < 1e-12,
-            "expected provisional/legacy Hallen RHS ratio {expected_ratio}, got {}",
-            h_provisional.rhs[sample_idx].norm() / h_legacy.rhs[sample_idx].norm()
-        );
     }
 
     #[test]
@@ -1177,104 +519,5 @@ mod tests {
         let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
         assert_eq!(h.rhs.len(), segs.len());
         assert_eq!(h.cos_vec.len(), segs.len());
-
-        // Driven wire (tag 1) segments must have nonzero RHS; passive wire (tag 2) must be zero.
-        let driven_segs: Vec<usize> = segs
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.tag == 1)
-            .map(|(i, _)| i)
-            .collect();
-        let passive_segs: Vec<usize> = segs
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.tag == 2)
-            .map(|(i, _)| i)
-            .collect();
-
-        // Non-feed driven segments must have nonzero RHS.
-        let feed_idx_in_segs = segs
-            .iter()
-            .position(|s| s.tag == 1 && s.tag_index == 6)
-            .unwrap();
-        for &i in &driven_segs {
-            if i != feed_idx_in_segs {
-                assert!(
-                    h.rhs[i].norm() > 1e-12,
-                    "driven seg {i} expected nonzero rhs, got {}",
-                    h.rhs[i]
-                );
-            }
-        }
-        // All passive wire segments must have zero RHS.
-        for &i in &passive_segs {
-            assert!(
-                h.rhs[i].norm() < 1e-30,
-                "passive seg {i} expected zero rhs, got {}",
-                h.rhs[i]
-            );
-        }
-    }
-
-    #[test]
-    fn hallen_rhs_rejects_bent_topology() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 11,
-            start: [0.0, 0.0, -2.677],
-            end: [0.0, 0.0, 2.677],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 2,
-            segments: 9,
-            start: [-0.25, 0.0, 2.677],
-            end: [0.25, 0.0, 2.677],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 0,
-            tag: 1,
-            segment: 6,
-            i4: 0,
-            voltage_real: 1.0,
-            voltage_imag: 0.0,
-        }));
-
-        let segs = build_geometry(&deck).unwrap();
-        let h = build_hallen_rhs_with_options(&deck, &segs, TEST_FREQ_HZ, true).unwrap();
-        assert_eq!(h.rhs.len(), segs.len());
-        assert_eq!(h.cos_vec.len(), segs.len());
-    }
-
-    /// Two EX 0 cards on the same tag must be rejected with DuplicateSourceTag.
-    #[test]
-    fn hallen_rhs_rejects_duplicate_source_tag() {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: 11,
-            start: [0.0, 0.0, -2.677],
-            end: [0.0, 0.0, 2.677],
-            radius: 0.001,
-        }));
-        // Two EX cards referencing the same tag — should be rejected.
-        for seg in [3u32, 9] {
-            deck.cards.push(Card::Ex(ExCard {
-                excitation_type: 0,
-                tag: 1,
-                segment: seg,
-                i4: 0,
-                voltage_real: 1.0,
-                voltage_imag: 0.0,
-            }));
-        }
-        let segs = build_geometry(&deck).unwrap();
-        let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
-        assert!(
-            matches!(result, Err(ExcitationError::DuplicateSourceTag { tag: 1 })),
-            "expected DuplicateSourceTag error, got: {result:?}"
-        );
     }
 }

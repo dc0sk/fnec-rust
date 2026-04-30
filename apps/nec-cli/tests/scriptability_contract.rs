@@ -184,6 +184,8 @@ fn bench_csv_stays_on_stderr_not_stdout() {
 
 #[test]
 fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
+    // Phase-1: LD and GE are not parsed; they produce 'unknown card' warnings.
+    // The LOADS section does not appear in the report.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nXX 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     let deck_path = write_temp_deck("scriptable-load-table-stream", deck);
@@ -207,15 +209,26 @@ fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stdout.contains("LOADS\n"));
-    assert!(stdout.contains("N_LOADS 1\n"));
+    // Phase-1: no LOADS section since LD is not parsed.
+    assert!(
+        !stdout.contains("LOADS\n"),
+        "Phase-1: no LOADS section expected when LD is not parsed, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("warning: line 2: unknown card 'GE'"),
+        "expected unknown-card warning for GE in stderr, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("warning: line 3: unknown card 'LD'"),
+        "expected unknown-card warning for LD in stderr, got:\n{stderr}"
+    );
     assert!(
         stderr.contains("warning: line 4: unknown card 'XX'"),
         "expected parser warning in stderr, got:\n{stderr}"
     );
     assert!(
         !stdout.contains("warning:"),
-        "stdout must remain report-only even when LOADS are present, got:\n{stdout}"
+        "stdout must remain report-only, got:\n{stdout}"
     );
 }
 

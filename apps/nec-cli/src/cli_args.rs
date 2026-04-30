@@ -1,18 +1,16 @@
 use std::path::PathBuf;
 
-use super::{BenchFormat, Ex3I4Mode, ExecutionMode, PulseRhsMode, SolverMode};
+use super::{BenchFormat, ExecutionMode, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] <deck.nec>";
 
 #[derive(Debug, Clone)]
 pub struct ParsedArgs {
     pub solver_mode: SolverMode,
     pub pulse_rhs_mode: PulseRhsMode,
     pub execution_mode: ExecutionMode,
-    pub hallen_allow_non_collinear: bool,
     pub enable_benchmarking: bool,
     pub bench_format: BenchFormat,
-    pub ex3_i4_mode: Ex3I4Mode,
     pub enable_gpu_fr: bool,
     pub path: PathBuf,
 }
@@ -21,11 +19,9 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut solver_mode = SolverMode::Hallen;
     let mut pulse_rhs_mode = PulseRhsMode::Nec2;
     let mut execution_mode = ExecutionMode::Cpu;
-    let mut hallen_allow_non_collinear = false;
     let mut enable_benchmarking = false;
     let mut bench_format = BenchFormat::Human;
     let mut enable_gpu_fr = false;
-    let mut ex3_i4_mode = Ex3I4Mode::Legacy;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -83,7 +79,11 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 };
             }
             "--allow-noncollinear-hallen" => {
-                hallen_allow_non_collinear = true;
+                // flag removed in phase-1 simplification — silently ignore for backward compat
+            }
+            "--ex3-i4-mode" => {
+                // flag removed in phase-1 simplification — silently ignore for backward compat
+                i += 1; // skip the value argument
             }
             "--bench" => {
                 enable_benchmarking = true;
@@ -112,24 +112,6 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--gpu-fr" => {
                 enable_gpu_fr = true;
             }
-            "--ex3-i4-mode" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err(
-                        "missing value after --ex3-i4-mode (expected: legacy|divide-by-i4)"
-                            .to_string(),
-                    );
-                }
-                ex3_i4_mode = match args[i].as_str() {
-                    "legacy" => Ex3I4Mode::Legacy,
-                    "divide-by-i4" => Ex3I4Mode::DivideByI4,
-                    other => {
-                        return Err(format!(
-                            "invalid --ex3-i4-mode value '{other}' (expected: legacy|divide-by-i4)"
-                        ))
-                    }
-                };
-            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -148,10 +130,8 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         solver_mode,
         pulse_rhs_mode,
         execution_mode,
-        hallen_allow_non_collinear,
         enable_benchmarking,
         bench_format,
-        ex3_i4_mode,
         enable_gpu_fr,
         path,
     })
