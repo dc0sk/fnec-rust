@@ -1,0 +1,4 @@
+# Variable map for corpus/variable-dipole.nec
+# Half-wave dipole at 14.2 MHz: λ/2 ≈ 10.564 m → half-arm ≈ 5.282 m
+HALF_LENGTH_M = "5.282"
+FREQ_MHZ      = "14.2"
