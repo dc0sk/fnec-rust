@@ -35,7 +35,7 @@ Compatibility profile note:
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
-| `--allow-noncollinear-hallen` | flag | off | Experimental: allow Hallen RHS projection on non-collinear wire topologies instead of hard fail |
+| `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | `legacy` | EX type 3 runtime semantics: `legacy` keeps type 3 == type 0 behavior; `divide-by-i4` enables experimental source normalization using I4 as divisor when I4>0 |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
@@ -51,9 +51,9 @@ impedance for thin-wire antennas when all wires are collinear with the driven
 segment axis. Non-collinear topologies currently return an explicit unsupported
 topology error instead of a misleading impedance.
 
-If `--allow-noncollinear-hallen` is set, this hard-fail guardrail is bypassed
-and Hallen RHS is built using feed-axis projection for all segments. This path
-is experimental and can be inaccurate.
+The `--allow-noncollinear-hallen` flag is accepted for compatibility but is
+currently silently ignored — passing it has no effect on solver behaviour.
+The hard-fail guardrail remains active in Phase 1 regardless.
 
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
@@ -269,7 +269,7 @@ The TL card connects two segments with a transmission line; the current solver s
 ## Notes
 
 - Multi-source decks (multiple EX cards) are supported; one output line per source.
-- The Hallén solver rejects non-collinear wire topologies by default. Use `--allow-noncollinear-hallen` only for experimental exploration.
+- The Hallén solver rejects non-collinear and junctioned wire topologies with an explicit error. `--allow-noncollinear-hallen` is accepted for compatibility but is silently ignored in Phase 1; passing it does not change solver behaviour.
 - EX type 0 is implemented across supported solver paths. EX type 1 is also implemented for `--solver pulse`; Hallen and other non-pulse modes still keep EX type 1 on the staged portability path.
 - GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
 - `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
