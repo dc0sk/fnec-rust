@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-04-28
+last_updated: 2026-04-30
 ---
 
 # NEC-4 Support Boundary
@@ -81,6 +81,44 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:------------|:-------|:------|
 | NM | Program control (NEC-4) | DEFERRED | Version/control flags. Phase 2. |
 | NE | Program end (NEC-4) | DEFERRED | Extension to EN. Phase 2. |
+
+## PH3-CHK-001 complete card status index
+
+This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exact parser status and functional status.  It is the authoritative machine-checkable index for `par001_card_status_table_complete`.
+
+**Parser status values:**
+
+| Value | Meaning |
+|:------|:--------|
+| `recognized` | Parser has an explicit match arm; card is stored in the `NecDeck`. |
+| `unknown` | Falls through to the unknown-card warning path; card is not stored. |
+
+| Mnemonic | Description | Parser status | Functional status | Notes |
+|:---------|:------------|:--------------|:------------------|:------|
+| CE | Comment end | `recognized` | FULL | Parsed and stored as comment; ends comment block. |
+| CH | Characteristic impedance | `unknown` | DEFERRED | Wire impedance tagging. Phase 2+. |
+| CM | Comment | `recognized` | FULL | Parsed and stored as comment; free text. |
+| CP | Control program | `unknown` | OUT OF SCOPE | Procedural looping belongs in user scripts. |
+| EN | End of input | `recognized` | FULL | Terminates deck parse per NEC spec. |
+| EX | Excitation | `recognized` | PARTIAL | Type 0 (voltage) FULL; types 1/4/5 PARTIAL in pulse mode; types 2/3 staged portability fallback. |
+| FR | Frequency specification | `recognized` | FULL | Single frequency and step sweep fully supported. |
+| GE | Geometry end | `recognized` | FULL | Ground-reflection flag preserved; GE I1=1 infers PEC ground. |
+| GF | Scale segments | `unknown` | DEFERRED | Geometry scaling. Phase 2+. |
+| GM | Move segments | `unknown` | PARTIAL | Geometry builder (`nec_solver::geometry`) implements rotate/translate; parser does not yet recognize GM so CLI decks with GM cards produce an unknown-card warning and the GM transform is not applied. Parser recognition is a Phase 3 item. |
+| GN | Ground definition | `recognized` | PARTIAL | Types 0/2 finite-conductivity (Fresnel), type 1 PEC image, type -1 free-space implemented. Full Sommerfeld/Norton deferred. |
+| GR | Repeat segments | `unknown` | PARTIAL | Geometry builder implements z-axis rotation repeat; parser does not yet recognize GR so CLI decks with GR cards produce an unknown-card warning and the GR transform is not applied. Parser recognition is a Phase 3 item. |
+| GW | Wire segment | `recognized` | FULL | Straight wire; tag, segments, endpoints, radius fully supported. |
+| LD | Load impedance | `recognized` | PARTIAL | Types 0–5 implemented (series/parallel RLC, series RL/RC/Z, distributed conductivity). Other types warn and are ignored. |
+| MA | Matériel (material) definition | `unknown` | DEFERRED | Lossy wire materials. Phase 2+. |
+| NE | Program end (NEC-4) | `unknown` | DEFERRED | Extension to EN. Phase 2+. |
+| NM | Program control (NEC-4) | `unknown` | DEFERRED | Version/control flags. Phase 2+. |
+| NT | Network definition | `recognized` | PARTIAL | Parsed for staged portability; solver emits explicit deferred-support warning; NT electrical semantics not applied. |
+| PT | Print/store control | `unknown` | PARTIAL | Model has `PtCard`; `warn_pt_card_deferred_support` function defined but not yet called from main; parser does not recognize PT. Portability path only. |
+| RP | Radiation pattern request | `recognized` | PARTIAL | THETA/PHI far-field pattern executed and reported in `RADIATION_PATTERN` section; no near-field, no JSON/CSV/plot export. |
+| SP | Special segment | `unknown` | OUT OF SCOPE | Complex geometry types (spheres, absorbers) belong in CAD tools. |
+| SY | Symbol definition | `unknown` | OUT OF SCOPE | Parametric expressions; use pre-processing/template tool (PH3-CHK-007). |
+| TL | Transmission line | `recognized` | PARTIAL | Lossless TL type 0 contributes 2-port impedance stamp; NSEG=0 mapped to tag center; unsupported variants warn and are ignored. |
+| XQ | Near/far field request | `unknown` | DEFERRED | Near-field analysis. Phase 2+. |
 
 ## Source type support matrix
 
