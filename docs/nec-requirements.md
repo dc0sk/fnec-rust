@@ -1,7 +1,7 @@
 ---
-project: rusty-wire
+project: fnec-rust
 doc: docs/nec-requirements.md
-status: deferred
+status: living
 last_updated: 2026-04-30
 ---
 
