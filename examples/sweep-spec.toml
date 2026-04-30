@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Example sweep-config: range-based frequency sweep from 14 to 18 MHz in 0.5 MHz steps.
+#
+# Pass this file to fnec with --sweep-config:
+#   fnec --sweep-config examples/sweep-spec.toml my-deck.nec
+
+[frequency]
+start_mhz = 14.0
+end_mhz   = 18.0
+step_mhz  = 0.5

@@ -218,7 +218,9 @@ dependencies = [
  "nec_solver",
  "num-complex",
  "rayon",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

@@ -6,6 +6,7 @@ mod cli_args;
 mod exec_profile;
 mod geometry_validation;
 mod solve_session;
+mod sweep_config;
 mod warnings;
 
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
@@ -53,6 +54,7 @@ fn main() -> ExitCode {
         enable_benchmarking,
         bench_format,
         enable_gpu_fr,
+        sweep_config_path,
         path,
     } = match parse_args(&args) {
         Ok(v) => v,
@@ -108,7 +110,17 @@ fn main() -> ExitCode {
     warn_ge_ground_reflection_flag(deck);
     warn_nt_card_deferred_support(deck);
 
-    let freqs_hz = frequencies_from_fr(deck);
+    let freqs_hz = if let Some(ref sc_path) = sweep_config_path {
+        match sweep_config::SweepConfig::from_file(sc_path) {
+            Ok(sc) => sc.frequencies_hz,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        frequencies_from_fr(deck)
+    };
     if freqs_hz.is_empty() {
         return ExitCode::SUCCESS;
     }
