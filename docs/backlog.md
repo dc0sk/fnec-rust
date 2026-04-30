@@ -120,7 +120,7 @@ last_updated: 2026-04-30
 	Resolution: PAR-001 v1 contract implemented and CI-gated on 2026-04-23 (`FORMAT_VERSION 1`, deterministic headers/table, report contract integration test).
 	Follow-up scope (gain/pattern/current report breadth and richer parity expectations) remains tracked under Phase 1-2 roadmap/report parity items.
 
-- [ ] **PAR-002 / Advanced ground parity plan / Owner: Solver / Target: Phase 2 / Issue: #15**
+- [x] **PAR-002 / Advanced ground parity plan / Owner: Solver / Target: Phase 2 / Issue: #15**
 	Resolution criteria: NEC-4-class ground scope document published; Sommerfeld validation corpus added; tolerance pass documented for supported near-ground cases.
 	- 2026-04-28 progress: started PAR-002 docs-first discovery slice by adding a scoped finite-ground plan to `docs/nec4-support.md` (scope/non-goals/completion evidence).
 	- 2026-04-28 progress: added PAR-002 finite-ground validation workflow and closure checklist to `docs/corpus-validation-strategy.md` to define capture/gating expectations before solver expansion.
@@ -134,6 +134,7 @@ last_updated: 2026-04-30
 	- 2026-04-28 progress: fixed GN -1 (null ground) to map to `GroundModel::FreeSpace` without emitting a deferred-ground warning; added geometry unit test `ground_model_gn_negative1_returns_free_space`, CLI integration test `gn_negative1_null_ground_is_silent_free_space`, corpus fixture `corpus/dipole-gn-1-null.nec`, and `corpus/reference-results.json` entry with forbidden-warning contract; extended PAR-002 checklist gate to include the GN -1 case with `expect_forbidden_contract`.
 	- 2026-04-29 progress: implemented the first PH2-CHK-001 GN2 runtime slice by mapping `GN 2` to the active scoped finite-ground path (same approximation family as current GN0) instead of deferred free-space fallback; `GN 3` remains deferred.
 	- 2026-04-29 progress: updated GN2 contracts across solver/CLI/corpus (`crates/nec_solver/src/geometry.rs`, `apps/nec-cli/tests/ground_diagnostics.rs`, `apps/nec-cli/tests/corpus_validation.rs`, `corpus/dipole-gn2-deferred.nec`, `corpus/reference-results.json`) to require no deferred GN2 warning and to gate regression impedance on the in-scope above-ground GN2 class.
+	- 2026-04-30 resolution: all three closure criteria met. (1) Ground scope document: `docs/nec4-support.md` PAR-002 section and support-matrix table updated to accurately reflect GN types 0/2 as PARTIAL (scoped `SimpleFiniteGround` path) and GN types 3+ as still deferred. (2) Sommerfeld corpus: `corpus/dipole-gn2-near-ground-51seg.nec` and `corpus/dipole-gn2-buried-unsupported.nec` added; all GN corpus entries documented in `corpus/README.md`. (3) Tolerance pass: `corpus/reference-results.json` contains tolerance gates for all GN cases; `cargo test -p nec-cli --test corpus_validation` passes (6/6 tests).
 
 - [x] **PAR-003 / Mainstream NEC workflow card coverage / Owner: Parser+Solver / Target: Phase 2 / Issue: #16**
 	Resolution criteria: load/source/TL-network card subset listed as supported in `docs/nec4-support.md`; integration tests added per card family; deck portability checklist passes for selected reference decks.
