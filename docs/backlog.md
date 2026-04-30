@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/backlog.md
 status: living
-last_updated: 2026-04-29
+last_updated: 2026-04-30
 ---
 
 # Backlog
@@ -90,6 +90,12 @@ last_updated: 2026-04-29
 - [ ] **Property-based solver invariants / Owner: Solver+Validation / Target: Phase 2**
 	Resolution criteria: at least one property-based invariant test is present in `nec_solver` for a physical reciprocity or symmetry law and is part of the normal test matrix.
 	- 2026-04-29 progress: added the first randomized Hallen reciprocity invariant in `crates/nec_solver/src/matrix.rs`, checking `A_ij = A_ji` across randomly parameterized collinear two-segment cases.
+
+- [ ] **Hallen non-collinear multi-wire breadth investigation / Owner: Solver / Target: Phase 2**
+	Resolution criteria: document the exact Hallen topology boundary for current support (single-wire chains vs parallel collinear multi-wire arrays vs junctioned or non-collinear classes), capture at least one representative blocked corpus class plus one representative still-supported multi-wire class, and record a formulation decision for Phase 3 parity claims.
+	- 2026-04-30 progress: rusty-wire Phase 2 deck generation confirmed that the new `inverted-v-40m-90deg` reference deck fails in Hallen with `Hallen solver currently supports only collinear wire topologies aligned with the driven segment; non-collinear tags: [2]`.
+	- 2026-04-30 progress: existing `corpus/yagi-5elm-51seg.nec` evidence shows Hallen already handles multi-wire parallel collinear arrays, so the missing breadth is specifically junctioned or non-collinear multi-wire classes rather than all multi-wire Hallen support.
+	- 2026-04-30 progress: investigation output should close the current ambiguity around `--allow-noncollinear-hallen`, align `docs/roadmap.md` Phase 2 decision-gate wording with the actual supported topology classes, and point to the chosen next step: generalized formulation work, explicit hybrid-solver split, or documented deferral from parity claims.
 
 - [ ] **Benchmark history trend capture / Owner: Performance / Target: Phase 5 prep**
 	Resolution criteria: repeated benchmark runs can be appended to a persistent history format and summarized by a tracked script without relying on ad hoc files in `tmp/`.
