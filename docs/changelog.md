@@ -2,16 +2,18 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-05-01
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
 
-## [0.3.0] — 2026-04-30
+## [0.3.0] — 2026-05-01
 
 ### Added
+
+- **PH3-CHK-008 (resonance-targeting helper)**: Added `fnec sweep --resonance <file.nec.toml>` subcommand that binary-searches one template variable to find the feedpoint reactance closest to a target (typically 0 Ω for series resonance). The `.nec.toml` file embeds both a `[search]` table (variable name, lo/hi bounds, target reactance, tolerance, max iterations) and a `[deck]` table containing the NEC template string. Implementation: `apps/nec-cli/src/resonance_search.rs` (`ResonanceFile` TOML struct, `bisect()` function, `print_result()`). Integrates with the template engine from PH3-CHK-007 and re-runs the full geometry/solve pipeline for each probe point. Added `examples/resonance-search.nec.toml` worked example (14.2 MHz dipole resonance search); added 3 contract tests in `apps/nec-cli/tests/resonance_contract.rs` (convergence, unbounded-range error, missing-flag usage error).
 
 - **PH3-CHK-007 (variable-substitution engine)**: Added `nec_parser::template` module with a `substitute()` function that replaces `$VAR` tokens in NEC deck strings from a `HashMap<String, String>`. `$$` produces a literal `$`; undefined tokens return a `TemplateError` with the variable name and 1-based line number. CLI: `--vars <file>` flag loads a flat TOML or JSON key→value map and applies substitution before parsing. Added `apps/nec-cli/src/vars_config.rs` (TOML via `toml` crate; JSON via minimal hand-rolled parser). Added 5 contract tests in `apps/nec-cli/tests/template_contract.rs`. Corpus example: `corpus/variable-dipole.nec` (template) + `corpus/dipole-vars.toml` (vars). `--vars` documented in `docs/cli-guide.md` synopsis and options table.
 

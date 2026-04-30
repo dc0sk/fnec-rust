@@ -1,0 +1,33 @@
+# Half-wave dipole resonance search at 14.2 MHz
+#
+# This file is a self-contained resonance-search example.
+# It encodes both the NEC deck template and the binary-search configuration.
+#
+# Run:
+#   fnec sweep --resonance examples/resonance-search.nec.toml
+#
+# Expected output (approximate):
+#   RESONANCE_SEARCH_RESULT
+#   VAR HALF_LEN
+#   CONVERGED_VALUE 5.19xxxx
+#   Z_RE ~73
+#   Z_IM  ~0
+#   ITERATIONS <20
+#   CONVERGED true
+
+[search]
+var                   = "HALF_LEN"
+lo                    = 4.5
+hi                    = 6.0
+target_reactance_ohm  = 0.0
+tolerance_ohm         = 0.5
+max_iter              = 50
+
+[deck]
+template = """
+GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001
+GE
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""

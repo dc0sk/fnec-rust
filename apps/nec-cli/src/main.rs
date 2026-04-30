@@ -5,6 +5,7 @@ mod bench;
 mod cli_args;
 mod exec_profile;
 mod geometry_validation;
+mod resonance_search;
 mod solve_session;
 mod sweep_config;
 mod vars_config;
@@ -47,6 +48,12 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     }
+
+    // --- sweep subcommand ---------------------------------------------------
+    if args.get(1).map(String::as_str) == Some("sweep") {
+        return run_sweep_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
 
     let ParsedArgs {
         solver_mode,
@@ -313,6 +320,140 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Entry point for `fnec sweep --resonance <file.nec.toml>`.
+fn run_sweep_subcommand(args: &[String]) -> ExitCode {
+    const SWEEP_USAGE: &str = "Usage: fnec sweep --resonance <file.nec.toml>\n\
+         The .nec.toml file must contain [search] and [deck] tables.";
+
+    // Parse the sweep subcommand args (args[0] = binary, args[1] = "sweep").
+    let mut resonance_path: Option<std::path::PathBuf> = None;
+    let mut i = 2usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--resonance" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                    eprintln!("{SWEEP_USAGE}");
+                    eprintln!("error: missing value after --resonance");
+                    return ExitCode::from(2);
+                }
+                resonance_path = Some(std::path::PathBuf::from(&args[i]));
+            }
+            flag if flag.starts_with('-') => {
+                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("{SWEEP_USAGE}");
+                eprintln!("error: unknown sweep option: {flag}");
+                return ExitCode::from(2);
+            }
+            other => {
+                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("{SWEEP_USAGE}");
+                eprintln!("error: unexpected argument: {other}");
+                return ExitCode::from(2);
+            }
+        }
+        i += 1;
+    }
+
+    let path = match resonance_path {
+        Some(p) => p,
+        None => {
+            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("{SWEEP_USAGE}");
+            eprintln!("error: --resonance <file> is required");
+            return ExitCode::from(2);
+        }
+    };
+
+    let rf = match resonance_search::ResonanceFile::from_file(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let template = rf.deck.template.clone();
+    let cfg = rf.search;
+
+    // Build a probe closure: substitutes the search variable into the template,
+    // parses the deck, runs a single-frequency solve, and returns (z_re, z_im).
+    let probe = |val: f64| -> Result<(f64, f64), String> {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert(cfg.var.clone(), format!("{val:.9}"));
+        let deck_str =
+            nec_parser::template::substitute(&template, &vars).map_err(|e| e.to_string())?;
+        let result = parse(&deck_str).map_err(|e| e.to_string())?;
+        let deck = &result.deck;
+
+        let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+        let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
+        let ground = ground_model_from_deck(deck);
+        let wire_endpoints = wire_endpoints_from_segs(&segs);
+        let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
+        let sinusoidal_topology_supported =
+            sinusoidal_a4_topology_supported(&segs, &wire_endpoints);
+
+        // Find the single FR frequency from the deck.
+        let freqs = frequencies_from_fr(deck);
+        let freq_hz = freqs
+            .first()
+            .copied()
+            .ok_or_else(|| "resonance search: deck must have an FR card".to_string())?;
+
+        let solve_result = solve_frequency_point(
+            deck,
+            &segs,
+            &wire_endpoints,
+            per_wire_basis_feasible,
+            sinusoidal_topology_supported,
+            &v_vec,
+            &ground,
+            &[],
+            SolverMode::Hallen,
+            PulseRhsMode::Nec2,
+            ExecutionMode::Cpu,
+            false,
+            freq_hz,
+        )?;
+
+        let summary = solve_result.sweep_summary.ok_or_else(|| {
+            "resonance search: solver did not produce a sweep summary".to_string()
+        })?;
+
+        Ok((summary.z_re, summary.z_im))
+    };
+
+    match resonance_search::bisect(
+        cfg.lo,
+        cfg.hi,
+        cfg.target_reactance_ohm,
+        cfg.tolerance_ohm,
+        cfg.max_iter,
+        probe,
+    ) {
+        Ok(result) => {
+            resonance_search::print_result(&cfg.var, &result);
+            if result.converged {
+                ExitCode::SUCCESS
+            } else {
+                eprintln!(
+                    "warning: resonance search did not converge within {} iterations \
+                     (|z_im - target| = {:.3} Ω)",
+                    result.iterations,
+                    (result.final_z_im - cfg.target_reactance_ohm).abs()
+                );
+                ExitCode::SUCCESS // still emit result; caller decides
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[cfg(test)]

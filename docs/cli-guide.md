@@ -16,6 +16,7 @@ Diagnostics are written to stderr.
 
 ```
 fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
+fnec sweep --resonance <file.nec.toml>
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -42,6 +43,56 @@ Compatibility profile note:
 | `--gpu-fr` | flag | off | Route RP far-field evaluation through accelerator stub path |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list); overrides the `FR` card frequency list for a batch solve. See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
+
+## Subcommands
+
+### `fnec sweep --resonance <file.nec.toml>`
+
+Runs a binary-search resonance-targeting pass over one template variable to
+find the value at which the feedpoint reactance matches a target (typically 0 Ω
+for series resonance).
+
+The `.nec.toml` file is a TOML file containing two required tables:
+
+```toml
+[search]
+var                   = "HALF_LEN"   # template variable to search
+lo                    = 4.5          # lower bound
+hi                    = 6.0          # upper bound
+target_reactance_ohm  = 0.0          # target Z_im
+tolerance_ohm         = 0.5          # convergence tolerance (default 0.5)
+max_iter              = 50           # max bisection iterations (default 50)
+
+[deck]
+template = """
+GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001
+GE
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+```
+
+The deck template must contain exactly one `FR` card (single frequency), and
+the named variable must appear at least once as a `$VAR` token.
+
+**Output** (stdout, structured text):
+
+```
+RESONANCE_SEARCH_RESULT
+VAR HALF_LEN
+CONVERGED_VALUE 5.192382
+Z_RE 73.112345
+Z_IM -0.312456
+ITERATIONS 14
+CONVERGED true
+```
+
+Exit code **0** when converged or when max iterations reached (with a warning
+on stderr); **1** if the root is not bracketed or a solver error occurs; **2**
+for usage errors.
+
+See `examples/resonance-search.nec.toml` for a complete worked example.
 
 ## Solver modes
 
