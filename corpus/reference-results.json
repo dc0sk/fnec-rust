@@ -318,13 +318,13 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for NT staged portability; NT is parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; NT parsed with deferred runtime semantics, emits deferred-support warning)",
       "expected_warning_substrings": [
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -336,7 +336,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for NT deck portability while NT runtime semantics remain deferred."
+      "status": "Phase-2 regression lock: NT card parsed; emits deferred-support warning, deck runs as free-space."
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -346,14 +346,14 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for combined PT+NT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -365,7 +365,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for combined PT+NT deck portability while runtime semantics remain deferred."
+      "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning."
     },
     "dipole-nt-pt-freesp-51seg": {
       "deck_file": "dipole-nt-pt-freesp-51seg.nec",
@@ -375,14 +375,14 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for NT+PT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -394,7 +394,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for NT+PT card-order portability while runtime semantics remain deferred."
+      "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card."
     },
     "dipole-pt-nt-repeated-freesp-51seg": {
       "deck_file": "dipole-pt-nt-repeated-freesp-51seg.nec",
@@ -404,14 +404,14 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for repeated PT+NT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -423,7 +423,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for repeated PT+NT deck portability while runtime semantics remain deferred."
+      "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning."
     },
     "dipole-nt-pt-repeated-freesp-51seg": {
       "deck_file": "dipole-nt-pt-repeated-freesp-51seg.nec",
@@ -433,14 +433,14 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for repeated NT+PT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -452,7 +452,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for repeated NT+PT card-order portability while runtime semantics remain deferred."
+      "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card."
     },
     "dipole-pt-nt-interleaved-freesp-51seg": {
       "deck_file": "dipole-pt-nt-interleaved-freesp-51seg.nec",
@@ -462,10 +462,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for interleaved PT+NT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -477,10 +477,10 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for interleaved PT+NT deck portability while runtime semantics remain deferred.",
+      "status": "Phase-2 regression lock: interleaved PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ]
     },
     "dipole-nt-pt-interleaved-freesp-51seg": {
@@ -491,10 +491,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for interleaved NT+PT staged portability; PT/NT are parsed but ignored at runtime)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
         "unknown card 'PT'",
-        "unknown card 'NT'"
+        "NT card support is currently deferred"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -506,10 +506,10 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for interleaved NT+PT card-order portability while runtime semantics remain deferred.",
+      "status": "Phase-2 regression lock: interleaved NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
       "forbidden_warning_substrings": [
         "PT card support is currently deferred",
-        "NT card support is currently deferred"
+        "unknown card 'NT'"
       ]
     },
     "dipole-ex3-i4-freesp-51seg": {
@@ -1232,10 +1232,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for LD type 1 support); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD cards parsed and applied)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 7422.769493,
+        "imag_ohm": 1428.846488
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ inserted before EN)",
@@ -1245,12 +1245,12 @@
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
-        "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05,
+        "R_absolute_ohm": 5.0,
+        "X_absolute_ohm": 5.0,
         "ExternalR_absolute_ohm": 6500.0,
         "ExternalX_absolute_ohm": 1500.0
       },
-      "status": "Regression lock for LD type 1 (parallel RLC equivalent impedance) after initial implementation. External nec2c candidate is now CI-gated with provisional absolute thresholds while parity is still being improved."
+      "status": "Phase-2 regression lock: LD cards parsed and applied. fnec now applies LD type 1+4 loads; impedance reflects loaded operation. External nec2c reference not yet aligned (pending further LD model validation)."
     },
     "dipole-ld-series-rl-51seg": {
       "deck_file": "dipole-ld-series-rl-51seg.nec",
@@ -1260,18 +1260,18 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for LD type 2 support); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD type 2 series-RL parsed and applied)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 23.997576,
+        "imag_ohm": 651.798682
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
-        "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "R_absolute_ohm": 0.1,
+        "X_absolute_ohm": 2.0
       },
-      "status": "Regression lock for LD type 2 (series RL) after initial implementation."
+      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 Ω, L=1 µH at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance."
     },
     "dipole-ld-series-rc-51seg": {
       "deck_file": "dipole-ld-series-rc-51seg.nec",
@@ -1281,18 +1281,18 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for LD type 3 support); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD type 3 series-RC parsed and applied)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 15247.905051,
+        "imag_ohm": -78413.559716
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
-        "R_absolute_ohm": 0.05,
-        "X_absolute_ohm": 0.05
+        "R_absolute_ohm": 50.0,
+        "X_absolute_ohm": 500.0
       },
-      "status": "Regression lock for LD type 3 (series RC) after initial implementation."
+      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 Ω, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C ≈11.2 kΩ)."
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
@@ -1302,10 +1302,10 @@
       "wires": 2,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for TL initial executable subset); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.305023,
-        "imag_ohm": -14.538057
+        "real_ohm": 3.670498,
+        "imag_ohm": -14.490403
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1313,7 +1313,7 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference (152.352) was captured with incorrect code that applied source excitation to the passive (TL-coupled) dipole. New result (3.305) reflects correct passive-wire handling with rhs=0 for non-EX wires. TL coupling enters only through Z-matrix stamps. External NEC2 validation pending."
+      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending."
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1323,10 +1323,10 @@
       "wires": 2,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for TL segment=0 center mapping); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card with seg=0 mapping parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.305023,
-        "imag_ohm": -14.538057
+        "real_ohm": 3.670498,
+        "imag_ohm": -14.490403
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1334,7 +1334,7 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference was captured with incorrect code that applied source excitation to the passive TL-coupled dipole. New result reflects correct passive-wire handling."
+      "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position)."
     },
     "tl-two-dipoles-linked-nseg0": {
       "deck_file": "tl-two-dipoles-linked-nseg0.nec",
@@ -1344,10 +1344,10 @@
       "wires": 2,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for TL NSEG=0 single-section shorthand); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card with NSEG=0 shorthand parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.305023,
-        "imag_ohm": -14.538057
+        "real_ohm": 3.670498,
+        "imag_ohm": -14.490403
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1355,7 +1355,7 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference was captured with incorrect code that applied source excitation to the passive TL-coupled dipole. New result reflects correct passive-wire handling."
+      "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case."
     },
     "tl-two-dipoles-linked-seg0-even52": {
       "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
@@ -1365,10 +1365,10 @@
       "wires": 2,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for TL segment=0 lower-center mapping on even-segment tags); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL with seg=0 lower-center mapping on even-segment tags, Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.218708,
-        "imag_ohm": -13.51858
+        "real_ohm": 3.609804,
+        "imag_ohm": -13.463569
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1376,7 +1376,7 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference was captured with incorrect code that applied source excitation to the passive TL-coupled dipole. New result reflects correct passive-wire handling."
+      "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base."
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",

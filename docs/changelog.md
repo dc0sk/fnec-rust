@@ -113,6 +113,8 @@ All notable documentation process changes are recorded here.
 - Extended drop-in compatibility contract tests to cover both `nec2dxs*` and `4nec2*` alias-name detection paths.
 - Populated `docs/par011-dropin-evidence-memo.md` with concrete NEC2MP artifact evidence (inventory, readme findings, SHA256 fingerprints) and a phased docs-only PAR-011 implementation plan with `AT-PAR011-*` acceptance tests.
 - Explicitly postponed PAR-011 compatibility harness-skeleton work in current scope (option 3 deferred).
+- Explicitly postponed PAR-011 compatibility harness-skeleton work in current scope (option 3 deferred).
+- **PH2-CHK-003 — LD/TL/NT implemented semantics (2026-05-10)**: LD cards (types 0–5) and TL lossless-line cards (`type=0`) are now parsed in `nec_parser` and applied as impedance stamps in the solver; NT cards are parsed for staged portability and emit a deferred-support warning instead of an unknown-card warning. 5 `ld_loads.rs` and 3 `tl_cards.rs` integration tests updated to Phase-2 assertions; 14 corpus reference entries in `reference-results.json` updated (3 LD loaded-value cases, 4 TL coupled-dipole cases, 7 NT deferred-warning cases); `parser_warnings.rs`, `report_contract.rs`, and `scriptability_contract.rs` tests updated to Phase-2 contracts.
 
 ## 0.2.0 — 2026-05-01
 

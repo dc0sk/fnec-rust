@@ -55,8 +55,9 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 
 #[test]
 fn supported_tl_card_changes_feedpoint_impedance() {
-    // Phase-1: TL is not parsed; card produces 'unknown card' warning and deck
-    // runs as free-space.  Base and TL decks have the same impedance.
+    // Phase-2: TL is parsed and applied.  The lossless Z-stamp for Z0=50 Ω,
+    // length=0.1 m between the two dipole center segments shifts Z_RE relative
+    // to the no-TL two-wire deck.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -67,26 +68,34 @@ fn supported_tl_card_changes_feedpoint_impedance() {
     let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&tl_path, tl_deck).expect("failed to write TL deck");
 
-    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
-    let _ = fs::remove_file(&tl_path);
+    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-{now}.nec"));
+    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&base_path, base_deck).expect("failed to write base deck");
 
+    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
+    let (base_out, _) = run_fnec(&base_path, &workspace_root);
+    let _ = fs::remove_file(&tl_path);
+    let _ = fs::remove_file(&base_path);
+
+    // Phase-2: TL is parsed — no unknown-card warning.
     assert!(
-        tl_err.contains("unknown card 'TL'"),
-        "expected unknown-card warning for TL, got:\n{tl_err}"
+        !tl_err.contains("unknown card 'TL'"),
+        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
     );
-    assert!(
-        !tl_err.contains("TL card ignored"),
-        "Phase-1 should not emit TL card ignored, got:\n{tl_err}"
-    );
-    // Phase-1: runs as free-space (two-wire deck with no EX on second wire).
+    // TL stamp changes Z_RE relative to no-TL base.
     let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    // Just verify it produces a valid impedance (non-zero R).
-    assert!(tl_r > 0.0, "expected positive R, got {tl_r}");
+    let (base_r, _) = first_feedpoint_impedance(&base_out);
+    assert!(
+        (tl_r - base_r).abs() > 0.05,
+        "Phase-2: TL card should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
+    );
+    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
 }
 
 #[test]
 fn supported_tl_card_with_nseg_zero_changes_feedpoint_impedance() {
-    // Phase-1: TL is not parsed; card produces 'unknown card' warning.
+    // Phase-2: TL is parsed.  NSEG=0 is a single-section shorthand and produces
+    // the same impedance stamp as NSEG=1.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -97,24 +106,32 @@ fn supported_tl_card_with_nseg_zero_changes_feedpoint_impedance() {
     let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 0 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&tl_path, tl_deck).expect("failed to write TL deck with NSEG=0");
 
+    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-nseg0-{now}.nec"));
+    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&base_path, base_deck).expect("failed to write base deck");
+
     let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
+    let (base_out, _) = run_fnec(&base_path, &workspace_root);
     let _ = fs::remove_file(&tl_path);
+    let _ = fs::remove_file(&base_path);
 
     assert!(
-        tl_err.contains("unknown card 'TL'"),
-        "expected unknown-card warning for TL, got:\n{tl_err}"
-    );
-    assert!(
-        !tl_err.contains("TL card ignored"),
-        "Phase-1 should not emit TL card ignored, got:\n{tl_err}"
+        !tl_err.contains("unknown card 'TL'"),
+        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
     );
     let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    assert!(tl_r > 0.0, "expected positive R, got {tl_r}");
+    let (base_r, _) = first_feedpoint_impedance(&base_out);
+    assert!(
+        (tl_r - base_r).abs() > 0.05,
+        "Phase-2: TL NSEG=0 should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
+    );
+    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
 }
 
 #[test]
 fn supported_tl_card_with_nseg_gt_one_changes_feedpoint_impedance() {
-    // Phase-1: TL is not parsed; card produces 'unknown card' warning.
+    // Phase-2: TL is parsed.  NSEG=3 uses uniform-line stamp semantics
+    // identical to NSEG=1 for lossless lines (tl_type=0).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -125,17 +142,24 @@ fn supported_tl_card_with_nseg_gt_one_changes_feedpoint_impedance() {
     let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 3 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&tl_path, tl_deck).expect("failed to write TL deck with NSEG=3");
 
+    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-nseg3-{now}.nec"));
+    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&base_path, base_deck).expect("failed to write base deck");
+
     let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
+    let (base_out, _) = run_fnec(&base_path, &workspace_root);
     let _ = fs::remove_file(&tl_path);
+    let _ = fs::remove_file(&base_path);
 
     assert!(
-        tl_err.contains("unknown card 'TL'"),
-        "expected unknown-card warning for TL, got:\n{tl_err}"
-    );
-    assert!(
-        !tl_err.contains("TL card ignored"),
-        "Phase-1 should not emit TL card ignored, got:\n{tl_err}"
+        !tl_err.contains("unknown card 'TL'"),
+        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
     );
     let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    assert!(tl_r > 0.0, "expected positive R, got {tl_r}");
+    let (base_r, _) = first_feedpoint_impedance(&base_out);
+    assert!(
+        (tl_r - base_r).abs() > 0.05,
+        "Phase-2: TL NSEG=3 should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
+    );
+    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
 }
