@@ -138,6 +138,112 @@ pub trait ResultFilter {
     fn filter(&self, rows: &[FeedpointRow]) -> Vec<FeedpointRow>;
 }
 
+/// **Extension point EP-3 — custom report section.**
+///
+/// Implementors produce an arbitrary text block that is appended verbatim
+/// after the standard sections in the report output.  The section name and
+/// content are entirely under the implementor's control.
+///
+/// # Safety model
+///
+/// Implementations are plain in-process Rust.  The trait carries no handles
+/// to network sockets, file descriptors, or FFI pointers.  The report
+/// pipeline calls `render()` once per section after all standard sections
+/// have been built; it cannot influence solver behaviour.
+///
+/// # Example — summary statistics section
+///
+/// ```
+/// use nec_report::{ReportSection, FeedpointRow, ReportInput, render_text_report_with_sections};
+/// use num_complex::Complex64;
+///
+/// /// Appends a one-line |Z| summary.
+/// struct ImpedanceSummary<'a> { rows: &'a [FeedpointRow] }
+///
+/// impl ReportSection for ImpedanceSummary<'_> {
+///     fn render(&self) -> String {
+///         let mut out = String::from("IMPEDANCE_SUMMARY\n");
+///         for r in self.rows {
+///             let mag = (r.z_in.re * r.z_in.re + r.z_in.im * r.z_in.im).sqrt();
+///             out.push_str(&format!("TAG {} SEG {} |Z|={:.3} Ω\n", r.tag, r.seg, mag));
+///         }
+///         out
+///     }
+/// }
+///
+/// let row = FeedpointRow {
+///     tag: 1, seg: 26,
+///     v_source: Complex64::new(1.0, 0.0),
+///     current: Complex64::new(0.013471, -0.002522),
+///     z_in: Complex64::new(74.242874, 13.899516),
+/// };
+/// let input = ReportInput {
+///     solver_mode: "hallen",
+///     pulse_rhs: "Nec2",
+///     frequency_hz: 14_200_000.0,
+///     rows: &[row],
+///     source_table: &[],
+///     load_table: &[],
+///     current_table: &[],
+///     pattern_table: &[],
+/// };
+/// let section = ImpedanceSummary { rows: &[row] };
+/// let report = render_text_report_with_sections(&input, &[&section]);
+/// assert!(report.contains("IMPEDANCE_SUMMARY\n"));
+/// assert!(report.contains("|Z|=75."));
+/// ```
+pub trait ReportSection {
+    /// Renders the custom section to a string.  The returned text is appended
+    /// after all standard sections.  Trailing newlines are the implementor's
+    /// responsibility.
+    fn render(&self) -> String;
+}
+
+/// Renders a text report and appends zero or more custom sections from EP-3
+/// implementors.
+///
+/// If `extra_sections` is empty this behaves identically to
+/// [`render_text_report`].
+///
+/// # Example
+///
+/// ```
+/// use nec_report::{ReportSection, FeedpointRow, ReportInput, render_text_report_with_sections};
+/// use num_complex::Complex64;
+///
+/// struct Banner;
+/// impl ReportSection for Banner {
+///     fn render(&self) -> String { "MY_SECTION\nhello world\n".to_string() }
+/// }
+///
+/// let row = FeedpointRow {
+///     tag: 1, seg: 1,
+///     v_source: Complex64::new(1.0, 0.0),
+///     current: Complex64::new(0.02, 0.0),
+///     z_in: Complex64::new(50.0, 0.0),
+/// };
+/// let input = ReportInput {
+///     solver_mode: "hallen", pulse_rhs: "Nec2",
+///     frequency_hz: 14e6,
+///     rows: &[row],
+///     source_table: &[], load_table: &[],
+///     current_table: &[], pattern_table: &[],
+/// };
+/// let report = render_text_report_with_sections(&input, &[&Banner]);
+/// assert!(report.contains("MY_SECTION\nhello world\n"));
+/// ```
+pub fn render_text_report_with_sections(
+    input: &ReportInput<'_>,
+    extra_sections: &[&dyn ReportSection],
+) -> String {
+    let mut out = render_text_report(input);
+    for section in extra_sections {
+        out.push('\n');
+        out.push_str(&section.render());
+    }
+    out
+}
+
 pub fn render_text_report(input: &ReportInput<'_>) -> String {
     let mut out = String::new();
 
@@ -467,5 +573,117 @@ mod tests {
         assert!(report.contains("TYPE TAG SEG I4 V_RE V_IM\n"));
         assert!(report.contains("N_LOADS 1\n"));
         assert!(report.contains("TYPE TAG SEG_FIRST SEG_LAST F1 F2 F3\n"));
+    }
+
+    // ── EP-3 ReportSection tests ────────────────────────────────────────
+
+    struct FixedSection(&'static str);
+    impl ReportSection for FixedSection {
+        fn render(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    fn minimal_input<'a>(rows: &'a [FeedpointRow]) -> ReportInput<'a> {
+        ReportInput {
+            solver_mode: "hallen",
+            pulse_rhs: "Nec2",
+            frequency_hz: 14_200_000.0,
+            rows,
+            source_table: &[],
+            load_table: &[],
+            current_table: &[],
+            pattern_table: &[],
+        }
+    }
+
+    #[test]
+    fn render_with_sections_no_extra_is_identical_to_base() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 26,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.013471, -0.002522),
+            z_in: Complex64::new(74.242874, 13.899516),
+        }];
+        let input = minimal_input(&rows);
+        assert_eq!(
+            render_text_report(&input),
+            render_text_report_with_sections(&input, &[])
+        );
+    }
+
+    #[test]
+    fn render_with_sections_appends_custom_section() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 1,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.02, 0.0),
+            z_in: Complex64::new(50.0, 0.0),
+        }];
+        let input = minimal_input(&rows);
+        let section = FixedSection("MY_SECTION\nsome data\n");
+        let report = render_text_report_with_sections(&input, &[&section]);
+        assert!(report.contains("MY_SECTION\nsome data\n"));
+        // Standard headers still present.
+        assert!(report.contains("FEEDPOINTS\n"));
+    }
+
+    #[test]
+    fn render_with_sections_multiple_sections_appended_in_order() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 1,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.02, 0.0),
+            z_in: Complex64::new(50.0, 0.0),
+        }];
+        let input = minimal_input(&rows);
+        let s1 = FixedSection("SECTION_A\n");
+        let s2 = FixedSection("SECTION_B\n");
+        let report = render_text_report_with_sections(&input, &[&s1, &s2]);
+        let a_pos = report.find("SECTION_A\n").expect("SECTION_A missing");
+        let b_pos = report.find("SECTION_B\n").expect("SECTION_B missing");
+        assert!(a_pos < b_pos, "sections should appear in order");
+    }
+
+    #[test]
+    fn ep3_summary_statistics_section_renders_impedance() {
+        let rows = [
+            FeedpointRow {
+                tag: 1,
+                seg: 1,
+                v_source: Complex64::new(1.0, 0.0),
+                current: Complex64::new(0.02, 0.0),
+                z_in: Complex64::new(50.0, 0.0),
+            },
+            FeedpointRow {
+                tag: 1,
+                seg: 26,
+                v_source: Complex64::new(1.0, 0.0),
+                current: Complex64::new(0.013471, -0.002522),
+                z_in: Complex64::new(74.242874, 13.899516),
+            },
+        ];
+
+        struct PeakImpedanceSection<'a>(&'a [FeedpointRow]);
+        impl ReportSection for PeakImpedanceSection<'_> {
+            fn render(&self) -> String {
+                let peak = self
+                    .0
+                    .iter()
+                    .map(|r| (r.z_in.re * r.z_in.re + r.z_in.im * r.z_in.im).sqrt())
+                    .fold(f64::NEG_INFINITY, f64::max);
+                format!("PEAK_IMPEDANCE\n|Z|_max={:.3}\n", peak)
+            }
+        }
+
+        let input = minimal_input(&rows);
+        let section = PeakImpedanceSection(&rows);
+        let report = render_text_report_with_sections(&input, &[&section]);
+        assert!(report.contains("PEAK_IMPEDANCE\n"));
+        // Peak |Z| ≈ sqrt(74.24² + 13.90²) ≈ 75.22 Ω
+        assert!(report.contains("|Z|_max=75."));
     }
 }
