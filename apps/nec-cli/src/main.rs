@@ -12,7 +12,7 @@ mod vars_config;
 mod warnings;
 
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
-use cli_args::{parse_args, ParsedArgs, USAGE};
+use cli_args::{parse_args, OutputFormat, ParsedArgs, USAGE};
 use exec_profile::{
     auto_select_execution_mode, detect_compatibility_profile, startup_execution_probe,
     steer_execution_mode_by_profile, warn_compatibility_profile, CompatibilityProfile,
@@ -62,6 +62,7 @@ fn main() -> ExitCode {
         enable_benchmarking,
         bench_format,
         enable_gpu_fr,
+        output_format,
         sweep_config_path,
         vars_path,
         path,
@@ -263,6 +264,7 @@ fn main() -> ExitCode {
     let bench_deck = path.display().to_string();
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
+    let mut json_records: Vec<String> = Vec::new();
 
     for (fidx, result, elapsed_ms) in solved {
         let solved_point = match result {
@@ -273,11 +275,27 @@ fn main() -> ExitCode {
             }
         };
 
-        if fidx > 0 {
-            println!();
+        if output_format == OutputFormat::Text {
+            if fidx > 0 {
+                println!();
+            }
+            print!("{}", solved_point.report);
         }
-        print!("{}", solved_point.report);
         if let Some(summary) = solved_point.sweep_summary {
+            if output_format == OutputFormat::Json {
+                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
+                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
+                json_records.push(format!(
+                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
+                    freq_mhz = summary.freq_mhz,
+                    tag = summary.tag,
+                    seg = summary.seg,
+                    z_re = summary.z_re,
+                    z_im = summary.z_im,
+                    z_abs = z_abs,
+                    z_arg_deg = z_arg_deg,
+                ));
+            }
             sweep_rows.push(summary);
         }
         eprintln!("{}", solved_point.diag_line);
@@ -306,7 +324,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if sweep_rows.len() > 1 {
+    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
         println!();
         println!("SWEEP_POINTS");
         println!("N_POINTS {}", sweep_rows.len());
@@ -317,6 +335,10 @@ fn main() -> ExitCode {
                 row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
             );
         }
+    }
+
+    if output_format == OutputFormat::Json {
+        println!("[{records}]", records = json_records.join(","));
     }
 
     ExitCode::SUCCESS

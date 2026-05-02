@@ -4,7 +4,13 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
 
 #[derive(Debug, Clone)]
 pub struct ParsedArgs {
@@ -14,6 +20,7 @@ pub struct ParsedArgs {
     pub enable_benchmarking: bool,
     pub bench_format: BenchFormat,
     pub enable_gpu_fr: bool,
+    pub output_format: OutputFormat,
     pub sweep_config_path: Option<PathBuf>,
     pub vars_path: Option<PathBuf>,
     pub path: PathBuf,
@@ -26,6 +33,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut enable_benchmarking = false;
     let mut bench_format = BenchFormat::Human;
     let mut enable_gpu_fr = false;
+    let mut output_format = OutputFormat::Text;
     let mut sweep_config_path: Option<PathBuf> = None;
     let mut vars_path: Option<PathBuf> = None;
     let mut deck_path: Option<PathBuf> = None;
@@ -118,6 +126,23 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--gpu-fr" => {
                 enable_gpu_fr = true;
             }
+            "--output-format" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --output-format (expected: text|json)".to_string()
+                    );
+                }
+                output_format = match args[i].as_str() {
+                    "text" => OutputFormat::Text,
+                    "json" => OutputFormat::Json,
+                    other => {
+                        return Err(format!(
+                            "invalid --output-format value '{other}' (expected: text|json)"
+                        ))
+                    }
+                };
+            }
             "--sweep-config" => {
                 i += 1;
                 if i >= args.len() {
@@ -159,6 +184,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         enable_benchmarking,
         bench_format,
         enable_gpu_fr,
+        output_format,
         sweep_config_path,
         vars_path,
         path,
