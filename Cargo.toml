@@ -13,7 +13,7 @@ members = [
     "apps/nec-gui",
     "apps/nec-tui",
 ]
-exclude = ["fuzz"]
+exclude = ["fuzz", "bindings/fnec_py"]
 resolver = "2"
 
 [workspace.package]

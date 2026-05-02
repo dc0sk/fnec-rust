@@ -12,6 +12,8 @@ All notable documentation process changes are recorded here.
 ## [0.4.0] — 2026-05-02
 ### Added
 
+- **PH4-CHK-004 (Python bindings)**: New `bindings/fnec_py/` crate (PyO3 0.23, cdylib). Exposes `solve_deck_str(deck: str) -> dict` and `sweep_deck_str(deck: str) -> list[dict]` returning `{freq_mhz, tag, seg, z_re, z_im, z_abs, z_arg_deg}`. Uses Hallen solver internally. Build: `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin develop` from `bindings/fnec_py/`. 8 smoke tests in `bindings/fnec_py/tests/test_smoke.py`. Build instructions in `docs/python-bindings.md`.
+
 - **PH4-CHK-003 (`--output-format json`)**: `fnec` now accepts `--output-format json` on all solve/sweep paths. Output is a JSON array — one record per frequency point — with fields `freq_mhz`, `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`. Text output unchanged when flag is omitted. Schema locked in `docs/json-output-schema.md` (schema v1). 5 contract tests in `apps/nec-cli/tests/json_output_contract.rs`.
 
 - **PH4-CHK-002 (EP-3 custom report sections)**: Added `ReportSection` trait and `render_text_report_with_sections()` to `nec_report`. Callers pass a `&[&dyn ReportSection]` slice; each section's `render()` output is appended after the standard report sections. Two doctests (`ImpedanceSummary`, `Banner`) and 4 unit tests (identity, single-section append, multi-section ordering, `PeakImpedanceSection` worked example). `docs/plugin-api-design.md` updated with EP-3 section description, revised pipeline diagram, and updated future-EP table (EP-4/5/6). `cargo test -p nec_report`: 11 unit tests + 3 doctests.

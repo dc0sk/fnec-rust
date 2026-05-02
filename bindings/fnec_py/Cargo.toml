@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+
+[package]
+name = "fnec_py"
+description = "Python bindings for fnec — expose NEC deck solve/sweep via PyO3"
+version = "0.4.0"
+authors = ["Simon Keimer (DC0SK)"]
+license = "GPL-3.0-only"
+edition = "2021"
+rust-version = "1.75"
+
+[lib]
+name = "fnec_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+nec_parser  = { path = "../../crates/nec_parser" }
+nec_solver  = { path = "../../crates/nec_solver" }
+nec_model   = { path = "../../crates/nec_model" }
+num-complex = "0.4"
+pyo3 = { version = "0.23", features = ["extension-module"] }
