@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Simon Keimer (DC0SK)
+#
+# cargo-deny configuration for fnec-rust.
+# Run: cargo deny check licenses
+# See: docs/dependency-policy.md
+
+[graph]
+# Analyse the full dependency graph (all features, all targets).
+all-features = false
+targets = []
+
+# ── Licenses ──────────────────────────────────────────────────────────────────
+[licenses]
+version = 2
+
+# Allowed SPDX expressions.  All must be compatible with GPL-3.0-only.
+allow = [
+    # Our own workspace crates
+    "GPL-3.0-only",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "CC0-1.0",
+    "0BSD",
+    "BSL-1.0",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    # LGPL-2.1-or-later is compatible with GPL-3.0-only when linked dynamically
+    # or when the LGPL "or later" clause is exercised as LGPL-3.0.
+    # r-efi is MIT OR Apache-2.0 OR LGPL-2.1-or-later — we use MIT or Apache-2.0.
+    "LGPL-2.1-or-later",
+]
+
+# Exceptions for crates whose SPDX expression requires explicit acknowledgement.
+# See docs/dependency-policy.md § Exception process.
+[[licenses.exceptions]]
+# self_cell is Apache-2.0 OR GPL-2.0-only.
+# We use self_cell under the Apache-2.0 option.  GPL-2.0-only is NOT chosen.
+# Rationale: multi-license crate; Apache-2.0 is GPL-3.0-compatible.
+# Review date: 2026-05-02.  Re-review on any version bump to self_cell.
+allow = ["Apache-2.0", "GPL-2.0-only"]
+name = "self_cell"
+version = "*"
+
+# ── Advisories ────────────────────────────────────────────────────────────────
+[advisories]
+version = 2
+# Treat all unignored security advisories as errors.
+ignore = []
+
+# ── Bans ──────────────────────────────────────────────────────────────────────
+[bans]
+# Warn (not error) on duplicate versions to keep the graph clean without
+# blocking CI on transitive duplicates outside our control.
+multiple-versions = "warn"
+
+# ── Sources ───────────────────────────────────────────────────────────────────
+[sources]
+# Only crates.io and local path crates are permitted.
+unknown-registry = "deny"
+unknown-git = "deny"
