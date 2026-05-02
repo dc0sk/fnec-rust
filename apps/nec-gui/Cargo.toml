@@ -10,9 +10,18 @@ license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "nec_gui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "fnec-gui"
 path = "src/main.rs"
 
 [dependencies]
+nec_model   = { workspace = true }
+nec_parser  = { workspace = true }
+nec_solver  = { workspace = true }
 nec_project = { workspace = true }
+num-complex = { workspace = true }
+iced        = "0.13"

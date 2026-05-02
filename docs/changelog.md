@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-01
+last_updated: 2026-05-02
 ---
 
 # Changelog
@@ -10,7 +10,9 @@ last_updated: 2026-05-01
 All notable documentation process changes are recorded here.
 
 ## [0.3.0] — 2026-05-01
+### Added
 
+- **PH3-CHK-009 (nec-gui iced desktop window)**: Implemented the `fnec-gui` desktop frontend using `iced` 0.13. The binary presents a dark-themed window with a deck path text input, a Solve button, and a result panel showing frequency, Z_re, Z_im, and |Z|. The solve pipeline runs asynchronously via `Task::perform`. Implementation split: `apps/nec-gui/src/lib.rs` + `app_state.rs` (state machine — no iced dep, fully headless-testable) + `solve.rs` (Hallen solve wrapper calling `nec_solver` directly). Added 13 headless smoke tests in `apps/nec-gui/tests/gui_smoke.rs` covering state machine transitions (8 tests) and solve pipeline correctness (5 tests). Added `.github/workflows/gui-smoke.yml` CI gate running `cargo test -p nec-gui --test gui_smoke`.
 ### Added
 
 - **PH3-CHK-008 (resonance-targeting helper)**: Added `fnec sweep --resonance <file.nec.toml>` subcommand that binary-searches one template variable to find the feedpoint reactance closest to a target (typically 0 Ω for series resonance). The `.nec.toml` file embeds both a `[search]` table (variable name, lo/hi bounds, target reactance, tolerance, max iterations) and a `[deck]` table containing the NEC template string. Implementation: `apps/nec-cli/src/resonance_search.rs` (`ResonanceFile` TOML struct, `bisect()` function, `print_result()`). Integrates with the template engine from PH3-CHK-007 and re-runs the full geometry/solve pipeline for each probe point. Added `examples/resonance-search.nec.toml` worked example (14.2 MHz dipole resonance search); added 3 contract tests in `apps/nec-cli/tests/resonance_contract.rs` (convergence, unbounded-range error, missing-flag usage error).
