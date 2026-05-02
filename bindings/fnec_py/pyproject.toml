@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fnec_py"
+version = "0.4.0"
+description = "Python bindings for fnec — solve NEC antenna decks from Python"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-only" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+
+[tool.maturin]
+module-name = "fnec_py"
+manifest-path = "Cargo.toml"
+features = ["pyo3/extension-module"]
