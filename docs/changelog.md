@@ -9,7 +9,7 @@ last_updated: 2026-05-02
 
 All notable documentation process changes are recorded here.
 
-## [0.3.0] — 2026-05-02
+## [0.4.0] — 2026-05-02
 ### Added
 
 - **PH3-CHK-012 (Phase 3 usability benchmark)**: Authored `docs/usability-benchmark-ph3.md` satisfying all three Phase 3 usability acceptance minima. Benchmark 1 records the 5-point frequency sweep from a blank `fnec-gui` project in exactly **7 explicit actions** with a step-by-step table. Benchmark 2 records an edit-run-inspect workflow comparison against xnec2c: fnec-gui completes in 4 steps (~15 s) vs. xnec2c's 5 steps (~22 s). The document includes the acceptance-minima checklist with all items ticked.
