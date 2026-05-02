@@ -44,7 +44,7 @@ All developers must have these hooks active before pushing:
 A version bump is not complete until all of the following are done in the same PR:
 
 1. Update `version` field in the workspace `Cargo.toml`.
-2. Regenerate the machine-readable SBOM in SPDX format: `cargo sbom --output-format spdx-json > SBOM.spdx.json`
+2. Regenerate the machine-readable SBOM in SPDX format: `cargo sbom --output-format spdx_json_2_3 > SBOM.spdx.json`
 3. Update `docs/changelog.md`: move all items from the `## Unreleased` section into a new dated release section `## X.Y.Z — YYYY-MM-DD`.
 4. Update `docs/releasenotes.md`: write a curated, user-facing summary for the new version.
 5. Update any version references in `docs/sbom.md` for internal project crates.
