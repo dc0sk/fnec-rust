@@ -93,7 +93,38 @@ pub trait ResultFilter {
 (`DropHighImpedance` example — verifies the trait is callable and the filter
 correctly passes or drops rows based on `z_in.re`).
 
-## Pipeline integration diagram
+### EP-3 — `ReportSection` (`nec_report` crate)
+
+**Stage**: after all standard report sections have been rendered.
+
+**Signature** (in `crates/nec_report/src/lib.rs`):
+
+```rust
+pub trait ReportSection {
+    fn render(&self) -> String;
+}
+
+pub fn render_text_report_with_sections(
+    input: &ReportInput<'_>,
+    extra_sections: &[&dyn ReportSection],
+) -> String;
+```
+
+**Intended uses**:
+
+- Appending a summary statistics block (e.g. peak |Z|, SWR, resonant frequency)
+  for use in sweep post-processing output.
+- Injecting a custom legend or metadata block into a saved report file.
+- Attaching per-run notes, git-revision stamps, or operator comments.
+- Composing multi-section reports that combine standard and custom output
+  without forking the rendering pipeline.
+
+**Exercised by**: the doctests in `crates/nec_report/src/lib.rs`
+(`ImpedanceSummary` and `Banner` examples — verify `render()` is called
+and its output appears after the standard sections).  Four additional unit
+tests in the `tests` module cover: no-extra-sections identity, single
+section append, multiple-section ordering, and a `PeakImpedanceSection`
+worked example.
 
 ```
 NEC deck file
@@ -111,7 +142,10 @@ NEC deck file
  Vec<FeedpointRow>  ◄──── EP-2: ResultFilter::filter(&rows)
      │
      ▼
- render_text_report()  →  stdout / report file
+ render_text_report_with_sections()  ◄── EP-3: ReportSection::render()
+     │
+     ▼
+ stdout / report file
 ```
 
 ## Planned future extension points
@@ -122,9 +156,9 @@ visible:
 
 | ID | Stage | Crate | Purpose |
 |:---|:------|:------|:--------|
-| EP-3 | After pattern computation | `nec_report` | `PatternFilter` — post-process `PatternRow` slice |
-| EP-4 | After full report render | `nec_report` | `ReportSectionAppender` — append custom text sections |
-| EP-5 | Before geometry build | `nec_solver` | `SegmentTransform` — modify the `Segment` list |
+| EP-4 | Before geometry build | `nec_solver` | `DeckValidator` — inject custom semantic validation rules before geometry resolution |
+| EP-5 | After pattern computation | `nec_report` | `PatternFilter` — post-process `PatternRow` slice |
+| EP-6 | After geometry build | `nec_solver` | `SegmentTransform` — modify the `Segment` list |
 
 ## BLK-004 resolved signal
 
