@@ -10,8 +10,13 @@
 
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Element, Length, Task, Theme};
-use nec_gui::app_state::{ActiveTab, AppState, Message, SolvePhase, SweepPhase, SweepSortCol};
-use nec_gui::solve::{solve_deck_path, sweep_deck_path, SolveResult, SweepPoint};
+use nec_gui::app_state::{
+    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
+};
+use nec_gui::solve::{
+    current_distribution_deck_path, pattern_slice_deck_path, solve_deck_path, sweep_deck_path,
+    SolveResult, SweepPoint,
+};
 use std::path::PathBuf;
 
 fn main() -> iced::Result {
@@ -30,6 +35,8 @@ impl FnecGui {
     fn update(&mut self, message: Message) -> Task<Message> {
         let spawn_solve = matches!(message, Message::Solve);
         let spawn_sweep = matches!(message, Message::RunSweep);
+        let spawn_pattern = matches!(message, Message::RunPattern);
+        let spawn_currents = matches!(message, Message::RunCurrents);
         self.state.apply(&message);
 
         if spawn_solve {
@@ -55,6 +62,26 @@ impl FnecGui {
                     Task::none()
                 }
             }
+        } else if spawn_pattern {
+            match self.state.pattern_phi() {
+                Ok(phi_deg) => {
+                    let path = PathBuf::from(self.state.deck_path.clone());
+                    Task::perform(
+                        async move { pattern_slice_deck_path(&path, phi_deg) },
+                        Message::PatternComplete,
+                    )
+                }
+                Err(e) => {
+                    self.state.apply(&Message::PatternComplete(Err(e)));
+                    Task::none()
+                }
+            }
+        } else if spawn_currents {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            Task::perform(
+                async move { current_distribution_deck_path(&path) },
+                Message::CurrentsComplete,
+            )
         } else {
             Task::none()
         }
@@ -72,7 +99,17 @@ impl FnecGui {
         } else {
             button("  Sweep  ").on_press(Message::TabSelected(ActiveTab::Sweep))
         };
-        let tab_bar = row![tab_solve, tab_sweep].spacing(4);
+        let tab_pattern = if self.state.active_tab == ActiveTab::Pattern {
+            button("[ Pattern ]").on_press(Message::TabSelected(ActiveTab::Pattern))
+        } else {
+            button("  Pattern  ").on_press(Message::TabSelected(ActiveTab::Pattern))
+        };
+        let tab_currents = if self.state.active_tab == ActiveTab::Currents {
+            button("[ Currents ]").on_press(Message::TabSelected(ActiveTab::Currents))
+        } else {
+            button("  Currents  ").on_press(Message::TabSelected(ActiveTab::Currents))
+        };
+        let tab_bar = row![tab_solve, tab_sweep, tab_pattern, tab_currents].spacing(4);
 
         // ── Shared deck-path row ─────────────────────────────────────────
         let path_row = row![
@@ -88,6 +125,8 @@ impl FnecGui {
         let tab_content: Element<Message> = match self.state.active_tab {
             ActiveTab::Solve => self.solve_view(),
             ActiveTab::Sweep => self.sweep_view(),
+            ActiveTab::Pattern => self.pattern_view(),
+            ActiveTab::Currents => self.currents_view(),
         };
 
         let content = column![tab_bar, path_row, tab_content]
@@ -231,6 +270,120 @@ fn sweep_row(pt: SweepPoint) -> Element<'static, Message> {
         text(format!("{:.3}", pt.z_re)).width(Length::Fixed(110.0)),
         text(format!("{:+.3}", pt.z_im)).width(Length::Fixed(110.0)),
         text(format!("{:.3}", zmag)).width(Length::Fixed(110.0)),
+    ]
+    .spacing(4)
+    .into()
+}
+
+// ── FnecGui methods for the new tabs (PH3-CHK-011) ───────────────────────────
+
+impl FnecGui {
+    // ── Pattern view ─────────────────────────────────────────────────────
+    fn pattern_view(&self) -> Element<'_, Message> {
+        let phi_row = row![
+            text("Azimuth φ (°):").width(Length::Fixed(110.0)),
+            text_input("e.g. 0", &self.state.pattern_phi_deg)
+                .on_input(Message::PatternPhiChanged)
+                .width(Length::Fixed(80.0)),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        let run_btn = if self.state.can_run_pattern() {
+            button("Run Pattern").on_press(Message::RunPattern)
+        } else {
+            button("Run Pattern")
+        };
+
+        let status = text(self.state.pattern_status_text());
+
+        let result_section: Element<Message> = match &self.state.pattern_phase {
+            PatternPhase::Done(_) => pattern_table(self),
+            _ => text("").into(),
+        };
+
+        column![phi_row, run_btn, status, result_section]
+            .spacing(8)
+            .into()
+    }
+
+    // ── Currents view ─────────────────────────────────────────────────────
+    fn currents_view(&self) -> Element<'_, Message> {
+        let run_btn = if self.state.can_run_currents() {
+            button("Run Currents").on_press(Message::RunCurrents)
+        } else {
+            button("Run Currents")
+        };
+
+        let status = text(self.state.currents_status_text());
+
+        let result_section: Element<Message> = match &self.state.currents_phase {
+            CurrentsPhase::Done(_) => currents_bars(self),
+            _ => text("").into(),
+        };
+
+        column![run_btn, status, result_section].spacing(8).into()
+    }
+}
+
+/// Pattern slice result table: θ column + gain dBi column + text bar.
+fn pattern_table(app: &FnecGui) -> Element<'_, Message> {
+    let rows = app.state.pattern_display_rows();
+
+    let header = row![
+        text("θ (°)").width(Length::Fixed(70.0)),
+        text("Gain (dBi)").width(Length::Fixed(90.0)),
+        text("Pattern").width(Length::Fill),
+    ]
+    .spacing(4);
+
+    let mut col = column![header].spacing(2);
+    for r in rows.into_iter() {
+        col = col.push(pattern_row(r));
+    }
+
+    scrollable(col).height(Length::Fixed(300.0)).into()
+}
+
+fn pattern_row(r: nec_gui::app_state::PatternDisplayRow) -> Element<'static, Message> {
+    // Bar: '█' chars scaled to 0..40 columns.
+    let bar_len = (r.bar_width_frac * 40.0).round() as usize;
+    let bar: String = "█".repeat(bar_len);
+    row![
+        text(format!("{:5.1}", r.theta_deg)).width(Length::Fixed(70.0)),
+        text(format!("{:+7.2}", r.gain_dbi)).width(Length::Fixed(90.0)),
+        text(bar).width(Length::Fill),
+    ]
+    .spacing(4)
+    .into()
+}
+
+/// Current-distribution bar chart.
+fn currents_bars(app: &FnecGui) -> Element<'_, Message> {
+    let bars = app.state.current_display_bars();
+
+    let header = row![
+        text("Seg").width(Length::Fixed(50.0)),
+        text("|I| (mA)").width(Length::Fixed(90.0)),
+        text("Magnitude").width(Length::Fill),
+    ]
+    .spacing(4);
+
+    let mut col = column![header].spacing(2);
+    for b in bars.into_iter() {
+        col = col.push(current_bar_row(b));
+    }
+
+    scrollable(col).height(Length::Fixed(300.0)).into()
+}
+
+fn current_bar_row(b: nec_gui::app_state::CurrentDisplayBar) -> Element<'static, Message> {
+    let bar_len = (b.bar_width_frac * 40.0).round() as usize;
+    let bar: String = "█".repeat(bar_len);
+    row![
+        text(format!("{:4}", b.seg_idx)).width(Length::Fixed(50.0)),
+        text(format!("{:8.4}", b.current_mag_ma)).width(Length::Fixed(90.0)),
+        text(bar).width(Length::Fill),
     ]
     .spacing(4)
     .into()

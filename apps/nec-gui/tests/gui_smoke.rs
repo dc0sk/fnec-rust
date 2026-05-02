@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 //
-// Headless smoke tests for nec-gui (PH3-CHK-009 + PH3-CHK-010).
+// Headless smoke tests for nec-gui (PH3-CHK-009 + PH3-CHK-010 + PH3-CHK-011).
 //
 // These tests exercise the AppState state machine and the solve pipeline
 // without opening an iced window.  They are the CI gate for this feature.
 
-use nec_gui::app_state::{ActiveTab, AppState, Message, SolvePhase, SweepPhase, SweepSortCol};
-use nec_gui::solve::{solve_deck_path, solve_deck_str, sweep_deck_str, SolveResult, SweepPoint};
+use nec_gui::app_state::{
+    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
+};
+use nec_gui::solve::{
+    current_distribution_deck_str, pattern_slice_deck_str, solve_deck_path, solve_deck_str,
+    sweep_deck_str, CurrentPoint, PatternPoint, SolveResult, SweepPoint,
+};
 use std::path::PathBuf;
 
 // ── State machine tests ──────────────────────────────────────────────────────
@@ -415,4 +420,344 @@ fn sweep_deck_str_rejects_zero_step() {
 fn sweep_deck_str_rejects_start_ge_end() {
     let result = sweep_deck_str(DIPOLE_DECK, 15.0, 14.0, 0.5);
     assert!(result.is_err(), "expected Err for start >= end");
+}
+
+// ── Pattern state machine tests (PH3-CHK-011) ─────────────────────────────────
+
+/// Pattern state starts Idle with a default phi field.
+#[test]
+fn pattern_initial_state_is_idle() {
+    let state = AppState::default();
+    assert_eq!(state.pattern_phase, PatternPhase::Idle);
+    assert!(!state.pattern_phi_deg.is_empty());
+}
+
+/// RunPattern transitions pattern phase to Running.
+#[test]
+fn run_pattern_transitions_to_running() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunPattern);
+    assert_eq!(state.pattern_phase, PatternPhase::Running);
+    assert!(
+        !state.can_run_pattern(),
+        "button should be disabled while running"
+    );
+}
+
+/// PatternComplete(Ok) transitions to Done.
+#[test]
+fn pattern_complete_ok_transitions_to_done() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunPattern);
+    let pts = vec![
+        PatternPoint {
+            theta_deg: 0.0,
+            phi_deg: 0.0,
+            gain_total_dbi: -10.0,
+        },
+        PatternPoint {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+            gain_total_dbi: 2.15,
+        },
+        PatternPoint {
+            theta_deg: 180.0,
+            phi_deg: 0.0,
+            gain_total_dbi: -10.0,
+        },
+    ];
+    state.apply(&Message::PatternComplete(Ok(pts)));
+    assert!(matches!(state.pattern_phase, PatternPhase::Done(_)));
+    assert!(
+        state.can_run_pattern(),
+        "button should re-enable after done"
+    );
+}
+
+/// PatternComplete(Err) transitions to Failed.
+#[test]
+fn pattern_complete_err_transitions_to_failed() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunPattern);
+    state.apply(&Message::PatternComplete(Err("no FR card".into())));
+    assert!(matches!(state.pattern_phase, PatternPhase::Failed(_)));
+}
+
+/// PatternPhiChanged updates the phi field.
+#[test]
+fn pattern_phi_changed_updates_field() {
+    let mut state = AppState::default();
+    state.apply(&Message::PatternPhiChanged("90.0".into()));
+    assert_eq!(state.pattern_phi_deg, "90.0");
+    let phi = state.pattern_phi().expect("valid float");
+    assert!((phi - 90.0).abs() < 1e-9);
+}
+
+/// pattern_phi rejects a non-float string.
+#[test]
+fn pattern_phi_rejects_non_float() {
+    let mut state = AppState::default();
+    state.apply(&Message::PatternPhiChanged("bad".into()));
+    assert!(state.pattern_phi().is_err());
+}
+
+// ── Currents state machine tests (PH3-CHK-011) ────────────────────────────────
+
+/// Currents state starts Idle.
+#[test]
+fn currents_initial_state_is_idle() {
+    let state = AppState::default();
+    assert_eq!(state.currents_phase, CurrentsPhase::Idle);
+}
+
+/// RunCurrents transitions to Running.
+#[test]
+fn run_currents_transitions_to_running() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunCurrents);
+    assert_eq!(state.currents_phase, CurrentsPhase::Running);
+    assert!(!state.can_run_currents());
+}
+
+/// CurrentsComplete(Ok) transitions to Done.
+#[test]
+fn currents_complete_ok_transitions_to_done() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunCurrents);
+    let pts = vec![
+        CurrentPoint {
+            seg_idx: 0,
+            position_m: 0.0,
+            current_mag_ma: 0.5,
+        },
+        CurrentPoint {
+            seg_idx: 1,
+            position_m: 0.1,
+            current_mag_ma: 1.0,
+        },
+    ];
+    state.apply(&Message::CurrentsComplete(Ok(pts)));
+    assert!(matches!(state.currents_phase, CurrentsPhase::Done(_)));
+}
+
+// ── Data-to-plot mapping tests (PH3-CHK-011) ──────────────────────────────────
+
+/// pattern_display_rows returns one row per point with frac in [0, 1].
+#[test]
+fn pattern_display_rows_frac_in_range() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunPattern);
+    let pts = vec![
+        PatternPoint {
+            theta_deg: 0.0,
+            phi_deg: 0.0,
+            gain_total_dbi: -10.0,
+        },
+        PatternPoint {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+            gain_total_dbi: 2.15,
+        },
+        PatternPoint {
+            theta_deg: 180.0,
+            phi_deg: 0.0,
+            gain_total_dbi: -5.0,
+        },
+    ];
+    state.apply(&Message::PatternComplete(Ok(pts)));
+    let rows = state.pattern_display_rows();
+    assert_eq!(rows.len(), 3);
+    for r in &rows {
+        assert!(
+            r.bar_width_frac >= 0.0 && r.bar_width_frac <= 1.0,
+            "bar_width_frac out of range: {}",
+            r.bar_width_frac
+        );
+    }
+    // Peak gain row gets frac = 1.0
+    let peak = rows
+        .iter()
+        .max_by(|a, b| a.gain_dbi.partial_cmp(&b.gain_dbi).unwrap())
+        .unwrap();
+    assert!(
+        (peak.bar_width_frac - 1.0).abs() < 1e-9,
+        "peak bar_width_frac should be 1.0, got {}",
+        peak.bar_width_frac
+    );
+}
+
+/// current_display_bars returns correct normalisation: peak segment gets frac = 1.
+#[test]
+fn current_display_bars_peak_is_one() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("foo.nec".into()));
+    state.apply(&Message::RunCurrents);
+    let pts = vec![
+        CurrentPoint {
+            seg_idx: 0,
+            position_m: 0.0,
+            current_mag_ma: 0.1,
+        },
+        CurrentPoint {
+            seg_idx: 1,
+            position_m: 0.05,
+            current_mag_ma: 5.0,
+        },
+        CurrentPoint {
+            seg_idx: 2,
+            position_m: 0.1,
+            current_mag_ma: 2.0,
+        },
+    ];
+    state.apply(&Message::CurrentsComplete(Ok(pts)));
+    let bars = state.current_display_bars();
+    assert_eq!(bars.len(), 3);
+    let peak = bars
+        .iter()
+        .max_by(|a, b| a.current_mag_ma.partial_cmp(&b.current_mag_ma).unwrap())
+        .unwrap();
+    assert!(
+        (peak.bar_width_frac - 1.0).abs() < 1e-9,
+        "peak frac should be 1.0, got {}",
+        peak.bar_width_frac
+    );
+    for b in &bars {
+        assert!(
+            b.bar_width_frac >= 0.0 && b.bar_width_frac <= 1.0,
+            "bar_width_frac out of range: {}",
+            b.bar_width_frac
+        );
+    }
+}
+
+/// pattern_display_rows returns empty Vec when pattern is not Done.
+#[test]
+fn pattern_display_rows_empty_when_not_done() {
+    let state = AppState::default();
+    assert!(state.pattern_display_rows().is_empty());
+}
+
+/// current_display_bars returns empty Vec when currents are not Done.
+#[test]
+fn current_display_bars_empty_when_not_done() {
+    let state = AppState::default();
+    assert!(state.current_display_bars().is_empty());
+}
+
+// ── Pattern pipeline tests (PH3-CHK-011) ──────────────────────────────────────
+
+/// pattern_slice_deck_str produces 37 elevation points for a free-space dipole.
+#[test]
+fn pattern_slice_deck_str_produces_elevation_slice() {
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    // 0, 5, 10, … 180 deg → 37 points
+    assert_eq!(pts.len(), 37, "expected 37 theta points, got {}", pts.len());
+}
+
+/// Pattern theta values span 0..=180 in 5° steps.
+#[test]
+fn pattern_slice_theta_grid_is_correct() {
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    for (i, pt) in pts.iter().enumerate() {
+        let expected = i as f64 * 5.0;
+        assert!(
+            (pt.theta_deg - expected).abs() < 1e-9,
+            "theta[{i}] = {} expected {expected}",
+            pt.theta_deg
+        );
+    }
+}
+
+/// For a free-space dipole the equatorial gain (θ=90°) should exceed the
+/// end-fire gain (θ=0°) — the dipole radiates broadside, not end-fire.
+#[test]
+fn pattern_slice_dipole_broadside_exceeds_endfire() {
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    let endfire = pts
+        .iter()
+        .find(|p| p.theta_deg == 0.0)
+        .unwrap()
+        .gain_total_dbi;
+    let broadside = pts
+        .iter()
+        .find(|p| p.theta_deg == 90.0)
+        .unwrap()
+        .gain_total_dbi;
+    assert!(
+        broadside > endfire,
+        "broadside ({broadside:.2} dBi) should exceed end-fire ({endfire:.2} dBi)"
+    );
+}
+
+/// pattern_slice_deck_str on the corpus free-space dipole renders correctly.
+#[test]
+fn pattern_slice_corpus_dipole_freesp() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let pts = pattern_slice_deck_str(
+        &std::fs::read_to_string(&deck_path)
+            .unwrap_or_else(|e| panic!("cannot read corpus file: {e}")),
+        0.0,
+    )
+    .expect("pattern failed for corpus dipole");
+    assert_eq!(pts.len(), 37);
+    // Peak gain for a half-wave dipole should be close to 2.15 dBi.
+    let max_gain = pts
+        .iter()
+        .map(|p| p.gain_total_dbi)
+        .filter(|&g| g > -500.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        max_gain > 1.5 && max_gain < 3.5,
+        "peak gain {max_gain:.2} dBi outside expected 1.5–3.5 dBi range"
+    );
+}
+
+// ── Current distribution pipeline tests (PH3-CHK-011) ────────────────────────
+
+/// current_distribution_deck_str returns one entry per segment.
+#[test]
+fn current_distribution_segment_count() {
+    let pts = current_distribution_deck_str(DIPOLE_DECK).expect("currents failed");
+    // DIPOLE_DECK has GW with 51 segments.
+    assert_eq!(pts.len(), 51, "expected 51 segments, got {}", pts.len());
+}
+
+/// Peak current magnitude is at or near the feedpoint (segment ~26 for a 51-seg
+/// half-wave dipole).
+#[test]
+fn current_distribution_peak_near_feedpoint() {
+    let pts = current_distribution_deck_str(DIPOLE_DECK).expect("currents failed");
+    let peak_idx = pts
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.current_mag_ma.partial_cmp(&b.current_mag_ma).unwrap())
+        .map(|(i, _)| i)
+        .unwrap();
+    // Feedpoint is segment 25 (0-based middle of 51), allow ±3.
+    assert!(
+        peak_idx >= 22 && peak_idx <= 28,
+        "peak current at segment {peak_idx}, expected near 25"
+    );
+}
+
+/// current_distribution_deck_str on the corpus dipole produces valid data.
+#[test]
+fn current_distribution_corpus_dipole_freesp() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let pts = current_distribution_deck_str(
+        &std::fs::read_to_string(&deck_path)
+            .unwrap_or_else(|e| panic!("cannot read corpus file: {e}")),
+    )
+    .expect("currents failed for corpus dipole");
+    assert!(!pts.is_empty(), "expected at least one segment");
+    let any_nonzero = pts.iter().any(|p| p.current_mag_ma > 1e-6);
+    assert!(any_nonzero, "all currents are effectively zero");
 }

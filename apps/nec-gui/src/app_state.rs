@@ -7,7 +7,7 @@
 //! The iced binary wraps [`AppState`] and calls [`AppState::apply`] from its
 //! `update` function.  Integration tests call it directly without a display.
 
-use crate::solve::{SolveResult, SweepPoint};
+use crate::solve::{CurrentPoint, PatternPoint, SolveResult, SweepPoint};
 
 /// Active view tab.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -17,6 +17,10 @@ pub enum ActiveTab {
     Solve,
     /// Frequency-range sweep.
     Sweep,
+    /// 2-D elevation-plane radiation pattern.
+    Pattern,
+    /// Segment current-distribution bar chart.
+    Currents,
 }
 
 /// Current phase of the single-frequency solver pipeline.
@@ -43,6 +47,26 @@ pub enum SweepPhase {
     Failed(String),
 }
 
+/// Current phase of the pattern computation pipeline.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum PatternPhase {
+    #[default]
+    Idle,
+    Running,
+    Done(Vec<PatternPoint>),
+    Failed(String),
+}
+
+/// Current phase of the current-distribution pipeline.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum CurrentsPhase {
+    #[default]
+    Idle,
+    Running,
+    Done(Vec<CurrentPoint>),
+    Failed(String),
+}
+
 /// Top-level application state.
 #[derive(Debug)]
 pub struct AppState {
@@ -65,6 +89,14 @@ pub struct AppState {
     pub sweep_sort_asc: bool,
     /// Sweep pipeline phase.
     pub sweep_phase: SweepPhase,
+    // ── Pattern tab state ──────────────────────────────────────────────────
+    /// Azimuth angle (φ, degrees) for the elevation-plane pattern slice.
+    pub pattern_phi_deg: String,
+    /// Pattern computation phase.
+    pub pattern_phase: PatternPhase,
+    // ── Currents tab state ─────────────────────────────────────────────────
+    /// Current-distribution phase.
+    pub currents_phase: CurrentsPhase,
 }
 
 impl Default for AppState {
@@ -79,6 +111,9 @@ impl Default for AppState {
             sweep_sort_col: SweepSortCol::FreqMhz,
             sweep_sort_asc: true,
             sweep_phase: SweepPhase::default(),
+            pattern_phi_deg: "0.0".into(),
+            pattern_phase: PatternPhase::default(),
+            currents_phase: CurrentsPhase::default(),
         }
     }
 }
@@ -119,6 +154,18 @@ pub enum Message {
     SweepComplete(Result<Vec<SweepPoint>, String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
+    // ── Pattern tab ───────────────────────────────────────────────────────
+    /// User edited the pattern azimuth angle.
+    PatternPhiChanged(String),
+    /// User clicked Run Pattern.
+    RunPattern,
+    /// Background pattern computation completed.
+    PatternComplete(Result<Vec<PatternPoint>, String>),
+    // ── Currents tab ──────────────────────────────────────────────────────
+    /// User clicked Run Currents.
+    RunCurrents,
+    /// Background current-distribution computation completed.
+    CurrentsComplete(Result<Vec<CurrentPoint>, String>),
 }
 
 impl AppState {
@@ -165,6 +212,25 @@ impl AppState {
                     self.sweep_sort_asc = true;
                 }
             }
+            Message::PatternPhiChanged(s) => self.pattern_phi_deg = s.clone(),
+            Message::RunPattern => {
+                self.pattern_phase = PatternPhase::Running;
+            }
+            Message::PatternComplete(Ok(pts)) => {
+                self.pattern_phase = PatternPhase::Done(pts.clone());
+            }
+            Message::PatternComplete(Err(e)) => {
+                self.pattern_phase = PatternPhase::Failed(e.clone());
+            }
+            Message::RunCurrents => {
+                self.currents_phase = CurrentsPhase::Running;
+            }
+            Message::CurrentsComplete(Ok(pts)) => {
+                self.currents_phase = CurrentsPhase::Done(pts.clone());
+            }
+            Message::CurrentsComplete(Err(e)) => {
+                self.currents_phase = CurrentsPhase::Failed(e.clone());
+            }
         }
     }
 
@@ -176,6 +242,23 @@ impl AppState {
     /// Returns `true` when the Run Sweep button should be enabled.
     pub fn can_sweep(&self) -> bool {
         !self.deck_path.is_empty() && !matches!(self.sweep_phase, SweepPhase::Running)
+    }
+
+    /// Returns `true` when the Run Pattern button should be enabled.
+    pub fn can_run_pattern(&self) -> bool {
+        !self.deck_path.is_empty() && !matches!(self.pattern_phase, PatternPhase::Running)
+    }
+
+    /// Parse the pattern phi angle; returns `Err` if it is not a valid float.
+    pub fn pattern_phi(&self) -> Result<f64, String> {
+        self.pattern_phi_deg
+            .parse::<f64>()
+            .map_err(|_| format!("invalid azimuth angle: '{}'", self.pattern_phi_deg))
+    }
+
+    /// Returns `true` when the Run Currents button should be enabled.
+    pub fn can_run_currents(&self) -> bool {
+        !self.deck_path.is_empty() && !matches!(self.currents_phase, CurrentsPhase::Running)
     }
 
     /// Parse sweep parameters; returns `Err` with a diagnostic if any field
@@ -244,6 +327,97 @@ impl AppState {
             SweepPhase::Failed(e) => format!("Error: {e}"),
         }
     }
+
+    /// Human-readable status line for the pattern tab.
+    pub fn pattern_status_text(&self) -> String {
+        match &self.pattern_phase {
+            PatternPhase::Idle => String::from("Enter an azimuth angle φ and click Run Pattern."),
+            PatternPhase::Running => String::from("Computing pattern…"),
+            PatternPhase::Done(pts) => format!("Done — {} points", pts.len()),
+            PatternPhase::Failed(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Human-readable status line for the currents tab.
+    pub fn currents_status_text(&self) -> String {
+        match &self.currents_phase {
+            CurrentsPhase::Idle => String::from("Click Run Currents to compute the distribution."),
+            CurrentsPhase::Running => String::from("Computing currents…"),
+            CurrentsPhase::Done(pts) => format!("Done — {} segments", pts.len()),
+            CurrentsPhase::Failed(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// Map pattern points to display rows with a normalised bar-width fraction
+    /// (0 = minimum, 1 = maximum gain point).
+    ///
+    /// Gain values are normalised linearly relative to the maximum.  Points
+    /// below the minimum are clamped to 0.  Suitable for rendering a polar bar.
+    pub fn pattern_display_rows(&self) -> Vec<PatternDisplayRow> {
+        let PatternPhase::Done(pts) = &self.pattern_phase else {
+            return Vec::new();
+        };
+        // Clamp extremely negative sentinel values (-999.99 dB) before normalising.
+        let valid: Vec<f64> = pts
+            .iter()
+            .map(|p| p.gain_total_dbi)
+            .filter(|&g| g > -500.0)
+            .collect();
+        if valid.is_empty() {
+            return Vec::new();
+        }
+        let max_g = valid.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_g = valid.iter().cloned().fold(f64::INFINITY, f64::min);
+        let range = (max_g - min_g).max(1e-12);
+
+        pts.iter()
+            .map(|p| {
+                let g = p.gain_total_dbi.max(min_g);
+                PatternDisplayRow {
+                    theta_deg: p.theta_deg,
+                    phi_deg: p.phi_deg,
+                    gain_dbi: p.gain_total_dbi,
+                    bar_width_frac: ((g - min_g) / range).clamp(0.0, 1.0),
+                }
+            })
+            .collect()
+    }
+
+    /// Map current distribution to display bars with normalised bar-width
+    /// fraction (0 = zero current, 1 = peak current segment).
+    pub fn current_display_bars(&self) -> Vec<CurrentDisplayBar> {
+        let CurrentsPhase::Done(pts) = &self.currents_phase else {
+            return Vec::new();
+        };
+        let max_mag = pts.iter().map(|p| p.current_mag_ma).fold(0.0_f64, f64::max);
+        let norm = max_mag.max(1e-30);
+        pts.iter()
+            .map(|p| CurrentDisplayBar {
+                seg_idx: p.seg_idx,
+                current_mag_ma: p.current_mag_ma,
+                bar_width_frac: (p.current_mag_ma / norm).clamp(0.0, 1.0),
+            })
+            .collect()
+    }
+}
+
+/// One row in the pattern display table, with a normalised bar-width fraction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternDisplayRow {
+    pub theta_deg: f64,
+    pub phi_deg: f64,
+    pub gain_dbi: f64,
+    /// Fraction 0..=1 for bar rendering (1 = peak gain point).
+    pub bar_width_frac: f64,
+}
+
+/// One bar in the current-distribution chart, with a normalised bar-width fraction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurrentDisplayBar {
+    pub seg_idx: usize,
+    pub current_mag_ma: f64,
+    /// Fraction 0..=1 for bar rendering (1 = peak current segment).
+    pub bar_width_frac: f64,
 }
 
 fn cmp_f64(a: f64, b: f64, asc: bool) -> std::cmp::Ordering {
