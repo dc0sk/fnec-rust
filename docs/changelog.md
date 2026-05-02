@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-02
+last_updated: 2026-05-09
 ---
 
 # Changelog
@@ -11,6 +11,8 @@ All notable documentation process changes are recorded here.
 
 ## [0.4.0] — 2026-05-02
 ### Added
+
+- **PH4-CHK-005 (EP-4 DeckValidator)**: Added `DeckValidator` trait, `ValidationDiagnostic` struct, `DiagnosticLevel` enum, and `run_validators()` helper to `nec_model`. Validators receive a read-only `&NecDeck` and return a `Vec<ValidationDiagnostic>`; `run_validators` aggregates results across all validators without short-circuiting. CLI wires in a built-in `NoExCardValidator` (warning-level) on every solve path, emitting `warning: [validator] …` to stderr. Error-level diagnostics produce a non-zero exit code. `docs/plugin-api-design.md` updated: EP-4 section added, pipeline diagram updated, EP-4 removed from the "Planned" table. Tests: 7 unit tests in `crates/nec_model`, 2 doctests (`DeckPostProcessor`, `DeckValidator`), 4 integration tests in `apps/nec-cli/tests/deck_validator.rs`.
 
 - **PH4-CHK-004 (Python bindings)**: New `bindings/fnec_py/` crate (PyO3 0.23, cdylib). Exposes `solve_deck_str(deck: str) -> dict` and `sweep_deck_str(deck: str) -> list[dict]` returning `{freq_mhz, tag, seg, z_re, z_im, z_abs, z_arg_deg}`. Uses Hallen solver internally. Build: `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin develop` from `bindings/fnec_py/`. 8 smoke tests in `bindings/fnec_py/tests/test_smoke.py`. Build instructions in `docs/python-bindings.md`.
 

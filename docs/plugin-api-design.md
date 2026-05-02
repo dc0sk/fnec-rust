@@ -126,6 +126,53 @@ tests in the `tests` module cover: no-extra-sections identity, single
 section append, multiple-section ordering, and a `PeakImpedanceSection`
 worked example.
 
+### EP-4 — `DeckValidator` (`nec_model` crate)
+
+**Stage**: after parsing and EP-1 post-processing, before geometry build.
+
+**Signature** (in `crates/nec_model/src/lib.rs`):
+
+```rust
+pub trait DeckValidator {
+    fn validate(&self, deck: &NecDeck) -> Vec<ValidationDiagnostic>;
+}
+
+pub struct ValidationDiagnostic {
+    pub message: String,
+    pub level: DiagnosticLevel,  // Error | Warning
+}
+
+pub fn run_validators(
+    deck: &NecDeck,
+    validators: &[&dyn DeckValidator],
+) -> Vec<ValidationDiagnostic>;
+```
+
+`run_validators` runs all validators in order and aggregates their diagnostics;
+it never short-circuits, so callers receive the complete picture in one pass.
+`DiagnosticLevel::Error` signals that the solve should be aborted.
+`DiagnosticLevel::Warning` is informational.
+
+**Intended uses**:
+
+- Verifying that mandatory cards are present (e.g. at least one EX card).
+- Enforcing project-specific geometry conventions (wire tag ranges, segment
+  count limits, frequency band restrictions).
+- Checking that templated-variable substitutions produced plausible values
+  before committing to a solve.
+- Emitting structured feedback to automation pipelines without parsing CLI
+  stderr heuristically.
+
+**CLI integration**: `fnec` runs `NoExCardValidator` (warning-level) as a
+built-in validator on every solve path, emitting `warning: [validator] …`
+to stderr.  Error-level diagnostics cause a non-zero exit code without
+starting the solver.
+
+**Exercised by**: the doctest in `crates/nec_model/src/lib.rs`
+(`RequireExCard` example) plus 7 unit tests in the `tests` module.  Four
+integration tests in `apps/nec-cli/tests/deck_validator.rs` verify the
+CLI warning/error emission path.
+
 ```
 NEC deck file
      │
@@ -134,6 +181,9 @@ NEC deck file
      │
      ▼
  NecDeck  ◄────── EP-1: DeckPostProcessor::process(&mut deck)
+     │
+     ▼
+ [validators]  ◄── EP-4: DeckValidator::validate(&deck)
      │
      ▼
  geometry build + solver
@@ -156,7 +206,6 @@ visible:
 
 | ID | Stage | Crate | Purpose |
 |:---|:------|:------|:--------|
-| EP-4 | Before geometry build | `nec_solver` | `DeckValidator` — inject custom semantic validation rules before geometry resolution |
 | EP-5 | After pattern computation | `nec_report` | `PatternFilter` — post-process `PatternRow` slice |
 | EP-6 | After geometry build | `nec_solver` | `SegmentTransform` — modify the `Segment` list |
 

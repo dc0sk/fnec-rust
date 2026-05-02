@@ -23,6 +23,7 @@ use geometry_validation::{
     source_risk_geometry_error,
 };
 use nec_model::card::Card;
+use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
 use nec_parser::parse;
 use nec_solver::{
     build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
@@ -138,6 +139,39 @@ fn main() -> ExitCode {
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
     warn_nt_card_deferred_support(deck);
+
+    // --- EP-4: run deck validators before geometry build ------------------
+    struct NoExCardValidator;
+    impl DeckValidator for NoExCardValidator {
+        fn validate(&self, deck: &nec_model::deck::NecDeck) -> Vec<ValidationDiagnostic> {
+            let has_ex = deck.cards.iter().any(|c| matches!(c, Card::Ex(_)));
+            if has_ex {
+                vec![]
+            } else {
+                vec![ValidationDiagnostic::warning(
+                    "deck has no EX card — no feedpoint impedance will be computed",
+                )]
+            }
+        }
+    }
+    let validators: Vec<&dyn DeckValidator> = vec![&NoExCardValidator];
+    let validator_diags = run_validators(deck, &validators);
+    let mut has_validator_error = false;
+    for diag in &validator_diags {
+        match diag.level {
+            DiagnosticLevel::Error => {
+                eprintln!("error: [validator] {}", diag.message);
+                has_validator_error = true;
+            }
+            DiagnosticLevel::Warning => {
+                eprintln!("warning: [validator] {}", diag.message);
+            }
+        }
+    }
+    if has_validator_error {
+        return ExitCode::FAILURE;
+    }
+    // ----------------------------------------------------------------------
 
     let freqs_hz = if let Some(ref sc_path) = sweep_config_path {
         match sweep_config::SweepConfig::from_file(sc_path) {
