@@ -3,6 +3,9 @@
 
 pub mod gpu_kernels;
 
+#[cfg(feature = "wgpu")]
+pub mod wgpu_device;
+
 pub use gpu_kernels::{
     compute_hallen_fr_batch_stub, compute_hallen_fr_point_stub,
     compute_hallen_fr_point_with_timing, HallenFrGpuKernel, HallenRhsGpuKernel, KernelTiming,
@@ -131,5 +134,37 @@ mod tests {
 
         assert_eq!(path, ExecutionPath::GpuStubEmulation);
         assert!(matches!(result, Ok(7)));
+    }
+}
+
+#[cfg(all(test, feature = "wgpu"))]
+mod wgpu_tests {
+    use super::wgpu_device::{
+        enumerate_compute_adapters, run_noop_compute_pipeline, NoOpPipelineResult,
+    };
+
+    /// Enumerate adapters — must not panic; may return an empty list on bare CI.
+    #[test]
+    fn wgpu_enumerate_adapters_does_not_panic() {
+        let adapters = pollster::block_on(enumerate_compute_adapters());
+        // Zero adapters is acceptable; we only require no panic.
+        let _ = adapters;
+    }
+
+    /// Compile and dispatch a no-op compute shader.
+    ///
+    /// Accepts `NoAdapterAvailable` for headless CI without a software rasterizer;
+    /// fails on any panic or unexpected variant (there are only two).
+    #[test]
+    fn wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully() {
+        let result = pollster::block_on(run_noop_compute_pipeline());
+        assert!(
+            matches!(
+                result,
+                NoOpPipelineResult::Success | NoOpPipelineResult::NoAdapterAvailable
+            ),
+            "unexpected result: {:?}",
+            result
+        );
     }
 }
