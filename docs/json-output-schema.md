@@ -1,9 +1,8 @@
 ---
-title: JSON Output Schema
-status: stable
-schema_version: 1
-introduced: 0.4.0
-last_updated: 2026-05-02
+project: fnec-rust
+doc: docs/json-output-schema.md
+status: living
+last_updated: 2026-05-03
 ---
 
 # fnec JSON Output Schema (v1)

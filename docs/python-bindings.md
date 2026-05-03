@@ -1,8 +1,8 @@
 ---
-title: Python Bindings
-status: scaffolding
-introduced: 0.4.0
-last_updated: 2026-05-02
+project: fnec-rust
+doc: docs/python-bindings.md
+status: living
+last_updated: 2026-05-03
 ---
 
 # fnec Python Bindings (`fnec_py`)
