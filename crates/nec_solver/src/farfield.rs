@@ -139,6 +139,32 @@ fn far_field_components(
 ///
 /// Returns the normalisation denominator `∫ U dΩ` (in sr × [|F|²] units).
 fn integrate_power(segs: &[Segment], i_vec: &[Complex64], k: f64, pec_ground: bool) -> f64 {
+    integrate_radiated_power_inner(segs, i_vec, k, pec_ground)
+}
+
+/// Compute the total radiated power normalisation integral.
+///
+/// Used by GPU acceleration paths (e.g. wgpu RP kernel) to obtain the same
+/// `total_radiated` value that `compute_radiation_pattern` uses internally for
+/// gain normalisation.
+///
+/// * `pec_ground` — `true` for a perfect-electric-conductor ground plane.
+pub fn integrate_radiated_power(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+    pec_ground: bool,
+) -> f64 {
+    let k = 2.0 * PI / (SPEED_OF_LIGHT / freq_hz);
+    integrate_radiated_power_inner(segs, i_vec, k, pec_ground)
+}
+
+fn integrate_radiated_power_inner(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    k: f64,
+    pec_ground: bool,
+) -> f64 {
     let (n_theta, theta_max_deg): (usize, f64) = if pec_ground { (91, 90.0) } else { (181, 180.0) };
     let n_phi = 360usize;
     let d_theta = theta_max_deg.to_radians() / (n_theta as f64 - 1.0);
