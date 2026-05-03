@@ -14,7 +14,10 @@ pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
     build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
-pub use farfield::{compute_radiation_pattern, rp_card_points, FarFieldPoint, FarFieldResult};
+pub use farfield::{
+    compute_radiation_pattern, integrate_radiated_power, rp_card_points, FarFieldPoint,
+    FarFieldResult,
+};
 pub use geometry::{
     build_geometry, detect_wire_junctions, ground_model_from_deck, wire_endpoints_from_segs,
     GeometryError, GroundModel, Segment, WireJunction,

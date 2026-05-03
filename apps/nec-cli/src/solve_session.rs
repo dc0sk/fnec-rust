@@ -55,7 +55,7 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
-    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions,
+    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
     scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_with_continuity_basis_per_wire,
     solve_with_sinusoidal_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
@@ -573,6 +573,66 @@ pub(super) fn solve_frequency_point(
 
     let pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
+    } else if execution_mode == ExecutionMode::Gpu {
+        // Attempt wgpu RP kernel dispatch (gate G4).
+        // Compute total radiated power on CPU for gain normalisation — the GPU
+        // computes radiation intensity components, not normalised gain.
+        let pec_ground = matches!(ground, GroundModel::PerfectConductor);
+        let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, pec_ground);
+        let k = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+
+        let gpu_segments: Vec<_> = segs
+            .iter()
+            .map(|seg| nec_accel::gpu_kernels::GpuSegment {
+                midpoint: seg.midpoint,
+                direction: seg.direction,
+                length: seg.length,
+            })
+            .collect();
+
+        let points_tuples: Vec<(f64, f64)> = pattern_points
+            .iter()
+            .map(|p| (p.theta_deg, p.phi_deg))
+            .collect();
+
+        let gpu_results = pollster::block_on(nec_accel::wgpu_device::run_rp_farfield_batch_wgpu(
+            &gpu_segments,
+            &i_vec,
+            k,
+            total_radiated,
+            &points_tuples,
+        ));
+
+        match gpu_results {
+            Some(rows) => rows
+                .iter()
+                .map(|r| PatternRow {
+                    theta_deg: r.theta_deg,
+                    phi_deg: r.phi_deg,
+                    gain_total_dbi: r.gain_total_dbi,
+                    gain_theta_dbi: r.gain_theta_dbi,
+                    gain_phi_dbi: r.gain_phi_dbi,
+                    axial_ratio: r.axial_ratio,
+                })
+                .collect(),
+            None => {
+                // No adapter available — fall back to CPU path silently.
+                eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU RP");
+                let results =
+                    compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
+                results
+                    .iter()
+                    .map(|r| PatternRow {
+                        theta_deg: r.theta_deg,
+                        phi_deg: r.phi_deg,
+                        gain_total_dbi: r.gain_total_dbi,
+                        gain_theta_dbi: r.gain_theta_dbi,
+                        gain_phi_dbi: r.gain_phi_dbi,
+                        axial_ratio: r.axial_ratio,
+                    })
+                    .collect()
+            }
+        }
     } else if enable_gpu_fr {
         // Dispatch far-field to GPU kernel stub
         // Note: GPU stub uses CPU computation; normalization computed via simple heuristic

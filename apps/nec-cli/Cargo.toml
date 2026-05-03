@@ -17,11 +17,12 @@ path = "src/main.rs"
 [dependencies]
 nec_parser  = { workspace = true }
 nec_model   = { workspace = true }
-nec_accel   = { workspace = true }
+nec_accel   = { workspace = true, features = ["wgpu"] }
 nec_project = { workspace = true }
 nec_report  = { workspace = true }
 nec_solver  = { workspace = true }
 num-complex = { workspace = true }
+pollster    = { workspace = true }
 rayon       = { workspace = true }
 serde       = { workspace = true }
 toml        = { workspace = true }
