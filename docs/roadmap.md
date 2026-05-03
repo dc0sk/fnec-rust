@@ -205,6 +205,18 @@ Execution order recommendation: PH4-CHK-001 → PH4-CHK-002 → PH4-CHK-003 → 
 
 **Goals**: GPU acceleration from postprocessing to solver kernel.
 
+### Phase 5 checklist
+
+| ID | Priority | Dependencies | Description | Deliverables | Acceptance criteria | Status |
+|:---|:---------|:-------------|:------------|:-------------|:--------------------|:-------|
+| PH5-CHK-001 | A | — | Lock GPU architecture: choose API (wgpu), target matrix, first-offload candidate, real-hardware validation minimum. Satisfies GAP-007. | New: `docs/gpu-arch.md`; milestone gate sequence G1–G7 defined. | Doc exists; API choice made with rationale; first-offload candidate named; hardware validation minimum specified; frontmatter CI gate passes. | Done |
+| PH5-CHK-002 | A | PH5-CHK-001 | Add `wgpu` to `nec_accel`; implement device enumeration and a no-op compute pipeline that compiles and runs in CI via software rasterizer. | Modified: `crates/nec_accel/Cargo.toml`, `src/lib.rs`. New: `src/wgpu_device.rs`. | `cargo test -p nec_accel` passes in CI; device enumeration returns at least one adapter (software fallback). | Not started |
+| PH5-CHK-003 | A | PH5-CHK-002 | Implement the RP far-field gain WGSL compute shader (gate G3). Numerical parity test on `dipole-freesp-rp-51seg`: GPU RP results within RP tolerance vs CPU reference. | New: WGSL shader file; `HallenFrGpuKernel::execute_wgpu`; parity test. | Parity test passes in CI (software rasterizer); manual validation on real hardware (workstation + Pi5) per §6 of `gpu-arch.md`. | Not started |
+| PH5-CHK-004 | B | PH5-CHK-003 | Wire `--exec gpu` through the wgpu RP kernel in the CLI (gate G4). Integration test: RP output within tolerance when wgpu adapter available. | Modified: `apps/nec-cli/src/main.rs`, `crates/nec_accel/src/lib.rs`. New: integration test. | CLI RP output matches CPU within tolerance; `cargo test -p nec-cli` clean. | Not started |
+| PH5-CHK-005 | B | PH5-CHK-004 | CPU-vs-GPU benchmark gate (gate G5): benchmark RP path on large RP grid; assert GPU ≥ 0.8× CPU (no more than 20% slower than CPU as regression guard). | Modified: `scripts/pi-benchmark-compare.sh` or new script; benchmark results in `docs/benchmarks.md`. | Benchmark gate added to CI; timing comparison documented. | Not started |
+| PH5-CHK-006 | B | PH5-CHK-005 | Prototype Hallen Z-matrix fill WGSL kernel (gate G6). Numerical parity: filled Z-matrix elements match CPU within 1×10⁻⁶ relative on `dipole-freesp-51seg`. | New: WGSL shader for Z-matrix fill; parity test. | Parity test passes in CI. | Not started |
+| PH5-CHK-007 | C | PH5-CHK-006 | Full GPU Hallen solve path (gate G7): GPU matrix-fill + solve; all corpus impedance tolerance gates pass. | Modified: `nec_accel`, `nec_solver`. | All corpus decks pass impedance tolerance gates with GPU path; `cargo test` clean. | Not started |
+
 ### Benchmark mode matrix (all targets)
 
 To prevent regressions and keep performance claims comparable, benchmarking must run in three modes on every supported target class:
@@ -248,7 +260,7 @@ Required benchmark outputs per target/mode:
 | GAP-004 | Plugin/scripting interface | **HIGH** | Phase 3 end | Core APIs+Automation | BLK-004: extension API design, safety model, and first two working extension points are documented and exercised by at least one integration example. |
 | GAP-005 | 4nec2-like text report format | **HIGH** | Phase 1 end | CLI+Reporting | **Resolved 2026-04-23** via PAR-001 v1 contract and CI gate. |
 | GAP-006 | GUI information architecture | **MEDIUM** | Phase 3 end | GUI+UX | IA document, task flow wireframes, and at least one round of workflow-feedback notes exist for sweep setup, result inspection, and rerun workflows. |
-| GAP-007 | GPU rollout criteria | **MEDIUM** | Phase 5 end | Acceleration | Architecture docs define the OpenCL/ROCm/Vulkan target matrix, first-offload candidate, and real-hardware validation minimum before matrix-fill/solve kernels land. |
+| GAP-007 | GPU rollout criteria | **MEDIUM** | Phase 5 end | Acceleration | **Resolved 2026-05-03** via `docs/gpu-arch.md` (PH5-CHK-001): wgpu chosen as primary API; target matrix defined (Vulkan primary, Metal/DX12/OpenCL via wgpu); first-offload candidate = RP far-field gain; real-hardware validation minimum = G3 passes on workstation + Pi5 before matrix-fill work begins; milestone gate sequence G1–G7 defined. |
 | GAP-008 | Dependency/license policy | **MEDIUM** | Phase 2 end | Build+Release | BLK-005: policy thresholds, exception process, and GPLv2 compatibility rules are documented and referenced by release/process docs. |
 | GAP-009 | Workflow parity acceptance criteria | **HIGH** | Phase 3 start | Product+GUI/CLI | At least one measurable usability benchmark exists per Phase 3 milestone, with explicit step-count or elapsed-time acceptance criteria against a named incumbent workflow. |
 | GAP-010 | Automation and embedding strategy | **HIGH** | Phase 3 start | Core APIs | A documented automation surface exists for non-GUI consumers, including error model, stability expectations, and planned bindings/embedding path. |
