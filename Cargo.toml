@@ -38,4 +38,5 @@ pollster = "0.3"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+bytemuck = { version = "1", features = ["derive"] }
 wgpu = "29"

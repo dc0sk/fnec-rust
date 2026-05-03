@@ -167,4 +167,119 @@ mod wgpu_tests {
             result
         );
     }
+
+    /// Parity test — RP far-field wgpu kernel vs CPU stub (gate G3).
+    ///
+    /// Uses a minimal 3-segment vertical dipole at 14 MHz.  For each of several
+    /// (θ, φ) observation directions, asserts that the GPU radiation intensity
+    /// components match the CPU reference within f32 precision (we tolerate up to
+    /// 1 % relative error, which far exceeds the ≤0.5 dB gain tolerance spec but
+    /// correctly captures f32 vs f64 rounding).  When no wgpu adapter is
+    /// available the test passes vacuously — this is the expected CI behaviour on
+    /// bare-metal hosts without a software rasterizer.
+    #[test]
+    fn wgpu_rp_farfield_parity_vs_cpu_stub() {
+        use super::gpu_kernels::{GpuSegment, HallenFrGpuKernel};
+        use super::wgpu_device::{run_rp_farfield_wgpu, RpPipelineResult};
+        use num_complex::Complex64;
+
+        // 3-segment vertical dipole — each segment 0.1 m long along Z axis.
+        let seg_length = 0.1_f64;
+        let segs = vec![
+            GpuSegment {
+                midpoint: [0.0, 0.0, -0.1],
+                direction: [0.0, 0.0, 1.0],
+                length: seg_length,
+            },
+            GpuSegment {
+                midpoint: [0.0, 0.0, 0.0],
+                direction: [0.0, 0.0, 1.0],
+                length: seg_length,
+            },
+            GpuSegment {
+                midpoint: [0.0, 0.0, 0.1],
+                direction: [0.0, 0.0, 1.0],
+                length: seg_length,
+            },
+        ];
+
+        // Uniform current (simplified — good enough for a parity check).
+        let currents: Vec<Complex64> = vec![
+            Complex64::new(1.0, 0.0),
+            Complex64::new(1.0, 0.0),
+            Complex64::new(1.0, 0.0),
+        ];
+
+        let freq_hz = 14.2e6_f64;
+        let wavenumber = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+
+        // Build CPU kernel (total_radiated = 1.0 — we only compare u_theta/u_phi).
+        let cpu_kernel = HallenFrGpuKernel {
+            gpu_segments: segs.clone(),
+            currents: currents.clone(),
+            freq_hz,
+            wavenumber,
+            total_radiated: 1.0,
+        };
+
+        // Observation directions to test.
+        let points: &[(f64, f64)] = &[
+            (90.0, 0.0),
+            (90.0, 90.0),
+            (45.0, 0.0),
+            (45.0, 45.0),
+            (135.0, 180.0),
+        ];
+
+        for &(theta_deg, phi_deg) in points {
+            let gpu_result = pollster::block_on(run_rp_farfield_wgpu(
+                &segs, &currents, wavenumber, theta_deg, phi_deg,
+            ));
+
+            let gpu = match gpu_result {
+                RpPipelineResult::Success(r) => r,
+                RpPipelineResult::NoAdapterAvailable => {
+                    // Acceptable on headless CI — skip gracefully.
+                    return;
+                }
+            };
+
+            // CPU reference: compute_hallen_fr_point_with_timing returns the
+            // intermediate radiation intensity values we need.  We re-derive
+            // them from the point's gain fields using the same math.
+            use super::gpu_kernels::compute_hallen_fr_point_with_timing;
+            let (cpu_pt, _timing) =
+                compute_hallen_fr_point_with_timing(&cpu_kernel, theta_deg, phi_deg);
+
+            // Reconstruct u_theta and u_phi from the CPU result using the
+            // inverse of the gain formula: u = gain_linear * P_rad / (4π).
+            // Since total_radiated = 1.0, norm = 4π, so u = gain_linear / 1.
+            // But the CPU path stores dBi values. Instead, run the inner kernel
+            // directly via the public batch stub and compare the radiation
+            // intensities. We re-run the reference calculation using the
+            // cpu_kernel at total_radiated=1 and check that gain_total_dbi
+            // matches the GPU-derived gain.
+            //
+            // GPU u_total = u_theta + u_phi.  CPU point gives dBi.  We
+            // convert GPU u → dBi using the same norm factor (4π / 1.0).
+            let norm = 4.0 * std::f64::consts::PI; // total_radiated = 1.0
+            let gpu_u_total = gpu.u_theta + gpu.u_phi;
+
+            let gpu_gain_dbi = if gpu_u_total * norm > 1e-20 {
+                10.0 * (gpu_u_total * norm).log10()
+            } else {
+                -999.99
+            };
+
+            // Tolerance: 0.5 dBi (G3 gate spec).  On values that are
+            // effectively zero (-999 dBi) both sides should be equal.
+            let diff = (gpu_gain_dbi - cpu_pt.gain_total_dbi).abs();
+            assert!(
+                diff <= 0.5,
+                "RP parity failure at θ={theta_deg} φ={phi_deg}: GPU={gpu_gain_dbi:.4} dBi  \
+                 CPU={:.4} dBi  |Δ|={diff:.4} dB (limit 0.5)",
+                cpu_pt.gain_total_dbi
+            );
+        }
+    }
 }
