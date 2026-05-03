@@ -12,10 +12,11 @@ rust-version.workspace = true
 
 [features]
 default = []
-wgpu = ["dep:wgpu"]
+wgpu = ["dep:wgpu", "dep:bytemuck"]
 
 [dependencies]
 num-complex = { workspace = true }
+bytemuck = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
