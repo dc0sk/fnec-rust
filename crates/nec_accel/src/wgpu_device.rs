@@ -179,8 +179,21 @@ struct RpUniforms {
     n_segs: u32,
 }
 
+/// Uniform block for the batch RP shader (k, n_segs, n_points, pad — 16 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct RpBatchUniforms {
+    k: f32,
+    n_segs: u32,
+    n_points: u32,
+    _pad: u32,
+}
+
 /// The compiled WGSL RP far-field shader source.
 const RP_WGSL: &str = include_str!("shaders/rp_farfield.wgsl");
+
+/// The compiled WGSL RP far-field batch shader source (all N points, single dispatch).
+const RP_BATCH_WGSL: &str = include_str!("shaders/rp_farfield_batch.wgsl");
 
 /// Dispatch the RP far-field WGSL shader for one (θ, φ) observation direction.
 ///
@@ -436,9 +449,12 @@ pub async fn run_rp_farfield_wgpu(
 }
 
 /// Dispatch the RP far-field WGSL shader for a **batch** of (θ, φ) observation
-/// directions, reusing the wgpu device, buffers, and compiled pipeline across
-/// all points (only the 16-byte uniforms buffer is updated per iteration via
-/// `queue.write_buffer`).
+/// directions using a single GPU submission.
+///
+/// All N points are dispatched in one compute pass — the shader maps each
+/// thread to one observation direction (workgroup_size=64, N/64 workgroups).
+/// A single readback retrieves all results.  This eliminates the per-point
+/// command-encoder and device.poll overhead of the earlier per-point loop.
 ///
 /// Returns `None` when no wgpu adapter can be obtained; the caller should
 /// fall back to the CPU path in that case.
@@ -458,9 +474,9 @@ pub async fn run_rp_farfield_batch_wgpu(
 
     let adapter = match instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::None,
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: None,
-            force_fallback_adapter: true,
+            force_fallback_adapter: false,
         })
         .await
     {
@@ -480,9 +496,10 @@ pub async fn run_rp_farfield_batch_wgpu(
         Err(_) => return None,
     };
 
-    let n = segments.len() as u32;
+    let n_segs = segments.len() as u32;
+    let n_points = points.len() as u32;
 
-    // ---- pack segment data (f64 → f32) --------------------------------------
+    // ---- pack input data (f64 → f32) ----------------------------------------
     let seg_data: Vec<GpuSegmentF32> = segments
         .iter()
         .map(|s| GpuSegmentF32 {
@@ -497,12 +514,18 @@ pub async fn run_rp_farfield_batch_wgpu(
         })
         .collect();
 
-    // ---- pack current data (Complex64 → f32 pairs) --------------------------
     let cur_data: Vec<f32> = currents
         .iter()
         .flat_map(|c| [c.re as f32, c.im as f32])
         .collect();
 
+    // obs_pts: flat [theta0, phi0, theta1, phi1, ...] in degrees
+    let obs_data: Vec<f32> = points
+        .iter()
+        .flat_map(|&(theta, phi)| [theta as f32, phi as f32])
+        .collect();
+
+    // ---- create GPU buffers -------------------------------------------------
     use wgpu::util::DeviceExt;
 
     let seg_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -517,34 +540,41 @@ pub async fn run_rp_farfield_batch_wgpu(
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    // Uniforms buffer — writable by queue.write_buffer per point.
-    let initial_uniforms = RpUniforms {
+    let uniforms = RpBatchUniforms {
         k: k as f32,
-        theta_deg: 0.0,
-        phi_deg: 0.0,
-        n_segs: n,
+        n_segs,
+        n_points,
+        _pad: 0,
     };
     let uni_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("rp-batch-uniforms"),
-        contents: bytemuck::bytes_of(&initial_uniforms),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        contents: bytemuck::bytes_of(&uniforms),
+        usage: wgpu::BufferUsages::UNIFORM,
     });
 
+    let obs_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("rp-batch-obs"),
+        contents: bytemuck::cast_slice(&obs_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    // Output: n_points × [u_theta_f32, u_phi_f32] = n_points × 8 bytes
+    let out_size = n_points as u64 * 8;
     let out_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("rp-batch-output"),
-        size: 8,
+        size: out_size,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
 
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("rp-batch-readback"),
-        size: 8,
+        size: out_size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
 
-    // ---- bind group layout --------------------------------------------------
+    // ---- bind group layout (5 bindings) -------------------------------------
     let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("rp-batch-bgl"),
         entries: &[
@@ -582,6 +612,16 @@ pub async fn run_rp_farfield_batch_wgpu(
                 binding: 3,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: None,
@@ -609,6 +649,10 @@ pub async fn run_rp_farfield_batch_wgpu(
             },
             wgpu::BindGroupEntry {
                 binding: 3,
+                resource: obs_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
                 resource: out_buf.as_entire_binding(),
             },
         ],
@@ -616,7 +660,7 @@ pub async fn run_rp_farfield_batch_wgpu(
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("rp-batch-shader"),
-        source: wgpu::ShaderSource::Wgsl(RP_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(RP_BATCH_WGSL.into()),
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -629,10 +673,44 @@ pub async fn run_rp_farfield_batch_wgpu(
         label: Some("rp-batch-pipeline"),
         layout: Some(&pipeline_layout),
         module: &shader,
-        entry_point: Some("cs_rp_farfield"),
+        entry_point: Some("cs_rp_farfield_batch"),
         compilation_options: Default::default(),
         cache: None,
     });
+
+    // ---- single dispatch + single readback ----------------------------------
+    let n_workgroups = (n_points + 63) / 64;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("rp-batch-encoder"),
+    });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("rp-batch-pass"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&pipeline);
+        cpass.set_bind_group(0, &bind_group, &[]);
+        cpass.dispatch_workgroups(n_workgroups, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&out_buf, 0, &readback_buf, 0, out_size);
+    queue.submit(std::iter::once(encoder.finish()));
+
+    let slice = readback_buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .unwrap();
+    if rx.recv().unwrap().is_err() {
+        return None;
+    }
+    let raw = slice.get_mapped_range();
+    let vals: &[f32] = bytemuck::cast_slice(&*raw);
 
     let norm = if total_radiated > 0.0 {
         4.0 * std::f64::consts::PI / total_radiated
@@ -640,90 +718,51 @@ pub async fn run_rp_farfield_batch_wgpu(
         0.0
     };
 
-    let mut results: Vec<RpGpuResult> = Vec::with_capacity(points.len());
+    const DB_FACTOR: f64 = 10.0;
+    const MIN_NORM: f64 = 1e-20;
 
-    for &(theta_deg, phi_deg) in points {
-        // Update uniforms for this observation direction.
-        let uniforms = RpUniforms {
-            k: k as f32,
-            theta_deg: theta_deg as f32,
-            phi_deg: phi_deg as f32,
-            n_segs: n,
-        };
-        queue.write_buffer(&uni_buf, 0, bytemuck::bytes_of(&uniforms));
+    let results: Vec<RpGpuResult> = points
+        .iter()
+        .enumerate()
+        .map(|(i, &(theta_deg, phi_deg))| {
+            let u_theta = vals[i * 2] as f64;
+            let u_phi = vals[i * 2 + 1] as f64;
+            let u_total = u_theta + u_phi;
+            let gain_total_dbi = if u_total * norm > MIN_NORM {
+                DB_FACTOR * (u_total * norm).log10()
+            } else {
+                -999.99
+            };
+            let gain_theta_dbi = if u_theta * norm > MIN_NORM {
+                DB_FACTOR * (u_theta * norm).log10()
+            } else {
+                -999.99
+            };
+            let gain_phi_dbi = if u_phi * norm > MIN_NORM {
+                DB_FACTOR * (u_phi * norm).log10()
+            } else {
+                -999.99
+            };
+            let axial_ratio = if u_phi.sqrt() > 1e-30 {
+                u_theta.sqrt() / u_phi.sqrt()
+            } else {
+                0.0
+            };
+            RpGpuResult {
+                u_theta,
+                u_phi,
+                gain_total_dbi,
+                gain_theta_dbi,
+                gain_phi_dbi,
+                axial_ratio,
+                theta_deg,
+                phi_deg,
+            }
+        })
+        .collect();
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("rp-batch-encoder"),
-        });
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("rp-batch-pass"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&pipeline);
-            cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(1, 1, 1);
-        }
-        encoder.copy_buffer_to_buffer(&out_buf, 0, &readback_buf, 0, 8);
-        queue.submit(std::iter::once(encoder.finish()));
-
-        let slice = readback_buf.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            })
-            .unwrap();
-        if rx.recv().unwrap().is_err() {
-            return None;
-        }
-        let raw = slice.get_mapped_range();
-        let vals: &[f32] = bytemuck::cast_slice(&raw[..8]);
-        let u_theta = vals[0] as f64;
-        let u_phi = vals[1] as f64;
-        drop(raw);
-        readback_buf.unmap();
-
-        // Convert radiation intensity to dBi using the pre-computed norm.
-        const DB_FACTOR: f64 = 10.0;
-        const MIN_NORM: f64 = 1e-20;
-        let u_total = u_theta + u_phi;
-        let gain_total_dbi = if u_total * norm > MIN_NORM {
-            DB_FACTOR * (u_total * norm).log10()
-        } else {
-            -999.99
-        };
-        let gain_theta_dbi = if u_theta * norm > MIN_NORM {
-            DB_FACTOR * (u_theta * norm).log10()
-        } else {
-            -999.99
-        };
-        let gain_phi_dbi = if u_phi * norm > MIN_NORM {
-            DB_FACTOR * (u_phi * norm).log10()
-        } else {
-            -999.99
-        };
-        let axial_ratio = if u_phi.sqrt() > 1e-30 {
-            u_theta.sqrt() / u_phi.sqrt()
-        } else {
-            0.0
-        };
-
-        results.push(RpGpuResult {
-            u_theta,
-            u_phi,
-            gain_total_dbi,
-            gain_theta_dbi,
-            gain_phi_dbi,
-            axial_ratio,
-            theta_deg,
-            phi_deg,
-        });
-    }
+    drop(raw);
+    readback_buf.unmap();
 
     Some(results)
 }
