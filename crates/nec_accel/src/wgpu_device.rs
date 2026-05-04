@@ -766,3 +766,282 @@ pub async fn run_rp_farfield_batch_wgpu(
 
     Some(results)
 }
+
+// ---------------------------------------------------------------------------
+// Z-matrix fill (gate G6)
+// ---------------------------------------------------------------------------
+
+/// GPU segment layout for the Z-matrix shader (10 × f32, includes radius).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GpuSegmentZ {
+    mid_x: f32,
+    mid_y: f32,
+    mid_z: f32,
+    dir_x: f32,
+    dir_y: f32,
+    dir_z: f32,
+    length: f32,
+    radius: f32,
+    _pad0: f32,
+    _pad1: f32,
+}
+
+/// Uniform block for the Z-matrix fill shader (k, n, pad, pad — 16 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ZUniforms {
+    k: f32,
+    n: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// The compiled WGSL Z-matrix fill shader source.
+const ZMATRIX_WGSL: &str = include_str!("shaders/zmatrix_fill.wgsl");
+
+/// Input segment data for [`fill_zmatrix_wgpu`].
+///
+/// Mirrors the fields of `nec_solver::geometry::Segment` needed for the
+/// Z-matrix kernel.  Callers convert using `From<&Segment>` or manually.
+#[derive(Debug, Clone, Copy)]
+pub struct ZSegmentInput {
+    pub midpoint: [f64; 3],
+    pub direction: [f64; 3],
+    pub length: f64,
+    pub radius: f64,
+}
+
+/// A single Z-matrix element (real + imaginary parts).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZElem {
+    pub re: f32,
+    pub im: f32,
+}
+
+/// Fill the N×N Hallén A-matrix on the GPU using a single compute dispatch.
+///
+/// Each thread computes one element Z[i,j].  Returns `None` when no wgpu
+/// adapter is available; the caller should fall back to the CPU path.
+///
+/// The returned `Vec<ZElem>` has length `n*n`, stored row-major so that
+/// `result[i * n + j]` gives Z[i,j].
+pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Option<Vec<ZElem>> {
+    use wgpu::util::DeviceExt;
+
+    if segments.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let n = segments.len();
+    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+
+    // ---- adapter + device --------------------------------------------------
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = match instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+    {
+        Ok(a) => a,
+        Err(_) => {
+            eprintln!(
+                "warning: fill_zmatrix_wgpu: no wgpu adapter available — falling back to CPU"
+            );
+            return None;
+        }
+    };
+
+    let (device, queue) = match adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("fnec-zmatrix"),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(dq) => dq,
+        Err(_) => {
+            eprintln!("warning: fill_zmatrix_wgpu: device request failed — falling back to CPU");
+            return None;
+        }
+    };
+
+    // ---- pack segment data (f64 → f32) ------------------------------------
+    let seg_data: Vec<GpuSegmentZ> = segments
+        .iter()
+        .map(|s| GpuSegmentZ {
+            mid_x: s.midpoint[0] as f32,
+            mid_y: s.midpoint[1] as f32,
+            mid_z: s.midpoint[2] as f32,
+            dir_x: s.direction[0] as f32,
+            dir_y: s.direction[1] as f32,
+            dir_z: s.direction[2] as f32,
+            length: s.length as f32,
+            radius: s.radius as f32,
+            _pad0: 0.0,
+            _pad1: 0.0,
+        })
+        .collect();
+
+    // ---- buffers -----------------------------------------------------------
+    let seg_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("zmatrix-segs"),
+        contents: bytemuck::cast_slice(&seg_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let uniforms = ZUniforms {
+        k,
+        n: n as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("zmatrix-uniforms"),
+        contents: bytemuck::bytes_of(&uniforms),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+
+    // Output: 2 f32 per element (re, im), N*N elements.
+    let output_size = (2 * n * n * std::mem::size_of::<f32>()) as u64;
+    let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("zmatrix-output"),
+        size: output_size,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("zmatrix-readback"),
+        size: output_size,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    // ---- shader + pipeline -------------------------------------------------
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("fnec-zmatrix-shader"),
+        source: wgpu::ShaderSource::Wgsl(ZMATRIX_WGSL.into()),
+    });
+
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("zmatrix-bgl"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("zmatrix-layout"),
+        bind_group_layouts: &[Some(&bgl)],
+        immediate_size: 0,
+    });
+
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("zmatrix-pipeline"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("cs_zmatrix_fill"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("zmatrix-bg"),
+        layout: &bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: seg_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: output_buf.as_entire_binding(),
+            },
+        ],
+    });
+
+    // ---- dispatch ----------------------------------------------------------
+    let total_threads = (n * n) as u32;
+    let workgroups = total_threads.div_ceil(64);
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("zmatrix-encoder"),
+    });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("zmatrix-pass"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&pipeline);
+        cpass.set_bind_group(0, &bind_group, &[]);
+        cpass.dispatch_workgroups(workgroups, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&output_buf, 0, &readback_buf, 0, output_size);
+
+    queue.submit(std::iter::once(encoder.finish()));
+
+    // ---- readback ----------------------------------------------------------
+    let slice = readback_buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .unwrap();
+    if rx.recv().unwrap().is_err() {
+        return None;
+    }
+    let raw = slice.get_mapped_range();
+    let floats: &[f32] = bytemuck::cast_slice(&*raw);
+
+    let results: Vec<ZElem> = floats
+        .chunks_exact(2)
+        .map(|c| ZElem { re: c[0], im: c[1] })
+        .collect();
+
+    drop(raw);
+    readback_buf.unmap();
+
+    Some(results)
+}

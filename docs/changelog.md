@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-09
+last_updated: 2026-05-04
 ---
 
 # Changelog
@@ -11,6 +11,8 @@ All notable documentation process changes are recorded here.
 
 ## [0.4.0] — 2026-05-02
 ### Added
+
+- **PH5-CHK-006 (GPU Z-matrix fill WGSL kernel — gate G6)**: New `crates/nec_accel/src/shaders/zmatrix_fill.wgsl` — WGSL compute shader that fills the N×N Hallén A-matrix; each thread computes one element Z[i,j]. Off-diagonal elements use 8-point GL with reduced kernel; self elements use 4-point GL smooth part + analytic log singularity subtraction (identical algorithm to CPU `assemble_z_matrix`). New public async `fill_zmatrix_wgpu(segments, freq_hz)` in `wgpu_device.rs` packs f64 segment data (including radius) into a `GpuSegmentZ` buffer, dispatches `ceil(N²/64)` workgroups, and reads back `Vec<ZElem>` (re, im f32 pairs, row-major). New `ZSegmentInput` type in `nec_accel` avoids circular dependency with `nec_solver`. New parity test `crates/nec_accel/tests/gpu_zmatrix_parity.rs`: builds a 51-segment dipole, compares GPU vs CPU Z-matrix with max relative error ≤ 1×10⁻⁴; passes vacuously when no GPU adapter is available. Achieved max rel err = 2.12×10⁻⁶ on local hardware.
 
 - **PH5-CHK-004 (CLI `--exec gpu` wired to wgpu RP kernel — gate G4)**: `--exec gpu` now dispatches the RP far-field computation through the real wgpu compute kernel (`run_rp_farfield_batch_wgpu`) instead of the CPU stub. New `run_rp_farfield_batch_wgpu()` in `wgpu_device.rs` reuses the wgpu device, compiled pipeline, and segment/current buffers across all observation points — only the 16-byte uniforms buffer is updated per point via `queue.write_buffer`. When no adapter is available a stderr warning is emitted and the code gracefully falls back to the CPU path. New `pub fn integrate_radiated_power()` exported from `nec_solver` computes the total radiated power normalisation integral needed to convert GPU `U_θ/U_φ` outputs to gain (dBi). `nec-cli` now depends on `nec_accel` with `features = ["wgpu"]` and `pollster` for synchronous dispatch. New integration test `gpu_rp_exec.rs`: two tests — gain parity check (≤0.5 dBi) vs CPU reference, and exec diag field assertion. All `cargo test -p nec-cli` tests pass.
 

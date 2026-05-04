@@ -2144,6 +2144,9 @@ name = "nec_accel"
 version = "0.4.0"
 dependencies = [
  "bytemuck",
+ "nec_model",
+ "nec_parser",
+ "nec_solver",
  "num-complex",
  "pollster",
  "wgpu 29.0.3",

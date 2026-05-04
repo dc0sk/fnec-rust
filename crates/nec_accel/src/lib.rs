@@ -6,6 +6,9 @@ pub mod gpu_kernels;
 #[cfg(feature = "wgpu")]
 pub mod wgpu_device;
 
+#[cfg(feature = "wgpu")]
+pub use wgpu_device::{fill_zmatrix_wgpu, ZElem, ZSegmentInput};
+
 pub use gpu_kernels::{
     compute_hallen_fr_batch_stub, compute_hallen_fr_point_stub,
     compute_hallen_fr_point_with_timing, HallenFrGpuKernel, HallenRhsGpuKernel, KernelTiming,
