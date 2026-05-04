@@ -19,8 +19,7 @@ use exec_profile::{
     ExecutionMode,
 };
 use geometry_validation::{
-    buried_wire_geometry_error, segment_intersection_error, sinusoidal_a4_topology_supported,
-    source_risk_geometry_error,
+    buried_wire_geometry_error, segment_intersection_error, source_risk_geometry_error,
 };
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
@@ -253,15 +252,12 @@ fn main() -> ExitCode {
         .flatten()
         .collect();
 
-    let sinusoidal_topology_supported = sinusoidal_a4_topology_supported(&segs, &wire_endpoints);
-
     let solve_one = |freq_hz: f64| {
         solve_frequency_point(
             deck,
             &segs,
             &wire_endpoints,
             per_wire_basis_feasible,
-            sinusoidal_topology_supported,
             &v_vec,
             &ground,
             &pattern_points,
@@ -450,8 +446,6 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
         let ground = ground_model_from_deck(deck);
         let wire_endpoints = wire_endpoints_from_segs(&segs);
         let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
-        let sinusoidal_topology_supported =
-            sinusoidal_a4_topology_supported(&segs, &wire_endpoints);
 
         // Find the single FR frequency from the deck.
         let freqs = frequencies_from_fr(deck);
@@ -465,7 +459,6 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             &segs,
             &wire_endpoints,
             per_wire_basis_feasible,
-            sinusoidal_topology_supported,
             &v_vec,
             &ground,
             &[],

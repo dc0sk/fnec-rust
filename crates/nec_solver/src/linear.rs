@@ -374,6 +374,247 @@ pub fn solve_with_continuity_basis_per_wire(
     Ok(basis_to_currents(&global_t, &a_sol))
 }
 
+/// Solve Hallén's augmented integral equation using a sinusoidal (Galerkin)
+/// basis for the segment currents.
+///
+/// This is the NEC2-style accurate path for `--solver sinusoidal`.
+/// Instead of solving for raw segment currents `I` directly, we write
+/// `I = T · a` where `T` is the block-diagonal **global-sine** basis transform
+/// and `a` is the vector of basis coefficients.  For each wire of length `L`
+/// with `n_w` segments, the transform entry is:
+///
+/// ```text
+/// T[j][k] = sin((k+1) · π · pos_j)   k = 0..n_w-2
+/// ```
+///
+/// where `pos_j = (j + 0.5) / n_w` is the normalised midpoint position of
+/// segment `j` on that wire (0 < pos < 1).  These are the proper global
+/// sinusoidal expansion functions — each one spans the whole wire and
+/// automatically satisfies the endpoint condition I(0)=I(L)=0.
+///
+/// The Galerkin-projected system is assembled directly as `A = T^T Z T` and
+/// `b = T^T · rhs`, then the endpoint/junction boundary-condition rows are
+/// appended, and the overdetermined `(m + constraint_rows) × (m + W)` system
+/// is solved via normal equations.  Using the Galerkin projection preserves
+/// the complex-symmetric structure of the Hallén kernel, yielding results that
+/// converge to the Hallén pulse-basis solution as `m → N`.
+///
+/// Arguments mirror [`solve_hallen`]; see that function for details on
+/// `wire_endpoints` and `junction_constraints`.
+pub fn solve_hallen_sinusoidal_basis(
+    z: &ZMatrix,
+    rhs: &[Complex64],
+    cos_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
+) -> Result<HallenSolution, SolveError> {
+    let n = z.n;
+    if rhs.len() != n || cos_vec.len() != n {
+        return Err(SolveError::HallenDimensionMismatch {
+            z_n: n,
+            rhs_len: rhs.len(),
+            cos_len: cos_vec.len(),
+        });
+    }
+
+    // Resolve effective wire endpoint list.
+    let endpoints: &[(usize, usize)];
+    let fallback_endpoints;
+    if wire_endpoints.is_empty() || n == 0 {
+        fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
+        endpoints = &fallback_endpoints;
+    } else {
+        endpoints = wire_endpoints;
+    }
+
+    // If any wire has fewer than 2 segments, fall back to standard Hallén.
+    if endpoints.iter().any(|&(first, last)| last <= first) {
+        return solve_hallen(z, rhs, cos_vec, wire_endpoints, junction_constraints);
+    }
+
+    let w = endpoints.len(); // number of wires (= number of homogeneous constants)
+
+    // Build the global-sine basis transform T (n × m) as a block-diagonal matrix.
+    // For wire k with n_k segments:
+    //   T[first_k + j][col_offset + p] = sin((p+1) · π · (j+0.5) / n_k)
+    let m: usize = endpoints
+        .iter()
+        .map(|&(first, last)| (last - first + 1).saturating_sub(1))
+        .sum();
+    if m == 0 {
+        return solve_hallen(z, rhs, cos_vec, wire_endpoints, junction_constraints);
+    }
+
+    let mut global_t = vec![vec![0.0f64; m]; n];
+    let mut col_offset = 0usize;
+    for &(first, last) in endpoints.iter() {
+        let n_w = last - first + 1;
+        let m_w = n_w - 1;
+        for local_row in 0..n_w {
+            let pos = (local_row as f64 + 0.5) / (n_w as f64); // 0 < pos < 1
+            for p in 0..m_w {
+                let coeff = std::f64::consts::PI * ((p + 1) as f64) * pos;
+                global_t[first + local_row][col_offset + p] = coeff.sin();
+            }
+        }
+        col_offset += m_w;
+    }
+
+    // Determine which wire each segment belongs to.
+    let mut seg_wire = vec![0usize; n];
+    for (wi, &(first, last)) in endpoints.iter().enumerate() {
+        for sw in seg_wire.iter_mut().take(last + 1).skip(first) {
+            *sw = wi;
+        }
+    }
+
+    // Build the set of endpoint segments that are part of a junction.
+    let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
+        .iter()
+        .flat_map(|&(a, b, _)| [a, b])
+        .collect();
+
+    // Count constraint rows.
+    let mut free_endpoint_count = 0usize;
+    for &(first, last) in endpoints.iter() {
+        if !junction_endpoint_set.contains(&first) {
+            free_endpoint_count += 1;
+        }
+        if !junction_endpoint_set.contains(&last) {
+            free_endpoint_count += 1;
+        }
+    }
+    let jc = junction_constraints.len();
+    let constraint_rows = free_endpoint_count + jc;
+
+    // --- Galerkin projection ---
+    // Step 1: ZT = Z @ T  (n × m, complex).
+    let mut zt = vec![vec![Complex64::new(0.0, 0.0); m]; n];
+    for r in 0..n {
+        for c in 0..m {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for (j, t_row) in global_t.iter().enumerate() {
+                let coeff = t_row[c];
+                if coeff != 0.0 {
+                    sum += z.get(r, j) * coeff;
+                }
+            }
+            zt[r][c] = sum;
+        }
+    }
+
+    // Step 2: A = T^T @ ZT  (m × m, complex).
+    let mut a_mat = vec![vec![Complex64::new(0.0, 0.0); m]; m];
+    for i in 0..m {
+        for j in 0..m {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..n {
+                sum += global_t[r][i] * zt[r][j];
+            }
+            a_mat[i][j] = sum;
+        }
+    }
+
+    // Step 3: b = T^T @ rhs  (m).
+    let mut b_proj = vec![Complex64::new(0.0, 0.0); m];
+    for i in 0..m {
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..n {
+            sum += global_t[r][i] * rhs[r];
+        }
+        b_proj[i] = sum;
+    }
+
+    // Step 4: For each wire k, cos_proj[k] = T^T (indicator_k · cos_vec)  (m).
+    // The C_k column in the projected system is -cos_proj[k].
+    let mut cos_projs = vec![vec![0.0f64; m]; w];
+    for r in 0..n {
+        let k = seg_wire[r];
+        let cv = cos_vec[r];
+        for i in 0..m {
+            cos_projs[k][i] += global_t[r][i] * cv;
+        }
+    }
+
+    // Assemble the projected + constrained system:
+    //   rows: m (Galerkin) + constraint_rows
+    //   cols: m + w  (basis coefficients + one C per wire)
+    let rows = m + constraint_rows;
+    let cols = m + w;
+    let mut mat = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
+    let mut y_vec = vec![Complex64::new(0.0, 0.0); rows];
+
+    // Galerkin rows.
+    for i in 0..m {
+        for j in 0..m {
+            mat[i][j] = a_mat[i][j];
+        }
+        for k in 0..w {
+            mat[i][m + k] = Complex64::new(-cos_projs[k][i], 0.0);
+        }
+        y_vec[i] = b_proj[i];
+    }
+
+    // Endpoint and junction constraints.
+    let mut crow = m;
+    for &(first, last) in endpoints.iter() {
+        if !junction_endpoint_set.contains(&first) {
+            for c in 0..m {
+                mat[crow][c] = Complex64::new(global_t[first][c], 0.0);
+            }
+            crow += 1;
+        }
+        if !junction_endpoint_set.contains(&last) {
+            for c in 0..m {
+                mat[crow][c] = Complex64::new(global_t[last][c], 0.0);
+            }
+            crow += 1;
+        }
+    }
+    for &(seg_a, seg_b, sign) in junction_constraints.iter() {
+        for c in 0..m {
+            mat[crow][c] = Complex64::new(global_t[seg_a][c] + sign * global_t[seg_b][c], 0.0);
+        }
+        crow += 1;
+    }
+
+    // Solve the (m + constraint_rows) × (m + w) system via normal equations.
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..rows {
+                sum += mat[r][i].conj() * mat[r][j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..rows {
+            sum += mat[r][i].conj() * y_vec[r];
+        }
+        aty[i] = sum;
+    }
+    let lambda = 1e-8;
+    for i in 0..cols {
+        ata[i][i] += Complex64::new(lambda, 0.0);
+    }
+
+    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let a_basis = &x[..m];
+    let c_hom_per_wire = x[m..].to_vec();
+    let currents = basis_to_currents(&global_t, a_basis);
+
+    Ok(HallenSolution {
+        currents,
+        c_hom: c_hom_per_wire
+            .first()
+            .copied()
+            .unwrap_or(Complex64::new(0.0, 0.0)),
+        c_hom_per_wire,
+    })
+}
+
 fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f64 {
     if a.is_empty() {
         return floor;

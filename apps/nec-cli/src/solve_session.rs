@@ -3,7 +3,6 @@ use nec_model::card::Card;
 
 pub(super) const C0: f64 = 299_792_458.0;
 pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
-pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX: f64 = 1e-2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SolverMode {
@@ -56,8 +55,8 @@ use nec_report::{
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
     build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_with_continuity_basis_per_wire,
-    solve_with_sinusoidal_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -385,7 +384,6 @@ pub(super) fn solve_frequency_point(
     segs: &[Segment],
     wire_endpoints: &[(usize, usize)],
     per_wire_basis_feasible: bool,
-    sinusoidal_topology_supported: bool,
     v_vec: &[Complex64],
     ground: &GroundModel,
     pattern_points: &[FarFieldPoint],
@@ -441,8 +439,12 @@ pub(super) fn solve_frequency_point(
                 assemble_z_matrix_with_ground(segs, freq_hz, ground)
             }
         }
-        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => {
-            assemble_pocklington_matrix(segs, freq_hz)
+        SolverMode::Pulse | SolverMode::Continuity => assemble_pocklington_matrix(segs, freq_hz),
+        SolverMode::Sinusoidal => {
+            // Sinusoidal mode uses the Hallén thin-wire Z-matrix (same as Hallen),
+            // not the Pocklington EFIE matrix. The accurate basis only matters for
+            // the solve step, not the matrix assembly.
+            assemble_z_matrix_with_ground(segs, freq_hz, ground)
         }
     };
 
@@ -539,50 +541,35 @@ pub(super) fn solve_frequency_point(
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 (i, a, r, "sinusoidal->pulse")
-            } else if !sinusoidal_topology_supported {
-                eprintln!(
-                    "warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse"
-                );
-                let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                (i, a, r, "sinusoidal->pulse(topology)")
             } else {
-                let i = solve_with_sinusoidal_basis_per_wire(&z_mat, &v_vec_pulse, wire_endpoints)
-                    .map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
+                // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
+                // sinusoidal expansion functions and pulse testing (projection).
+                let hallen_rhs =
+                    build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+                let wire_junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
+                let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
+                    .iter()
+                    .map(|j| (j.seg_a, j.seg_b, j.sign))
+                    .collect();
+                let sol = solve_hallen_sinusoidal_basis(
+                    &z_mat,
+                    &hallen_rhs.rhs,
+                    &hallen_rhs.cos_vec,
+                    wire_endpoints,
+                    &junction_tuples,
+                )
+                .map_err(|e| e.to_string())?;
+                let (a, r) = residual_hallen(
+                    &z_mat,
+                    &sol.currents,
+                    &sol.c_hom_per_wire,
+                    &hallen_rhs.cos_vec,
+                    &hallen_rhs.rhs,
+                    wire_endpoints,
+                );
                 sin_rel_res = r;
-                if r <= SINUSOIDAL_REL_RESIDUAL_MAX {
-                    (i, a, r, "sinusoidal")
-                } else {
-                    eprintln!(
-                        "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
-                        r, SINUSOIDAL_REL_RESIDUAL_MAX
-                    );
-                    let hallen_rhs =
-                        build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-                    let mut hallen_z = assemble_z_matrix_with_ground(segs, freq_hz, ground);
-                    hallen_z.add_to_diagonal(&load_vec);
-                    for (row, col, delta) in &tl_stamps {
-                        hallen_z.add_to_entry(*row, *col, *delta);
-                    }
-                    let sol = solve_hallen(
-                        &hallen_z,
-                        &hallen_rhs.rhs,
-                        &hallen_rhs.cos_vec,
-                        wire_endpoints,
-                        &[],
-                    )
-                    .map_err(|e| e.to_string())?;
-                    let (a2, r2) = residual_hallen(
-                        &hallen_z,
-                        &sol.currents,
-                        &sol.c_hom_per_wire,
-                        &hallen_rhs.cos_vec,
-                        &hallen_rhs.rhs,
-                        wire_endpoints,
-                    );
-                    (sol.currents, a2, r2, "sinusoidal->hallen(residual)")
-                }
+                (sol.currents, a, r, "sinusoidal")
             }
         }
     };

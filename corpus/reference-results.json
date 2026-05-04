@@ -1271,7 +1271,7 @@
         "R_absolute_ohm": 0.1,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 Ω, L=1 µH at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance."
+      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 \u03a9, L=1 \u00b5H at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance."
     },
     "dipole-ld-series-rc-51seg": {
       "deck_file": "dipole-ld-series-rc-51seg.nec",
@@ -1292,7 +1292,7 @@
         "R_absolute_ohm": 50.0,
         "X_absolute_ohm": 500.0
       },
-      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 Ω, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C ≈11.2 kΩ)."
+      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 \u03a9, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C \u224811.2 k\u03a9)."
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
@@ -1313,7 +1313,7 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending."
+      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 \u03a9, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending."
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1603,6 +1603,57 @@
       },
       "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation",
       "expected_hallen_error_contains": "no segment with tag"
+    },
+    "dipole-sinusoidal-51seg": {
+      "deck_file": "dipole-sinusoidal-51seg.nec",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz \u2014 sinusoidal Galerkin basis validation",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "cli_args": [
+        "--solver",
+        "sinusoidal"
+      ],
+      "reference_source": "fnec sinusoidal Galerkin-on-Hallen, PH6-CHK-003",
+      "feedpoint_impedance": {
+        "real_ohm": 74.27,
+        "imag_ohm": 13.32
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 1.0,
+        "X_percent_rel": 5.0,
+        "R_absolute_ohm": 1.0,
+        "X_absolute_ohm": 1.0,
+        "Current_amplitude_dB": 0.001,
+        "Current_phase_deg": 1.0
+      },
+      "forbidden_warning_substrings": [
+        "EXPERIMENTAL",
+        "falling back"
+      ],
+      "current_samples": [
+        {
+          "wire_id": 1,
+          "segment_id": 1,
+          "amplitude_db": 2.047353e-07,
+          "phase_deg": -86.11
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 26,
+          "amplitude_db": 0.013253,
+          "phase_deg": -10.17
+        },
+        {
+          "wire_id": 1,
+          "segment_id": 51,
+          "amplitude_db": 2.047353e-07,
+          "phase_deg": -86.11
+        }
+      ],
+      "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X"
     }
   }
 }
