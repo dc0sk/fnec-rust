@@ -2113,6 +2113,7 @@ dependencies = [
  "nec_report",
  "nec_solver",
  "num-complex",
+ "pollster",
  "rayon",
  "serde",
  "serde_json",
@@ -2142,6 +2143,7 @@ dependencies = [
 name = "nec_accel"
 version = "0.4.0"
 dependencies = [
+ "bytemuck",
  "num-complex",
  "pollster",
  "wgpu 29.0.3",
