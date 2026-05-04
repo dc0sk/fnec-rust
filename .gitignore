@@ -10,3 +10,6 @@ pr_body.txt
 
 # Local benchmark host aliases/secrets
 .benchmark-hosts.env
+
+# External reference PDFs (added locally for study; not committed)
+docs/external/
