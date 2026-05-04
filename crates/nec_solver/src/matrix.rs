@@ -94,6 +94,20 @@ impl ZMatrix {
         }
     }
 
+    /// Construct an N×N matrix from a flat row-major `Vec`.
+    ///
+    /// Panics if `data.len() != n * n`.
+    pub fn from_flat(n: usize, data: Vec<Complex64>) -> Self {
+        assert_eq!(
+            data.len(),
+            n * n,
+            "ZMatrix::from_flat: expected {n}×{n}={} elements, got {}",
+            n * n,
+            data.len()
+        );
+        Self { n, data }
+    }
+
     /// Get element at (row, col).
     pub fn get(&self, row: usize, col: usize) -> Complex64 {
         self.data[row * self.n + col]

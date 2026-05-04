@@ -215,7 +215,7 @@ Execution order recommendation: PH4-CHK-001 → PH4-CHK-002 → PH4-CHK-003 → 
 | PH5-CHK-004 | B | PH5-CHK-003 | Wire `--exec gpu` through the wgpu RP kernel in the CLI (gate G4). Integration test: RP output within tolerance when wgpu adapter available. | Modified: `apps/nec-cli/src/main.rs`, `crates/nec_accel/src/lib.rs`. New: integration test. | CLI RP output matches CPU within tolerance; `cargo test -p nec-cli` clean. | Done |
 | PH5-CHK-005 | B | PH5-CHK-004 | CPU-vs-GPU benchmark gate (gate G5): benchmark RP path on large RP grid; assert GPU ≥ 0.8× CPU (no more than 20% slower than CPU as regression guard). | Modified: `scripts/pi-benchmark-compare.sh` or new script; benchmark results in `docs/benchmarks.md`. | Benchmark gate added to CI; timing comparison documented. | Done |
 | PH5-CHK-006 | B | PH5-CHK-005 | Prototype Hallen Z-matrix fill WGSL kernel (gate G6). Numerical parity: filled Z-matrix elements match CPU within 1×10⁻⁶ relative on `dipole-freesp-51seg`. | New: WGSL shader for Z-matrix fill; parity test. | Parity test passes in CI. | Done |
-| PH5-CHK-007 | C | PH5-CHK-006 | Full GPU Hallen solve path (gate G7): GPU matrix-fill + solve; all corpus impedance tolerance gates pass. | Modified: `nec_accel`, `nec_solver`. | All corpus decks pass impedance tolerance gates with GPU path; `cargo test` clean. | Not started |
+| PH5-CHK-007 | C | PH5-CHK-006 | Full GPU Hallen solve path (gate G7): GPU matrix-fill + solve; all corpus impedance tolerance gates pass. | Modified: `nec_accel`, `nec_solver`. | All corpus decks pass impedance tolerance gates with GPU path; `cargo test` clean. | Done |
 
 ### Benchmark mode matrix (all targets)
 
