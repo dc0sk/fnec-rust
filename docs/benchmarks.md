@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-04-27
+last_updated: 2026-05-04
 ---
 
 # Benchmarks
@@ -146,3 +146,55 @@ Rows per mode: 15 (5 frequencies $\times$ 3 runs)
 | Hybrid (CPU multithread + GPU) | `RAYON_NUM_THREADS=$(nproc)`, `FNEC_ACCEL_STUB_GPU=1`, `--exec hybrid` | 16.8 |
 
 For regression checks, compare candidate runs against baseline with `scripts/pi-benchmark-compare.sh --fail-on-mode-drift`.
+
+## G5 Gate: CPU-vs-GPU Benchmark Gate (PH5-CHK-005)
+
+Gate definition: the GPU RP path must not exceed 1.25× CPU RP elapsed time on the large RP grid deck (GPU ≥ 0.8× CPU speed).
+
+### Deck
+
+`corpus/dipole-freesp-rp-large-grid.nec` — 51-segment half-wave dipole at 14.2 MHz, 37×73 = 2701 observation points.
+
+### CI gate
+
+```
+cargo test --test gpu_benchmark_gate
+```
+
+Passes when GPU median wall time across 3 repetitions ≤ 1.25× CPU median.
+
+### Offline script gate
+
+```bash
+scripts/pi-benchmark-compare.sh --gpu-vs-cpu-max-pct 25 <candidate.csv>
+```
+
+Fails if any (deck, solver) combination has GPU avg time > 1.25× CPU avg time.
+
+### Implementation notes
+
+- `run_rp_farfield_batch_wgpu` uses `force_fallback_adapter: false` (production function).
+  On machines without a hardware GPU the function returns `None` in ≤ 10 ms and falls back to CPU.
+  The software rasterizer (`force_fallback_adapter: true`) is intentionally excluded from the
+  production batch path to avoid the ~350 ms llvmpipe shader-compile overhead.
+- The batch shader (`rp_farfield_batch.wgsl`) dispatches all N observation points in a single GPU
+  submission (ceil(N/64) workgroups, workgroup_size=64), replacing the previous per-point
+  encode/submit/poll loop that caused O(N) wgpu round-trip overhead.
+
+### Baseline results (local workstation, 2026-05-04)
+
+Deck: `corpus/dipole-freesp-rp-large-grid.nec` (37×73 = 2701 points)  
+Solver: hallen  
+Build: debug  
+Repeats: 3 (median reported)
+
+| Path | Median elapsed (µs) | Ratio |
+|---|---:|---:|
+| `--exec cpu` | 364,987 | 1.000× (reference) |
+| `--exec gpu` | 417,995 | 1.145× |
+
+Gate limit: ≤ 1.25× CPU. **Result: PASS.**
+
+Note: CPU/GPU on this machine differ by ~53 ms (wgpu hardware adapter enumeration overhead)
+even when the GPU dispatch falls back to CPU for the MoM solve. On Pi5 (no discrete GPU),
+the wgpu init fast-fails and both paths run at identical CPU-only speed.
