@@ -1,0 +1,11 @@
+[thresholds]
+# Fail if any (deck, solver, exec_mode) combination regresses by more than
+# this percentage relative to the stored ci-baseline.json.
+# Set generously to absorb GitHub Actions runner timing variance.
+max_regression_pct = 100.0
+
+# Fail if GPU average time exceeds CPU-single-thread average by more than
+# this multiplier. 1.25 matches the G5 gate (GPU >= 0.8x CPU).
+# GPU paths on CI use the stub fallback, so this primarily enforces
+# that the stub path does not add unreasonable overhead.
+max_gpu_cpu_ratio = 1.25
