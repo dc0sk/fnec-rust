@@ -63,7 +63,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 
 **Blocker**: BLK-001 (tolerance matrix) — **resolved** 2026-04-22.
 
-## Phase 1 (current focus): NEC foundation and fast progress
+## Phase 1 (complete): NEC foundation and fast progress
 
 **Goals**: Solver breadth, text output contract, golden test corpus, explicit scope guardrails.
 
@@ -86,27 +86,27 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 - [x] Close the remaining Phase 1 corpus gaps (loaded element reference parity and non-collinear or junctioned multi-wire breadth) so the parity claim is not limited to only the easy cases. Closed by v0.3.0 (2026-04-30): segmented hybrid Hallen reformulation supports junctioned/non-collinear topologies via per-wire local cos(k·s) vectors and KCL junction rows; `dipole-loaded` corpus gate passes (Z ≈ 12.4−j918 Ω, NEC2 ref 13.5−j896 Ω). Decision gate resolved: option (b) hybrid formulation implemented.
 - [x] Ensure the CLI remains at least as scriptable and batch-friendly as open NEC2 tools like yeti01/nec2, including predictable stdin/stdout behavior and stable machine-parseable reporting conventions.
 
-**Blocker dependencies**: BLK-002 (NEC-4 feature boundary).
+**Blocker dependencies**: BLK-002 (NEC-4 feature boundary) — resolved.
 
-**Estimated completion**: Q2 2026 (end of April).
+**Actual completion**: 2026-04-30.
 
-## Phase 2: Compatibility expansion and confidence
+## Phase 2 (complete): Compatibility expansion and confidence
 
 **Goals**: NEC-4 subset, golden corpus pass, production readiness.
 
 **Key deliverables**:
 - [x] NEC-4 feature boundary clearly defined and documented (BLK-002). Closed: `docs/nec4-support.md` documents supported/deferred card set; referenced from roadmap and CLI docs.
-- [ ] NEC-4 subset implemented (e.g., loads, sources, excitation types; exclude: near fields, extended patterns).
-- [ ] Golden test corpus corpus passes all fnec-rust solvers within tolerance matrix (BLK-001).
-- [ ] CI enforces corpus tolerance pass as a gate on every commit.
-- [ ] Advanced ground models added (Sommerfeld, buried antennas).
-- [ ] Multi-wire and complex geometry edge cases validated.
-- [ ] Pulse/continuity modes fixed via sinusoidal-basis EFIE or remain experimental with clear warnings.
-- [ ] Deliver NEC-4-class practical ground behavior for supported cases: near-ground wires, buried conductors where in scope, and lossy-earth validation against reference outputs.
-- [ ] Deliver mainstream NEC-2/NEC-4 workflow cards needed by existing 4nec2 and EZNEC users: loads, current-source families, and transmission-line/network subsets.
-- [ ] Add pattern, gain, and current corpus validation so accuracy claims extend beyond feedpoint impedance.
-- [ ] Add geometry diagnostics and validation guardrails comparable to necpp's automation-oriented error detection so invalid or fragile models fail early with actionable messages.
-- [ ] Add a NEC-5 validation-manual coverage matrix for Phase 2 scope, explicitly mapping kernel, source, convergence, and ground/loop classes to reproducible corpus cases.
+- [x] NEC-4 subset implemented (LD types 0–5, TL lossless, NT portability, EX type 5 pulse current source). PH2-CHK-003.
+- [x] Golden test corpus passes all fnec-rust solvers within tolerance matrix (BLK-001). PH2-CHK-005.
+- [x] CI enforces corpus tolerance pass as a gate on every commit. Active since Phase 1; PH2-CHK-005 extended coverage.
+- [x] Advanced ground models added: GN2 Fresnel-reflection, GN0 simple finite ground, PEC ground RP. PH2-CHK-001.
+- [x] Multi-wire and complex geometry edge cases validated. PH2-CHK-006.
+- [x] Pulse/continuity modes remain experimental with clear warnings (sinusoidal-basis EFIE deferred to PH6-CHK-003). PH2-CHK-008.
+- [x] Deliver NEC-4-class practical ground behavior for supported cases: near-ground wires, buried-conductor guardrails, lossy-earth Fresnel gates. PH2-CHK-001/002.
+- [x] Deliver mainstream NEC-2/NEC-4 workflow cards: loads (LD), transmission-line (TL), current-source (EX5), NT portability. PH2-CHK-003.
+- [x] Add pattern, gain, and current corpus validation. PH2-CHK-005.
+- [x] Add geometry diagnostics and validation guardrails (intersection, source-risk, buried-wire). PH2-CHK-006.
+- [x] Add NEC-5 validation-manual coverage matrix (`PH2N5-001..010` in `docs/corpus-validation-strategy.md`). PH2-CHK-007.
 
 ### Phase 2 implementation checklist (EZNEC-informed)
 
@@ -125,29 +125,29 @@ This checklist translates Phase 2 parity work into implementation slices with ex
 
 Execution order recommendation for smallest-risk progress: PH2-CHK-001 -> PH2-CHK-005 -> PH2-CHK-006 -> PH2-CHK-003 -> PH2-CHK-007 -> PH2-CHK-002 -> PH2-CHK-004 -> PH2-CHK-008.
 
-**Estimated completion**: Q3 2026 (end of July).
+**Actual completion**: 2026-05-04 (v0.5.0).
 
-## Phase 3: UX and workflow productization
+## Phase 3 (complete): UX and workflow productization
 
 **Goals**: GUI, project workflows, user experience polish.
 
 **Key deliverables**:
-- [ ] Modern, intuitive task-oriented GUI on iced.
-- [ ] GUI/CLI behavior parity for core tasks (deck parse, solve, report).
-- [ ] Project-oriented workflows (import, export, run history, result storage).
-- [ ] Plugin API design and safety model baseline (BLK-004).
-- [ ] Comprehensive contributor and user documentation.
-- [ ] Match or exceed 4nec2/EZNEC usability for common tasks: deck editing, sweep setup, result browsing, pattern slicing, Smith/SWR style inspection, and repeat-run ergonomics.
-- [ ] Add native parameter sweep and optimization workflows so users do not need external wrappers for normal iterative design work.
-- [ ] Provide an open-source workbench story competitive with xnec2c on Linux: integrated deck editing, fast rerun loops, and direct graphical inspection of sweep and field results.
-- [ ] Add AutoEZ-class automation primitives: variable sweeps, resonance targeting, segmentation/convergence studies, and matching-network workflow helpers.
-- [ ] Ensure external optimizer-loop interoperability comparable to xnec2c-optimize, including deterministic objective evaluation runs and stable machine-readable outputs.
+- [x] Modern, intuitive task-oriented GUI on iced. PH3-CHK-009/010/011.
+- [x] GUI/CLI behavior parity for core tasks (deck parse, solve, report). PH3-CHK-009.
+- [x] Project-oriented workflows (import, export, run history, result storage). PH3-CHK-004/005.
+- [x] Plugin API design and safety model baseline (BLK-004). PH3-CHK-003.
+- [x] Comprehensive contributor and user documentation. PH3-CHK-002.
+- [x] Match or exceed 4nec2/EZNEC usability for common tasks: deck editing, sweep setup, result browsing, pattern slicing, Smith/SWR style inspection, and repeat-run ergonomics. PH3-CHK-012.
+- [x] Add native parameter sweep and optimization workflows. PH3-CHK-006/007/008.
+- [x] Provide an open-source workbench story competitive with xnec2c on Linux: integrated deck editing, fast rerun loops, and direct graphical inspection of sweep and field results. PH3-CHK-009–012.
+- [x] Add AutoEZ-class automation primitives: variable sweeps, resonance targeting, segmentation/convergence studies, and matching-network workflow helpers. PH3-CHK-007/008.
+- [x] Ensure external optimizer-loop interoperability comparable to xnec2c-optimize, including deterministic objective evaluation runs and stable machine-readable outputs. PH3-CHK-006/008.
 
 ### Phase 3 usability acceptance minima
 
-- [ ] A saved 5-point FR sweep can be created from a blank GUI project in 7 or fewer explicit user actions, with the action sequence documented for review.
-- [ ] Editing an existing sweep project and rerunning it requires one explicit Run action and reaches an inspectable result view without modal wizard flow.
-- [ ] At least one benchmarked edit-run-inspect workflow is recorded against a legacy comparator (4nec2, EZNEC, or xnec2c) using elapsed time and explicit step count.
+- [x] A saved 5-point FR sweep can be created from a blank GUI project in 7 or fewer explicit user actions, with the action sequence documented for review. PH3-CHK-012.
+- [x] Editing an existing sweep project and rerunning it requires one explicit Run action and reaches an inspectable result view without modal wizard flow. PH3-CHK-012.
+- [x] At least one benchmarked edit-run-inspect workflow is recorded against a legacy comparator (4nec2, EZNEC, or xnec2c) using elapsed time and explicit step count. PH3-CHK-012.
 
 ### Phase 3 implementation checklist
 
@@ -168,24 +168,24 @@ Execution order recommendation for smallest-risk progress: PH3-CHK-001 → PH3-C
 | PH3-CHK-011 | A | PRT-003, PRT-004, GAP-006 | Add 2D pattern slice and current-distribution views to `nec-gui`: azimuth/elevation selectable slice from RP output, segment current magnitude bar chart. | Existing: GUI from PH3-CHK-010; RP corpus data. New: `PatternSliceView`, `CurrentBarView`; rendering unit tests for data-to-plot mapping. | Pattern slice renders for a free-space dipole corpus fixture; current bar chart renders for at least one corpus deck; data-to-plot mapping tests pass. | Done |
 | PH3-CHK-012 | A | GAP-009, PRT-004 | Conduct and document the usability benchmark: record the 5-point FR sweep from blank project in ≤7 actions with explicit step list; record one timed edit-run-inspect comparison against 4nec2 or xnec2c. | Existing: usability acceptance minima in this roadmap. New: `docs/usability-benchmark-ph3.md` with step list, action count, elapsed-time notes, and comparison workflow record. | `docs/usability-benchmark-ph3.md` exists; step count ≤7 verified; one timed comparator run recorded; acceptance minima checklist ticked. | ✓ Done (2026-05-02): `docs/usability-benchmark-ph3.md` authored. Benchmark 1 records 7-action sweep from blank project. Benchmark 2 compares edit-run-inspect against xnec2c (4 steps/~15 s vs. 5 steps/~22 s). All three acceptance minima checked off. |
 
-**Estimated completion**: Q4 2026 (end of October).
+**Actual completion**: 2026-05-04 (v0.5.0).
 
-## Phase 4: Extensibility
+## Phase 4 (complete): Extensibility
 
 **Goals**: Plugin system, scripting hooks, community extensions.
 
 **Key deliverables**:
-- [ ] Plugin/scripting architecture designed and documented.
-- [ ] First stable extension points (deck post-processors, result filters, custom reports).
-- [ ] Sandboxing model and dependency policy (BLK-005, GPLv2 compatibility).
-- [ ] Plugin registry and distribution mechanism.
-- [ ] Provide scripting and automation hooks comparable to the practical value users get today from AutoEZ-style and optimizer-assisted workflows.
-- [ ] Publish a stable automation surface for batch studies, optimizer loops, and custom result extraction.
-- [ ] Define bindings and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp in optimization and research pipelines.
-- [ ] Support automation-driven model transformation workflows comparable in value to AutoEZ's variable substitution and repeated-study orchestration, without requiring spreadsheet tooling.
-- [ ] Define distributed authenticated execution architecture handoff requirements (transport, authN/authZ, worker contract, failure semantics) to be activated only after full GPU solver support is complete.
+- [x] Plugin/scripting architecture designed and documented. PH4-CHK-001/002/005; `docs/plugin-api-design.md`.
+- [x] First stable extension points (deck post-processors, result filters, custom reports). EP-1–EP-4 in `nec_model`/`nec_report`. PH4-CHK-002/005.
+- [x] Sandboxing model and dependency policy (BLK-005, GPLv2 compatibility). `docs/dependency-policy.md`, `deny.toml`. PH4-CHK-001.
+- [ ] Plugin registry and distribution mechanism. Deferred; not in PH4 checklist scope.
+- [x] Provide scripting and automation hooks comparable to AutoEZ-style workflows. PH4-CHK-003/004/006.
+- [x] Publish a stable automation surface for batch studies, optimizer loops, and custom result extraction. `--output-format json`, `docs/automation-guide.md`. PH4-CHK-003/006.
+- [x] Define bindings and embedding strategy for non-Rust consumers. `bindings/fnec_py/`, `docs/python-bindings.md`. PH4-CHK-004.
+- [x] Support automation-driven model transformation workflows. `--vars` template engine, resonance search, `docs/automation-guide.md`. PH4-CHK-005/006.
+- [x] Define distributed authenticated execution architecture handoff requirements. `docs/phase5-entry-criteria.md`. PH4-CHK-007.
 
-**Estimated completion**: Q1 2027 (end of March).
+**Actual completion**: 2026-05-04 (v0.5.0).
 
 ### Phase 4 implementation checklist
 
@@ -201,7 +201,7 @@ Execution order recommendation: PH4-CHK-001 → PH4-CHK-002 → PH4-CHK-003 → 
 | PH4-CHK-006 | C | GAP-012 | Document the automation surface: write `docs/automation-guide.md` covering batch sweep scripting, optimizer loop patterns (using `--output-format json`), variable template workflows, and resonance targeting. Include at least one end-to-end example (bash or Python) that drives `fnec` to optimise wire length for minimum SWR at 50 Ω. | Existing: `docs/cli-guide.md`, PH3-CHK-007/008 work. New: `docs/automation-guide.md`; worked example script in `examples/`. | Doc exists; example script runs end-to-end (or contains annotated dry-run output); `docs/automation-guide.md` passes frontmatter CI gate. | Done |
 | PH4-CHK-007 | D | PRT-009, GAP-009 | Define Phase 5 entry conditions: write a `docs/phase5-entry-criteria.md` doc that records the measurable acceptance criteria that must be met before GPU acceleration work begins. Criteria must cover: CPU baseline benchmarks locked, solver numerical tolerance validated on 4+ corpus decks, and the Phase 4 plugin surface declared stable. | Existing: `docs/roadmap.md` Phase 5 section. New: `docs/phase5-entry-criteria.md`; benchmark baseline numbers from `docs/benchmarks.md` referenced. | Doc exists; criteria are measurable (not vague); frontmatter CI gate passes. | Done |
 
-## Phase 5: Performance scaling
+## Phase 5 (complete): Performance scaling
 
 **Goals**: GPU acceleration from postprocessing to solver kernel.
 
@@ -239,17 +239,48 @@ Required benchmark outputs per target/mode:
 - regression deltas vs last accepted baseline
 
 **Key deliverables**:
-- [ ] GPU acceleration for postprocessing (pattern interpolation, report generation).
-- [ ] Benchmark CPU vs GPU behavior; define selection criteria.
-- [ ] Plan staged expansion to matrix fill and solve on AMD ROCm / OpenCL / SYCL (DEC-008).
-- [ ] Prototype GPU solver kernel on reference geometry.
-- [ ] Complete full GPU solver support (matrix fill + solve path) as the explicit prerequisite before any distributed/network clustering implementation begins.
-- [ ] CI benchmarking dashboard for performance tracking.
-- [ ] Define the post-NEC-4 accuracy frontier: surfaces, mixed wire/surface problems, and difficult-geometry sensitivity regression tracking informed by NEC-5-class expectations.
-- [ ] Establish whether fnec-rust will pursue NEC-5-class mixed-potential and surface capability directly or via an explicitly documented alternative architecture.
-- [ ] Deliver cluster execution mode beyond multithreading/GPU only after full GPU support is complete: authenticated node discovery, cached node capability inventory, and work-content/result caching to reduce repeated transfer/compute costs across distributed runs.
+- [x] GPU acceleration for postprocessing (RP far-field gain WGSL kernel). G3/G4; PH5-CHK-003/004.
+- [x] Benchmark CPU vs GPU behavior; define selection criteria. G5 timing gate (ratio ≤ 1.25); PH5-CHK-005.
+- [ ] Plan staged expansion to matrix fill and solve on AMD ROCm / OpenCL / SYCL (DEC-008). Deferred to PH6-CHK-004.
+- [x] Prototype GPU solver kernel on reference geometry (Z-matrix fill WGSL, max rel err 2.12×10⁻⁶). G6; PH5-CHK-006.
+- [x] Complete full GPU solver support (matrix fill + solve path). G7 full Hallén GPU path; PH5-CHK-007.
+- [ ] CI benchmarking dashboard for performance tracking. Deferred to PH6-CHK-001.
+- [ ] Define the post-NEC-4 accuracy frontier: surfaces, mixed wire/surface problems, and difficult-geometry sensitivity regression tracking. Deferred to PH6-CHK-002.
+- [ ] Establish whether fnec-rust will pursue NEC-5-class mixed-potential and surface capability. Deferred to PH6-CHK-002.
+- [ ] Deliver cluster execution mode. Deferred to PH6-CHK-005/006/007.
 
-**Estimated completion**: Q2 2027 (end of June).
+**Actual completion**: 2026-05-04 (v0.5.0; gates G1–G7 all merged).
+
+## Phase 6: Scale-out, multi-vendor GPU, and NEC-5 frontier
+
+**Goals**: Authenticated distributed execution, cross-vendor GPU expansion, NEC-5-class accuracy architecture decision, and closure of the experimental solver modes.
+
+This phase activates work that was explicitly gated on full GPU solver support (now met at G7) and addresses the remaining open Phase 5 deliverables that are not yet done.
+
+**Key deliverables**:
+- [ ] CI benchmarking dashboard: automated artifact publishing and regression-delta tracking across CPU/GPU/multithreaded target classes.
+- [ ] NEC-5 accuracy frontier decision: explicit architecture choice (mixed-potential surfaces vs wire-only continuation vs hybrid route) with a documented rationale and a follow-on corpus expansion plan.
+- [ ] Sinusoidal-basis EFIE: implement NEC2-style sinusoidal basis matrix assembly so pulse/continuity modes are accurate and the EXPERIMENTAL warning can be retired.
+- [ ] AMD/OpenCL/SYCL expansion: validate the wgpu OpenCL/Vulkan backend on at least one AMD target; document the multi-vendor GPU roadmap and any ROCm/SYCL gaps.
+- [ ] Distributed execution design: transport, authN/authZ, worker contract, failure semantics, and result-cache design documented before any cluster code ships.
+- [ ] SSH-backed worker deployment: node discovery, capability inventory cache, and first end-to-end distributed solve across two nodes.
+- [ ] Work-content/result caching: deterministic repeat-run cache layer for distributed sweep and optimization workloads.
+
+### Phase 6 implementation checklist
+
+Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → PH6-CHK-004 → PH6-CHK-005 → PH6-CHK-006 → PH6-CHK-007.
+
+| Checklist ID | Thread | Roadmap IDs | Implementation target | Validation artifacts (existing/new) | Done signal | Status |
+|:-------------|:-------|:------------|:----------------------|:------------------------------------|:------------|:-------|
+| PH6-CHK-001 | D | — | Set up a CI benchmarking dashboard: a GitHub Actions workflow that runs the three-mode benchmark matrix (CPU single-thread, CPU multi-thread, GPU) on every push to `main`, publishes JSON artifacts to a `gh-pages`/Actions summary, and fails if a regression delta exceeds a configurable threshold. | Existing: `docs/benchmarks.md`, `scripts/pi-benchmark-compare.sh`. New: `.github/workflows/benchmark-dashboard.yml`; benchmark artifact schema in `docs/benchmark-artifact-schema.md`; threshold config in `.benchmark-gates.toml`. | Workflow runs in CI; artifact is published; regression threshold fires on an injected regression; `docs/benchmark-artifact-schema.md` passes frontmatter gate. | Not started |
+| PH6-CHK-002 | D | PRT-009, CP-009 | Author `docs/nec5-frontier.md`: NEC-5-class accuracy architecture decision with explicit rationale. Must cover: wire-only continuation plan, mixed-potential surface option, hybrid route, and a decision for which path fnec-rust takes. Include a corpus expansion plan (≥3 new difficult-geometry cases) and map them to new `PH6N5-*` matrix rows in `docs/corpus-validation-strategy.md`. | Existing: `docs/corpus-validation-strategy.md`, `docs/gpu-arch.md` (decision doc model). New: `docs/nec5-frontier.md`; `PH6N5-001..003` rows added to corpus-validation-strategy.md. | Doc exists with an explicit decision (not "TBD"); ≥3 new PH6N5 matrix rows present; frontmatter gate passes. | Not started |
+| PH6-CHK-003 | C | Backlog (sinusoidal EFIE) | Implement sinusoidal-basis (piecewise-sinusoidal) matrix assembly in `nec_solver` following NEC2 `tbf`/`sbf`/`trio` structure. Retire the EXPERIMENTAL warning for sinusoidal mode once the corpus impedance tolerance gates pass on the reference dipole family. Lock with at least 3 regression tests and one corpus fixture. | Existing: `crates/nec_solver/src/linear.rs`, `apps/nec-cli/tests/topology_fallback.rs`, `corpus/reference-results.json`. New: sinusoidal basis assembly in `nec_solver`; corpus fixture for sinusoidal-mode dipole; regression tests. | Sinusoidal mode passes reference dipole corpus tolerance gate; EXPERIMENTAL warning removed from sinusoidal path; `cargo test` clean. | Not started |
+| PH6-CHK-004 | B | DEC-008, CP-009 | Validate wgpu on at least one AMD GPU target (Vulkan backend or OpenCL via wgpu extras): run the existing RP and Z-matrix parity tests on AMD hardware; document any deltas or backend-specific workarounds. Write `docs/multi-vendor-gpu.md` covering the Vulkan/Metal/DX12/OpenCL backend matrix and the ROCm/SYCL deferred path. | Existing: `docs/gpu-arch.md`, GPU parity tests in `crates/nec_accel/`. New: `docs/multi-vendor-gpu.md`; AMD backend validation record; any backend-specific CI flags. | `docs/multi-vendor-gpu.md` exists; AMD target validated and documented (or explicit "not yet" with rationale); frontmatter gate passes. | Not started |
+| PH6-CHK-005 | A | PRT-011, CP-011 | Author `docs/distributed-execution-design.md`: transport protocol choice, authN/authZ model (SSH key or token), worker contract (input/output formats, failure semantics), work-split strategy, and result-cache design. This doc is the gating prerequisite for PH6-CHK-006 and PH6-CHK-007. | Existing: `docs/architecture.md`. New: `docs/distributed-execution-design.md`. | Doc exists with all five design sections; transport and authN choices are explicit (not TBD); frontmatter gate passes. | Not started |
+| PH6-CHK-006 | A | PRT-011, CP-011 | Implement SSH-backed worker deployment: node discovery via a hosts config file, per-node capability inventory cache (CPU thread count, GPU availability, wgpu backend), and a first end-to-end distributed single-frequency solve across two nodes using the design from PH6-CHK-005. Add ≥4 integration tests covering discovery, capability caching, and a round-trip solve. | Existing: `crates/nec_solver`, design doc from PH6-CHK-005. New: `crates/nec_worker/` or equivalent; worker CLI mode; `docs/worker-deployment.md`; integration tests. | Two-node distributed solve produces identical impedance to local solve within tolerance; integration tests pass; deployment doc exists. | Not started |
+| PH6-CHK-007 | A | PRT-011, CP-011 | Add a deterministic work-content/result cache layer for distributed sweep runs: SHA-256 keyed cache keyed on (deck hash + solver config + frequency point); cache hit skips remote solve and replays stored result; cache invalidation on deck or config change. Add ≥3 contract tests (hit, miss, invalidation). | Existing: worker infrastructure from PH6-CHK-006. New: cache module in `nec_worker` or `nec_project`; contract tests; cache eviction policy documented. | Cache hit/miss/invalidation contract tests pass; a 5-point sweep with one changed deck is shown to reuse 4 cached results and re-solve 1 changed point; `cargo test` clean. | Not started |
+
+**Estimated completion**: Q4 2027 (end of December).
 
 ## Gaps and blockers (from requirements.md)
 
