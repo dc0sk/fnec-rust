@@ -1,9 +1,8 @@
 ---
 project: fnec-rust
 doc: docs/utd-feasibility-assessment.md
-status: reference
+status: living
 last_updated: 2026-05-04
-correction: ADA305743 corrected from "likely NEC-BSC" to Rousseau & Pathak TD-UTD (1996), confirmed via PDF review (all 163 pp. read 2026-05-04)
 ---
 
 # UTD and Canning Simply Sparse: Feasibility Assessment
