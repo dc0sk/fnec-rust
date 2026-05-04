@@ -22,7 +22,12 @@ fn deck_path() -> PathBuf {
         .join("corpus/dipole-freesp-rp-large-grid.nec")
 }
 
-fn run_timed(exec_mode: &str) -> std::time::Duration {
+struct RunResult {
+    elapsed: std::time::Duration,
+    stderr: String,
+}
+
+fn run_timed(exec_mode: &str) -> RunResult {
     let deck = deck_path();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.args(["--solver", "hallen", "--exec", exec_mode])
@@ -42,7 +47,10 @@ fn run_timed(exec_mode: &str) -> std::time::Duration {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    elapsed
+    RunResult {
+        elapsed,
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
 }
 
 fn median_us(times: &mut [u64]) -> u64 {
@@ -59,10 +67,24 @@ fn gpu_exec_not_more_than_25_percent_slower_than_cpu() {
     const REPS: usize = 3;
     let mut cpu_us = [0u64; REPS];
     let mut gpu_us = [0u64; REPS];
+    let mut gpu_fallback = false;
 
     for i in 0..REPS {
-        cpu_us[i] = run_timed("cpu").as_micros() as u64;
-        gpu_us[i] = run_timed("gpu").as_micros() as u64;
+        let cpu = run_timed("cpu");
+        let gpu = run_timed("gpu");
+        cpu_us[i] = cpu.elapsed.as_micros() as u64;
+        gpu_us[i] = gpu.elapsed.as_micros() as u64;
+        if gpu.stderr.contains("no wgpu adapter available") {
+            gpu_fallback = true;
+        }
+    }
+
+    // When running in CI without a hardware GPU the wgpu path falls back to
+    // the CPU stub.  The timing comparison is meaningless (and noisy) in that
+    // environment, so we only enforce the gate when a real adapter was used.
+    if gpu_fallback {
+        eprintln!("G5 gate: no hardware GPU adapter — timing gate skipped (software fallback)");
+        return;
     }
 
     let cpu_med = median_us(&mut cpu_us);
