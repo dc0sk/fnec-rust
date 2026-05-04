@@ -401,7 +401,46 @@ pub(super) fn solve_frequency_point(
     };
 
     let mut z_mat = match solver_mode {
-        SolverMode::Hallen => assemble_z_matrix_with_ground(segs, freq_hz, ground),
+        SolverMode::Hallen => {
+            // For free-space (or deferred) ground with --exec gpu, attempt GPU Z-matrix fill.
+            // Ground-image-augmented models fall back to CPU; GPU fills free-space part only.
+            // A minimum segment count guards against wgpu device-init overhead dominating for
+            // small problems where CPU assembly is < 1 ms.
+            const MIN_GPU_ZMATRIX_SEGS: usize = 128;
+            let try_gpu = execution_mode == ExecutionMode::Gpu
+                && segs.len() >= MIN_GPU_ZMATRIX_SEGS
+                && matches!(
+                    ground,
+                    GroundModel::FreeSpace | GroundModel::Deferred { .. }
+                );
+            if try_gpu {
+                let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
+                    .iter()
+                    .map(|s| nec_accel::ZSegmentInput {
+                        midpoint: s.midpoint,
+                        direction: s.direction,
+                        length: s.length,
+                        radius: s.radius,
+                    })
+                    .collect();
+                match pollster::block_on(nec_accel::fill_zmatrix_wgpu(&z_inputs, freq_hz)) {
+                    Some(elems) => {
+                        let n = segs.len();
+                        let flat: Vec<Complex64> = elems
+                            .iter()
+                            .map(|e| Complex64::new(e.re as f64, e.im as f64))
+                            .collect();
+                        ZMatrix::from_flat(n, flat)
+                    }
+                    None => {
+                        eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU Z-matrix fill");
+                        assemble_z_matrix_with_ground(segs, freq_hz, ground)
+                    }
+                }
+            } else {
+                assemble_z_matrix_with_ground(segs, freq_hz, ground)
+            }
+        }
         SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => {
             assemble_pocklington_matrix(segs, freq_hz)
         }
