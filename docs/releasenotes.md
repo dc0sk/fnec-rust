@@ -2,10 +2,41 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-05-02
+last_updated: 2026-05-04
 ---
 
 # Release Notes
+
+## 0.5.0 — Phase 2 + Phase 5 complete
+
+### GPU acceleration (Phase 5)
+
+- **`--exec gpu`**: full Hallén solve path — GPU Z-matrix fill (WGSL compute shader) + CPU LU solve. Free-space and deferred-ground decks with N ≥ 128 segments use the GPU path; smaller problems and ground-augmented models retain the CPU path. Falls back gracefully to CPU when no wgpu adapter is available.
+- **RP far-field GPU kernel**: `--exec gpu` dispatches the radiation-pattern far-field computation through a real wgpu WGSL compute shader (gate G4 onward). Gain parity ≤ 0.5 dBi vs CPU on all corpus RP cases.
+- **`ZMatrix::from_flat`**: new constructor for building a `ZMatrix` from GPU-produced flat row-major data.
+- **CPU-vs-GPU benchmark gate (G5)**: GPU path asserted no more than 25% slower than CPU on large RP grid (37×73 = 2701 points); gate is skipped gracefully in CI without hardware GPU.
+- Gate G6: GPU Z-matrix fill max relative error 2.12×10⁻⁶ vs CPU (limit 1×10⁻⁴) on 51-segment dipole at 14 MHz.
+- Gate G7: GPU fill + CPU solve feedpoint ΔR=0 Ω, ΔX=0 Ω vs all-CPU reference.
+
+### Ground and geometry (Phase 2)
+
+- **GN2 near-ground**: above-ground GN type 2 decks solve correctly with a near-ground corpus fixture and tolerance gate.
+- **Buried-wire guardrails**: buried-wire requests on active ground models fail fast with an actionable diagnostic; supported near-ground class is corpus-gated.
+- **GN0 Fresnel finite ground**: Hallen matrix assembly uses a complex Fresnel-style reflection factor from EPSE/SIG for GN type 0 simple finite-ground decks.
+- **PEC ground RP**: ground-plane image contribution correctly applied to far-field computation with above-horizon normalization and below-horizon null contract.
+- **Geometry diagnostics**: intersecting wires, tiny source segments (L/r < 2), and invalid junction topologies detected before solve with actionable error messages.
+
+### Source, load, and network (Phase 2)
+
+- **EX type 5 (pulse-mode current source)**: driven-segment current path implemented; suppresses legacy portability warning on `--solver pulse`.
+- **LD family**: distributed and lumped load semantics implemented and corpus-gated.
+- **TL subset**: transmission-line card semantics wired into solve path.
+
+### Report and scriptability (Phase 2)
+
+- **SOURCES / LOADS sections**: stable, machine-parseable report sections with deterministic ordering (`FEEDPOINTS → SOURCES → LOADS → CURRENTS`).
+- **SWEEP_POINTS summary**: per-frequency sweep summary section after all report blocks.
+- **Scriptability preserved**: stderr-only diagnostics and stable stdout machine stream remain hard contracts after all Phase 2 additions.
 
 ## 0.4.0 — Phase 3 complete
 
