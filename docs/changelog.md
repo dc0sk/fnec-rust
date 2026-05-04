@@ -9,6 +9,18 @@ last_updated: 2026-05-04
 
 All notable documentation process changes are recorded here.
 
+## [0.5.0] — 2026-05-04
+### Added
+
+- **Phase 2 complete** — all eight PH2-CHK items done (ground models, buried-wire guardrails, source/load/network semantics, report/table parity, corpus truth expansion, geometry diagnostics, NEC-5 validation matrix, scriptability preservation).
+- **Phase 5 complete** — all seven PH5-CHK GPU acceleration items done (G1–G7 gates: architecture decision, wgpu scaffold, RP WGSL kernel, CLI --exec gpu wiring, CPU-vs-GPU benchmark gate, Z-matrix fill WGSL kernel, full GPU Hallén solve path).
+
+## [0.5.0] — 2026-05-04
+### Added
+
+- **Phase 2 complete** — all eight PH2-CHK items done (ground models, buried-wire guardrails, source/load/network semantics, report/table parity, corpus truth expansion, geometry diagnostics, NEC-5 validation matrix, scriptability preservation).
+- **Phase 5 complete** — all seven PH5-CHK GPU acceleration items done (G1–G7 gates: architecture decision, wgpu scaffold, RP WGSL kernel, CLI `--exec gpu` wiring, CPU-vs-GPU benchmark gate, Z-matrix fill WGSL kernel, full GPU Hallén solve path).
+
 ## [0.4.0] — 2026-05-02
 ### Added
 
