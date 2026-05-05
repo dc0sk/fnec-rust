@@ -247,3 +247,199 @@ impl RunHistory {
         self.0.push(record);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    fn minimal_project() -> ProjectFile {
+        ProjectFile {
+            version: 1,
+            name: "test-dipole".to_string(),
+            deck_path: PathBuf::from("corpus/dipole-freesp-51seg.nec"),
+            solver: SolverConfig::default(),
+            runs: vec![],
+            history: RunHistory::default(),
+        }
+    }
+
+    fn make_run_record(label: &str, z_re: f64, z_im: f64) -> RunRecord {
+        RunRecord {
+            timestamp: "2026-05-05T12:00:00Z".to_string(),
+            solver: SolverConfig {
+                mode: label.to_string(),
+                pulse_rhs: "auto".to_string(),
+            },
+            result: ResultSummary {
+                impedance_re: z_re,
+                impedance_im: z_im,
+                peak_gain_dbi: None,
+                sweep_point_count: 1,
+            },
+        }
+    }
+
+    // ── SolverConfig ────────────────────────────────────────────────────────
+
+    #[test]
+    fn solver_config_default_is_hallen_auto() {
+        let sc = SolverConfig::default();
+        assert_eq!(sc.mode, "hallen");
+        assert_eq!(sc.pulse_rhs, "auto");
+    }
+
+    // ── ProjectFile round-trip ───────────────────────────────────────────────
+
+    #[test]
+    fn project_file_round_trips_minimal() {
+        let project = minimal_project();
+        let toml = project.to_toml().expect("serialise should succeed");
+        let loaded = ProjectFile::from_toml(&toml).expect("deserialise should succeed");
+        assert_eq!(loaded, project);
+    }
+
+    #[test]
+    fn project_file_round_trips_with_runs_and_history() {
+        let mut project = minimal_project();
+        project.runs.push(NamedRun {
+            name: "baseline".to_string(),
+            description: Some("Default Hallen solve".to_string()),
+            solver: None,
+        });
+        project.runs.push(NamedRun {
+            name: "loaded".to_string(),
+            description: None,
+            solver: Some(SolverConfig {
+                mode: "hallen".to_string(),
+                pulse_rhs: "1".to_string(),
+            }),
+        });
+        project
+            .history
+            .push(make_run_record("hallen", 74.24, 13.90));
+
+        let toml = project.to_toml().expect("serialise should succeed");
+        let loaded = ProjectFile::from_toml(&toml).expect("deserialise should succeed");
+        assert_eq!(loaded, project);
+    }
+
+    #[test]
+    fn project_file_toml_omits_empty_runs_and_history() {
+        let project = minimal_project();
+        let toml = project.to_toml().expect("serialise should succeed");
+        // Empty runs and empty history should not appear in the TOML output.
+        assert!(!toml.contains("[[runs]]"), "empty runs should be omitted");
+        assert!(
+            !toml.contains("[[history]]"),
+            "empty history should be omitted"
+        );
+    }
+
+    #[test]
+    fn project_file_round_trips_with_peak_gain() {
+        let mut project = minimal_project();
+        project.history.push(RunRecord {
+            timestamp: "2026-05-05T14:00:00Z".to_string(),
+            solver: SolverConfig::default(),
+            result: ResultSummary {
+                impedance_re: 74.24,
+                impedance_im: 13.90,
+                peak_gain_dbi: Some(2.15),
+                sweep_point_count: 3,
+            },
+        });
+
+        let toml = project.to_toml().expect("serialise should succeed");
+        let loaded = ProjectFile::from_toml(&toml).expect("deserialise should succeed");
+        assert_eq!(loaded.last_run().unwrap().result.peak_gain_dbi, Some(2.15));
+    }
+
+    // ── Version guard ────────────────────────────────────────────────────────
+
+    #[test]
+    fn unsupported_version_returns_error() {
+        let bad_toml = r#"
+version = 99
+name = "bad"
+deck_path = "deck.nec"
+[solver]
+mode = "hallen"
+pulse_rhs = "auto"
+"#;
+        let result = ProjectFile::from_toml(bad_toml);
+        assert!(
+            matches!(result, Err(ProjectError::UnsupportedVersion(99))),
+            "expected UnsupportedVersion(99), got {result:?}",
+        );
+    }
+
+    #[test]
+    fn missing_required_field_returns_deserialise_error() {
+        let bad_toml = r#"version = 1"#; // missing name, deck_path, solver
+        let result = ProjectFile::from_toml(bad_toml);
+        assert!(
+            matches!(result, Err(ProjectError::DeserialiseError(_))),
+            "expected DeserialiseError, got {result:?}",
+        );
+    }
+
+    // ── ProjectError Display ─────────────────────────────────────────────────
+
+    #[test]
+    fn project_error_unsupported_version_display() {
+        let msg = ProjectError::UnsupportedVersion(42).to_string();
+        assert!(msg.contains("42"), "display should mention the bad version");
+        assert!(
+            msg.contains(&PROJECT_FILE_VERSION.to_string()),
+            "display should mention the expected version"
+        );
+    }
+
+    // ── RunHistory API ───────────────────────────────────────────────────────
+
+    #[test]
+    fn run_history_starts_empty() {
+        let h = RunHistory::default();
+        assert!(h.is_empty());
+        assert_eq!(h.run_count(), 0);
+        assert!(h.last_run().is_none());
+        assert!(h.run_by_index(0).is_none());
+    }
+
+    #[test]
+    fn run_history_push_and_query() {
+        let mut h = RunHistory::default();
+        h.push(make_run_record("hallen", 74.24, 13.90));
+        h.push(make_run_record("continuity", 50.0, 0.0));
+
+        assert_eq!(h.run_count(), 2);
+        assert!(!h.is_empty());
+        assert_eq!(h.last_run().unwrap().solver.mode, "continuity");
+        assert_eq!(h.run_by_index(0).unwrap().solver.mode, "hallen");
+        assert_eq!(h.run_by_index(1).unwrap().solver.mode, "continuity");
+        assert!(h.run_by_index(2).is_none());
+    }
+
+    // ── ProjectFile run-history delegation ───────────────────────────────────
+
+    #[test]
+    fn project_file_run_count_delegates_to_history() {
+        let mut project = minimal_project();
+        assert_eq!(project.run_count(), 0);
+        assert!(project.last_run().is_none());
+        project
+            .history
+            .push(make_run_record("hallen", 74.24, 13.90));
+        assert_eq!(project.run_count(), 1);
+        assert!(project.last_run().is_some());
+        assert!(project.run_by_index(0).is_some());
+        assert!(project.run_by_index(1).is_none());
+    }
+}
