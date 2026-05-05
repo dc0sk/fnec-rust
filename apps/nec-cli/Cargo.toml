@@ -21,6 +21,7 @@ nec_accel   = { workspace = true, features = ["wgpu"] }
 nec_project = { workspace = true }
 nec_report  = { workspace = true }
 nec_solver  = { workspace = true }
+nec_worker  = { workspace = true }
 num-complex = { workspace = true }
 pollster    = { workspace = true }
 rayon       = { workspace = true }
@@ -28,4 +29,5 @@ serde       = { workspace = true }
 toml        = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1"
+serde_json = { workspace = true }
+base64     = { workspace = true }

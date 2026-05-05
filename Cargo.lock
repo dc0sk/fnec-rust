@@ -294,6 +294,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,12 +2112,14 @@ dependencies = [
 name = "nec-cli"
 version = "0.5.0"
 dependencies = [
+ "base64",
  "nec_accel",
  "nec_model",
  "nec_parser",
  "nec_project",
  "nec_report",
  "nec_solver",
+ "nec_worker",
  "num-complex",
  "pollster",
  "rayon",
@@ -2191,6 +2199,20 @@ dependencies = [
  "nec_model",
  "num-complex",
  "proptest",
+]
+
+[[package]]
+name = "nec_worker"
+version = "0.5.0"
+dependencies = [
+ "base64",
+ "nec_model",
+ "nec_parser",
+ "nec_solver",
+ "num-complex",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
