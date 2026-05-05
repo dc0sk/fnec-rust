@@ -171,7 +171,7 @@ fn solve_corpus_dipole_freesp() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
 
-    let result = solve_deck_path(&deck_path)
+    let result = solve_deck_path(&deck_path, None)
         .unwrap_or_else(|e| panic!("solve failed for corpus dipole: {e}"));
 
     // Reference impedance: Z ≈ 73 + j42 Ω (Hallen, 14.2 MHz).
@@ -187,9 +187,10 @@ fn solve_corpus_dipole_freesp() {
 /// solve_deck_path returns Err for a non-existent file.
 #[test]
 fn solve_deck_path_nonexistent_file_returns_err() {
-    let result = solve_deck_path(std::path::Path::new(
-        "/tmp/does-not-exist-fnec-gui-test.nec",
-    ));
+    let result = solve_deck_path(
+        std::path::Path::new("/tmp/does-not-exist-fnec-gui-test.nec"),
+        None,
+    );
     assert!(result.is_err(), "expected Err for nonexistent file");
     let msg = result.unwrap_err();
     assert!(

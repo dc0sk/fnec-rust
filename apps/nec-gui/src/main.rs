@@ -41,8 +41,13 @@ impl FnecGui {
 
         if spawn_solve {
             let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
             Task::perform(
-                async move { solve_deck_path(&path) },
+                async move { solve_deck_path(&path, vars.as_deref()) },
                 Message::SolveComplete,
             )
         } else if spawn_sweep {
@@ -51,8 +56,13 @@ impl FnecGui {
             match self.state.sweep_params() {
                 Ok((start, end, step)) => {
                     let path = PathBuf::from(self.state.deck_path.clone());
+                    let vars: Option<String> = if self.state.vars_path.is_empty() {
+                        None
+                    } else {
+                        Some(self.state.vars_path.clone())
+                    };
                     Task::perform(
-                        async move { sweep_deck_path(&path, start, end, step) },
+                        async move { sweep_deck_path(&path, vars.as_deref(), start, end, step) },
                         Message::SweepComplete,
                     )
                 }
@@ -66,8 +76,13 @@ impl FnecGui {
             match self.state.pattern_phi() {
                 Ok(phi_deg) => {
                     let path = PathBuf::from(self.state.deck_path.clone());
+                    let vars: Option<String> = if self.state.vars_path.is_empty() {
+                        None
+                    } else {
+                        Some(self.state.vars_path.clone())
+                    };
                     Task::perform(
-                        async move { pattern_slice_deck_path(&path, phi_deg) },
+                        async move { pattern_slice_deck_path(&path, vars.as_deref(), phi_deg) },
                         Message::PatternComplete,
                     )
                 }
@@ -78,8 +93,13 @@ impl FnecGui {
             }
         } else if spawn_currents {
             let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
             Task::perform(
-                async move { current_distribution_deck_path(&path) },
+                async move { current_distribution_deck_path(&path, vars.as_deref()) },
                 Message::CurrentsComplete,
             )
         } else {
@@ -121,6 +141,19 @@ impl FnecGui {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
+        // ── Optional variable-substitution file row ──────────────────────
+        let vars_row = row![
+            text("Vars file:").width(Length::Fixed(80.0)),
+            text_input(
+                "Optional: path to .toml or .json vars file (for $VAR decks)…",
+                &self.state.vars_path,
+            )
+            .on_input(Message::VarsPathChanged)
+            .width(Length::Fill),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
         // ── Active tab content ───────────────────────────────────────────
         let tab_content: Element<Message> = match self.state.active_tab {
             ActiveTab::Solve => self.solve_view(),
@@ -129,7 +162,7 @@ impl FnecGui {
             ActiveTab::Currents => self.currents_view(),
         };
 
-        let content = column![tab_bar, path_row, tab_content]
+        let content = column![tab_bar, path_row, vars_row, tab_content]
             .spacing(12)
             .padding(20);
 

@@ -72,6 +72,9 @@ pub enum CurrentsPhase {
 pub struct AppState {
     /// Path to the NEC deck file as entered by the user.
     pub deck_path: String,
+    /// Optional path to a `.toml` or `.json` variable-substitution file.
+    /// When non-empty, `$VAR` tokens in the deck are substituted before parsing.
+    pub vars_path: String,
     /// Current active tab.
     pub active_tab: ActiveTab,
     /// Single-frequency solver phase.
@@ -103,6 +106,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             deck_path: String::new(),
+            vars_path: String::new(),
             active_tab: ActiveTab::default(),
             phase: SolvePhase::default(),
             sweep_start: "14.0".into(),
@@ -134,6 +138,8 @@ pub enum Message {
     // ── Global ────────────────────────────────────────────────────────────
     /// User typed a new deck path.
     DeckPathChanged(String),
+    /// User typed a new vars file path.
+    VarsPathChanged(String),
     /// User switched tabs.
     TabSelected(ActiveTab),
     // ── Single-frequency tab ──────────────────────────────────────────────
@@ -179,6 +185,9 @@ impl AppState {
                 if matches!(self.phase, SolvePhase::Failed(_)) {
                     self.phase = SolvePhase::Idle;
                 }
+            }
+            Message::VarsPathChanged(p) => {
+                self.vars_path = p.clone();
             }
             Message::TabSelected(tab) => {
                 self.active_tab = tab.clone();
