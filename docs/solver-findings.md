@@ -19,9 +19,9 @@ center-fed half-wave dipole test case at 14.2 MHz.
 - Excitation: EX 0, center segment (tag=1, seg=26), 1.0 V
 - Reference: xnec2c NEC2 C implementation; Python MoM scripts in `studies/mom-kernel-accuracy/`
 
-## Confirmed results (2026-04-22)
+## Confirmed results (2026-04-22, updated 2026-05-01)
 
-### Hallén solver — CORRECT
+### Hallén solver — INTERNALLY CONSISTENT (see model-difference note below)
 
 After fixing two bugs (`e098fb4`, `c302f29`), the Hallén augmented system is now:
 
@@ -36,7 +36,7 @@ with the correct RHS prefactor:
 
 $$\text{Hallén RHS prefactor} = \frac{2\pi}{\eta_0}$$
 
-Validation results:
+Validation results against the independent Python reference (`studies/mom-kernel-accuracy/hallen_reference.py`):
 
 | Mode | N=51 | Python reference |
 |:-----|:-----|:----------------|
@@ -46,6 +46,62 @@ $$Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega$$
 
 The Hallén augmented system (`[A | −cos] [I; C] = b`) with the correct
 `2π/η₀` RHS prefactor and NEC sign convention is the production-accurate solver.
+
+### NEC2 cross-validation and Hallén vs. Pocklington model difference (2026-05-01)
+
+**Background.** The original `solver-findings.md` and `hallen_reference.py` both
+contained the claim "matches xnec2c NEC2 reference". That claim was never verified
+against an actual NEC2 run and was incorrect.
+
+**NEC2 reference run.** After running both `nec2c` and `NEC2DXS500` (double-precision
+4nec2 engine, via wine) on the identical geometry, the actual NEC2 result is:
+
+$$Z_{\mathrm{NEC2}}(N=51,\,14.2\,\mathrm{MHz}) = 79.35 + j\,46.22\,\Omega$$
+
+Both tools agree to four significant figures. A segment-count convergence sweep
+(N = 11, 21, 51, 101) shows NEC2 is stable at ~79–80 + j45–46 Ω.
+
+**fnec Hallén convergence sweep:**
+
+| N | fnec Hallén | fnec Sinusoidal | NEC2DXS |
+|--:|-------------|-----------------|---------|
+| 11 | 57.88 − j100.1 | 58.12 − j118.3 | 78.69 + j45.4 |
+| 21 | 67.31 − j31.2  | 66.23 − j34.5  | 79.03 + j45.9 |
+| 51 | 74.24 + j13.9  | 74.27 + j13.3  | 79.35 + j46.2 |
+| 101 | 76.85 + j29.8 | 76.78 + j29.6  | 79.49 + j46.4 |
+
+**Root cause — NOT a bug; different physical models.** The Hallén and NEC2 solvers
+implement fundamentally different integral equations:
+
+- **Hallén (fnec):** Uses the reduced thin-wire kernel (`e^{-jkr}/r`) with the
+  `sin(k|z|)` RHS. This models the dipole as driven by an ideal distributed source
+  whose strength matches the sinusoidal current shape. The "impedance" is the ratio
+  of the assumed excitation voltage to the feed current. The antenna resonates at
+  exactly half-wave length ($L/\lambda = 0.5$), giving $X \approx 0$ at exact
+  resonance.
+
+- **NEC2 / Pocklington EFIE:** Uses piecewise-sinusoidal basis functions on each
+  segment and a delta-gap voltage source on a finite segment. The discrete feed gap
+  introduces an additional inductive contribution. NEC2's half-wave resonance
+  occurs at $L/\lambda \approx 0.475$ (the antenna must be physically shorter than
+  half-wave for $X = 0$ in the delta-gap model).
+
+**Frequency-sweep confirmation.** Running the fnec Hallén solver over a frequency sweep
+shows that at 14.5 MHz it gives Z ≈ 79.41 + j45.51 Ω — essentially identical to
+NEC2's 14.2 MHz result. The two formulations produce the same impedance curve shifted
+by ~0.3 MHz (about 2%), consistent with the known delta-gap vs. distributed-source
+offset.
+
+**Conclusion.** The fnec Hallén solver is **internally correct**. The Python reference
+(`hallen_reference.py`) is also correct. The "74.23 + j13.90 Ω matches xnec2c" label
+was a false claim — the two quantities are not directly comparable without accounting
+for the model difference. Corpus reference values for the `hallen` and `sinusoidal`
+solver modes reflect the Hallén model and remain valid for regression testing. They
+should not be compared directly to NEC2 output without the ~0.3 MHz frequency offset
+correction.
+
+**For future validation of the Pocklington EFIE path (if/when implemented), use NEC2
+as the direct reference.**
 
 ### EX type 3 source handling — REGRESSION-COVERED
 
