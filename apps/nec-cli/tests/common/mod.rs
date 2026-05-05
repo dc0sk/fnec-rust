@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub fn diag_field<'a>(stderr: &'a str, key: &str) -> Option<&'a str> {
     let prefix = format!("{key}=");
     for line in stderr.lines() {
