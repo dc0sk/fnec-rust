@@ -743,7 +743,7 @@ fn current_distribution_peak_near_feedpoint() {
         .unwrap();
     // Feedpoint is segment 25 (0-based middle of 51), allow ±3.
     assert!(
-        peak_idx >= 22 && peak_idx <= 28,
+        (22..=28).contains(&peak_idx),
         "peak current at segment {peak_idx}, expected near 25"
     );
 }

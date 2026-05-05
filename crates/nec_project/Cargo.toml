@@ -17,3 +17,6 @@ nec_solver  = { workspace = true }
 nec_report  = { workspace = true }
 serde       = { workspace = true }
 toml        = { workspace = true }
+
+[lints]
+workspace = true

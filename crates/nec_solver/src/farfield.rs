@@ -255,7 +255,7 @@ fn far_field_components_with_image(
 /// * `freq_hz`  — operating frequency in Hz.
 /// * `points`   — observation directions (θ, φ in degrees).
 /// * `ground`   — ground model; `PerfectConductor` adds PEC image contribution
-///               and restricts the pattern to the upper hemisphere (θ ≤ 90°).
+///   and restricts the pattern to the upper hemisphere (θ ≤ 90°).
 pub fn compute_radiation_pattern(
     segs: &[Segment],
     i_vec: &[Complex64],

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
+// Numerical matrix algorithms legitimately use index-based loops.
+#![allow(clippy::needless_range_loop)]
+
 //! Dense complex linear solver: LU factorisation with partial pivoting.
 //!
 //! Solves Z·I = V for the segment current vector I.

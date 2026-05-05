@@ -24,3 +24,6 @@ pollster = { workspace = true }
 nec_solver = { workspace = true }
 nec_parser = { workspace = true }
 nec_model  = { workspace = true }
+
+[lints]
+workspace = true

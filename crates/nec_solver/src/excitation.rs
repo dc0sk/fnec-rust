@@ -78,7 +78,7 @@ pub fn build_excitation(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        apply_ex(&ex, segs, &mut v)?;
+        apply_ex(ex, segs, &mut v)?;
     }
 
     Ok(v)

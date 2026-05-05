@@ -375,8 +375,8 @@ impl AppState {
         if valid.is_empty() {
             return Vec::new();
         }
-        let max_g = valid.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_g = valid.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_g = valid.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min_g = valid.iter().copied().fold(f64::INFINITY, f64::min);
         let range = (max_g - min_g).max(1e-12);
 
         pts.iter()

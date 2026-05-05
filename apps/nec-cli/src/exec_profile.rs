@@ -95,7 +95,7 @@ pub(super) fn warn_compatibility_profile(
 
 pub(super) fn startup_execution_probe(freq_points: usize) -> StartupExecutionProbe {
     let cpu_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
+        .map(std::num::NonZeroUsize::get)
         .unwrap_or(1);
     let gpu_available = matches!(
         dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6),

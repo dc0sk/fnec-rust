@@ -45,3 +45,24 @@ wgpu = "29"
 serde_json = "1"
 base64 = "0.22"
 sha2 = "0.10"
+
+# ---------------------------------------------------------------------------
+# Workspace-level lint configuration
+# ---------------------------------------------------------------------------
+# All crates opt in via `[lints] workspace = true` in their Cargo.toml.
+# Overrides are documented in the relevant crate's Cargo.toml.
+[workspace.lints.rust]
+unsafe_code   = "warn"
+unused_imports = "warn"
+
+[workspace.lints.clippy]
+# Pedantic subset we want across the workspace
+cloned_instead_of_copied  = "warn"
+manual_string_new          = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+# Lints suppressed workspace-wide (documented reason)
+# needless_range_loop: numerical code in nec_solver uses index arithmetic
+#   intentionally; suppressed file-level in linear.rs / basis.rs.
+# type_complexity / too_many_arguments: suppressed per-site in solve_session
+#   and geometry test helpers.

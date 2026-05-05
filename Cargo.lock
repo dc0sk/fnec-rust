@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "nec-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "nec_accel",
@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "nec-gui"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "iced",
  "nec_model",
@@ -2138,18 +2138,19 @@ dependencies = [
  "nec_project",
  "nec_solver",
  "num-complex",
+ "toml",
 ]
 
 [[package]]
 name = "nec-tui"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nec_project",
 ]
 
 [[package]]
 name = "nec_accel"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bytemuck",
  "nec_model",
@@ -2162,18 +2163,18 @@ dependencies = [
 
 [[package]]
 name = "nec_model"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "nec_parser"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nec_model",
 ]
 
 [[package]]
 name = "nec_project"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nec_model",
  "nec_parser",
@@ -2185,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "nec_report"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nec_model",
  "num-complex",
@@ -2193,7 +2194,7 @@ dependencies = [
 
 [[package]]
 name = "nec_solver"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nec_accel",
  "nec_model",
@@ -2203,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "nec_worker"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "nec_model",

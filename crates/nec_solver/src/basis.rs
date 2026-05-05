@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
+// Numerical transform matrices are built with index arithmetic; suppress the
+// lint that suggests converting them to iterator-based loops.
+#![allow(clippy::needless_range_loop)]
+
 //! Current-basis utilities.
 //!
 //! This module provides a continuity-enforcing transform from internal node

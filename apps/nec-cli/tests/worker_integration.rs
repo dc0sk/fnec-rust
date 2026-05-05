@@ -66,7 +66,7 @@ fn test_capability_cache_roundtrip() {
 
     let fetched = cache.get("box1.local").expect("entry should be present");
     assert_eq!(fetched.cpu_threads, 16);
-    assert_eq!(fetched.gpu_available, true);
+    assert!(fetched.gpu_available);
     assert_eq!(fetched.wgpu_backend.as_deref(), Some("Vulkan"));
 
     assert!(cache.get("no-such-host").is_none());

@@ -593,7 +593,8 @@ mod tests {
     #[test]
     fn pec_ground_changes_hallen_matrix_element() {
         let s = make_seg(1, 1, 0, [0.0, 0.0, 1.0], DIR_Z, SEG_LEN, RADIUS);
-        let z_free = assemble_z_matrix_with_ground(&[s.clone()], FREQ, &GroundModel::FreeSpace);
+        let z_free =
+            assemble_z_matrix_with_ground(std::slice::from_ref(&s), FREQ, &GroundModel::FreeSpace);
         let z_pec = assemble_z_matrix_with_ground(&[s], FREQ, &GroundModel::PerfectConductor);
 
         let delta = z_pec.get(0, 0) - z_free.get(0, 0);
@@ -606,7 +607,8 @@ mod tests {
     #[test]
     fn gn0_ground_changes_hallen_matrix_element() {
         let s = make_seg(1, 1, 0, [0.0, 0.0, 1.0], DIR_Z, SEG_LEN, RADIUS);
-        let z_free = assemble_z_matrix_with_ground(&[s.clone()], FREQ, &GroundModel::FreeSpace);
+        let z_free =
+            assemble_z_matrix_with_ground(std::slice::from_ref(&s), FREQ, &GroundModel::FreeSpace);
         let z_gn0 = assemble_z_matrix_with_ground(
             &[s],
             FREQ,

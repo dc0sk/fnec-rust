@@ -113,19 +113,19 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "GW", &fields, 9)?;
                 deck.cards.push(Card::Gw(GwCard {
-                    tag: parse_u32(lineno, "GW", 1, &fields[0])?,
-                    segments: parse_u32(lineno, "GW", 2, &fields[1])?,
+                    tag: parse_u32(lineno, "GW", 1, fields[0])?,
+                    segments: parse_u32(lineno, "GW", 2, fields[1])?,
                     start: [
-                        parse_f64(lineno, "GW", 3, &fields[2])?,
-                        parse_f64(lineno, "GW", 4, &fields[3])?,
-                        parse_f64(lineno, "GW", 5, &fields[4])?,
+                        parse_f64(lineno, "GW", 3, fields[2])?,
+                        parse_f64(lineno, "GW", 4, fields[3])?,
+                        parse_f64(lineno, "GW", 5, fields[4])?,
                     ],
                     end: [
-                        parse_f64(lineno, "GW", 6, &fields[5])?,
-                        parse_f64(lineno, "GW", 7, &fields[6])?,
-                        parse_f64(lineno, "GW", 8, &fields[7])?,
+                        parse_f64(lineno, "GW", 6, fields[5])?,
+                        parse_f64(lineno, "GW", 7, fields[6])?,
+                        parse_f64(lineno, "GW", 8, fields[7])?,
                     ],
-                    radius: parse_f64(lineno, "GW", 9, &fields[8])?,
+                    radius: parse_f64(lineno, "GW", 9, fields[8])?,
                 }));
             }
             "GE" => {
@@ -133,7 +133,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let ground_reflection_flag = if fields.is_empty() {
                     0
                 } else {
-                    parse_i32(lineno, "GE", 1, &fields[0])?
+                    parse_i32(lineno, "GE", 1, fields[0])?
                 };
                 deck.cards.push(Card::Ge(GeCard {
                     ground_reflection_flag,
@@ -145,18 +145,18 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // GN I1 NRADL I3 I4 EPSE SIG
                 // We currently only consume I1 and optional EPSE/SIG.
                 let eps_r = if fields.len() > 4 {
-                    Some(parse_f64(lineno, "GN", 5, &fields[4])?)
+                    Some(parse_f64(lineno, "GN", 5, fields[4])?)
                 } else {
                     None
                 };
                 let sigma = if fields.len() > 5 {
-                    Some(parse_f64(lineno, "GN", 6, &fields[5])?)
+                    Some(parse_f64(lineno, "GN", 6, fields[5])?)
                 } else {
                     None
                 };
 
                 deck.cards.push(Card::Gn(GnCard {
-                    ground_type: parse_i32(lineno, "GN", 1, &fields[0])?,
+                    ground_type: parse_i32(lineno, "GN", 1, fields[0])?,
                     eps_r,
                     sigma,
                 }));
@@ -168,20 +168,20 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // default to 0.0 if absent.
                 require_fields(lineno, "EX", &fields, 4)?;
                 let vr = if fields.len() > 4 {
-                    parse_f64(lineno, "EX", 5, &fields[4])?
+                    parse_f64(lineno, "EX", 5, fields[4])?
                 } else {
                     0.0
                 };
                 let vi = if fields.len() > 5 {
-                    parse_f64(lineno, "EX", 6, &fields[5])?
+                    parse_f64(lineno, "EX", 6, fields[5])?
                 } else {
                     0.0
                 };
                 deck.cards.push(Card::Ex(ExCard {
-                    excitation_type: parse_u32(lineno, "EX", 1, &fields[0])?,
-                    tag: parse_u32(lineno, "EX", 2, &fields[1])?,
-                    segment: parse_u32(lineno, "EX", 3, &fields[2])?,
-                    i4: parse_u32(lineno, "EX", 4, &fields[3])?,
+                    excitation_type: parse_u32(lineno, "EX", 1, fields[0])?,
+                    tag: parse_u32(lineno, "EX", 2, fields[1])?,
+                    segment: parse_u32(lineno, "EX", 3, fields[2])?,
+                    i4: parse_u32(lineno, "EX", 4, fields[3])?,
                     voltage_real: vr,
                     voltage_imag: vi,
                 }));
@@ -200,23 +200,23 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     (2, 3) // shorthand: no I3/I4
                 };
                 deck.cards.push(Card::Fr(FrCard {
-                    step_type: parse_u32(lineno, "FR", 1, &fields[0])?,
-                    steps: parse_u32(lineno, "FR", 2, &fields[1])?,
-                    frequency_mhz: parse_f64(lineno, "FR", freq_idx + 1, &fields[freq_idx])?,
-                    step_mhz: parse_f64(lineno, "FR", step_idx + 1, &fields[step_idx])?,
+                    step_type: parse_u32(lineno, "FR", 1, fields[0])?,
+                    steps: parse_u32(lineno, "FR", 2, fields[1])?,
+                    frequency_mhz: parse_f64(lineno, "FR", freq_idx + 1, fields[freq_idx])?,
+                    step_mhz: parse_f64(lineno, "FR", step_idx + 1, fields[step_idx])?,
                 }));
             }
             "RP" => {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "RP", &fields, 7)?;
                 deck.cards.push(Card::Rp(RpCard {
-                    mode: parse_u32(lineno, "RP", 1, &fields[0])?,
-                    n_theta: parse_u32(lineno, "RP", 2, &fields[1])?,
-                    n_phi: parse_u32(lineno, "RP", 3, &fields[2])?,
-                    theta0: parse_f64(lineno, "RP", 4, &fields[3])?,
-                    phi0: parse_f64(lineno, "RP", 5, &fields[4])?,
-                    d_theta: parse_f64(lineno, "RP", 6, &fields[5])?,
-                    d_phi: parse_f64(lineno, "RP", 7, &fields[6])?,
+                    mode: parse_u32(lineno, "RP", 1, fields[0])?,
+                    n_theta: parse_u32(lineno, "RP", 2, fields[1])?,
+                    n_phi: parse_u32(lineno, "RP", 3, fields[2])?,
+                    theta0: parse_f64(lineno, "RP", 4, fields[3])?,
+                    phi0: parse_f64(lineno, "RP", 5, fields[4])?,
+                    d_theta: parse_f64(lineno, "RP", 6, fields[5])?,
+                    d_phi: parse_f64(lineno, "RP", 7, fields[6])?,
                 }));
             }
             "LD" => {
@@ -226,25 +226,25 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "LD", &fields, 4)?;
                 let f1 = if fields.len() > 4 {
-                    parse_f64(lineno, "LD", 5, &fields[4])?
+                    parse_f64(lineno, "LD", 5, fields[4])?
                 } else {
                     0.0
                 };
                 let f2 = if fields.len() > 5 {
-                    parse_f64(lineno, "LD", 6, &fields[5])?
+                    parse_f64(lineno, "LD", 6, fields[5])?
                 } else {
                     0.0
                 };
                 let f3 = if fields.len() > 6 {
-                    parse_f64(lineno, "LD", 7, &fields[6])?
+                    parse_f64(lineno, "LD", 7, fields[6])?
                 } else {
                     0.0
                 };
                 deck.cards.push(Card::Ld(LdCard {
-                    load_type: parse_i32(lineno, "LD", 1, &fields[0])?,
-                    tag: parse_u32(lineno, "LD", 2, &fields[1])?,
-                    seg_first: parse_u32(lineno, "LD", 3, &fields[2])?,
-                    seg_last: parse_u32(lineno, "LD", 4, &fields[3])?,
+                    load_type: parse_i32(lineno, "LD", 1, fields[0])?,
+                    tag: parse_u32(lineno, "LD", 2, fields[1])?,
+                    seg_first: parse_u32(lineno, "LD", 3, fields[2])?,
+                    seg_last: parse_u32(lineno, "LD", 4, fields[3])?,
                     f1,
                     f2,
                     f3,
@@ -257,19 +257,19 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "TL", &fields, 8)?;
                 let f3 = if fields.len() > 8 {
-                    parse_f64(lineno, "TL", 9, &fields[8])?
+                    parse_f64(lineno, "TL", 9, fields[8])?
                 } else {
                     1.0
                 };
                 deck.cards.push(Card::Tl(TlCard {
-                    tag1: parse_u32(lineno, "TL", 1, &fields[0])?,
-                    segment1: parse_u32(lineno, "TL", 2, &fields[1])?,
-                    tag2: parse_u32(lineno, "TL", 3, &fields[2])?,
-                    segment2: parse_u32(lineno, "TL", 4, &fields[3])?,
-                    num_segments: parse_u32(lineno, "TL", 5, &fields[4])?,
-                    tl_type: parse_u32(lineno, "TL", 6, &fields[5])?,
-                    z0: parse_f64(lineno, "TL", 7, &fields[6])?,
-                    length: parse_f64(lineno, "TL", 8, &fields[7])?,
+                    tag1: parse_u32(lineno, "TL", 1, fields[0])?,
+                    segment1: parse_u32(lineno, "TL", 2, fields[1])?,
+                    tag2: parse_u32(lineno, "TL", 3, fields[2])?,
+                    segment2: parse_u32(lineno, "TL", 4, fields[3])?,
+                    num_segments: parse_u32(lineno, "TL", 5, fields[4])?,
+                    tl_type: parse_u32(lineno, "TL", 6, fields[5])?,
+                    z0: parse_f64(lineno, "TL", 7, fields[6])?,
+                    length: parse_f64(lineno, "TL", 8, fields[7])?,
                     f3,
                 }));
             }
@@ -280,7 +280,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // solve time (replaces the previous "unknown card 'NT'" path).
                 let fields = parse_fields(rest);
                 deck.cards.push(Card::Nt(NtCard {
-                    raw_fields: fields.into_iter().map(|s| s.to_string()).collect(),
+                    raw_fields: fields
+                        .into_iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
                 }));
             }
             "EN" => {
@@ -408,7 +411,12 @@ EN
             })
         );
         // CE (empty text)
-        assert_eq!(cards[1], Card::Comment(CommentCard { text: "".into() }));
+        assert_eq!(
+            cards[1],
+            Card::Comment(CommentCard {
+                text: String::new()
+            })
+        );
         // GW
         assert_eq!(
             cards[2],

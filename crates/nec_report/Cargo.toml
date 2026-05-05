@@ -13,3 +13,6 @@ rust-version.workspace = true
 [dependencies]
 nec_model = { workspace = true }
 num-complex = { workspace = true }
+
+[lints]
+workspace = true

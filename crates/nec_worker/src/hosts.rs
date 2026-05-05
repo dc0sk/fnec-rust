@@ -65,6 +65,7 @@ impl std::error::Error for HostsConfigError {}
 
 impl HostsConfig {
     /// Parse a `HostsConfig` from a TOML string.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(s)
     }
