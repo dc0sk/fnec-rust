@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-05-01
+last_updated: 2026-05-05
 ---
 
 # CLI Guide — fnec (v0.2.0)
@@ -267,6 +267,10 @@ EN
 ```
 
 ## Supported NEC cards
+
+For the full card support matrix including field mappings and per-type details, see [docs/card-support-matrix.md](card-support-matrix.md).
+
+Quick reference:
 
 | Card | Support | Notes |
 |------|---------|-------|

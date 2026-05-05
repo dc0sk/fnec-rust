@@ -66,7 +66,7 @@ TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
 1 26 1.000000 0.000000 0.013013 -0.002436 74.242874 13.899516
 ```
 
-See [docs/cli-guide.md](docs/cli-guide.md) for full option reference.
+See [docs/cli-guide.md](docs/cli-guide.md) for full option reference and [docs/card-support-matrix.md](docs/card-support-matrix.md) for the NEC card support matrix.
 
 ## Support fnec-rust
 
