@@ -27,17 +27,13 @@ pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
 }
 
 pub(super) fn warn_pulse_mode_experimental(solver_mode: SolverMode) {
-    if !matches!(
-        solver_mode,
-        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal
-    ) {
+    if !matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity) {
         return;
     }
     eprintln!(
-        "warning: pulse/continuity/sinusoidal solver modes are EXPERIMENTAL and known-inaccurate for \
+        "warning: pulse/continuity solver modes are EXPERIMENTAL and known-inaccurate for \
 thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution \
-as segment count increases. Use --solver hallen for accurate results. \
-(Sinusoidal-basis EFIE fix tracked in backlog.)"
+as segment count increases. Use --solver hallen or --solver sinusoidal for accurate results."
     );
 }
 

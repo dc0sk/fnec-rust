@@ -23,8 +23,9 @@ pub use geometry::{
     GeometryError, GroundModel, Segment, WireJunction,
 };
 pub use linear::{
-    solve, solve_hallen, solve_with_continuity_basis, solve_with_continuity_basis_per_wire,
-    solve_with_sinusoidal_basis, solve_with_sinusoidal_basis_per_wire, HallenSolution, SolveError,
+    solve, solve_hallen, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
+    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
+    solve_with_sinusoidal_basis_per_wire, HallenSolution, SolveError,
 };
 pub use loads::{build_loads, LoadWarning};
 pub use matrix::{

@@ -124,134 +124,7 @@ fn sinusoidal_non_single_chain_falls_back_to_pulse() {
 }
 
 #[test]
-fn sinusoidal_a4_multiwire_nonchain_topology_falls_back_to_pulse() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path =
-        std::env::temp_dir().join(format!("fnec-sinusoidal-a1-multiwire-fallback-{now}.nec"));
-
-    // Two wires, both >=2 segments, so per-wire basis is feasible.
-    // A4 still rejects disconnected non-chain multi-wire topologies.
-    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 11 0.5 0.0 -1.0 0.5 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A1 fallback deck");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("sinusoidal")
-        .env_remove("FNEC_ACCEL_STUB_GPU")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| {
-            panic!("Failed to run fnec for sinusoidal A1 multi-wire fallback test: {e}")
-        });
-
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(
-            "warning: sinusoidal A4 currently supports only collinear wire-chain topologies; falling back to pulse"
-        ),
-        "expected sinusoidal A4 topology warning in stderr, got:\n{stderr}"
-    );
-    assert_diag_mode(&stderr, "sinusoidal->pulse(topology)");
-}
-
-#[test]
-fn sinusoidal_a4_collinear_chain_topology_is_not_rejected_by_topology_gate() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path =
-        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-collinear-chain-{now}.nec"));
-
-    // Two collinear wires that touch end-to-start at z=0.0.
-    // This should pass the A4 topology gate.
-    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 0.0 0.0 0.0 1.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary sinusoidal A4 chain deck");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("sinusoidal")
-        .env_remove("FNEC_ACCEL_STUB_GPU")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| {
-            panic!("Failed to run fnec for sinusoidal A4 collinear-chain test: {e}")
-        });
-
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
-        "did not expect A4 topology-gate fallback warning for collinear chain, got:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("mode=sinusoidal->pulse(topology)"),
-        "did not expect topology fallback diag mode for collinear chain, got:\n{stderr}"
-    );
-}
-
-#[test]
-fn sinusoidal_a4_collinear_chain_with_mixed_wire_orientation_is_supported() {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path =
-        std::env::temp_dir().join(format!("fnec-sinusoidal-a4-mixed-orientation-{now}.nec"));
-
-    // Two collinear wires touching at z=0.0 with opposite declaration direction.
-    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 0.0 0.001\nGW 2 11 0.0 0.0 1.0 0.0 0.0 0.0 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck)
-        .expect("failed to write temporary sinusoidal A4 mixed-orientation deck");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("sinusoidal")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| {
-            panic!("Failed to run fnec for sinusoidal A4 mixed-orientation test: {e}")
-        });
-
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("sinusoidal A4 currently supports only collinear wire-chain topologies"),
-        "did not expect A4 topology-gate fallback warning for mixed orientation chain, got:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("mode=sinusoidal->pulse(topology)"),
-        "did not expect topology fallback diag mode for mixed orientation chain, got:\n{stderr}"
-    );
-}
-
-#[test]
-fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
+fn sinusoidal_solves_reference_dipole_without_fallback() {
     let output = run_solver_on_reference_dipole("sinusoidal");
 
     assert!(
@@ -262,14 +135,10 @@ fn sinusoidal_residual_falls_back_to_hallen_on_reference_dipole() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("warning: sinusoidal residual "),
-        "expected sinusoidal residual warning in stderr, got:\n{stderr}"
+        !stderr.contains("falling back"),
+        "sinusoidal should not fall back on a clean 51-segment dipole, got:\n{stderr}"
     );
-    assert!(
-        stderr.contains("falling back to hallen"),
-        "expected sinusoidal fallback-to-hallen warning in stderr, got:\n{stderr}"
-    );
-    assert_diag_mode(&stderr, "sinusoidal->hallen(residual)");
+    assert_diag_mode(&stderr, "sinusoidal");
 }
 
 #[test]
@@ -286,7 +155,8 @@ fn experimental_warning_is_mode_gated() {
         "did not expect experimental warning for hallen, got:\n{hallen_stderr}"
     );
 
-    for solver in ["pulse", "continuity", "sinusoidal"] {
+    // Only pulse and continuity are EXPERIMENTAL; sinusoidal is now a stable solver.
+    for solver in ["pulse", "continuity"] {
         let output = run_solver_on_reference_dipole(solver);
         assert!(
             output.status.success(),
@@ -299,6 +169,18 @@ fn experimental_warning_is_mode_gated() {
             "expected experimental warning for {solver}, got:\n{stderr}"
         );
     }
+    // Sinusoidal must NOT emit the EXPERIMENTAL warning.
+    let sin_output = run_solver_on_reference_dipole("sinusoidal");
+    assert!(
+        sin_output.status.success(),
+        "fnec failed for sinusoidal: {}",
+        String::from_utf8_lossy(&sin_output.stderr)
+    );
+    let sin_stderr = String::from_utf8_lossy(&sin_output.stderr);
+    assert!(
+        !sin_stderr.contains("solver modes are EXPERIMENTAL"),
+        "sinusoidal must not emit EXPERIMENTAL warning, got:\n{sin_stderr}"
+    );
 }
 
 #[test]

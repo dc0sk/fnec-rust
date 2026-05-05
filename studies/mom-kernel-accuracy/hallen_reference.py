@@ -10,7 +10,10 @@ half-wave dipole using:
   - Augmented system: [A | -cos(kz)] [I; C_hom] = b
     with endpoint constraints I[0] = I[N-1] = 0
 
-Ground-truth result for the benchmark geometry: 74.23 + j13.90 Ω
+Ground-truth result for the benchmark geometry: 74.23 + j13.90 Ω (Hallén model).
+NOTE: NEC2 (Pocklington EFIE / delta-gap) gives 79.35 + j46.22 Ω for the same
+geometry at 14.2 MHz. The ~0.3 MHz frequency offset between the two models' resonance
+curves is a known systematic difference. See docs/solver-findings.md for details.
 
 Benchmark geometry
 ------------------
@@ -148,7 +151,7 @@ def main():
     z_feed = 1.0 / I[FEED]
     print(f"\n  Feed current I[{FEED}] = {I[FEED]:.6e}")
     print(f"  Impedance Z  = {z_feed:.6f} Ω")
-    print(f"\n  Expected: 74.23 + j13.90 Ω  (matches xnec2c NEC2 reference)")
+    print(f"\n  Expected: 74.23 + j13.90 Ω  (Hallén model; see docs/solver-findings.md for NEC2 comparison)")
 
     # Print current distribution summary
     print(f"\n  Current distribution (normalised to max):")
