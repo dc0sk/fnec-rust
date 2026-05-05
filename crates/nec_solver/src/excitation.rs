@@ -542,4 +542,122 @@ mod tests {
         assert_eq!(h.rhs.len(), segs.len());
         assert_eq!(h.cos_vec.len(), segs.len());
     }
+
+    // ── Proptest sweeps (BL-IMPR-005) ───────────────────────────────────
+
+    use proptest::prelude::*;
+
+    /// Minimal single-segment geometry for proptest use.
+    fn three_seg_deck_with_ex(
+        v_re: f64,
+        v_im: f64,
+        ex_type: u32,
+        seg_idx: u32,
+    ) -> (NecDeck, Vec<Segment>) {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 3,
+            start: [0.0, 0.0, -1.0],
+            end: [0.0, 0.0, 1.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Ex(ExCard {
+            excitation_type: ex_type,
+            tag: 1,
+            segment: seg_idx,
+            i4: 0,
+            voltage_real: v_re,
+            voltage_imag: v_im,
+        }));
+        let segs = build_geometry(&deck).unwrap();
+        (deck, segs)
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(512))]
+
+        /// EX type 0: only the target segment is non-zero; all others are zero.
+        #[test]
+        fn proptest_ex_type0_only_target_segment_nonzero(
+            v_re in -1e6_f64..=1e6_f64,
+            v_im in -1e6_f64..=1e6_f64,
+            seg_idx in 1_u32..=3_u32,
+        ) {
+            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 0, seg_idx);
+            let v = build_excitation(&deck, &segs).unwrap();
+            prop_assert_eq!(v.len(), 3);
+            for (i, vi) in v.iter().enumerate() {
+                let one_based = (i + 1) as u32;
+                if one_based == seg_idx {
+                    // Must be non-zero (V / dl).
+                    let dl = segs[i].length;
+                    let expected = Complex64::new(v_re, v_im) / dl;
+                    prop_assert!((vi - expected).norm() < 1e-12,
+                        "seg {seg_idx}: expected {expected}, got {vi}");
+                } else {
+                    prop_assert_eq!(*vi, Complex64::new(0.0, 0.0),
+                        "seg {} should be zero", one_based);
+                }
+            }
+        }
+
+        /// EX type 0: stored value is V / dl (V/m units).
+        #[test]
+        fn proptest_ex_type0_stored_value_is_v_over_dl(
+            v_re in -1e6_f64..=1e6_f64,
+            v_im in -1e6_f64..=1e6_f64,
+        ) {
+            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 0, 2);
+            let v = build_excitation(&deck, &segs).unwrap();
+            let dl = segs[1].length; // segment index 1 = seg_idx 2 (1-based)
+            let expected = Complex64::new(v_re, v_im) / dl;
+            prop_assert!((v[1] - expected).norm() < 1e-12,
+                "expected {expected}, got {}", v[1]);
+        }
+
+        /// EX types 1–5: build_excitation must return UnsupportedType error, not panic.
+        #[test]
+        fn proptest_unsupported_ex_types_return_error(
+            ex_type in 1_u32..=5_u32,
+            v_re in -1e6_f64..=1e6_f64,
+            v_im in -1e6_f64..=1e6_f64,
+        ) {
+            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, ex_type, 2);
+            let result = build_excitation(&deck, &segs);
+            prop_assert!(
+                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: t, .. }) if t == ex_type),
+                "expected UnsupportedType({ex_type}), got {result:?}"
+            );
+        }
+
+        /// EX types 1–5: build_hallen_rhs must return UnsupportedType error, not panic.
+        #[test]
+        fn proptest_hallen_rhs_unsupported_ex_types_return_error(
+            ex_type in 1_u32..=5_u32,
+        ) {
+            let (deck, segs) = three_seg_deck_with_ex(1.0, 0.0, ex_type, 2);
+            let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
+            prop_assert!(
+                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: t, .. }) if t == ex_type),
+                "expected UnsupportedType({ex_type}), got {result:?}"
+            );
+        }
+
+        /// EX type 0: scale_excitation_for_pulse_rhs is linear — doubling the
+        /// voltage doubles the scaled result.
+        #[test]
+        fn proptest_scale_excitation_is_linear_in_voltage(
+            v_re in -1e6_f64..=1e6_f64,
+            v_im in -1e6_f64..=1e6_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let v = vec![Complex64::new(v_re, v_im)];
+            let v2 = vec![Complex64::new(2.0 * v_re, 2.0 * v_im)];
+            let scaled = scale_excitation_for_pulse_rhs(&v, freq);
+            let scaled2 = scale_excitation_for_pulse_rhs(&v2, freq);
+            prop_assert!((scaled2[0] - 2.0 * scaled[0]).norm() < 1e-9,
+                "scaling not linear: 2*scaled={}, scaled2={}", 2.0 * scaled[0], scaled2[0]);
+        }
+    }
 }
