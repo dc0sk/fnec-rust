@@ -716,6 +716,7 @@ mod tests {
     // GM / GR tests
     // -------------------------------------------------------------------------
 
+    #[allow(clippy::too_many_arguments)]
     fn make_gm(
         tag_increment: u32,
         last_tag: u32,

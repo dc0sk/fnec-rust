@@ -251,8 +251,8 @@ The following items were identified during a project-wide review on 2026-04-30 a
 
 ### Code quality & robustness
 
-- [ ] **BL-IMPR-001 / Reduce `unwrap`/`expect` in core solver paths**: Audit `crates/nec_solver/src/{linear.rs,matrix.rs,excitation.rs,loads.rs}` and convert non-test `unwrap()` / `expect()` call sites to `Result` propagation or explicit panics with documented invariants. Resolution criteria: no `.unwrap()` / `.expect()` outside `#[cfg(test)]` in `nec_solver` core modules without an accompanying invariant comment; CI lint check optional.
-- [ ] **BL-IMPR-002 / Workspace `[lints]` table**: Add a workspace-level `[lints]` table in the root `Cargo.toml` that pins clippy and rustc warning levels, and selectively opts in to a curated `clippy::pedantic` subset. Resolution criteria: `cargo clippy --workspace --all-targets` runs clean under the new lints; per-crate overrides documented.
+- [x] **BL-IMPR-001 / Reduce `unwrap`/`expect` in core solver paths**: Audit `crates/nec_solver/src/{linear.rs,matrix.rs,excitation.rs,loads.rs}` and convert non-test `unwrap()` / `expect()` call sites to `Result` propagation or explicit panics with documented invariants. Resolution criteria: no `.unwrap()` / `.expect()` outside `#[cfg(test)]` in `nec_solver` core modules without an accompanying invariant comment; CI lint check optional.
+- [x] **BL-IMPR-002 / Workspace `[lints]` table**: Add a workspace-level `[lints]` table in the root `Cargo.toml` that pins clippy and rustc warning levels, and selectively opts in to a curated `clippy::pedantic` subset. Resolution criteria: `cargo clippy --workspace --all-targets` runs clean under the new lints; per-crate overrides documented.
 
 ### Test coverage
 

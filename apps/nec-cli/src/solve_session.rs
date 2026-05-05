@@ -87,7 +87,10 @@ pub(super) struct HybridLanePlan {
 }
 
 pub(super) fn l2_norm(v: &[Complex64]) -> f64 {
-    v.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt()
+    v.iter()
+        .map(num_complex::Complex::norm_sqr)
+        .sum::<f64>()
+        .sqrt()
 }
 
 pub(super) fn matrix_diagonal_spread(z: &ZMatrix) -> f64 {
@@ -676,7 +679,10 @@ pub(super) fn solve_frequency_point(
         let _ = compute_radiation_pattern(segs, &i_vec, freq_hz, &[pattern_points[0]], ground);
 
         // For stub, use a simple normalized reference (total current squared)
-        let norm_ref = i_vec.iter().map(|i| i.norm_sqr()).sum::<f64>();
+        let norm_ref = i_vec
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f64>();
 
         let kernel = nec_accel::HallenFrGpuKernel::new(
             gpu_segments,
@@ -767,6 +773,7 @@ pub(super) fn solve_frequency_point(
 ///
 /// Returns results indexed by frequency position, unsorted. The caller is responsible
 /// for sorting by index and emitting per-result warnings.
+#[allow(clippy::type_complexity)]
 pub(super) fn execute_frequency_sweep<F>(
     freqs_hz: &[f64],
     execution_mode: ExecutionMode,

@@ -112,7 +112,7 @@ fn resonance_search_worked_example_converges() {
         .parse()
         .unwrap_or_else(|_| panic!("CONVERGED_VALUE not a float: '{val_str}'\nstdout: {stdout}"));
     assert!(
-        val >= 4.5 && val <= 6.0,
+        (4.5..=6.0).contains(&val),
         "CONVERGED_VALUE {val:.4} m outside plausible [4.5, 6.0] range\nstdout: {stdout}"
     );
 
@@ -123,7 +123,7 @@ fn resonance_search_worked_example_converges() {
         .parse()
         .unwrap_or_else(|_| panic!("ITERATIONS not an integer: '{iters_str}'\nstdout: {stdout}"));
     assert!(
-        iters >= 1 && iters <= 52,
+        (1..=52).contains(&iters),
         "ITERATIONS {iters} outside plausible [1, 52] range\nstdout: {stdout}"
     );
 }

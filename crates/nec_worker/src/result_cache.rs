@@ -105,9 +105,9 @@ impl ResultCache {
     /// If the cache is at capacity, the oldest entry is evicted first.
     pub fn insert(&mut self, key: impl Into<String>, result: TaskResult) {
         let key = key.into();
-        if self.entries.contains_key(&key) {
+        if let Some(entry) = self.entries.get_mut(&key) {
             // Replace in-place; don't grow the insertion-order queue.
-            self.entries.insert(key, CacheEntry { result });
+            *entry = CacheEntry { result };
             return;
         }
         // Evict oldest if at capacity.

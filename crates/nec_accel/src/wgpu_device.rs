@@ -679,7 +679,7 @@ pub async fn run_rp_farfield_batch_wgpu(
     });
 
     // ---- single dispatch + single readback ----------------------------------
-    let n_workgroups = (n_points + 63) / 64;
+    let n_workgroups = n_points.div_ceil(64);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("rp-batch-encoder"),
     });
@@ -710,7 +710,7 @@ pub async fn run_rp_farfield_batch_wgpu(
         return None;
     }
     let raw = slice.get_mapped_range();
-    let vals: &[f32] = bytemuck::cast_slice(&*raw);
+    let vals: &[f32] = bytemuck::cast_slice(&raw);
 
     let norm = if total_radiated > 0.0 {
         4.0 * std::f64::consts::PI / total_radiated
@@ -1033,7 +1033,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
         return None;
     }
     let raw = slice.get_mapped_range();
-    let floats: &[f32] = bytemuck::cast_slice(&*raw);
+    let floats: &[f32] = bytemuck::cast_slice(&raw);
 
     let results: Vec<ZElem> = floats
         .chunks_exact(2)

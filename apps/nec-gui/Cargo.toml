@@ -26,3 +26,6 @@ nec_project = { workspace = true }
 num-complex = { workspace = true }
 toml        = { workspace = true }
 iced        = "0.13"
+
+[lints]
+workspace = true

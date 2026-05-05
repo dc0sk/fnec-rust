@@ -12,3 +12,6 @@ rust-version.workspace = true
 
 [dependencies]
 nec_model = { workspace = true }
+
+[lints]
+workspace = true

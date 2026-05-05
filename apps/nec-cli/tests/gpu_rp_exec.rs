@@ -41,10 +41,8 @@ fn parse_gain_total_column(stdout: &str) -> Vec<f64> {
                 }
             }
             // Any non-data line (empty or next section header) ends the table.
-            if !parts.is_empty() && !values.is_empty() {
-                if parts[0].parse::<f64>().is_err() {
-                    in_pattern = false;
-                }
+            if !parts.is_empty() && !values.is_empty() && parts[0].parse::<f64>().is_err() {
+                in_pattern = false;
             }
         }
     }

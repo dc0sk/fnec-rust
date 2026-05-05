@@ -22,3 +22,6 @@ nec_accel   = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
+
+[lints]
+workspace = true

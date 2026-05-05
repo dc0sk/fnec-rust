@@ -252,7 +252,7 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
     out.push_str(&format!("FREQ_MHZ {:.6}\n", input.frequency_hz / 1e6));
     out.push_str(&format!("SOLVER_MODE {}\n", input.solver_mode));
     out.push_str(&format!("PULSE_RHS {}\n", input.pulse_rhs));
-    out.push_str("\n");
+    out.push('\n');
     out.push_str("FEEDPOINTS\n");
     out.push_str("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n");
 
