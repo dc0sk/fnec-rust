@@ -197,7 +197,7 @@ fn corpus_validation_cases_with_references() {
         } else {
             None
         };
-        let current_amplitude_dB_tol = gates
+        let current_amplitude_db_tol = gates
             .get("Current_amplitude_dB")
             .and_then(Value::as_f64)
             .unwrap_or(0.1);
@@ -717,7 +717,7 @@ fn corpus_validation_cases_with_references() {
                 let err_phase = (actual_phase_deg - expected_curr.phase_deg).abs();
 
                 assert!(
-                    err_amp <= current_amplitude_dB_tol,
+                    err_amp <= current_amplitude_db_tol,
                     "Case '{}' current amplitude at wire={} seg={} out of tolerance: got {:.4} dB, expected {:.4} dB, err {:.4} dB, tol {:.4} dB",
                     case_name,
                     expected_curr.wire_id,
@@ -725,7 +725,7 @@ fn corpus_validation_cases_with_references() {
                     actual_amp_db,
                     expected_curr.amplitude_db,
                     err_amp,
-                    current_amplitude_dB_tol
+                    current_amplitude_db_tol
                 );
                 assert!(
                     err_phase <= current_phase_deg_tol,
