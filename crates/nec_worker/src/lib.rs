@@ -9,6 +9,7 @@ pub mod capability;
 pub mod controller;
 pub mod hosts;
 pub mod protocol;
+pub mod result_cache;
 pub mod solve;
 pub mod worker;
 
@@ -16,6 +17,7 @@ pub use capability::{Capability, CapabilityCache};
 pub use controller::LocalWorkerHandle;
 pub use hosts::{HostEntry, HostsConfig, HostsConfigError};
 pub use protocol::{ErrorCode, Impedance, TaskMessage, TaskResult, WorkerSolverConfig};
+pub use result_cache::{cache_key, ResultCache};
 pub use worker::run_worker_stdio;
 
 /// Encode a NEC deck string as base64 for inclusion in a [`TaskMessage`].
