@@ -288,7 +288,7 @@ Quick reference:
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern calculation and report table rendering |
 | LD type 0, 1, 2, 3, 4, 5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads |
-| TL | Partial | Lossless subset only (`type=0`, `NSEG=0/1`, `segment=0` center mapping); other variants warn and are ignored |
+| TL | Partial | Lossless subset only (`type=0`); supported `NSEG` range: 0, 1, and >1 — all treated as single-section stamp (no subdivision). `segment=0` center mapping warns. Other variants warn and are ignored |
 | PT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
 | NT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
 | EN | Full | Terminates parse |
@@ -321,7 +321,7 @@ The TL card connects two segments with a transmission line; the current solver s
 - F2: Transmission-line length (m)
 - F3: Angle (°) for lossy models or velocity factor (ratio) for lossless (default 1.0)
 
-**Solver integration**: Initial TL solver support is active for lossless cards with `type=0` and `NSEG=0` or `1`. The solver stamps a 2-port impedance model into the matrix; endpoint `segment=0` is mapped to the tag center segment with an explicit warning. Unsupported TL variants still warn and are ignored.
+**Solver integration**: Initial TL solver support is active for lossless cards with `type=0`. The supported `NSEG` range is `0`, `1`, and any value `> 1`; all are treated as a single-section stamp (no per-segment subdivision). `NSEG=0` is normalised to `NSEG=1` before stamping. The solver stamps a 2-port impedance model into the matrix; endpoint `segment=0` is mapped to the tag center segment with an explicit warning. Unsupported TL variants still warn and are ignored.
 
 ## Notes
 

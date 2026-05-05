@@ -15,8 +15,8 @@ pub use excitation::{
     build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use farfield::{
-    compute_radiation_pattern, integrate_radiated_power, rp_card_points, FarFieldPoint,
-    FarFieldResult,
+    bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, rp_card_points,
+    FarFieldPoint, FarFieldResult, RpGainGrid,
 };
 pub use geometry::{
     build_geometry, detect_wire_junctions, ground_model_from_deck, wire_endpoints_from_segs,
