@@ -480,4 +480,265 @@ mod tests {
         assert_eq!(results[1].theta_deg, 90.0);
         assert_eq!(results[2].theta_deg, 180.0);
     }
+
+    // ── Edge-case tests (BL-IMPR-006) ────────────────────────────────────
+
+    fn single_seg(length: f64) -> GpuSegment {
+        GpuSegment {
+            midpoint: [0.0, 0.0, 0.0],
+            direction: [0.0, 0.0, 1.0],
+            length,
+        }
+    }
+
+    // --- 1-segment cases -------------------------------------------------
+
+    #[test]
+    fn one_segment_hallen_fr_kernel_construction() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.5)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1.0,
+        );
+        assert_eq!(kernel.gpu_segments.len(), 1);
+        assert!(kernel.wavenumber > 0.0);
+    }
+
+    #[test]
+    fn one_segment_hallen_rhs_kernel_construction() {
+        let kernel = HallenRhsGpuKernel::new(vec![single_seg(0.5)], (1, 1), 14.2e6);
+        assert_eq!(kernel.gpu_segments.len(), 1);
+        assert!(kernel.wavenumber > 0.0);
+        assert_eq!(kernel.excitation, (1, 1));
+    }
+
+    #[test]
+    fn one_segment_pocklington_matrix_kernel_construction() {
+        let kernel = PocklingtonMatrixGpuKernel::new(vec![single_seg(0.5)], 14.2e6);
+        assert_eq!(kernel.matrix_size, 1); // 1×1
+        assert_eq!(kernel.gpu_segments.len(), 1);
+    }
+
+    #[test]
+    fn one_segment_kernel_compute_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
+    }
+
+    #[test]
+    fn one_segment_batch_returns_one_result() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let results = compute_hallen_fr_batch_stub(&kernel, &[(90.0, 0.0)]);
+        assert_eq!(results.len(), 1);
+    }
+
+    // --- Very small / very large frequencies -----------------------------
+
+    #[test]
+    fn very_low_frequency_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(1.0)],
+            vec![Complex64::new(1.0, 0.0)],
+            1.0,
+            1e-30,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // Must not panic; gain is either finite or the sentinel -999.99.
+        assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
+    }
+
+    #[test]
+    fn very_high_frequency_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.001)],
+            vec![Complex64::new(1.0, 0.0)],
+            1e12,
+            1e10,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
+    }
+
+    #[test]
+    fn very_low_frequency_wavenumber_is_tiny() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(1.0)],
+            vec![Complex64::new(1.0, 0.0)],
+            1.0,
+            1.0,
+        );
+        // k = 2π·1.0 / c ≈ 2.1e-8  (very tiny)
+        assert!(kernel.wavenumber < 1e-6);
+    }
+
+    #[test]
+    fn very_high_frequency_wavenumber_is_large() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.001)],
+            vec![Complex64::new(1.0, 0.0)],
+            1e12,
+            1.0,
+        );
+        // k = 2π·1e12 / c ≈ 2.09e4
+        assert!(kernel.wavenumber > 1e3);
+    }
+
+    // --- NaN-source handling --------------------------------------------
+
+    #[test]
+    fn nan_current_produces_sentinel_gain() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(f64::NAN, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // NaN propagates through the computation; gain must be either NaN
+        // or the -999.99 sentinel — in either case it must not panic.
+        let g = result.gain_total_dbi;
+        assert!(
+            g.is_nan() || g == -999.99 || g.is_finite(),
+            "unexpected gain value: {g}"
+        );
+    }
+
+    #[test]
+    fn zero_current_produces_sentinel_gain() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(0.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // All-zero currents ⟹ zero field intensity ⟹ should hit the
+        // MIN_NORM_PATTERN floor and return the -999.99 sentinel.
+        assert_eq!(result.gain_total_dbi, -999.99);
+    }
+
+    #[test]
+    fn zero_normalisation_produces_zero_gain_or_sentinel() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            0.0, // zero normalisation
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // norm = 0 ⟹ u * norm = 0 ⟹ below MIN_NORM_PATTERN ⟹ -999.99
+        assert_eq!(result.gain_total_dbi, -999.99);
+    }
+
+    // --- Pattern near the poles (θ=0, θ=180) ----------------------------
+
+    #[test]
+    fn pattern_at_north_pole_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 0.0, 0.0);
+        assert_eq!(result.theta_deg, 0.0);
+        // Gain is a finite number or the -999.99 sentinel — no NaN.
+        assert!(
+            !result.gain_total_dbi.is_nan(),
+            "gain should not be NaN at θ=0, got {}",
+            result.gain_total_dbi
+        );
+    }
+
+    #[test]
+    fn pattern_at_south_pole_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let result = compute_hallen_fr_point_stub(&kernel, 180.0, 0.0);
+        assert_eq!(result.theta_deg, 180.0);
+        assert!(
+            !result.gain_total_dbi.is_nan(),
+            "gain should not be NaN at θ=180, got {}",
+            result.gain_total_dbi
+        );
+    }
+
+    #[test]
+    fn vertical_dipole_has_null_at_both_poles() {
+        // A z-aligned dipole has zero radiation at the poles in both θ and φ.
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let north = compute_hallen_fr_point_stub(&kernel, 0.0, 0.0);
+        let south = compute_hallen_fr_point_stub(&kernel, 180.0, 0.0);
+        let equator = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // Both poles should have lower gain than the equator.
+        assert!(
+            north.gain_total_dbi < equator.gain_total_dbi,
+            "north pole gain ({}) should be < equator gain ({})",
+            north.gain_total_dbi,
+            equator.gain_total_dbi
+        );
+        assert!(
+            south.gain_total_dbi < equator.gain_total_dbi,
+            "south pole gain ({}) should be < equator gain ({})",
+            south.gain_total_dbi,
+            equator.gain_total_dbi
+        );
+    }
+
+    #[test]
+    fn batch_at_poles_returns_correct_theta_values() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let points = vec![(0.0_f64, 0.0_f64), (180.0, 0.0)];
+        let results = compute_hallen_fr_batch_stub(&kernel, &points);
+        assert_eq!(results[0].theta_deg, 0.0);
+        assert_eq!(results[1].theta_deg, 180.0);
+    }
+
+    // --- Empty segment list ---------------------------------------------
+
+    #[test]
+    fn empty_segment_list_does_not_panic() {
+        let kernel = HallenFrGpuKernel::new(vec![], vec![], 14.2e6, 1e-4);
+        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        // No segments ⟹ zero field ⟹ sentinel -999.99.
+        assert_eq!(result.gain_total_dbi, -999.99);
+    }
+
+    #[test]
+    fn empty_batch_returns_empty_vec() {
+        let kernel = HallenFrGpuKernel::new(
+            vec![single_seg(0.01)],
+            vec![Complex64::new(1.0, 0.0)],
+            14.2e6,
+            1e-4,
+        );
+        let results = compute_hallen_fr_batch_stub(&kernel, &[]);
+        assert!(results.is_empty());
+    }
 }

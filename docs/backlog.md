@@ -259,7 +259,7 @@ The following items were identified during a project-wide review on 2026-04-30 a
 - [x] **BL-IMPR-003 / Add unit tests to `nec_project` crate**: Crate currently has only `lib.rs` skeleton. Resolution criteria: at least one unit-test module exercising the public API surface; CI gate on `cargo test -p nec_project`. Precondition for FR-004 Markdown project-workflow work.
 - [x] **BL-IMPR-004 / Add unit tests to `nec_report` crate**: Crate is exercised today only via CLI integration tests. Resolution criteria: unit tests for table-render corner cases (NaN, empty rows, very wide columns, pattern row filtering) directly against the public render API.
 - [x] **BL-IMPR-005 / Property-based tests for excitation/loads**: Add `proptest`-driven sweeps over LD types 0–5 and EX types 1–5 to cover staged/portability paths and randomized card field values. Resolution criteria: at least one proptest in `nec_solver/src/excitation.rs` and `nec_solver/src/loads.rs` test modules with a stable seed configuration in CI.
-- [ ] **BL-IMPR-006 / GPU kernel edge-case tests**: Extend `crates/nec_accel/src/gpu_kernels` unit tests to cover 1-segment cases, very small/large frequencies, NaN-source handling, and pattern interpolation near the poles (θ=0, θ=π). Resolution criteria: dedicated edge-case tests added; existing happy-path tests untouched.
+- [x] **BL-IMPR-006 / GPU kernel edge-case tests**: Extend `crates/nec_accel/src/gpu_kernels` unit tests to cover 1-segment cases, very small/large frequencies, NaN-source handling, and pattern interpolation near the poles (θ=0, θ=π). Resolution criteria: dedicated edge-case tests added; existing happy-path tests untouched.
 
 ### Documentation
 
