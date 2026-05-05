@@ -264,7 +264,7 @@ The following items were identified during a project-wide review on 2026-04-30 a
 ### Documentation
 
 - [x] **BL-IMPR-007 / Single staged-card status table**: Document one canonical table (likely under `docs/cli-guide.md` or a new `docs/card-support-matrix.md`) of supported vs deferred behavior for EX types, PT, NT, LD types, TL types, and GN types, with links to the corresponding solver/parser entry points. Resolution criteria: table exists, is referenced from `docs/cli-guide.md` and `README.md`, and is covered by a frontmatter validation hook if practical.
-- [ ] **BL-IMPR-008 / Clarify GPU stub state in `nec_accel` README**: The `crates/nec_accel` GPU dispatch path is currently a stub; today only the roadmap notes this. Resolution criteria: a short README in `crates/nec_accel/` (or a doc comment in `lib.rs`) explicitly states which kernels are stubs vs implemented and links to the roadmap entry that tracks the real-kernel work.
+- [x] **BL-IMPR-008 / Clarify GPU stub state in `nec_accel` README**: The `crates/nec_accel` GPU dispatch path is currently a stub; today only the roadmap notes this. Resolution criteria: a short README in `crates/nec_accel/` (or a doc comment in `lib.rs`) explicitly states which kernels are stubs vs implemented and links to the roadmap entry that tracks the real-kernel work.
 
 ### Performance & parallelism
 
