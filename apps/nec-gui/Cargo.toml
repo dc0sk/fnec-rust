@@ -24,4 +24,5 @@ nec_parser  = { workspace = true }
 nec_solver  = { workspace = true }
 nec_project = { workspace = true }
 num-complex = { workspace = true }
+toml        = { workspace = true }
 iced        = "0.13"

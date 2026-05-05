@@ -4,6 +4,7 @@
 //! Single-frequency Hallen solve — thin wrapper around `nec_solver` for use
 //! by the GUI.  Returns the first feedpoint impedance found in the deck.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use nec_model::card::Card;
@@ -14,6 +15,92 @@ use nec_solver::{
     solve_hallen, wire_endpoints_from_segs, FarFieldPoint,
 };
 use num_complex::Complex64;
+
+// ---------------------------------------------------------------------------
+// Variable-substitution helper
+// ---------------------------------------------------------------------------
+
+/// Load a flat string-to-string variable map from a `.toml` or `.json` file.
+///
+/// Accepts TOML (default) or JSON (detected by `.json` extension) flat
+/// key-value maps.  Integer and float values are accepted and converted to
+/// strings.  Returns `Err` with a human-readable message on any failure.
+fn load_vars(path: &Path) -> Result<HashMap<String, String>, String> {
+    let src = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read vars file '{}': {e}", path.display()))?;
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "json" {
+        // Minimal flat-JSON-object parser (avoids serde_json in deps).
+        let s = src.trim();
+        if !s.starts_with('{') || !s.ends_with('}') {
+            return Err(format!(
+                "'{}': JSON vars file must be a top-level object",
+                path.display()
+            ));
+        }
+        let inner = s[1..s.len() - 1].trim();
+        let mut map = HashMap::new();
+        if inner.is_empty() {
+            return Ok(map);
+        }
+        // Naive split on top-level commas (no nested objects supported).
+        for raw_pair in inner.split(',') {
+            let pair = raw_pair.trim();
+            if pair.is_empty() {
+                continue;
+            }
+            let colon = pair
+                .find(':')
+                .ok_or_else(|| format!("'{}': malformed JSON pair: {pair}", path.display()))?;
+            let raw_key = pair[..colon].trim().trim_matches('"');
+            let raw_val = pair[colon + 1..].trim().trim_matches('"');
+            map.insert(raw_key.to_string(), raw_val.to_string());
+        }
+        Ok(map)
+    } else {
+        let table: toml::Table = toml::from_str(&src)
+            .map_err(|e| format!("'{}': TOML parse error: {e}", path.display()))?;
+        let mut map = HashMap::new();
+        for (k, v) in table {
+            match v {
+                toml::Value::String(s) => {
+                    map.insert(k, s);
+                }
+                toml::Value::Integer(i) => {
+                    map.insert(k, i.to_string());
+                }
+                toml::Value::Float(f) => {
+                    map.insert(k, format!("{f}"));
+                }
+                other => {
+                    return Err(format!(
+                        "'{}': variable '{k}' has unsupported type {} — use strings or numbers",
+                        path.display(),
+                        other.type_str()
+                    ));
+                }
+            }
+        }
+        Ok(map)
+    }
+}
+
+/// Apply variable substitution to `input` if `vars_path` is provided.
+/// Returns the (possibly substituted) string or an error.
+fn apply_vars(input: &str, vars_path: Option<&str>) -> Result<String, String> {
+    if let Some(vp) = vars_path {
+        let vars = load_vars(Path::new(vp))?;
+        nec_parser::template::substitute(input, &vars).map_err(|e| e.to_string())
+    } else {
+        Ok(input.to_owned())
+    }
+}
 
 /// Result of a successful single-frequency solve.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,11 +124,15 @@ pub struct SweepPoint {
 /// Run a Hallen solve on the NEC deck at `path` and return the feedpoint
 /// impedance at the first frequency found in the `FR` card.
 ///
+/// If `vars_path` is `Some(path)`, the file is loaded as a variable map and
+/// `$VAR` tokens in the deck are substituted before parsing.
+///
 /// Returns `Err` with a human-readable message if the file cannot be read,
 /// parsed, or solved.
-pub fn solve_deck_path(path: &Path) -> Result<SolveResult, String> {
+pub fn solve_deck_path(path: &Path, vars_path: Option<&str>) -> Result<SolveResult, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
     solve_deck_str(&input)
 }
 
@@ -139,14 +230,17 @@ fn feedpoint_impedance(
 ///
 /// `start_mhz`, `end_mhz`, `step_mhz` define the linear sweep.  The geometry
 /// and excitation vector are built once and reused for every frequency point.
+/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
 pub fn sweep_deck_path(
     path: &std::path::Path,
+    vars_path: Option<&str>,
     start_mhz: f64,
     end_mhz: f64,
     step_mhz: f64,
 ) -> Result<Vec<SweepPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
     sweep_deck_str(&input, start_mhz, end_mhz, step_mhz)
 }
 
@@ -242,9 +336,15 @@ pub struct PatternPoint {
 ///
 /// `phi_deg` selects the azimuth plane.  θ is sampled in 5° steps from 0° to
 /// 180° (37 points), giving a full elevation cut.
-pub fn pattern_slice_deck_path(path: &Path, phi_deg: f64) -> Result<Vec<PatternPoint>, String> {
+/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
+pub fn pattern_slice_deck_path(
+    path: &Path,
+    vars_path: Option<&str>,
+    phi_deg: f64,
+) -> Result<Vec<PatternPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
     pattern_slice_deck_str(&input, phi_deg)
 }
 
@@ -288,9 +388,14 @@ pub struct CurrentPoint {
 }
 
 /// Compute the per-segment current distribution from the deck at `path`.
-pub fn current_distribution_deck_path(path: &Path) -> Result<Vec<CurrentPoint>, String> {
+/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
+pub fn current_distribution_deck_path(
+    path: &Path,
+    vars_path: Option<&str>,
+) -> Result<Vec<CurrentPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
     current_distribution_deck_str(&input)
 }
 
