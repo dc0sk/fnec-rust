@@ -75,7 +75,7 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 
 | Card | Support | Notes |
 |------|---------|-------|
-| TL type 0 | Partial | Lossless, `NSEG=0/1`; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
+| TL type 0 | Partial | Lossless; supported `NSEG` range: 0, 1, and >1 — all treated as a **single-section stamp** (no per-segment subdivision); `NSEG=0` is normalised to 1; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
 | TL other | Deferred | Lossy / complex variants: card is ignored with a warning |
 | NT | Deferred | Parsed for staged portability; ignored at runtime with a warning |
 | PT | Deferred | Parsed for staged portability; ignored at runtime with a warning |
@@ -88,7 +88,7 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 |-------|---------|
 | tag1, seg1 | Port 1 endpoint |
 | tag2, seg2 | Port 2 endpoint |
-| NSEG | Number of TL sections (0 or 1 = single section supported) |
+| NSEG | Number of TL sections; supported range: 0, 1, or >1 — all use a single-section stamp (no subdivision); `NSEG=0` is normalised to 1 before stamping |
 | type | 0 = lossless (supported); non-zero = lossy/complex (deferred) |
 | F1 | Characteristic impedance Z₀ (Ω, default 50) |
 | F2 | Transmission-line length (m) |

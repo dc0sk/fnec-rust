@@ -368,6 +368,82 @@ pub fn rp_card_points(
 }
 
 // ---------------------------------------------------------------------------
+// Pattern-grid bilinear interpolation
+// ---------------------------------------------------------------------------
+
+/// A regular (θ, φ) RP gain grid suitable for bilinear interpolation.
+///
+/// The grid covers:
+///   θ ∈ [theta0_deg, theta0_deg + (n_theta−1) · d_theta_deg]  (n_theta points)
+///   φ ∈ [phi0_deg,   phi0_deg   + (n_phi−1)   · d_phi_deg  ]  (n_phi   points)
+///
+/// Samples are stored in the same row-major order as [`rp_card_points`]:
+/// outer index φ (0..n_phi), inner index θ (0..n_theta).
+/// `gains[ip * n_theta + it]` is the total-gain (dBi) at θ index `it` and φ index `ip`.
+#[derive(Debug, Clone)]
+pub struct RpGainGrid {
+    pub theta0_deg: f64,
+    pub phi0_deg: f64,
+    pub d_theta_deg: f64,
+    pub d_phi_deg: f64,
+    pub n_theta: usize,
+    pub n_phi: usize,
+    /// Total gain (dBi) values, stored in (φ-outer, θ-inner) row-major order.
+    pub gains: Vec<f64>,
+}
+
+/// Bilinearly interpolate total gain (dBi) within an [`RpGainGrid`].
+///
+/// Returns `None` if the query point falls outside the grid bounds or if any
+/// of the four surrounding grid corners holds a clamped null value (< −900 dBi).
+///
+/// # Documented tolerance
+///
+/// For a 10° grid step in both θ and φ, bilinear interpolation of smooth
+/// radiation patterns (Hertzian dipole, half-wave dipole) away from axial
+/// nulls stays within **0.5 dBi** of directly-computed values.  Near deep
+/// nulls (surrounding corners ≤ −900 dBi) the function returns `None`; the
+/// caller must handle that region separately.
+pub fn bilinear_interp_gain(grid: &RpGainGrid, theta_deg: f64, phi_deg: f64) -> Option<f64> {
+    let t_rel = (theta_deg - grid.theta0_deg) / grid.d_theta_deg;
+    let p_rel = (phi_deg - grid.phi0_deg) / grid.d_phi_deg;
+
+    if t_rel < 0.0 || p_rel < 0.0 {
+        return None;
+    }
+
+    let it0 = t_rel.floor() as usize;
+    let ip0 = p_rel.floor() as usize;
+    let it1 = it0 + 1;
+    let ip1 = ip0 + 1;
+
+    if it1 >= grid.n_theta || ip1 >= grid.n_phi {
+        return None;
+    }
+
+    let ft = t_rel - it0 as f64; // fractional position in θ cell
+    let fp = p_rel - ip0 as f64; // fractional position in φ cell
+
+    let idx = |ip: usize, it: usize| ip * grid.n_theta + it;
+    let g00 = grid.gains[idx(ip0, it0)];
+    let g10 = grid.gains[idx(ip0, it1)];
+    let g01 = grid.gains[idx(ip1, it0)];
+    let g11 = grid.gains[idx(ip1, it1)];
+
+    // Reject any cell containing a clamped null corner.
+    if g00 < -900.0 || g10 < -900.0 || g01 < -900.0 || g11 < -900.0 {
+        return None;
+    }
+
+    let gain = (1.0 - ft) * (1.0 - fp) * g00
+        + ft * (1.0 - fp) * g10
+        + (1.0 - ft) * fp * g01
+        + ft * fp * g11;
+
+    Some(gain)
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 
@@ -555,5 +631,81 @@ mod tests {
             "below-ground point should be -999.99 dB, got {}",
             results[0].gain_total_dbi
         );
+    }
+
+    // ── Proptest sweeps (BL-IMPR-010) ────────────────────────────────────
+
+    use proptest::prelude::*;
+
+    /// Build a Hertzian-dipole RP grid with 10° step in θ and φ.
+    ///
+    /// θ range: 10°..170° (17 points), φ range: 0°..360° (37 points).
+    /// Gains stored in (φ-outer, θ-inner) order matching [`rp_card_points`].
+    fn hertzian_10deg_grid() -> RpGainGrid {
+        let (segs, i_vec) = hertzian_segment(0.01);
+        let freq_hz = 14.2e6;
+        let theta0 = 10.0_f64;
+        let phi0 = 0.0_f64;
+        let d_theta = 10.0_f64;
+        let d_phi = 10.0_f64;
+        let n_theta = 17usize;
+        let n_phi = 37usize;
+
+        let pts = rp_card_points(n_theta as u32, n_phi as u32, theta0, phi0, d_theta, d_phi);
+        let results =
+            compute_radiation_pattern(&segs, &i_vec, freq_hz, &pts, &GroundModel::FreeSpace);
+
+        RpGainGrid {
+            theta0_deg: theta0,
+            phi0_deg: phi0,
+            d_theta_deg: d_theta,
+            d_phi_deg: d_phi,
+            n_theta,
+            n_phi,
+            gains: results.iter().map(|r| r.gain_total_dbi).collect(),
+        }
+    }
+
+    proptest! {
+        /// Documented tolerance for BL-IMPR-010:
+        ///
+        /// For the 10° RP grid (θ and φ step), bilinear interpolation of a
+        /// Hertzian-dipole pattern at arbitrary interior points stays within
+        /// **0.5 dBi** of directly-computed values, provided the query and
+        /// all four surrounding grid corners are away from axial nulls.
+        ///
+        /// Query domain is restricted to θ ∈ [20°, 160°] to keep all four
+        /// surrounding corners inside the 10°–170° grid range and well clear
+        /// of the on-axis nulls at θ = 0° / 180°.
+        #[test]
+        fn proptest_pattern_interp_within_tolerance(
+            theta_deg in 20.0_f64..=160.0_f64,
+            phi_deg in 10.0_f64..=350.0_f64,
+        ) {
+            let grid = hertzian_10deg_grid();
+            let (segs, i_vec) = hertzian_segment(0.01);
+            let freq_hz = 14.2e6;
+
+            // Compute gain directly at the query point.
+            let pts = vec![FarFieldPoint { theta_deg, phi_deg }];
+            let direct = compute_radiation_pattern(
+                &segs, &i_vec, freq_hz, &pts, &GroundModel::FreeSpace,
+            );
+            let direct_gain = direct[0].gain_total_dbi;
+
+            // Obtain bilinear estimate; if a null corner is present, skip.
+            if let Some(interp_gain) = bilinear_interp_gain(&grid, theta_deg, phi_deg) {
+                // Both values must be non-null for a meaningful comparison.
+                if direct_gain > -900.0 {
+                    prop_assert!(
+                        (interp_gain - direct_gain).abs() <= 0.5,
+                        "bilinear interp error {:.4} dBi > 0.5 dBi at θ={:.2}° φ={:.2}° \
+                         (interp={:.4}, direct={:.4})",
+                        (interp_gain - direct_gain).abs(),
+                        theta_deg, phi_deg, interp_gain, direct_gain
+                    );
+                }
+            }
+        }
     }
 }
