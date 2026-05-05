@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-05-02
+last_updated: 2026-05-05
 ---
 
 # SBOM
@@ -26,6 +26,7 @@ Update this file whenever a dependency is added, removed, or its status changes.
 | nec_accel | Runtime | GPL-3.0-only | Active | crates/nec_accel |
 | nec_report | Runtime | GPL-3.0-only | Active | crates/nec_report |
 | nec_project | Runtime | GPL-3.0-only | Active | crates/nec_project |
+| nec_worker | Runtime | GPL-3.0-only | Active | crates/nec_worker |
 | nec-cli | Runtime | GPL-3.0-only | Active | apps/nec-cli |
 | nec-gui | Runtime | GPL-3.0-only | Active | apps/nec-gui |
 | nec-tui | Runtime | GPL-3.0-only | Active | apps/nec-tui |
