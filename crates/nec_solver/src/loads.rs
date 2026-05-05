@@ -409,4 +409,186 @@ mod tests {
         assert!((loads[0].re - 50.0).abs() < 1e-9);
         assert!((loads[1].re - 50.0).abs() < 1e-9);
     }
+
+    // ── Proptest sweeps (BL-IMPR-005) ───────────────────────────────────
+
+    use proptest::prelude::*;
+
+    /// Fixed geometry used by all proptest cases.
+    fn proptest_seg() -> Segment {
+        seg(1, 1, 0.1, 0.001)
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(512))]
+
+        /// LD type 4 (series impedance): Z = R + jX, frequency-independent.
+        /// Re and Im must equal f1 and f2 exactly for any finite values.
+        #[test]
+        fn proptest_ld_type4_is_frequency_independent(
+            r in -1e9_f64..=1e9_f64,
+            x in -1e9_f64..=1e9_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 4,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: x, f3: 0.0,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            prop_assert!((loads[0].re - r).abs() < 1e-9,
+                "Re expected {r}, got {}", loads[0].re);
+            prop_assert!((loads[0].im - x).abs() < 1e-9,
+                "Im expected {x}, got {}", loads[0].im);
+        }
+
+        /// LD type 0 (series RLC): Re(Z) must equal R for any R≥0, L≥0, C≥0.
+        #[test]
+        fn proptest_ld_type0_re_equals_resistance(
+            r in 0.0_f64..1e9_f64,
+            l in 0.0_f64..1e-3_f64,
+            c in 0.0_f64..1e-6_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 0,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: l, f3: c,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            prop_assert!((loads[0].re - r).abs() < 1e-6,
+                "Re expected {r}, got {}", loads[0].re);
+        }
+
+        /// LD type 0 (series RLC): Im(Z) = ωL − 1/(ωC) for C > 0.
+        #[test]
+        fn proptest_ld_type0_im_formula(
+            r in 0.0_f64..1e6_f64,
+            l in 1e-9_f64..1e-3_f64,
+            c in 1e-15_f64..1e-6_f64,
+            freq in 1e6_f64..1e9_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 0,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: l, f3: c,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            let omega = TWO_PI * freq;
+            let expected_x = omega * l - 1.0 / (omega * c);
+            // Tolerance scales with magnitude due to floating-point cancellation.
+            let tol = (expected_x.abs() * 1e-9).max(1e-3);
+            prop_assert!((loads[0].im - expected_x).abs() < tol,
+                "Im expected {expected_x}, got {}, tol={tol}", loads[0].im);
+        }
+
+        /// LD type 2 (series RL): Z = R + jωL.
+        #[test]
+        fn proptest_ld_type2_re_and_im_formula(
+            r in 0.0_f64..1e9_f64,
+            l in 0.0_f64..1e-3_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 2,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: l, f3: 0.0,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            let expected_im = TWO_PI * freq * l;
+            prop_assert!((loads[0].re - r).abs() < 1e-9,
+                "Re expected {r}, got {}", loads[0].re);
+            prop_assert!((loads[0].im - expected_im).abs() < expected_im.abs() * 1e-9 + 1e-9,
+                "Im expected {expected_im}, got {}", loads[0].im);
+        }
+
+        /// LD type 3 (series RC): Re(Z) = R, Im(Z) ≤ 0 for C > 0.
+        #[test]
+        fn proptest_ld_type3_re_equals_resistance_and_im_is_nonpositive(
+            r in 0.0_f64..1e9_f64,
+            c in 1e-15_f64..1e-6_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 3,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: 0.0, f3: c,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            prop_assert!((loads[0].re - r).abs() < 1e-9,
+                "Re expected {r}, got {}", loads[0].re);
+            prop_assert!(loads[0].im <= 0.0,
+                "RC reactance should be non-positive, got {}", loads[0].im);
+        }
+
+        /// LD type 5 (wire conductivity): Im(Z) = 0, Re(Z) > 0 for σ > 0.
+        #[test]
+        fn proptest_ld_type5_positive_sigma_gives_real_positive_impedance(
+            sigma in 1.0_f64..1e10_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 5,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: sigma, f2: 0.0, f3: 0.0,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            prop_assert!(loads[0].re > 0.0,
+                "Re should be positive for σ={sigma}, got {}", loads[0].re);
+            prop_assert_eq!(loads[0].im, 0.0);
+        }
+
+        /// LD type 5 (wire conductivity): Re(Z) = dl / (2π·a·σ) exactly.
+        #[test]
+        fn proptest_ld_type5_formula(
+            sigma in 1.0_f64..1e10_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let seg_len = 0.1_f64;
+            let seg_radius = 0.001_f64;
+            let deck = deck_with_ld(LdCard {
+                load_type: 5,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: sigma, f2: 0.0, f3: 0.0,
+            });
+            let (loads, warns) = build_loads(&deck, &segs, freq);
+            prop_assert!(warns.is_empty());
+            let expected = seg_len / (TWO_PI * seg_radius * sigma);
+            prop_assert!((loads[0].re - expected).abs() < expected * 1e-12,
+                "Re expected {expected}, got {}", loads[0].re);
+        }
+
+        /// LD type 1 (parallel RLC): Re(Z) ≥ 0 for passive element values.
+        #[test]
+        fn proptest_ld_type1_parallel_rlc_is_passive(
+            r in 0.0_f64..1e9_f64,
+            l in 0.0_f64..1e-3_f64,
+            c in 0.0_f64..1e-6_f64,
+            freq in 1e4_f64..3e10_f64,
+        ) {
+            let segs = vec![proptest_seg()];
+            let deck = deck_with_ld(LdCard {
+                load_type: 1,
+                tag: 1, seg_first: 1, seg_last: 1,
+                f1: r, f2: l, f3: c,
+            });
+            let (loads, _warns) = build_loads(&deck, &segs, freq);
+            // A passive parallel network must have non-negative Re(Z).
+            prop_assert!(loads[0].re >= -1e-12,
+                "Re(Z) of passive parallel RLC should be ≥ 0, got {}", loads[0].re);
+        }
+    }
 }
