@@ -1,7 +1,8 @@
 ---
-title: Worker Node Deployment Guide
+project: fnec-rust
+doc: docs/worker-deployment.md
+status: living
 last_updated: 2026-05-05
-status: current
 ---
 
 # Worker Node Deployment Guide
