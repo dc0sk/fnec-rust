@@ -2,10 +2,36 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 ---
 
 # Release Notes
+
+## 0.6.0 — Phase 6 complete: distributed execution, multi-vendor GPU, sinusoidal EFIE
+
+### Distributed worker deployment
+
+- **`fnec worker --stdio`**: new worker node mode — spawns a JSON-lines solve loop on stdin/stdout for SSH-pipe transport. Run one worker per node; the controller dispatches frequency-point tasks and collects results.
+- **`nec_worker` crate**: `TaskMessage`/`TaskResult` protocol, `HostsConfig` TOML node list, per-node `CapabilityCache` (CPU threads, GPU availability, wgpu backend), `LocalWorkerHandle` subprocess controller.
+- **SHA-256 result cache**: `ResultCache` keyed on `hash(deck + solver_config + freq_hz)`; FIFO-bounded capacity; cache hit skips the remote solve. A 5-point sweep with one changed deck reuses 4 cached results and re-solves only the changed point.
+- **Deployment guide**: `docs/worker-deployment.md` — SSH key setup, `hosts.toml` field reference, wire protocol examples, troubleshooting.
+
+### Solver and accuracy
+
+- **Sinusoidal-basis EFIE**: piecewise-sinusoidal matrix assembly now fully implemented in `nec_solver`. The EXPERIMENTAL warning is retired; all corpus dipole decks pass the impedance tolerance gate in sinusoidal mode.
+
+### Multi-vendor GPU
+
+- **`docs/multi-vendor-gpu.md`**: Vulkan/Metal/DX12/OpenCL backend matrix; AMD Vulkan validation result; Intel ANV, Nvidia MX150, and Pi 5 V3DV coverage; ROCm/SYCL deferred path rationale.
+
+### CI and observability
+
+- **Benchmark dashboard**: GitHub Actions workflow runs the CPU/GPU/multithreaded matrix on every push to `main`, publishes JSON artifacts to Actions summary, and fails on configurable regression deltas.
+
+### Architecture decisions
+
+- **NEC-5 frontier**: `docs/nec5-frontier.md` documents the explicit wire-only continuation decision with ≥3 new difficult-geometry corpus cases mapped to `PH6N5-*` validation rows.
+- **Distributed execution design**: `docs/distributed-execution-design.md` — SSH stdio transport, ed25519 authN, worker contract, frequency-point work-split, and result-cache design.
 
 ## 0.5.0 — Phase 2 + Phase 5 complete
 

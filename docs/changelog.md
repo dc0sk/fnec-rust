@@ -2,18 +2,26 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
 
-## [0.5.0] — 2026-05-04
+## [0.6.0] — 2026-05-05
 ### Added
 
-- **Phase 2 complete** — all eight PH2-CHK items done (ground models, buried-wire guardrails, source/load/network semantics, report/table parity, corpus truth expansion, geometry diagnostics, NEC-5 validation matrix, scriptability preservation).
-- **Phase 5 complete** — all seven PH5-CHK GPU acceleration items done (G1–G7 gates: architecture decision, wgpu scaffold, RP WGSL kernel, CLI --exec gpu wiring, CPU-vs-GPU benchmark gate, Z-matrix fill WGSL kernel, full GPU Hallén solve path).
+- **Phase 6 complete** — all seven PH6-CHK items done (CI benchmark dashboard, NEC-5 frontier decision, sinusoidal-basis EFIE, multi-vendor GPU validation, distributed execution design, SSH-backed worker deployment, SHA-256 result cache).
+- **`nec_worker` crate**: new library crate implementing the distributed worker protocol — `TaskMessage`/`TaskResult` JSON-lines protocol, `HostsConfig` TOML, per-node `CapabilityCache`, `solve_deck_at_frequency()` Hallén pipeline, `run_worker_stdio()` event loop, and `LocalWorkerHandle` subprocess controller.
+- **`fnec worker --stdio` subcommand**: worker node mode added to `nec-cli`; spawns a JSON-lines solve loop on stdin/stdout for SSH-pipe transport.
+- **SHA-256 result cache (`ResultCache`)**: deterministic cache keyed on `hash(deck + solver_config + freq_hz)`; FIFO-bounded capacity; hit/miss/invalidation contract tests; 5-point sweep reuse demonstrated.
+- **CI benchmark dashboard (PH6-CHK-001)**: GitHub Actions workflow publishing benchmark JSON artifacts; regression delta threshold enforced.
+- **NEC-5 frontier decision doc** (`docs/nec5-frontier.md`): explicit wire-only continuation decision; ≥3 corpus expansion cases mapped to PH6N5-* rows.
+- **Sinusoidal-basis EFIE (PH6-CHK-003)**: piecewise-sinusoidal matrix assembly in `nec_solver`; EXPERIMENTAL warning retired.
+- **Multi-vendor GPU doc** (`docs/multi-vendor-gpu.md`): Vulkan/Metal/DX12/OpenCL backend matrix; AMD validation; ROCm/SYCL deferred path documented.
+- **Distributed execution design doc** (`docs/distributed-execution-design.md`): SSH stdio transport, ed25519 authN, worker contract, frequency-point work-split, result-cache design.
+- **Worker deployment guide** (`docs/worker-deployment.md`): per-node SSH key setup, `hosts.toml` reference, wire protocol examples, troubleshooting.
 
 ## [0.5.0] — 2026-05-04
 ### Added
