@@ -120,6 +120,22 @@ Rows are intentionally explicit about status:
 | PH2N5-009 | Surface meshing and wire-surface junctions | out-of-scope | - |
 | PH2N5-010 | Monopole on finite box and patch-ground classes | out-of-scope | - |
 
+### PH6-CHK-002 traceability matrix
+
+This matrix adds three difficult-geometry wire-only cases that push current-distribution
+sensitivity, inter-element coupling, and segment-aspect-ratio stress beyond the
+baseline dipole family. Defined in `docs/nec5-frontier.md`.
+
+Rows use the same status vocabulary as the PH2-CHK-007 matrix above. Corpus fixtures
+and reference captures are pending; rows will transition to `in-scope implemented`
+once the NEC deck, reference-results entry, and tolerance gate are in place.
+
+| Row ID | NEC-5 validation class | Status | Corpus case IDs |
+|:-------|:------------------------|:-------|:----------------|
+| PH6N5-001 | Non-collinear wire junction (bent/V-dipole) | in-scope pending | `vdipole-bent-120deg-51seg` |
+| PH6N5-002 | Near-field inter-element coupling (close parallel dipoles) | in-scope pending | `coupled-parallel-dipoles-51seg` |
+| PH6N5-003 | Loaded passive element in multi-wire Yagi | in-scope pending | `yagi-3elm-loaded-reflector-21seg` |
+
 ## Validation workflow
 
 ### Step 1: Reference capture (manual, one-time per case)
