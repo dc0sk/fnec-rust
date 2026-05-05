@@ -55,6 +55,12 @@ fn main() -> ExitCode {
     }
     // ------------------------------------------------------------------------
 
+    // --- worker subcommand --------------------------------------------------
+    if args.get(1).map(String::as_str) == Some("worker") {
+        return run_worker_subcommand();
+    }
+    // ------------------------------------------------------------------------
+
     let ParsedArgs {
         solver_mode,
         pulse_rhs_mode,
@@ -371,6 +377,18 @@ fn main() -> ExitCode {
         println!("[{records}]", records = json_records.join(","));
     }
 
+    ExitCode::SUCCESS
+}
+
+/// Entry point for `fnec worker --stdio`.
+///
+/// Runs the distributed worker stdio event loop: reads newline-delimited JSON
+/// task messages from stdin and writes result messages to stdout.  Exits when
+/// stdin closes or a shutdown command is received.
+fn run_worker_subcommand() -> ExitCode {
+    let stdin = std::io::stdin().lock();
+    let stdout = std::io::stdout();
+    nec_worker::run_worker_stdio(stdin, stdout);
     ExitCode::SUCCESS
 }
 

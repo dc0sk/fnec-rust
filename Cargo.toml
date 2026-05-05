@@ -9,6 +9,7 @@ members = [
     "crates/nec_accel",
     "crates/nec_report",
     "crates/nec_project",
+    "crates/nec_worker",
     "apps/nec-cli",
     "apps/nec-gui",
     "apps/nec-tui",
@@ -31,6 +32,7 @@ nec_solver  = { path = "crates/nec_solver" }
 nec_accel   = { path = "crates/nec_accel" }
 nec_report  = { path = "crates/nec_report" }
 nec_project = { path = "crates/nec_project" }
+nec_worker  = { path = "crates/nec_worker" }
 
 # External crates
 num-complex = "0.4"
@@ -40,3 +42,5 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 bytemuck = { version = "1", features = ["derive"] }
 wgpu = "29"
+serde_json = "1"
+base64 = "0.22"
