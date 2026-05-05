@@ -686,4 +686,284 @@ mod tests {
         // Peak |Z| ≈ sqrt(74.24² + 13.90²) ≈ 75.22 Ω
         assert!(report.contains("|Z|_max=75."));
     }
+
+    // ── Corner-case tests (BL-IMPR-004) ─────────────────────────────────
+
+    /// Empty feedpoint slice: FEEDPOINTS header + column header must still
+    /// appear; no data rows should follow.
+    #[test]
+    fn report_with_empty_feedpoint_rows_renders_headers_only() {
+        let report = render_text_report(&ReportInput {
+            solver_mode: "hallen",
+            pulse_rhs: "Nec2",
+            frequency_hz: 14_200_000.0,
+            rows: &[],
+            source_table: &[],
+            load_table: &[],
+            current_table: &[],
+            pattern_table: &[],
+        });
+        assert!(report.contains("FEEDPOINTS\n"));
+        assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));
+        // No numeric data row should follow the column header.
+        let after_header = report
+            .split("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n")
+            .nth(1)
+            .unwrap_or("");
+        let first_line = after_header.lines().next().unwrap_or("");
+        assert!(
+            first_line.is_empty(),
+            "expected no data row after empty feedpoints, got: {first_line:?}"
+        );
+    }
+
+    /// Empty pattern table: RADIATION_PATTERN section must be omitted.
+    #[test]
+    fn report_omits_radiation_pattern_section_when_empty() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 1,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.02, 0.0),
+            z_in: Complex64::new(50.0, 0.0),
+        }];
+        let report = render_text_report(&minimal_input(&rows));
+        assert!(!report.contains("RADIATION_PATTERN\n"));
+    }
+
+    /// NaN in feedpoint z_in: the formatter must not panic; the output line
+    /// should still have 8 columns with the NaN tokens in the Z columns.
+    #[test]
+    fn format_feedpoint_row_survives_nan_z_in() {
+        let row = FeedpointRow {
+            tag: 1,
+            seg: 1,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.02, 0.0),
+            z_in: Complex64::new(f64::NAN, f64::NAN),
+        };
+        let line = format_feedpoint_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 8, "must produce 8 columns even for NaN: {line}");
+    }
+
+    /// NaN in pattern gain field: formatter must not panic and must produce 6
+    /// columns.
+    #[test]
+    fn format_pattern_row_survives_nan_gain() {
+        let row = PatternRow {
+            theta_deg: 90.0,
+            phi_deg: 0.0,
+            gain_total_dbi: f64::NAN,
+            gain_theta_dbi: f64::NAN,
+            gain_phi_dbi: f64::NEG_INFINITY,
+            axial_ratio: 0.0,
+        };
+        let line = format_pattern_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 6, "must produce 6 columns even for NaN: {line}");
+    }
+
+    /// Very large impedance values (wide columns): formatter should not panic
+    /// and the Z columns should contain the large magnitude.
+    #[test]
+    fn format_feedpoint_row_handles_very_large_z() {
+        let row = FeedpointRow {
+            tag: 999,
+            seg: 9999,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(1e-12, 0.0),
+            z_in: Complex64::new(1e12, -1e12),
+        };
+        let line = format_feedpoint_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 8, "must produce 8 columns for large Z: {line}");
+        // Z_RE column (index 6) should contain the large magnitude.
+        let z_re: f64 = cols[6].parse().expect("Z_RE must be parseable");
+        assert!((z_re - 1e12).abs() < 1.0, "Z_RE={z_re} expected ~1e12");
+    }
+
+    /// Very large gain values in pattern row: formatter must handle them.
+    #[test]
+    fn format_pattern_row_handles_very_large_gain() {
+        let row = PatternRow {
+            theta_deg: 0.0,
+            phi_deg: 0.0,
+            gain_total_dbi: 1e6,
+            gain_theta_dbi: 1e6,
+            gain_phi_dbi: -1e6,
+            axial_ratio: 1e9,
+        };
+        let line = format_pattern_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(
+            cols.len(),
+            6,
+            "must produce 6 columns for large gain: {line}"
+        );
+    }
+
+    /// Pattern rows at the poles (θ=0 and θ=180): formatter must not panic.
+    #[test]
+    fn format_pattern_row_at_poles() {
+        for theta in [0.0_f64, 180.0_f64] {
+            let row = PatternRow {
+                theta_deg: theta,
+                phi_deg: 0.0,
+                gain_total_dbi: 2.15,
+                gain_theta_dbi: 2.15,
+                gain_phi_dbi: -999.99,
+                axial_ratio: 0.0,
+            };
+            let line = format_pattern_row(&row);
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            assert_eq!(
+                cols.len(),
+                6,
+                "must produce 6 columns at theta={theta}: {line}"
+            );
+            let t: f64 = cols[0].parse().unwrap();
+            assert!((t - theta).abs() < 0.001, "theta round-trip failed: {t}");
+        }
+    }
+
+    /// `format_source_row` stability: 6 columns, correct field order.
+    #[test]
+    fn format_source_row_is_stable() {
+        let row = SourceRow {
+            excitation_type: 0,
+            tag: 1,
+            seg: 26,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: -0.5,
+        };
+        let line = format_source_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 6, "source row must have 6 columns: {line}");
+        assert_eq!(cols[0], "0"); // excitation_type
+        assert_eq!(cols[1], "1"); // tag
+        assert_eq!(cols[2], "26"); // seg
+        assert_eq!(cols[3], "0"); // i4
+    }
+
+    /// `format_load_row` stability: 7 columns, correct field order.
+    #[test]
+    fn format_load_row_is_stable() {
+        let row = LoadRow {
+            load_type: 2,
+            tag: 1,
+            seg_first: 10,
+            seg_last: 20,
+            f1: 5.0,
+            f2: 1e-6,
+            f3: 0.0,
+        };
+        let line = format_load_row(&row);
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 7, "load row must have 7 columns: {line}");
+        assert_eq!(cols[0], "2"); // load_type
+        assert_eq!(cols[2], "10"); // seg_first
+        assert_eq!(cols[3], "20"); // seg_last
+    }
+
+    // ── EP-2 ResultFilter tests ──────────────────────────────────────────
+
+    struct IdentityFilter;
+    impl ResultFilter for IdentityFilter {
+        fn filter(&self, rows: &[FeedpointRow]) -> Vec<FeedpointRow> {
+            rows.to_vec()
+        }
+    }
+
+    struct DropAll;
+    impl ResultFilter for DropAll {
+        fn filter(&self, _rows: &[FeedpointRow]) -> Vec<FeedpointRow> {
+            vec![]
+        }
+    }
+
+    struct ThresholdFilter {
+        max_re_ohms: f64,
+    }
+    impl ResultFilter for ThresholdFilter {
+        fn filter(&self, rows: &[FeedpointRow]) -> Vec<FeedpointRow> {
+            rows.iter()
+                .filter(|r| r.z_in.re.abs() <= self.max_re_ohms)
+                .copied()
+                .collect()
+        }
+    }
+
+    fn two_feedpoint_rows() -> [FeedpointRow; 2] {
+        [
+            FeedpointRow {
+                tag: 1,
+                seg: 1,
+                v_source: Complex64::new(1.0, 0.0),
+                current: Complex64::new(0.02, 0.0),
+                z_in: Complex64::new(50.0, 0.0),
+            },
+            FeedpointRow {
+                tag: 1,
+                seg: 26,
+                v_source: Complex64::new(1.0, 0.0),
+                current: Complex64::new(0.013471, -0.002522),
+                z_in: Complex64::new(300.0, 0.0),
+            },
+        ]
+    }
+
+    #[test]
+    fn result_filter_identity_returns_all_rows() {
+        let rows = two_feedpoint_rows();
+        let filtered = IdentityFilter.filter(&rows);
+        assert_eq!(filtered.len(), rows.len());
+        for (a, b) in rows.iter().zip(filtered.iter()) {
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn result_filter_drop_all_returns_empty() {
+        let rows = two_feedpoint_rows();
+        let filtered = DropAll.filter(&rows);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn result_filter_threshold_passes_only_matching_rows() {
+        let rows = two_feedpoint_rows();
+        let f = ThresholdFilter { max_re_ohms: 100.0 };
+        let filtered = f.filter(&rows);
+        assert_eq!(filtered.len(), 1, "only the 50 Ω row should pass");
+        assert!((filtered[0].z_in.re - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn result_filter_on_empty_slice_returns_empty() {
+        let filtered = IdentityFilter.filter(&[]);
+        assert!(filtered.is_empty());
+        let filtered = ThresholdFilter { max_re_ohms: 1.0 }.filter(&[]);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn result_filter_threshold_with_nan_z_in_does_not_panic() {
+        let rows = [FeedpointRow {
+            tag: 1,
+            seg: 1,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(0.02, 0.0),
+            z_in: Complex64::new(f64::NAN, 0.0),
+        }];
+        // NaN.abs() is NaN, which is not <= any finite threshold, so it
+        // should be silently dropped rather than panic.
+        let f = ThresholdFilter { max_re_ohms: 100.0 };
+        let filtered = f.filter(&rows);
+        assert!(
+            filtered.is_empty(),
+            "NaN z_in should be dropped by threshold filter"
+        );
+    }
 }
