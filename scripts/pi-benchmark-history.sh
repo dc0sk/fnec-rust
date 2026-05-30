@@ -54,17 +54,17 @@ case "${cmd}" in
     fi
 
     in_header="$(head -n 1 "${in_csv}")"
-    current_header='timestamp_utc,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,freq_mhz,abs_res,rel_res,exec_mode,diag_spread,sin_rel_res'
+    current_csv_header='timestamp_utc,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,freq_mhz,abs_res,rel_res,exec_mode,diag_spread,sin_rel_res'
     legacy_header='timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res'
     format=""
-    if [[ "${in_header}" == "${current_header}" ]]; then
+    if [[ "${in_header}" == "${current_csv_header}" ]]; then
       format="current"
     elif [[ "${in_header}" == "${legacy_header}" ]]; then
       format="legacy"
     else
       echo "error: unsupported benchmark CSV header in ${in_csv}" >&2
       echo "expected one of:" >&2
-      echo "  ${current_header}" >&2
+      echo "  ${current_csv_header}" >&2
       echo "  ${legacy_header}" >&2
       exit 1
     fi
@@ -75,11 +75,11 @@ case "${cmd}" in
     if [[ ! -f "${history_csv}" ]]; then
       printf '%s\n' "${history_header}" > "${history_csv}"
     else
-      current_header="$(head -n 1 "${history_csv}")"
-      if [[ "${current_header}" != "${history_header}" ]]; then
+      existing_history_header="$(head -n 1 "${history_csv}")"
+      if [[ "${existing_history_header}" != "${history_header}" ]]; then
         echo "error: history CSV header mismatch in ${history_csv}" >&2
         echo "expected: ${history_header}" >&2
-        echo "actual:   ${current_header}" >&2
+        echo "actual:   ${existing_history_header}" >&2
         exit 1
       fi
     fi
@@ -97,13 +97,21 @@ case "${cmd}" in
       ' "${in_csv}" >> "${history_csv}"
     else
       # legacy local format: exec column appears before freq/abs/rel and
-      # timestamp is in unix-ms form; normalize into canonical field order.
+      # timestamp is in unix-ms form; normalize both field order and timestamp.
       awk -F, -v ts="${ingested_at}" -v sha="${git_sha}" -v src="${source_name}" '
+        function iso_from_unix_ms(ms, sec, cmd, out) {
+          sec = int(ms / 1000)
+          cmd = "date -u -d @" sec " +%Y-%m-%dT%H:%M:%SZ"
+          cmd | getline out
+          close(cmd)
+          return out
+        }
         NR == 1 { next }
         NF > 1 {
+          iso_ts = iso_from_unix_ms($1 + 0)
           printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
             ts, sha, src,
-            $1, $2, $3, $4, $5, $6, $7,
+            iso_ts, $2, $3, $4, $5, $6, $7,
             $8, $9, $11, $12, $13, $10, $14, $15
         }
       ' "${in_csv}" >> "${history_csv}"
