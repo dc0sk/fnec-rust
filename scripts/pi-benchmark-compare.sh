@@ -12,8 +12,10 @@ print per deck+solver deltas for timing and residual diagnostics.
 In the two-file form, base.csv is compared to candidate.csv.
 
 In the single-file form (--gpu-vs-cpu-max-pct), GPU rows are compared to CPU
-rows within candidate.csv for the same (deck, solver) combination.  Fails if
-any GPU average exceeds the CPU average by more than the given percentage.
+rows within candidate.csv for the same (deck, solver) combination. If both
+`cpu-single` and legacy `cpu` rows exist, `cpu-single` is used as the CPU
+baseline. Fails if any GPU average exceeds the CPU average by more than the
+given percentage.
 This is the G5 gate (PH5-CHK-005): GPU ≥ 0.8× CPU (limit: 25%).
 
 Columns in output (two-file mode):
@@ -128,19 +130,27 @@ if [[ -n "${gpu_vs_cpu_max_pct}" ]]; then
     {
         ex = (NF >= 13 && $13 != "") ? $13 : "cpu"
         k = $3 "|" $4
-        if (ex == "cpu") { cpu_c[k]++; cpu_t[k] += $7 }
+        if (ex == "cpu-single") { cpu_single_c[k]++; cpu_single_t[k] += $7 }
+        else if (ex == "cpu") { cpu_legacy_c[k]++; cpu_legacy_t[k] += $7 }
         else if (ex == "gpu") { gpu_c[k]++; gpu_t[k] += $7 }
     }
     END {
         fail = 0
-        for (k in cpu_c) {
-            if (!(k in gpu_c)) continue
-            if (cpu_c[k] == 0 || gpu_c[k] == 0) continue
-            cpu_avg = cpu_t[k] / cpu_c[k]
+        for (k in gpu_c) {
+            if (gpu_c[k] == 0) continue
+            if (k in cpu_single_c && cpu_single_c[k] > 0) {
+                cpu_avg = cpu_single_t[k] / cpu_single_c[k]
+                cpu_runs = cpu_single_c[k]
+            } else if (k in cpu_legacy_c && cpu_legacy_c[k] > 0) {
+                cpu_avg = cpu_legacy_t[k] / cpu_legacy_c[k]
+                cpu_runs = cpu_legacy_c[k]
+            } else {
+                continue
+            }
             gpu_avg = gpu_t[k] / gpu_c[k]
             r = (cpu_avg > 0) ? gpu_avg / cpu_avg : 0
             split(k, p, "|")
-            printf "%s,%s,%d,%d,%.3f,%.3f,%.4f\n", p[1], p[2], cpu_c[k], gpu_c[k], cpu_avg, gpu_avg, r
+            printf "%s,%s,%d,%d,%.3f,%.3f,%.4f\n", p[1], p[2], cpu_runs, gpu_c[k], cpu_avg, gpu_avg, r
             if (max_pct != "" && cpu_avg > 0) {
                 delta_pct = (gpu_avg - cpu_avg) / cpu_avg * 100.0
                 if (delta_pct > (max_pct + 0.0)) {

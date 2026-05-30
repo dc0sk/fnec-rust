@@ -24,8 +24,11 @@ Environment overrides:
                        default: "corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec corpus/yagi-5elm-51seg.nec"
   FNEC_BENCH_SOLVERS   Space-separated solver names
                        default: "hallen pulse sinusoidal"
-  FNEC_BENCH_EXECS     Space-separated execution modes (cpu|hybrid|gpu)
-                       default: "cpu"
+  FNEC_BENCH_EXECS     Space-separated benchmark scenarios:
+                       cpu-single | cpu | hybrid | gpu
+                       default: "cpu-single cpu"
+                       cpu-single forces RAYON_NUM_THREADS=1 for a stable
+                       single-thread baseline while still using --exec cpu.
   FNEC_BENCH_RUNS      Number of repeated runs per deck+solver (default: 3)
   FNEC_BENCH_OUT       Output CSV path (default: tmp/pi-benchmark-<UTC timestamp>.csv)
 EOF
@@ -47,7 +50,7 @@ local_dir="${FNEC_LOCAL_DIR:-$PWD}"
 bootstrap_rust="${FNEC_BOOTSTRAP_RUST:-1}"
 bench_decks="${FNEC_BENCH_DECKS:-corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec corpus/yagi-5elm-51seg.nec}"
 bench_solvers="${FNEC_BENCH_SOLVERS:-hallen pulse sinusoidal}"
-bench_execs="${FNEC_BENCH_EXECS:-cpu}"
+bench_execs="${FNEC_BENCH_EXECS:-cpu-single cpu}"
 bench_runs="${FNEC_BENCH_RUNS:-3}"
 out_csv="${FNEC_BENCH_OUT:-tmp/pi-benchmark-$(date -u +%Y%m%dT%H%M%SZ).csv}"
 out_dir="$(dirname "${out_csv}")"
@@ -115,14 +118,48 @@ cargo build -q -p nec-cli
 
 for deck in ${BENCH_DECKS}; do
   for solver in ${BENCH_SOLVERS}; do
-    for exec_mode in ${BENCH_EXECS}; do
+    for bench_exec in ${BENCH_EXECS}; do
+      case "${bench_exec}" in
+        cpu-single)
+          exec_arg="cpu"
+          bench_rayon="1"
+          bench_stub_gpu="0"
+          ;;
+        cpu)
+          exec_arg="cpu"
+          bench_rayon=""
+          bench_stub_gpu="0"
+          ;;
+        hybrid)
+          exec_arg="hybrid"
+          bench_rayon=""
+          bench_stub_gpu="0"
+          ;;
+        gpu)
+          exec_arg="gpu"
+          bench_rayon=""
+          bench_stub_gpu="1"
+          ;;
+        *)
+          echo "error: unsupported benchmark exec scenario: ${bench_exec}" >&2
+          exit 2
+          ;;
+      esac
+
       run=1
       while [[ "${run}" -le "${BENCH_RUNS}" ]]; do
         ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         start_ns="$(date +%s%N)"
         status="ok"
 
-        if ! target/debug/fnec --solver "${solver}" --exec "${exec_mode}" "${deck}" >/tmp/fnec_out.txt 2>/tmp/fnec_err.txt; then
+        if [[ -n "${bench_rayon}" ]]; then
+          export RAYON_NUM_THREADS="${bench_rayon}"
+        else
+          unset RAYON_NUM_THREADS || true
+        fi
+        export FNEC_ACCEL_STUB_GPU="${bench_stub_gpu}"
+
+        if ! target/debug/fnec --solver "${solver}" --exec "${exec_arg}" "${deck}" >/tmp/fnec_out.txt 2>/tmp/fnec_err.txt; then
           status="fail"
         fi
 
@@ -140,7 +177,7 @@ for deck in ${BENCH_DECKS}; do
 
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
           "${ts}" "${deck}" "${solver}" "${run}" "${status}" "${elapsed_ms}" \
-          "${mode}" "${pulse_rhs}" "${freq_mhz}" "${abs_res}" "${rel_res}" "${exec_mode}" "${diag_spread}" "${sin_rel_res}"
+          "${mode}" "${pulse_rhs}" "${freq_mhz}" "${abs_res}" "${rel_res}" "${bench_exec}" "${diag_spread}" "${sin_rel_res}"
 
         run="$((run + 1))"
       done
