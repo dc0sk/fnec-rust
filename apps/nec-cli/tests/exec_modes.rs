@@ -724,6 +724,7 @@ fn fournec2_alias_keeps_report_on_stdout_and_warning_on_stderr() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("4nec2-kernel");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
 
     let output = Command::new(&alias)
         .arg("--solver")
@@ -737,8 +738,6 @@ fn fournec2_alias_keeps_report_on_stdout_and_warning_on_stderr() {
                 alias.display()
             )
         });
-
-    let _ = fs::remove_file(&alias);
 
     assert!(
         output.status.success(),
@@ -773,6 +772,7 @@ fn dropin_alias_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr()
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("nec2dxs3k0");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
 
     let output = Command::new(&alias)
         .arg("--solver")
@@ -788,8 +788,6 @@ fn dropin_alias_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr()
                 alias.display()
             )
         });
-
-    let _ = fs::remove_file(&alias);
 
     assert!(
         output.status.success(),
@@ -822,6 +820,7 @@ fn dropin_alias_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr()
 #[test]
 fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_contract() {
     let alias = create_dropin_alias("nec2dxs3k0");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
     let bogus_path = test_tmp_dir().join("fnec-dropin-explicit-missing-stream.nec");
     let _ = fs::remove_file(&bogus_path);
 
@@ -836,8 +835,6 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_
                 alias.display()
             )
         });
-
-    let _ = fs::remove_file(&alias);
 
     assert_eq!(
         output.status.code(),
