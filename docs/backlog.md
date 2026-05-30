@@ -219,14 +219,17 @@ last_updated: 2026-04-30
 	- 2026-04-29 progress: tightened external impedance gates across 5 corpus cases based on actual solver-vs-nec2c deltas (10-15% headroom): `dipole-ground-51seg` R 10→8; `yagi-5elm-51seg` R/X 30/70→25/55; `tl-two-dipoles-linked` R/X 5/20→4/16; `frequency-sweep-dipole` R/X 15/50→14/47; `multi-source` R/X 15/50→12/40. `dipole-ld-loaded-51seg` unchanged (large known gap).
 	- 2026-04-27 progress: added corpus validation case `tl-two-dipoles-linked` (`corpus/tl-two-dipoles-linked.nec`) to lock TL subset behavior in CI, with a first `nec2c` external impedance candidate captured for parity tracking.
 
-- [ ] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**
+- [x] **PAR-004 / xnec2c-style workbench parity / Owner: GUI+CLI / Target: Phase 3 / Issue: #17**
 	Resolution criteria: usability acceptance checklist defined and demonstrated (interactive sweep inspection, graphical result browsing, fast edit-run-inspect loop); at least one end-to-end demo captured.
+	- 2026-05-30 resolution: criteria satisfied by completed Phase 3 gates in `docs/roadmap.md` (`PH3-CHK-009` through `PH3-CHK-012`) and benchmark evidence in `docs/usability-benchmark-ph3.md` (7-action sweep flow plus timed edit-run-inspect comparator run).
 
-- [ ] **PAR-005 / AutoEZ-class automation primitives / Owner: Automation / Target: Phase 3 / Issue: #18**
+- [x] **PAR-005 / AutoEZ-class automation primitives / Owner: Automation / Target: Phase 3 / Issue: #18**
 	Resolution criteria: variable sweep runner, resonance targeting helper, convergence study helper, and matching-network helper are implemented with CLI entry points and documented examples.
+	- 2026-05-30 resolution: criteria satisfied by completed roadmap deliverables (`PH3-CHK-006`/`PH3-CHK-007`/`PH3-CHK-008`, plus automation-surface completion in `PH4-CHK-006`) with CLI/docs artifacts (`--sweep-config`, `--vars`, resonance helper, `docs/automation-guide.md`).
 
-- [ ] **PAR-006 / necpp-style embeddability and diagnostics / Owner: Core APIs / Target: Phase 3 / Issue: #19**
+- [x] **PAR-006 / necpp-style embeddability and diagnostics / Owner: Core APIs / Target: Phase 3 / Issue: #19**
 	Resolution criteria: stable automation API surface documented; binding strategy decision recorded; geometry diagnostics catch at least the known invalid/fragile model classes with actionable errors.
+	- 2026-05-30 resolution: criteria satisfied by completed roadmap gates `PH2-CHK-006` (geometry diagnostics), `PH4-CHK-003`/`PH4-CHK-006` (stable automation surface docs and JSON contract), and `PH4-CHK-004` (binding strategy + Python scaffolding documented in `docs/python-bindings.md`).
 
 - [x] **PAR-007 / AutoEZ procurement gate / Owner: Product / Target: Phase 3 start / Issue: #20**
 	Resolution criteria: go/no-go decision recorded with evidence from open-tool and documentation benchmarking; if go, purchase and benchmark plan logged; if no-go, defer rationale and next review date logged.
@@ -235,12 +238,14 @@ last_updated: 2026-04-30
 - [x] **PAR-008 / NEC-5 validation-manual coverage matrix / Owner: Solver+Validation / Target: Phase 2 / Issue: #21**
 	Resolution: Completed 2026-04-26 for coverage-matrix scope. NEC-5 Validation Manual scenario classes are mapped to current fnec-rust in-scope equivalents; mapped in-scope classes have reproducible corpus tests with explicit tolerance gating; known out-of-scope classes are documented with rationale and phase deferral. Matrix source: `docs/corpus-validation-strategy.md` section "NEC-5 validation coverage matrix (PAR-008)".
 
-- [ ] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
+- [x] **PAR-009 / xnec2c-optimize external optimizer-loop parity / Owner: Automation+CLI / Target: Phase 3 / Issue: #22**
 	Resolution criteria: deterministic objective-evaluation CLI/API contract documented; at least one xnec2c-optimize-style optimization flow reproduced end-to-end with fnec-rust automation hooks; machine-readable outputs verified stable across repeated runs.
+	- 2026-05-30 resolution: criteria satisfied by roadmap completion signals `PH3-CHK-006`/`PH3-CHK-008` (deterministic sweep + resonance workflow) and `PH4-CHK-003`/`PH4-CHK-006` (`--output-format json` contract, schema lock, automation guide examples).
 
-- [ ] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 5+ (after full GPU support) / Issue: #23**
+- [x] **PAR-010 / Distributed authenticated cluster execution mode / Owner: Core+Automation / Target: Phase 5+ (after full GPU support) / Issue: #23**
 	Resolution criteria: architecture decision doc approved (auth model, trust boundary, transport, failure semantics); authenticated node discovery implemented with capability cache; work-content/result cache implemented with deterministic cache keys and invalidation policy; SSH-backed bootstrap flow documented and demonstrated on at least 2 worker nodes.
 	- Sequencing constraint: implementation starts only after full GPU solver support (matrix fill + solve path) is complete and benchmarked.
+	- 2026-05-30 resolution: sequencing constraint and criteria satisfied by completed roadmap gates `PH5-CHK-007` (full GPU solve path complete) and `PH6-CHK-005`/`PH6-CHK-006`/`PH6-CHK-007` (distributed execution design, SSH-backed worker deployment, deterministic work-content/result cache).
 
 - [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
 	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
