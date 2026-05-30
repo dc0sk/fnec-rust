@@ -270,3 +270,33 @@ Performance success criteria:
 - `AT-PAR011-0201`: satisfied by the fixture schema and concrete example record above.
 - `AT-PAR011-0202`: satisfied by the benchmark protocol band and machine-metadata requirements above.
 - `AT-PAR011-0203`: satisfied by the explicit compatibility and performance success criteria above.
+
+## Remaining work boundary
+
+The documentation-contract portion of PAR-011 is now complete. Remaining PAR-011 items are no longer contract-definition tasks; they require either:
+
+1. external evidence capture on a real 4nec2/Windows setup, or
+2. implementation work that changes runtime behavior beyond the current filename-steered scaffold
+
+To avoid low-value documentation churn, future PAR-011 docs updates should be bundled with real evidence capture or implementation changes rather than shipped as stand-alone micro-PRs.
+
+### External evidence capture bundle
+
+The next evidence-oriented pass should capture the following in one run where practical:
+
+1. side-by-side binary selection behavior in 4nec2 settings and whether selection is automatic or manual
+2. observed `argv`, `cwd`, stdin/stdout/stderr, exit-code, and timeout behavior for at least one successful and one failing run
+3. file side effects: inputs, outputs, temporary files, overwrite behavior, and cleanup rules
+4. dependency surface: any DLL/runtime requirements plus loader/search-path assumptions
+5. fixture records for each binary variant actually exercised
+6. benchmark data against the legacy single-thread baseline with machine metadata attached
+
+### Non-assumptions until evidence exists
+
+Until the external capture bundle above is completed, the project should not assume:
+
+- side-by-side kernel selection is automatic
+- no runtime DLLs are required outside the observed package root
+- file side effects are limited to the current best-guess template
+- timeout/exit semantics match the current fnec CLI contract
+- throughput gains are uniform across all segment-band binaries
