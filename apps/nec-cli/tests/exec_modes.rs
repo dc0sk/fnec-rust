@@ -544,3 +544,177 @@ fn dropin_alias_missing_deck_does_not_create_files_in_working_directory() {
         "drop-in alias missing-deck run must not create files in working directory; got: {after_entries:?}"
     );
 }
+
+#[test]
+fn fournec2_alias_run_does_not_create_files_in_working_directory() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("4nec2-kernel");
+    let sandbox = create_sandbox_dir("dropin-cwd-4nec2-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+    let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read 4nec2 sandbox before run")
+        .map(|entry| {
+            entry
+                .expect("failed to read 4nec2 sandbox entry before run")
+                .path()
+        })
+        .collect();
+    assert!(
+        before_entries.is_empty(),
+        "expected empty 4nec2 sandbox before run, got: {before_entries:?}"
+    );
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .current_dir(&sandbox)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run 4nec2 alias '{}' for file-side-effect contract test: {e}",
+                alias.display()
+            )
+        });
+
+    assert!(
+        output.status.success(),
+        "4nec2 alias run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read 4nec2 sandbox after run")
+        .map(|entry| {
+            entry
+                .expect("failed to read 4nec2 sandbox entry after run")
+                .path()
+        })
+        .collect();
+
+    assert!(
+        after_entries.is_empty(),
+        "4nec2 alias run must not create files in working directory; got: {after_entries:?}"
+    );
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_run_does_not_create_files_in_working_directory() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("nec2dxs3k0");
+    let sandbox = create_sandbox_dir("dropin-cwd-explicit-cpu-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+    let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read explicit-exec sandbox before run")
+        .map(|entry| {
+            entry
+                .expect("failed to read explicit-exec sandbox entry before run")
+                .path()
+        })
+        .collect();
+    assert!(
+        before_entries.is_empty(),
+        "expected empty explicit-exec sandbox before run, got: {before_entries:?}"
+    );
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .current_dir(&sandbox)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' with explicit exec for side-effect contract test: {e}",
+                alias.display()
+            )
+        });
+
+    assert!(
+        output.status.success(),
+        "drop-in alias explicit-exec run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read explicit-exec sandbox after run")
+        .map(|entry| {
+            entry
+                .expect("failed to read explicit-exec sandbox entry after run")
+                .path()
+        })
+        .collect();
+
+    assert!(
+        after_entries.is_empty(),
+        "drop-in alias explicit-exec run must not create files in working directory; got: {after_entries:?}"
+    );
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_missing_deck_does_not_create_files_in_working_directory() {
+    let alias = create_dropin_alias("nec2dxs3k0");
+    let sandbox = create_sandbox_dir("dropin-cwd-explicit-cpu-missing-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+    let bogus_path = test_tmp_dir().join("fnec-dropin-explicit-missing-cwd.nec");
+    let _ = fs::remove_file(&bogus_path);
+
+    let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read explicit-exec missing-deck sandbox before run")
+        .map(|entry| {
+            entry
+                .expect("failed to read explicit-exec missing-deck sandbox entry before run")
+                .path()
+        })
+        .collect();
+    assert!(
+        before_entries.is_empty(),
+        "expected empty explicit-exec missing-deck sandbox before run, got: {before_entries:?}"
+    );
+
+    let output = Command::new(&alias)
+        .arg("--exec")
+        .arg("cpu")
+        .arg(&bogus_path)
+        .current_dir(&sandbox)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' with explicit exec for missing-deck side-effect contract test: {e}",
+                alias.display()
+            )
+        });
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "missing deck under explicit-exec drop-in alias must exit with code 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read explicit-exec missing-deck sandbox after run")
+        .map(|entry| {
+            entry
+                .expect("failed to read explicit-exec missing-deck sandbox entry after run")
+                .path()
+        })
+        .collect();
+
+    assert!(
+        after_entries.is_empty(),
+        "drop-in alias explicit-exec missing-deck run must not create files in working directory; got: {after_entries:?}"
+    );
+}
