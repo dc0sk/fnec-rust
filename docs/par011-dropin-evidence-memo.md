@@ -154,9 +154,9 @@ Deliverables:
 
 Acceptance tests:
 
-- `AT-PAR011-0201`: fixture schema documented with at least one concrete example record.
-- `AT-PAR011-0202`: benchmark protocol includes segment-band and machine metadata requirements.
-- `AT-PAR011-0203`: success criteria for parity and performance are explicit and measurable.
+- [x] `AT-PAR011-0201`: fixture schema documented with at least one concrete example record.
+- [x] `AT-PAR011-0202`: benchmark protocol includes segment-band and machine metadata requirements.
+- [x] `AT-PAR011-0203`: success criteria for parity and performance are explicit and measurable.
 
 ### Postponed scope
 
