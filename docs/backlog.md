@@ -121,8 +121,9 @@ last_updated: 2026-04-30
 	Resolution criteria: implement Markdown project import (`.md` with frontmatter + fenced blocks) into `nec_project::ProjectFile`, add parser contract tests, and document accepted Markdown schema in `docs/project-format.md`.
 	- 2026-05-30 resolution: implemented `ProjectFile::from_markdown(...)` in `crates/nec_project/src/lib.rs` with frontmatter validation (`format: fnec-project-markdown`, `version`) plus fenced payload parsing (` ```toml project ` block). Added parser contract coverage in `crates/nec_project/tests/project_roundtrip.rs` (success path + required-frontmatter + required-project-fence + version mismatch). Documented accepted Markdown import schema and example in `docs/project-format.md`.
 
-- [ ] **FR-004B Markdown project export path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
+- [x] **FR-004B Markdown project export path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
 	Resolution criteria: implement deterministic Markdown export from `nec_project::ProjectFile` (stable field ordering + formatting), add round-trip tests (`markdown -> ProjectFile -> markdown` stability contracts), and document CLI/API entry points.
+	- 2026-05-30 resolution: implemented `ProjectFile::to_markdown(...)` in `crates/nec_project/src/lib.rs` with deterministic frontmatter ordering (`format`, `version`, `title`) and fixed ` ```toml project ` payload fence. Added round-trip/stability coverage in `crates/nec_project/tests/project_roundtrip.rs` (`markdown_export_roundtrip_preserves_project`, `markdown_export_is_stable_after_roundtrip`, plus contract-shape assertions). Documented Markdown export schema and API/CLI entry-point status in `docs/project-format.md`.
 
 ## Parity-driven backlog items
 
