@@ -370,7 +370,7 @@ fn markdown_export_contains_required_contract_fields() {
 
     assert!(markdown.starts_with("---\n"));
     assert!(markdown.contains("format: fnec-project-markdown\n"));
-    assert!(markdown.contains("version: 1\n"));
+    assert!(markdown.contains(&format!("version: {}\n", project.version)));
     assert!(markdown.contains("```toml project\n"));
     assert!(markdown.ends_with("```\n"));
 }

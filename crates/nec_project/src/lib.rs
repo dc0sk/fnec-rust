@@ -333,10 +333,21 @@ fn strip_yaml_scalar(value: &str) -> &str {
 }
 
 fn yaml_double_quoted_single_line(value: &str) -> String {
-    let escaped = value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n");
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            c if c.is_control() => {
+                let code = c as u32;
+                escaped.push_str(&format!("\\u{:04X}", code));
+            }
+            c => escaped.push(c),
+        }
+    }
     format!("\"{}\"", escaped)
 }
 
