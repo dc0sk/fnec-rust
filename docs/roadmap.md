@@ -260,7 +260,7 @@ This phase activates work that was explicitly gated on full GPU solver support (
 **Key deliverables**:
 - [ ] CI benchmarking dashboard: automated artifact publishing and regression-delta tracking across CPU/GPU/multithreaded target classes.
 - [x] NEC-5 accuracy frontier decision: explicit architecture choice (mixed-potential surfaces vs wire-only continuation vs hybrid route) with a documented rationale and a follow-on corpus expansion plan.
-- [ ] Sinusoidal-basis EFIE: implement NEC2-style sinusoidal basis matrix assembly so pulse/continuity modes are accurate and the EXPERIMENTAL warning can be retired.
+- [x] Sinusoidal-basis EFIE: implemented NEC2-style sinusoidal basis matrix assembly so pulse/continuity modes are accurate and the sinusoidal EXPERIMENTAL warning is retired.
 - [ ] AMD/OpenCL/SYCL expansion: validate the wgpu OpenCL/Vulkan backend on at least one AMD target; document the multi-vendor GPU roadmap and any ROCm/SYCL gaps.
 - [x] Distributed execution design: transport, authN/authZ, worker contract, failure semantics, and result-cache design documented before any cluster code ships.
 - [ ] SSH-backed worker deployment: node discovery, capability inventory cache, and first end-to-end distributed solve across two nodes.

@@ -118,8 +118,8 @@ Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 ### `pulse` (EXPERIMENTAL)
 
 Pulse-basis Pocklington EFIE.  **Known to diverge** from the physical solution
-as segment count increases — do not use for production work.  A sinusoidal-basis
-EFIE fix is tracked in `docs/backlog.md`.
+as segment count increases — do not use for production work. Use `hallen` or
+`sinusoidal` for accurate supported-path runs.
 
 ### `continuity` (EXPERIMENTAL)
 
@@ -129,12 +129,10 @@ at least two segments. Falls back to `pulse` when topology is infeasible for
 the basis transform or when residual exceeds 1e-3. Subject to the same fundamental
 divergence as `pulse`.
 
-### `sinusoidal` (EXPERIMENTAL)
+### `sinusoidal`
 
-Incremental milestone mode that applies a sine-tapered continuity transform on
-top of the Pocklington matrix with per-wire block transforms on multi-wire decks
-when each wire has at least two segments. This is not yet full NEC2 `tbf/sbf/trio` sinusoidal-basis
-assembly, but it establishes a compatible stepping-stone for that implementation.
+Sinusoidal-basis solve path for the Hallen thin-wire system, with guarded fallback
+when the residual-quality budget is exceeded.
 If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
 `SOLVER_MODE sinusoidal->hallen(residual)`.
