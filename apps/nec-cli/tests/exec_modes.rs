@@ -488,3 +488,59 @@ fn dropin_alias_run_does_not_create_files_in_working_directory() {
         "drop-in alias run must not create files in working directory; got: {after_entries:?}"
     );
 }
+
+#[test]
+fn dropin_alias_missing_deck_does_not_create_files_in_working_directory() {
+    let alias = create_dropin_alias("nec2dxs500");
+    let sandbox = create_sandbox_dir("dropin-cwd-missing-deck-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+    let bogus_path = test_tmp_dir().join("fnec-dropin-missing-cwd.nec");
+    let _ = fs::remove_file(&bogus_path);
+
+    let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read sandbox before missing-deck run")
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry before missing-deck run")
+                .path()
+        })
+        .collect();
+    assert!(
+        before_entries.is_empty(),
+        "expected empty sandbox before missing-deck run, got: {before_entries:?}"
+    );
+
+    let output = Command::new(&alias)
+        .arg(&bogus_path)
+        .current_dir(&sandbox)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' for missing-deck side-effect contract test: {e}",
+                alias.display()
+            )
+        });
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "missing deck under drop-in alias must exit with code 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read sandbox after missing-deck run")
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry after missing-deck run")
+                .path()
+        })
+        .collect();
+
+    assert!(
+        after_entries.is_empty(),
+        "drop-in alias missing-deck run must not create files in working directory; got: {after_entries:?}"
+    );
+}
