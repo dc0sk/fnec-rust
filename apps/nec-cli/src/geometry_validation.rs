@@ -97,10 +97,18 @@ pub(super) fn buried_wire_geometry_error(
     }
 
     for seg in segs {
-        if seg.start[2] < -BURIED_Z_EPS || seg.end[2] < -BURIED_Z_EPS {
+        let min_z = seg.start[2].min(seg.end[2]);
+        if min_z <= BURIED_Z_EPS {
+            let detail = match ground {
+                GroundModel::SimpleFiniteGround { eps_r, sigma } => {
+                    format!("finite ground eps_r={:.3}, sigma={:.6}", eps_r, sigma)
+                }
+                GroundModel::PerfectConductor => "PEC ground".to_string(),
+                _ => "active ground".to_string(),
+            };
             return Some(format!(
-                "unsupported buried-wire geometry for active ground model on tag {} seg {} (z < 0). Use free-space or move geometry to z >= 0; buried/near-ground classes are deferred",
-                seg.tag, seg.tag_index
+                "unsupported buried-wire geometry for active ground model on tag {} seg {} (min z = {:.6e} m, {}). Use free-space or move geometry strictly above the ground interface (z > 0); buried/ground-contact classes are deferred",
+                seg.tag, seg.tag_index, min_z, detail,
             ));
         }
     }

@@ -144,7 +144,7 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 |:-----|:-------|:------|
 | Free space (no ground) | FULL | Baseline. No coupling to ground plane. |
 | Perfect conductor (infinite, ideal) | PARTIAL | Implemented via image method. Phase 1. Sommerfeld corrections (Phase 2) for accuracy near ground. |
-| Finite conductivity (simple scoped model) | PARTIAL | GN types 0 and 2 map to the scoped `SimpleFiniteGround` path using Fresnel-reflection approximation with parsed EPSE/SIG. Above-ground wire classes are in-scope and corpus-gated. Full Sommerfeld/Norton ground-wave integrals deferred to Phase 2+. |
+| Finite conductivity (simple scoped model) | PARTIAL | GN types 0 and 2 map to the scoped `SimpleFiniteGround` path using Fresnel-reflection approximation with parsed EPSE/SIG. Strictly above-ground wire classes (`z > 0`) are in-scope and corpus-gated; buried or interface-touching wires are deferred. Full Sommerfeld/Norton ground-wave integrals deferred to Phase 2+. |
 | Layered earth | DEFERRED | Multi-layer soil models. Phase 3. |
 | Seawater effects | DEFERRED | Conductive media. Phase 3. |
 
@@ -159,7 +159,7 @@ Planned PAR-002 scope:
 
 Current scoped coverage:
 
-- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`.
+- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`; interface-touching or buried active-ground wires remain fail-fast deferred classes.
 - Buried `z < 0` active-ground wire classes remain out of scope for now and fail fast with actionable diagnostics (`corpus/dipole-gn2-buried-unsupported.nec`).
 3. Add tolerance-gated external-reference comparisons for those fixtures in `corpus/reference-results.json` and `apps/nec-cli/tests/corpus_validation.rs`.
 4. Keep existing GN type 1 PEC behavior unchanged and regression-protected while finite-ground support expands.
