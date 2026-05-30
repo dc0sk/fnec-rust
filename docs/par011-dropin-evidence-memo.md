@@ -111,6 +111,7 @@ Phase-0 template status:
 - Filename-steered detection is present with an explicit known-name matrix (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`) plus `4nec2` naming fallback, and is covered by CLI unit tests.
 - Execution-mode steering is currently limited to internal mode defaults and diagnostics.
 - Full external-kernel drop-in invocation and file-contract parity is not yet implemented.
+- Documentation-contract capture is complete through phase 2; remaining unchecked items require external evidence capture or implementation work rather than more contract-only docs.
 
 ## Docs-only phased implementation plan
 
@@ -161,3 +162,15 @@ Acceptance tests:
 ### Postponed scope
 
 - Harness skeleton for executing compatibility fixtures is explicitly postponed (user-requested defer of option 3).
+
+## Remaining evidence-only queue
+
+The unresolved checklist items above should be collected in one bundled external-evidence pass where practical, not as separate doc-only PRs.
+
+Recommended bundle contents:
+
+1. side-by-side selection behavior observation in a real 4nec2 install
+2. process-contract capture (`argv`, `cwd`, stdio, exit codes, timeout semantics)
+3. filesystem side-effect capture
+4. dependency-surface confirmation (DLL/runtime and loader assumptions)
+5. representative fixtures and first benchmark records
