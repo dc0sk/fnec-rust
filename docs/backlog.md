@@ -109,8 +109,9 @@ last_updated: 2026-04-30
 	- 2026-04-30 context: investigation item closed; this item captures the Phase 2 delivery requirement. See `docs/solver-findings.md` §"Current --allow-noncollinear-hallen status" for the rationale and three-way decision space.
 	- 2026-05 completed: Segmented hybrid (option 3) implemented. Per-wire local cos(k·s) vectors replace global s-axis; passive wires get rhs=0; junction endpoints detected via `detect_wire_junctions()` and enforced as KCL continuity rows in the augmented Hallen system. `dipole-loaded` corpus gate now passes (Z ≈ 12.39 − j918 Ω; external NEC2 ref 13.46 − j896 Ω). `--allow-noncollinear-hallen` flag silently accepted (no-op). All CI tests pass.
 
-- [ ] **Benchmark history trend capture / Owner: Performance / Target: Phase 5 prep**
+- [x] **Benchmark history trend capture / Owner: Performance / Target: Phase 5 prep**
 	Resolution criteria: repeated benchmark runs can be appended to a persistent history format and summarized by a tracked script without relying on ad hoc files in `tmp/`.
+	- 2026-05-30 resolution: added `scripts/pi-benchmark-history.sh` with `append` and `trend` commands, using tracked history schema `benchmarks/pi-benchmark-history.csv` (`ingested_at_utc`, `git_sha`, `source_csv`, plus benchmark row fields). `scripts/pi-remote-benchmark.sh` now supports optional `FNEC_BENCH_HISTORY` to auto-append each run CSV to history, and trend summaries are emitted by `scripts/pi-benchmark-history.sh trend <history.csv>`.
 
 - [ ] **FR-004 project format scope (`nec_project`) / Owner: Project+Core APIs / Target: Phase 3**
 	Resolution criteria: `nec_project` has a documented crate scope covering Markdown project structure, run metadata, and result-storage responsibilities, and roadmap/backlog work items explicitly track Markdown import/export delivery.

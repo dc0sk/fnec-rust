@@ -90,6 +90,34 @@ Note: GPU paths are currently stub/fallback based, so this is execution-path cov
 - Timing includes full CLI invocation path, not just kernel-only execution.
 - `hybrid` and `gpu` can include fallback paths; mode counts are included to guard against drift.
 
+## Persistent History
+
+To retain benchmark snapshots over time in a tracked, non-`tmp/` location, use:
+
+```bash
+bash ./scripts/pi-benchmark-history.sh append <candidate.csv> benchmarks/pi-benchmark-history.csv
+```
+
+Or append automatically after each remote benchmark run:
+
+```bash
+FNEC_BENCH_HISTORY="benchmarks/pi-benchmark-history.csv" \
+  bash ./scripts/pi-remote-benchmark.sh <user@host>
+```
+
+History schema (`benchmarks/pi-benchmark-history.csv`):
+
+- `ingested_at_utc`
+- `git_sha`
+- `source_csv`
+- all original benchmark CSV fields from `scripts/pi-remote-benchmark.sh`
+
+Summarize long-term trend by deck/solver/exec mode:
+
+```bash
+bash ./scripts/pi-benchmark-history.sh trend benchmarks/pi-benchmark-history.csv
+```
+
 ## Baseline Results (Three Targets)
 
 ### Solver Average Runtime (ms)

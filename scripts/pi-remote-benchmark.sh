@@ -31,6 +31,8 @@ Environment overrides:
                        single-thread baseline while still using --exec cpu.
   FNEC_BENCH_RUNS      Number of repeated runs per deck+solver (default: 3)
   FNEC_BENCH_OUT       Output CSV path (default: tmp/pi-benchmark-<UTC timestamp>.csv)
+  FNEC_BENCH_HISTORY   Optional history CSV path. When set, appends FNEC_BENCH_OUT
+                       into this persistent history via scripts/pi-benchmark-history.sh.
 EOF
 }
 
@@ -53,6 +55,7 @@ bench_solvers="${FNEC_BENCH_SOLVERS:-hallen pulse sinusoidal}"
 bench_execs="${FNEC_BENCH_EXECS:-cpu-single cpu}"
 bench_runs="${FNEC_BENCH_RUNS:-3}"
 out_csv="${FNEC_BENCH_OUT:-tmp/pi-benchmark-$(date -u +%Y%m%dT%H%M%SZ).csv}"
+history_csv="${FNEC_BENCH_HISTORY:-}"
 out_dir="$(dirname "${out_csv}")"
 
 if [[ -z "${ssh_target}" ]]; then
@@ -221,3 +224,13 @@ awk -F, '
 ' "${out_csv}"
 
 echo "CSV written: ${out_csv}"
+
+if [[ -n "${history_csv}" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  history_script="${script_dir}/pi-benchmark-history.sh"
+  if [[ ! -x "${history_script}" ]]; then
+    echo "warning: history append requested but helper is not executable: ${history_script}" >&2
+  else
+    "${history_script}" append "${out_csv}" "${history_csv}"
+  fi
+fi

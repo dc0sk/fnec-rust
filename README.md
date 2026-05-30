@@ -127,8 +127,11 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
 - Remote ARM64 benchmark CSV (Pi over SSH): `bash ./scripts/pi-remote-benchmark.sh <user@host>`
 - Remote benchmark with explicit single-thread baseline + parallel CPU sweep: `FNEC_BENCH_EXECS="cpu-single cpu" bash ./scripts/pi-remote-benchmark.sh <user@host>`
+- Remote benchmark with persistent history append: `FNEC_BENCH_HISTORY="benchmarks/pi-benchmark-history.csv" bash ./scripts/pi-remote-benchmark.sh <user@host>`
 - Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`
 - Benchmark CSV delta gate example: `bash ./scripts/pi-benchmark-compare.sh --max-delta-pct 15 --fail-on-mode-drift <base.csv> <candidate.csv>`
+- Append benchmark CSV to persistent history: `bash ./scripts/pi-benchmark-history.sh append <candidate.csv> benchmarks/pi-benchmark-history.csv`
+- Benchmark history trend summary: `bash ./scripts/pi-benchmark-history.sh trend benchmarks/pi-benchmark-history.csv`
 
 GitHub Actions includes `benchmark-compare.yml`, which runs on PRs and compares `benchmarks/pi-base.csv` vs `benchmarks/pi-candidate.csv` when both files exist. If either file is missing, the job reports a clean skip.
 When it runs, it also writes a benchmark delta preview to the Actions job summary.
