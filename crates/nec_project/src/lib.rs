@@ -116,6 +116,8 @@ pub enum ProjectError {
     DeserialiseError(toml::de::Error),
     /// The file declares an unsupported format version.
     UnsupportedVersion(u32),
+    /// Markdown import parsing failed.
+    MarkdownParseError(String),
 }
 
 impl std::fmt::Display for ProjectError {
@@ -128,6 +130,9 @@ impl std::fmt::Display for ProjectError {
                     f,
                     "unsupported project file version {v} (expected {PROJECT_FILE_VERSION})"
                 )
+            }
+            ProjectError::MarkdownParseError(msg) => {
+                write!(f, "project markdown parse error: {msg}")
             }
         }
     }
@@ -165,6 +170,110 @@ impl ProjectFile {
         Ok(project)
     }
 
+    /// Deserialise a project from a Markdown manifest.
+    ///
+    /// Accepted format:
+    /// - YAML frontmatter delimited by `---` with keys:
+    ///   - `format: fnec-project-markdown`
+    ///   - `version: 1`
+    /// - One fenced TOML block tagged as a project payload:
+    ///   - ````toml project````
+    ///
+    /// The fenced TOML payload must be a valid [`ProjectFile`] document.
+    /// Frontmatter `version` must match payload `version`.
+    pub fn from_markdown(s: &str) -> Result<Self, ProjectError> {
+        let lines: Vec<&str> = s.lines().collect();
+        if lines.len() < 3 || lines[0].trim() != "---" {
+            return Err(ProjectError::MarkdownParseError(
+                "missing YAML frontmatter opening delimiter".to_string(),
+            ));
+        }
+
+        let mut fm_end = None;
+        for (i, line) in lines.iter().enumerate().skip(1) {
+            if line.trim() == "---" {
+                fm_end = Some(i);
+                break;
+            }
+        }
+        let fm_end = fm_end.ok_or_else(|| {
+            ProjectError::MarkdownParseError(
+                "missing YAML frontmatter closing delimiter".to_string(),
+            )
+        })?;
+
+        let mut format_value: Option<String> = None;
+        let mut version_value: Option<u32> = None;
+        for line in lines.iter().take(fm_end).skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let (k, v) = trimmed.split_once(':').ok_or_else(|| {
+                ProjectError::MarkdownParseError(format!("invalid frontmatter line: {trimmed}"))
+            })?;
+            let key = k.trim();
+            let value = strip_yaml_scalar(v.trim());
+            match key {
+                "format" => format_value = Some(value.to_string()),
+                "version" => {
+                    let parsed = value.parse::<u32>().map_err(|_| {
+                        ProjectError::MarkdownParseError(
+                            "frontmatter version must be an integer".to_string(),
+                        )
+                    })?;
+                    version_value = Some(parsed);
+                }
+                _ => {}
+            }
+        }
+
+        if format_value.as_deref() != Some("fnec-project-markdown") {
+            return Err(ProjectError::MarkdownParseError(
+                "frontmatter format must be fnec-project-markdown".to_string(),
+            ));
+        }
+        let frontmatter_version = version_value.ok_or_else(|| {
+            ProjectError::MarkdownParseError("frontmatter version is required".to_string())
+        })?;
+
+        let mut in_project_toml = false;
+        let mut project_toml = String::new();
+        for line in lines.iter().skip(fm_end + 1) {
+            let trimmed = line.trim();
+            if !in_project_toml {
+                if let Some(rest) = trimmed.strip_prefix("```") {
+                    let info = rest.trim();
+                    if info.starts_with("toml") && info.contains("project") {
+                        in_project_toml = true;
+                    }
+                }
+                continue;
+            }
+
+            if trimmed == "```" {
+                break;
+            }
+            project_toml.push_str(line);
+            project_toml.push('\n');
+        }
+
+        if project_toml.trim().is_empty() {
+            return Err(ProjectError::MarkdownParseError(
+                "missing fenced TOML project block (```toml project)".to_string(),
+            ));
+        }
+
+        let project = ProjectFile::from_toml(&project_toml)?;
+        if project.version != frontmatter_version {
+            return Err(ProjectError::MarkdownParseError(format!(
+                "frontmatter version {} does not match project payload version {}",
+                frontmatter_version, project.version
+            )));
+        }
+        Ok(project)
+    }
+
     // --- run-history query API -------------------------------------------
 
     /// Number of completed runs recorded in the history.
@@ -182,6 +291,18 @@ impl ProjectFile {
     pub fn run_by_index(&self, index: usize) -> Option<&RunRecord> {
         self.history.run_by_index(index)
     }
+}
+
+fn strip_yaml_scalar(value: &str) -> &str {
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
+        {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +521,13 @@ pulse_rhs = "auto"
             msg.contains(&PROJECT_FILE_VERSION.to_string()),
             "display should mention the expected version"
         );
+    }
+
+    #[test]
+    fn markdown_parse_error_display_includes_reason() {
+        let msg = ProjectError::MarkdownParseError("bad schema".to_string()).to_string();
+        assert!(msg.contains("markdown parse error"));
+        assert!(msg.contains("bad schema"));
     }
 
     // ── RunHistory API ───────────────────────────────────────────────────────
