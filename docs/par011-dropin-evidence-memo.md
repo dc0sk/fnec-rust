@@ -140,9 +140,9 @@ Deliverables:
 
 Acceptance tests:
 
-- `AT-PAR011-0101`: docs specify precedence rule: explicit `--exec` always wins.
-- `AT-PAR011-0102`: docs specify warning text classes for steered vs preserved-explicit paths.
-- `AT-PAR011-0103`: docs enumerate side-effect files and cleanup expectations.
+- [x] `AT-PAR011-0101`: docs specify precedence rule: explicit `--exec` always wins.
+- [x] `AT-PAR011-0102`: docs specify warning text classes for steered vs preserved-explicit paths.
+- [x] `AT-PAR011-0103`: docs enumerate side-effect files and cleanup expectations.
 
 ### Phase 2: Validation and benchmark specification
 
