@@ -260,6 +260,7 @@ last_updated: 2026-05-30
 	- 2026-05-30 progress: added drop-in alias file-side-effect contract coverage in `apps/nec-cli/tests/exec_modes.rs` (`dropin_alias_run_does_not_create_files_in_working_directory`) to lock that current filename-steered scaffold runs do not create working-directory artifacts.
 	- 2026-05-30 progress: extended drop-in alias file-side-effect coverage with error-path validation in `apps/nec-cli/tests/exec_modes.rs` (`dropin_alias_missing_deck_does_not_create_files_in_working_directory`) to lock that missing-deck failures also avoid creating working-directory artifacts.
 	- 2026-05-30 progress: bundled additional drop-in side-effect runtime contracts in `apps/nec-cli/tests/exec_modes.rs` to reduce test-PR fragmentation, covering `4nec2` alias success-path cwd invariants plus explicit `--exec=cpu` success and missing-deck cwd invariants.
+	- 2026-05-30 progress: bundled additional stream/diagnostic runtime contracts in `apps/nec-cli/tests/exec_modes.rs` to reduce test-PR fragmentation, covering `4nec2` alias stdout/stderr separation plus explicit `--exec=cpu` success and missing-deck stderr/exit-code invariants under drop-in aliases.
 	- 2026-04-26 scope decision: compatibility harness skeleton work is postponed for now (option 3 deferred).
 	- Discovery checklist (capture before implementation starts):
 		- Binary-name matrix: confirm exact accepted executable names/casing and segment-limit mapping (`nec2dxs500.exe`, `nec2dxs1K5.exe`, `nec2dxs3k0.exe`, `nec2dxs5k0.exe`, `nec2dxs8k0.exe`, `nec2dxs11k.exe`).
