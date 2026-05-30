@@ -10,12 +10,20 @@ mod common;
 
 use common::assert_diag_field;
 
+fn test_tmp_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(".tmp/nec-cli-tests");
+    fs::create_dir_all(&dir).expect("failed to create repo-local test tmp dir");
+    dir
+}
+
 fn make_dropin_alias_path(alias_name: &str) -> PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    std::env::temp_dir().join(format!("fnec-dropin-alias-{alias_name}-{now}"))
+    test_tmp_dir().join(format!("fnec-dropin-alias-{alias_name}-{now}"))
 }
 
 fn create_dropin_alias(alias_name: &str) -> PathBuf {
@@ -291,4 +299,89 @@ fn filename_steering_also_detects_4nec2_alias_names() {
         "expected compatibility-profile warning in stderr, got:\n{stderr}"
     );
     assert_diag_field(&stderr, "exec", "hybrid");
+}
+
+#[test]
+fn dropin_alias_keeps_report_on_stdout_and_warning_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("nec2dxs500");
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' for stream contract test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert!(
+        output.status.success(),
+        "fnec drop-in alias failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+        "expected stable report header on stdout, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("FNEC FEEDPOINT REPORT"),
+        "stderr must not contain report output, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "hybrid");
+}
+
+#[test]
+fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let alias = create_dropin_alias("nec2dxs500");
+    let bogus_path = test_tmp_dir().join("fnec-dropin-missing.nec");
+
+    let output = Command::new(&alias)
+        .arg(&bogus_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' for missing-deck contract test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "missing deck under drop-in alias must exit with code 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stdout.is_empty(), "expected no stdout on missing-deck error, got:\n{stdout}");
+    assert!(
+        stderr.contains("error:"),
+        "expected error message on stderr for missing deck, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected compatibility-profile warning to remain on stderr, got:\n{stderr}"
+    );
 }
