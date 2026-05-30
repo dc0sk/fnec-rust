@@ -83,3 +83,62 @@ Use this template when observing host (4nec2) to kernel-process behavior.
 - `AT-PAR011-0001`: satisfied by matrix and evidence links in `docs/par011-dropin-evidence-memo.md`.
 - `AT-PAR011-0002`: satisfied by deterministic install and rollback procedure in this document.
 - `AT-PAR011-0003`: satisfied by process-contract template in this document.
+
+## Phase 1 compatibility behavior specification
+
+This section freezes the expected behavior of the current filename-steered compatibility scaffold. It documents the behavior that exists today; it does not claim full external-kernel parity.
+
+### Execution-mode precedence rule
+
+Precedence is strict:
+
+1. An explicit `--exec <cpu|hybrid|gpu>` flag always wins.
+2. If `--exec` is omitted and the drop-in profile is active, execution defaults to `hybrid`.
+3. If `--exec` is omitted and the native profile is active, the normal startup auto-probe policy applies.
+
+Implication:
+
+- drop-in profile activation may change the default execution path
+- drop-in profile activation must not override an explicit operator choice
+
+### Warning and diagnostic contract
+
+When the drop-in profile is active, stderr warning classes are fixed to two cases:
+
+1. Steered-default case:
+   - `warning: 4nec2 drop-in compatibility profile detected by binary name; default execution path steered to exec=hybrid`
+2. Explicit-preserved case:
+   - `warning: 4nec2 drop-in compatibility profile detected by binary name; preserving explicit --exec=<value>`
+
+Diagnostic expectations:
+
+- the warning is emitted on stderr, not stdout
+- the normal `diag:` line still reflects the effective execution mode (`exec=hybrid`, `exec=cpu`, or `exec=gpu(cpu-fallback)`)
+- no additional drop-in-specific stdout markers are introduced in the current scaffold
+
+### File side-effect and lifecycle constraints
+
+Current scaffold expectation:
+
+- filename steering changes only in-process execution-mode selection and emitted diagnostics
+- it does not add new temporary files, cache files, manifests, or host-visible compatibility artifacts
+- it does not alter the existing report-stream split: human/machine report content remains on stdout; warnings and benchmark/diagnostic records remain on stderr
+
+Expected side-effect constraints for the current scaffold:
+
+1. Input deck handling:
+   - read the provided deck path only
+   - do not rewrite the input deck in place
+2. Output files:
+   - no new compatibility-profile-specific output files are created
+   - any future file-based compatibility layer must define overwrite rules explicitly before implementation
+3. Cleanup:
+   - no new temporary compatibility files implies no additional cleanup phase in the current scaffold
+4. Existing-file behavior:
+   - because no new drop-in-specific files are created, existing unrelated files in the working directory must remain untouched by profile activation alone
+
+## Acceptance-test mapping (phase 1)
+
+- `AT-PAR011-0101`: satisfied by the execution-mode precedence rule above.
+- `AT-PAR011-0102`: satisfied by the fixed warning/diagnostic classes above.
+- `AT-PAR011-0103`: satisfied by the file side-effect and lifecycle constraints above.
