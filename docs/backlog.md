@@ -268,7 +268,8 @@ The following items were identified during a project-wide review on 2026-04-30 a
 
 ### Performance & parallelism
 
-- [ ] **BL-IMPR-009 / CPU single-thread benchmark baseline in CI**: Add a `RAYON_NUM_THREADS=1` benchmark scenario to the existing benchmark harness so parallel scaling can be measured against a stable single-thread baseline. Resolution criteria: single-thread baseline CSV captured by the existing benchmark scripts and gated by an existing comparison workflow; no regressions in current benchmark coverage.
+- [x] **BL-IMPR-009 / CPU single-thread benchmark baseline in CI**: Add a `RAYON_NUM_THREADS=1` benchmark scenario to the existing benchmark harness so parallel scaling can be measured against a stable single-thread baseline. Resolution criteria: single-thread baseline CSV captured by the existing benchmark scripts and gated by an existing comparison workflow; no regressions in current benchmark coverage.
+	- 2026-05-30 resolution: `scripts/pi-remote-benchmark.sh` now supports explicit benchmark scenarios including `cpu-single` (mapped to `RAYON_NUM_THREADS=1` with `--exec cpu`) and defaults to `cpu-single cpu` so baseline and parallel CPU rows are captured in the same CSV run. `scripts/pi-benchmark-compare.sh --gpu-vs-cpu-max-pct` now prefers `cpu-single` when both `cpu-single` and legacy `cpu` rows are present, preserving compatibility with existing CSV compare gating workflows.
 
 ### Feature gaps
 

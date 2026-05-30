@@ -126,6 +126,7 @@ This configures `core.hooksPath` to use `.githooks/`.
 - Parser fuzz scaffold: `(cd fuzz && cargo fuzz run nec_parser_parse corpus/nec_parser_parse)`
 - Remote ARM64 check (Pi over SSH): `bash ./scripts/pi-remote-workspace-check.sh <user@host>`
 - Remote ARM64 benchmark CSV (Pi over SSH): `bash ./scripts/pi-remote-benchmark.sh <user@host>`
+- Remote benchmark with explicit single-thread baseline + parallel CPU sweep: `FNEC_BENCH_EXECS="cpu-single cpu" bash ./scripts/pi-remote-benchmark.sh <user@host>`
 - Benchmark CSV delta view: `bash ./scripts/pi-benchmark-compare.sh <base.csv> <candidate.csv>`
 - Benchmark CSV delta gate example: `bash ./scripts/pi-benchmark-compare.sh --max-delta-pct 15 --fail-on-mode-drift <base.csv> <candidate.csv>`
 
