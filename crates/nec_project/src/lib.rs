@@ -274,6 +274,33 @@ impl ProjectFile {
         Ok(project)
     }
 
+    /// Serialise this project into the Markdown manifest format.
+    ///
+    /// Output is deterministic:
+    /// - fixed frontmatter key order (`format`, `version`, `title`)
+    /// - fixed fenced payload marker (` ```toml project `)
+    /// - TOML payload produced via [`ProjectFile::to_toml`]
+    pub fn to_markdown(&self) -> Result<String, ProjectError> {
+        let toml = self.to_toml()?;
+
+        let mut out = String::new();
+        out.push_str("---\n");
+        out.push_str("format: fnec-project-markdown\n");
+        out.push_str(&format!("version: {}\n", self.version));
+        out.push_str("title: ");
+        out.push_str(&yaml_double_quoted_single_line(&self.name));
+        out.push_str("\n---\n\n");
+        out.push_str("# Project manifest\n\n");
+        out.push_str("```toml project\n");
+        out.push_str(&toml);
+        if !toml.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("```\n");
+
+        Ok(out)
+    }
+
     // --- run-history query API -------------------------------------------
 
     /// Number of completed runs recorded in the history.
@@ -303,6 +330,25 @@ fn strip_yaml_scalar(value: &str) -> &str {
         }
     }
     value
+}
+
+fn yaml_double_quoted_single_line(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            c if c.is_control() => {
+                let code = c as u32;
+                escaped.push_str(&format!("\\u{:04X}", code));
+            }
+            c => escaped.push(c),
+        }
+    }
+    format!("\"{}\"", escaped)
 }
 
 // ---------------------------------------------------------------------------

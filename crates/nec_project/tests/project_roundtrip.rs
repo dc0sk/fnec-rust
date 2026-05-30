@@ -362,3 +362,60 @@ pulse_rhs = "auto"
     let err = ProjectFile::from_markdown(markdown).unwrap_err();
     assert!(matches!(err, ProjectError::MarkdownParseError(_)));
 }
+
+#[test]
+fn markdown_export_contains_required_contract_fields() {
+    let project = minimal_project();
+    let markdown = project.to_markdown().unwrap();
+
+    assert!(markdown.starts_with("---\n"));
+    assert!(markdown.contains("format: fnec-project-markdown\n"));
+    assert!(markdown.contains(&format!("version: {}\n", project.version)));
+    assert!(markdown.contains("```toml project\n"));
+    assert!(markdown.ends_with("```\n"));
+}
+
+#[test]
+fn markdown_export_roundtrip_preserves_project() {
+    let mut project = ProjectFile {
+        name: "md-export-roundtrip".to_string(),
+        runs: vec![NamedRun {
+            name: "baseline".to_string(),
+            description: Some("Roundtrip export test".to_string()),
+            solver: None,
+        }],
+        ..minimal_project()
+    };
+    project.history.push(make_record(
+        "2026-05-30T16:00:00Z",
+        "hallen",
+        71.2,
+        -4.0,
+        Some(2.1),
+        3,
+    ));
+
+    let markdown = project.to_markdown().unwrap();
+    let loaded = ProjectFile::from_markdown(&markdown).unwrap();
+    assert_eq!(loaded, project);
+}
+
+#[test]
+fn markdown_export_is_stable_after_roundtrip() {
+    let mut project = minimal_project();
+    project.name = "stable-markdown".to_string();
+    project.history.push(make_record(
+        "2026-05-30T16:30:00Z",
+        "continuity",
+        64.0,
+        1.2,
+        None,
+        5,
+    ));
+
+    let md1 = project.to_markdown().unwrap();
+    let parsed = ProjectFile::from_markdown(&md1).unwrap();
+    let md2 = parsed.to_markdown().unwrap();
+
+    assert_eq!(md1, md2);
+}
