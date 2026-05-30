@@ -62,6 +62,34 @@ fn create_sandbox_dir(prefix: &str) -> PathBuf {
     dir
 }
 
+struct TempPathCleanup {
+    path: PathBuf,
+    is_dir: bool,
+}
+
+impl TempPathCleanup {
+    fn file(path: PathBuf) -> Self {
+        Self {
+            path,
+            is_dir: false,
+        }
+    }
+
+    fn dir(path: PathBuf) -> Self {
+        Self { path, is_dir: true }
+    }
+}
+
+impl Drop for TempPathCleanup {
+    fn drop(&mut self) {
+        let _ = if self.is_dir {
+            fs::remove_dir_all(&self.path)
+        } else {
+            fs::remove_file(&self.path)
+        };
+    }
+}
+
 #[test]
 fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -403,12 +431,15 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
         "expected compatibility-profile warning to remain on stderr, got:\n{stderr}"
     );
 }
+
 #[test]
 fn dropin_alias_run_does_not_create_files_in_working_directory() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("nec2dxs500");
     let sandbox = create_sandbox_dir("dropin-cwd-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
 
     let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
         .expect("failed to read sandbox before run")
@@ -437,8 +468,6 @@ fn dropin_alias_run_does_not_create_files_in_working_directory() {
             )
         });
 
-    let _ = fs::remove_file(&alias);
-
     assert!(
         output.status.success(),
         "drop-in alias run failed: {}",
@@ -458,6 +487,4 @@ fn dropin_alias_run_does_not_create_files_in_working_directory() {
         after_entries.is_empty(),
         "drop-in alias run must not create files in working directory; got: {after_entries:?}"
     );
-
-    fs::remove_dir_all(&sandbox).expect("failed to remove sandbox directory");
 }
