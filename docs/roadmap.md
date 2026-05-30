@@ -324,6 +324,7 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 - Revisit AutoEZ acquisition when Phase 3 work begins on automation parity: variable sweeps, resonance targeting, convergence studies, matching-network helpers, and repeated-analysis orchestration.
 - Purchase becomes justified when hands-on validation is needed for UX details that public documentation cannot settle reliably, especially around multi-step study workflows and format-translation behavior.
 - Until then, treat AutoEZ as a design benchmark and workflow target, not as a required reference engine for numerical validation.
+- Next review date: **2026-09-30** (or earlier if a Phase 3 parity gate requires hands-on AutoEZ workflow validation).
 
 ## Gap-driven milestone blockers (Phase gates)
 
