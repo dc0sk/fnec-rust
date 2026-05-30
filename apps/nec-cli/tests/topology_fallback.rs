@@ -95,6 +95,32 @@ fn run_solver_on_reference_dipole_with_exec(solver: &str, exec_mode: &str) -> st
         })
 }
 
+fn run_sinusoidal_with_threshold(
+    threshold_cli: Option<&str>,
+    threshold_env: Option<&str>,
+) -> std::process::Output {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
+    cmd.arg("--solver").arg("sinusoidal");
+    if let Some(v) = threshold_cli {
+        cmd.arg("--sin-fallback-rel-max").arg(v);
+    }
+    match threshold_env {
+        Some(v) => {
+            cmd.env("FNEC_SIN_FALLBACK_REL_MAX", v);
+        }
+        None => {
+            cmd.env_remove("FNEC_SIN_FALLBACK_REL_MAX");
+        }
+    }
+    cmd.env_remove("FNEC_ACCEL_STUB_GPU");
+    cmd.arg(&deck_path);
+    cmd.output()
+        .unwrap_or_else(|e| panic!("Failed to run sinusoidal solver with threshold override: {e}"))
+}
+
 fn run_hallen_on_loaded_case(allow_noncollinear_hallen: bool) -> std::process::Output {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-loaded.nec");
@@ -139,6 +165,36 @@ fn sinusoidal_solves_reference_dipole_without_fallback() {
         "sinusoidal should not fall back on a clean 51-segment dipole, got:\n{stderr}"
     );
     assert_diag_mode(&stderr, "sinusoidal");
+}
+
+#[test]
+fn sinusoidal_threshold_cli_override_forces_hallen_fallback() {
+    // Keep env permissive and force fallback via tiny CLI threshold.
+    let output = run_sinusoidal_with_threshold(Some("1e-30"), Some("1e9"));
+    assert!(
+        output.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: sinusoidal residual"),
+        "expected sinusoidal residual fallback warning, got:\n{stderr}"
+    );
+    assert_diag_mode(&stderr, "sinusoidal->hallen(residual)");
+    assert_diag_field(&stderr, "sin_fallback_rel_max", "1.000000e-30");
+}
+
+#[test]
+fn invalid_sinusoidal_threshold_env_reports_usage_error() {
+    let output = run_sinusoidal_with_threshold(None, Some("bogus"));
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid FNEC_SIN_FALLBACK_REL_MAX='bogus'"),
+        "expected invalid env-value error, got:\n{stderr}"
+    );
 }
 
 #[test]

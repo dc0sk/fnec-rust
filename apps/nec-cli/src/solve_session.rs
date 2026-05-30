@@ -3,6 +3,7 @@ use nec_model::card::Card;
 
 pub(super) const C0: f64 = 299_792_458.0;
 pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
+pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT: f64 = 1e-2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SolverMode {
@@ -394,6 +395,7 @@ pub(super) fn solve_frequency_point(
     pulse_rhs_mode: PulseRhsMode,
     execution_mode: ExecutionMode,
     enable_gpu_fr: bool,
+    sin_fallback_rel_max: f64,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
     let mut v_vec_pulse = match pulse_rhs_mode {
@@ -572,7 +574,31 @@ pub(super) fn solve_frequency_point(
                     wire_endpoints,
                 );
                 sin_rel_res = r;
-                (sol.currents, a, r, "sinusoidal")
+                if r <= sin_fallback_rel_max {
+                    (sol.currents, a, r, "sinusoidal")
+                } else {
+                    eprintln!(
+                        "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
+                        r, sin_fallback_rel_max
+                    );
+                    let hallen_sol = solve_hallen(
+                        &z_mat,
+                        &hallen_rhs.rhs,
+                        &hallen_rhs.cos_vec,
+                        wire_endpoints,
+                        &junction_tuples,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let (a2, r2) = residual_hallen(
+                        &z_mat,
+                        &hallen_sol.currents,
+                        &hallen_sol.c_hom_per_wire,
+                        &hallen_rhs.cos_vec,
+                        &hallen_rhs.rhs,
+                        wire_endpoints,
+                    );
+                    (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
+                }
             }
         }
     };
@@ -740,14 +766,15 @@ pub(super) fn solve_frequency_point(
         z_im: row.z_in.im,
     });
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e}",
         pulse_rhs_mode,
         execution_mode.as_diag_str(),
         freq_hz / 1e6,
         diag_abs,
         diag_rel,
         diag_spread,
-        sin_rel_res
+        sin_rel_res,
+        sin_fallback_rel_max
     );
 
     let bench = BenchRecord {

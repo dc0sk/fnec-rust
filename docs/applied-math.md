@@ -127,8 +127,8 @@ Recover segment currents by I_seg = T*a after solve.
 
 The fallback-capable experimental modes use explicit residual budgets as safety rails, not as parity claims.
 
-- `continuity`: relative L2 residual budget is `1e-3` (`CONTINUITY_REL_RESIDUAL_MAX` in `apps/nec-cli/src/main.rs`). If the continuity-basis solve exceeds this threshold, the CLI emits a warning and falls back to the pulse solution path.
-- `sinusoidal`: relative L2 residual budget is `1e-2` (`SINUSOIDAL_REL_RESIDUAL_MAX` in `apps/nec-cli/src/main.rs`). If the projected sinusoidal-basis solve exceeds this threshold on a topology that otherwise passes the A4 topology gate, the CLI emits a warning and falls back to Hallen.
+- `continuity`: relative L2 residual budget is `1e-3` (`CONTINUITY_REL_RESIDUAL_MAX` in `apps/nec-cli/src/solve_session.rs`). If the continuity-basis solve exceeds this threshold, the CLI emits a warning and falls back to the pulse solution path.
+- `sinusoidal`: relative L2 residual budget defaults to `1e-2` (`SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT` in `apps/nec-cli/src/solve_session.rs`). It is user-tunable via `--sin-fallback-rel-max` or `FNEC_SIN_FALLBACK_REL_MAX` (CLI flag takes precedence). If the projected sinusoidal-basis solve exceeds the active threshold on a topology that otherwise passes the A4 topology gate, the CLI emits a warning and falls back to Hallen.
 - `sin_rel_res` in CLI diagnostics records the pre-fallback sinusoidal residual so automation can distinguish a successful sinusoidal solve from a guarded fallback.
 
 These thresholds are intentionally stricter than "solver did not crash" but looser than the compatibility tolerance matrix. They exist to prevent experimental modes from silently returning numerically poor results while a more stable fallback exists.

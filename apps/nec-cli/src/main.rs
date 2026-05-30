@@ -30,7 +30,7 @@ use nec_solver::{
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, PulseRhsMode, SolverMode,
-    SweepPointSummary,
+    SweepPointSummary, SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
 use warnings::{
@@ -71,6 +71,7 @@ fn main() -> ExitCode {
         output_format,
         sweep_config_path,
         vars_path,
+        sin_fallback_rel_max_cli,
         path,
     } = match parse_args(&args) {
         Ok(v) => v,
@@ -86,6 +87,24 @@ fn main() -> ExitCode {
     if enable_benchmarking {
         std::env::set_var("FNEC_GPU_BENCH", "1");
     }
+
+    let sin_fallback_rel_max = if let Some(v) = sin_fallback_rel_max_cli {
+        v
+    } else if let Ok(raw) = std::env::var("FNEC_SIN_FALLBACK_REL_MAX") {
+        match raw.parse::<f64>() {
+            Ok(v) if v.is_finite() && v > 0.0 => v,
+            _ => {
+                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("{USAGE}");
+                eprintln!(
+                    "error: invalid FNEC_SIN_FALLBACK_REL_MAX='{raw}' (expected: positive number)"
+                );
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
+    };
 
     let requested_execution_mode = execution_mode;
     execution_mode = steer_execution_mode_by_profile(
@@ -271,6 +290,7 @@ fn main() -> ExitCode {
             pulse_rhs_mode,
             execution_mode,
             enable_gpu_fr,
+            sin_fallback_rel_max,
             freq_hz,
         )
     };
@@ -484,6 +504,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             PulseRhsMode::Nec2,
             ExecutionMode::Cpu,
             false,
+            SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
             freq_hz,
         )?;
 

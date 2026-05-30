@@ -29,7 +29,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - RP radiation-pattern execution in CLI output (`RADIATION_PATTERN` section with theta/phi gain rows)
 - Corpus validation can track and optionally gate external parity candidates (RP and impedance) recorded in `corpus/reference-results.json`
 - Pulse-basis, continuity-basis, and sinusoidal-tapered Pocklington solvers (EXPERIMENTAL — known to diverge for thin wires)
-	- `sinusoidal` now falls back to Hallen on single collinear chains when its residual budget is exceeded, so the CLI avoids returning misleading impedances for that path
+	- `sinusoidal` falls back to Hallen on single collinear chains when its residual budget is exceeded, and the budget is user-tunable via `--sin-fallback-rel-max` (or `FNEC_SIN_FALLBACK_REL_MAX`)
 - CLI binary `fnec` with selectable solver and RHS modes
 - FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run

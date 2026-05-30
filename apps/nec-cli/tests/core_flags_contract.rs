@@ -110,6 +110,42 @@ fn invalid_exec_value_reports_contract_error_and_usage() {
 }
 
 #[test]
+fn missing_sin_fallback_rel_max_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&["--sin-fallback-rel-max"]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing value after --sin-fallback-rel-max"),
+        "missing sin-fallback parse error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: positive number"),
+        "missing expected positive-number hint in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn invalid_sin_fallback_rel_max_value_reports_contract_error_and_usage() {
+    let output = run_fnec(&[
+        "--sin-fallback-rel-max",
+        "bogus",
+        fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid --sin-fallback-rel-max value 'bogus'"),
+        "missing invalid sin-fallback detail in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: positive number"),
+        "missing expected positive-number hint in stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn missing_bench_format_value_reports_contract_error_and_usage() {
     let output = run_fnec(&["--bench-format"]);
     assert_eq!(output.status.code(), Some(2));
