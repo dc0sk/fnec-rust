@@ -336,6 +336,10 @@ fn dropin_alias_keeps_report_on_stdout_and_warning_on_stderr() {
         "expected stable report header on stdout, got:\n{stdout}"
     );
     assert!(
+        !stdout.contains("drop-in compatibility profile detected by binary name"),
+        "drop-in compatibility warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
         stderr.contains("drop-in compatibility profile detected by binary name"),
         "expected compatibility-profile warning in stderr, got:\n{stderr}"
     );
@@ -351,6 +355,7 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let alias = create_dropin_alias("nec2dxs500");
     let bogus_path = test_tmp_dir().join("fnec-dropin-missing.nec");
+    let _ = fs::remove_file(&bogus_path);
 
     let output = Command::new(&alias)
         .arg(&bogus_path)
@@ -375,7 +380,10 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stdout.is_empty(), "expected no stdout on missing-deck error, got:\n{stdout}");
+    assert!(
+        stdout.is_empty(),
+        "expected no stdout on missing-deck error, got:\n{stdout}"
+    );
     assert!(
         stderr.contains("error:"),
         "expected error message on stderr for missing deck, got:\n{stderr}"

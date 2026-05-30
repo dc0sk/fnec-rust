@@ -244,6 +244,7 @@ fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
 fn nonexistent_deck_exits_with_code_1_and_error_on_stderr() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let bogus_path = test_tmp_dir().join("fnec-definitely-does-not-exist.nec");
+    let _ = fs::remove_file(&bogus_path);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
