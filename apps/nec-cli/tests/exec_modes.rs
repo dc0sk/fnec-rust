@@ -52,6 +52,44 @@ fn create_dropin_alias(alias_name: &str) -> PathBuf {
     alias
 }
 
+fn create_sandbox_dir(prefix: &str) -> PathBuf {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let dir = test_tmp_dir().join(format!("{prefix}-{now}"));
+    fs::create_dir_all(&dir).expect("failed to create test sandbox dir");
+    dir
+}
+
+struct TempPathCleanup {
+    path: PathBuf,
+    is_dir: bool,
+}
+
+impl TempPathCleanup {
+    fn file(path: PathBuf) -> Self {
+        Self {
+            path,
+            is_dir: false,
+        }
+    }
+
+    fn dir(path: PathBuf) -> Self {
+        Self { path, is_dir: true }
+    }
+}
+
+impl Drop for TempPathCleanup {
+    fn drop(&mut self) {
+        let _ = if self.is_dir {
+            fs::remove_dir_all(&self.path)
+        } else {
+            fs::remove_file(&self.path)
+        };
+    }
+}
+
 #[test]
 fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -391,5 +429,62 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
     assert!(
         stderr.contains("drop-in compatibility profile detected by binary name"),
         "expected compatibility-profile warning to remain on stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn dropin_alias_run_does_not_create_files_in_working_directory() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("nec2dxs500");
+    let sandbox = create_sandbox_dir("dropin-cwd-sandbox");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+    let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read sandbox before run")
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry before run")
+                .path()
+        })
+        .collect();
+    assert!(
+        before_entries.is_empty(),
+        "expected empty sandbox before run, got: {before_entries:?}"
+    );
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .current_dir(&sandbox)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' for file-side-effect contract test: {e}",
+                alias.display()
+            )
+        });
+
+    assert!(
+        output.status.success(),
+        "drop-in alias run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+        .expect("failed to read sandbox after run")
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry after run")
+                .path()
+        })
+        .collect();
+
+    assert!(
+        after_entries.is_empty(),
+        "drop-in alias run must not create files in working directory; got: {after_entries:?}"
     );
 }
