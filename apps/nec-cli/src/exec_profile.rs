@@ -1,6 +1,26 @@
 use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
 use std::path::Path;
 
+const FOURNEC2_DROPIN_KERNEL_STEMS: &[&str] = &[
+    "nec2dxs500",
+    "nec2dxs1k5",
+    "nec2dxs3k0",
+    "nec2dxs5k0",
+    "nec2dxs8k0",
+    "nec2dxs11k",
+];
+
+fn contains_ascii_token(haystack: &str, token: &str) -> bool {
+    haystack.match_indices(token).any(|(start, _)| {
+        let end = start + token.len();
+        let left = haystack[..start].chars().next_back();
+        let right = haystack[end..].chars().next();
+        let left_ok = left.is_none_or(|c| !c.is_ascii_alphanumeric());
+        let right_ok = right.is_none_or(|c| !c.is_ascii_alphanumeric());
+        left_ok && right_ok
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ExecutionMode {
     Cpu,
@@ -47,7 +67,10 @@ pub(super) fn detect_compatibility_profile(argv0: &str) -> CompatibilityProfile 
         .unwrap_or_default()
         .to_ascii_lowercase();
 
-    if stem.contains("nec2dxs") || stem.contains("4nec2") {
+    let is_known_dropin_kernel_name = FOURNEC2_DROPIN_KERNEL_STEMS
+        .iter()
+        .any(|name| contains_ascii_token(&stem, name));
+    if is_known_dropin_kernel_name || stem.contains("4nec2") {
         CompatibilityProfile::FourNec2DropIn
     } else {
         CompatibilityProfile::Native

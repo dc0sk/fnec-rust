@@ -559,7 +559,47 @@ mod tests {
             CompatibilityProfile::FourNec2DropIn
         );
         assert_eq!(
+            detect_compatibility_profile("C:/4nec2/EXE/nec2dxs1K5.exe"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
+            detect_compatibility_profile("C:/4nec2/EXE/NEC2DXS3K0.EXE"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
+            detect_compatibility_profile("/opt/4nec2/nec2dxs5k0"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
+            detect_compatibility_profile("/opt/4nec2/nec2dxs8k0"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
+            detect_compatibility_profile("/opt/4nec2/nec2dxs11k"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+        assert_eq!(
             detect_compatibility_profile("C:/tools/4nec2-kernel"),
+            CompatibilityProfile::FourNec2DropIn
+        );
+    }
+
+    #[test]
+    fn keeps_native_profile_for_unknown_nec2dxs_like_names() {
+        assert_eq!(
+            detect_compatibility_profile("/tmp/nec2dxs750"),
+            CompatibilityProfile::Native
+        );
+        assert_eq!(
+            detect_compatibility_profile("/tmp/custom-nec2dxs-wrapper"),
+            CompatibilityProfile::Native
+        );
+    }
+
+    #[test]
+    fn detects_dropin_profile_when_known_kernel_name_is_embedded_as_token() {
+        assert_eq!(
+            detect_compatibility_profile("/tmp/fnec-dropin-alias-nec2dxs500-123"),
             CompatibilityProfile::FourNec2DropIn
         );
     }
