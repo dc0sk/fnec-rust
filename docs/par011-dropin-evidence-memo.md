@@ -60,8 +60,10 @@ Key points from `nec2mp-readme.pdf` extraction:
 
 ## Binary-name contract
 
-- [ ] Confirm accepted executable-name variants and case-sensitivity behavior used by host tooling.
-- [ ] Map each variant to expected segment or model-size bands.
+- [x] Confirm accepted executable-name variants and case-sensitivity behavior used by host tooling.
+	- 2026-05-30: CLI detection contract now locks known stem variants case-insensitively (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`) and adds false-positive guard for unknown `nec2dxs*` names.
+- [x] Map each variant to expected segment or model-size bands.
+	- 2026-05-30 mapping (from artifact naming): `nec2dxs500` -> 500; `nec2dxs1K5` -> 1500; `nec2dxs3k0` -> 3000; `nec2dxs5k0` -> 5000; `nec2dxs8k0` -> 8000; `nec2dxs11k` -> 11000.
 
 ## Installation and replacement workflow
 
@@ -100,7 +102,7 @@ Key points from `nec2mp-readme.pdf` extraction:
 
 ## Current implementation gap summary
 
-- Filename-steered detection is present (`nec2dxs*`, `4nec2*`) and tested in CLI integration tests.
+- Filename-steered detection is present with an explicit known-name matrix (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`) plus `4nec2` naming fallback, and is covered by CLI unit tests.
 - Execution-mode steering is currently limited to internal mode defaults and diagnostics.
 - Full external-kernel drop-in invocation and file-contract parity is not yet implemented.
 
