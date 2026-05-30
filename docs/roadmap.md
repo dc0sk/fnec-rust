@@ -299,6 +299,7 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 | GAP-012 | AutoEZ-class automation acceptance | **HIGH** | Phase 3 end | Automation | Acceptance checklist covers variable sweeps, resonance targeting, convergence studies, and matching-network helpers with at least one documented end-to-end workflow per class. |
 | GAP-013 | NEC-5-informed validation matrix | **HIGH** | Phase 2 end | Validation | Validation-manual-informed case matrix is maintained with owner, corpus mapping, and tolerance-gated status for each in-scope class. |
 | GAP-014 | External optimizer-loop compatibility | **MEDIUM** | Phase 3 end | Automation+CLI | Deterministic objective-evaluation CLI/API contract is documented and at least one xnec2c-optimize-style loop is reproduced end-to-end with stable machine-readable outputs. |
+| GAP-015 | Markdown project import/export delivery track | **MEDIUM** | Phase 6+ | Project+Core APIs | `nec_project` supports deterministic Markdown project import and export (in addition to TOML), with documented schema, round-trip stability tests, and explicit CLI/API entry points. |
 
 ## Competitive parity work items
 

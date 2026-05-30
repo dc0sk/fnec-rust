@@ -113,8 +113,15 @@ last_updated: 2026-04-30
 	Resolution criteria: repeated benchmark runs can be appended to a persistent history format and summarized by a tracked script without relying on ad hoc files in `tmp/`.
 	- 2026-05-30 resolution: added `scripts/pi-benchmark-history.sh` with `append` and `trend` commands, using tracked history schema `benchmarks/pi-benchmark-history.csv` (`ingested_at_utc`, `git_sha`, `source_csv`, plus benchmark row fields). `scripts/pi-remote-benchmark.sh` now supports optional `FNEC_BENCH_HISTORY` to auto-append each run CSV to history, and trend summaries are emitted by `scripts/pi-benchmark-history.sh trend <history.csv>`.
 
-- [ ] **FR-004 project format scope (`nec_project`) / Owner: Project+Core APIs / Target: Phase 3**
+- [x] **FR-004 project format scope (`nec_project`) / Owner: Project+Core APIs / Target: Phase 3**
 	Resolution criteria: `nec_project` has a documented crate scope covering Markdown project structure, run metadata, and result-storage responsibilities, and roadmap/backlog work items explicitly track Markdown import/export delivery.
+	- 2026-05-30 resolution: scope is now explicitly documented in `docs/project-format.md` and crate-level docs in `crates/nec_project/src/lib.rs` (project structure boundary, run metadata, and result-storage ownership). Markdown delivery is now explicitly tracked by backlog items FR-004A/FR-004B below and roadmap gap `GAP-015`.
+
+- [ ] **FR-004A Markdown project import path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
+	Resolution criteria: implement Markdown project import (`.md` with frontmatter + fenced blocks) into `nec_project::ProjectFile`, add parser contract tests, and document accepted Markdown schema in `docs/project-format.md`.
+
+- [ ] **FR-004B Markdown project export path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
+	Resolution criteria: implement deterministic Markdown export from `nec_project::ProjectFile` (stable field ordering + formatting), add round-trip tests (`markdown -> ProjectFile -> markdown` stability contracts), and document CLI/API entry points.
 
 ## Parity-driven backlog items
 

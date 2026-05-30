@@ -15,6 +15,27 @@ Project files are the primary mechanism for storing per-project solver
 configuration and named run variants.  The CLI will load a project file when
 invoked with a `.fnecproj` path instead of a `.nec` deck path.
 
+## `nec_project` scope boundary (FR-004)
+
+The `nec_project` crate owns project-container semantics, not solver math.
+
+In scope:
+
+- project structure schema (currently TOML `.fnecproj`, with Markdown import/export tracked for future delivery)
+- run metadata (`timestamp`, solver snapshot, and compact result summaries)
+- result-storage conventions for repeatable project workflows (`history` ordering and query API)
+
+Out of scope:
+
+- NEC card parsing/geometry semantics (owned by `nec_parser`/`nec_model`)
+- impedance/pattern/current math kernels (owned by `nec_solver`/`nec_accel`)
+- renderer/report formatting contracts (owned by `nec_report`)
+
+Markdown project import/export delivery tracking:
+
+- Backlog: `FR-004A` (Markdown import) and `FR-004B` (Markdown export) in `docs/backlog.md`
+- Roadmap gap tracking: `GAP-015` in `docs/roadmap.md`
+
 ## File extension
 
 `.fnecproj`
