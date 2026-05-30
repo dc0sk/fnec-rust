@@ -397,6 +397,52 @@ fn buried_wire_with_active_ground_fails_fast_with_actionable_error() {
 }
 
 #[test]
+fn interface_touching_wire_with_active_ground_fails_fast_with_material_context() {
+    // The scoped finite-ground path only supports strictly above-ground wires.
+    // Touching the z=0 interface must fail fast with active-medium context.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-gn2-interface-{now}.nec"));
+
+    let deck =
+        "GW 1 51 0 0 0.0 0 0 10.564 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("failed to write temporary interface-touching deck");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec for interface-touch guardrail test: {e}"));
+
+    let _ = fs::remove_file(&deck_path);
+
+    assert!(
+        !output.status.success(),
+        "interface-touching deck with active ground should fail, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: unsupported buried-wire geometry for active ground model"),
+        "expected buried-wire guardrail error, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("eps_r=13.000") && stderr.contains("sigma=0.005000"),
+        "expected finite-ground material context in diagnostic, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("z > 0"),
+        "expected strict above-ground guidance in diagnostic, got:\n{stderr}"
+    );
+}
+
+#[test]
 fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
     // Near-ground wire with GN2 is a supported active-ground path.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
