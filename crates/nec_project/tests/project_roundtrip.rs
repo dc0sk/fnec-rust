@@ -271,3 +271,94 @@ fn history_empty_omitted_from_toml() {
     let toml_str = project.to_toml().unwrap();
     assert!(!toml_str.contains("history"));
 }
+
+// --- markdown import contract tests ----------------------------------------
+
+#[test]
+fn markdown_import_minimal_project_succeeds() {
+    let markdown = r#"---
+format: fnec-project-markdown
+version: 1
+title: demo
+---
+
+# Demo project
+
+```toml project
+version = 1
+name = "md-import"
+deck_path = "corpus/dipole-freesp-51seg.nec"
+
+[solver]
+mode = "hallen"
+pulse_rhs = "auto"
+```
+"#;
+
+    let loaded = ProjectFile::from_markdown(markdown).unwrap();
+    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.name, "md-import");
+    assert_eq!(
+        loaded.deck_path,
+        PathBuf::from("corpus/dipole-freesp-51seg.nec")
+    );
+    assert_eq!(loaded.solver.mode, "hallen");
+    assert!(loaded.runs.is_empty());
+}
+
+#[test]
+fn markdown_import_requires_frontmatter() {
+    let markdown = r#"
+# Missing frontmatter
+
+```toml project
+version = 1
+name = "bad"
+deck_path = "corpus/dipole-freesp-51seg.nec"
+[solver]
+mode = "hallen"
+pulse_rhs = "auto"
+```
+"#;
+
+    let err = ProjectFile::from_markdown(markdown).unwrap_err();
+    assert!(matches!(err, ProjectError::MarkdownParseError(_)));
+}
+
+#[test]
+fn markdown_import_requires_project_fence() {
+    let markdown = r#"---
+format: fnec-project-markdown
+version: 1
+---
+
+```toml
+name = "not-a-project-fence"
+```
+"#;
+
+    let err = ProjectFile::from_markdown(markdown).unwrap_err();
+    assert!(matches!(err, ProjectError::MarkdownParseError(_)));
+}
+
+#[test]
+fn markdown_import_frontmatter_and_payload_version_must_match() {
+    let markdown = r#"---
+format: fnec-project-markdown
+version: 2
+---
+
+```toml project
+version = 1
+name = "mismatch"
+deck_path = "corpus/dipole-freesp-51seg.nec"
+
+[solver]
+mode = "hallen"
+pulse_rhs = "auto"
+```
+"#;
+
+    let err = ProjectFile::from_markdown(markdown).unwrap_err();
+    assert!(matches!(err, ProjectError::MarkdownParseError(_)));
+}

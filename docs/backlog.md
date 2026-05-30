@@ -117,8 +117,9 @@ last_updated: 2026-04-30
 	Resolution criteria: `nec_project` has a documented crate scope covering Markdown project structure, run metadata, and result-storage responsibilities, and roadmap/backlog work items explicitly track Markdown import/export delivery.
 	- 2026-05-30 resolution: scope is now explicitly documented in `docs/project-format.md` and crate-level docs in `crates/nec_project/src/lib.rs` (project structure boundary, run metadata, and result-storage ownership). Markdown delivery is now explicitly tracked by backlog items FR-004A/FR-004B below and roadmap gap `GAP-015`.
 
-- [ ] **FR-004A Markdown project import path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
+- [x] **FR-004A Markdown project import path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
 	Resolution criteria: implement Markdown project import (`.md` with frontmatter + fenced blocks) into `nec_project::ProjectFile`, add parser contract tests, and document accepted Markdown schema in `docs/project-format.md`.
+	- 2026-05-30 resolution: implemented `ProjectFile::from_markdown(...)` in `crates/nec_project/src/lib.rs` with frontmatter validation (`format: fnec-project-markdown`, `version`) plus fenced payload parsing (` ```toml project ` block). Added parser contract coverage in `crates/nec_project/tests/project_roundtrip.rs` (success path + required-frontmatter + required-project-fence + version mismatch). Documented accepted Markdown import schema and example in `docs/project-format.md`.
 
 - [ ] **FR-004B Markdown project export path (`nec_project`) / Owner: Project+Core APIs / Target: Phase 6+**
 	Resolution criteria: implement deterministic Markdown export from `nec_project::ProjectFile` (stable field ordering + formatting), add round-trip tests (`markdown -> ProjectFile -> markdown` stability contracts), and document CLI/API entry points.

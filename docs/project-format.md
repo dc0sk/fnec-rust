@@ -40,6 +40,48 @@ Markdown project import/export delivery tracking:
 
 `.fnecproj`
 
+## Markdown import schema (`FR-004A`)
+
+`nec_project::ProjectFile::from_markdown(...)` accepts a Markdown manifest with
+frontmatter and a fenced TOML project payload.
+
+Required frontmatter keys:
+
+- `format: fnec-project-markdown`
+- `version: 1`
+
+Required fenced block:
+
+- ````toml project```` containing the same TOML schema as `.fnecproj`
+
+Import contract notes:
+
+- frontmatter `version` must match payload `version`
+- only the `toml project` fenced block is consumed as project payload
+- the payload is validated by the same version guard as `ProjectFile::from_toml`
+
+Example:
+
+````markdown
+---
+format: fnec-project-markdown
+version: 1
+title: half-wave dipole study
+---
+
+# Half-wave dipole project
+
+```toml project
+version = 1
+name = "dipole-study"
+deck_path = "corpus/dipole-freesp-51seg.nec"
+
+[solver]
+mode = "hallen"
+pulse_rhs = "auto"
+```
+````
+
 ## Top-level fields
 
 | Field | Type | Required | Description |
