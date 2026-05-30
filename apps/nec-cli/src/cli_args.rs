@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -23,6 +23,7 @@ pub struct ParsedArgs {
     pub output_format: OutputFormat,
     pub sweep_config_path: Option<PathBuf>,
     pub vars_path: Option<PathBuf>,
+    pub sin_fallback_rel_max_cli: Option<f64>,
     pub path: PathBuf,
 }
 
@@ -36,6 +37,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut output_format = OutputFormat::Text;
     let mut sweep_config_path: Option<PathBuf> = None;
     let mut vars_path: Option<PathBuf> = None;
+    let mut sin_fallback_rel_max_cli: Option<f64> = None;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -163,6 +165,27 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 }
                 vars_path = Some(PathBuf::from(&args[i]));
             }
+            "--sin-fallback-rel-max" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --sin-fallback-rel-max (expected: positive number)"
+                            .to_string(),
+                    );
+                }
+                let raw = &args[i];
+                let parsed = raw.parse::<f64>().map_err(|_| {
+                    format!(
+                        "invalid --sin-fallback-rel-max value '{raw}' (expected: positive number)"
+                    )
+                })?;
+                if !parsed.is_finite() || parsed <= 0.0 {
+                    return Err(format!(
+                        "invalid --sin-fallback-rel-max value '{raw}' (expected: positive number)"
+                    ));
+                }
+                sin_fallback_rel_max_cli = Some(parsed);
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -187,6 +210,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         output_format,
         sweep_config_path,
         vars_path,
+        sin_fallback_rel_max_cli,
         path,
     })
 }

@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 ```
 
@@ -36,6 +36,7 @@ Compatibility profile note:
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
+| `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | `legacy` | EX type 3 runtime semantics: `legacy` keeps type 3 == type 0 behavior; `divide-by-i4` enables experimental source normalization using I4 as divisor when I4>0 |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
@@ -138,6 +139,12 @@ If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
 `SOLVER_MODE sinusoidal->hallen(residual)`.
 
+Residual budget precedence:
+
+- `--sin-fallback-rel-max <value>` (if provided)
+- `FNEC_SIN_FALLBACK_REL_MAX` environment variable
+- built-in default `1e-2`
+
 ## `--pulse-rhs` values
 
 Applies to `pulse`, `continuity`, and `sinusoidal` modes.
@@ -210,7 +217,7 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0 sin_fallback_rel_max=1.000000e-02
 ```
 
 | Field | Description |
@@ -223,6 +230,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
 | `diag_spread` | Conditioning proxy: max/min diagonal magnitude ratio of solved matrix |
 | `sin_rel_res` | Sinusoidal pre-fallback relative residual (0 for non-sinusoidal paths) |
+| `sin_fallback_rel_max` | Active sinusoidal residual fallback threshold after CLI/env/default precedence |
 
 When `--bench-format csv` is enabled, one header plus one machine-readable line per solved frequency point is emitted to stderr:
 
