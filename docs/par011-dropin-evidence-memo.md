@@ -67,9 +67,11 @@ Key points from `nec2mp-readme.pdf` extraction:
 
 ## Installation and replacement workflow
 
-- [ ] Document required copy/replace steps in a standard 4nec2 Windows installation.
+- [x] Document required copy/replace steps in a standard 4nec2 Windows installation.
+	- 2026-05-30: documented in `docs/par011-dropin-contract.md` section "Windows install and rollback procedure (deterministic)".
 - [ ] Confirm whether side-by-side binaries are selected automatically by host tooling.
-- [ ] Confirm rollback path for restoring original binaries.
+- [x] Confirm rollback path for restoring original binaries.
+	- 2026-05-30: deterministic rollback path documented in `docs/par011-dropin-contract.md`.
 
 ## Invocation and process contract
 
@@ -77,6 +79,10 @@ Key points from `nec2mp-readme.pdf` extraction:
 - [ ] Capture expected working-directory assumptions.
 - [ ] Capture stdin/stdout/stderr usage and parsing assumptions.
 - [ ] Capture expected exit-code semantics for success and common failure classes.
+
+Phase-0 template status:
+
+- 2026-05-30: process-contract capture template published in `docs/par011-dropin-contract.md`; observational capture values remain pending.
 
 ## Filesystem side effects
 
@@ -120,9 +126,9 @@ Deliverables:
 
 Acceptance tests:
 
-- `AT-PAR011-0001`: document includes exact executable-name matrix and source evidence links.
-- `AT-PAR011-0002`: document includes deterministic install rollback procedure.
-- `AT-PAR011-0003`: process-contract template reviewed and checked into docs.
+- [x] `AT-PAR011-0001`: document includes exact executable-name matrix and source evidence links.
+- [x] `AT-PAR011-0002`: document includes deterministic install rollback procedure.
+- [x] `AT-PAR011-0003`: process-contract template reviewed and checked into docs.
 
 ### Phase 1: Compatibility behavior specification
 
