@@ -5,9 +5,9 @@ status: living
 last_updated: 2026-05-30
 ---
 
-# PAR-011 4nec2 Drop-In Contract (Phase 0)
+# PAR-011 4nec2 Drop-In Contract
 
-This document captures the phase-0 contract for PAR-011:
+This document captures the current documentation contract for PAR-011:
 
 - deterministic Windows install and rollback procedure for external-kernel replacement
 - explicit binary-name matrix and intended segment-band mapping
@@ -142,3 +142,131 @@ Expected side-effect constraints for the current scaffold:
 - `AT-PAR011-0101`: satisfied by the execution-mode precedence rule above.
 - `AT-PAR011-0102`: satisfied by the fixed warning/diagnostic classes above.
 - `AT-PAR011-0103`: satisfied by the file side-effect and lifecycle constraints above.
+
+## Phase 2 validation and benchmark specification
+
+This section defines the artifacts that future PAR-011 validation work must capture before any full compatibility claim is made.
+
+### Compatibility fixture schema
+
+Each fixture record must describe one observed host-to-kernel execution of a specific drop-in binary variant.
+
+Required fields:
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `fixture_id` | string | Stable identifier, for example `par011-nec2dxs500-dipole-freesp-51seg-win10-001` |
+| `captured_at_utc` | string | ISO-8601 UTC timestamp |
+| `host_tool` | object | Host metadata: product name, version, build, platform |
+| `kernel_binary` | object | Binary filename, SHA256, intended segment band |
+| `deck` | object | Deck filename, SHA256, segment count band, working corpus/reference tag |
+| `process` | object | `argv`, `cwd`, relevant environment variables, timeout threshold |
+| `stdio_contract` | object | Captured stdout/stderr channel behavior summary |
+| `exit_contract` | object | Expected and observed exit code classification |
+| `file_effects` | object | Input/output/temp files read, written, overwritten, or deleted |
+| `result_summary` | object | High-level outcome: success/failure class plus key produced artifacts |
+
+Concrete example record:
+
+```json
+{
+   "fixture_id": "par011-nec2dxs500-dipole-freesp-51seg-win10-001",
+   "captured_at_utc": "2026-05-30T18:45:00Z",
+   "host_tool": {
+      "name": "4nec2",
+      "version": "TBD",
+      "platform": "Windows 10 x64"
+   },
+   "kernel_binary": {
+      "filename": "nec2dxs500.exe",
+      "sha256": "965fb451c44dfef421d4e901accce176383195741b2220bd15742610f34a9b4d",
+      "segment_band": 500
+   },
+   "deck": {
+      "filename": "dipole-freesp-51seg.nec",
+      "sha256": "TBD",
+      "segment_band": "<=500",
+      "corpus_tag": "reference-dipole"
+   },
+   "process": {
+      "argv": ["nec2dxs500.exe", "TBD"],
+      "cwd": "C:\\4NEC2\\EXE",
+      "timeout_seconds": "TBD"
+   },
+   "stdio_contract": {
+      "stdout": "TBD",
+      "stderr": "TBD"
+   },
+   "exit_contract": {
+      "expected_success_code": "TBD",
+      "observed_exit_code": "TBD"
+   },
+   "file_effects": {
+      "inputs": ["TBD"],
+      "outputs": ["TBD"],
+      "temporary": ["TBD"]
+   },
+   "result_summary": {
+      "status": "captured-template",
+      "artifacts": ["TBD"]
+   }
+}
+```
+
+Fixture coverage requirements:
+
+1. At least one fixture per binary variant in the matrix.
+2. At least one successful run fixture and one representative failure-class fixture.
+3. One fixture per distinct segment band actually exercised.
+
+### Benchmark protocol
+
+Benchmark objective:
+
+- compare replacement-kernel throughput against the legacy single-thread external baseline on identical decks and environment conditions
+
+Protocol requirements:
+
+1. Compare like-for-like binary bands:
+    - `nec2dxs500.exe` on decks within the 500-segment band
+    - `nec2dxs1K5.exe` on decks within the 1500-segment band
+    - `nec2dxs3k0.exe` on decks within the 3000-segment band
+    - `nec2dxs5k0.exe` on decks within the 5000-segment band
+    - `nec2dxs8k0.exe` on decks within the 8000-segment band
+    - `nec2dxs11k.exe` on decks within the 11000-segment band
+2. Use identical decks, host tool settings, working directory rules, and output paths for legacy-vs-replacement comparisons.
+3. Record at least 5 runs per deck/binary pair and report median elapsed time.
+4. Separate cold-cache notes from steady-state timing notes when filesystem caching cannot be controlled.
+5. Record machine metadata for every benchmark set:
+    - CPU model
+    - core/thread count
+    - RAM size
+    - storage type
+    - OS version/build
+    - 4nec2 version/build
+6. Record workload metadata for every benchmark set:
+    - binary filename
+    - deck filename and SHA256
+    - segment count
+    - solver mode or host run mode
+    - timeout threshold
+
+### Success criteria
+
+Compatibility success criteria:
+
+1. Fixture captures exist for every binary variant in scope.
+2. Process contract fields (`argv`, `cwd`, stdio classes, exit codes) are filled with observed values, not `TBD` placeholders.
+3. File side-effect captures are concrete enough to distinguish created, overwritten, and deleted artifacts.
+
+Performance success criteria:
+
+1. Replacement-kernel median elapsed time is reported against the legacy single-thread baseline for each exercised segment band.
+2. Throughput claims must be phrased per band, not as one aggregate number across all binaries.
+3. Any claim of improvement must cite the exact machine metadata and run count used.
+
+## Acceptance-test mapping (phase 2)
+
+- `AT-PAR011-0201`: satisfied by the fixture schema and concrete example record above.
+- `AT-PAR011-0202`: satisfied by the benchmark protocol band and machine-metadata requirements above.
+- `AT-PAR011-0203`: satisfied by the explicit compatibility and performance success criteria above.
