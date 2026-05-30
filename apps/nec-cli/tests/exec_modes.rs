@@ -403,7 +403,6 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
         "expected compatibility-profile warning to remain on stderr, got:\n{stderr}"
     );
 }
-
 #[test]
 fn dropin_alias_run_does_not_create_files_in_working_directory() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -413,7 +412,11 @@ fn dropin_alias_run_does_not_create_files_in_working_directory() {
 
     let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
         .expect("failed to read sandbox before run")
-        .map(|entry| entry.expect("failed to read sandbox entry before run").path())
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry before run")
+                .path()
+        })
         .collect();
     assert!(
         before_entries.is_empty(),
@@ -444,7 +447,11 @@ fn dropin_alias_run_does_not_create_files_in_working_directory() {
 
     let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
         .expect("failed to read sandbox after run")
-        .map(|entry| entry.expect("failed to read sandbox entry after run").path())
+        .map(|entry| {
+            entry
+                .expect("failed to read sandbox entry after run")
+                .path()
+        })
         .collect();
 
     assert!(
