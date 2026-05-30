@@ -718,3 +718,151 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_does_not_create_files_in_working_
         "drop-in alias explicit-exec missing-deck run must not create files in working directory; got: {after_entries:?}"
     );
 }
+
+#[test]
+fn fournec2_alias_keeps_report_on_stdout_and_warning_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("4nec2-kernel");
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run 4nec2 alias '{}' for stream contract test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert!(
+        output.status.success(),
+        "4nec2 alias run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+        "expected stable report header on stdout, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("drop-in compatibility profile detected by binary name"),
+        "drop-in compatibility warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("FNEC FEEDPOINT REPORT"),
+        "stderr must not contain report output, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "hybrid");
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("nec2dxs3k0");
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .env_remove("FNEC_ACCEL_STUB_GPU")
+        .arg(&deck_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' with explicit exec for stream contract test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert!(
+        output.status.success(),
+        "drop-in alias explicit-exec run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+        "expected stable report header on stdout, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("preserving explicit --exec=cpu"),
+        "explicit-exec preservation warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("preserving explicit --exec=cpu"),
+        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("FNEC FEEDPOINT REPORT"),
+        "stderr must not contain report output, got:\n{stderr}"
+    );
+    assert_diag_field(&stderr, "exec", "cpu");
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_contract() {
+    let alias = create_dropin_alias("nec2dxs3k0");
+    let bogus_path = test_tmp_dir().join("fnec-dropin-explicit-missing-stream.nec");
+    let _ = fs::remove_file(&bogus_path);
+
+    let output = Command::new(&alias)
+        .arg("--exec")
+        .arg("cpu")
+        .arg(&bogus_path)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to run drop-in alias '{}' with explicit exec for missing-deck stream contract test: {e}",
+                alias.display()
+            )
+        });
+
+    let _ = fs::remove_file(&alias);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "missing deck under explicit-exec drop-in alias must exit with code 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stdout.is_empty(),
+        "expected no stdout on explicit-exec missing-deck error, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("error:"),
+        "expected error message on stderr for missing deck, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("preserving explicit --exec=cpu"),
+        "expected explicit-exec preservation warning to remain on stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("FNEC FEEDPOINT REPORT"),
+        "stderr must not contain report output on explicit-exec missing-deck errors, got:\n{stderr}"
+    );
+}
