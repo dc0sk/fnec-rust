@@ -3,12 +3,20 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn test_tmp_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(".tmp/nec-cli-tests");
+    fs::create_dir_all(&dir).expect("failed to create repo-local test tmp dir");
+    dir
+}
+
 fn write_temp_deck(prefix: &str, body: &str) -> PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{prefix}-{now}.nec"));
+    let path = test_tmp_dir().join(format!("fnec-{prefix}-{now}.nec"));
     fs::write(&path, body).expect("failed to write temporary deck");
     path
 }
@@ -235,7 +243,8 @@ fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
 #[test]
 fn nonexistent_deck_exits_with_code_1_and_error_on_stderr() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let bogus_path = std::env::temp_dir().join("fnec-definitely-does-not-exist.nec");
+    let bogus_path = test_tmp_dir().join("fnec-definitely-does-not-exist.nec");
+    let _ = fs::remove_file(&bogus_path);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
