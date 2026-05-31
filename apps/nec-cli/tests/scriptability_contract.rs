@@ -578,3 +578,189 @@ fn fournec2_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
         "missing-deck read error must not appear on stdout, got:\n{stdout}"
     );
 }
+
+#[test]
+fn fournec2_alias_bench_csv_stays_on_stderr_not_stdout() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("4nec2-kernel");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--bench-format")
+        .arg("csv")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run 4nec2 alias for bench csv stream test: {e}"));
+
+    assert!(
+        output.status.success(),
+        "4nec2 alias failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("bench_csv:"),
+        "expected benchmark csv record in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("bench_csv:"),
+        "stdout must stay report-only for parsers, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected drop-in warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("drop-in compatibility profile detected by binary name"),
+        "drop-in warning must not appear on stdout, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_bench_csv_stays_on_stderr_not_stdout() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+    let alias = create_dropin_alias("nec2dxs3k0");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+    let output = Command::new(&alias)
+        .arg("--solver")
+        .arg("hallen")
+        .arg("--exec")
+        .arg("cpu")
+        .arg("--bench-format")
+        .arg("csv")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run explicit-exec drop-in alias for bench csv stream test: {e}")
+        });
+
+    assert!(
+        output.status.success(),
+        "explicit-exec drop-in alias failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("bench_csv:"),
+        "expected benchmark csv record in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("bench_csv:"),
+        "stdout must stay report-only for parsers, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("preserving explicit --exec=cpu"),
+        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("preserving explicit --exec=cpu"),
+        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dropin_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let alias = create_dropin_alias("nec2dxs500");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let bogus_path = test_tmp_dir().join("fnec-nec2dxs-missing-stream.nec");
+    let _ = fs::remove_file(&bogus_path);
+
+    let output = Command::new(&alias)
+        .arg(&bogus_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run drop-in alias for missing-deck stream test: {e}"));
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit code 1 for missing deck under drop-in alias"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("drop-in compatibility profile detected by binary name"),
+        "expected drop-in warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot read"),
+        "expected file-read error in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("FNEC FEEDPOINT REPORT"),
+        "stdout must have no report output on missing-deck error, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("drop-in compatibility profile detected by binary name"),
+        "drop-in warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("cannot read"),
+        "missing-deck read error must not appear on stdout, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let alias = create_dropin_alias("nec2dxs3k0");
+    let _alias_cleanup = TempPathCleanup::file(alias.clone());
+    let bogus_path = test_tmp_dir().join("fnec-explicit-nec2dxs-missing-stream.nec");
+    let _ = fs::remove_file(&bogus_path);
+
+    let output = Command::new(&alias)
+        .arg("--exec")
+        .arg("cpu")
+        .arg(&bogus_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run explicit-exec drop-in alias for missing-deck stream test: {e}")
+        });
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit code 1 for missing deck under explicit-exec drop-in alias"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("preserving explicit --exec=cpu"),
+        "expected explicit-exec warning in stderr, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot read"),
+        "expected file-read error in stderr, got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("FNEC FEEDPOINT REPORT"),
+        "stdout must have no report output on explicit-exec missing-deck error, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("preserving explicit --exec=cpu"),
+        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("cannot read"),
+        "missing-deck read error must not appear on stdout, got:\n{stdout}"
+    );
+}
