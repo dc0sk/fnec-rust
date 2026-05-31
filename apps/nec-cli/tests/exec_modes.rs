@@ -90,6 +90,17 @@ impl Drop for TempPathCleanup {
     }
 }
 
+fn nec2mp_alias_names() -> [&'static str; 6] {
+    [
+        "nec2dxs500",
+        "nec2dxs1K5",
+        "nec2dxs3k0",
+        "nec2dxs5k0",
+        "nec2dxs8k0",
+        "nec2dxs11k",
+    ]
+}
+
 #[test]
 fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -862,4 +873,374 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_
         !stderr.contains("FNEC FEEDPOINT REPORT"),
         "stderr must not contain report output on explicit-exec missing-deck errors, got:\n{stderr}"
     );
+}
+
+#[test]
+fn nec2mp_alias_matrix_filename_steering_sets_default_exec() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .env_remove("FNEC_ACCEL_STUB_GPU")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for filename steering test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "fnec drop-in alias '{alias_name}' failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected compatibility-profile warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert_diag_field(&stderr, "exec", "hybrid");
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_explicit_exec_cpu_overrides_filename_steering() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--exec")
+            .arg("cpu")
+            .env_remove("FNEC_ACCEL_STUB_GPU")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for explicit exec override test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "fnec explicit-exec drop-in alias '{alias_name}' failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("preserving explicit --exec=cpu"),
+            "expected explicit exec preservation warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert_diag_field(&stderr, "exec", "cpu");
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_keeps_report_on_stdout_and_warning_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .env_remove("FNEC_ACCEL_STUB_GPU")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for stream contract test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "fnec drop-in alias '{alias_name}' failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+            "expected stable report header on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("drop-in compatibility profile detected by binary name"),
+            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected compatibility-profile warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("FNEC FEEDPOINT REPORT"),
+            "stderr must not contain report output for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert_diag_field(&stderr, "exec", "hybrid");
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_stream_contract() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+        let bogus_path = test_tmp_dir().join(format!("fnec-{alias_name}-missing.nec"));
+        let _ = fs::remove_file(&bogus_path);
+
+        let output = Command::new(&alias)
+            .arg(&bogus_path)
+            .current_dir(&workspace_root)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for missing-deck contract test: {e}")
+            });
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "missing deck under alias '{alias_name}' must exit with code 1; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stdout.is_empty(),
+            "expected no stdout on missing-deck error for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("error:"),
+            "expected error message on stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected compatibility-profile warning to remain on stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_run_does_not_create_files_in_working_directory() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let sandbox = create_sandbox_dir(&format!("dropin-cwd-{alias_name}-sandbox"));
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+        let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+        let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+            .expect("failed to read sandbox before run")
+            .map(|entry| {
+                entry
+                    .expect("failed to read sandbox entry before run")
+                    .path()
+            })
+            .collect();
+        assert!(
+            before_entries.is_empty(),
+            "expected empty sandbox before run for alias '{alias_name}', got: {before_entries:?}"
+        );
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .env_remove("FNEC_ACCEL_STUB_GPU")
+            .arg(&deck_path)
+            .current_dir(&sandbox)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for file-side-effect contract test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "drop-in alias '{alias_name}' run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+            .expect("failed to read sandbox after run")
+            .map(|entry| {
+                entry
+                    .expect("failed to read sandbox entry after run")
+                    .path()
+            })
+            .collect();
+
+        assert!(
+            after_entries.is_empty(),
+            "drop-in alias '{alias_name}' run must not create files in working directory; got: {after_entries:?}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_missing_deck_does_not_create_files_in_working_directory() {
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let sandbox = create_sandbox_dir(&format!("dropin-cwd-{alias_name}-missing-sandbox"));
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+        let _sandbox_cleanup = TempPathCleanup::dir(sandbox.clone());
+
+        let bogus_path = test_tmp_dir().join(format!("fnec-{alias_name}-missing-cwd.nec"));
+        let _ = fs::remove_file(&bogus_path);
+
+        let before_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+            .expect("failed to read sandbox before missing-deck run")
+            .map(|entry| {
+                entry
+                    .expect("failed to read sandbox entry before missing-deck run")
+                    .path()
+            })
+            .collect();
+        assert!(
+            before_entries.is_empty(),
+            "expected empty sandbox before missing-deck run for alias '{alias_name}', got: {before_entries:?}"
+        );
+
+        let output = Command::new(&alias)
+            .arg(&bogus_path)
+            .current_dir(&sandbox)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' for missing-deck side-effect contract test: {e}")
+            });
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "missing deck under alias '{alias_name}' must exit with code 1; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let after_entries: Vec<PathBuf> = fs::read_dir(&sandbox)
+            .expect("failed to read sandbox after missing-deck run")
+            .map(|entry| {
+                entry
+                    .expect("failed to read sandbox entry after missing-deck run")
+                    .path()
+            })
+            .collect();
+
+        assert!(
+            after_entries.is_empty(),
+            "drop-in alias '{alias_name}' missing-deck run must not create files in working directory; got: {after_entries:?}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--exec")
+            .arg("cpu")
+            .env_remove("FNEC_ACCEL_STUB_GPU")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' with explicit exec for stream contract test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "drop-in alias '{alias_name}' explicit-exec run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stdout.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"),
+            "expected stable report header on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("preserving explicit --exec=cpu"),
+            "explicit-exec warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("preserving explicit --exec=cpu"),
+            "expected explicit-exec preservation warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("FNEC FEEDPOINT REPORT"),
+            "stderr must not contain report output for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert_diag_field(&stderr, "exec", "cpu");
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_contract() {
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+        let bogus_path =
+            test_tmp_dir().join(format!("fnec-{alias_name}-explicit-missing-stream.nec"));
+        let _ = fs::remove_file(&bogus_path);
+
+        let output = Command::new(&alias)
+            .arg("--exec")
+            .arg("cpu")
+            .arg(&bogus_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run alias '{alias_name}' with explicit exec for missing-deck stream contract test: {e}")
+            });
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "missing deck under explicit-exec alias '{alias_name}' must exit with code 1; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stdout.is_empty(),
+            "expected no stdout on explicit-exec missing-deck error for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("error:"),
+            "expected error message on stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("preserving explicit --exec=cpu"),
+            "expected explicit-exec warning to remain on stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("FNEC FEEDPOINT REPORT"),
+            "stderr must not contain report output on explicit-exec missing-deck errors for alias '{alias_name}', got:\n{stderr}"
+        );
+    }
 }
