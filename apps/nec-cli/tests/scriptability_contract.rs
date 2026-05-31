@@ -569,4 +569,12 @@ fn fournec2_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
         !stdout.contains("FNEC FEEDPOINT REPORT"),
         "stdout must have no report output on missing-deck error, got:\n{stdout}"
     );
+    assert!(
+        !stdout.contains("drop-in compatibility profile detected by binary name"),
+        "drop-in warning must not appear on stdout, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("cannot read"),
+        "missing-deck read error must not appear on stdout, got:\n{stdout}"
+    );
 }
