@@ -766,7 +766,6 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_stde
         "missing-deck read error must not appear on stdout, got:\n{stdout}"
     );
 }
-
 #[test]
 fn fournec2_alias_explicit_exec_cpu_bench_json_stays_on_stderr_not_stdout() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
