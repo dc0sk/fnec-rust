@@ -74,6 +74,17 @@ impl Drop for TempPathCleanup {
     }
 }
 
+fn nec2mp_alias_names() -> [&'static str; 6] {
+    [
+        "nec2dxs500",
+        "nec2dxs1K5",
+        "nec2dxs3k0",
+        "nec2dxs5k0",
+        "nec2dxs8k0",
+        "nec2dxs11k",
+    ]
+}
+
 #[test]
 fn report_headers_are_machine_parseable_on_stdout() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -969,4 +980,189 @@ fn fournec2_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
         !stdout.contains("FNEC FEEDPOINT REPORT"),
         "stdout must have no report output on 4nec2 alias no-arg invocation, got:\n{stdout}"
     );
+}
+
+#[test]
+fn nec2mp_alias_matrix_bench_json_stays_on_stderr_not_stdout() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--bench-format")
+            .arg("json")
+            .arg(&deck_path)
+            .current_dir(&workspace_root)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run nec2mp alias '{alias_name}' for bench json stream test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "nec2mp alias '{alias_name}' failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stderr.contains("bench_json:{"),
+            "expected benchmark json record in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("bench_json:{"),
+            "stdout must stay report-only for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("drop-in compatibility profile detected by binary name"),
+            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_bench_csv_stays_on_stderr_not_stdout() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--bench-format")
+            .arg("csv")
+            .arg(&deck_path)
+            .current_dir(&workspace_root)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run nec2mp alias '{alias_name}' for bench csv stream test: {e}")
+            });
+
+        assert!(
+            output.status.success(),
+            "nec2mp alias '{alias_name}' failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stderr.contains("bench_csv:"),
+            "expected benchmark csv record in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("bench_csv:"),
+            "stdout must stay report-only for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("drop-in compatibility profile detected by binary name"),
+            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+        let bogus_path = test_tmp_dir().join(format!("fnec-{alias_name}-missing-stream.nec"));
+        let _ = fs::remove_file(&bogus_path);
+
+        let output = Command::new(&alias)
+            .arg(&bogus_path)
+            .current_dir(&workspace_root)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to run nec2mp alias '{alias_name}' for missing-deck stream test: {e}"
+                )
+            });
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "expected exit code 1 for missing deck under alias '{alias_name}'"
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stderr.contains("drop-in compatibility profile detected by binary name"),
+            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("cannot read"),
+            "expected file-read error in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("FNEC FEEDPOINT REPORT"),
+            "stdout must have no report output on missing-deck error for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("drop-in compatibility profile detected by binary name"),
+            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("cannot read"),
+            "missing-deck read error must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn nec2mp_alias_matrix_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    for alias_name in nec2mp_alias_names() {
+        let alias = create_dropin_alias(alias_name);
+        let _alias_cleanup = TempPathCleanup::file(alias.clone());
+
+        let output = Command::new(&alias)
+            .current_dir(&workspace_root)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("Failed to run nec2mp alias '{alias_name}' for no-arg test: {e}")
+            });
+
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "expected exit code 2 for no-arg invocation under alias '{alias_name}'"
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            stderr.contains("Usage: fnec"),
+            "expected usage text in stderr for alias '{alias_name}', got:\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("FNEC FEEDPOINT REPORT"),
+            "stdout must have no report output on no-arg invocation for alias '{alias_name}', got:\n{stdout}"
+        );
+    }
 }
