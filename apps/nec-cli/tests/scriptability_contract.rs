@@ -683,7 +683,9 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
         .arg(&bogus_path)
         .current_dir(&workspace_root)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run drop-in alias for missing-deck stream test: {e}"));
+        .unwrap_or_else(|e| {
+            panic!("Failed to run drop-in alias for missing-deck stream test: {e}")
+        });
 
     assert_eq!(
         output.status.code(),
