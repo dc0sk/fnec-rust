@@ -1,0 +1,111 @@
+name: Benchmark Dashboard
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: benchmark-${{ runner.os }}-
+
+      - name: Build release binary
+        run: cargo build --release -p nec-cli
+
+      - name: Run three-mode benchmark matrix
+        env:
+          FNEC_BENCH_RUNS: "3"
+          FNEC_BENCH_DECKS: "corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec"
+          FNEC_BENCH_SOLVERS: "hallen pulse"
+        run: |
+          chmod +x scripts/run-benchmark-matrix.sh
+          bash scripts/run-benchmark-matrix.sh benchmark-result.json
+
+      - name: Compare against CI baseline
+        id: compare
+        run: |
+          chmod +x scripts/benchmark-compare-json.sh
+          if [[ -f benchmarks/ci-baseline.json ]]; then
+            if bash scripts/benchmark-compare-json.sh \
+                  benchmarks/ci-baseline.json \
+                  benchmark-result.json \
+                  2>&1 | tee benchmark-compare-report.txt; then
+              echo "gate=passed" >> "$GITHUB_OUTPUT"
+            else
+              echo "gate=failed" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No ci-baseline.json found; skipping regression check."
+            echo "To initialise: run scripts/run-benchmark-matrix.sh benchmarks/ci-baseline.json and commit."
+            echo "gate=no-baseline" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write Actions step summary
+        if: always()
+        run: |
+          {
+            echo "## Benchmark Dashboard"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:------|:------|"
+            echo "| Git SHA | \`${{ github.sha }}\` |"
+            echo "| Runner | \`${{ runner.os }}\` / \`ubuntu-latest\` |"
+            echo "| Gate result | **${{ steps.compare.outputs.gate || 'n/a' }}** |"
+            echo ""
+            echo "### Summary (avg_ms per mode/solver/deck)"
+            echo ""
+            echo "| exec_mode | solver | deck | avg_ms | min_ms | max_ms |"
+            echo "|:----------|:-------|:-----|-------:|-------:|-------:|"
+            jq -r '.summary[] |
+              "| \(.exec_mode) | \(.solver) | \(.deck) | \(.avg_ms) | \(.min_ms) | \(.max_ms) |"
+            ' benchmark-result.json
+            if [[ -f benchmark-compare-report.txt ]]; then
+              echo ""
+              echo "### Regression Report"
+              echo ""
+              echo '```'
+              cat benchmark-compare-report.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result-${{ github.sha }}
+          path: benchmark-result.json
+          retention-days: 90
+
+      - name: Fail on regression
+        if: steps.compare.outputs.gate == 'failed'
+        run: |
+          echo "Benchmark regression gate failed. See the compare report in the step summary."
+          exit 1
+
+  gate-injection-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test that regression gate fires on injected regression
+        run: |
+          chmod +x scripts/benchmark-compare-json.sh scripts/test-benchmark-gate.sh
+          bash scripts/test-benchmark-gate.sh

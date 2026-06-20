@@ -4,7 +4,8 @@
 //! NEC deck parser.
 //!
 //! Parses geometry, program-control, and loading cards:
-//! `CM`, `CE`, `GW`, `GE`, `GN`, `EX`, `FR`, `RP`, `LD`, `TL`, `NT`, `EN`.
+//! `CM`, `CE`, `GW`, `GE`, `GM`, `GR`, `GN`, `EX`, `FR`, `RP`, `LD`, `TL`,
+//! `NT`, `PT`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
@@ -12,8 +13,8 @@
 pub mod template;
 
 use nec_model::card::{
-    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, LdCard, NtCard, RpCard,
-    TlCard,
+    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
+    NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -137,6 +138,32 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 };
                 deck.cards.push(Card::Ge(GeCard {
                     ground_reflection_flag,
+                }));
+            }
+            "GM" => {
+                // GM I1 I2 F1 F2 F3 F4 F5 F6 F7
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GM", &fields, 9)?;
+                deck.cards.push(Card::Gm(GmCard {
+                    tag_increment: parse_u32(lineno, "GM", 1, fields[0])?,
+                    last_tag: parse_u32(lineno, "GM", 2, fields[1])?,
+                    rot_x_deg: parse_f64(lineno, "GM", 3, fields[2])?,
+                    rot_y_deg: parse_f64(lineno, "GM", 4, fields[3])?,
+                    rot_z_deg: parse_f64(lineno, "GM", 5, fields[4])?,
+                    translate_x: parse_f64(lineno, "GM", 6, fields[5])?,
+                    translate_y: parse_f64(lineno, "GM", 7, fields[6])?,
+                    translate_z: parse_f64(lineno, "GM", 8, fields[7])?,
+                    first_tag: parse_u32(lineno, "GM", 9, fields[8])?,
+                }));
+            }
+            "GR" => {
+                // GR I1 I2 F1
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GR", &fields, 3)?;
+                deck.cards.push(Card::Gr(GrCard {
+                    tag_increment: parse_u32(lineno, "GR", 1, fields[0])?,
+                    count: parse_u32(lineno, "GR", 2, fields[1])?,
+                    angle_deg: parse_f64(lineno, "GR", 3, fields[2])?,
                 }));
             }
             "GN" => {
@@ -286,6 +313,19 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         .collect(),
                 }));
             }
+            "PT" => {
+                // PT — transmission-line source card.
+                // Semantics are not yet implemented in the solver; the card is
+                // parsed and stored for explicit deferred-support warnings at
+                // solve time (replaces the previous "unknown card 'PT'" path).
+                let fields = parse_fields(rest);
+                deck.cards.push(Card::Pt(PtCard {
+                    raw_fields: fields
+                        .into_iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
+                }));
+            }
             "EN" => {
                 deck.cards.push(Card::En(EnCard));
                 // Stop at EN per NEC spec.
@@ -376,7 +416,7 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 mod tests {
     use super::*;
     use nec_model::card::{
-        Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GnCard, GwCard, RpCard,
+        Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, RpCard,
     };
 
     /// Minimal half-wave dipole deck used as golden round-trip fixture.
@@ -573,5 +613,95 @@ EN
                 ground_reflection_flag: 0
             })
         );
+    }
+
+    #[test]
+    fn parser_recognises_gm_card() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nGM 0 1 0 0 0 1.0 0 0 1\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let gm =
+            result.deck.cards.iter().find_map(
+                |c| {
+                    if let Card::Gm(gm) = c {
+                        Some(gm)
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert_eq!(
+            gm,
+            Some(&GmCard {
+                tag_increment: 0,
+                last_tag: 1,
+                rot_x_deg: 0.0,
+                rot_y_deg: 0.0,
+                rot_z_deg: 0.0,
+                translate_x: 1.0,
+                translate_y: 0.0,
+                translate_z: 0.0,
+                first_tag: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn parser_recognises_gr_card() {
+        let input = "GW 1 3 0.5 0 1 0.5 0 4 0.001\nGR 1 1 180.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let gr =
+            result.deck.cards.iter().find_map(
+                |c| {
+                    if let Card::Gr(gr) = c {
+                        Some(gr)
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert_eq!(
+            gr,
+            Some(&GrCard {
+                tag_increment: 1,
+                count: 1,
+                angle_deg: 180.0,
+            })
+        );
+    }
+
+    #[test]
+    fn parser_recognises_pt_card() {
+        let input = "GW 1 3 0 0 1 0 0 4 0.001\nPT -1 0 0 0 0 0 0 0 0 0 0 0 0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert!(result.warnings.is_empty());
+
+        let pt =
+            result.deck.cards.iter().find_map(
+                |c| {
+                    if let Card::Pt(pt) = c {
+                        Some(pt)
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert!(pt.is_some());
+        assert_eq!(pt.unwrap().raw_fields.len(), 13);
+    }
+
+    #[test]
+    fn gm_too_few_fields_is_error() {
+        let input = "GM 0 1 0 0\nEN\n";
+        assert!(parse(input).is_err());
+    }
+
+    #[test]
+    fn gr_too_few_fields_is_error() {
+        let input = "GR 1 1\nEN\n";
+        assert!(parse(input).is_err());
     }
 }

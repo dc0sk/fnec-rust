@@ -35,7 +35,7 @@ use solve_session::{
 use std::process::ExitCode;
 use warnings::{
     warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
-    warn_nt_card_deferred_support, warn_pulse_mode_experimental,
+    warn_nt_card_deferred_support, warn_pt_card_deferred_support, warn_pulse_mode_experimental,
 };
 
 fn main() -> ExitCode {
@@ -163,6 +163,7 @@ fn main() -> ExitCode {
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
     warn_nt_card_deferred_support(deck);
+    warn_pt_card_deferred_support(deck);
 
     // --- EP-4: run deck validators before geometry build ------------------
     struct NoExCardValidator;
