@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/worker-deployment.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-06-20
 ---
 
 # Worker Node Deployment Guide
@@ -190,6 +190,71 @@ result messages to stdout.  Send a shutdown command to exit cleanly:
   "error_message": "factorization failed: matrix is singular at this frequency"
 }
 ```
+
+---
+
+## Programmatic Usage (Rust API)
+
+The `nec_worker` crate exposes two worker handle types:
+
+- **`LocalWorkerHandle`** — spawns `fnec worker --stdio` as a subprocess on
+  the local machine.  Used by the CLI when `--workers` flag is absent.
+- **`SshWorkerHandle`** — spawns `ssh <user>@<host> <binary> worker --stdio`
+  as a subprocess.  Used by the controller when `hosts.toml` entries exist.
+
+Both implement the same `dispatch(TaskMessage) -> Result<TaskResult, String>`
+protocol.
+
+### Connecting to a single remote worker
+
+```rust
+use nec_worker::{HostEntry, SshWorkerHandle, WorkerSolverConfig, TaskMessage};
+
+let entry = HostEntry {
+    hostname: "worker1.example.com".to_string(),
+    ssh_user: Some("dc0sk".to_string()),
+    binary_path: Some("/usr/local/bin/fnec".to_string()),
+    cpu_threads_override: None,
+    gpu_weight_override: None,
+};
+
+let mut handle = SshWorkerHandle::connect(&entry)?;
+
+let result = handle.dispatch(&TaskMessage {
+    task_id: "t001".into(),
+    deck_hash: "abc".into(),
+    deck_b64: /* base64-encoded NEC deck */,
+    solver_config: WorkerSolverConfig {
+        basis: "hallen".into(),
+        ground_model: "none".into(),
+    },
+    frequency_hz: 14.175e6,
+})?;
+
+handle.shutdown()?;
+```
+
+### Batch discovery with capability probing
+
+```rust
+use nec_worker::{HostsConfig, connect_all};
+
+let cfg = HostsConfig::from_file("hosts.toml")?;
+let (handles, cache) = connect_all(&cfg);
+
+// `cache` maps hostname -> Capability{cpu_threads, gpu_available, ...}
+// Handles that fail to connect or probe are skipped with a warning.
+```
+
+### SSH connection options
+
+The `SshWorkerHandle::connect` method passes these options to the `ssh`
+binary by default:
+
+| Option | Value | Purpose |
+|---|---|---|
+| `BatchMode` | `yes` | Disable interactive password prompts |
+| `ConnectTimeout` | `5` | Abort after 5 seconds if host is unreachable |
 
 ---
 
