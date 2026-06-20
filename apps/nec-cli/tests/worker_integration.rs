@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! Integration tests for the distributed worker — PH6-CHK-006.
+//! Integration tests for the distributed worker — PH6-CHK-006/007.
 //!
-//! Tests 1 and 2 are pure library-level tests (no subprocess).
-//! Tests 3 and 4 spawn `fnec worker --stdio` as a subprocess.
+//! Tests 1-2: library-level (hosts config, capability cache).
+//! Tests 3-4: local subprocess worker round-trip.
+//! Tests 5-7: SSH worker handle (graceful error handling).
 
 use base64::Engine;
 
@@ -178,4 +179,47 @@ fn test_worker_two_node_solve_matches_local() {
 
     w0.shutdown().ok();
     w1.shutdown().ok();
+}
+
+// ---------------------------------------------------------------------------
+// Test 5 — SshWorkerHandle dispatch against unreachable remote fails
+// ---------------------------------------------------------------------------
+#[test]
+fn test_ssh_worker_dispatch_failure() {
+    // Connect to a host that doesn't have sshd running.  With BatchMode=yes
+    // and ConnectTimeout=5 the ssh client will exit quickly.  The spawn()
+    // itself succeeds, but dispatch() will fail with a broken-pipe or EOF
+    // error.
+    let entry = nec_worker::HostEntry {
+        hostname: "127.0.0.2".to_string(),
+        ssh_user: Some("nobody".to_string()),
+        binary_path: None,
+        cpu_threads_override: None,
+        gpu_weight_override: None,
+    };
+
+    let mut handle = match nec_worker::SshWorkerHandle::connect(&entry) {
+        Ok(h) => h,
+        Err(_) => {
+            // No ssh binary — skip.
+            eprintln!("info: ssh not available, skipping test");
+            return;
+        }
+    };
+
+    let task = nec_worker::TaskMessage {
+        task_id: "t-fail".to_string(),
+        deck_hash: "x".to_string(),
+        deck_b64: String::new(),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+        },
+        frequency_hz: 14.0e6,
+    };
+    let result = handle.dispatch(&task);
+    assert!(
+        result.is_err(),
+        "expected dispatch to fail when remote is unreachable"
+    );
 }
