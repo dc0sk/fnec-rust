@@ -6,6 +6,97 @@
 //! All messages are newline-delimited JSON (one object per line, no embedded newlines).
 //! Maximum message size: 4 MiB.
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_result_ok_roundtrip() {
+        let result = TaskResult::Ok {
+            task_id: "t-42".into(),
+            frequency_hz: 14.2e6,
+            impedance: Impedance {
+                re_ohm: 74.24,
+                im_ohm: 13.90,
+            },
+            vswr_50: 1.5,
+            feedpoint_current_mag: 0.5,
+            feedpoint_current_phase_deg: 10.0,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: TaskResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.task_id(), "t-42");
+        assert!(back.is_ok());
+    }
+
+    #[test]
+    fn task_result_error_roundtrip() {
+        let result = TaskResult::Error {
+            task_id: "t-err".into(),
+            frequency_hz: 14.2e6,
+            error_code: ErrorCode::SingularMatrix,
+            error_message: "matrix is singular".into(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: TaskResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.task_id(), "t-err");
+        assert!(!back.is_ok());
+    }
+
+    #[test]
+    fn task_result_error_code_variants_roundtrip() {
+        let codes = vec![
+            ErrorCode::SingularMatrix,
+            ErrorCode::ParseError,
+            ErrorCode::UnsupportedConfig,
+            ErrorCode::ResourceExhausted,
+            ErrorCode::Internal,
+        ];
+        for code in codes {
+            let json = serde_json::to_string(&code).unwrap();
+            let back: ErrorCode = serde_json::from_str(&json).unwrap();
+            assert_eq!(code, back);
+        }
+    }
+
+    #[test]
+    fn task_message_roundtrip() {
+        let msg = TaskMessage {
+            task_id: "t99".into(),
+            deck_hash: "abc123".into(),
+            deck_b64: "R0VORVJJQyB...".into(),
+            solver_config: WorkerSolverConfig {
+                basis: "hallen".into(),
+                ground_model: "perfect".into(),
+            },
+            frequency_hz: 7.15e6,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: TaskMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.task_id, "t99");
+        assert_eq!(back.solver_config.basis, "hallen");
+        assert!((back.frequency_hz - 7.15e6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn worker_solver_config_defaults() {
+        let cfg = WorkerSolverConfig::default();
+        assert_eq!(cfg.basis, "hallen");
+        assert_eq!(cfg.ground_model, "none");
+    }
+
+    #[test]
+    fn worker_solver_config_roundtrip() {
+        let cfg = WorkerSolverConfig {
+            basis: "sinusoidal".into(),
+            ground_model: "sommerfeld".into(),
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: WorkerSolverConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfg, back);
+    }
+}
+
 use serde::{Deserialize, Serialize};
 
 /// Solver configuration included with each task message.

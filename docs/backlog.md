@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/backlog.md
 status: living
-last_updated: 2026-05-31
+last_updated: 2026-06-20
 ---
 
 # Backlog
@@ -247,7 +247,7 @@ last_updated: 2026-05-31
 	- Sequencing constraint: implementation starts only after full GPU solver support (matrix fill + solve path) is complete and benchmarked.
 	- 2026-05-30 resolution: sequencing constraint and criteria satisfied by completed roadmap gates `PH5-CHK-007` (full GPU solve path complete) and `PH6-CHK-005`/`PH6-CHK-006`/`PH6-CHK-007` (distributed execution design, SSH-backed worker deployment, deterministic work-content/result cache).
 
-- [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
+- [x] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 4-5 / Issue: #24**
 	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
 	- 2026-04-26 assessment: deferred from Phase 2-3 to Phase 4-5 after reviewing real NEC2MP replacement artifacts (`nec2dxs500/1K5/3k0/5k0/8k0/11k` variants plus external install procedure docs). Full drop-in parity likely requires Windows-specific replacement semantics, binary-name matrix handling, and compatibility validation against external tool expectations beyond current CLI contract scope.
 	- 2026-04-26 progress: populated `docs/par011-dropin-evidence-memo.md` with concrete artifact fingerprints/readme findings and added a phased docs-only implementation plan with acceptance tests (`AT-PAR011-*`).

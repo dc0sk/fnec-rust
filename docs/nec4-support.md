@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-06-20
 ---
 
 # NEC-4 Support Boundary
@@ -134,9 +134,10 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 
 | Mode | Status | Notes |
 |:-----|:-------|:------|
-| Hallén (augmented integral equation) | FULL | Validated: $$Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega$$ vs Python reference. Production-ready. |
-| Pocklington pulse basis | EXPERIMENTAL | Known divergence for thin-wire antennas. Do not use. Fixed by sinusoidal basis (Phase 2). |
-| Pocklington continuity basis | EXPERIMENTAL | Rooftop basis transform. Same divergence issue. Phase 2. |
+| Hallén (augmented integral equation) | FULL | Validated: $$Z_{\mathrm{in}} \approx 74.24 + j\,13.90\,\Omega$$ vs Python reference. Production-ready. Supports non-collinear and junctioned multi-wire topologies via segmented hybrid formulation. |
+| Sinusoidal (piecewise-sinusoidal basis) | FULL | NEC2-style `tbf`/`sbf`/`trio` matrix assembly. Residual-guided fallback to Hallen when convergence is poor (`--sin-fallback-rel-max`). |
+| Pocklington pulse basis | EXPERIMENTAL | Known divergence for thin-wire antennas. Prefer sinusoidal or Hallen for production work. |
+| Pocklington continuity basis | EXPERIMENTAL | Rooftop basis transform. Same divergence issue as pulse. |
 
 ## Ground model support
 

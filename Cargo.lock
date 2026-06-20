@@ -2142,13 +2142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nec-tui"
-version = "0.6.0"
-dependencies = [
- "nec_project",
-]
-
-[[package]]
 name = "nec_accel"
 version = "0.6.0"
 dependencies = [

@@ -3,6 +3,81 @@
 
 //! Hosts configuration — parsed from `hosts.toml`.
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_str_parses_two_workers() {
+        let toml = r#"
+[[worker]]
+hostname = "box1"
+ssh_user = "u1"
+cpu_threads_override = 8
+
+[[worker]]
+hostname = "box2"
+binary_path = "/opt/fnec"
+gpu_weight_override = 6.0
+"#;
+        let cfg = HostsConfig::from_str(toml).unwrap();
+        assert_eq!(cfg.worker.len(), 2);
+
+        assert_eq!(cfg.worker[0].hostname, "box1");
+        assert_eq!(cfg.worker[0].ssh_user.as_deref(), Some("u1"));
+        assert_eq!(cfg.worker[0].cpu_threads_override, Some(8));
+        assert!(cfg.worker[0].gpu_weight_override.is_none());
+
+        assert_eq!(cfg.worker[1].hostname, "box2");
+        assert_eq!(cfg.worker[1].binary_path.as_deref(), Some("/opt/fnec"));
+        assert!((cfg.worker[1].gpu_weight_override.unwrap() - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_str_empty_config() {
+        let cfg = HostsConfig::from_str("").unwrap();
+        assert!(cfg.worker.is_empty());
+    }
+
+    #[test]
+    fn from_str_with_optional_fields_omitted() {
+        let toml = r#"
+[[worker]]
+hostname = "minimal"
+"#;
+        let cfg = HostsConfig::from_str(toml).unwrap();
+        assert_eq!(cfg.worker.len(), 1);
+        assert!(cfg.worker[0].ssh_user.is_none());
+        assert!(cfg.worker[0].binary_path.is_none());
+        assert!(cfg.worker[0].cpu_threads_override.is_none());
+        assert!(cfg.worker[0].gpu_weight_override.is_none());
+    }
+
+    #[test]
+    fn from_str_invalid_toml_errors() {
+        let result = HostsConfig::from_str("not valid toml {{{");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_file_nonexistent_path_errors() {
+        let result = HostsConfig::from_file(std::path::Path::new("/nonexistent/hosts.toml"));
+        match result {
+            Err(HostsConfigError::Io(_)) => {}
+            other => panic!("expected Io error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn display_error_roundtrip() {
+        let io_err =
+            HostsConfigError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "nope"));
+        let msg = io_err.to_string();
+        assert!(msg.contains("IO error"));
+        assert!(msg.contains("nope"));
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

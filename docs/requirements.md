@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-06-20
 ---
 
 # Requirements
@@ -11,14 +11,14 @@ last_updated: 2026-04-24
 
 - **DEC-001**: Support both NEC-2 and NEC-4 compatibility goals, delivered incrementally.
 - **DEC-002**: Ground model scope starts simple for fast progress; more complex ground patterns are added later.
-- **DEC-003**: GPU acceleration starts in postprocessing only; matrix fill and solve acceleration are deferred.
+- **DEC-003**: GPU acceleration is implemented via wgpu for the full Hallen solve path (matrix fill + solve + far-field RP). All GPU kernels currently run as CPU-emulation stubs in CI — real GPU dispatch requires wgpu-capable hardware. Acceleration is optional at runtime with reliable CPU fallback.
 - **DEC-004**: User-facing output is 4nec2-like text output only for now; JSON and CSV are out of scope in early phases.
 - **DEC-005**: GUI direction is modern, intuitive, and task-oriented (not a legacy 4nec2 dialog clone).
 - **DEC-006**: Plugin and scripting capabilities are in scope.
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
 - **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
 - **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, competitive with xnec2c-optimize for optimizer-loop orchestration, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
-- **DEC-010**: Hallen solve scope is explicitly constrained to collinear wire topologies aligned with the driven-segment axis; non-collinear Hallen requests must fail fast with a clear diagnostic.
+- **DEC-010**: Hallen solver supports non-collinear and junctioned multi-wire topologies via the segmented hybrid formulation (per-wire local cos(k·s) vectors and KCL junction rows). `--allow-noncollinear-hallen` is a silent no-op retained for backward-compatible invocation.
 - **DEC-011**: Experimental sinusoidal solver mode must be safety-bounded. If residual quality is unstable for supported chain geometry, CLI behavior falls back to a stable Hallen-class solve path with explicit diagnostics.
 
 ## Functional requirements
@@ -159,7 +159,7 @@ Tolerance concept #2 is that each output metric gets a deliberately different to
 - **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability).
 - **GAP-005 (high)**: ~~Define text report format contract for 4nec2-like output (sections, units, precision, ordering).~~ **resolved** 2026-04-23 via PAR-001 v1 contract and CI gate.
 - **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow.
-- **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred).
+- **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred). **Resolved** 2026-05-03: see `docs/gpu-arch.md` (PH5-CHK-001) and `docs/multi-vendor-gpu.md` (PH6-CHK-004).
 - **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility.
 - **GAP-009 (high)**: Define measurable acceptance criteria for 4nec2/EZNEC-grade workflow parity, including result inspection, sweep interaction, and reporting completeness.
 - **GAP-010 (high)**: Define stable automation and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp-style integrations.

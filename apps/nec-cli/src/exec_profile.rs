@@ -15,8 +15,8 @@ fn contains_ascii_token(haystack: &str, token: &str) -> bool {
         let end = start + token.len();
         let left = haystack[..start].chars().next_back();
         let right = haystack[end..].chars().next();
-        let left_ok = left.is_none_or(|c| !c.is_ascii_alphanumeric());
-        let right_ok = right.is_none_or(|c| !c.is_ascii_alphanumeric());
+        let left_ok = left.map_or(true, |c| !c.is_ascii_alphanumeric());
+        let right_ok = right.map_or(true, |c| !c.is_ascii_alphanumeric());
         left_ok && right_ok
     })
 }
