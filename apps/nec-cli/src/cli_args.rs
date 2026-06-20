@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -24,6 +24,7 @@ pub struct ParsedArgs {
     pub sweep_config_path: Option<PathBuf>,
     pub vars_path: Option<PathBuf>,
     pub sin_fallback_rel_max_cli: Option<f64>,
+    pub hosts_path: Option<PathBuf>,
     pub path: PathBuf,
 }
 
@@ -38,6 +39,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut sweep_config_path: Option<PathBuf> = None;
     let mut vars_path: Option<PathBuf> = None;
     let mut sin_fallback_rel_max_cli: Option<f64> = None;
+    let mut hosts_path: Option<PathBuf> = None;
     let mut deck_path: Option<PathBuf> = None;
 
     let mut i = 1usize;
@@ -165,6 +167,16 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 }
                 vars_path = Some(PathBuf::from(&args[i]));
             }
+            "--hosts" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --hosts (expected: path to hosts.toml file)"
+                            .to_string(),
+                    );
+                }
+                hosts_path = Some(PathBuf::from(&args[i]));
+            }
             "--sin-fallback-rel-max" => {
                 i += 1;
                 if i >= args.len() {
@@ -211,6 +223,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         sweep_config_path,
         vars_path,
         sin_fallback_rel_max_cli,
+        hosts_path,
         path,
     })
 }

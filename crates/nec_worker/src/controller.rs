@@ -17,6 +17,7 @@ use crate::protocol::{TaskMessage, TaskResult};
 ///
 /// Used directly in integration tests and as the building block for the
 /// SSH-backed worker deployment in PH6-CHK-006.
+#[derive(Debug)]
 pub struct LocalWorkerHandle {
     child: Child,
     stdin: ChildStdin,

@@ -224,6 +224,43 @@ fn missing_deck_path_reports_contract_error() {
 }
 
 #[test]
+fn missing_hosts_value_reports_contract_error() {
+    let output = run_fnec(&["--hosts"]);
+    assert_eq!(output.status.code(), Some(2));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing value after --hosts"),
+        "missing --hosts parse error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("expected: path to hosts.toml file"),
+        "missing expected-path hint in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn hosts_nonexistent_file_reports_error() {
+    let deck = fixture_deck("dipole-freesp-51seg.nec");
+    let output = run_fnec(&[
+        "--hosts",
+        "/tmp/definitely-does-not-exist.toml",
+        deck.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error:"),
+        "expected error in stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("IO error reading hosts config"),
+        "expected IO error message in stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn all_core_flags_combination_runs_successfully() {
     let deck = fixture_deck("dipole-freesp-51seg.nec");
     let output = run_fnec(&[

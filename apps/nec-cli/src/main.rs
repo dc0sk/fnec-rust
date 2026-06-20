@@ -28,11 +28,16 @@ use nec_solver::{
     build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
     wire_endpoints_from_segs, FarFieldPoint,
 };
+use nec_worker::{
+    encode_deck, HostsConfig, TaskMessage, TaskResult, WorkerPool, WorkerSolverConfig,
+};
 use solve_session::{
-    execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, PulseRhsMode, SolverMode,
-    SweepPointSummary, SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
+    execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
+    FrequencySolveResult, PulseRhsMode, SolverMode, SweepPointSummary,
+    SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
+use std::time::Instant;
 use warnings::{
     warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
     warn_nt_card_deferred_support, warn_pt_card_deferred_support, warn_pulse_mode_experimental,
@@ -72,6 +77,7 @@ fn main() -> ExitCode {
         sweep_config_path,
         vars_path,
         sin_fallback_rel_max_cli,
+        hosts_path,
         path,
     } = match parse_args(&args) {
         Ok(v) => v,
@@ -229,6 +235,23 @@ fn main() -> ExitCode {
 
     warn_execution_mode_fallback(execution_mode);
 
+    // ------------------------------------------------------------------
+    // Distributed solve via --hosts
+    // ------------------------------------------------------------------
+    if let Some(ref hosts_path) = hosts_path {
+        return run_distributed_solve(
+            &input,
+            &freqs_hz,
+            hosts_path,
+            output_format,
+            enable_benchmarking,
+            bench_format,
+            solver_mode,
+            &path,
+        );
+    }
+    // ------------------------------------------------------------------
+
     let segs = match build_geometry(deck) {
         Ok(s) => s,
         Err(e) => {
@@ -310,6 +333,232 @@ fn main() -> ExitCode {
             "warning: --exec hybrid dispatched {gpu_stub_count} frequency point(s) to accelerator stub backend; solving with CPU emulation"
         );
     }
+
+    if enable_benchmarking && bench_format == BenchFormat::Csv {
+        emit_bench_csv_header();
+    }
+
+    let bench_target = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let bench_deck = path.display().to_string();
+    let bench_solver = solver_mode.as_str().to_string();
+    let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
+    let mut json_records: Vec<String> = Vec::new();
+
+    for (fidx, result, elapsed_ms) in solved {
+        let solved_point = match result {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        if output_format == OutputFormat::Text {
+            if fidx > 0 {
+                println!();
+            }
+            print!("{}", solved_point.report);
+        }
+        if let Some(summary) = solved_point.sweep_summary {
+            if output_format == OutputFormat::Json {
+                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
+                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
+                json_records.push(format!(
+                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
+                    freq_mhz = summary.freq_mhz,
+                    tag = summary.tag,
+                    seg = summary.seg,
+                    z_re = summary.z_re,
+                    z_im = summary.z_im,
+                    z_abs = z_abs,
+                    z_arg_deg = z_arg_deg,
+                ));
+            }
+            sweep_rows.push(summary);
+        }
+        eprintln!("{}", solved_point.diag_line);
+
+        if enable_benchmarking {
+            let run = fidx + 1;
+            match bench_format {
+                BenchFormat::Human => {}
+                BenchFormat::Csv => emit_bench_record_csv(
+                    &bench_target,
+                    &bench_deck,
+                    &bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+                BenchFormat::Json => emit_bench_record_json(
+                    &bench_target,
+                    &bench_deck,
+                    &bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+            }
+        }
+    }
+
+    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
+        println!();
+        println!("SWEEP_POINTS");
+        println!("N_POINTS {}", sweep_rows.len());
+        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
+        for row in sweep_rows {
+            println!(
+                "{:.6} {} {} {:.6} {:.6}",
+                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
+            );
+        }
+    }
+
+    if output_format == OutputFormat::Json {
+        println!("[{records}]", records = json_records.join(","));
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// Distributed solve via `--hosts`.
+///
+/// Loads the hosts config, creates a worker pool, base64-encodes the deck, and
+/// dispatches one task per frequency point.  Results are collected and emitted
+/// in the same output format as the local solve path.
+#[allow(clippy::too_many_arguments)]
+fn run_distributed_solve(
+    input: &str,
+    freqs_hz: &[f64],
+    hosts_path: &std::path::Path,
+    output_format: OutputFormat,
+    enable_benchmarking: bool,
+    bench_format: BenchFormat,
+    solver_mode: SolverMode,
+    path: &std::path::Path,
+) -> ExitCode {
+    let cfg = match HostsConfig::from_file(hosts_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if cfg.worker.is_empty() {
+        eprintln!(
+            "error: --hosts file '{}' contains no [[worker]] entries",
+            hosts_path.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let mut pool = WorkerPool::new_ssh_skip_failures(&cfg.worker);
+    if pool.is_empty() {
+        eprintln!(
+            "error: no workers could be reached from '{}'",
+            hosts_path.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let deck_b64 = encode_deck(input);
+    let deck_hash = "na".to_string(); // informational; worker does not verify
+    let basis = solver_mode.as_str().to_string();
+    let solver_config = WorkerSolverConfig {
+        basis,
+        ..WorkerSolverConfig::default()
+    };
+
+    let n = freqs_hz.len();
+    let mut solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)> =
+        Vec::with_capacity(n);
+
+    for (fidx, &freq_hz) in freqs_hz.iter().enumerate() {
+        let task_id = format!("{deck_hash}-{fidx}");
+        let task = TaskMessage {
+            task_id,
+            deck_hash: deck_hash.clone(),
+            deck_b64: deck_b64.clone(),
+            solver_config: solver_config.clone(),
+            frequency_hz: freq_hz,
+        };
+
+        let start = Instant::now();
+        let result = match pool.dispatch(&task) {
+            Ok((
+                TaskResult::Ok {
+                    impedance,
+                    vswr_50,
+                    feedpoint_current_mag,
+                    feedpoint_current_phase_deg,
+                    ..
+                },
+                label,
+            )) => {
+                let freq_mhz = freq_hz / 1e6;
+                let report = format!(
+                    "FEEDPOINTS\nFREQ {freq_mhz}\nZ {re} {im}\nVSWR 50 {vswr}\nFEEDPOINT CURRENT {mag} {phase}\n",
+                    freq_mhz = freq_mhz,
+                    re = impedance.re_ohm,
+                    im = impedance.im_ohm,
+                    vswr = vswr_50,
+                    mag = feedpoint_current_mag,
+                    phase = feedpoint_current_phase_deg,
+                );
+                let diag_line = format!(
+                    "diag: mode=distributed freq_mhz={freq_mhz:.6} z_abs={:.6e} vswr={:.6} worker={label}",
+                    (impedance.re_ohm * impedance.re_ohm + impedance.im_ohm * impedance.im_ohm).sqrt(),
+                    vswr_50,
+                );
+                let bench = BenchRecord {
+                    mode: "distributed".to_string(),
+                    pulse_rhs: "unknown".to_string(),
+                    exec: "ssh".to_string(),
+                    freq_mhz,
+                    abs_res: 0.0,
+                    rel_res: 0.0,
+                    diag_spread: 0.0,
+                    sin_rel_res: 0.0,
+                };
+                let sweep_summary = Some(SweepPointSummary {
+                    freq_mhz,
+                    tag: 0,
+                    seg: 0,
+                    z_re: impedance.re_ohm,
+                    z_im: impedance.im_ohm,
+                });
+                Ok(FrequencySolveResult {
+                    report,
+                    diag_line,
+                    bench,
+                    sweep_summary,
+                })
+            }
+            Ok((
+                TaskResult::Error {
+                    frequency_hz,
+                    error_code,
+                    error_message,
+                    ..
+                },
+                label,
+            )) => Err(format!(
+                "worker '{label}' failed at {frequency_hz} Hz: {error_code:?} — {error_message}"
+            )),
+            Err(e) => Err(e),
+        };
+        let elapsed_ms = start.elapsed().as_millis();
+        solved.push((fidx, result, elapsed_ms));
+    }
+
+    // Drop pool explicitly to shut down workers before output
+    pool.shutdown_all();
+
+    // --- output (mirrors local solve path) ---
+    solved.sort_by_key(|(idx, _, _)| *idx);
 
     if enable_benchmarking && bench_format == BenchFormat::Csv {
         emit_bench_csv_header();
