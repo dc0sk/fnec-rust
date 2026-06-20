@@ -96,3 +96,12 @@ pub(super) fn warn_nt_card_deferred_support(deck: &nec_model::deck::NecDeck) {
         );
     }
 }
+
+pub(super) fn warn_pt_card_deferred_support(deck: &nec_model::deck::NecDeck) {
+    let has_pt = deck.cards.iter().any(|c| matches!(c, Card::Pt(_)));
+    if has_pt {
+        eprintln!(
+            "warning: PT card support is currently deferred; PT cards are parsed for portability but ignored at runtime"
+        );
+    }
+}

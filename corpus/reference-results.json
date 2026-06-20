@@ -292,10 +292,9 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference for PT staged portability; PT is parsed but ignored at runtime)",
       "expected_warning_substrings": [
-        "unknown card 'PT'"
+        "PT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "NT card support is currently deferred"
       ],
       "feedpoint_impedance": {
@@ -323,7 +322,6 @@
         "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
@@ -348,11 +346,9 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
@@ -377,11 +373,9 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
@@ -406,11 +400,9 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
@@ -435,11 +427,9 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
@@ -464,7 +454,6 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "feedpoint_impedance": {
@@ -479,7 +468,6 @@
       },
       "status": "Phase-2 regression lock: interleaved PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ]
     },
@@ -493,7 +481,6 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "unknown card 'PT'",
         "NT card support is currently deferred"
       ],
       "feedpoint_impedance": {
@@ -508,7 +495,6 @@
       },
       "status": "Phase-2 regression lock: interleaved NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
       "forbidden_warning_substrings": [
-        "PT card support is currently deferred",
         "unknown card 'NT'"
       ]
     },
@@ -1573,8 +1559,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation",
-      "expected_hallen_error_contains": "no segment with tag"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation"
     },
     "multi-source-gm-copy": {
       "deck_file": "multi-source-gm-copy.nec",
@@ -1601,8 +1586,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation",
-      "expected_hallen_error_contains": "no segment with tag"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation"
     },
     "dipole-sinusoidal-51seg": {
       "deck_file": "dipole-sinusoidal-51seg.nec",

@@ -104,16 +104,16 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 | FR | Frequency specification | `recognized` | FULL | Single frequency and step sweep fully supported. |
 | GE | Geometry end | `recognized` | FULL | Ground-reflection flag preserved; GE I1=1 infers PEC ground. |
 | GF | Scale segments | `unknown` | DEFERRED | Geometry scaling. Phase 2+. |
-| GM | Move segments | `unknown` | PARTIAL | Geometry builder (`nec_solver::geometry`) implements rotate/translate; parser does not yet recognize GM so CLI decks with GM cards produce an unknown-card warning and the GM transform is not applied. Parser recognition is a Phase 3 item. |
+| GM | Move segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for rotate/translate. In-place (`tag_increment=0`) and copy (`tag_increment>0`) modes supported. Broader NEC GM semantics should be reviewed before claiming full parity. |
 | GN | Ground definition | `recognized` | PARTIAL | Types 0/2 finite-conductivity (Fresnel), type 1 PEC image, type -1 free-space implemented. Full Sommerfeld/Norton deferred. |
-| GR | Repeat segments | `unknown` | PARTIAL | Geometry builder implements z-axis rotation repeat; parser does not yet recognize GR so CLI decks with GR cards produce an unknown-card warning and the GR transform is not applied. Parser recognition is a Phase 3 item. |
+| GR | Repeat segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for z-axis rotation repeat. Each copy rotated by cumulative multiple of `angle_deg` with incremented tag numbers. |
 | GW | Wire segment | `recognized` | FULL | Straight wire; tag, segments, endpoints, radius fully supported. |
 | LD | Load impedance | `recognized` | PARTIAL | Types 0–5 implemented (series/parallel RLC, series RL/RC/Z, distributed conductivity). Other types warn and are ignored. |
 | MA | Matériel (material) definition | `unknown` | DEFERRED | Lossy wire materials. Phase 2+. |
 | NE | Program end (NEC-4) | `unknown` | DEFERRED | Extension to EN. Phase 2+. |
 | NM | Program control (NEC-4) | `unknown` | DEFERRED | Version/control flags. Phase 2+. |
 | NT | Network definition | `recognized` | PARTIAL | Parsed for staged portability; solver emits explicit deferred-support warning; NT electrical semantics not applied. |
-| PT | Print/store control | `unknown` | PARTIAL | Model has `PtCard`; `warn_pt_card_deferred_support` function defined but not yet called from main; parser does not recognize PT. Portability path only. |
+| PT | Print/store control | `recognized` | PARTIAL | Parsed for staged portability; runtime emits explicit deferred-support warning. Portability path only. |
 | RP | Radiation pattern request | `recognized` | PARTIAL | THETA/PHI far-field pattern executed and reported in `RADIATION_PATTERN` section; no near-field, no JSON/CSV/plot export. |
 | SP | Special segment | `unknown` | OUT OF SCOPE | Complex geometry types (spheres, absorbers) belong in CAD tools. |
 | SY | Symbol definition | `unknown` | OUT OF SCOPE | Parametric expressions; use pre-processing/template tool (PH3-CHK-007). |

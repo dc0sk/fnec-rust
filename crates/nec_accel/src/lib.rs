@@ -5,35 +5,46 @@
 //!
 //! # Kernel status
 //!
-//! **All GPU kernels in this crate are currently stubs.**  Every kernel runs on
-//! the CPU using the same numerical algorithms as `nec_solver`.  No real GPU
-//! dispatch occurs.  The stub infrastructure exists so that the dispatch seam,
-//! timing instrumentation, and hybrid-scheduling logic can be developed and
-//! tested without waiting for a real GPU back-end.
+//! GPU acceleration is implemented in two layers:
+//!
+//! - **`gpu_kernels`** — CPU-emulation stubs (always compiled).  These use the
+//!   same numerical algorithms as `nec_solver` and serve as the reference for
+//!   parity testing.  No real GPU dispatch occurs in this module.
+//!
+//! - **`wgpu_device`** — real wgpu GPU dispatch (gated behind `feature = "wgpu"`).
+//!   Contains WGSL compute shaders for far-field radiation pattern (`RP`) and
+//!   Hallén Z-matrix fill.  These paths run on any wgpu-compatible adapter
+//!   (Vulkan, Metal, DX12, or software rasteriser).
 //!
 //! | Kernel / entry point | Module | Status |
 //! |---|---|---|
-//! | `HallenFrGpuKernel` (far-field, Hallén) | `gpu_kernels` | **Stub** — CPU emulation |
-//! | `HallenRhsGpuKernel` (RHS builder) | `gpu_kernels` | **Stub** — CPU emulation |
-//! | `PocklingtonMatrixGpuKernel` (Z-matrix fill) | `gpu_kernels` | **Stub** — CPU emulation |
-//! | `compute_hallen_fr_point_stub` | `gpu_kernels` | **Stub** — CPU emulation |
-//! | `compute_hallen_fr_batch_stub` | `gpu_kernels` | **Stub** — CPU emulation |
-//! | `fill_zmatrix_wgpu` | `wgpu_device` (feature `wgpu`) | **Stub** — wgpu scaffolding only |
+//! | `HallenFrGpuKernel` (far-field Hallén) | `gpu_kernels` | CPU emulation stub |
+//! | `HallenRhsGpuKernel` (RHS builder) | `gpu_kernels` | CPU emulation stub |
+//! | `PocklingtonMatrixGpuKernel` (Z-matrix fill) | `gpu_kernels` | CPU emulation stub |
+//! | `compute_hallen_fr_point_stub` | `gpu_kernels` | CPU emulation stub |
+//! | `compute_hallen_fr_batch_stub` | `gpu_kernels` | CPU emulation stub |
+//! | `run_rp_farfield_wgpu` | `wgpu_device` | **Real wgpu** — WGSL compute shader |
+//! | `run_rp_farfield_batch_wgpu` | `wgpu_device` | **Real wgpu** — batch WGSL dispatch |
+//! | `fill_zmatrix_wgpu` | `wgpu_device` | **Real wgpu** — N×N Z-matrix fill |
+//!
+//! **Known gaps:**
+//! - No GPU linear solver (LU decomposition runs on CPU).
+//! - `run_rp_farfield_wgpu` gain fields are hardcoded to sentinel `-999.99`;
+//!   only u_theta / u_phi are computed by the shader.
+//! - All GPU computations use f32 precision (f64 downcast).
 //!
 //! # Dispatch policy
 //!
-//! [`dispatch_frequency_point`] always returns [`DispatchDecision::FallbackToCpu`]
-//! unless the environment variable `FNEC_ACCEL_STUB_GPU=1` is set, which forces
-//! [`DispatchDecision::RunOnGpu`] for testing the hybrid scheduling path.  Even
-//! then, [`execute_frequency_point`] runs the CPU closure — no real GPU work
-//! is performed.
+//! [`dispatch_frequency_point`] returns [`DispatchDecision::FallbackToCpu`]
+//! by default.  Setting `FNEC_ACCEL_STUB_GPU=1` forces
+//! [`DispatchDecision::RunOnGpu`] for testing the hybrid scheduling path,
+//! but [`execute_frequency_point`] still runs the CPU closure — the real
+//! wgpu path is invoked directly by solver tests, not through this dispatch
+//! seam.
 //!
 //! # Roadmap
 //!
-//! Real kernel implementation is tracked under **GAP-007** in
-//! `docs/requirements.md` (GPU rollout from postprocessing to matrix fill and
-//! solve, FOSS-first per DEC-008).  Until GAP-007 is resolved this crate
-//! provides the dispatch seam only.
+//! Remaining GPU work is tracked under DEC-003 in `docs/requirements.md`.
 
 pub mod gpu_kernels;
 
