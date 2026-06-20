@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fnec-rust Benchmark Dashboard</title>
+<style>
+  :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #58a6ff; --border: #30363d; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; background: var(--bg); color: var(--fg); padding: 2rem; }
+  h1 { color: var(--accent); margin-bottom: 0.5rem; }
+  p { margin-bottom: 1.5rem; }
+  .status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 2rem; font-size: 0.85rem; font-weight: 600; }
+  .ok { background: #1b6b3a; color: #7ee787; }
+  .fail { background: #6b1b1b; color: #ff7b72; }
+  .warn { background: #6b5b1b; color: #ffd072; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0 2rem; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--accent); border-bottom: 2px solid var(--border); }
+  td { font-variant-numeric: tabular-nums; }
+  .sha { font-family: monospace; font-size: 0.85rem; color: #8b949e; }
+  .meta { margin-bottom: 2rem; padding: 1rem; background: #161b22; border: 1px solid var(--border); border-radius: 0.5rem; }
+  .meta dt { color: var(--accent); font-weight: 600; margin-top: 0.5rem; }
+  .meta dd { margin-left: 1rem; }
+  .empty { text-align: center; padding: 3rem; color: #8b949e; }
+</style>
+</head>
+<body>
+<h1>fnec-rust Benchmark Dashboard</h1>
+<p>CI benchmark tracking for <code>main</code> across CPU single-thread, CPU multi-thread, and GPU execution modes.</p>
+
+<div class="meta">
+  <dl>
+    <dt>Latest run</dt>
+    <dd>No benchmark data published yet — awaiting first CI run after workflow re-enablement.</dd>
+    <dt>Repository</dt>
+    <dd><a href="https://github.com/dc0sk/fnec-rust">dc0sk/fnec-rust</a></dd>
+    <dt>Benchmark schema</dt>
+    <dd><a href="benchmark-artifact-schema.html">benchmark-artifact-schema.md</a></dd>
+  </dl>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Date</th><th>Commit</th><th>Deck</th><th>Solver</th><th>Mode</th><th>Avg (ms)</th><th>Min (ms)</th><th>Max (ms)</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="9" class="empty">No benchmark artifacts yet. Push to <code>main</code> to trigger the benchmark workflow.</td></tr>
+  </tbody>
+</table>
+
+<p><em>This page is published from the <code>gh-pages</code> branch. Benchmark artifacts are uploaded by the CI workflow and committed here automatically.</em></p>
+</body>
+</html>
