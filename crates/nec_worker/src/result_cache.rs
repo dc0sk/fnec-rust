@@ -1,30 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Simon Keimer (DC0SK)
-
-//! SHA-256-keyed result cache for distributed frequency sweeps.
-//!
-//! # Cache key
-//!
-//! A cache key is the lower-hex SHA-256 digest of the concatenation:
-//!
-//! ```text
-//! {deck_str}\0{basis}\0{ground_model}\0{freq_hz_bits}
-//! ```
-//!
-//! where `freq_hz_bits` is the big-endian IEEE-754 bit pattern of `freq_hz`
-//! formatted as a 16-character hex string.  This guarantees exact, bit-stable
-//! matching regardless of floating-point rounding in the caller.
-//!
-//! # Eviction policy
-//!
-//! The cache is bounded by an optional `max_entries` capacity.  When the
-//! limit is reached, the **oldest inserted entry** is evicted (FIFO order).
-//! The insertion order is tracked with a [`std::collections::VecDeque`] of
-//! keys; on eviction the front of the queue is removed from both the deque
-//! and the HashMap.
-//!
-//! When `max_entries` is `None` the cache is unbounded.
-
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 
@@ -106,11 +79,9 @@ impl ResultCache {
     pub fn insert(&mut self, key: impl Into<String>, result: TaskResult) {
         let key = key.into();
         if let Some(entry) = self.entries.get_mut(&key) {
-            // Replace in-place; don't grow the insertion-order queue.
             *entry = CacheEntry { result };
             return;
         }
-        // Evict oldest if at capacity.
         if let Some(max) = self.max_entries {
             while self.entries.len() >= max {
                 if let Some(oldest) = self.insertion_order.pop_front() {
@@ -137,11 +108,6 @@ impl ResultCache {
     }
 
     /// Remove all entries whose `task_id` starts with `deck_hash`.
-    ///
-    /// This is a convenience helper for invalidating all cached results for a
-    /// particular deck when the deck content changes.  The caller should use
-    /// the same deck hash that was embedded in the `TaskMessage.deck_hash`
-    /// field when the results were computed.
     pub fn invalidate_by_deck_hash(&mut self, deck_hash: &str) {
         let to_remove: Vec<String> = self
             .entries
@@ -177,5 +143,176 @@ impl ResultCache {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_result(task_id: &str) -> TaskResult {
+        TaskResult::Ok {
+            task_id: task_id.into(),
+            frequency_hz: 14.2e6,
+            impedance: crate::protocol::Impedance {
+                re_ohm: 74.24,
+                im_ohm: 13.90,
+            },
+            vswr_50: 1.5,
+            feedpoint_current_mag: 0.5,
+            feedpoint_current_phase_deg: 10.0,
+        }
+    }
+
+    fn sample_config() -> WorkerSolverConfig {
+        WorkerSolverConfig {
+            basis: "hallen".into(),
+            ground_model: "none".into(),
+        }
+    }
+
+    #[test]
+    fn cache_key_stable_for_identical_inputs() {
+        let k1 = cache_key("deck content", &sample_config(), 14.2e6);
+        let k2 = cache_key("deck content", &sample_config(), 14.2e6);
+        assert_eq!(k1, k2);
+        assert_eq!(k1.len(), 64);
+    }
+
+    #[test]
+    fn cache_key_changes_on_deck_change() {
+        let k1 = cache_key("deck A", &sample_config(), 14.2e6);
+        let k2 = cache_key("deck B", &sample_config(), 14.2e6);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn cache_key_changes_on_frequency_change() {
+        let k1 = cache_key("deck", &sample_config(), 14.0e6);
+        let k2 = cache_key("deck", &sample_config(), 14.2e6);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn cache_key_changes_on_config_change() {
+        let c2 = WorkerSolverConfig {
+            basis: "sinusoidal".into(),
+            ..sample_config()
+        };
+        let k1 = cache_key("deck", &sample_config(), 14.2e6);
+        let k2 = cache_key("deck", &c2, 14.2e6);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn cache_hit_after_insert() {
+        let mut cache = ResultCache::new();
+        let key = "k1";
+        assert!(cache.get(key).is_none());
+        cache.insert(key, sample_result("t1"));
+        assert!(cache.get(key).is_some());
+    }
+
+    #[test]
+    fn cache_miss_for_unknown_key() {
+        let cache = ResultCache::new();
+        assert!(cache.get("no-such-key").is_none());
+    }
+
+    #[test]
+    fn cache_invalidate_removes_entry() {
+        let mut cache = ResultCache::new();
+        cache.insert("k", sample_result("t"));
+        assert!(cache.get("k").is_some());
+        cache.invalidate("k");
+        assert!(cache.get("k").is_none());
+    }
+
+    #[test]
+    fn cache_clear_removes_all() {
+        let mut cache = ResultCache::new();
+        cache.insert("a", sample_result("t1"));
+        cache.insert("b", sample_result("t2"));
+        assert_eq!(cache.len(), 2);
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn cache_fifo_eviction_when_at_capacity() {
+        let mut cache = ResultCache::with_capacity(2);
+        cache.insert("k1", sample_result("t1"));
+        cache.insert("k2", sample_result("t2"));
+        assert_eq!(cache.len(), 2);
+        cache.insert("k3", sample_result("t3"));
+        assert_eq!(cache.len(), 2);
+        assert!(cache.get("k1").is_none());
+        assert!(cache.get("k2").is_some());
+        assert!(cache.get("k3").is_some());
+    }
+
+    #[test]
+    fn cache_replace_in_place_does_not_grow_queue() {
+        let mut cache = ResultCache::with_capacity(2);
+        cache.insert("k1", sample_result("t1"));
+        cache.insert("k2", sample_result("t2"));
+        cache.insert("k1", sample_result("t1-again"));
+        assert_eq!(cache.len(), 2);
+        assert!(cache.get("k1").is_some());
+        assert!(cache.get("k2").is_some());
+    }
+
+    #[test]
+    fn invalidate_by_deck_hash_matches_task_id_prefix() {
+        let mut cache = ResultCache::new();
+        cache.insert(
+            "key-a",
+            TaskResult::Ok {
+                task_id: "hash123-freq1".into(),
+                frequency_hz: 14.0e6,
+                impedance: crate::protocol::Impedance {
+                    re_ohm: 70.0,
+                    im_ohm: 10.0,
+                },
+                vswr_50: 1.2,
+                feedpoint_current_mag: 0.6,
+                feedpoint_current_phase_deg: 5.0,
+            },
+        );
+        cache.insert(
+            "key-b",
+            TaskResult::Ok {
+                task_id: "hash999-freq1".into(),
+                frequency_hz: 14.2e6,
+                impedance: crate::protocol::Impedance {
+                    re_ohm: 74.0,
+                    im_ohm: 14.0,
+                },
+                vswr_50: 1.3,
+                feedpoint_current_mag: 0.55,
+                feedpoint_current_phase_deg: 8.0,
+            },
+        );
+        assert_eq!(cache.len(), 2);
+        cache.invalidate_by_deck_hash("hash123");
+        assert_eq!(cache.len(), 1);
+        assert!(cache.get("key-a").is_none());
+        assert!(cache.get("key-b").is_some());
+    }
+
+    #[test]
+    fn cache_is_empty_on_create() {
+        let cache = ResultCache::new();
+        assert!(cache.is_empty());
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn unbounded_cache_never_evicts() {
+        let mut cache = ResultCache::new();
+        for i in 0..10_000 {
+            cache.insert(format!("k{i}"), sample_result(&format!("t{i}")));
+        }
+        assert_eq!(cache.len(), 10_000);
     }
 }

@@ -7,6 +7,79 @@
 //! [`SolveError::UnsupportedConfig`].  This is sufficient for PH6-CHK-006;
 //! additional bases are added in subsequent milestones.
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DIPOLE: &str = include_str!("../../../corpus/dipole-freesp-51seg.nec");
+
+    #[test]
+    fn solve_dipole_at_resonance() {
+        let result = solve_deck_at_frequency(DIPOLE, 14.175e6, "hallen").unwrap();
+        // Free-space half-wave dipole at resonance: ~73 + j13 Ω
+        assert!(
+            result.impedance_re > 50.0 && result.impedance_re < 100.0,
+            "R = {} Ω",
+            result.impedance_re
+        );
+        assert!(
+            result.impedance_im > -20.0 && result.impedance_im < 50.0,
+            "X = {} Ω",
+            result.impedance_im
+        );
+        assert!(result.current_mag > 0.0);
+    }
+
+    #[test]
+    fn solve_rejects_unsupported_basis() {
+        let err = solve_deck_at_frequency(DIPOLE, 14.0e6, "pulse").unwrap_err();
+        assert!(matches!(err, SolveError::UnsupportedConfig(_)));
+    }
+
+    #[test]
+    fn solve_rejects_empty_deck() {
+        let err = solve_deck_at_frequency("", 14.0e6, "hallen").unwrap_err();
+        assert!(
+            matches!(err, SolveError::GeometryError(_)),
+            "empty deck produced: {err}"
+        );
+    }
+
+    #[test]
+    fn solve_rejects_garbage_input() {
+        let err = solve_deck_at_frequency("NOT A NEC DECK", 14.0e6, "hallen").unwrap_err();
+        assert!(
+            matches!(err, SolveError::GeometryError(_)),
+            "garbage input produced: {err}"
+        );
+    }
+
+    #[test]
+    fn solve_no_feedpoint_returns_error() {
+        // Deck with geometry but no EX card.
+        let deck = "CM test\nGW 0 1 0 0 0 0 0 1 0.001\nGE 0\nFR 0 1 0 0 14.175 0\nEN\n";
+        let err = solve_deck_at_frequency(deck, 14.175e6, "hallen").unwrap_err();
+        assert!(matches!(err, SolveError::NoFeedpoint));
+    }
+
+    #[test]
+    fn solve_error_display() {
+        let err = SolveError::NoFeedpoint;
+        assert_eq!(err.to_string(), "no EX type-0 card found in deck");
+
+        let err = SolveError::SingularMatrix("det=0".into());
+        assert_eq!(err.to_string(), "singular matrix: det=0");
+    }
+
+    #[test]
+    fn feedpoint_result_is_deterministic() {
+        let a = solve_deck_at_frequency(DIPOLE, 14.0e6, "hallen").unwrap();
+        let b = solve_deck_at_frequency(DIPOLE, 14.0e6, "hallen").unwrap();
+        assert!((a.impedance_re - b.impedance_re).abs() < 1e-12);
+        assert!((a.impedance_im - b.impedance_im).abs() < 1e-12);
+    }
+}
+
 use nec_model::card::Card;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, build_loads, build_tl_stamps,

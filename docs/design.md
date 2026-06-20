@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/design.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-06-20
 ---
 
 # Design
@@ -18,7 +18,7 @@ last_updated: 2026-04-22
 
 - CLI is the canonical execution path and baseline for correctness.
 - GUI organizes user tasks as guided workflows rather than low-level card editing dialogs.
-- Optional TUI supports operational and headless workflows.
+- Optional TUI (intended for operational and headless workflows) is stubbed but not yet implemented.
 - CLI must remain strong for scripted and optimizer-driven operation; GUI improvements must not come at the cost of batch-friendliness.
 - GUI should eventually exceed legacy workflows for common tasks such as sweep setup, result inspection, and iterative tuning, even if it does not mimic their layout.
 - Automation design should reduce dependence on external spreadsheet-style orchestration by bringing high-value study workflows into the product over time while still supporting robust external optimizer-loop integration.
@@ -34,8 +34,7 @@ last_updated: 2026-04-22
 
 - Begin with simple ground model controls.
 - Add advanced ground configuration progressively.
-- Begin with CPU-first workflows and add GPU postprocessing controls later.
-- Sequence work so accuracy parity, reporting parity, and workflow parity advance together; a numerically strong but operationally weak product does not meet the project goal.
+- Begin with CPU-first workflows and add GPU postprocessing controls later (Phase 5 completed wgpu-based Hallen solve path; all GPU kernels currently run as CPU-emulation stubs in CI — real GPU dispatch requires wgpu-capable hardware).
 - Sequence work so accuracy parity, reporting parity, and workflow parity advance together; a numerically strong but operationally weak product does not meet the project goal.
 - Prioritize validation UX that makes NEC-5-manual-inspired scenario classes (convergence, source behavior, loops/ground, and junction stress cases) easy to run and compare repeatedly.
 
@@ -46,6 +45,15 @@ last_updated: 2026-04-22
 - Extension lifecycle and compatibility policy must be documented before public plugin API freeze.
 - Automation design should support future bindings and embedding scenarios comparable to necpp-style library use, not only in-process plugins.
 - Automation design should also support higher-level user workflows comparable in practical value to AutoEZ's variable studies, resonance tools, and repeated-analysis helpers.
+- Phase 4 delivered `--output-format json`, Python bindings (`bindings/fnec_py/`), template variable substitution, and resonance-search helpers. See `docs/automation-guide.md`.
+
+## Distributed execution design
+
+- Phase 6 added a distributed worker protocol with controller/worker separation, SSH-backed node discovery, and a SHA-256-keyed result cache. See `docs/distributed-execution-design.md` and `crates/nec_worker/`.
+
+## Markdown project format
+
+- Phase 3-6 added `crates/nec_project/` supporting both TOML and Markdown project files with frontmatter validation, run history, and round-trip stability contracts. See `docs/project-format.md`.
 
 ## Documentation design constraints
 

@@ -3,6 +3,113 @@
 
 //! Per-node capability model and in-memory cache.
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assignment_weight_cpu_only() {
+        let cap = Capability {
+            cpu_threads: 8,
+            gpu_available: false,
+            wgpu_backend: None,
+        };
+        assert!((cap.assignment_weight(None) - 8.0).abs() < 1e-9);
+        assert!((cap.assignment_weight(Some(2.0)) - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn assignment_weight_gpu_default_weight() {
+        let cap = Capability {
+            cpu_threads: 4,
+            gpu_available: true,
+            wgpu_backend: Some("Vulkan".into()),
+        };
+        assert!((cap.assignment_weight(None) - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn assignment_weight_gpu_with_override() {
+        let cap = Capability {
+            cpu_threads: 16,
+            gpu_available: true,
+            wgpu_backend: Some("Metal".into()),
+        };
+        assert!((cap.assignment_weight(Some(10.0)) - 26.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn capability_cache_insert_get_invalidate() {
+        let mut cache = CapabilityCache::new();
+        assert!(cache.is_empty());
+
+        let cap = Capability {
+            cpu_threads: 8,
+            gpu_available: false,
+            wgpu_backend: None,
+        };
+        cache.insert("node-a", cap.clone());
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get("node-a").map(|c| c.cpu_threads), Some(8));
+        assert!(cache.get("node-b").is_none());
+
+        cache.invalidate("node-a");
+        assert!(cache.get("node-a").is_none());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn capability_cache_overwrite_replaces() {
+        let mut cache = CapabilityCache::new();
+        cache.insert(
+            "n",
+            Capability {
+                cpu_threads: 2,
+                gpu_available: false,
+                wgpu_backend: None,
+            },
+        );
+        cache.insert(
+            "n",
+            Capability {
+                cpu_threads: 16,
+                gpu_available: true,
+                wgpu_backend: Some("Vulkan".into()),
+            },
+        );
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get("n").unwrap().cpu_threads, 16);
+        assert!(cache.get("n").unwrap().gpu_available);
+    }
+
+    #[test]
+    fn capability_cache_ttl_expires_entry() {
+        let mut cache = CapabilityCache::with_ttl(Duration::from_secs(0));
+        cache.insert(
+            "ephemeral",
+            Capability {
+                cpu_threads: 1,
+                gpu_available: false,
+                wgpu_backend: None,
+            },
+        );
+        // TTL is 0 seconds, so elapsed() will be > TTL immediately.
+        assert!(cache.get("ephemeral").is_none());
+    }
+
+    #[test]
+    fn capability_cache_serialize_roundtrip() {
+        let cap = Capability {
+            cpu_threads: 32,
+            gpu_available: true,
+            wgpu_backend: Some("Dx12".into()),
+        };
+        let json = serde_json::to_string(&cap).unwrap();
+        let back: Capability = serde_json::from_str(&json).unwrap();
+        assert_eq!(cap, back);
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};

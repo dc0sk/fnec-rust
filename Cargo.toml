@@ -12,7 +12,6 @@ members = [
     "crates/nec_worker",
     "apps/nec-cli",
     "apps/nec-gui",
-    "apps/nec-tui",
 ]
 exclude = ["fuzz", "bindings/fnec_py"]
 resolver = "2"
