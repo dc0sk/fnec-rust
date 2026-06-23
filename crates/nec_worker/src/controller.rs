@@ -81,3 +81,27 @@ impl Drop for LocalWorkerHandle {
         let _ = self.child.wait();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawn_nonexistent_binary_returns_error() {
+        let result = LocalWorkerHandle::spawn("/nonexistent/fnec-binary");
+        assert!(result.is_err(), "expected Err, got Ok");
+    }
+
+    #[test]
+    fn spawn_empty_binary_path_returns_error() {
+        let result = LocalWorkerHandle::spawn("");
+        assert!(result.is_err(), "expected Err, got Ok");
+    }
+
+    #[test]
+    fn shutdown_message_is_valid_json() {
+        let msg = r#"{"cmd":"shutdown"}"#;
+        let val: serde_json::Value = serde_json::from_str(msg).unwrap();
+        assert_eq!(val.get("cmd").and_then(|v| v.as_str()), Some("shutdown"));
+    }
+}

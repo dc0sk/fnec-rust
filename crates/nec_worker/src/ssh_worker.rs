@@ -203,4 +203,19 @@ mod tests {
         assert!(handles.is_empty());
         assert!(cache.is_empty());
     }
+
+    #[test]
+    fn connect_all_skips_unreachable_host_gracefully() {
+        // connect_all should not panic when given an unresolvable host;
+        // it prints a warning to stderr and continues.
+        let toml = r#"
+[[worker]]
+hostname = "invalid-host-that-will-never-resolve.example"
+"#;
+        let cfg = crate::HostsConfig::from_str(toml).unwrap();
+        // Note: this may take up to ConnectTimeout (5s) per entry.
+        let (handles, cache) = connect_all(&cfg);
+        assert!(handles.is_empty());
+        assert!(cache.is_empty());
+    }
 }

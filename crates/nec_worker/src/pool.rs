@@ -214,4 +214,23 @@ mod tests {
         assert!(pool.is_empty());
         assert_eq!(pool.len(), 0);
     }
+
+    #[test]
+    fn new_local_nonexistent_binary_returns_error() {
+        let result = WorkerPool::new_local(1, "/nonexistent/fnec-binary");
+        assert!(result.is_err(), "expected Err, got Ok");
+    }
+
+    #[test]
+    fn new_local_zero_workers_returns_empty() {
+        let pool = WorkerPool::new_local(0, "fnec").unwrap();
+        assert!(pool.is_empty());
+        assert_eq!(pool.len(), 0);
+    }
+
+    #[test]
+    fn new_local_multiple_with_nonexistent_binary_returns_error() {
+        let result = WorkerPool::new_local(3, "/nonexistent/fnec-binary");
+        assert!(result.is_err(), "expected Err, got Ok");
+    }
 }
