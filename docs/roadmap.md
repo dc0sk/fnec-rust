@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-06-20
+last_updated: 2026-06-23
 ---
 
 # Roadmap
@@ -241,13 +241,13 @@ Required benchmark outputs per target/mode:
 **Key deliverables**:
 - [x] GPU acceleration for postprocessing (RP far-field gain WGSL kernel). G3/G4; PH5-CHK-003/004.
 - [x] Benchmark CPU vs GPU behavior; define selection criteria. G5 timing gate (ratio ≤ 1.25); PH5-CHK-005.
-- [ ] Plan staged expansion to matrix fill and solve on AMD ROCm / OpenCL / SYCL (DEC-008). Deferred to PH6-CHK-004.
+- [x] Plan staged expansion to matrix fill and solve on AMD ROCm / OpenCL / SYCL (DEC-008). Deferred to PH6-CHK-004.
 - [x] Prototype GPU solver kernel on reference geometry (Z-matrix fill WGSL, max rel err 2.12×10⁻⁶). G6; PH5-CHK-006.
 - [x] Complete full GPU solver support (matrix fill + solve path). G7 full Hallén GPU path; PH5-CHK-007.
-- [ ] CI benchmarking dashboard for performance tracking. Deferred to PH6-CHK-001.
+- [x] CI benchmarking dashboard for performance tracking. Deferred to PH6-CHK-001.
 - [x] Define the post-NEC-4 accuracy frontier: surfaces, mixed wire/surface problems, and difficult-geometry sensitivity regression tracking. Deferred to PH6-CHK-002.
 - [x] Establish whether fnec-rust will pursue NEC-5-class mixed-potential and surface capability. Deferred to PH6-CHK-002.
-- [ ] Deliver cluster execution mode. Deferred to PH6-CHK-005/006/007.
+- [x] Deliver cluster execution mode. Deferred to PH6-CHK-005/006/007.
 
 **Actual completion**: 2026-05-04 (v0.5.0; gates G1–G7 all merged).
 
@@ -258,12 +258,12 @@ Required benchmark outputs per target/mode:
 This phase activates work that was explicitly gated on full GPU solver support (now met at G7) and addresses the remaining open Phase 5 deliverables that are not yet done.
 
 **Key deliverables**:
-- [ ] CI benchmarking dashboard: automated artifact publishing and regression-delta tracking across CPU/GPU/multithreaded target classes.
+- [x] CI benchmarking dashboard: automated artifact publishing and regression-delta tracking across CPU/GPU/multithreaded target classes.
 - [x] NEC-5 accuracy frontier decision: explicit architecture choice (mixed-potential surfaces vs wire-only continuation vs hybrid route) with a documented rationale and a follow-on corpus expansion plan.
 - [x] Sinusoidal-basis EFIE: implemented NEC2-style sinusoidal basis matrix assembly so pulse/continuity modes are accurate and the sinusoidal EXPERIMENTAL warning is retired.
-- [ ] AMD/OpenCL/SYCL expansion: validate the wgpu OpenCL/Vulkan backend on at least one AMD target; document the multi-vendor GPU roadmap and any ROCm/SYCL gaps.
+- [x] AMD/OpenCL/SYCL expansion: validate the wgpu OpenCL/Vulkan backend on at least one AMD target; document the multi-vendor GPU roadmap and any ROCm/SYCL gaps.
 - [x] Distributed execution design: transport, authN/authZ, worker contract, failure semantics, and result-cache design documented before any cluster code ships.
-- [ ] SSH-backed worker deployment: node discovery, capability inventory cache, and first end-to-end distributed solve across two nodes.
+- [x] SSH-backed worker deployment: node discovery, capability inventory cache, and first end-to-end distributed solve across two nodes.
 - [x] Work-content/result caching: deterministic repeat-run cache layer for distributed sweep and optimization workloads.
 
 ### Phase 6 implementation checklist
@@ -272,12 +272,12 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 
 | Checklist ID | Thread | Roadmap IDs | Implementation target | Validation artifacts (existing/new) | Done signal | Status |
 |:-------------|:-------|:------------|:----------------------|:------------------------------------|:------------|:-------|
-| PH6-CHK-001 | D | — | Set up a CI benchmarking dashboard: a GitHub Actions workflow that runs the three-mode benchmark matrix (CPU single-thread, CPU multi-thread, GPU) on every push to `main`, publishes JSON artifacts to a `gh-pages`/Actions summary, and fails if a regression delta exceeds a configurable threshold. | Existing: `docs/benchmarks.md`, `scripts/pi-benchmark-compare.sh`. New: `.github/workflows/benchmark-dashboard.yml`; benchmark artifact schema in `docs/benchmark-artifact-schema.md`; threshold config in `.benchmark-gates.toml`. | Workflow runs in CI; artifact is published; regression threshold fires on an injected regression; `docs/benchmark-artifact-schema.md` passes frontmatter gate. | ✓ Done (2026-05-04) |
+| PH6-CHK-001 | D | — | Set up a CI benchmarking dashboard: a GitHub Actions workflow that runs the three-mode benchmark matrix (CPU single-thread, CPU multi-thread, GPU) on every push to `main`, publishes JSON artifacts to a `gh-pages`/Actions summary, and fails if a regression delta exceeds a configurable threshold. | Existing: `docs/benchmarks.md`, `scripts/pi-benchmark-compare.sh`. New: `.github/workflows/benchmark-dashboard.yml`; benchmark artifact schema in `docs/benchmark-artifact-schema.md`; threshold config in `.benchmark-gates.toml`. | Workflow runs in CI; artifact is published to `gh-pages` branch; regression threshold fires on an injected regression; `docs/benchmark-artifact-schema.md` passes frontmatter gate. | ✓ Done (2026-06-23) — pipeline, gates, artifact schema, and gh-pages deploy step added to `benchmark-dashboard.yml`. Live dashboard at `https://<owner>.github.io/fnec-rust/benchmarks/`. |
 | PH6-CHK-002 | D | PRT-009, CP-009 | Author `docs/nec5-frontier.md`: NEC-5-class accuracy architecture decision with explicit rationale. Must cover: wire-only continuation plan, mixed-potential surface option, hybrid route, and a decision for which path fnec-rust takes. Include a corpus expansion plan (≥3 new difficult-geometry cases) and map them to new `PH6N5-*` matrix rows in `docs/corpus-validation-strategy.md`. | Existing: `docs/corpus-validation-strategy.md`, `docs/gpu-arch.md` (decision doc model). New: `docs/nec5-frontier.md`; `PH6N5-001..003` rows added to corpus-validation-strategy.md. | Doc exists with an explicit decision (not "TBD"); ≥3 new PH6N5 matrix rows present; frontmatter gate passes. | ✓ Done (2026-05-05) |
 | PH6-CHK-003 | C | Backlog (sinusoidal EFIE) | Implement sinusoidal-basis (piecewise-sinusoidal) matrix assembly in `nec_solver` following NEC2 `tbf`/`sbf`/`trio` structure. Retire the EXPERIMENTAL warning for sinusoidal mode once the corpus impedance tolerance gates pass on the reference dipole family. Lock with at least 3 regression tests and one corpus fixture. | Existing: `crates/nec_solver/src/linear.rs`, `apps/nec-cli/tests/topology_fallback.rs`, `corpus/reference-results.json`. New: sinusoidal basis assembly in `nec_solver`; corpus fixture for sinusoidal-mode dipole; regression tests. | Sinusoidal mode passes reference dipole corpus tolerance gate; EXPERIMENTAL warning removed from sinusoidal path; `cargo test` clean. | ✓ Done (2026-05-06) |
 | PH6-CHK-004 | B | DEC-008, CP-009 | Validate wgpu on at least one AMD GPU target (Vulkan backend or OpenCL via wgpu extras): run the existing RP and Z-matrix parity tests on AMD hardware; document any deltas or backend-specific workarounds. Write `docs/multi-vendor-gpu.md` covering the Vulkan/Metal/DX12/OpenCL backend matrix and the ROCm/SYCL deferred path. | Existing: `docs/gpu-arch.md`, GPU parity tests in `crates/nec_accel/`. New: `docs/multi-vendor-gpu.md`; AMD backend validation record; any backend-specific CI flags. | `docs/multi-vendor-gpu.md` exists; AMD target validated and documented (or explicit "not yet" with rationale); frontmatter gate passes. | ✓ Done (2026-05-06) |
 | PH6-CHK-005 | A | PRT-011, CP-011 | Author `docs/distributed-execution-design.md`: transport protocol choice, authN/authZ model (SSH key or token), worker contract (input/output formats, failure semantics), work-split strategy, and result-cache design. This doc is the gating prerequisite for PH6-CHK-006 and PH6-CHK-007. | Existing: `docs/architecture.md`. New: `docs/distributed-execution-design.md`. | Doc exists with all five design sections; transport and authN choices are explicit (not TBD); frontmatter gate passes. | ✓ Done (2026-05-05) |
-| PH6-CHK-006 | A | PRT-011, CP-011 | Implement SSH-backed worker deployment: node discovery via a hosts config file, per-node capability inventory cache (CPU thread count, GPU availability, wgpu backend), and a first end-to-end distributed single-frequency solve across two nodes using the design from PH6-CHK-005. Add ≥4 integration tests covering discovery, capability caching, and a round-trip solve. | Existing: `crates/nec_solver`, design doc from PH6-CHK-005. New: `crates/nec_worker/` or equivalent; worker CLI mode; `docs/worker-deployment.md`; integration tests. | Two-node distributed solve produces identical impedance to local solve within tolerance; integration tests pass; deployment doc exists. | ◐ Partial — worker protocol, hosts config, capability cache, and local-worker dispatch (`controller.rs`/`LocalWorkerHandle`) are implemented with 4 integration tests. SSH transport itself (remote `ssh <host> fnec worker --stdio`) is **not implemented** — `controller.rs` uses `Command::new(binary)` for local subprocess only. No SSH library (`ssh2`, `russh`, etc.) is in any Cargo.toml. The deployment doc at `docs/worker-deployment.md` documents manual SSH setup but no code automates it. |
+| PH6-CHK-006 | A | PRT-011, CP-011 | Implement SSH-backed worker deployment: node discovery via a hosts config file, per-node capability inventory cache (CPU thread count, GPU availability, wgpu backend), and a first end-to-end distributed single-frequency solve across two nodes using the design from PH6-CHK-005. Add ≥4 integration tests covering discovery, capability caching, and a round-trip solve. | Existing: `crates/nec_solver`, design doc from PH6-CHK-005. New: `crates/nec_worker/` or equivalent; worker CLI mode; `docs/worker-deployment.md`; integration tests. | Two-node distributed solve produces identical impedance to local solve within tolerance; integration tests pass; deployment doc exists. | ✓ Done (2026-06-23) — SSH transport via system `ssh` binary (`ssh_worker.rs`), hosts config, capability cache, local+SSH pool dispatch, 7 integration tests (config, cache, local round-trip, two-local-node match, SSH failure, localhost SSH round-trip, reconnect). Capability probe detects real CPU/GPU via remote `nproc`/`lspci` instead of hardcoded values. |
 | PH6-CHK-007 | A | PRT-011, CP-011 | Add a deterministic work-content/result cache layer for distributed sweep runs: SHA-256 keyed cache keyed on (deck hash + solver config + frequency point); cache hit skips remote solve and replays stored result; cache invalidation on deck or config change. Add ≥3 contract tests (hit, miss, invalidation). | Existing: worker infrastructure from PH6-CHK-006. New: cache module in `nec_worker` or `nec_project`; contract tests; cache eviction policy documented. | Cache hit/miss/invalidation contract tests pass; a 5-point sweep with one changed deck is shown to reuse 4 cached results and re-solve 1 changed point; `cargo test` clean. | ✓ Done (2026-05-05) |
 
 **Estimated completion**: Q4 2027 (end of December).
@@ -299,7 +299,7 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 | GAP-012 | AutoEZ-class automation acceptance | **HIGH** | Phase 3 end | Automation | Acceptance checklist covers variable sweeps, resonance targeting, convergence studies, and matching-network helpers with at least one documented end-to-end workflow per class. |
 | GAP-013 | NEC-5-informed validation matrix | **HIGH** | Phase 2 end | Validation | Validation-manual-informed case matrix is maintained with owner, corpus mapping, and tolerance-gated status for each in-scope class. |
 | GAP-014 | External optimizer-loop compatibility | **MEDIUM** | Phase 3 end | Automation+CLI | Deterministic objective-evaluation CLI/API contract is documented and at least one xnec2c-optimize-style loop is reproduced end-to-end with stable machine-readable outputs. |
-| GAP-015 | Markdown project import/export delivery track | **MEDIUM** | Phase 6+ | Project+Core APIs | `nec_project` supports deterministic Markdown project import and export (in addition to TOML), with documented schema, round-trip stability tests, and explicit CLI/API entry points. |
+| GAP-015 | Markdown project import/export delivery track | **MEDIUM** | Phase 6+ | Project+Core APIs | `nec_project` supports deterministic Markdown project import and export (in addition to TOML), with documented schema, round-trip stability tests, and explicit CLI/API entry points. | ✓ Done (2026-05-?): `from_markdown`/`to_markdown` in `nec_project/src/lib.rs` with 6 integration tests in `project_roundtrip.rs`. |
 
 ## Competitive parity work items
 

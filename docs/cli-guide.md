@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-06-23
 ---
 
 # CLI Guide — fnec (v0.2.0)
@@ -257,11 +257,128 @@ fnec dipole.nec
 fnec --solver hallen dipole.nec
 ```
 
+### Execution backend selection
+
+```bash
+fnec --exec cpu dipole.nec
+fnec --exec hybrid dipole.nec
+fnec --exec gpu dipole.nec
+```
+
+`cpu` uses parallel CPU kernels. `hybrid` runs split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane); GPU-candidate points currently fall back to CPU with diagnostics. `gpu` currently falls back to CPU with explicit diagnostics. When `--exec` is omitted the native profile auto-selects the best mode via a quick startup probe.
+
 ### Experimental pulse mode (diagnostic only)
 
 ```bash
 fnec --solver pulse --pulse-rhs nec2 dipole.nec
 ```
+
+### Sinusoidal mode with custom fallback threshold
+
+```bash
+fnec --solver sinusoidal --sin-fallback-rel-max 5e-3 dipole.nec
+```
+
+Overrides the default `1e-2` relative residual threshold. If the sinusoidal solve exceeds the budget the solver falls back to Hallén and reports `SOLVER_MODE sinusoidal->hallen(residual)`.
+
+### EX type 3 with I4-divisor semantics
+
+```bash
+fnec --ex3-i4-mode divide-by-i4 dipole.nec
+```
+
+Enables experimental source normalisation using I4 as the divisor when `I4>0`. Default `legacy` mode treats type 3 the same as type 0.
+
+### Frequency sweep via external config file
+
+```bash
+fnec --sweep-config sweep.toml dipole.nec
+```
+
+`sweep.toml`:
+
+```toml
+[frequency]
+start_mhz = 14.0
+end_mhz   = 30.0
+step_mhz  = 0.5
+```
+
+Overrides the deck's `FR` card. See [`examples/sweep-spec.toml`](../examples/sweep-spec.toml) for the full format.
+
+### Variable template substitution
+
+```bash
+fnec --vars params.toml template.nec
+```
+
+`params.toml`:
+
+```toml
+HALF_LEN = "5.19"
+RADIUS   = "0.001"
+FREQ_MHZ = "14.2"
+```
+
+`template.nec`:
+
+```
+GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN $RADIUS
+GE
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 $FREQ_MHZ 0.0
+EN
+```
+
+JSON vars files are also accepted:
+
+```bash
+fnec --vars params.json template.nec
+```
+
+An undefined `$VAR` token causes a non-zero exit with a diagnostic on stderr.
+
+### Resonance targeting (binary search)
+
+```bash
+fnec sweep --resonance examples/resonance-search.nec.toml
+```
+
+Finds the wire length at which feedpoint reactance crosses zero (series resonance).
+
+### Machine-readable JSON output
+
+```bash
+fnec --output-format json dipole.nec
+```
+
+Writes a JSON array to stdout — one record per solved frequency point — and keeps diagnostics on stderr.
+
+### Benchmark instrumentation
+
+```bash
+fnec --bench dipole.nec
+fnec --bench --bench-format csv dipole.nec
+fnec --bench --bench-format json dipole.nec
+```
+
+Prints per-solve timing and residual diagnostics. CSV/JSON machine-readable lines go to stderr with `bench_csv:` / `bench_json:` prefixes.
+
+### GPU far-field acceleration
+
+```bash
+fnec --gpu-fr --exec hybrid dipole.nec
+```
+
+Routes RP far-field evaluation through the accelerator stub path.
+
+### Compatibility flag placeholder
+
+```bash
+fnec --allow-noncollinear-hallen dipole.nec
+```
+
+Accepted for compatibility but silently ignored in Phase 1 — the hard-fail guardrail remains active regardless.
 
 ### Minimal deck for a 14.2 MHz half-wave dipole
 
@@ -272,6 +389,144 @@ EX 0 1 26 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
 EN
 ```
+
+---
+
+## Test Rigs
+
+The `scripts/` directory provides benchmark and validation rigs for CI gates,
+remote execution, regression tracking, and documentation hygiene.
+
+### Local benchmark matrix
+
+```bash
+scripts/run-benchmark-matrix.sh [output.json]
+```
+
+Runs a 3×3×3 matrix (deck × solver × exec-mode) with configurable repeats.
+Writes a JSON artifact with per-run `elapsed_ms` and per-combination summary.
+
+**Environment overrides**:
+
+| Variable | Default |
+|----------|---------|
+| `FNEC_BINARY` | `./target/release/fnec` |
+| `FNEC_BENCH_DECKS` | `corpus/dipole-freesp-51seg.nec corpus/dipole-ground-51seg.nec` |
+| `FNEC_BENCH_SOLVERS` | `hallen pulse` |
+| `FNEC_BENCH_RUNS` | `3` |
+| `FNEC_BENCH_MODES` | `cpu-single cpu-multi gpu` |
+
+### Remote SSH benchmark
+
+```bash
+scripts/pi-remote-benchmark.sh user@host
+```
+
+Syncs the workspace to a remote Linux host, builds release, and runs a
+configurable benchmark sweep. Results are written as CSV in `tmp/`.
+
+**Key env overrides**: `FNEC_BENCH_DECKS`, `FNEC_BENCH_SOLVERS`,
+`FNEC_BENCH_EXECS`, `FNEC_BENCH_RUNS`, `FNEC_BENCH_HISTORY`.
+
+```bash
+# Append results automatically to a persistent history CSV
+FNEC_BENCH_HISTORY="benchmarks/pi-benchmark-history.csv" \
+  scripts/pi-remote-benchmark.sh user@host
+```
+
+### Compare two benchmark CSVs
+
+```bash
+scripts/pi-benchmark-compare.sh base.csv candidate.csv
+scripts/pi-benchmark-compare.sh --max-delta-pct 10 base.csv candidate.csv
+scripts/pi-benchmark-compare.sh --gpu-vs-cpu-max-pct 25 candidate.csv
+```
+
+Prints per-deck per-solver deltas for timing and residual diagnostics.
+The `--max-delta-pct` gate fails if candidate timing regresses beyond the
+threshold. The `--gpu-vs-cpu-max-pct` single-file form compares GPU vs CPU
+rows within one CSV (PH5-CHK-005 G5 gate).
+
+### Summarise a benchmark CSV
+
+```bash
+scripts/pi-benchmark-summary.sh results.csv
+```
+
+Prints average elapsed_ms grouped by (deck, solver, exec_mode), unique
+`diag_mode` counts, sinusoidal fallback rows, and `diag_spread` min/max.
+
+### Benchmark history tracking
+
+```bash
+# Append a new snapshot
+scripts/pi-benchmark-history.sh append results.csv benchmarks/pi-benchmark-history.csv
+
+# Summarise long-term trend per (deck, solver, exec_mode)
+scripts/pi-benchmark-history.sh trend benchmarks/pi-benchmark-history.csv
+```
+
+The trend command shows `first_avg_ms`, `latest_avg_ms`, `delta_pct`,
+`latest_timestamp_utc`, `latest_git_sha`.
+
+### JSON regression gate
+
+```bash
+scripts/benchmark-compare-json.sh baseline.json candidate.json
+scripts/benchmark-compare-json.sh --gates-file .benchmark-gates.toml base.json cand.json
+```
+
+Compares two JSON artifacts (produced by `run-benchmark-matrix.sh`) against
+configurable TOML thresholds. Exit code 0 = all gates passed.
+
+### Regression gate self-test
+
+```bash
+scripts/test-benchmark-gate.sh
+```
+
+Injects a synthetic regression and verifies that `benchmark-compare-json.sh`
+correctly fires. Exit code 0 = gate logic works.
+
+### Remote workspace test
+
+```bash
+scripts/pi-remote-workspace-check.sh user@host
+```
+
+Syncs the workspace to a remote host and runs `cargo test --workspace` there.
+Requires SSH and rsync.
+
+**Overrides**: `FNEC_TEST_COMMAND` (default: `cargo test --workspace`),
+`FNEC_BOOTSTRAP_RUST` (default: 1).
+
+### Version-bump documentation check
+
+```bash
+scripts/check-version-bump-docs.sh <base-ref> <head-ref>
+```
+
+Verifies that a version bump in `Cargo.toml` is accompanied by updates to
+`docs/changelog.md`, `docs/releasenotes.md`, and `SBOM.spdx.json`.
+
+### Documentation frontmatter validation
+
+```bash
+scripts/validate-doc-frontmatter.sh
+```
+
+Validates that every `docs/*.md` file has correct frontmatter
+(`project`, `doc`, `status`, `last_updated`) and that `doc` matches the
+file path.
+
+### Documentation last-updated stamping
+
+```bash
+scripts/stamp-doc-last-updated.sh --from-git-diff <base-ref> <head-ref>
+```
+
+Updates `last_updated` to today's UTC date in all docs changed between
+two git refs.
 
 ## Supported NEC cards
 

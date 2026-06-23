@@ -99,6 +99,49 @@ jobs:
           echo "Benchmark regression gate failed. See the compare report in the step summary."
           exit 1
 
+      - name: Generate gh-pages index
+        if: always()
+        run: |
+          mkdir -p gh-pages-output
+          cat > gh-pages-output/index.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>fnec-rust Benchmark Dashboard</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:960px;margin:2em auto;padding:0 1em}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #ccc;padding:6px 10px;text-align:right}
+th{background:#f0f0f0}
+td:first-child{text-align:left}
+h2{margin-top:2em}
+.info{color:#555}
+.fail{color:#c00}
+.pass{color:#080}
+</style></head><body>
+<h1>fnec-rust Benchmark Dashboard</h1>
+<p class="info">Commit: <code>${{ github.sha }}</code> &middot; Run: <code>${{ github.run_id }}</code></p>
+<p class="info">Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>
+<p>Gate result: <strong class="${{ steps.compare.outputs.gate == 'failed' && 'fail' || 'pass' }}">${{ steps.compare.outputs.gate || 'n/a' }}</strong></p>
+<h2>Per-mode summary</h2>
+<table><thead><tr><th>exec_mode</th><th>solver</th><th>deck</th><th>avg_ms</th><th>min_ms</th><th>max_ms</th></tr></thead><tbody>
+EOF
+          jq -r '.summary[] | "<tr><td>\(.exec_mode)</td><td>\(.solver)</td><td>\(.deck)</td><td>\(.avg_ms)</td><td>\(.min_ms)</td><td>\(.max_ms)</td></tr>"' benchmark-result.json >> gh-pages-output/index.html
+          cat >> gh-pages-output/index.html << 'EOF'
+</tbody></table>
+<hr><p class="info">See <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Actions run</a> for full report.</p>
+</body></html>
+EOF
+          cp benchmark-result.json gh-pages-output/benchmark-latest.json
+
+      - name: Deploy to gh-pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages-output
+          destination_dir: benchmarks
+          keep_files: true
+
   gate-injection-test:
     runs-on: ubuntu-latest
     steps:
