@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH7-CHK-006 — native ROCm/SYCL backend: dated deferral**. `docs/multi-vendor-gpu.md`
+  records a verified, dated deferral: the AMD target (Renoir `gfx90c` APU) is
+  outside AMD's ROCm support matrix, no ROCm/HIP/OpenCL/SYCL toolchain is present,
+  and a native backend would duplicate kernels for no correctness gain over the
+  already-validated RADV Vulkan path. Concrete blockers + revisit trigger and the
+  backend matrix updated; corrected a stale "GPU dispatch deferred" note now that
+  PH7-CHK-003/004 dispatch real kernels.
+
 - **PH7-CHK-005 — real discrete-GPU benchmark evidence**: harness
   `apps/nec-cli/examples/gpu_crossover.rs` measures the Z-matrix-fill and RP
   kernels against CPU on a real AMD GPU (`RADV RENOIR`, Vulkan). Artifact
