@@ -1,0 +1,90 @@
+{
+  "schema_version": "1",
+  "kind": "gpu_crossover",
+  "adapter": {
+    "name": "AMD Radeon Graphics (RADV RENOIR)",
+    "backend": "Vulkan",
+    "device_type": "IntegratedGpu"
+  },
+  "freq_hz": 14200000,
+  "zmatrix_fill_kernel_only": [
+    {
+      "n_segments": 32,
+      "cpu_us": 125,
+      "gpu_dispatch_us": 70,
+      "gpu_device_init_us": 37015
+    },
+    {
+      "n_segments": 64,
+      "cpu_us": 506,
+      "gpu_dispatch_us": 57,
+      "gpu_device_init_us": 23461
+    },
+    {
+      "n_segments": 128,
+      "cpu_us": 2013,
+      "gpu_dispatch_us": 102,
+      "gpu_device_init_us": 22330
+    },
+    {
+      "n_segments": 256,
+      "cpu_us": 8068,
+      "gpu_dispatch_us": 113,
+      "gpu_device_init_us": 23371
+    },
+    {
+      "n_segments": 512,
+      "cpu_us": 32434,
+      "gpu_dispatch_us": 195,
+      "gpu_device_init_us": 24773
+    },
+    {
+      "n_segments": 768,
+      "cpu_us": 73015,
+      "gpu_dispatch_us": 391,
+      "gpu_device_init_us": 23645
+    },
+    {
+      "n_segments": 1024,
+      "cpu_us": 129791,
+      "gpu_dispatch_us": 682,
+      "gpu_device_init_us": 24628
+    },
+    {
+      "n_segments": 1536,
+      "cpu_us": 311100,
+      "gpu_dispatch_us": 1300,
+      "gpu_device_init_us": 23745
+    }
+  ],
+  "zmatrix_fill_crossover_n": 32,
+  "rp_farfield_wallclock": [
+    {
+      "n_points": 181,
+      "cpu_us": 62985,
+      "gpu_wall_us": 42992
+    },
+    {
+      "n_points": 721,
+      "cpu_us": 63186,
+      "gpu_wall_us": 42159
+    },
+    {
+      "n_points": 2701,
+      "cpu_us": 65229,
+      "gpu_wall_us": 42127
+    },
+    {
+      "n_points": 8101,
+      "cpu_us": 70068,
+      "gpu_wall_us": 42318
+    },
+    {
+      "n_points": 16201,
+      "cpu_us": 80082,
+      "gpu_wall_us": 44516
+    }
+  ],
+  "generated_on": "local workstation (AMD Renoir, Vulkan/RADV) \u2014 representative run",
+  "git_sha": "6f3b99f"
+}

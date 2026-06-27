@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH7-CHK-005 — real discrete-GPU benchmark evidence**: harness
+  `apps/nec-cli/examples/gpu_crossover.rs` measures the Z-matrix-fill and RP
+  kernels against CPU on a real AMD GPU (`RADV RENOIR`, Vulkan). Artifact
+  `benchmarks/real-gpu-crossover.json`; crossover documented in `docs/benchmarks.md`
+  (Z-fill kernel-only: GPU beats CPU below 32 segments, up to ~240× at 1536;
+  RP wall-clock 1.5–1.8× faster). Refreshes the retired `FNEC_ACCEL_STUB_GPU`
+  references in `docs/benchmarks.md`. See `docs/ph7-chk-005-real-gpu-benchmark.md`.
+
 - **PH7-CHK-002 — in-process GPU microbenchmark**: `nec_accel::microbench_zmatrix_dispatch`
   pays the wgpu device-initialization cost once and times many reused kernel
   dispatches, so per-dispatch time is isolated from device-init (which the
