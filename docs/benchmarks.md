@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-05-04
+last_updated: 2026-06-27
 ---
 
 # Benchmarks
@@ -75,14 +75,17 @@ For explicit four-mode coverage, an additional local verification sweep was run 
   - `--exec hybrid`
 - GPU:
   - `RAYON_NUM_THREADS=$(nproc)`
-  - `FNEC_ACCEL_STUB_GPU=1`
   - `--exec gpu`
 - Hybrid (CPU multithread + GPU):
   - `RAYON_NUM_THREADS=$(nproc)`
-  - `FNEC_ACCEL_STUB_GPU=1`
   - `--exec hybrid`
 
-Note: GPU paths are currently stub/fallback based, so this is execution-path coverage with current backend behavior.
+Note: this earlier four-mode sweep predates the real GPU kernels. The
+`FNEC_ACCEL_STUB_GPU` env var was retired in PH7-CHK-001; `--exec gpu` now
+dispatches the real wgpu RP / Z-matrix-fill / GPU-resident-solve kernels when an
+adapter is available, falling back to CPU otherwise. For real discrete-GPU
+kernel measurements and the GPU-beats-CPU crossover, see
+[Real discrete-GPU crossover](#real-discrete-gpu-crossover-ph7-chk-005) below.
 
 ## Method Notes
 
@@ -226,3 +229,66 @@ Gate limit: ≤ 1.25× CPU. **Result: PASS.**
 Note: CPU/GPU on this machine differ by ~53 ms (wgpu hardware adapter enumeration overhead)
 even when the GPU dispatch falls back to CPU for the MoM solve. On Pi5 (no discrete GPU),
 the wgpu init fast-fails and both paths run at identical CPU-only speed.
+
+## Real discrete-GPU crossover (PH7-CHK-005)
+
+Real-hardware measurements of the two production GPU kernels against their CPU
+equivalents, locating the problem-size crossover where the GPU path wins. These
+are **not** the CI software rasterizer — they are a real Vulkan GPU.
+
+- **Adapter**: `AMD Radeon Graphics (RADV RENOIR)` — Vulkan backend, integrated GPU.
+- **Harness**: `apps/nec-cli/examples/gpu_crossover.rs`
+  (`cargo run --release -p nec-cli --example gpu_crossover`).
+- **Artifact**: `benchmarks/real-gpu-crossover.json` (representative run).
+- Numbers below are a representative run on the local workstation; absolute µs
+  vary run-to-run, the crossover and scaling do not.
+
+### Z-matrix fill — kernel-only (device-init excluded)
+
+GPU dispatch time measured with `microbench_zmatrix_dispatch` (PH7-CHK-002),
+which pays the ~tens-of-ms wgpu device-init **once** and times reused dispatches;
+CPU is `assemble_z_matrix`. CPU cost grows ≈ O(N²); GPU dispatch is roughly flat.
+
+| N segments | CPU (µs) | GPU dispatch (µs) | GPU speedup |
+|---:|---:|---:|---:|
+| 32 | 125 | 70 | 1.8× |
+| 64 | 506 | 57 | 8.9× |
+| 128 | 2,013 | 102 | 19.7× |
+| 256 | 8,068 | 113 | 71× |
+| 512 | 32,434 | 195 | 166× |
+| 768 | 73,015 | 391 | 187× |
+| 1,024 | 129,791 | 682 | 190× |
+| 1,536 | 311,100 | 1,300 | 239× |
+
+**Crossover: once the device is initialized, the GPU Z-fill beats the CPU below
+32 segments** (the smallest size measured) and the lead widens to ~240× by 1,536
+segments. The one-time device-init (~25 ms here) is the only reason a *single*
+small solve does not benefit — it is amortized across a frequency sweep or a
+GPU-resident solve (PH7-CHK-003) that reuses the device.
+
+### RP far-field — production wall-clock (device-init included)
+
+GPU = `run_rp_farfield_batch_wgpu` (the production path, which re-acquires the
+device each call, so this *includes* device-init); CPU = `compute_radiation_pattern`.
+64-segment wire, θ-sweep with the given point count.
+
+| Observation points | CPU (µs) | GPU wall (µs) | GPU speedup |
+|---:|---:|---:|---:|
+| 181 | 62,985 | 42,992 | 1.5× |
+| 721 | 63,186 | 42,159 | 1.5× |
+| 2,701 | 65,229 | 42,127 | 1.5× |
+| 8,101 | 70,068 | 42,318 | 1.7× |
+| 16,201 | 80,082 | 44,516 | 1.8× |
+
+Even with device-init included, the GPU RP path is ~1.5–1.8× faster than CPU
+across the range and the lead grows with point count. (Both sides carry a large
+fixed cost at these sizes; the GPU's fixed cost is device-init, isolated
+separately by the PH7-CHK-002 microbenchmark.)
+
+### Takeaway
+
+For the supported GPU kernels on this AMD target, the GPU is the faster path
+whenever the device-init is amortized (any sweep, or a single large problem). The
+break-even for a *single* small Z-fill is set by device-init (~25 ms), not by the
+kernel — which is exactly why PH7-CHK-002 reports the two separately and
+PH7-CHK-003/004 keep the device resident across a solve / a worker's task stream.
