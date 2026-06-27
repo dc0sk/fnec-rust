@@ -382,6 +382,80 @@ pub(super) fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {
     }
 }
 
+/// Attempt the GPU-resident Hallén fill+solve (PH7-CHK-003) for the supported
+/// deck class. Returns `None` (caller uses the CPU `solve_hallen`) unless:
+/// `--exec gpu`, free-space/deferred ground, no LD/TL host matrix stamps, and at
+/// least `MIN_GPU_RESIDENT_SEGS` segments. Also returns `None` when no wgpu
+/// adapter is available.
+#[allow(clippy::too_many_arguments)]
+fn maybe_gpu_resident_hallen(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    hallen_rhs: &nec_solver::HallenRhs,
+    wire_endpoints: &[(usize, usize)],
+    junctions: &[(usize, usize, f64)],
+    ground: &GroundModel,
+    execution_mode: ExecutionMode,
+    freq_hz: f64,
+) -> Option<nec_solver::HallenSolution> {
+    use nec_model::card::Card;
+
+    const MIN_GPU_RESIDENT_SEGS: usize = 16;
+    if execution_mode != ExecutionMode::Gpu || segs.len() < MIN_GPU_RESIDENT_SEGS {
+        return None;
+    }
+    if !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    ) {
+        return None;
+    }
+    // LD/TL cards stamp the host matrix in ways the GPU free-space fill does not
+    // reproduce — keep those on the CPU path.
+    if deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Ld(_) | Card::Tl(_)))
+    {
+        return None;
+    }
+
+    let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
+        .iter()
+        .map(|s| nec_accel::ZSegmentInput {
+            midpoint: s.midpoint,
+            direction: s.direction,
+            length: s.length,
+            radius: s.radius,
+        })
+        .collect();
+
+    let x = pollster::block_on(nec_accel::solve_hallen_gpu_resident(
+        &z_inputs,
+        &hallen_rhs.rhs,
+        &hallen_rhs.cos_vec,
+        wire_endpoints,
+        junctions,
+        freq_hz,
+    ))?;
+
+    let n = segs.len();
+    if x.len() < n {
+        return None;
+    }
+    let currents = x[..n].to_vec();
+    let c_hom_per_wire = x[n..].to_vec();
+    let c_hom = c_hom_per_wire
+        .first()
+        .copied()
+        .unwrap_or(Complex64::new(0.0, 0.0));
+    Some(nec_solver::HallenSolution {
+        currents,
+        c_hom_per_wire,
+        c_hom,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn solve_frequency_point(
     deck: &nec_model::deck::NecDeck,
@@ -489,13 +563,32 @@ pub(super) fn solve_frequency_point(
                 .iter()
                 .map(|j| (j.seg_a, j.seg_b, j.sign))
                 .collect();
-            let sol = solve_hallen(
-                &z_mat,
-                &hallen_rhs.rhs,
-                &hallen_rhs.cos_vec,
+
+            // GPU-resident fill+solve (PH7-CHK-003): for the supported class the
+            // entire fill→solve runs on the device (no full-matrix copy-back).
+            // Only valid when the host applies no matrix modifications the GPU
+            // path does not reproduce: free-space/deferred ground, no load or TL
+            // stamps, and enough segments to amortize device setup.
+            let sol = maybe_gpu_resident_hallen(
+                deck,
+                segs,
+                &hallen_rhs,
                 wire_endpoints,
                 &junction_tuples,
+                ground,
+                execution_mode,
+                freq_hz,
             )
+            .map(Ok)
+            .unwrap_or_else(|| {
+                solve_hallen(
+                    &z_mat,
+                    &hallen_rhs.rhs,
+                    &hallen_rhs.cos_vec,
+                    wire_endpoints,
+                    &junction_tuples,
+                )
+            })
             .map_err(|e| e.to_string())?;
             let (a, r) = residual_hallen(
                 &z_mat,

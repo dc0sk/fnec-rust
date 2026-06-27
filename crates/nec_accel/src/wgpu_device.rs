@@ -800,6 +800,9 @@ struct ZUniforms {
 /// The compiled WGSL Z-matrix fill shader source.
 const ZMATRIX_WGSL: &str = include_str!("shaders/zmatrix_fill.wgsl");
 
+/// The compiled WGSL GPU-resident Hallén normal-equations solve shader source.
+const HALLEN_SOLVE_WGSL: &str = include_str!("shaders/hallen_normal_solve.wgsl");
+
 /// Input segment data for [`fill_zmatrix_wgpu`].
 ///
 /// Mirrors the fields of `nec_solver::geometry::Segment` needed for the
@@ -1044,4 +1047,411 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     readback_buf.unmap();
 
     Some(results)
+}
+
+// ---------------------------------------------------------------------------
+// GPU-resident Hallén solve (gate PH7-CHK-003)
+// ---------------------------------------------------------------------------
+
+/// Uniform block for the Hallén solve shader: n, s, nc, lambda (16 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SolveParams {
+    n: u32,
+    s: u32,
+    nc: u32,
+    lambda: f32,
+}
+
+/// Tikhonov regularization constant — matches `nec_solver::linear::solve_hallen`.
+const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
+
+/// GPU-resident Hallén dense solve (PH7-CHK-003).
+///
+/// Fills the N×N Hallén Z-matrix on the GPU and then solves the regularized
+/// normal-equations augmented system **on the device**, returning only the
+/// length-`S` solution vector (`S = N + W`): `x[..N]` are the segment currents
+/// and `x[N..]` the per-wire homogeneous constants. The full matrix never
+/// leaves the GPU.
+///
+/// `rhs` and `cos_vec` are the Hallén RHS / projection vectors (length `N`),
+/// `wire_endpoints` the per-wire `(first, last)` segment indices, and
+/// `junctions` the `(seg_a, seg_b, sign)` continuity constraints — i.e. exactly
+/// the inputs of `nec_solver::linear::solve_hallen`, which this reproduces.
+///
+/// Returns `None` when no wgpu adapter is available (caller falls back to the
+/// f64 CPU solve). All GPU arithmetic is f32; the result is intended to be
+/// validated to the 2 Ω GPU-path tolerance, not the f64 corpus gate.
+pub async fn solve_hallen_gpu_resident(
+    segments: &[ZSegmentInput],
+    rhs: &[num_complex::Complex64],
+    cos_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+    junctions: &[(usize, usize, f64)],
+    freq_hz: f64,
+) -> Option<Vec<num_complex::Complex64>> {
+    use wgpu::util::DeviceExt;
+
+    let n = segments.len();
+    if n == 0 {
+        return Some(Vec::new());
+    }
+    if rhs.len() != n || cos_vec.len() != n {
+        return None;
+    }
+
+    // ---- host-side augmented-system metadata (mirrors solve_hallen) --------
+    let fallback_endpoints;
+    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() {
+        fallback_endpoints = vec![(0usize, n - 1)];
+        &fallback_endpoints
+    } else {
+        wire_endpoints
+    };
+
+    let junction_endpoint_set: std::collections::HashSet<usize> =
+        junctions.iter().flat_map(|&(a, b, _)| [a, b]).collect();
+
+    // Constraint rows encoded as [col_a, col_b_or_-1, val_a, val_b].
+    let mut constraints: Vec<[f32; 4]> = Vec::new();
+    for &(first, last) in endpoints.iter() {
+        if !junction_endpoint_set.contains(&first) {
+            constraints.push([first as f32, -1.0, 1.0, 0.0]);
+        }
+        if !junction_endpoint_set.contains(&last) {
+            constraints.push([last as f32, -1.0, 1.0, 0.0]);
+        }
+    }
+    for &(seg_a, seg_b, sign) in junctions.iter() {
+        constraints.push([seg_a as f32, seg_b as f32, 1.0, sign as f32]);
+    }
+
+    let w = endpoints.len();
+    let s = n + w;
+    let nc = constraints.len();
+
+    // The solve shader holds per-column scratch in fixed-size workgroup arrays
+    // (`MAX_S` in hallen_normal_solve.wgsl). Larger systems fall back to CPU.
+    const MAX_S: usize = 1024;
+    if s > MAX_S {
+        return None;
+    }
+
+    let mut row_wire = vec![0u32; n];
+    for (wi, &(first, last)) in endpoints.iter().enumerate() {
+        for rw in row_wire.iter_mut().take(last + 1).skip(first) {
+            *rw = wi as u32;
+        }
+    }
+
+    // meta buffer: per-seg [cos, rhs_re, rhs_im, wire] then constraint rows.
+    let mut meta: Vec<f32> = Vec::with_capacity(4 * n + 4 * nc);
+    for r in 0..n {
+        meta.push(cos_vec[r] as f32);
+        meta.push(rhs[r].re as f32);
+        meta.push(rhs[r].im as f32);
+        meta.push(row_wire[r] as f32);
+    }
+    for c in &constraints {
+        meta.extend_from_slice(c);
+    }
+
+    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+
+    // ---- adapter + device --------------------------------------------------
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = match instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+    {
+        Ok(a) => a,
+        Err(_) => {
+            eprintln!(
+                "warning: solve_hallen_gpu_resident: no wgpu adapter available — falling back to CPU"
+            );
+            return None;
+        }
+    };
+    let (device, queue) = match adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("fnec-hallen-solve"),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(dq) => dq,
+        Err(_) => {
+            eprintln!(
+                "warning: solve_hallen_gpu_resident: device request failed — falling back to CPU"
+            );
+            return None;
+        }
+    };
+
+    // ---- segment data for the fill kernel ---------------------------------
+    let seg_data: Vec<GpuSegmentZ> = segments
+        .iter()
+        .map(|sg| GpuSegmentZ {
+            mid_x: sg.midpoint[0] as f32,
+            mid_y: sg.midpoint[1] as f32,
+            mid_z: sg.midpoint[2] as f32,
+            dir_x: sg.direction[0] as f32,
+            dir_y: sg.direction[1] as f32,
+            dir_z: sg.direction[2] as f32,
+            length: sg.length as f32,
+            radius: sg.radius as f32,
+            _pad0: 0.0,
+            _pad1: 0.0,
+        })
+        .collect();
+    let seg_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("hallen-segs"),
+        contents: bytemuck::cast_slice(&seg_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let zfill_uniforms = ZUniforms {
+        k,
+        n: n as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let zfill_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("hallen-zfill-uniforms"),
+        contents: bytemuck::bytes_of(&zfill_uniforms),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+
+    // ---- device-resident Z buffer (never copied back) ----------------------
+    let z_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("hallen-z"),
+        size: (2 * n * n * std::mem::size_of::<f32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
+    // ---- solve buffers -----------------------------------------------------
+    let solve_params = SolveParams {
+        n: n as u32,
+        s: s as u32,
+        nc: nc as u32,
+        lambda: HALLEN_SOLVE_LAMBDA,
+    };
+    let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("hallen-params"),
+        contents: bytemuck::bytes_of(&solve_params),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let meta_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("hallen-meta"),
+        contents: bytemuck::cast_slice(&meta),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    // lu: one S×S complex matrix (scaled A', factored in place).
+    let mat_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("hallen-lu"),
+        size: (2 * s * s * std::mem::size_of::<f32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    // vec_: 5 complex vectors of stride R = n + nc (x, gp, dx, t, out).
+    let rows = n + nc;
+    let vec_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("hallen-vec"),
+        size: (10 * rows * std::mem::size_of::<f32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    // Read back SLOT_OUT (slot 4) — the full S-element solution (currents = x[..n],
+    // per-wire homogeneous constants = x[n..]).
+    let out_slot_byte_offset = (2 * 4 * rows * std::mem::size_of::<f32>()) as u64;
+    let readback_size = (2 * s * std::mem::size_of::<f32>()) as u64;
+    let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("hallen-readback"),
+        size: readback_size,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    // ---- bind-group-layout entry helpers ----------------------------------
+    let storage_entry = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    let uniform_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+
+    // ---- fill pipeline (reuses zmatrix_fill.wgsl) --------------------------
+    let fill_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("hallen-zfill-shader"),
+        source: wgpu::ShaderSource::Wgsl(ZMATRIX_WGSL.into()),
+    });
+    let fill_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("hallen-zfill-bgl"),
+        entries: &[
+            storage_entry(0, true),
+            uniform_entry(1),
+            storage_entry(2, false),
+        ],
+    });
+    let fill_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("hallen-zfill-layout"),
+        bind_group_layouts: &[Some(&fill_bgl)],
+        immediate_size: 0,
+    });
+    let fill_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("hallen-zfill-pipeline"),
+        layout: Some(&fill_layout),
+        module: &fill_shader,
+        entry_point: Some("cs_zmatrix_fill"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    let fill_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("hallen-zfill-bg"),
+        layout: &fill_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: seg_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: zfill_uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: z_buf.as_entire_binding(),
+            },
+        ],
+    });
+
+    // ---- solve pipeline ----------------------------------------------------
+    let solve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("hallen-solve-shader"),
+        source: wgpu::ShaderSource::Wgsl(HALLEN_SOLVE_WGSL.into()),
+    });
+    let solve_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("hallen-solve-bgl"),
+        entries: &[
+            storage_entry(0, true),
+            uniform_entry(1),
+            storage_entry(2, true),
+            storage_entry(3, false),
+            storage_entry(4, false),
+        ],
+    });
+    let solve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("hallen-solve-layout"),
+        bind_group_layouts: &[Some(&solve_bgl)],
+        immediate_size: 0,
+    });
+    let solve_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("hallen-solve-pipeline"),
+        layout: Some(&solve_layout),
+        module: &solve_shader,
+        entry_point: Some("cs_hallen_solve"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    let solve_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("hallen-solve-bg"),
+        layout: &solve_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: z_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: params_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: mat_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: vec_buf.as_entire_binding(),
+            },
+        ],
+    });
+
+    // ---- encode both passes (Z stays on device between them) ---------------
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("hallen-encoder"),
+    });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("hallen-zfill-pass"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&fill_pipeline);
+        cpass.set_bind_group(0, &fill_bg, &[]);
+        cpass.dispatch_workgroups(((n * n) as u32).div_ceil(64), 1, 1);
+    }
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("hallen-solve-pass"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&solve_pipeline);
+        cpass.set_bind_group(0, &solve_bg, &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(
+        &vec_buf,
+        out_slot_byte_offset,
+        &readback_buf,
+        0,
+        readback_size,
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+
+    // ---- readback (solution vector only) -----------------------------------
+    let slice = readback_buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .unwrap();
+    if rx.recv().unwrap().is_err() {
+        return None;
+    }
+    let raw = slice.get_mapped_range();
+    let floats: &[f32] = bytemuck::cast_slice(&raw);
+    let solution: Vec<num_complex::Complex64> = (0..s)
+        .map(|i| num_complex::Complex64::new(floats[2 * i] as f64, floats[2 * i + 1] as f64))
+        .collect();
+    drop(raw);
+    readback_buf.unmap();
+
+    Some(solution)
 }

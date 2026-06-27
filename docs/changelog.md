@@ -10,6 +10,18 @@ last_updated: 2026-06-27
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Added
+
+- **PH7-CHK-003 — GPU-resident Hallén solve**: `solve_hallen_gpu_resident`
+  (`crates/nec_accel`, `shaders/hallen_normal_solve.wgsl`) fills the Z-matrix and
+  solves the regularized normal-equations system entirely on the GPU — Jacobi
+  equilibration + complex LU (partial pivoting) + Björck least-squares refinement
+  — returning only the solution vector (the N×N matrix never leaves the device).
+  Wired into CLI `--exec gpu` for the supported Hallén class (free-space, no
+  LD/TL). Matches the f64 CPU solve to ~0.01 Ω on the reference dipole. f32
+  precision; the f64 CPU solve stays the corpus-gate reference. See
+  `docs/ph7-chk-003-gpu-resident-solve.md`.
+
 ### Changed
 
 - **PH7-CHK-001 — retired the GPU CPU-emulation scaffold**: removed every code path
