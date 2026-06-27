@@ -2,12 +2,29 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-06-27
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
+
+## [Unreleased]
+### Changed
+
+- **PH7-CHK-001 — retired the GPU CPU-emulation scaffold**: removed every code path
+  that reported CPU compute as GPU work. `nec_accel::gpu_kernels` is now documented
+  and named as the **CPU reference** far-field kernel (parity baseline for the wgpu
+  shaders); `compute_hallen_fr_*_stub` renamed to `*_cpu`. Removed the
+  `FNEC_ACCEL_STUB_GPU` env hack, `ExecutionPath::GpuStubEmulation`,
+  `execute_frequency_point`, the dead `HallenRhsGpuKernel`/`PocklingtonMatrixGpuKernel`
+  structs, and the "accelerator stub backend … CPU emulation" warnings. See
+  `docs/ph7-chk-001-gpu-stub-retirement.md`.
+
+### Removed
+
+- **`--gpu-fr` CLI flag**: it only ran a CPU computation labelled as GPU. Superseded by
+  `--exec gpu`, which dispatches the real wgpu RP / Z-matrix-fill kernels.
 
 ## [0.6.0] — 2026-05-05
 ### Added

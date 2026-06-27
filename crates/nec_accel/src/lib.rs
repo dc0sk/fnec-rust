@@ -7,9 +7,12 @@
 //!
 //! GPU acceleration is implemented in two layers:
 //!
-//! - **`gpu_kernels`** — CPU-emulation stubs (always compiled).  These use the
-//!   same numerical algorithms as `nec_solver` and serve as the reference for
-//!   parity testing.  No real GPU dispatch occurs in this module.
+//! - **`gpu_kernels`** — the **CPU reference** far-field (radiation-pattern)
+//!   implementation, plus the GPU-ready data layouts (`GpuSegment`,
+//!   `GpuFarFieldPoint`) that the real wgpu kernels consume.  It runs the same
+//!   numerical algorithm as the wgpu shaders and is the parity baseline they are
+//!   tested against.  No GPU dispatch occurs in this module, and no path here
+//!   reports its CPU time as GPU time.
 //!
 //! - **`wgpu_device`** — real wgpu GPU dispatch (gated behind `feature = "wgpu"`).
 //!   Contains WGSL compute shaders for far-field radiation pattern (`RP`) and
@@ -18,33 +21,30 @@
 //!
 //! | Kernel / entry point | Module | Status |
 //! |---|---|---|
-//! | `HallenFrGpuKernel` (far-field Hallén) | `gpu_kernels` | CPU emulation stub |
-//! | `HallenRhsGpuKernel` (RHS builder) | `gpu_kernels` | CPU emulation stub |
-//! | `PocklingtonMatrixGpuKernel` (Z-matrix fill) | `gpu_kernels` | CPU emulation stub |
-//! | `compute_hallen_fr_point_stub` | `gpu_kernels` | CPU emulation stub |
-//! | `compute_hallen_fr_batch_stub` | `gpu_kernels` | CPU emulation stub |
+//! | `compute_hallen_fr_point_cpu` / `compute_hallen_fr_batch_cpu` | `gpu_kernels` | CPU reference (parity baseline) |
 //! | `run_rp_farfield_wgpu` | `wgpu_device` | **Real wgpu** — WGSL compute shader |
 //! | `run_rp_farfield_batch_wgpu` | `wgpu_device` | **Real wgpu** — batch WGSL dispatch |
 //! | `fill_zmatrix_wgpu` | `wgpu_device` | **Real wgpu** — N×N Z-matrix fill |
 //!
 //! **Known gaps:**
-//! - No GPU linear solver (LU decomposition runs on CPU).
+//! - No GPU linear solver — the dense solve runs on CPU (tracked as PH7-CHK-003).
 //! - `run_rp_farfield_wgpu` gain fields are hardcoded to sentinel `-999.99`;
 //!   only u_theta / u_phi are computed by the shader.
 //! - All GPU computations use f32 precision (f64 downcast).
 //!
 //! # Dispatch policy
 //!
-//! [`dispatch_frequency_point`] returns [`DispatchDecision::FallbackToCpu`]
-//! by default.  Setting `FNEC_ACCEL_STUB_GPU=1` forces
-//! [`DispatchDecision::RunOnGpu`] for testing the hybrid scheduling path,
-//! but [`execute_frequency_point`] still runs the CPU closure — the real
-//! wgpu path is invoked directly by solver tests, not through this dispatch
-//! seam.
+//! [`dispatch_frequency_point`] is the per-frequency scheduling seam used by the
+//! CLI hybrid sweep lane.  It currently always returns
+//! [`DispatchDecision::FallbackToCpu`]: real per-frequency GPU dispatch is not
+//! yet wired (tracked as PH7-CHK-004).  [`DispatchDecision::RunOnGpu`] is
+//! reserved for that work.  The real wgpu RP / Z-matrix-fill paths are dispatched
+//! directly from the solver/CLI, not through this seam.
 //!
 //! # Roadmap
 //!
-//! Remaining GPU work is tracked under DEC-003 in `docs/requirements.md`.
+//! Remaining GPU work is tracked under DEC-003 in `docs/requirements.md` and
+//! Phase 7 (`PH7-CHK-003`, `PH7-CHK-004`) in `docs/roadmap.md`.
 
 pub mod gpu_kernels;
 
@@ -55,9 +55,8 @@ pub mod wgpu_device;
 pub use wgpu_device::{fill_zmatrix_wgpu, ZElem, ZSegmentInput};
 
 pub use gpu_kernels::{
-    compute_hallen_fr_batch_stub, compute_hallen_fr_point_stub,
-    compute_hallen_fr_point_with_timing, HallenFrGpuKernel, HallenRhsGpuKernel, KernelTiming,
-    PocklingtonMatrixGpuKernel,
+    compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, compute_hallen_fr_point_with_timing,
+    HallenFrGpuKernel, KernelTiming,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,122 +65,56 @@ pub enum AccelRequestKind {
     GpuOnly,
 }
 
+/// Per-frequency scheduling decision for the CLI hybrid sweep lane.
+///
+/// `RunOnGpu` is reserved for PH7-CHK-004 (per-frequency GPU dispatch); until
+/// that lands, [`dispatch_frequency_point`] always returns `FallbackToCpu`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchDecision {
     RunOnGpu,
     FallbackToCpu { reason: &'static str },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionPath {
-    CpuFallback,
-    GpuStubEmulation,
-}
+/// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
+pub const GPU_DISPATCH_NOT_WIRED: &str = "per-frequency GPU dispatch not yet wired (PH7-CHK-004)";
 
-const ACCEL_STUB_GPU_ENV: &str = "FNEC_ACCEL_STUB_GPU";
-
-fn stub_gpu_enabled() -> bool {
-    std::env::var_os(ACCEL_STUB_GPU_ENV)
-        .and_then(|v| v.into_string().ok())
-        .is_some_and(|v| v == "1")
-}
-
+/// Decide whether a single frequency point should run on the GPU.
+///
+/// Currently always [`DispatchDecision::FallbackToCpu`] — per-frequency GPU
+/// dispatch is not yet wired (PH7-CHK-004). This is an honest seam: it never
+/// reports CPU work as GPU work.
 pub fn dispatch_frequency_point(_request: AccelRequestKind, _freq_hz: f64) -> DispatchDecision {
-    if stub_gpu_enabled() {
-        return DispatchDecision::RunOnGpu;
-    }
-
     DispatchDecision::FallbackToCpu {
-        reason: "GPU kernels are not yet wired",
-    }
-}
-
-pub fn execute_frequency_point<T, F>(
-    decision: DispatchDecision,
-    cpu_emulated_solve: F,
-) -> (ExecutionPath, Result<T, String>)
-where
-    F: FnOnce() -> Result<T, String>,
-{
-    match decision {
-        DispatchDecision::FallbackToCpu { .. } => {
-            (ExecutionPath::CpuFallback, cpu_emulated_solve())
-        }
-        DispatchDecision::RunOnGpu => (ExecutionPath::GpuStubEmulation, cpu_emulated_solve()),
+        reason: GPU_DISPATCH_NOT_WIRED,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::{
-        dispatch_frequency_point, execute_frequency_point, AccelRequestKind, DispatchDecision,
-        ExecutionPath,
+        dispatch_frequency_point, AccelRequestKind, DispatchDecision, GPU_DISPATCH_NOT_WIRED,
     };
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn hybrid_gpu_candidate_dispatch_falls_back_to_cpu_for_now() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
-        std::env::remove_var("FNEC_ACCEL_STUB_GPU");
         let decision = dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6);
         assert!(matches!(
             decision,
             DispatchDecision::FallbackToCpu {
-                reason: "GPU kernels are not yet wired"
+                reason: GPU_DISPATCH_NOT_WIRED
             }
         ));
     }
 
     #[test]
     fn gpu_only_dispatch_falls_back_to_cpu_for_now() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
-        std::env::remove_var("FNEC_ACCEL_STUB_GPU");
         let decision = dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6);
         assert!(matches!(
             decision,
             DispatchDecision::FallbackToCpu {
-                reason: "GPU kernels are not yet wired"
+                reason: GPU_DISPATCH_NOT_WIRED
             }
         ));
-    }
-
-    #[test]
-    fn stub_gpu_env_enables_run_on_gpu_dispatch() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
-        std::env::set_var("FNEC_ACCEL_STUB_GPU", "1");
-
-        let hybrid = dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6);
-        let gpu_only = dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6);
-
-        std::env::remove_var("FNEC_ACCEL_STUB_GPU");
-
-        assert!(matches!(hybrid, DispatchDecision::RunOnGpu));
-        assert!(matches!(gpu_only, DispatchDecision::RunOnGpu));
-    }
-
-    #[test]
-    fn execute_frequency_point_marks_fallback_path() {
-        let (path, result) = execute_frequency_point(
-            DispatchDecision::FallbackToCpu {
-                reason: "GPU kernels are not yet wired",
-            },
-            || Ok::<usize, String>(42),
-        );
-
-        assert_eq!(path, ExecutionPath::CpuFallback);
-        assert!(matches!(result, Ok(42)));
-    }
-
-    #[test]
-    fn execute_frequency_point_marks_stub_emulation_path() {
-        let (path, result) =
-            execute_frequency_point(DispatchDecision::RunOnGpu, || Ok::<usize, String>(7));
-
-        assert_eq!(path, ExecutionPath::GpuStubEmulation);
-        assert!(matches!(result, Ok(7)));
     }
 }
 
@@ -216,7 +149,7 @@ mod wgpu_tests {
         );
     }
 
-    /// Parity test — RP far-field wgpu kernel vs CPU stub (gate G3).
+    /// Parity test — RP far-field wgpu kernel vs CPU reference (gate G3).
     ///
     /// Uses a minimal 3-segment vertical dipole at 14 MHz.  For each of several
     /// (θ, φ) observation directions, asserts that the GPU radiation intensity
@@ -226,7 +159,7 @@ mod wgpu_tests {
     /// available the test passes vacuously — this is the expected CI behaviour on
     /// bare-metal hosts without a software rasterizer.
     #[test]
-    fn wgpu_rp_farfield_parity_vs_cpu_stub() {
+    fn wgpu_rp_farfield_parity_vs_cpu_reference() {
         use super::gpu_kernels::{GpuSegment, HallenFrGpuKernel};
         use super::wgpu_device::{run_rp_farfield_wgpu, RpPipelineResult};
         use num_complex::Complex64;

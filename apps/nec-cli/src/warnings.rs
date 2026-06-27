@@ -12,15 +12,17 @@ pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
         ExecutionMode::Cpu => {}
         ExecutionMode::Hybrid => {}
         ExecutionMode::Gpu => {
+            // The RP and Z-matrix-fill kernels run on the GPU via wgpu; the dense
+            // linear solve still runs on CPU (GPU-resident solve tracked as
+            // PH7-CHK-003). `dispatch_frequency_point` is the per-frequency
+            // scheduling seam, which is CPU-only until PH7-CHK-004.
             match nec_accel::dispatch_frequency_point(nec_accel::AccelRequestKind::GpuOnly, 0.0) {
                 nec_accel::DispatchDecision::FallbackToCpu { reason } => {
                     eprintln!("warning: --exec gpu requested, but {reason}; using CPU solve path");
                 }
-                nec_accel::DispatchDecision::RunOnGpu => {
-                    eprintln!(
-                    "warning: --exec gpu dispatched to accelerator stub backend; solving with CPU emulation"
-                );
-                }
+                // Reserved for PH7-CHK-004; real per-frequency GPU dispatch needs
+                // no fallback warning.
+                nec_accel::DispatchDecision::RunOnGpu => {}
             }
         }
     }

@@ -272,7 +272,6 @@ fn all_core_flags_combination_runs_successfully() {
         "cpu",
         "--bench-format",
         "json",
-        "--gpu-fr",
         deck.to_str().unwrap(),
     ]);
 

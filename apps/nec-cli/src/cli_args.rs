@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -19,7 +19,6 @@ pub struct ParsedArgs {
     pub execution_mode: ExecutionMode,
     pub enable_benchmarking: bool,
     pub bench_format: BenchFormat,
-    pub enable_gpu_fr: bool,
     pub output_format: OutputFormat,
     pub sweep_config_path: Option<PathBuf>,
     pub vars_path: Option<PathBuf>,
@@ -34,7 +33,6 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut execution_mode = ExecutionMode::Cpu;
     let mut enable_benchmarking = false;
     let mut bench_format = BenchFormat::Human;
-    let mut enable_gpu_fr = false;
     let mut output_format = OutputFormat::Text;
     let mut sweep_config_path: Option<PathBuf> = None;
     let mut vars_path: Option<PathBuf> = None;
@@ -127,9 +125,6 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                     enable_benchmarking = true;
                 }
             }
-            "--gpu-fr" => {
-                enable_gpu_fr = true;
-            }
             "--output-format" => {
                 i += 1;
                 if i >= args.len() {
@@ -218,7 +213,6 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         execution_mode,
         enable_benchmarking,
         bench_format,
-        enable_gpu_fr,
         output_format,
         sweep_config_path,
         vars_path,

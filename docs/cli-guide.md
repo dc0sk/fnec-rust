@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--gpu-fr] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 ```
 
@@ -40,9 +40,8 @@ Compatibility profile note:
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | `legacy` | EX type 3 runtime semantics: `legacy` keeps type 3 == type 0 behavior; `divide-by-i4` enables experimental source normalization using I4 as divisor when I4>0 |
-| `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by GPU stub timing gates) |
+| `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by the GPU benchmark timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
-| `--gpu-fr` | flag | off | Route RP far-field evaluation through accelerator stub path |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list); overrides the `FR` card frequency list for a batch solve. See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
 
@@ -367,10 +366,15 @@ Prints per-solve timing and residual diagnostics. CSV/JSON machine-readable line
 ### GPU far-field acceleration
 
 ```bash
-fnec --gpu-fr --exec hybrid dipole.nec
+fnec --exec gpu dipole.nec
 ```
 
-Routes RP far-field evaluation through the accelerator stub path.
+`--exec gpu` dispatches the radiation-pattern far-field and Z-matrix-fill
+kernels through real wgpu compute shaders when a wgpu adapter is available,
+falling back to CPU otherwise. The dense linear solve still runs on CPU
+(GPU-resident solve is tracked as roadmap item PH7-CHK-003). The legacy
+`--gpu-fr` flag — which only ran a CPU computation labelled as GPU — was
+removed in favour of this real GPU path (PH7-CHK-001).
 
 ### Compatibility flag placeholder
 
