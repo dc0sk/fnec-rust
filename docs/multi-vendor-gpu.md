@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/multi-vendor-gpu.md
 status: living
-last_updated: 2026-05-07
+last_updated: 2026-06-27
 ---
 
 # Multi-Vendor GPU Backend Matrix
@@ -126,7 +126,7 @@ No workarounds or backend-specific flags were required on any machine.
 |:-----|:-------|:------|
 | `wgpu_enumerate_adapters_does_not_panic` | ✓ pass | RADV RENOIR enumerated as adapter[0] |
 | `wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully` | ✓ pass | `NoOpPipelineResult::Success` |
-| `wgpu_rp_farfield_parity_vs_cpu_stub` | ✓ pass | wgpu kernel matches CPU stub within 1 % |
+| `wgpu_rp_farfield_parity_vs_cpu_reference` | ✓ pass | wgpu kernel matches CPU stub within 1 % |
 | `gpu_zmatrix_fill_matches_cpu_within_1e4_relative` | ✓ pass | Z-matrix dispatch path clean |
 | `gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu` | ✓ pass | Hallén solver dispatch path clean |
 
@@ -138,7 +138,7 @@ No workarounds or backend-specific flags were required on any machine.
 |:-----|:-------|:------|
 | `wgpu_enumerate_adapters_does_not_panic` | ✓ pass | Intel ANV adapter[0], Nvidia adapter[1] both enumerated |
 | `wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully` | ✓ pass | `NoOpPipelineResult::Success` |
-| `wgpu_rp_farfield_parity_vs_cpu_stub` | ✓ pass | Matches CPU stub within 1 % |
+| `wgpu_rp_farfield_parity_vs_cpu_reference` | ✓ pass | Matches CPU stub within 1 % |
 | `gpu_zmatrix_fill_matches_cpu_within_1e4_relative` | ✓ pass | Z-matrix path clean |
 | `gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu` | ✓ pass | Hallén path clean |
 | All other 12 tests | ✓ pass | No Intel- or Nvidia-specific deltas observed |
@@ -151,18 +151,19 @@ No workarounds or backend-specific flags were required on any machine.
 |:-----|:-------|:------|
 | `wgpu_enumerate_adapters_does_not_panic` | ✓ pass | V3D 7.1.10.2 enumerated as adapter[0] |
 | `wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully` | ✓ pass | `NoOpPipelineResult::Success` |
-| `wgpu_rp_farfield_parity_vs_cpu_stub` | ✓ pass | Matches CPU stub within 1 % |
+| `wgpu_rp_farfield_parity_vs_cpu_reference` | ✓ pass | Matches CPU stub within 1 % |
 | `gpu_zmatrix_fill_matches_cpu_within_1e4_relative` | ✓ pass | Z-matrix path clean |
 | `gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu` | ✓ pass | Hallén path clean |
 | All other 12 tests | ✓ pass | No V3DV- or aarch64-specific deltas observed |
 
-**Dispatch note**: `dispatch_frequency_point` currently returns `FallbackToCpu` for
-real workloads (GPU kernel wiring is not yet complete).  The Z-matrix and Hallén
-tests validate the CPU-backed dispatch layer, not a real wgpu compute shader
-dispatched to the GPU.  The validated path is: adapter enumeration →
-device/queue creation → no-op compute pipeline → RP far-field WGSL kernel.  The
-Z-matrix WGSL kernel and the Hallén solve kernel are wired but their dispatch is
-deferred (they fall back to CPU pending kernel optimisation — see `gpu-arch.md`).
+**Dispatch note (updated 2026-06-27)**: the per-frequency `dispatch_frequency_point`
+seam still returns `FallbackToCpu` (that lane is tracked separately), but the GPU
+kernels themselves are now really dispatched to the device: `--exec gpu` runs the
+RP far-field and Z-matrix-fill WGSL kernels, and — since PH7-CHK-003 — the
+GPU-resident Hallén solve (fill → LU → refinement entirely on the GPU). On this
+AMD Renoir/RADV target PH7-CHK-005 measured those real kernels (Z-fill ~200×
+faster than CPU up to 1536 segments). The validated path is therefore: adapter
+enumeration → device/queue creation → real RP / Z-fill / resident-solve dispatch.
 
 No vendor-specific deltas or workarounds were required on any of the four tested backends.
 
@@ -181,9 +182,9 @@ No vendor-specific deltas or workarounds were required on any of the four tested
 | Metal | macOS | Not tested | wgpu 0.19 supports Metal; no test hardware available |
 | OpenGL | Linux (Mesa) | Available | adapter[1] on Renoir; not used for compute |
 | WebGPU | Browser | Not targeted | fnec-rust is a CLI/TUI/GUI desktop tool |
-| OpenCL | Linux | Deferred | See DEC-008 below |
-| ROCm | Linux (AMD) | Deferred | See DEC-008 below |
-| SYCL | Cross-platform | Deferred | See DEC-008 below |
+| OpenCL | Linux | Deferred | DEC-008; dated deferral PH7-CHK-006 (2026-06-27) |
+| ROCm | Linux (AMD) | Deferred | DEC-008; dated deferral PH7-CHK-006 — Renoir APU outside ROCm support matrix |
+| SYCL | Cross-platform | Deferred | DEC-008; dated deferral PH7-CHK-006 — no SYCL toolchain on target |
 
 ---
 
@@ -215,6 +216,44 @@ DEC-008 and deferred past the current Phase 6 milestone sequence.
 Vulkan pipeline overhead (expected only at >10,000 segments with batch dispatch)
 or if a CI runner with ROCm becomes available.
 
+### PH7-CHK-006 outcome (2026-06-27): dated deferral
+
+PH7-CHK-006 asked to *validate a native non-wgpu backend (ROCm or SYCL) on an AMD
+target for the matrix-fill kernel, or record an explicit dated "not yet" with
+rationale and the concrete blocking gaps.* **Outcome: deferred** — native ROCm/
+SYCL validation is **not attempted** for the reasons below, each verified on the
+AMD target on 2026-06-27.
+
+**Concrete blocking gaps (verified, not asserted):**
+
+1. **Hardware is outside AMD's ROCm support matrix.** The AMD target is a
+   **Renoir** integrated APU (PCI device `0x1636`, `gfx90c`). AMD's official ROCm
+   support matrix covers CDNA datacenter parts and a subset of discrete RDNA
+   cards; Renoir/APU integrated GPUs are **not supported**. Running ROCm on it
+   requires unsupported `HSA_OVERRIDE_GFX_VERSION` overrides, which would make any
+   "validation" non-representative of a supported configuration.
+
+2. **No native GPU-compute toolchain is installed on the target.** Probed
+   2026-06-27: `rocminfo`, `hipcc`, `rocm-smi` absent; no `/opt/rocm*`; `clinfo`
+   (OpenCL) absent; no SYCL compiler (`icpx`, `acpp`, `syclcc`, `dpcpp`). A
+   validation attempt would first require installing the full ROCm/HIP stack (or a
+   SYCL implementation) on unsupported hardware — large effort, low confidence.
+
+3. **`nec_accel` is wgpu-only by design; a native backend is a parallel
+   implementation.** Adding ROCm/HIP or SYCL means new FFI bindings, a second
+   matrix-fill kernel maintained alongside `zmatrix_fill.wgsl`, a build/feature
+   gate, and dependency/license review — for **no correctness gain**: the wgpu
+   **Vulkan (RADV)** path is already validated on this exact Renoir GPU
+   (PH7-CHK-005 measured real Z-fill/RP kernels here), so cross-vendor AMD
+   acceleration is already delivered.
+
+**Revisit trigger (specific):** pursue native ROCm/SYCL only when *either* a
+ROCm-supported AMD device (CDNA, or a supported discrete RDNA card) becomes
+available for validation, *or* profiling shows the RADV Vulkan matrix-fill path is
+the bottleneck at production problem sizes (the PH7-CHK-005 crossover shows the
+Vulkan kernel is ~200× faster than CPU up to 1536 segments, so this is not
+currently the case). Until then the Vulkan path is the supported AMD backend.
+
 ---
 
 ## CI Behaviour
@@ -233,5 +272,5 @@ No backend-specific CI flags are required for any of the four validated backends
 ## See Also
 
 - [docs/gpu-arch.md](gpu-arch.md) — GPU acceleration architecture decisions
-- [docs/roadmap.md](roadmap.md) — PH6-CHK-004 checklist entry
+- [docs/roadmap.md](roadmap.md) — PH6-CHK-004 and PH7-CHK-006 checklist entries
 - [crates/nec_accel/src/wgpu_device.rs](../crates/nec_accel/src/wgpu_device.rs) — adapter enumeration and pipeline implementation
