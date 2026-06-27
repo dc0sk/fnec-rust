@@ -25,9 +25,12 @@
 //! | `run_rp_farfield_wgpu` | `wgpu_device` | **Real wgpu** — WGSL compute shader |
 //! | `run_rp_farfield_batch_wgpu` | `wgpu_device` | **Real wgpu** — batch WGSL dispatch |
 //! | `fill_zmatrix_wgpu` | `wgpu_device` | **Real wgpu** — N×N Z-matrix fill |
+//! | `solve_hallen_gpu_resident` | `wgpu_device` | **Real wgpu** — GPU-resident fill + dense solve |
 //!
 //! **Known gaps:**
-//! - No GPU linear solver — the dense solve runs on CPU (tracked as PH7-CHK-003).
+//! - `solve_hallen_gpu_resident` is f32 (LU + Björck refinement); it matches the
+//!   f64 CPU solve to ~0.01 Ω on the reference dipole but the f64 CPU solve
+//!   remains the corpus-gate accuracy reference (see `docs/ph7-chk-003-gpu-resident-solve.md`).
 //! - `run_rp_farfield_wgpu` gain fields are hardcoded to sentinel `-999.99`;
 //!   only u_theta / u_phi are computed by the shader.
 //! - All GPU computations use f32 precision (f64 downcast).
@@ -52,7 +55,7 @@ pub mod gpu_kernels;
 pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
-pub use wgpu_device::{fill_zmatrix_wgpu, ZElem, ZSegmentInput};
+pub use wgpu_device::{fill_zmatrix_wgpu, solve_hallen_gpu_resident, ZElem, ZSegmentInput};
 
 pub use gpu_kernels::{
     compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, compute_hallen_fr_point_with_timing,

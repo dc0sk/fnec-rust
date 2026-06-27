@@ -371,10 +371,15 @@ fnec --exec gpu dipole.nec
 
 `--exec gpu` dispatches the radiation-pattern far-field and Z-matrix-fill
 kernels through real wgpu compute shaders when a wgpu adapter is available,
-falling back to CPU otherwise. The dense linear solve still runs on CPU
-(GPU-resident solve is tracked as roadmap item PH7-CHK-003). The legacy
-`--gpu-fr` flag — which only ran a CPU computation labelled as GPU — was
-removed in favour of this real GPU path (PH7-CHK-001).
+falling back to CPU otherwise. For Hallén decks in the supported class
+(free-space ground, no LD/TL cards) it also runs the **GPU-resident dense
+solve** (PH7-CHK-003): the impedance matrix is filled and the system solved
+entirely on the device, with only the solution vector returned. This path is
+f32 (LU + iterative refinement) and matches the f64 CPU solve to ~0.01 Ω on the
+reference dipole; the f64 CPU solve (`--exec cpu`) remains the accuracy
+reference for corpus tolerance gates. The legacy `--gpu-fr` flag — which only
+ran a CPU computation labelled as GPU — was removed in favour of this real GPU
+path (PH7-CHK-001).
 
 ### Compatibility flag placeholder
 
