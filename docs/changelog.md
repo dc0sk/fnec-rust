@@ -9,7 +9,7 @@ last_updated: 2026-06-27
 
 All notable documentation process changes are recorded here.
 
-## [Unreleased]
+## [0.7.0] — 2026-06-27 — Phase 7 complete: GPU productionization
 ### Added
 
 - **PH7-CHK-006 — native ROCm/SYCL backend: dated deferral**. `docs/multi-vendor-gpu.md`

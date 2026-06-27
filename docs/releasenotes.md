@@ -2,10 +2,56 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-06-27
 ---
 
 # Release Notes
+
+## 0.7.0 — Phase 7 complete: GPU productionization
+
+This release turns the GPU path from a working-but-host-bound scaffold into a
+production accelerator, and makes the GPU surface honest end-to-end.
+
+### GPU-resident solve
+
+- **`--exec gpu` now solves on the device.** For Hallén decks in the supported
+  class (free-space ground, no `LD`/`TL` cards), the impedance matrix is filled
+  **and** the regularized normal-equations system is solved entirely on the GPU —
+  Jacobi equilibration + complex LU with partial pivoting + Björck least-squares
+  refinement — and only the solution vector returns. The N×N matrix never leaves
+  the device. f32 precision; matches the f64 CPU solve to ~0.01 Ω on the
+  reference dipole. The f64 CPU solve (`--exec cpu`) remains the accuracy
+  reference for tolerance-gated work.
+
+### Distributed GPU execution
+
+- **`fnec --exec gpu --hosts hosts.toml`** asks each worker to solve on its GPU.
+  GPU-capable nodes use their GPU; CPU-only nodes (or out-of-class decks) fall
+  back transparently, so a heterogeneous pool returns correct impedance on every
+  node. New `exec` request / `exec_used` report fields are serde-default, so
+  pre-0.7 peers interoperate.
+
+### Benchmarking and evidence
+
+- **In-process GPU microbenchmark** isolates per-kernel dispatch time from the
+  one-time wgpu device-init (which the across-process gate cannot separate).
+- **Real discrete-GPU crossover** measured on AMD (RADV RENOIR, Vulkan): once the
+  device is initialized, the GPU Z-fill beats CPU below 32 segments and scales to
+  ~240× by 1,536 segments; RP wall-clock is 1.5–1.8× faster. See `docs/benchmarks.md`.
+
+### Honesty / cleanup
+
+- **Retired the GPU CPU-emulation scaffold.** No code path reports CPU compute as
+  GPU time anymore. Removed the `FNEC_ACCEL_STUB_GPU` env hack, the
+  `ExecutionPath::GpuStubEmulation` path, and dead stub structs.
+- **Removed the `--gpu-fr` flag** (it ran a CPU computation labelled as GPU);
+  superseded by `--exec gpu`.
+
+### Deferred
+
+- **Native ROCm/SYCL** backend is deferred with a dated, verified rationale (the
+  AMD target's Renoir APU is outside ROCm's support matrix; the wgpu Vulkan path
+  already covers AMD). See `docs/multi-vendor-gpu.md`.
 
 ## 0.6.0 — Phase 6 complete: distributed execution, multi-vendor GPU, sinusoidal EFIE
 
