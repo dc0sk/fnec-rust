@@ -1050,6 +1050,215 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
 }
 
 // ---------------------------------------------------------------------------
+// In-process GPU microbenchmark (PH7-CHK-002)
+// ---------------------------------------------------------------------------
+
+/// Result of [`microbench_zmatrix_dispatch`].
+///
+/// Separates the one-time wgpu **device-initialization** cost from the per-kernel
+/// **dispatch** cost. The across-process G5 gate
+/// (`apps/nec-cli/tests/gpu_benchmark_gate.rs`) cannot make this split because
+/// each of its samples is a fresh process that re-pays device-init; this
+/// in-process measurement pays it once and times many reused dispatches.
+#[derive(Debug, Clone, Copy)]
+pub struct GpuMicrobench {
+    /// Problem size (segments) the microbenchmark filled.
+    pub n_segments: usize,
+    /// Number of timed dispatches.
+    pub n_dispatches: usize,
+    /// One-time wgpu device acquisition (instance + adapter + device), µs.
+    pub device_init_us: u64,
+    /// Best (minimum) per-dispatch submit→complete time, µs (device-init excluded).
+    pub dispatch_min_us: u64,
+    /// Median per-dispatch submit→complete time, µs.
+    pub dispatch_median_us: u64,
+}
+
+/// In-process GPU microbenchmark of the Z-matrix-fill kernel (PH7-CHK-002).
+///
+/// Acquires the wgpu device **once** (timed as `device_init_us`), builds the
+/// pipeline and buffers once, then runs warm-up plus `reps` timed dispatches that
+/// reuse all resources — so `dispatch_min_us` / `dispatch_median_us` measure pure
+/// kernel dispatch + execution with no device-init contamination. Uses the
+/// minimum over `reps` as the headline figure to reject positive-only wall-clock
+/// noise (the source of the across-process gate's flakiness).
+///
+/// Returns `None` when no wgpu adapter is available.
+pub async fn microbench_zmatrix_dispatch(
+    segments: &[ZSegmentInput],
+    freq_hz: f64,
+    reps: usize,
+) -> Option<GpuMicrobench> {
+    use std::time::Instant;
+    use wgpu::util::DeviceExt;
+
+    if segments.is_empty() || reps == 0 {
+        return None;
+    }
+    let n = segments.len();
+    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+
+    // ---- timed device acquisition -----------------------------------------
+    let t_dev = Instant::now();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+        .ok()?;
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("fnec-microbench"),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        })
+        .await
+        .ok()?;
+    let device_init_us = t_dev.elapsed().as_micros() as u64;
+
+    // ---- build pipeline + buffers once ------------------------------------
+    let seg_data: Vec<GpuSegmentZ> = segments
+        .iter()
+        .map(|s| GpuSegmentZ {
+            mid_x: s.midpoint[0] as f32,
+            mid_y: s.midpoint[1] as f32,
+            mid_z: s.midpoint[2] as f32,
+            dir_x: s.direction[0] as f32,
+            dir_y: s.direction[1] as f32,
+            dir_z: s.direction[2] as f32,
+            length: s.length as f32,
+            radius: s.radius as f32,
+            _pad0: 0.0,
+            _pad1: 0.0,
+        })
+        .collect();
+    let seg_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("microbench-segs"),
+        contents: bytemuck::cast_slice(&seg_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("microbench-uniforms"),
+        contents: bytemuck::bytes_of(&ZUniforms {
+            k,
+            n: n as u32,
+            _p0: 0,
+            _p1: 0,
+        }),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("microbench-output"),
+        size: (2 * n * n * std::mem::size_of::<f32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("microbench-shader"),
+        source: wgpu::ShaderSource::Wgsl(ZMATRIX_WGSL.into()),
+    });
+    let entry = |binding: u32, read_only: bool, uniform: bool| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: if uniform {
+                wgpu::BufferBindingType::Uniform
+            } else {
+                wgpu::BufferBindingType::Storage { read_only }
+            },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("microbench-bgl"),
+        entries: &[
+            entry(0, true, false),
+            entry(1, false, true),
+            entry(2, false, false),
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("microbench-layout"),
+        bind_group_layouts: &[Some(&bgl)],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("microbench-pipeline"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("cs_zmatrix_fill"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("microbench-bg"),
+        layout: &bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: seg_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: output_buf.as_entire_binding(),
+            },
+        ],
+    });
+    let workgroups = ((n * n) as u32).div_ceil(64);
+
+    let one_dispatch = || {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("microbench-encoder"),
+        });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("microbench-pass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(workgroups, 1, 1);
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
+    };
+
+    // ---- warm-up (shader compile / lazy init), then timed reps ------------
+    for _ in 0..2 {
+        one_dispatch();
+    }
+    let mut times: Vec<u64> = Vec::with_capacity(reps);
+    for _ in 0..reps {
+        let t = Instant::now();
+        one_dispatch();
+        times.push(t.elapsed().as_micros() as u64);
+    }
+    times.sort_unstable();
+
+    Some(GpuMicrobench {
+        n_segments: n,
+        n_dispatches: reps,
+        device_init_us,
+        dispatch_min_us: times[0],
+        dispatch_median_us: times[times.len() / 2],
+    })
+}
+
+// ---------------------------------------------------------------------------
 // GPU-resident Hallén solve (gate PH7-CHK-003)
 // ---------------------------------------------------------------------------
 
