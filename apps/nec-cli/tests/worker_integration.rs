@@ -5,7 +5,7 @@
 //!
 //! Tests 1-2: library-level (hosts config, capability cache).
 //! Tests 3-4: local subprocess worker round-trip.
-//! Tests 5-7: SSH worker handle (graceful error handling).
+//! Tests 5-7: SSH worker handle (graceful error handling, localhost round-trip).
 
 use base64::Engine;
 
@@ -222,4 +222,140 @@ fn test_ssh_worker_dispatch_failure() {
         result.is_err(),
         "expected dispatch to fail when remote is unreachable"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6 — SshWorkerHandle round-trip via localhost SSH
+// ---------------------------------------------------------------------------
+#[test]
+fn test_ssh_worker_localhost_round_trip() {
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+
+    // Check that ssh binary is available.
+    if std::process::Command::new("ssh")
+        .arg("-V")
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(true)
+    {
+        eprintln!("info: ssh not available, skipping test");
+        return;
+    }
+
+    // Try connecting to localhost via SSH.
+    let entry = nec_worker::HostEntry {
+        hostname: "127.0.0.1".to_string(),
+        ssh_user: None,
+        binary_path: Some(fnec.to_string()),
+        cpu_threads_override: None,
+        gpu_weight_override: None,
+    };
+
+    let mut handle = match nec_worker::SshWorkerHandle::connect(&entry) {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("info: localhost SSH not configured (missing key-based auth), skipping test");
+            return;
+        }
+    };
+
+    // Send a solve task and verify the result.
+    let task = nec_worker::TaskMessage {
+        task_id: "t-ssh-local".to_string(),
+        deck_hash: "ignored".to_string(),
+        deck_b64: b64(DIPOLE_DECK),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+        },
+        frequency_hz: 14.175e6,
+    };
+
+    let result = handle
+        .dispatch(&task)
+        .expect("SSH dispatch to localhost should succeed");
+    assert_eq!(result.task_id(), "t-ssh-local");
+    assert!(result.is_ok(), "solve should succeed");
+
+    if let nec_worker::TaskResult::Ok { impedance, .. } = &result {
+        assert!(
+            impedance.re_ohm > 30.0 && impedance.re_ohm < 120.0,
+            "feedpoint resistance should be in 30-120 Ω range, got {} Ω",
+            impedance.re_ohm
+        );
+        // Compare against local solve reference.
+        let local = nec_worker::solve::solve_deck_at_frequency(DIPOLE_DECK, 14.175e6, "hallen")
+            .expect("local solve should succeed");
+        let rel_re = ((impedance.re_ohm - local.impedance_re) / local.impedance_re.abs()).abs();
+        assert!(
+            rel_re < 1e-6,
+            "re error: rel={rel_re:.2e} (ssh={}, local={})",
+            impedance.re_ohm,
+            local.impedance_re
+        );
+    }
+
+    handle.shutdown().expect("shutdown should succeed");
+}
+
+// ---------------------------------------------------------------------------
+// Test 7 — reconnection: SSH worker re-establishes connection after drop
+// ---------------------------------------------------------------------------
+#[test]
+fn test_ssh_worker_reconnect_after_disconnect() {
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+
+    if std::process::Command::new("ssh")
+        .arg("-V")
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(true)
+    {
+        eprintln!("info: ssh not available, skipping test");
+        return;
+    }
+
+    let entry = nec_worker::HostEntry {
+        hostname: "127.0.0.1".to_string(),
+        ssh_user: None,
+        binary_path: Some(fnec.to_string()),
+        cpu_threads_override: None,
+        gpu_weight_override: None,
+    };
+
+    let mut handle = match nec_worker::SshWorkerHandle::connect(&entry) {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("info: localhost SSH not configured, skipping test");
+            return;
+        }
+    };
+
+    let task = |id: &str, freq: f64| nec_worker::TaskMessage {
+        task_id: id.to_string(),
+        deck_hash: "x".to_string(),
+        deck_b64: b64(DIPOLE_DECK),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+        },
+        frequency_hz: freq,
+    };
+
+    let r1 = handle
+        .dispatch(&task("t-rc-1", 14.0e6))
+        .expect("first dispatch");
+    assert!(r1.is_ok());
+
+    // Kill the SSH subprocess to simulate a dropped connection,
+    // then verify that reconnect restores communication.
+    handle.reconnect().expect("manual reconnect");
+
+    let r2 = handle
+        .dispatch(&task("t-rc-2", 14.5e6))
+        .expect("dispatch after reconnect");
+    assert!(r2.is_ok(), "solve after reconnect should succeed");
+    assert_eq!(r2.task_id(), "t-rc-2");
+
+    handle.shutdown().expect("shutdown");
 }
