@@ -2,7 +2,7 @@ use base64::Engine;
 use std::io::{BufRead, Write};
 
 use crate::protocol::{ErrorCode, Impedance, TaskMessage, TaskResult};
-use crate::solve::{solve_deck_at_frequency, SolveError};
+use crate::solve::{solve_deck_at_frequency_with_exec, SolveError};
 
 /// Run the worker stdio event loop.
 ///
@@ -59,6 +59,7 @@ fn process_task(line: &str) -> TaskResult {
     let task_id = task.task_id.clone();
     let freq_hz = task.frequency_hz;
     let basis = task.solver_config.basis.clone();
+    let exec = task.solver_config.exec.clone();
 
     let deck_bytes = match decode_b64(&task.deck_b64) {
         Ok(b) => b,
@@ -86,7 +87,7 @@ fn process_task(line: &str) -> TaskResult {
 
     let deck_str = deck_str.to_string();
 
-    match solve_deck_at_frequency(&deck_str, freq_hz, &basis) {
+    match solve_deck_at_frequency_with_exec(&deck_str, freq_hz, &basis, &exec) {
         Ok(fp) => {
             let vswr = vswr(fp.impedance_re, fp.impedance_im, 50.0);
             TaskResult::Ok {
@@ -99,6 +100,7 @@ fn process_task(line: &str) -> TaskResult {
                 vswr_50: vswr,
                 feedpoint_current_mag: fp.current_mag,
                 feedpoint_current_phase_deg: fp.current_phase_deg,
+                exec_used: fp.exec_used,
             }
         }
         Err(SolveError::SingularMatrix(m)) => TaskResult::Error {

@@ -22,6 +22,7 @@ mod tests {
             vswr_50: 1.5,
             feedpoint_current_mag: 0.5,
             feedpoint_current_phase_deg: 10.0,
+            exec_used: "cpu".into(),
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: TaskResult = serde_json::from_str(&json).unwrap();
@@ -68,6 +69,7 @@ mod tests {
             solver_config: WorkerSolverConfig {
                 basis: "hallen".into(),
                 ground_model: "perfect".into(),
+                exec: "cpu".into(),
             },
             frequency_hz: 7.15e6,
         };
@@ -90,6 +92,7 @@ mod tests {
         let cfg = WorkerSolverConfig {
             basis: "sinusoidal".into(),
             ground_model: "sommerfeld".into(),
+            exec: "cpu".into(),
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let back: WorkerSolverConfig = serde_json::from_str(&json).unwrap();
@@ -108,6 +111,12 @@ pub struct WorkerSolverConfig {
     /// Ground model: `"none"` | `"perfect"` | `"sommerfeld"`.
     #[serde(default = "default_ground")]
     pub ground_model: String,
+    /// Execution preference: `"cpu"` | `"gpu"` (PH7-CHK-004). When `"gpu"` and the
+    /// node has a usable wgpu adapter and the deck is in the GPU-resident
+    /// supported class, the worker solves on the GPU; otherwise it falls back to
+    /// the CPU solve. Defaults to `"cpu"` for wire back-compat.
+    #[serde(default = "default_exec")]
+    pub exec: String,
 }
 
 fn default_basis() -> String {
@@ -116,12 +125,16 @@ fn default_basis() -> String {
 fn default_ground() -> String {
     "none".to_string()
 }
+fn default_exec() -> String {
+    "cpu".to_string()
+}
 
 impl Default for WorkerSolverConfig {
     fn default() -> Self {
         Self {
             basis: default_basis(),
             ground_model: default_ground(),
+            exec: default_exec(),
         }
     }
 }
@@ -170,6 +183,10 @@ pub enum TaskResult {
         vswr_50: f64,
         feedpoint_current_mag: f64,
         feedpoint_current_phase_deg: f64,
+        /// Execution path the worker actually used: `"cpu"` | `"gpu"`
+        /// (PH7-CHK-004). Defaults to `"cpu"` for wire back-compat.
+        #[serde(default = "default_exec")]
+        exec_used: String,
     },
     Error {
         task_id: String,

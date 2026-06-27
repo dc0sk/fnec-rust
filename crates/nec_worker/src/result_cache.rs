@@ -161,6 +161,7 @@ mod tests {
             vswr_50: 1.5,
             feedpoint_current_mag: 0.5,
             feedpoint_current_phase_deg: 10.0,
+            exec_used: "cpu".into(),
         }
     }
 
@@ -168,6 +169,7 @@ mod tests {
         WorkerSolverConfig {
             basis: "hallen".into(),
             ground_model: "none".into(),
+            exec: "cpu".into(),
         }
     }
 
@@ -277,6 +279,7 @@ mod tests {
                 vswr_50: 1.2,
                 feedpoint_current_mag: 0.6,
                 feedpoint_current_phase_deg: 5.0,
+                exec_used: "cpu".into(),
             },
         );
         cache.insert(
@@ -291,6 +294,7 @@ mod tests {
                 vswr_50: 1.3,
                 feedpoint_current_mag: 0.55,
                 feedpoint_current_phase_deg: 8.0,
+                exec_used: "cpu".into(),
             },
         );
         assert_eq!(cache.len(), 2);

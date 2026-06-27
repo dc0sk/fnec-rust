@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH7-CHK-004 — distributed GPU execution**: `--exec gpu` is wired through the
+  `nec_worker` SSH pool. New `WorkerSolverConfig.exec` request and
+  `TaskResult.exec_used` report fields (serde-default for wire back-compat);
+  `solve_deck_at_frequency_with_exec` dispatches the GPU-resident solve
+  (PH7-CHK-003) on a node with a wgpu adapter for the supported deck class, and
+  falls back to the CPU solve otherwise. `nec_worker` now depends on `nec_accel`
+  (wgpu). See `docs/ph7-chk-004-distributed-gpu-execution.md`.
+
 - **PH7-CHK-003 — GPU-resident Hallén solve**: `solve_hallen_gpu_resident`
   (`crates/nec_accel`, `shaders/hallen_normal_solve.wgsl`) fills the Z-matrix and
   solves the regularized normal-equations system entirely on the GPU — Jacobi

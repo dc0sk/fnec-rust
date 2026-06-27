@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/worker-deployment.md
 status: living
-last_updated: 2026-06-20
+last_updated: 2026-06-27
 ---
 
 # Worker Node Deployment Guide
@@ -134,6 +134,26 @@ in `hosts.toml`).
 
 ---
 
+## Distributed GPU execution (PH7-CHK-004)
+
+Running a distributed sweep with `--exec gpu` asks every worker to solve on its
+GPU:
+
+```bash
+fnec --exec gpu --hosts hosts.toml antenna.nec
+```
+
+Each worker honours the request only if it actually has a usable wgpu adapter
+**and** the deck is in the GPU-resident supported class (Hallén solver,
+free-space ground, no `LD`/`TL` cards). Otherwise it transparently falls back to
+the f64 CPU solve — so a heterogeneous pool (some GPU nodes, some CPU-only)
+returns correct impedance on every node. The worker reports which path it took
+via the `exec_used` field (`"cpu"` | `"gpu"`) in each result. The GPU path is the
+f32 GPU-resident solve from PH7-CHK-003; the f64 CPU solve remains the accuracy
+reference for tolerance-gated work.
+
+---
+
 ## Running the Worker Manually (Debugging)
 
 To test the worker protocol by hand:
@@ -227,6 +247,7 @@ let result = handle.dispatch(&TaskMessage {
     solver_config: WorkerSolverConfig {
         basis: "hallen".into(),
         ground_model: "none".into(),
+        exec: "cpu".into(), // or "gpu" to request the GPU-resident solve
     },
     frequency_hz: 14.175e6,
 })?;

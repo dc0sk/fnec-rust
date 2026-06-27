@@ -2200,10 +2200,12 @@ name = "nec_worker"
 version = "0.6.0"
 dependencies = [
  "base64",
+ "nec_accel",
  "nec_model",
  "nec_parser",
  "nec_solver",
  "num-complex",
+ "pollster",
  "serde",
  "serde_json",
  "sha2",

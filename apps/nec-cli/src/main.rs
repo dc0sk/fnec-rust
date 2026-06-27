@@ -246,6 +246,7 @@ fn main() -> ExitCode {
             enable_benchmarking,
             bench_format,
             solver_mode,
+            execution_mode,
             &path,
         );
     }
@@ -431,6 +432,7 @@ fn run_distributed_solve(
     enable_benchmarking: bool,
     bench_format: BenchFormat,
     solver_mode: SolverMode,
+    execution_mode: ExecutionMode,
     path: &std::path::Path,
 ) -> ExitCode {
     let cfg = match HostsConfig::from_file(hosts_path) {
@@ -460,8 +462,16 @@ fn run_distributed_solve(
     let deck_b64 = encode_deck(input);
     let deck_hash = "na".to_string(); // informational; worker does not verify
     let basis = solver_mode.as_str().to_string();
+    // PH7-CHK-004: ask workers to use the GPU when the run is --exec gpu; each
+    // worker falls back to CPU if it has no adapter or the deck is out of class.
+    let exec = if execution_mode == ExecutionMode::Gpu {
+        "gpu".to_string()
+    } else {
+        "cpu".to_string()
+    };
     let solver_config = WorkerSolverConfig {
         basis,
+        exec,
         ..WorkerSolverConfig::default()
     };
 

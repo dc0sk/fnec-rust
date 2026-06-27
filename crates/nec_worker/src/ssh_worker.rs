@@ -192,6 +192,7 @@ impl SshWorkerHandle {
             solver_config: crate::protocol::WorkerSolverConfig {
                 basis: "hallen".to_string(),
                 ground_model: "none".to_string(),
+                exec: "cpu".to_string(),
             },
             frequency_hz: 14.2e6,
         };

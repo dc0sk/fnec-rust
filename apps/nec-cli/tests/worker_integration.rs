@@ -94,6 +94,7 @@ fn test_worker_single_task_round_trip() {
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
         },
         frequency_hz: 14.175e6,
     };
@@ -135,6 +136,7 @@ fn test_worker_two_node_solve_matches_local() {
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
         },
         frequency_hz: freq,
     };
@@ -214,6 +216,7 @@ fn test_ssh_worker_dispatch_failure() {
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
         },
         frequency_hz: 14.0e6,
     };
@@ -267,6 +270,7 @@ fn test_ssh_worker_localhost_round_trip() {
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
         },
         frequency_hz: 14.175e6,
     };
@@ -338,6 +342,7 @@ fn test_ssh_worker_reconnect_after_disconnect() {
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
         },
         frequency_hz: freq,
     };
