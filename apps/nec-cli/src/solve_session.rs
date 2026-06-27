@@ -394,7 +394,6 @@ pub(super) fn solve_frequency_point(
     solver_mode: SolverMode,
     pulse_rhs_mode: PulseRhsMode,
     execution_mode: ExecutionMode,
-    enable_gpu_fr: bool,
     sin_fallback_rel_max: f64,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
@@ -688,50 +687,6 @@ pub(super) fn solve_frequency_point(
                     .collect()
             }
         }
-    } else if enable_gpu_fr {
-        // Dispatch far-field to GPU kernel stub
-        // Note: GPU stub uses CPU computation; normalization computed via simple heuristic
-        let gpu_segments: Vec<_> = segs
-            .iter()
-            .map(|seg| nec_accel::gpu_kernels::GpuSegment {
-                midpoint: seg.midpoint,
-                direction: seg.direction,
-                length: seg.length,
-            })
-            .collect();
-
-        // Use standard CPU path once to get normalization, then switch to GPU stub for pattern eval
-        // (In production, the GPU would compute this on-device)
-        let _ = compute_radiation_pattern(segs, &i_vec, freq_hz, &[pattern_points[0]], ground);
-
-        // For stub, use a simple normalized reference (total current squared)
-        let norm_ref = i_vec
-            .iter()
-            .map(num_complex::Complex::norm_sqr)
-            .sum::<f64>();
-
-        let kernel = nec_accel::HallenFrGpuKernel::new(
-            gpu_segments,
-            i_vec.clone(),
-            freq_hz,
-            norm_ref.max(1e-6),
-        );
-        let pattern_points_tuples: Vec<_> = pattern_points
-            .iter()
-            .map(|p| (p.theta_deg, p.phi_deg))
-            .collect();
-
-        nec_accel::compute_hallen_fr_batch_stub(&kernel, &pattern_points_tuples)
-            .iter()
-            .map(|r| PatternRow {
-                theta_deg: r.theta_deg,
-                phi_deg: r.phi_deg,
-                gain_total_dbi: r.gain_total_dbi,
-                gain_theta_dbi: r.gain_theta_dbi,
-                gain_phi_dbi: r.gain_phi_dbi,
-                axial_ratio: r.axial_ratio,
-            })
-            .collect()
     } else {
         // Standard CPU path
         let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
@@ -808,14 +763,11 @@ pub(super) fn execute_frequency_sweep<F>(
 ) -> (
     Vec<(usize, Result<FrequencySolveResult, String>, u128)>,
     usize,
-    usize,
 )
 where
     F: Fn(f64) -> Result<FrequencySolveResult, String> + Sync,
 {
-    use nec_accel::{
-        dispatch_frequency_point, execute_frequency_point, AccelRequestKind, ExecutionPath,
-    };
+    use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
     use rayon::prelude::*;
 
     let timed_solve_one = |freq_hz: f64| {
@@ -840,49 +792,20 @@ where
             .collect();
         solved.extend(cpu_results);
 
-        let gpu_dispatch: Vec<(usize, nec_accel::DispatchDecision)> = lane_plan
-            .gpu_candidate_indices
-            .iter()
-            .copied()
-            .map(|idx| {
-                (
-                    idx,
-                    dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]),
-                )
-            })
-            .collect();
+        // The GPU-candidate lane consults the scheduling seam. Until per-frequency
+        // GPU dispatch is wired (PH7-CHK-004) every point falls back to CPU; we
+        // count those so the CLI can warn honestly that no GPU work occurred.
+        let mut gpu_fallback_count = 0usize;
+        for idx in lane_plan.gpu_candidate_indices.iter().copied() {
+            match dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]) {
+                DispatchDecision::FallbackToCpu { .. } => gpu_fallback_count += 1,
+                DispatchDecision::RunOnGpu => {}
+            }
+            let (result, elapsed_ms) = timed_solve_one(freqs_hz[idx]);
+            solved.push((idx, result, elapsed_ms));
+        }
 
-        let gpu_fallback_results: Vec<(
-            usize,
-            ExecutionPath,
-            Result<FrequencySolveResult, String>,
-            u128,
-        )> = gpu_dispatch
-            .into_iter()
-            .map(|(idx, decision)| {
-                let t0 = std::time::Instant::now();
-                let (path, result) = execute_frequency_point(decision, || solve_one(freqs_hz[idx]));
-                let elapsed_ms = t0.elapsed().as_millis();
-                (idx, path, result, elapsed_ms)
-            })
-            .collect();
-
-        let gpu_fallback_count = gpu_fallback_results
-            .iter()
-            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::CpuFallback))
-            .count();
-        let gpu_stub_count = gpu_fallback_results
-            .iter()
-            .filter(|(_, path, _, _)| matches!(path, ExecutionPath::GpuStubEmulation))
-            .count();
-
-        solved.extend(
-            gpu_fallback_results
-                .into_iter()
-                .map(|(idx, _, result, elapsed_ms)| (idx, result, elapsed_ms)),
-        );
-
-        (solved, gpu_fallback_count, gpu_stub_count)
+        (solved, gpu_fallback_count)
     } else {
         let solved = freqs_hz
             .iter()
@@ -893,6 +816,6 @@ where
                 (idx, result, elapsed_ms)
             })
             .collect();
-        (solved, 0, 0)
+        (solved, 0)
     }
 }

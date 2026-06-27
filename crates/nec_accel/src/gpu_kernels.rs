@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! GPU kernel stubs for far-field (radiation pattern) computation.
+//! CPU reference far-field (radiation-pattern) kernel and GPU-ready data layouts.
 //!
-//! This module provides stub implementations of GPU kernels that perform
-//! far-field calculations. Currently implemented on CPU, the structure is
-//! designed to be replaced with CUDA/OpenCL code in future versions.
+//! This module provides the **CPU reference implementation** of the Hallén
+//! far-field computation (`compute_hallen_fr_point_cpu` /
+//! `compute_hallen_fr_batch_cpu`), plus the GPU-ready data layouts
+//! (`GpuSegment`, `GpuFarFieldPoint`) that the real wgpu kernels in
+//! [`crate::wgpu_device`] consume.
 //!
-//! ## Architecture
-//!
-//! Each kernel function follows the pattern:
-//! 1. Prepare input data (geometry, currents, frequency)
-//! 2. Transfer to GPU memory (stub: no-op)
-//! 3. Invoke GPU kernel (stub: CPU computation marked as GPU)
-//! 4. Transfer results back (stub: no-op)
-//!
-//! The stub implementations use the same numerical algorithms as the CPU
-//! solvers to ensure parity during development.
+//! The CPU reference runs the same numerical algorithm as the WGSL shaders and
+//! is the parity baseline they are tested against (see the
+//! `wgpu_rp_farfield_parity_vs_cpu_*` test). Nothing in this module dispatches
+//! to a GPU, and no value here reports its CPU time as GPU time.
 
 use num_complex::Complex64;
 use std::f64::consts::PI;
@@ -26,18 +22,18 @@ const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
 const DB_FACTOR: f64 = 10.0_f64;
 const MIN_NORM_PATTERN: f64 = 1e-20;
 
-/// Execution timing result for GPU kernel operations.
+/// CPU timing breakdown for the reference far-field kernel.
 ///
-/// Tracks wall-clock time for each kernel stage (prep, GPU execution, retrieval).
-/// Currently all times are identical (CPU stub); future GPU implementations will
-/// show true device execution time separately from host-device transfer overhead.
+/// Tracks wall-clock time for each stage of the CPU reference computation.
+/// `retrieval_us` is always 0 on the CPU path (no device-to-host transfer); it
+/// exists so the breakdown mirrors the stages a GPU kernel would report.
 #[derive(Debug, Clone, Copy)]
 pub struct KernelTiming {
-    /// Host-side preparation time (geometry conversion, memory staging) in microseconds.
+    /// Host-side preparation time (geometry conversion, unit vectors) in microseconds.
     pub prep_us: u64,
-    /// GPU kernel execution time in microseconds (stub: CPU compute time).
+    /// CPU compute time for the far-field sum in microseconds.
     pub exec_us: u64,
-    /// Device-to-host result transfer time in microseconds (stub: 0).
+    /// Result transfer time in microseconds (always 0 on the CPU path).
     pub retrieval_us: u64,
 }
 
@@ -73,11 +69,12 @@ pub struct GpuFarFieldPoint {
     pub axial_ratio: f64,
 }
 
-/// Hallen far-field radiation pattern GPU kernel.
+/// Prepared inputs for a Hallén far-field (radiation-pattern) computation.
 ///
-/// This structure holds the prepared data for a Hallen FR computation
-/// ready to be dispatched to GPU (or CPU emulation). In production CUDA/
-/// OpenCL, this would manage device memory allocations and kernel invocation.
+/// Holds the GPU-ready segment layout, the solved current vector, and the
+/// normalisation constant. It is the input to both the CPU reference
+/// (`compute_hallen_fr_*_cpu`) and the real wgpu kernels in
+/// [`crate::wgpu_device`].
 pub struct HallenFrGpuKernel {
     /// GPU-prepared segments (flatten from NEC model).
     pub gpu_segments: Vec<GpuSegment>,
@@ -120,69 +117,11 @@ impl HallenFrGpuKernel {
     }
 }
 
-/// Hallén RHS construction GPU kernel.
-///
-/// Prepares the right-hand side vector for the Hallén augmented system.
-/// GPU kernel computes the integral terms and boundary conditions efficiently
-/// for large segment counts.
-pub struct HallenRhsGpuKernel {
-    /// GPU-prepared segments.
-    pub gpu_segments: Vec<GpuSegment>,
-    /// Excitation source position (segment tag, segment index).
-    pub excitation: (u32, u32),
-    /// Operating frequency in Hz.
-    pub freq_hz: f64,
-    /// Precomputed wavenumber k = 2π·f/c.
-    pub wavenumber: f64,
-}
-
-impl HallenRhsGpuKernel {
-    /// Prepare a Hallén RHS kernel from geometry and excitation.
-    pub fn new(segments: Vec<GpuSegment>, excitation: (u32, u32), freq_hz: f64) -> Self {
-        let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
-        HallenRhsGpuKernel {
-            gpu_segments: segments,
-            excitation,
-            freq_hz,
-            wavenumber,
-        }
-    }
-}
-
-/// Pocklington matrix assembly GPU kernel.
-///
-/// Assembles the impedance matrix from wire geometry using pulse-basis EFIE.
-/// GPU kernel distributes matrix-element computation across CUDA/OpenCL threads.
-pub struct PocklingtonMatrixGpuKernel {
-    /// GPU-prepared segments.
-    pub gpu_segments: Vec<GpuSegment>,
-    /// Operating frequency in Hz.
-    pub freq_hz: f64,
-    /// Precomputed wavenumber k = 2π·f/c.
-    pub wavenumber: f64,
-    /// Number of matrix elements (n_segments × n_segments).
-    pub matrix_size: usize,
-}
-
-impl PocklingtonMatrixGpuKernel {
-    /// Prepare a Pocklington matrix assembly kernel.
-    pub fn new(segments: Vec<GpuSegment>, freq_hz: f64) -> Self {
-        let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
-        let matrix_size = segments.len() * segments.len();
-        PocklingtonMatrixGpuKernel {
-            gpu_segments: segments,
-            freq_hz,
-            wavenumber,
-            matrix_size,
-        }
-    }
-}
-
-/// Compute far-field point using Hallen FR GPU stub kernel.
+/// Compute a far-field point with the CPU reference kernel.
 ///
 /// This function computes the complex far-field components (Eθ, Eφ) at a
-/// single observation point (θ, φ), then converts to dBi directivity.
-/// Currently implemented on CPU; production code will invoke GPU kernel.
+/// single observation point (θ, φ), then converts to dBi directivity. It is the
+/// parity baseline for the wgpu RP shader.
 ///
 /// The computation follows the NEC2 standard:
 /// ```text
@@ -190,13 +129,13 @@ impl PocklingtonMatrixGpuKernel {
 /// ```
 ///
 /// # Arguments
-/// * `kernel` — prepared GPU kernel with geometry, currents, frequency
+/// * `kernel` — prepared inputs with geometry, currents, frequency
 /// * `theta_deg` — zenith angle in degrees (0 = +z, 90 = equatorial)
 /// * `phi_deg` — azimuth angle in degrees (0 = +x axis)
 ///
 /// # Returns
 /// Computed far-field result with directivity in dBi for each polarization.
-pub fn compute_hallen_fr_point_stub(
+pub fn compute_hallen_fr_point_cpu(
     kernel: &HallenFrGpuKernel,
     theta_deg: f64,
     phi_deg: f64,
@@ -204,9 +143,9 @@ pub fn compute_hallen_fr_point_stub(
     compute_hallen_fr_point_with_timing(kernel, theta_deg, phi_deg).0
 }
 
-/// Compute far-field point with optional timing instrumentation.
+/// Compute a far-field point with the CPU reference kernel, with timing.
 ///
-/// Same as `compute_hallen_fr_point_stub()` but returns execution timing data.
+/// Same as `compute_hallen_fr_point_cpu()` but returns a CPU timing breakdown.
 /// Enable timing collection via `FNEC_GPU_BENCH=1` environment variable.
 pub fn compute_hallen_fr_point_with_timing(
     kernel: &HallenFrGpuKernel,
@@ -299,17 +238,17 @@ pub fn compute_hallen_fr_point_with_timing(
     (result, timing)
 }
 
-/// Compute multiple far-field points using Hallen FR GPU stub kernel.
+/// Compute multiple far-field points with the CPU reference kernel.
 ///
 /// Processes a batch of (θ, φ) points, returning directivity at each point.
 /// This is the typical interface for sweeping radiation patterns.
-pub fn compute_hallen_fr_batch_stub(
+pub fn compute_hallen_fr_batch_cpu(
     kernel: &HallenFrGpuKernel,
     points: &[(f64, f64)],
 ) -> Vec<GpuFarFieldPoint> {
     points
         .iter()
-        .map(|(theta_deg, phi_deg)| compute_hallen_fr_point_stub(kernel, *theta_deg, *phi_deg))
+        .map(|(theta_deg, phi_deg)| compute_hallen_fr_point_cpu(kernel, *theta_deg, *phi_deg))
         .collect()
 }
 
@@ -371,50 +310,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hallen_rhs_kernel_construction() {
-        let seg = GpuSegment {
-            midpoint: [0.0, 0.0, 0.0],
-            direction: [0.0, 0.0, 1.0],
-            length: 1.0,
-        };
-        let kernel = HallenRhsGpuKernel::new(vec![seg], (1, 1), 14.2e6);
-        assert_eq!(kernel.freq_hz, 14.2e6);
-        assert!(kernel.wavenumber > 0.0);
-        assert_eq!(kernel.excitation, (1, 1));
-    }
-
-    #[test]
-    fn pocklington_matrix_kernel_construction() {
-        let seg = GpuSegment {
-            midpoint: [0.0, 0.0, 0.0],
-            direction: [0.0, 0.0, 1.0],
-            length: 1.0,
-        };
-        let kernel = PocklingtonMatrixGpuKernel::new(vec![seg], 14.2e6);
-        assert_eq!(kernel.freq_hz, 14.2e6);
-        assert!(kernel.wavenumber > 0.0);
-        assert_eq!(kernel.matrix_size, 1); // 1 segment => 1x1 matrix
-    }
-
-    #[test]
-    fn pocklington_matrix_size_multi_segment() {
-        let segs = vec![
-            GpuSegment {
-                midpoint: [0.0, 0.0, 0.0],
-                direction: [0.0, 0.0, 1.0],
-                length: 1.0,
-            },
-            GpuSegment {
-                midpoint: [0.0, 0.0, 1.0],
-                direction: [0.0, 0.0, 1.0],
-                length: 1.0,
-            },
-        ];
-        let kernel = PocklingtonMatrixGpuKernel::new(segs, 14.2e6);
-        assert_eq!(kernel.matrix_size, 4); // 2 segments => 2x2 = 4 elements
-    }
-
-    #[test]
     fn kernel_timing_structure() {
         let timing = KernelTiming {
             prep_us: 100,
@@ -454,11 +349,11 @@ mod tests {
         let kernel = HallenFrGpuKernel::new(vec![seg], currents, freq_hz, 1e-4);
 
         // At θ = 90° (equator), dipole should have max gain
-        let point_eq = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let point_eq = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         assert!(point_eq.gain_total_dbi > -10.0); // rough bound
 
         // At θ = 0° (pole), dipole should have min gain
-        let point_pole = compute_hallen_fr_point_stub(&kernel, 0.0, 0.0);
+        let point_pole = compute_hallen_fr_point_cpu(&kernel, 0.0, 0.0);
         assert!(point_pole.gain_total_dbi < point_eq.gain_total_dbi);
     }
 
@@ -473,7 +368,7 @@ mod tests {
         let kernel = HallenFrGpuKernel::new(vec![seg], currents, 14.2e6, 1e-4);
 
         let points = vec![(0.0, 0.0), (90.0, 0.0), (180.0, 0.0)];
-        let results = compute_hallen_fr_batch_stub(&kernel, &points);
+        let results = compute_hallen_fr_batch_cpu(&kernel, &points);
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].theta_deg, 0.0);
@@ -506,21 +401,6 @@ mod tests {
     }
 
     #[test]
-    fn one_segment_hallen_rhs_kernel_construction() {
-        let kernel = HallenRhsGpuKernel::new(vec![single_seg(0.5)], (1, 1), 14.2e6);
-        assert_eq!(kernel.gpu_segments.len(), 1);
-        assert!(kernel.wavenumber > 0.0);
-        assert_eq!(kernel.excitation, (1, 1));
-    }
-
-    #[test]
-    fn one_segment_pocklington_matrix_kernel_construction() {
-        let kernel = PocklingtonMatrixGpuKernel::new(vec![single_seg(0.5)], 14.2e6);
-        assert_eq!(kernel.matrix_size, 1); // 1×1
-        assert_eq!(kernel.gpu_segments.len(), 1);
-    }
-
-    #[test]
     fn one_segment_kernel_compute_does_not_panic() {
         let kernel = HallenFrGpuKernel::new(
             vec![single_seg(0.01)],
@@ -528,7 +408,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
     }
 
@@ -540,7 +420,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let results = compute_hallen_fr_batch_stub(&kernel, &[(90.0, 0.0)]);
+        let results = compute_hallen_fr_batch_cpu(&kernel, &[(90.0, 0.0)]);
         assert_eq!(results.len(), 1);
     }
 
@@ -554,7 +434,7 @@ mod tests {
             1.0,
             1e-30,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // Must not panic; gain is either finite or the sentinel -999.99.
         assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
     }
@@ -567,7 +447,7 @@ mod tests {
             1e12,
             1e10,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         assert!(result.gain_total_dbi.is_finite() || result.gain_total_dbi == -999.99);
     }
 
@@ -605,7 +485,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // NaN propagates through the computation; gain must be either NaN
         // or the -999.99 sentinel — in either case it must not panic.
         let g = result.gain_total_dbi;
@@ -623,7 +503,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // All-zero currents ⟹ zero field intensity ⟹ should hit the
         // MIN_NORM_PATTERN floor and return the -999.99 sentinel.
         assert_eq!(result.gain_total_dbi, -999.99);
@@ -637,7 +517,7 @@ mod tests {
             14.2e6,
             0.0, // zero normalisation
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // norm = 0 ⟹ u * norm = 0 ⟹ below MIN_NORM_PATTERN ⟹ -999.99
         assert_eq!(result.gain_total_dbi, -999.99);
     }
@@ -652,7 +532,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 0.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 0.0, 0.0);
         assert_eq!(result.theta_deg, 0.0);
         // Gain is a finite number or the -999.99 sentinel — no NaN.
         assert!(
@@ -670,7 +550,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let result = compute_hallen_fr_point_stub(&kernel, 180.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 180.0, 0.0);
         assert_eq!(result.theta_deg, 180.0);
         assert!(
             !result.gain_total_dbi.is_nan(),
@@ -688,9 +568,9 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let north = compute_hallen_fr_point_stub(&kernel, 0.0, 0.0);
-        let south = compute_hallen_fr_point_stub(&kernel, 180.0, 0.0);
-        let equator = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let north = compute_hallen_fr_point_cpu(&kernel, 0.0, 0.0);
+        let south = compute_hallen_fr_point_cpu(&kernel, 180.0, 0.0);
+        let equator = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // Both poles should have lower gain than the equator.
         assert!(
             north.gain_total_dbi < equator.gain_total_dbi,
@@ -715,7 +595,7 @@ mod tests {
             1e-4,
         );
         let points = vec![(0.0_f64, 0.0_f64), (180.0, 0.0)];
-        let results = compute_hallen_fr_batch_stub(&kernel, &points);
+        let results = compute_hallen_fr_batch_cpu(&kernel, &points);
         assert_eq!(results[0].theta_deg, 0.0);
         assert_eq!(results[1].theta_deg, 180.0);
     }
@@ -725,7 +605,7 @@ mod tests {
     #[test]
     fn empty_segment_list_does_not_panic() {
         let kernel = HallenFrGpuKernel::new(vec![], vec![], 14.2e6, 1e-4);
-        let result = compute_hallen_fr_point_stub(&kernel, 90.0, 0.0);
+        let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // No segments ⟹ zero field ⟹ sentinel -999.99.
         assert_eq!(result.gain_total_dbi, -999.99);
     }
@@ -738,7 +618,7 @@ mod tests {
             14.2e6,
             1e-4,
         );
-        let results = compute_hallen_fr_batch_stub(&kernel, &[]);
+        let results = compute_hallen_fr_batch_cpu(&kernel, &[]);
         assert!(results.is_empty());
     }
 }

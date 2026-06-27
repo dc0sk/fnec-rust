@@ -167,8 +167,12 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     }
 }
 
+// PH7-CHK-001: the GPU-candidate lane has no CPU-emulation "stub backend".
+// Until per-frequency GPU dispatch lands (PH7-CHK-004), a hybrid sweep routes
+// its GPU-candidate points to CPU fallback and says so honestly — it never
+// reports CPU work as GPU emulation.
 #[test]
-fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
+fn hybrid_exec_mode_routes_gpu_candidate_lane_to_cpu_fallback() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
 
@@ -177,10 +181,9 @@ fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
         .arg("hallen")
         .arg("--exec")
         .arg("hybrid")
-        .env("FNEC_ACCEL_STUB_GPU", "1")
         .arg(&deck_path)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec stub test: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec fallback test: {e}"));
 
     assert!(
         output.status.success(),
@@ -192,12 +195,12 @@ fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        !stderr.contains("GPU-candidate lane"),
-        "did not expect GPU-candidate fallback warning in stub path, got:\n{stderr}"
+        stderr.contains("GPU-candidate lane"),
+        "expected honest GPU-candidate CPU-fallback warning in stderr, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("accelerator stub backend"),
-        "expected accelerator stub warning in stderr, got:\n{stderr}"
+        !stderr.contains("accelerator stub backend") && !stderr.contains("CPU emulation"),
+        "did not expect any 'stub backend' / 'CPU emulation' wording, got:\n{stderr}"
     );
     assert_diag_field(&stderr, "exec", "hybrid");
 
@@ -210,8 +213,11 @@ fn hybrid_exec_mode_accepts_accelerator_stub_dispatch_path() {
     assert_eq!(freq_headers, 5);
 }
 
+// PH7-CHK-001: `--exec gpu` dispatches the real wgpu RP / Z-matrix-fill kernels
+// (the dense solve still falls back to CPU). It must never emit the retired
+// "accelerator stub backend ... CPU emulation" warning.
 #[test]
-fn gpu_exec_mode_accepts_accelerator_stub_dispatch_path() {
+fn gpu_exec_mode_emits_no_stub_emulation_warning() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
 
@@ -220,10 +226,9 @@ fn gpu_exec_mode_accepts_accelerator_stub_dispatch_path() {
         .arg("hallen")
         .arg("--exec")
         .arg("gpu")
-        .env("FNEC_ACCEL_STUB_GPU", "1")
         .arg(&deck_path)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for gpu exec stub test: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to run fnec for gpu exec test: {e}"));
 
     assert!(
         output.status.success(),
@@ -233,12 +238,8 @@ fn gpu_exec_mode_accepts_accelerator_stub_dispatch_path() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("warning: --exec gpu dispatched to accelerator stub backend"),
-        "expected gpu stub dispatch warning in stderr, got:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("warning: --exec gpu requested"),
-        "did not expect gpu fallback-request warning in stub path, got:\n{stderr}"
+        !stderr.contains("accelerator stub backend") && !stderr.contains("CPU emulation"),
+        "did not expect any 'stub backend' / 'CPU emulation' wording, got:\n{stderr}"
     );
     assert_diag_field(&stderr, "exec", "gpu(cpu-fallback)");
 }

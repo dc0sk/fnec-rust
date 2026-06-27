@@ -72,7 +72,6 @@ fn main() -> ExitCode {
         mut execution_mode,
         enable_benchmarking,
         bench_format,
-        enable_gpu_fr,
         output_format,
         sweep_config_path,
         vars_path,
@@ -313,24 +312,18 @@ fn main() -> ExitCode {
             solver_mode,
             pulse_rhs_mode,
             execution_mode,
-            enable_gpu_fr,
             sin_fallback_rel_max,
             freq_hz,
         )
     };
 
-    let (mut solved, gpu_fallback_count, gpu_stub_count) =
+    let (mut solved, gpu_fallback_count) =
         execute_frequency_sweep(&freqs_hz, execution_mode, solve_one);
     solved.sort_by_key(|(idx, _, _)| *idx);
 
     if gpu_fallback_count > 0 {
         eprintln!(
-            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for GPU-candidate lane, but GPU kernels are not yet wired; running those points on CPU fallback"
-        );
-    }
-    if gpu_stub_count > 0 {
-        eprintln!(
-            "warning: --exec hybrid dispatched {gpu_stub_count} frequency point(s) to accelerator stub backend; solving with CPU emulation"
+            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not yet wired (PH7-CHK-004); running those points on CPU fallback"
         );
     }
 
@@ -753,7 +746,6 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             SolverMode::Hallen,
             PulseRhsMode::Nec2,
             ExecutionMode::Cpu,
-            false,
             SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
             freq_hz,
         )?;
