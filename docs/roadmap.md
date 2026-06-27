@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-06-23
+last_updated: 2026-06-27
 ---
 
 # Roadmap
@@ -281,6 +281,37 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 | PH6-CHK-007 | A | PRT-011, CP-011 | Add a deterministic work-content/result cache layer for distributed sweep runs: SHA-256 keyed cache keyed on (deck hash + solver config + frequency point); cache hit skips remote solve and replays stored result; cache invalidation on deck or config change. Add ≥3 contract tests (hit, miss, invalidation). | Existing: worker infrastructure from PH6-CHK-006. New: cache module in `nec_worker` or `nec_project`; contract tests; cache eviction policy documented. | Cache hit/miss/invalidation contract tests pass; a 5-point sweep with one changed deck is shown to reuse 4 cached results and re-solve 1 changed point; `cargo test` clean. | ✓ Done (2026-05-05) |
 
 **Estimated completion**: Q4 2027 (end of December).
+
+## Phase 7 (planned): GPU productionization and multi-vendor scale-out
+
+**Goals**: Turn the Phase 5/6 GPU foundation (real wgpu RP far-field and Z-matrix-fill kernels, gates G3–G7) from a working-but-host-bound path into a production accelerator: keep the solve resident on the device, retire the CPU-emulation scaffold, validate on real multi-vendor hardware, and let distributed workers use their GPUs.
+
+**Why now**: Phase 5 delivered real wgpu kernels and Phase 6 delivered the distributed worker pool, but three structural gaps remain. (1) `nec_accel::wgpu_device::fill_zmatrix_wgpu` fills the impedance matrix on-device, then copies it back and runs the linear solve on the CPU — the largest GPU-resident win (the dense solve) is unrealized and the round-trip copy dominates at scale. (2) `nec_accel::gpu_kernels` is a CPU-emulation scaffold (`HallenFrGpuKernel`, `compute_hallen_fr_*_stub`) that reports CPU compute time as "GPU" time, which is misleading and currently only feeds the hybrid-dispatch decision. (3) Multi-vendor validation (PH6-CHK-004) exercised the wgpu Vulkan backend but the published benchmark/dashboard path still runs the software rasterizer in CI, and `--exec gpu` is not wired through the `nec_worker` SSH pool, so cluster nodes solve on CPU even when they advertise a GPU in their capability cache.
+
+This phase is gated on Phase 6 (worker pool + capability cache) being complete, which it is.
+
+**Key deliverables**:
+- [ ] GPU-resident dense solve: keep the filled Z-matrix on the device and run the LU/triangular solve in WGSL, eliminating the fill→copy-back→CPU-solve round trip on the supported corpus.
+- [ ] Retire or realize the `gpu_kernels` CPU-emulation scaffold so no path reports CPU time as GPU time.
+- [ ] Real-hardware benchmark evidence (not software rasterizer) published to the Phase 6 dashboard for at least one discrete GPU, with the crossover problem size where GPU beats CPU documented.
+- [ ] Native multi-vendor expansion: a recorded ROCm or SYCL backend validation (or an explicit, dated "not yet" with rationale) beyond the wgpu Vulkan path.
+- [ ] Distributed GPU execution: `--exec gpu` dispatched through the SSH worker pool so GPU-capable nodes solve on their GPU.
+- [ ] Honest GPU microbenchmark: an in-process benchmark that isolates kernel dispatch cost from per-process wgpu device-init, complementing the across-process G5 wall-clock gate.
+
+### Phase 7 implementation checklist
+
+Execution order recommendation: PH7-CHK-001 → PH7-CHK-002 → PH7-CHK-003 → PH7-CHK-004 → PH7-CHK-005 → PH7-CHK-006. PH7-CHK-001 is the gating prerequisite for the GPU-resident solve claims in PH7-CHK-003.
+
+| Checklist ID | Thread | Roadmap IDs | Implementation target | Validation artifacts (existing/new) | Done signal | Status |
+|:-------------|:-------|:------------|:----------------------|:------------------------------------|:------------|:-------|
+| PH7-CHK-001 | C | — | Retire or realize the `nec_accel::gpu_kernels` CPU-emulation scaffold. Either replace `HallenFrGpuKernel`/`compute_hallen_fr_*_stub` with real wgpu dispatch, or delete the scaffold and route the hybrid-dispatch decision (`dispatch_frequency_point`) through `wgpu_device`. No code path may report CPU compute time as GPU time. | Existing: `crates/nec_accel/src/gpu_kernels.rs`, `crates/nec_accel/src/lib.rs`, `crates/nec_accel/src/wgpu_device.rs`. New/modified: unified GPU dispatch surface; updated `gpu_kernels` doc comment removing "CPU computation marked as GPU". | No remaining "stub: CPU computation marked as GPU" path; `cargo test -p nec_accel` clean; `ExecutionPath::GpuStubEmulation` either removed or backed by real device work. | Planned |
+| PH7-CHK-002 | D | — | Add an in-process GPU microbenchmark that isolates WGSL kernel dispatch + execution time from per-process wgpu device-initialization, recorded as a separate metric from the across-process G5 wall-clock gate (which now uses best-of-N timing with a 1.5× limit to absorb device-init noise). | Existing: `apps/nec-cli/tests/gpu_benchmark_gate.rs`, `docs/benchmark-artifact-schema.md`. New: in-process bench in `crates/nec_accel` (e.g. `benches/` or a timed parity test); device-init-excluded timing field in the artifact schema. | In-process dispatch timing is reported separately from device-init; benchmark artifact schema documents the new field; gate is non-flaky across ≥10 CI runs. | Planned |
+| PH7-CHK-003 | A | CP-011 | Implement a GPU-resident dense linear solve in WGSL (LU factorization + triangular solves, or a validated iterative solver) so the filled Z-matrix from `fill_zmatrix_wgpu` is solved on-device without copy-back. Numerical parity vs the CPU Hallén solve within the existing corpus impedance tolerance gates. | Existing: `crates/nec_accel/src/wgpu_device.rs` (`fill_zmatrix_wgpu`), `crates/nec_accel/src/shaders/zmatrix_fill.wgsl`, `crates/nec_solver/src/linear.rs`. New: WGSL solve shader(s); device-resident solve entry point; parity test. | Reference dipole family + ≥3 corpus decks pass impedance tolerance gates through the GPU-resident solve; no host copy-back of the full matrix; `cargo test` clean. | Planned |
+| PH7-CHK-004 | A | PRT-011, CP-011 | Wire `--exec gpu` through the `nec_worker` SSH pool so a worker that advertises GPU availability in its capability cache solves its assigned frequency points on its GPU. Add ≥3 integration tests (GPU-capable node uses GPU, CPU-only node falls back, mixed pool dispatch). | Existing: `crates/nec_worker/` (pool, capability cache, `ssh_worker.rs`), `apps/nec-cli/src/solve_session.rs`. New: GPU exec mode in the worker contract; integration tests. | Distributed sweep on a GPU-capable node produces impedance identical to local within tolerance and uses the GPU path; CPU-only node falls back without error; tests pass. | Planned |
+| PH7-CHK-005 | B | DEC-008, CP-009 | Record real discrete-GPU benchmark evidence (not the CI software rasterizer) for the RP and Z-matrix-fill kernels on at least one vendor, publish it to the Phase 6 dashboard, and document the problem-size crossover where the GPU path beats CPU. | Existing: `.github/workflows/benchmark-dashboard.yml`, `docs/benchmarks.md`, `docs/multi-vendor-gpu.md`. New: real-hardware benchmark run record; crossover note in `docs/benchmarks.md`; dashboard entry. | Dashboard shows a real-GPU benchmark series; crossover problem size is documented; `docs/benchmarks.md` frontmatter gate passes. | Planned |
+| PH7-CHK-006 | B | DEC-008, CP-009 | Validate a native non-wgpu backend (ROCm or SYCL) on an AMD target for the matrix-fill kernel, or record an explicit dated "not yet" with rationale and the concrete blocking gaps. Update `docs/multi-vendor-gpu.md` with the result and the remaining deferred path. | Existing: `docs/multi-vendor-gpu.md`, `crates/nec_accel/`. New: backend validation record or dated deferral note; any backend-specific CI flags. | `docs/multi-vendor-gpu.md` records a concrete ROCm/SYCL validation result or a dated, justified deferral; frontmatter gate passes. | Planned |
+
+**Estimated start**: after v0.6.0 ships; **target completion**: TBD (set when Phase 7 is scheduled).
 
 ## Gaps and blockers (from requirements.md)
 
