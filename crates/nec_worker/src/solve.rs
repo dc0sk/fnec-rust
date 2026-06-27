@@ -84,6 +84,7 @@ use nec_model::card::Card;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, build_loads, build_tl_stamps,
     detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
+    GroundModel,
 };
 use num_complex::Complex64;
 
@@ -94,7 +95,12 @@ pub struct FeedpointResult {
     pub impedance_im: f64,
     pub current_mag: f64,
     pub current_phase_deg: f64,
+    /// Execution path actually taken: `"cpu"` | `"gpu"` (PH7-CHK-004).
+    pub exec_used: String,
 }
+
+/// Minimum segment count before a worker attempts the GPU-resident solve.
+const MIN_GPU_RESIDENT_SEGS: usize = 16;
 
 /// Errors from the worker solve path.
 #[derive(Debug, Clone)]
@@ -123,11 +129,29 @@ impl std::error::Error for SolveError {}
 /// Run a Hallén solve on `deck_str` at `freq_hz` and return the feedpoint result.
 ///
 /// The `basis` parameter must be `"hallen"`; any other value returns
-/// [`SolveError::UnsupportedConfig`].
+/// [`SolveError::UnsupportedConfig`]. Always uses the CPU solve; the GPU-capable
+/// variant is [`solve_deck_at_frequency_with_exec`].
 pub fn solve_deck_at_frequency(
     deck_str: &str,
     freq_hz: f64,
     basis: &str,
+) -> Result<FeedpointResult, SolveError> {
+    solve_deck_at_frequency_with_exec(deck_str, freq_hz, basis, "cpu")
+}
+
+/// Run a Hallén solve, honouring an `exec` preference (`"cpu"` | `"gpu"`).
+///
+/// When `exec == "gpu"` and the deck is in the GPU-resident supported class
+/// (free-space/deferred ground, no LD/TL stamps, ≥ [`MIN_GPU_RESIDENT_SEGS`]
+/// segments), the worker dispatches `nec_accel::solve_hallen_gpu_resident`
+/// (PH7-CHK-003) and reports `exec_used = "gpu"`. Otherwise — out of class, or no
+/// wgpu adapter — it falls back to the f64 CPU `solve_hallen`
+/// (`exec_used = "cpu"`). PH7-CHK-004.
+pub fn solve_deck_at_frequency_with_exec(
+    deck_str: &str,
+    freq_hz: f64,
+    basis: &str,
+    exec: &str,
 ) -> Result<FeedpointResult, SolveError> {
     if basis != "hallen" {
         return Err(SolveError::UnsupportedConfig(format!(
@@ -172,15 +196,48 @@ pub fn solve_deck_at_frequency(
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
 
-    // 6. Solve
-    let solution = solve_hallen(
-        &z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
-        &wire_endpoints,
-        &junc_constraints,
-    )
-    .map_err(|e| SolveError::SingularMatrix(e.to_string()))?;
+    // 6. Solve — GPU-resident (PH7-CHK-003) for the supported class when
+    // requested, else the f64 CPU solve.
+    let gpu_eligible = exec == "gpu"
+        && segs.len() >= MIN_GPU_RESIDENT_SEGS
+        && matches!(
+            ground,
+            GroundModel::FreeSpace | GroundModel::Deferred { .. }
+        )
+        && load_vec.iter().all(|z| *z == Complex64::new(0.0, 0.0))
+        && tl_stamps.is_empty();
+
+    let (currents, exec_used) = if gpu_eligible {
+        let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
+            .iter()
+            .map(|s| nec_accel::ZSegmentInput {
+                midpoint: s.midpoint,
+                direction: s.direction,
+                length: s.length,
+                radius: s.radius,
+            })
+            .collect();
+        match pollster::block_on(nec_accel::solve_hallen_gpu_resident(
+            &z_inputs,
+            &hallen_rhs.rhs,
+            &hallen_rhs.cos_vec,
+            &wire_endpoints,
+            &junc_constraints,
+            freq_hz,
+        )) {
+            Some(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),
+            // No adapter (or short result) — fall back to CPU.
+            _ => (
+                cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
+                "cpu",
+            ),
+        }
+    } else {
+        (
+            cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
+            "cpu",
+        )
+    };
 
     // 7. Extract feedpoint from first type-0 EX card
     for card in &deck.cards {
@@ -194,7 +251,7 @@ pub fn solve_deck_at_frequency(
         else {
             continue;
         };
-        let current = solution.currents[idx];
+        let current = currents[idx];
         let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
         let z_in = if current.norm() > 1e-60 {
             v_source / current
@@ -206,8 +263,27 @@ pub fn solve_deck_at_frequency(
             impedance_im: z_in.im,
             current_mag: current.norm(),
             current_phase_deg: current.im.atan2(current.re).to_degrees(),
+            exec_used: exec_used.to_string(),
         });
     }
 
     Err(SolveError::NoFeedpoint)
+}
+
+/// CPU Hallén solve returning just the current vector.
+fn cpu_currents(
+    z_mat: &nec_solver::ZMatrix,
+    hallen_rhs: &nec_solver::HallenRhs,
+    wire_endpoints: &[(usize, usize)],
+    junc_constraints: &[(usize, usize, f64)],
+) -> Result<Vec<Complex64>, SolveError> {
+    let solution = solve_hallen(
+        z_mat,
+        &hallen_rhs.rhs,
+        &hallen_rhs.cos_vec,
+        wire_endpoints,
+        junc_constraints,
+    )
+    .map_err(|e| SolveError::SingularMatrix(e.to_string()))?;
+    Ok(solution.currents)
 }

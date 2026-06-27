@@ -14,6 +14,8 @@ rust-version.workspace = true
 nec_parser  = { workspace = true }
 nec_model   = { workspace = true }
 nec_solver  = { workspace = true }
+nec_accel   = { workspace = true, features = ["wgpu"] }
+pollster    = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 toml        = { workspace = true }

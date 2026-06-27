@@ -14,6 +14,7 @@ fn default_config() -> nec_worker::WorkerSolverConfig {
     nec_worker::WorkerSolverConfig {
         basis: "hallen".to_string(),
         ground_model: "none".to_string(),
+        exec: "cpu".to_string(),
     }
 }
 
@@ -29,6 +30,7 @@ fn ok_result(task_id: &str, freq_hz: f64, re: f64, im: f64) -> nec_worker::TaskR
         vswr_50: 1.0,
         feedpoint_current_mag: 0.01,
         feedpoint_current_phase_deg: 0.0,
+        exec_used: "cpu".to_string(),
     }
 }
 
@@ -76,6 +78,7 @@ fn test_result_cache_miss() {
     let cfg2 = nec_worker::WorkerSolverConfig {
         basis: "other".to_string(),
         ground_model: "none".to_string(),
+        exec: "cpu".to_string(),
     };
     let k3 = nec_worker::cache_key(DIPOLE_DECK, &cfg2, 14.0e6);
     assert_ne!(k1, k3, "keys must differ for different solver configs");

@@ -199,6 +199,7 @@ mod tests {
             solver_config: crate::protocol::WorkerSolverConfig {
                 basis: "hallen".into(),
                 ground_model: "none".into(),
+                exec: "cpu".into(),
             },
             frequency_hz: 14.0e6,
         };
