@@ -55,7 +55,10 @@ pub mod gpu_kernels;
 pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
-pub use wgpu_device::{fill_zmatrix_wgpu, solve_hallen_gpu_resident, ZElem, ZSegmentInput};
+pub use wgpu_device::{
+    fill_zmatrix_wgpu, microbench_zmatrix_dispatch, solve_hallen_gpu_resident, GpuMicrobench,
+    ZElem, ZSegmentInput,
+};
 
 pub use gpu_kernels::{
     compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, compute_hallen_fr_point_with_timing,

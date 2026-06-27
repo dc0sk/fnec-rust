@@ -12,6 +12,15 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH7-CHK-002 — in-process GPU microbenchmark**: `nec_accel::microbench_zmatrix_dispatch`
+  pays the wgpu device-initialization cost once and times many reused kernel
+  dispatches, so per-dispatch time is isolated from device-init (which the
+  across-process G5 gate cannot separate). Returns `GpuMicrobench { device_init_us,
+  dispatch_min_us, dispatch_median_us, .. }`. Artifact schema documents the
+  optional `gpu_microbench` object (and corrects the retired `FNEC_ACCEL_STUB_GPU`
+  reference). Measured ~61 ms device-init vs ~0.27 ms dispatch; non-flaky over 10
+  runs. See `docs/ph7-chk-002-gpu-microbenchmark.md`.
+
 - **PH7-CHK-004 — distributed GPU execution**: `--exec gpu` is wired through the
   `nec_worker` SSH pool. New `WorkerSolverConfig.exec` request and
   `TaskResult.exec_used` report fields (serde-default for wire back-compat);

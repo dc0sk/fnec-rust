@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmark-artifact-schema.md
 status: living
-last_updated: 2026-05-04
+last_updated: 2026-06-27
 ---
 
 # Benchmark Artifact Schema
@@ -21,6 +21,7 @@ The schema version is `"1"`.
 | `runner_nproc` | integer | Logical CPU count on the runner (`nproc`). |
 | `runs` | array of Run | Individual timed invocations (one per repeat). |
 | `summary` | array of Summary | Aggregated statistics per (deck, solver, exec\_mode). |
+| `gpu_microbench` | GpuMicrobench \| absent | Optional in-process GPU dispatch microbenchmark (PH7-CHK-002). Present only on a host with a real wgpu adapter; omitted in CI without one. |
 
 ## Run object
 
@@ -48,13 +49,33 @@ Each element of the `summary` array aggregates all repeat runs for one
 | `min_ms` | integer | Minimum elapsed time across repeats. |
 | `max_ms` | integer | Maximum elapsed time across repeats. |
 
+## GpuMicrobench object (optional)
+
+In-process microbenchmark of the Z-matrix-fill kernel (PH7-CHK-002). It pays the
+wgpu device-initialization cost **once** and times many dispatches that reuse the
+same device, pipeline, and buffers — so the per-dispatch figures are isolated
+from device-init (which the across-process G5 wall-clock gate cannot do, since
+each of its samples is a fresh process). See
+`docs/ph7-chk-002-gpu-microbenchmark.md`.
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `n_segments` | integer | Problem size (segments) used for the microbenchmark. |
+| `n_dispatches` | integer | Number of timed dispatches. |
+| `device_init_us` | integer | One-time wgpu device acquisition (instance + adapter + device), µs. |
+| `dispatch_min_us` | integer | Best per-dispatch submit→complete time, µs (device-init excluded). |
+| `dispatch_median_us` | integer | Median per-dispatch submit→complete time, µs. |
+
+`dispatch_min_us` is the headline, non-flaky figure (minimum rejects
+positive-only wall-clock noise).
+
 ## Exec modes
 
-| `exec_mode` value | CLI `--exec` arg | `RAYON_NUM_THREADS` | `FNEC_ACCEL_STUB_GPU` | Description |
-|:------------------|:-----------------|:--------------------|:----------------------|:------------|
-| `cpu-single`      | `cpu`            | `1`                 | `0`                   | Deterministic single-thread CPU baseline. |
-| `cpu-multi`       | `hybrid`         | `$(nproc)`          | `0`                   | Multi-threaded CPU sweep via parallel FR lanes. |
-| `gpu`             | `gpu`            | `$(nproc)`          | `1`                   | GPU dispatch path (stub fallback in CI; real wgpu on hardware). |
+| `exec_mode` value | CLI `--exec` arg | `RAYON_NUM_THREADS` | Description |
+|:------------------|:-----------------|:--------------------|:------------|
+| `cpu-single`      | `cpu`            | `1`                 | Deterministic single-thread CPU baseline. |
+| `cpu-multi`       | `hybrid`         | `$(nproc)`          | Multi-threaded CPU sweep via parallel FR lanes. |
+| `gpu`             | `gpu`            | `$(nproc)`          | Real wgpu dispatch when an adapter is available; transparent CPU fallback otherwise. (The retired `FNEC_ACCEL_STUB_GPU` env var is no longer used — see PH7-CHK-001.) |
 
 ## Example
 
