@@ -154,7 +154,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
 | PH8-CHK-001 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs`, `nec-cli/solve_session.rs` | `ex_cards.rs` (+ new fixture) | — | 📋 |
-| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs` (ExCard), `nec_parser`, `nec_solver/excitation.rs` | `ex_cards.rs` (+ `dipole-ex2-planewave-*`) | **Foundation merged (#255):** NEC2 EX-type alignment decision + `nec2c` reference deck `docs/dev/ph8-planewave-ref-theta30.nec`. Solve pending. | 🔨 |
+| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs` (`ExcitationKind`, `ExCard.polarization_deg`), `nec_parser` (F3), `nec_solver/excitation.rs` (diagnostic) | `nec_parser` `ex_plane_wave_polarization_f3_is_captured`; `ex_cards.rs` | **Design foundation** #255. **Code foundation** 2026-07-02: NEC2 classifier + F3 polarization capture + accurate reject diagnostic; 540 tests pass, clippy clean. Solve stage pending. | 🔨 |
 | PH8-CHK-003 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs` | `ex_cards.rs` (+ fixture) | — | 📋 |
 | PH8-CHK-004 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (`build_nt_stamps`) | new `nt_*` fixture | — | 📋 |
 | PH8-CHK-005 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (lossy) | `tl_cards.rs` (+ fixture) | — | 📋 |
@@ -173,17 +173,20 @@ Full chain for the item currently being implemented:
   source → type 4), user-approved 2026-06-27; (2) plane-wave RHS lives in the
   integral-equation **forcing term** (`exp(-jk_s s)` closed form for straight
   wires), not the delta-gap RHS.
-- **Implementation** (staged): `nec_model/card.rs` (`ExCard` + polarization
-  field) → `nec_parser` (read the field) → `nec_solver/excitation.rs`
-  (plane-wave forcing RHS) → `nec-cli/solve_session.rs` + `warnings.rs`
-  (route type 1 as plane wave, retire the EX-0 warning) → `nec_report`
-  (induced-current / receiving-voltage output).
+- **Implementation** (staged): ✅ *code foundation done* — `nec_model/card.rs`
+  (`ExcitationKind` NEC2 classifier + `ExCard.polarization_deg` F3) →
+  `nec_parser` (reads F3) → `nec_solver/excitation.rs` (NEC2-category reject
+  diagnostic) → `nec-cli/solve_session.rs` (dormant current-source path
+  re-pointed to NEC2 type 4). ⏳ *solve pending* — `nec_solver/excitation.rs`
+  (plane-wave forcing RHS) → `nec_report` (induced-current / receiving-voltage
+  output).
 - **Tests**: `apps/nec-cli/tests/ex_cards.rs` extended; new corpus fixture
   `dipole-ex2-planewave-*`; external `nec2c` parity + internal Rayleigh–Carson
   reciprocity gates.
 - **Tooling / reference**: `docs/dev/ph8-planewave-ref-theta30.nec` (`nec2c`
   induced-current reference, needs `XQ`), plus the reciprocity cross-check against
   the validated RP far-field path.
-- **Result**: foundation (decision + parser/model support + reference deck)
-  merged in **PR #255** (`4bf66e4`). Solve increment pending — this row updates as
-  each staged increment lands.
+- **Result**: design foundation merged in **PR #255** (`4bf66e4`); code
+  foundation (NEC2 classifier + F3 capture + accurate diagnostic) landed
+  2026-07-02 with 540 tests passing and clippy clean. Solve increment pending —
+  this row updates as each staged increment lands.

@@ -55,9 +55,14 @@ impl std::fmt::Display for ExcitationError {
                 segment,
                 i4,
             } => {
+                // Name the NEC2 category so real 4nec2 decks get an accurate
+                // diagnostic. The "is not yet supported" substring is a stable
+                // contract asserted by the corpus and ex_cards tests.
+                let kind = nec_model::card::ExcitationKind::from_type(*ex_type);
                 write!(
                     f,
-                    "EX: excitation type {ex_type} at tag {tag}, segment {segment}, I4={i4} is not yet supported"
+                    "EX: {} (I1={ex_type}, tag {tag}, segment {segment}, I4={i4}) is not yet supported",
+                    kind.describe()
                 )
             }
         }
@@ -277,6 +282,7 @@ mod tests {
             i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
+            polarization_deg: 0.0,
         }));
         deck
     }
@@ -321,6 +327,7 @@ mod tests {
             i4: 0,
             voltage_real: 0.5,
             voltage_imag: -0.5,
+            polarization_deg: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         let v = build_excitation(&deck, &segs).unwrap();
@@ -351,6 +358,7 @@ mod tests {
             i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
+            polarization_deg: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
@@ -381,6 +389,7 @@ mod tests {
             i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
+            polarization_deg: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
@@ -496,6 +505,7 @@ mod tests {
             i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
+            polarization_deg: 0.0,
         }));
 
         let segs = build_geometry(&deck).unwrap();
@@ -535,6 +545,7 @@ mod tests {
             i4: 0,
             voltage_real: 1.0,
             voltage_imag: 0.0,
+            polarization_deg: 0.0,
         }));
 
         let segs = build_geometry(&deck).unwrap();
@@ -569,6 +580,7 @@ mod tests {
             i4: 0,
             voltage_real: v_re,
             voltage_imag: v_im,
+            polarization_deg: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         (deck, segs)

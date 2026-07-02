@@ -193,7 +193,10 @@ pub(super) fn collect_pulse_current_source_constraints(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 1 && ex.excitation_type != 4 && ex.excitation_type != 5 {
+        // NEC2 numbering: the current source is type 4. (This staged path is
+        // reached only once the current-source runtime semantics land; today
+        // build_excitation rejects non-0 types before the solve.)
+        if ex.kind() != nec_model::card::ExcitationKind::CurrentSource {
             continue;
         }
 
@@ -266,20 +269,19 @@ pub(super) fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source =
-            if (ex.excitation_type == 1 || ex.excitation_type == 4 || ex.excitation_type == 5)
-                && matches!(solver_mode, SolverMode::Pulse)
-            {
-                pulse_current_sources
-                    .iter()
-                    .find(|constraint| constraint.seg_index == idx)
-                    .map(|constraint| {
-                        pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
-                    })
-                    .unwrap_or(v_vec[idx] * seg.length)
-            } else {
-                v_vec[idx] * seg.length
-            };
+        let v_source = if ex.kind() == nec_model::card::ExcitationKind::CurrentSource
+            && matches!(solver_mode, SolverMode::Pulse)
+        {
+            pulse_current_sources
+                .iter()
+                .find(|constraint| constraint.seg_index == idx)
+                .map(|constraint| {
+                    pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                })
+                .unwrap_or(v_vec[idx] * seg.length)
+        } else {
+            v_vec[idx] * seg.length
+        };
         let z_in = if current.norm() > 1e-60 {
             v_source / current
         } else {

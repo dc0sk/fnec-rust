@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-002-plane-wave-excitation.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-07-02
 ---
 
 # PH8-CHK-002: incident plane-wave excitation (+ NEC2 EX-type alignment)
@@ -88,3 +88,32 @@ direction (θ, φ); `k̂ = -r̂(θ,φ)`. Polarization angle η orients **E** in 
 ## Test results
 
 Recorded per increment in this section, the roadmap row, and the PRs.
+
+### Increment 1 — foundation code (2026-07-02)
+
+NEC2 EX-type alignment landed in the model, parser, and solver diagnostics
+(the design/decision foundation was PR #255; this is the code foundation):
+
+- **Model** (`nec_model::card`): added the `ExcitationKind` classifier (single
+  source of the NEC2 0–5 numbering) and `ExCard::kind()`; added
+  `ExCard::polarization_deg` (F3, the plane-wave polarization angle η).
+- **Parser** (`nec_parser`): reads the F3 field into `polarization_deg`
+  (defaults 0.0 when absent, so all existing decks are unaffected).
+- **Solver** (`nec_solver::excitation`): the `UnsupportedType` diagnostic now
+  names the NEC2 category — e.g. *"EX: incident plane wave, linear polarization
+  (type 1) … is not yet supported"* instead of a bare type number. The
+  `is not yet supported` substring (a corpus/test contract) is preserved.
+- **Dormant path** (`nec-cli::solve_session`): the staged current-source path is
+  re-pointed from the old `1|4|5` set to NEC2 type 4 via `ExcitationKind`.
+
+Runtime acceptance is unchanged — types 1–5 still fail fast (the plane-wave and
+current-source *solves* are the later increments) — so no corpus reference
+contract changed. Added `ex_plane_wave_polarization_f3_is_captured` (parser).
+
+Results: `cargo build --workspace` clean; `cargo test --workspace` **540 passed,
+0 failed** (was 539; +1 new parser test); `cargo clippy --workspace` clean.
+Manual check: a `EX 1 1 1 0 30 0 45` deck now reports the linear-plane-wave
+diagnostic.
+
+Still pending (next increments): the plane-wave forcing RHS + induced-current
+report + nec2c/reciprocity gates (the "Solve" stage).

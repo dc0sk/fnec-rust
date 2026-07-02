@@ -46,27 +46,117 @@ pub struct GeCard {
     pub ground_reflection_flag: i32,
 }
 
+/// NEC2-aligned classification of an `EX` excitation type (I1 field).
+///
+/// fnec follows the canonical NEC2/nec2c numbering (see
+/// `docs/ph8-chk-002-plane-wave-excitation.md`): types 1/2/3 are incident
+/// plane waves, and the current source lives on type 4. Only [`Self::VoltageSource`]
+/// is solved today; the others are recognized (so real 4nec2 decks are not
+/// misclassified) but fail fast until their runtime semantics land in Phase 8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExcitationKind {
+    /// Type 0 — applied-field / series voltage source.
+    VoltageSource,
+    /// Type 1 — incident plane wave, linear polarization.
+    PlaneWaveLinear,
+    /// Type 2 — incident plane wave, right-hand elliptic polarization.
+    PlaneWaveRightElliptic,
+    /// Type 3 — incident plane wave, left-hand elliptic polarization.
+    PlaneWaveLeftElliptic,
+    /// Type 4 — current source (elementary current source / applied current).
+    CurrentSource,
+    /// Type 5 — voltage source with current-slope discontinuity.
+    VoltageSourceCurrentSlope,
+    /// Any I1 value outside the canonical NEC2 0–5 range.
+    Unknown(u32),
+}
+
+impl ExcitationKind {
+    /// Classify a raw EX I1 value per canonical NEC2 numbering.
+    pub fn from_type(excitation_type: u32) -> Self {
+        match excitation_type {
+            0 => ExcitationKind::VoltageSource,
+            1 => ExcitationKind::PlaneWaveLinear,
+            2 => ExcitationKind::PlaneWaveRightElliptic,
+            3 => ExcitationKind::PlaneWaveLeftElliptic,
+            4 => ExcitationKind::CurrentSource,
+            5 => ExcitationKind::VoltageSourceCurrentSlope,
+            other => ExcitationKind::Unknown(other),
+        }
+    }
+
+    /// True for the incident-plane-wave types (1, 2, 3).
+    pub fn is_plane_wave(self) -> bool {
+        matches!(
+            self,
+            ExcitationKind::PlaneWaveLinear
+                | ExcitationKind::PlaneWaveRightElliptic
+                | ExcitationKind::PlaneWaveLeftElliptic
+        )
+    }
+
+    /// Human-readable NEC2 description, used in diagnostics.
+    pub fn describe(self) -> &'static str {
+        match self {
+            ExcitationKind::VoltageSource => "applied-field voltage source (type 0)",
+            ExcitationKind::PlaneWaveLinear => "incident plane wave, linear polarization (type 1)",
+            ExcitationKind::PlaneWaveRightElliptic => {
+                "incident plane wave, right-hand elliptic polarization (type 2)"
+            }
+            ExcitationKind::PlaneWaveLeftElliptic => {
+                "incident plane wave, left-hand elliptic polarization (type 3)"
+            }
+            ExcitationKind::CurrentSource => "current source (type 4)",
+            ExcitationKind::VoltageSourceCurrentSlope => {
+                "voltage source with current slope (type 5)"
+            }
+            ExcitationKind::Unknown(_) => "unknown excitation type",
+        }
+    }
+}
+
 /// EX — Excitation card.
 ///
-/// Phase 1 models voltage-source excitation (type 0). Additional fields are
-/// preserved so later phases can implement more EX source families.
-#[derive(Debug, Clone, PartialEq)]
+/// Field layout follows canonical NEC2. The interpretation of the numeric
+/// fields depends on the excitation type ([`ExCard::kind`]):
+///
+/// - **Voltage / current source** (types 0, 4, 5): `tag`/`segment` locate the
+///   driven segment, and `voltage_real`/`voltage_imag` carry the complex source
+///   value (volts, or amperes for the current source).
+/// - **Incident plane wave** (types 1, 2, 3): the same positional fields carry
+///   the NEC2 plane-wave parameters instead — `tag` = NTHETA, `segment` = NPHI,
+///   `voltage_real` = θ (deg, incidence), `voltage_imag` = φ (deg), and
+///   [`ExCard::polarization_deg`] = η, the polarization angle (F3).
+///
+/// Only type 0 is solved today; other types are recognized via [`ExCard::kind`]
+/// and fail fast with a NEC2-accurate diagnostic until Phase 8 implements them.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExCard {
-    /// Excitation type (0 = voltage source).
+    /// Excitation type (I1). See [`ExCard::kind`] for the NEC2 mapping.
     pub excitation_type: u32,
-    /// Tag number of the segment carrying the source.
+    /// Source segment tag (source types) or NTHETA (plane-wave types).
     pub tag: u32,
-    /// Segment number within the tag.
+    /// Source segment index (source types) or NPHI (plane-wave types).
     pub segment: u32,
     /// Integer EX field I4.
     ///
     /// For EX type 0 this is typically unused and often set to 0. For other
     /// source types NEC uses this field for additional source metadata.
     pub i4: u32,
-    /// Real part of the voltage (volts).
+    /// Complex source real part (volts/amps) or plane-wave θ incidence (deg).
     pub voltage_real: f64,
-    /// Imaginary part of the voltage (volts).
+    /// Complex source imag part (volts/amps) or plane-wave φ azimuth (deg).
     pub voltage_imag: f64,
+    /// EX field F3 — plane-wave polarization angle η (deg); unused for source
+    /// types. Defaults to 0.0 when the card omits it.
+    pub polarization_deg: f64,
+}
+
+impl ExCard {
+    /// Classify this card's excitation type per canonical NEC2 numbering.
+    pub fn kind(&self) -> ExcitationKind {
+        ExcitationKind::from_type(self.excitation_type)
+    }
 }
 
 /// FR — Frequency card.
