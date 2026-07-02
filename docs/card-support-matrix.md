@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-07-02
 ---
 
 # NEC Card Support Matrix
@@ -37,12 +37,18 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 
 | Card | Support | Notes |
 |------|---------|-------|
-| EX type 0 | Full | Voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal) |
-| EX type 1 | Partial | Implemented for `--solver pulse`; all other solver paths use staged portability (EX 0 behavior + warning) pending current-source semantics |
-| EX type 2 | Partial | Staged portability; treated like EX type 0 with a warning; incident-plane-wave semantics pending |
-| EX type 3 | Partial | `legacy` mode (default): treated like EX type 0 + non-default I4 warning; `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
-| EX type 4 | Partial | Staged portability; treated like EX type 0 with a warning; segment-current semantics pending |
-| EX type 5 | Partial | Staged portability; treated like EX type 0 with a warning; electric-Hertz-dipole (qdsrc) semantics pending |
+Excitation types follow canonical NEC2 numbering (see
+`docs/ph8-chk-002-plane-wave-excitation.md`). Only type 0 is solved today; the
+others are **recognized** (classified per NEC2 and given an accurate, category-named
+diagnostic) but fail fast until their runtime semantics land in Phase 8 — they are
+no longer silently treated as EX type 0.
+
+| EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal) |
+| EX type 1 | Deferred | Incident plane wave, linear polarization. Recognized + polarization field (F3) captured; fails fast pending plane-wave RHS (PH8-CHK-002, in progress) |
+| EX type 2 | Deferred | Incident plane wave, right-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
+| EX type 3 | Deferred | Incident plane wave, left-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
+| EX type 4 | Deferred | Current source. Recognized; fails fast pending current-source semantics (PH8-CHK-001) |
+| EX type 5 | Deferred | Voltage source with current-slope discontinuity. Recognized; fails fast pending runtime semantics (PH8-CHK-003) |
 
 ## Load cards
 

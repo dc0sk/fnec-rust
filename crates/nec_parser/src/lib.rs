@@ -190,9 +190,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             }
             "EX" => {
                 let fields = parse_fields(rest);
-                // Standard NEC EX card: I1 I2 I3 I4 F1 F2
-                // I4 is required by the spec; F1 (voltage real) and F2 (voltage imag)
-                // default to 0.0 if absent.
+                // Standard NEC EX card: I1 I2 I3 I4 F1 F2 F3
+                // I4 is required by the spec; F1/F2 default to 0.0 if absent.
+                // F3 carries the plane-wave polarization angle η (types 1/2/3);
+                // it is unused for source types and defaults to 0.0.
                 require_fields(lineno, "EX", &fields, 4)?;
                 let vr = if fields.len() > 4 {
                     parse_f64(lineno, "EX", 5, fields[4])?
@@ -204,6 +205,11 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 } else {
                     0.0
                 };
+                let f3 = if fields.len() > 6 {
+                    parse_f64(lineno, "EX", 7, fields[6])?
+                } else {
+                    0.0
+                };
                 deck.cards.push(Card::Ex(ExCard {
                     excitation_type: parse_u32(lineno, "EX", 1, fields[0])?,
                     tag: parse_u32(lineno, "EX", 2, fields[1])?,
@@ -211,6 +217,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     i4: parse_u32(lineno, "EX", 4, fields[3])?,
                     voltage_real: vr,
                     voltage_imag: vi,
+                    polarization_deg: f3,
                 }));
             }
             "FR" => {
@@ -478,6 +485,7 @@ EN
                 i4: 0,
                 voltage_real: 1.0,
                 voltage_imag: 0.0,
+                polarization_deg: 0.0,
             })
         );
         // FR
@@ -561,8 +569,35 @@ EN
                 i4: 3,
                 voltage_real: 1.5,
                 voltage_imag: -0.25,
+                polarization_deg: 0.0,
             })
         );
+    }
+
+    #[test]
+    fn ex_plane_wave_polarization_f3_is_captured() {
+        // NEC2 plane wave: EX 1 NTHETA NPHI 0 THETA PHI ETA.
+        // Here NTHETA=1, NPHI=1, THETA=30, PHI=0, ETA(polarization)=45.
+        let input = "EX 1 1 1 0 30.0 0.0 45.0\nEN\n";
+        let result = parse(input).expect("parse must succeed");
+        assert_eq!(
+            result.deck.cards[0],
+            Card::Ex(ExCard {
+                excitation_type: 1,
+                tag: 1,
+                segment: 1,
+                i4: 0,
+                voltage_real: 30.0,
+                voltage_imag: 0.0,
+                polarization_deg: 45.0,
+            })
+        );
+        // The F3 field only populates polarization; no F3 → 0.0.
+        let no_f3 = parse("EX 0 1 26 0 1.0 0.0\nEN\n").expect("parse");
+        let Card::Ex(ex) = &no_f3.deck.cards[0] else {
+            panic!("expected EX card");
+        };
+        assert_eq!(ex.polarization_deg, 0.0);
     }
 
     #[test]

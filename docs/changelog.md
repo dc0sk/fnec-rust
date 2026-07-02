@@ -2,12 +2,34 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-07-02
 ---
 
 # Changelog
 
 All notable documentation process changes are recorded here.
+
+## [Unreleased]
+### Added
+
+- **Project traceability layer** (`docs/project/`): a consolidated
+  requirement → design → implementation → tests → results matrix with a
+  per-push maintenance rule (#256).
+- **PH8-CHK-002 code foundation** — NEC2 EX-type alignment in code: an
+  `ExcitationKind` classifier (single source of the NEC2 0–5 numbering),
+  `ExCard.polarization_deg` (plane-wave polarization field F3, read by the
+  parser), and a NEC2-category-accurate reject diagnostic (e.g. *"incident
+  plane wave, linear polarization (type 1) … is not yet supported"*). EX types
+  1–5 still fail fast — the plane-wave/current-source solves are later
+  increments — so no corpus contract changed. `docs/card-support-matrix.md` EX
+  rows corrected to NEC2 numbering.
+
+### Changed
+
+- **Dependency hygiene**: documented, scoped exception for two `quick-xml` DoS
+  advisories (RUSTSEC-2026-0194/0195) in `.cargo/audit.toml` + `deny.toml` —
+  build-time-only Wayland proc-macro path, root fix blocked upstream. Revisit
+  when wayland-scanner ships `quick-xml >= 0.41`.
 
 ## [0.7.0] — 2026-06-27 — Phase 7 complete: GPU productionization
 ### Added
