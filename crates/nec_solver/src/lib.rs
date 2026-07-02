@@ -13,7 +13,8 @@ pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
-    build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
+    build_current_source_shape, build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs,
+    ExcitationError, HallenRhs,
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, rp_card_points,
@@ -24,9 +25,10 @@ pub use geometry::{
     GeometryError, GroundModel, Segment, WireJunction,
 };
 pub use linear::{
-    solve, solve_hallen, solve_hallen_planewave, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
-    solve_with_sinusoidal_basis_per_wire, HallenSolution, SolveError,
+    solve, solve_hallen, solve_hallen_current_source, solve_hallen_planewave,
+    solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
+    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
+    solve_with_sinusoidal_basis_per_wire, CurrentSourceSolution, HallenSolution, SolveError,
 };
 pub use loads::{build_loads, LoadWarning};
 pub use matrix::{

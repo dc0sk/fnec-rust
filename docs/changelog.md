@@ -12,6 +12,11 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-001 current-source solve core** — incident current source (NEC2 EX
+  type 4) on the Hallén path: `solve_hallen_current_source` treats the port
+  voltage as an unknown and forces `I[src]=i0`, the exact dual of the delta-gap
+  voltage source. Validated by impedance-consistency (current-source Z equals
+  voltage-source Z to 2×10⁻⁴). Solve core only — CLI wiring is a follow-on.
 - **Project traceability layer** (`docs/project/`): a consolidated
   requirement → design → implementation → tests → results matrix with a
   per-push maintenance rule (#256).

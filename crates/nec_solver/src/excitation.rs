@@ -231,6 +231,55 @@ pub fn build_hallen_rhs(
     Ok(HallenRhs { rhs, cos_vec })
 }
 
+/// Build the unit-voltage Hallén source shape `g` at a given segment, for the
+/// current-source (EX type 4) solve.
+///
+/// Returns `(source_shape, cos_vec, src_global_index)` where `source_shape` is
+/// [`build_hallen_rhs`]'s RHS for a `V = 1` delta-gap at `(src_tag, src_segment)`
+/// — i.e. the coefficient of the (unknown) port voltage in the current-source
+/// system. Other EX cards are dropped from the synthesized geometry.
+pub fn build_current_source_shape(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    src_tag: u32,
+    src_segment: u32,
+) -> Result<(Vec<Complex64>, Vec<f64>, usize), ExcitationError> {
+    let src_seg = segs
+        .iter()
+        .position(|s| s.tag == src_tag && s.tag_index == src_segment)
+        .ok_or(ExcitationError::SegmentNotFound {
+            tag: src_tag,
+            segment: src_segment,
+        })?;
+
+    // Synthesize a V=1 delta-gap at the source segment; drop other EX cards so
+    // build_hallen_rhs sees a single ordinary voltage source.
+    let mut synth = NecDeck::new();
+    let mut placed = false;
+    for card in &deck.cards {
+        match card {
+            Card::Ex(_) if !placed => {
+                synth.cards.push(Card::Ex(ExCard {
+                    excitation_type: 0,
+                    tag: src_tag,
+                    segment: src_segment,
+                    i4: 0,
+                    voltage_real: 1.0,
+                    voltage_imag: 0.0,
+                    polarization_deg: 0.0,
+                }));
+                placed = true;
+            }
+            Card::Ex(_) => {}
+            other => synth.cards.push(other.clone()),
+        }
+    }
+
+    let h = build_hallen_rhs(&synth, segs, freq_hz)?;
+    Ok((h.rhs, h.cos_vec, src_seg))
+}
+
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
     // Plane-wave excitations are not delta-gap voltage sources; they contribute
     // nothing to the EFIE voltage vector (handled by crate::planewave).
