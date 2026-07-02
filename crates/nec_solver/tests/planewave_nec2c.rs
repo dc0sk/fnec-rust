@@ -365,3 +365,165 @@ fn elliptic_matches_nec2c_shape_on_tilted_wire() {
         "elliptic currents deviate from nec2c by {max_rel:.4} (>7%)"
     );
 }
+
+// ── Multi-wire (non-junctioned) plane wave — PH8-CHK-002 breadth ────────────
+
+// nec2c two parallel z-dipoles at x=0 and x=1.0, 21 seg each, 28 MHz,
+// EX 1 θ=30 φ=0. Currents (real, imag) amps, wire1 then wire2. 2026-07-02.
+const NEC2C_TWO_WIRE: [(f64, f64); 42] = [
+    (-1.3217e-3, -4.0494e-4),
+    (-3.5698e-3, -1.1130e-3),
+    (-5.5522e-3, -1.7596e-3),
+    (-7.3243e-3, -2.3566e-3),
+    (-8.8802e-3, -2.8977e-3),
+    (-1.0206e-2, -3.3744e-3),
+    (-1.1289e-2, -3.7784e-3),
+    (-1.2116e-2, -4.1018e-3),
+    (-1.2678e-2, -4.3383e-3),
+    (-1.2972e-2, -4.4831e-3),
+    (-1.2997e-2, -4.5331e-3),
+    (-1.2758e-2, -4.4874e-3),
+    (-1.2262e-2, -4.3465e-3),
+    (-1.1522e-2, -4.1133e-3),
+    (-1.0555e-2, -3.7923e-3),
+    (-9.3815e-3, -3.3897e-3),
+    (-8.0226e-3, -2.9129e-3),
+    (-6.5020e-3, -2.3705e-3),
+    (-4.8417e-3, -1.7710e-3),
+    (-3.0569e-3, -1.1207e-3),
+    (-1.1113e-3, -4.0788e-4),
+    (-6.0709e-4, -3.9786e-4),
+    (-1.6077e-3, -1.0838e-3),
+    (-2.4525e-3, -1.6983e-3),
+    (-3.1755e-3, -2.2548e-3),
+    (-3.7824e-3, -2.7489e-3),
+    (-4.2746e-3, -3.1741e-3),
+    (-4.6532e-3, -3.5243e-3),
+    (-4.9194e-3, -3.7942e-3),
+    (-5.0753e-3, -3.9798e-3),
+    (-5.1241e-3, -4.0786e-3),
+    (-5.0702e-3, -4.0900e-3),
+    (-4.9192e-3, -4.0151e-3),
+    (-4.6777e-3, -3.8566e-3),
+    (-4.3531e-3, -3.6191e-3),
+    (-3.9536e-3, -3.3083e-3),
+    (-3.4877e-3, -2.9316e-3),
+    (-2.9641e-3, -2.4974e-3),
+    (-2.3907e-3, -2.0143e-3),
+    (-1.7742e-3, -1.4912e-3),
+    (-1.1179e-3, -9.3487e-4),
+    (-4.0603e-4, -3.3697e-4),
+];
+
+#[test]
+fn planewave_two_wire_per_wire_shape_matches_nec2c() {
+    // Two parallel z-dipoles. fnec's Hallén operator differs from nec2c by a
+    // per-wire constant factor (different mutual-coupling modelling), so each
+    // wire is compared to nec2c aligned on its OWN peak (shape), not globally.
+    let cur = two_wire_currents();
+    for (label, lo, hi, pk) in [
+        ("wire1", 0usize, 21usize, 10usize),
+        ("wire2", 21usize, 42usize, 31usize),
+    ] {
+        let rp = Complex64::new(NEC2C_TWO_WIRE[pk].0, NEC2C_TWO_WIRE[pk].1);
+        let align = rp / cur[pk];
+        let mut mx = 0.0f64;
+        for i in lo..hi {
+            let rc = Complex64::new(NEC2C_TWO_WIRE[i].0, NEC2C_TWO_WIRE[i].1);
+            mx = mx.max((cur[i] * align - rc).norm() / rp.norm());
+        }
+        println!("{label} shape max_rel = {mx:.4}");
+        assert!(mx < 0.12, "{label} deviates from nec2c by {mx:.4} (>12%)");
+    }
+}
+
+fn two_wire_currents() -> Vec<Complex64> {
+    let mut deck = NecDeck::new();
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: 21,
+        start: [0.0, 0.0, -2.5],
+        end: [0.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 2,
+        segments: 21,
+        start: [1.0, 0.0, -2.5],
+        end: [1.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(ex_card(1, 30.0, 0.0, 0.0, 0.0));
+    let freq = 28.0e6;
+    let segs = build_geometry(&deck).unwrap();
+    let z = assemble_z_matrix_with_ground(&segs, freq, &GroundModel::FreeSpace);
+    let pw = build_planewave_hallen(&deck, &segs, freq).unwrap();
+    let endpoints = wire_endpoints_from_segs(&segs);
+    solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap()
+}
+
+#[test]
+fn planewave_two_wire_symmetric_broadside_currents_are_equal() {
+    // Internal consistency: a wave from (θ=90, φ=90) travels along −y and hits two
+    // parallel z-wires (at x=0 and x=1, both at y=0) with identical phase, so by
+    // translational symmetry the induced currents on the two wires must be equal.
+    let mut deck = NecDeck::new();
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: 21,
+        start: [0.0, 0.0, -2.5],
+        end: [0.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 2,
+        segments: 21,
+        start: [1.0, 0.0, -2.5],
+        end: [1.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(ex_card(1, 90.0, 90.0, 0.0, 0.0));
+    let freq = 28.0e6;
+    let segs = build_geometry(&deck).unwrap();
+    let z = assemble_z_matrix_with_ground(&segs, freq, &GroundModel::FreeSpace);
+    let pw = build_planewave_hallen(&deck, &segs, freq).unwrap();
+    let endpoints = wire_endpoints_from_segs(&segs);
+    let cur = solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap();
+    let peak = cur[10].norm().max(1e-30);
+    let mut mx = 0.0f64;
+    for i in 0..21 {
+        mx = mx.max((cur[i] - cur[21 + i]).norm() / peak);
+    }
+    println!("two-wire broadside asymmetry = {mx:.2e}");
+    assert!(
+        mx < 1e-9,
+        "symmetric broadside currents differ between wires (asym {mx:.2e})"
+    );
+}
+
+#[test]
+fn planewave_junctioned_geometry_is_rejected() {
+    // Two wires sharing an endpoint (a junction) must fail fast.
+    let mut deck = NecDeck::new();
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: 11,
+        start: [0.0, 0.0, -2.5],
+        end: [0.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 2,
+        segments: 11,
+        start: [0.0, 0.0, 2.5],
+        end: [2.5, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    deck.cards.push(ex_card(1, 30.0, 0.0, 0.0, 0.0));
+    let segs = build_geometry(&deck).expect("geometry");
+    let r = build_planewave_hallen(&deck, &segs, 14.2e6);
+    assert!(matches!(
+        r,
+        Err(nec_solver::PlaneWaveError::JunctionedGeometryNotSupported)
+    ));
+}

@@ -137,3 +137,36 @@ fn current_source_offset_feed_matches_voltage_source() {
         "off-center current-source Z {z_i} != voltage-source Z {z_v} (rel {rel:.2e})"
     );
 }
+
+#[test]
+fn current_source_two_wire_array_matches_voltage_source() {
+    // Two parallel dipoles; current source on wire 1. The port impedance (with
+    // array mutual coupling) must still be independent of drive type.
+    let mut base = NecDeck::new();
+    base.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: 21,
+        start: [0.0, 0.0, -2.5],
+        end: [0.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    base.cards.push(Card::Gw(GwCard {
+        tag: 2,
+        segments: 21,
+        start: [1.0, 0.0, -2.5],
+        end: [1.0, 0.0, 2.5],
+        radius: 0.001,
+    }));
+    // feed at wire-1 center (seg 11).
+    let z_v = voltage_source_impedance(&base, 1, 11);
+    let (z_i, i_feed) = current_source_impedance(&base, 1, 11, Complex64::new(1.0, 0.0));
+    assert!(
+        (i_feed - Complex64::new(1.0, 0.0)).norm() < 1e-6,
+        "forced current not honored: {i_feed}"
+    );
+    let rel = (z_i - z_v).norm() / z_v.norm();
+    assert!(
+        rel < 5e-3,
+        "two-wire current-source Z {z_i} != voltage-source Z {z_v} (rel {rel:.2e})"
+    );
+}
