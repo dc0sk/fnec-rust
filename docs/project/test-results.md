@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-004-nt-cli` (base `4e9b947` main) |
+| Commit | branch `feat/ph8-chk-002-elliptic` (base `89f7c86` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,14 +27,22 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-550 passed; 0 failed; 0 ignored — across 56 test binaries
+553 passed; 0 failed; 0 ignored — across 56 test binaries
 exit code 0
 ```
 
-550 (unchanged count; NT CLI wiring flipped the malformed `dipole-nt-*` warning
-contracts from "deferred" to `NT card ignored` and added the
-`dipole-nt-tl-equiv-freesp-51seg` corpus case that stamps a well-formed NT and
-reproduces the equivalent TL feedpoint impedance, 70.63+j14.01, end to end).
+553 = 550 + 3 elliptic plane-wave tests (`planewave_nec2c.rs`: z-wire reduction,
+AR=0 reduction, tilted-wire nec2c shape). The `dipole-ex2`/`dipole-ex3` (and
+obsolete `dipole-ex3-i4-*`) contracts were flipped from "rejected" to the
+accept-path (skip in the impedance-centric framework, receive-only).
+
+### Elliptic plane-wave validation (PH8-CHK-002 breadth)
+
+```
+z-wire elliptic (any AR) == linear:                exact (<1e-9)
+tilted-wire elliptic AR=0 == linear:               exact (<1e-9)
+tilted-wire elliptic AR=0.5 vs nec2c shape:        5.4% (coarse non-resonant wire)
+```
 
 ### Current-source solve validation (PH8-CHK-001 solve core)
 

@@ -75,10 +75,41 @@ fn assert_ex_unsupported(ex_type: u8, workspace_root: &Path) {
     );
 }
 
+/// Helper: an incident plane-wave EX type (1/2/3) solves on --solver hallen and
+/// reports induced CURRENTS (receive solve). Used for the elliptic types 2/3.
+fn assert_ex_plane_wave_solves(ex_type: u8, workspace_root: &Path) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-ex{ex_type}-pw-{now}.nec"));
+    // EX N NTHETA NPHI 0 THETA PHI ETA — plane wave from θ=30°.
+    let deck = format!(
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX {ex_type} 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n"
+    );
+    fs::write(&deck_path, deck).expect("failed to write deck");
+    let output = run_fnec_output(&deck_path, workspace_root, &["--solver", "hallen"]);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = fs::remove_file(&deck_path);
+    assert!(
+        output.status.success(),
+        "EX type {ex_type} plane wave should solve on hallen; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type {ex_type} plane wave must not be rejected; stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("CURRENTS"),
+        "EX type {ex_type} plane-wave solve should report induced CURRENTS; stdout:\n{stdout}"
+    );
+}
+
 #[test]
 fn ex_type3_matches_ex_type0_feedpoint_impedance() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    assert_ex_unsupported(3, &workspace_root);
+    assert_ex_plane_wave_solves(3, &workspace_root);
 }
 
 #[test]
@@ -206,7 +237,7 @@ fn ex_type5_pulse_imposes_requested_segment_current_without_portability_warning(
 #[test]
 fn ex_type2_matches_ex_type0_feedpoint_impedance() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    assert_ex_unsupported(2, &workspace_root);
+    assert_ex_plane_wave_solves(2, &workspace_root);
 }
 
 #[test]
@@ -256,7 +287,10 @@ fn ex_type5_matches_ex_type0_feedpoint_impedance() {
 
 #[test]
 fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
-    // Phase-1: EX type 3 is rejected (not yet supported); --ex3-i4-mode is silently ignored.
+    // PH8-CHK-002: EX type 3 is now a left-elliptic plane wave and solves on the
+    // Hallén path. The legacy --ex3-i4-mode flag is an obsolete no-op (its former
+    // "normalized voltage source" meaning predates the NEC2 EX-type alignment)
+    // and must not prevent the plane-wave solve.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -264,8 +298,9 @@ fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
         .as_nanos();
 
     let ex3_i4_path = std::env::temp_dir().join(format!("fnec-ex3-i4-{now}.nec"));
+    // EX 3 NTHETA NPHI I4 THETA PHI ETA — plane wave; I4 is unused for plane waves.
     let ex3_i4_deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 26 2 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 3 1 1 2 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&ex3_i4_path, ex3_i4_deck).expect("failed to write EX type 3 I4 deck");
 
     let output = run_fnec_output(
@@ -273,15 +308,20 @@ fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
         &workspace_root,
         &["--ex3-i4-mode", "divide-by-i4"],
     );
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let _ = fs::remove_file(&ex3_i4_path);
 
     assert!(
-        !output.status.success(),
-        "EX type 3 (--ex3-i4-mode) should fail with 'not yet supported', but succeeded; stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 3 plane wave should solve even with the obsolete --ex3-i4-mode; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("is not yet supported"),
-        "EX type 3 stderr should contain 'is not yet supported', got:\n{stderr}"
+        !stderr.contains("is not yet supported"),
+        "EX type 3 plane wave must not be rejected, got stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("CURRENTS"),
+        "EX type 3 plane-wave solve should report induced CURRENTS; stdout:\n{stdout}"
     );
 }

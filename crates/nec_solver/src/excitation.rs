@@ -269,6 +269,7 @@ pub fn build_current_source_shape(
                     voltage_real: 1.0,
                     voltage_imag: 0.0,
                     polarization_deg: 0.0,
+                    polarization_ratio: 0.0,
                 }));
                 placed = true;
             }
@@ -345,6 +346,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
         deck
     }
@@ -390,6 +392,7 @@ mod tests {
             voltage_real: 0.5,
             voltage_imag: -0.5,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         let v = build_excitation(&deck, &segs).unwrap();
@@ -421,6 +424,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
@@ -452,6 +456,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         assert!(matches!(
@@ -568,6 +573,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
 
         let segs = build_geometry(&deck).unwrap();
@@ -608,6 +614,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
 
         let segs = build_geometry(&deck).unwrap();
@@ -643,6 +650,7 @@ mod tests {
             voltage_real: v_re,
             voltage_imag: v_im,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         }));
         let segs = build_geometry(&deck).unwrap();
         (deck, segs)

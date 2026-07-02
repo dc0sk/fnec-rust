@@ -51,6 +51,7 @@ fn build_dipole() -> (
         voltage_real: 1.0,
         voltage_imag: 0.0,
         polarization_deg: 0.0,
+        polarization_ratio: 0.0,
     }));
 
     let segs = build_geometry(&deck).expect("geometry should build");

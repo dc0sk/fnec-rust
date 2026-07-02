@@ -190,6 +190,38 @@ Results: `cargo test --workspace` **544 passed**, 0 failed; clippy clean. Manual
 CLI check: `EX 1 1 1 0 30 0 0` on `--solver hallen` emits induced `CURRENTS`
 (endpoint ≈ 0, ramping to center) with an empty `FEEDPOINTS` section.
 
-Still pending: elliptic polarization (types 2/3), multi-angle NTHETA/NPHI
-sweeps, and multi-wire geometry. `docs/card-support-matrix.md` EX type 1 →
-**Partial** (single straight wire, linear).
+### Increment 4 — elliptic polarization, types 2/3 (2026-07-02)
+
+Right- and left-hand elliptic plane waves now solve.
+
+- **Field** (`nec_solver::planewave`): `IncidentPlaneWave` gains `axial_ratio`
+  (EX F6) and `sense` (+1 type 2, −1 type 3). `pol_hat` returns a **complex**
+  vector `ê = û_maj + j·sense·AR·û_minor` (major axis tilted by η, minor axis 90°
+  out of phase, scaled by the axial ratio). The tangential coupling `ê·û` is
+  complex; the existing forcing/solve already carry `Complex64`.
+- **Model/parser**: `ExCard` gains `polarization_ratio` (EX F6), read by the
+  parser. The excitation type sets the handedness.
+- **Routing** (`nec-cli`): the elliptic fail-fast is removed; types 2/3 route to
+  the same plane-wave solve as type 1.
+
+**Validation** (`planewave_nec2c.rs`):
+1. **z-wire reduction** — on a z-oriented wire only θ̂ couples (φ̂·ẑ = 0), so an
+   elliptic wave (any AR) induces the same current as linear (exact, <1e-9).
+2. **AR = 0 reduction** — type 2 with axial ratio 0 equals type 1 (exact).
+3. **tilted-wire nec2c shape** — on a wire where both θ̂ and φ̂ couple, the
+   induced-current distribution matches nec2c's elliptic reference to **5.4%**
+   (a coarse, non-resonant tilted geometry; the same fnec-vs-nec2c operator
+   offset applies). This confirms the axial-ratio physics, distinct from linear.
+   (This symmetric geometry can't distinguish handedness by the shape metric —
+   type 2/3 give conjugate-related currents that align to the same shape — but
+   both reductions and the elliptic-vs-linear difference are validated.)
+
+**Contract flips**: `dipole-ex2` / `dipole-ex3` (and the obsolete `dipole-ex3-i4-*`
+/ `--ex3-i4-mode` variants) now solve as plane waves; their corpus contracts and
+the `ex_cards` / `parser_warnings` type-2/3 tests were flipped from "rejected" to
+the accept-path. The `--ex3-i4-mode` flag is retained as a documented no-op.
+
+Results: `cargo test --workspace` **553 passed**, 0 failed; clippy clean.
+`docs/card-support-matrix.md` EX types 1/2/3 → **Partial** (single straight wire).
+
+Still pending: multi-angle NTHETA/NPHI sweeps and multi-wire geometry.

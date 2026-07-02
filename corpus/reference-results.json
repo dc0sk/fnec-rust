@@ -50,29 +50,27 @@
     },
     "dipole-ex3-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 acceptance; currently mapped like EX type 0)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 deck portability while normalization semantics are pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-ex3-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with I4=0 and --ex3-i4-mode divide-by-i4",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "cli_args": [
         "--ex3-i4-mode",
         "divide-by-i4"
@@ -82,19 +80,17 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 I4=0 divide-by-i4 mode warning contract)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 I4=0 divide-by-i4 corpus-path warning semantics.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-ex1-freesp-51seg": {
       "deck_file": "dipole-ex1-freesp-51seg.nec",
@@ -148,27 +144,23 @@
     },
     "dipole-ex2-freesp-51seg": {
       "deck_file": "dipole-ex2-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 2 source",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 2 (right-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 2 staged portability; currently mapped like EX type 0)",
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 2 deck portability while incident-plane-wave semantics remain pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 2 (right-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only)."
     },
     "dipole-ex4-freesp-51seg": {
       "deck_file": "dipole-ex4-freesp-51seg.nec",
@@ -521,29 +513,27 @@
     },
     "dipole-ex3-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with non-default I4",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 non-default I4 warning contract)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 non-default I4 warning semantics while normalization behavior remains pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-ex3-i4-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with --ex3-i4-mode divide-by-i4",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "cli_args": [
         "--ex3-i4-mode",
         "divide-by-i4"
@@ -553,23 +543,21 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 divide-by-i4 mode warning contract)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 divide-by-i4 mode corpus-path warning semantics.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-ex3-i4-two-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-two-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with I4=2 and --ex3-i4-mode divide-by-i4",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "cli_args": [
         "--ex3-i4-mode",
         "divide-by-i4"
@@ -579,41 +567,37 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 I4=2 divide-by-i4 mode warning contract)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 I4=2 divide-by-i4 corpus-path warning semantics.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-ex3-i4-two-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-two-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 3 source with I4=2 in legacy mode",
+      "description": "Half-wave dipole (z-oriented), 51 seg, 14.2 MHz, EX type 3 (left-elliptic) incident plane wave. PH8-CHK-002: solves on --solver hallen (receive solve, no feedpoint). On a z-wire the elliptic polarization reduces to linear; --ex3-i4-mode is an obsolete no-op. Validated by crates/nec_solver/tests/planewave_nec2c.rs.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 3 I4=2 legacy warning contract)",
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "reference_source": "nec_solver planewave tests (elliptic reduction + tilted-wire nec2c shape); receive solve has no feedpoint",
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 3 I4=2 legacy corpus-path warning semantics.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": []
     },
     "dipole-freesp-rp-51seg": {
       "deck_file": "dipole-freesp-rp-51seg.nec",

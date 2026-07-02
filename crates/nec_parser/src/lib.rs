@@ -210,6 +210,13 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 } else {
                     0.0
                 };
+                // F4/F5 (angle increments, fields 7/8) are unused for a single
+                // incidence angle; F6 (field 9) is the plane-wave axial ratio.
+                let f6 = if fields.len() > 9 {
+                    parse_f64(lineno, "EX", 10, fields[9])?
+                } else {
+                    0.0
+                };
                 deck.cards.push(Card::Ex(ExCard {
                     excitation_type: parse_u32(lineno, "EX", 1, fields[0])?,
                     tag: parse_u32(lineno, "EX", 2, fields[1])?,
@@ -218,6 +225,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     voltage_real: vr,
                     voltage_imag: vi,
                     polarization_deg: f3,
+                    polarization_ratio: f6,
                 }));
             }
             "FR" => {
@@ -486,6 +494,7 @@ EN
                 voltage_real: 1.0,
                 voltage_imag: 0.0,
                 polarization_deg: 0.0,
+                polarization_ratio: 0.0,
             })
         );
         // FR
@@ -570,6 +579,7 @@ EN
                 voltage_real: 1.5,
                 voltage_imag: -0.25,
                 polarization_deg: 0.0,
+                polarization_ratio: 0.0,
             })
         );
     }
@@ -590,6 +600,7 @@ EN
                 voltage_real: 30.0,
                 voltage_imag: 0.0,
                 polarization_deg: 45.0,
+                polarization_ratio: 0.0,
             })
         );
         // The F3 field only populates polarization; no F3 → 0.0.

@@ -41,20 +41,36 @@ pub struct IncidentPlaneWave {
     pub theta_deg: f64,
     /// Incidence azimuth angle φ (degrees).
     pub phi_deg: f64,
-    /// Linear polarization angle η (degrees); η = 0 orients E along θ̂.
+    /// Polarization angle η (degrees); the major-axis tilt from θ̂ (η = 0 → θ̂).
     pub eta_deg: f64,
+    /// Axial ratio (minor/major axis of the polarization ellipse). 0 = linear.
+    pub axial_ratio: f64,
+    /// Handedness sense of the ellipse: +1 (right, EX type 2), −1 (left, type 3),
+    /// unused when `axial_ratio == 0` (linear, type 1).
+    pub sense: f64,
     /// Incident electric-field magnitude E₀ (V/m). Defaults to 1.0.
     pub e0: f64,
 }
 
 impl IncidentPlaneWave {
     /// Build from a plane-wave EX card. Field layout (NEC2): I2/I3 = NTHETA/NPHI
-    /// (unused here — single incidence angle), F1 = θ, F2 = φ, F3 = η.
+    /// (unused here — single incidence angle), F1 = θ, F2 = φ, F3 = η, F6 = axial
+    /// ratio. The excitation type sets the handedness: type 1 linear, type 2
+    /// right-hand elliptic, type 3 left-hand elliptic.
     pub fn from_ex_card(ex: &nec_model::card::ExCard) -> Self {
+        use nec_model::card::ExcitationKind;
+        let (axial_ratio, sense) = match ex.kind() {
+            ExcitationKind::PlaneWaveLinear => (0.0, 0.0),
+            ExcitationKind::PlaneWaveRightElliptic => (ex.polarization_ratio, 1.0),
+            ExcitationKind::PlaneWaveLeftElliptic => (ex.polarization_ratio, -1.0),
+            _ => (0.0, 0.0),
+        };
         IncidentPlaneWave {
             theta_deg: ex.voltage_real,
             phi_deg: ex.voltage_imag,
             eta_deg: ex.polarization_deg,
+            axial_ratio,
+            sense,
             e0: 1.0,
         }
     }
@@ -65,17 +81,26 @@ impl IncidentPlaneWave {
         [t.sin() * p.cos(), t.sin() * p.sin(), t.cos()]
     }
 
-    /// Unit polarization vector `ê = cos(η)·θ̂ + sin(η)·φ̂`.
-    fn pol_hat(&self) -> [f64; 3] {
+    /// Complex polarization vector.
+    ///
+    /// The ellipse's major axis is tilted by η from θ̂; the minor axis is 90° out
+    /// of phase (the `j` factor) and scaled by the axial ratio, with the sign set
+    /// by the handedness:
+    /// `ê = û_maj + j·sense·AR·û_minor`, where
+    /// `û_maj = cos η·θ̂ + sin η·φ̂` and `û_minor = −sin η·θ̂ + cos η·φ̂`.
+    /// For `AR = 0` this reduces to the real linear vector `cos η·θ̂ + sin η·φ̂`.
+    fn pol_hat(&self) -> [Complex64; 3] {
         let (t, p) = (self.theta_deg.to_radians(), self.phi_deg.to_radians());
         let eta = self.eta_deg.to_radians();
         let theta_hat = [t.cos() * p.cos(), t.cos() * p.sin(), -t.sin()];
         let phi_hat = [-p.sin(), p.cos(), 0.0];
-        [
-            eta.cos() * theta_hat[0] + eta.sin() * phi_hat[0],
-            eta.cos() * theta_hat[1] + eta.sin() * phi_hat[1],
-            eta.cos() * theta_hat[2] + eta.sin() * phi_hat[2],
-        ]
+        let (ce, se) = (eta.cos(), eta.sin());
+        let jminor = Complex64::new(0.0, self.sense * self.axial_ratio);
+        std::array::from_fn(|i| {
+            let major = ce * theta_hat[i] + se * phi_hat[i];
+            let minor = -se * theta_hat[i] + ce * phi_hat[i];
+            Complex64::new(major, 0.0) + jminor * minor
+        })
     }
 }
 
@@ -177,7 +202,9 @@ pub fn build_planewave_hallen(
     // tangential incident field E_t(s) = (ê·û)·E₀·exp(+j k r̂·r).
     let mut s_coord = vec![0.0f64; n];
     let mut e_tan = vec![Complex64::new(0.0, 0.0); n];
-    let tangential_coupling = dot(pol_hat, wire_dir);
+    // Complex tangential coupling ê·û (complex for elliptic polarization).
+    let tangential_coupling: Complex64 =
+        (0..3).map(|i| pol_hat[i] * wire_dir[i]).sum::<Complex64>() * wave.e0;
     for (i, seg) in segs.iter().enumerate() {
         let d = [
             seg.midpoint[0] - wire_mid[0],
@@ -186,7 +213,7 @@ pub fn build_planewave_hallen(
         ];
         s_coord[i] = dot(d, wire_dir);
         let phase = k * dot(r_hat, seg.midpoint); // +j k r̂·r
-        e_tan[i] = Complex64::from_polar(wave.e0 * tangential_coupling, phase);
+        e_tan[i] = tangential_coupling * Complex64::from_polar(1.0, phase);
     }
 
     // Hallén forcing: rhs(sₘ) = −j·(2π/η₀)·Σ_p E_t(s_p)·sin(k|sₘ − s_p|)·Δl_p.
