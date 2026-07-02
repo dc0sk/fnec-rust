@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-004-nt-stamp-core` (base `3bb9990` main) |
+| Commit | branch `feat/ph8-chk-004-nt-cli` (base `4e9b947` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -31,9 +31,10 @@ rule in [README.md](README.md)).
 exit code 0
 ```
 
-550 = 547 (PH8-CHK-001 complete) + 3 NT-stamp tests (`nt_network.rs`:
-TL-equivalence, singular-Y guard, missing-endpoint guard). The NT stamp core is
-not yet wired into the CLI solve path.
+550 (unchanged count; NT CLI wiring flipped the malformed `dipole-nt-*` warning
+contracts from "deferred" to `NT card ignored` and added the
+`dipole-nt-tl-equiv-freesp-51seg` corpus case that stamps a well-formed NT and
+reproduces the equivalent TL feedpoint impedance, 70.63+j14.01, end to end).
 
 ### Current-source solve validation (PH8-CHK-001 solve core)
 

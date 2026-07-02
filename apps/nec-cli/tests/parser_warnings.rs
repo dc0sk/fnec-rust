@@ -284,8 +284,8 @@ fn pt_card_emits_deferred_warning_but_run_succeeds() {
 
 #[test]
 fn nt_card_emits_deferred_warning_but_run_succeeds() {
-    // Phase-2: NT is parsed; emits "NT card support is currently deferred" warning
-    // from warn_nt_card_deferred_support; deck runs as free-space.
+    // PH8-CHK-004: this deck's NT card is malformed (8 fields), so the stamp
+    // path emits an "NT card ignored" warning and the deck runs as free-space.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -317,7 +317,7 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -364,7 +364,7 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
         "PT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -416,7 +416,7 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         "expected deferred-support warning for PT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -463,7 +463,7 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -515,7 +515,7 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -571,7 +571,7 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         "PT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
@@ -619,7 +619,7 @@ fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card support is currently deferred"),
+        stderr.contains("NT card ignored"),
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(

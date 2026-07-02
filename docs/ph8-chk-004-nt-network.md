@@ -60,12 +60,37 @@ because `[Y]⁻¹` inverts straight back to the TL's `[Z]`.
 `cargo test --workspace`: **550 passed**, 0 failed (was 547; +3 NT tests); clippy
 clean.
 
+## Increment 2 — CLI wiring (2026-07-02)
+
+NT cards now stamp the Z matrix end to end.
+
+- **Application** (`nec-cli::solve_session`): after the TL stamps, `build_nt_stamps`
+  runs and its stamps are added to `z_mat` (`add_to_entry`), exactly like TL.
+  Malformed/unsupported NT cards emit their `build_nt_stamps` warning
+  (deduplicated so repeated identical cards warn once).
+- **Deferred warning removed**: the blanket "NT card support is currently
+  deferred" warning (`warn_nt_card_deferred_support`) is gone; well-formed NT
+  cards stamp silently, malformed ones warn from the stamp path.
+
+**Corpus / test updates**: the pre-existing `dipole-nt-*` decks use a **malformed**
+NT card (`NT 1 1 26 1 1 26 50.0 0.0` — 8 fields, tag 26 absent), so they now warn
+`NT card ignored` and solve as free-space (impedance unchanged, 74.23+j13.9); the
+`parser_warnings` NT tests and those corpus contracts were updated from the
+"deferred" substring to `NT card ignored`.
+
+**New real fixture** `corpus/dipole-nt-tl-equiv-freesp-51seg.nec`: a well-formed
+NT between segments 20 and 32 whose admittance equals a lossless TL (Z0=50 Ω,
+ℓ=2.0 m). End to end it reproduces the equivalent **TL** deck's feedpoint
+impedance to ~1×10⁻⁵ Ω (both 70.6327+j14.0088) — a corpus-level confirmation that
+the admittance→Z stamp is correct through the full solve.
+
+Results: `cargo test --workspace` **550 passed**, 0 failed; clippy clean.
+`docs/card-support-matrix.md` NT → **Partial**.
+
 ## Staged delivery
 
-1. **Stamp core (this increment)** — `build_nt_stamps` (Y→Z→stamp), validated
-   against the TL stamp. Not yet wired into the CLI solve path.
-2. **CLI wiring** — apply `nt_stamps` to `z_mat` in `solve_session` (mirroring
-   the TL-stamp application); replace the existing NT "deferred" warning; add a
-   real NT corpus fixture (the current `dipole-nt-*` decks are malformed
-   deferred-warning placeholders and need proper two-port geometry + Y-params).
+1. **Stamp core** (#262) — `build_nt_stamps` (Y→Z→stamp), validated against the
+   TL stamp.
+2. **CLI wiring** (this increment) — apply stamps in `solve_session`; remove the
+   deferred warning; real NT-equals-TL corpus fixture.
 3. **Breadth** — non-reciprocal / general networks; interaction with TL/loads.
