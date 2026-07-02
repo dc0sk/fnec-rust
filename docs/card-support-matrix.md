@@ -44,7 +44,7 @@ diagnostic) but fail fast until their runtime semantics land in Phase 8 — they
 no longer silently treated as EX type 0.
 
 | EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal) |
-| EX type 1 | Deferred | Incident plane wave, linear polarization. Recognized + polarization field (F3) captured; fails fast pending plane-wave RHS (PH8-CHK-002, in progress) |
+| EX type 1 | Partial | Incident plane wave, linear polarization. **Solves** on `--solver hallen` for a single straight wire (receiving antenna → induced `CURRENTS`, no feedpoint); validated vs nec2c shape + reciprocity (PH8-CHK-002). Multi-wire geometry and `--solver pulse` fail fast with an actionable diagnostic |
 | EX type 2 | Deferred | Incident plane wave, right-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
 | EX type 3 | Deferred | Incident plane wave, left-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
 | EX type 4 | Deferred | Current source. Recognized; fails fast pending current-source semantics (PH8-CHK-001) |

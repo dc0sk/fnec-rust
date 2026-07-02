@@ -676,8 +676,9 @@ fn ex_type3_runs_without_unsupported_error() {
 }
 
 #[test]
-fn ex_type1_runs_with_portability_warning_without_unsupported_error() {
-    // Phase-1: EX type 1 is not yet supported; deck fails.
+fn ex_type1_plane_wave_solves_without_legacy_warning() {
+    // PH8-CHK-002: EX type 1 (incident plane wave) solves on --solver hallen and
+    // must not emit the old "treated like EX type 0" portability warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -685,7 +686,8 @@ fn ex_type1_runs_with_portability_warning_without_unsupported_error() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-ex-type1-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with EX type 1");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -697,23 +699,22 @@ fn ex_type1_runs_with_portability_warning_without_unsupported_error() {
         .arg(&deck_path)
         .current_dir(&workspace_root)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type1 warning test: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type1 test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 1 should be rejected as not yet supported"
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 1, got stderr:\n{stderr}"
+        output.status.success(),
+        "PH8-CHK-002: EX type 1 plane wave should solve on hallen; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 1 plane wave must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 1 is currently treated like EX type 0"),
-        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
+        "must not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
@@ -727,7 +728,8 @@ fn ex_type1_pulse_runs_without_portability_warning() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-ex-type1-pulse-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary pulse deck with EX type 1");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -745,17 +747,17 @@ fn ex_type1_pulse_runs_without_portability_warning() {
 
     assert!(
         !output.status.success(),
-        "Phase-1: EX type 1 pulse should be rejected as not yet supported"
+        "PH8-CHK-002: EX type 1 plane wave under --solver pulse should fail fast"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 1 pulse, got stderr:\n{stderr}"
+        stderr.contains("requires --solver hallen"),
+        "expected 'requires --solver hallen' for EX type 1 pulse, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 1 is currently treated like EX type 0"),
-        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
+        "must not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 

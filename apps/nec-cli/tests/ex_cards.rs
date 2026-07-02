@@ -82,14 +82,45 @@ fn ex_type3_matches_ex_type0_feedpoint_impedance() {
 }
 
 #[test]
-fn ex_type1_matches_ex_type0_feedpoint_impedance() {
+fn ex_type1_plane_wave_solves_on_hallen() {
+    // PH8-CHK-002: NEC2 type 1 = incident plane wave (linear). On a single
+    // straight wire with --solver hallen it SOLVES (receiving antenna) and
+    // reports induced currents — no "is not yet supported" rejection.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    assert_ex_unsupported(1, &workspace_root);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let path = std::env::temp_dir().join(format!("fnec-ex1-planewave-{now}.nec"));
+    // EX 1 NTHETA NPHI 0 THETA PHI ETA — plane wave from θ=30°, φ=0, linear.
+    let deck =
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&path, deck).expect("failed to write EX type 1 plane-wave deck");
+
+    let output = run_fnec_output(&path, &workspace_root, &["--solver", "hallen"]);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = fs::remove_file(&path);
+
+    assert!(
+        output.status.success(),
+        "EX type 1 plane wave should solve on --solver hallen; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 1 plane wave must not be rejected; stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("CURRENTS"),
+        "plane-wave solve should report induced CURRENTS; stdout:\n{stdout}"
+    );
 }
 
 #[test]
-fn ex_type1_pulse_imposes_requested_segment_current_without_portability_warning() {
-    // Phase-1: EX type 1 is rejected (not yet supported), even in pulse-solver mode.
+fn ex_type1_plane_wave_requires_hallen_solver() {
+    // A plane wave is solved only on the Hallén path; --solver pulse fails fast
+    // with an actionable diagnostic rather than silently mis-solving.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -98,7 +129,7 @@ fn ex_type1_pulse_imposes_requested_segment_current_without_portability_warning(
 
     let ex1_path = std::env::temp_dir().join(format!("fnec-ex1-pulse-{now}.nec"));
     let ex1_deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&ex1_path, ex1_deck).expect("failed to write EX type 1 pulse deck");
 
     let output = run_fnec_output(&ex1_path, &workspace_root, &["--solver", "pulse"]);
@@ -107,11 +138,11 @@ fn ex_type1_pulse_imposes_requested_segment_current_without_portability_warning(
 
     assert!(
         !output.status.success(),
-        "EX type 1 (pulse mode) should fail with 'not yet supported', but succeeded; stderr:\n{stderr}"
+        "EX type 1 plane wave under --solver pulse should fail fast; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("is not yet supported"),
-        "EX type 1 (pulse mode) stderr should contain 'is not yet supported', got:\n{stderr}"
+        stderr.contains("requires --solver hallen"),
+        "EX type 1 pulse stderr should say the plane wave requires --solver hallen, got:\n{stderr}"
     );
 }
 

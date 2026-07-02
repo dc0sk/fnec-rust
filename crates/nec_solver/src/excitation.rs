@@ -124,6 +124,12 @@ pub fn build_hallen_rhs(
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
+        // Plane-wave excitations (types 1/2/3) are not delta-gap sources; they
+        // are handled by the dedicated plane-wave path (crate::planewave) and
+        // contribute nothing to the delta-gap Hallén RHS.
+        if ex.kind().is_plane_wave() {
+            continue;
+        }
         if ex.excitation_type != 0 {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
@@ -226,6 +232,11 @@ pub fn build_hallen_rhs(
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
+    // Plane-wave excitations are not delta-gap voltage sources; they contribute
+    // nothing to the EFIE voltage vector (handled by crate::planewave).
+    if ex.kind().is_plane_wave() {
+        return Ok(());
+    }
     if ex.excitation_type != 0 {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
@@ -628,10 +639,12 @@ mod tests {
                 "expected {expected}, got {}", v[1]);
         }
 
-        /// EX types 1–5: build_excitation must return UnsupportedType error, not panic.
+        /// EX types 4–5 (current source, current-slope voltage): build_excitation
+        /// must return UnsupportedType error, not panic. Plane-wave types (1/2/3)
+        /// are not delta-gap sources and are skipped, not errored (crate::planewave).
         #[test]
         fn proptest_unsupported_ex_types_return_error(
-            ex_type in 1_u32..=5_u32,
+            ex_type in 4_u32..=5_u32,
             v_re in -1e6_f64..=1e6_f64,
             v_im in -1e6_f64..=1e6_f64,
         ) {
@@ -643,10 +656,10 @@ mod tests {
             );
         }
 
-        /// EX types 1–5: build_hallen_rhs must return UnsupportedType error, not panic.
+        /// EX types 4–5: build_hallen_rhs must return UnsupportedType error, not panic.
         #[test]
         fn proptest_hallen_rhs_unsupported_ex_types_return_error(
-            ex_type in 1_u32..=5_u32,
+            ex_type in 4_u32..=5_u32,
         ) {
             let (deck, segs) = three_seg_deck_with_ex(1.0, 0.0, ex_type, 2);
             let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
@@ -654,6 +667,18 @@ mod tests {
                 matches!(result, Err(ExcitationError::UnsupportedType { ex_type: t, .. }) if t == ex_type),
                 "expected UnsupportedType({ex_type}), got {result:?}"
             );
+        }
+
+        /// Plane-wave types (1/2/3) are skipped by the delta-gap builders (they
+        /// are handled by crate::planewave), so build_excitation returns a
+        /// zero voltage vector rather than an error.
+        #[test]
+        fn proptest_plane_wave_types_skipped_by_build_excitation(
+            ex_type in 1_u32..=3_u32,
+        ) {
+            let (deck, segs) = three_seg_deck_with_ex(1.0, 0.0, ex_type, 2);
+            let v = build_excitation(&deck, &segs).expect("plane waves are skipped, not errored");
+            prop_assert!(v.iter().all(|x| x.norm() == 0.0), "plane-wave v_vec must be zero");
         }
 
         /// EX type 0: scale_excitation_for_pulse_rhs is linear — doubling the

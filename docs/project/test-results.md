@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-002-planewave-solve` (base `f0d0831` main) |
+| Commit | branch `feat/ph8-chk-002-planewave-cli` (base `97865a3` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,14 +27,14 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-543 passed; 0 failed; 0 ignored — across 54 test binaries
+544 passed; 0 failed; 0 ignored — across 54 test binaries
 exit code 0
 ```
 
-543 = 539 baseline + 1 parser test (F3 capture, code foundation) + 3 plane-wave
-solve tests (`planewave_nec2c.rs`: nec2c shape parity, broadside symmetry,
-reciprocity). The shared delta-gap `solve_hallen` path is untouched, so no corpus
-reference contract changed.
+544 = 539 baseline + F3 parser test + 3 plane-wave solve tests + the plane-wave
+CLI accept-path net additions. The type-1 corpus/integration contracts were
+flipped from "rejected" to the accept-path (see PH8-CHK-002 CLI wiring); the
+shared delta-gap `solve_hallen` path remains untouched.
 
 ### Plane-wave solve validation (PH8-CHK-002 solve core)
 

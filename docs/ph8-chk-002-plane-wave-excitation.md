@@ -158,7 +158,38 @@ magnitude.
 Results: `cargo test --workspace` **543 passed** (was 540; +3 plane-wave tests),
 0 failed; clippy clean.
 
-Still pending (next increments): wire the solve into the CLI EX type-1 path
-(route plane-wave decks to this solver, report induced currents via `CURRENTS`,
-retire the fail-fast) with a corpus fixture; then elliptic polarization (types
-2/3), multi-angle sweeps, and multi-wire geometry.
+### Increment 3 — CLI wiring (2026-07-02)
+
+Plane-wave decks are now user-runnable end to end.
+
+- **Routing** (`nec-cli::solve_session`): the Hallén path detects a plane-wave EX
+  card (`deck_has_plane_wave`) and routes the supported class — single straight
+  wire, linear polarization (type 1) — through `solve_plane_wave_hallen`
+  (`build_planewave_hallen` + `solve_hallen_planewave`). Diag label
+  `hallen-planewave`.
+- **Report**: no `FEEDPOINTS` rows for a receive solve (`build_feedpoint_rows`
+  skips plane-wave cards, whose tag/segment fields are NTHETA/NPHI); the induced
+  currents appear in the existing `CURRENTS` section; the incidence shows in
+  `SOURCES`.
+- **Fail-fast contracts kept**: elliptic (types 2/3) → "only linear … is
+  implemented"; multi-wire type 1 → "multi-wire plane-wave is not yet supported";
+  plane wave under a non-Hallén solver → "requires --solver hallen". All retain
+  the `is not yet supported` / actionable-error contract.
+- **Delta-gap builders** (`build_excitation`, `build_hallen_rhs`) now treat
+  plane waves as *not a delta-gap source* (contribute nothing) rather than
+  erroring, so the shared solve path is reached; types 4/5 still error.
+
+**Contract updates**: `ex_cards.rs` and `parser_warnings.rs` type-1 tests flipped
+from "rejected" to the accept-path (solves + `CURRENTS`; pulse → requires-hallen).
+Corpus: `dipole-ex1-freesp-51seg` now solves (the impedance-centric corpus
+framework has no receive-only case, so it is skipped there and validated by the
+`nec_solver` planewave tests + the `ex_cards` CLI test); the pulse variant's
+error contract became "requires --solver hallen".
+
+Results: `cargo test --workspace` **544 passed**, 0 failed; clippy clean. Manual
+CLI check: `EX 1 1 1 0 30 0 0` on `--solver hallen` emits induced `CURRENTS`
+(endpoint ≈ 0, ramping to center) with an empty `FEEDPOINTS` section.
+
+Still pending: elliptic polarization (types 2/3), multi-angle NTHETA/NPHI
+sweeps, and multi-wire geometry. `docs/card-support-matrix.md` EX type 1 →
+**Partial** (single straight wire, linear).
