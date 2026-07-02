@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod linear;
 pub mod loads;
 pub mod matrix;
+pub mod planewave;
 pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
@@ -23,12 +24,13 @@ pub use geometry::{
     GeometryError, GroundModel, Segment, WireJunction,
 };
 pub use linear::{
-    solve, solve_hallen, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
-    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
+    solve, solve_hallen, solve_hallen_planewave, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, HallenSolution, SolveError,
 };
 pub use loads::{build_loads, LoadWarning};
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };
+pub use planewave::{build_planewave_hallen, IncidentPlaneWave, PlaneWaveError, PlaneWaveHallen};
 pub use tl::{build_tl_stamps, TlStamp, TlWarning};

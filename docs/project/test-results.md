@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-002-planewave-foundation` (base `84fcc9d` main) |
+| Commit | branch `feat/ph8-chk-002-planewave-solve` (base `f0d0831` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,22 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-540 passed; 0 failed; 0 ignored — across 53 test binaries
+543 passed; 0 failed; 0 ignored — across 54 test binaries
 exit code 0
 ```
 
-540 = the 539 baseline + 1 new parser test (`ex_plane_wave_polarization_f3_is_captured`)
-from the PH8-CHK-002 code foundation. No corpus/reference contract changed
-(EX types 1–5 still fail fast with the preserved `is not yet supported` substring).
+543 = 539 baseline + 1 parser test (F3 capture, code foundation) + 3 plane-wave
+solve tests (`planewave_nec2c.rs`: nec2c shape parity, broadside symmetry,
+reciprocity). The shared delta-gap `solve_hallen` path is untouched, so no corpus
+reference contract changed.
+
+### Plane-wave solve validation (PH8-CHK-002 solve core)
+
+```
+nec2c induced-current shape parity (λ/2 51-seg, θ=30):  4.3% max deviation
+broadside (θ=90) current symmetry:                       5.3e-13 (exact)
+Rayleigh–Carson reciprocity |I_center(θ)|²/G_θ(θ):       0.0000 spread (40–90°)
+```
 
 Authoritative workspace pass count. Covers all crates and both apps with the CPU
 solver path and the GPU dispatch seam in CPU-fallback mode (wgpu feature off).

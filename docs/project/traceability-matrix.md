@@ -154,7 +154,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
 | PH8-CHK-001 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs`, `nec-cli/solve_session.rs` | `ex_cards.rs` (+ new fixture) | — | 📋 |
-| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs` (`ExcitationKind`, `ExCard.polarization_deg`), `nec_parser` (F3), `nec_solver/excitation.rs` (diagnostic) | `nec_parser` `ex_plane_wave_polarization_f3_is_captured`; `ex_cards.rs` | **Design foundation** #255. **Code foundation** 2026-07-02: NEC2 classifier + F3 polarization capture + accurate reject diagnostic; 540 tests pass, clippy clean. Solve stage pending. | 🔨 |
+| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs` (`ExcitationKind`, `ExCard.polarization_deg`), `nec_parser` (F3), `nec_solver/planewave.rs` (`build_planewave_hallen`), `nec_solver/linear.rs` (`solve_hallen_planewave`, 2-DOF) | `nec_parser` F3 test; `nec_solver/tests/planewave_nec2c.rs` (nec2c shape, broadside symmetry, reciprocity) | **Design** #255. **Code foundation** + **solve core** 2026-07-02: plane-wave RHS + 2-DOF solve (isolated); nec2c shape 4.3%, reciprocity exact; 543 tests. CLI wiring + fixture + elliptic breadth pending. | 🔨 |
 | PH8-CHK-003 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs` | `ex_cards.rs` (+ fixture) | — | 📋 |
 | PH8-CHK-004 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (`build_nt_stamps`) | new `nt_*` fixture | — | 📋 |
 | PH8-CHK-005 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (lossy) | `tl_cards.rs` (+ fixture) | — | 📋 |
@@ -173,20 +173,22 @@ Full chain for the item currently being implemented:
   source → type 4), user-approved 2026-06-27; (2) plane-wave RHS lives in the
   integral-equation **forcing term** (`exp(-jk_s s)` closed form for straight
   wires), not the delta-gap RHS.
-- **Implementation** (staged): ✅ *code foundation done* — `nec_model/card.rs`
-  (`ExcitationKind` NEC2 classifier + `ExCard.polarization_deg` F3) →
-  `nec_parser` (reads F3) → `nec_solver/excitation.rs` (NEC2-category reject
-  diagnostic) → `nec-cli/solve_session.rs` (dormant current-source path
-  re-pointed to NEC2 type 4). ⏳ *solve pending* — `nec_solver/excitation.rs`
-  (plane-wave forcing RHS) → `nec_report` (induced-current / receiving-voltage
-  output).
+- **Implementation** (staged): ✅ *code foundation* — `ExcitationKind` NEC2
+  classifier + `ExCard.polarization_deg` F3 + accurate reject diagnostic.
+  ✅ *solve core* — `nec_solver::planewave` (`IncidentPlaneWave`,
+  `build_planewave_hallen`) + `solve_hallen_planewave` (2-DOF cos/sin Hallén,
+  isolated from the delta-gap path). ⏳ *pending* — CLI wiring (route EX type-1
+  decks to the solve, `CURRENTS` report, retire fail-fast) + corpus fixture;
+  elliptic (types 2/3) + multi-wire breadth.
 - **Tests**: `apps/nec-cli/tests/ex_cards.rs` extended; new corpus fixture
   `dipole-ex2-planewave-*`; external `nec2c` parity + internal Rayleigh–Carson
   reciprocity gates.
 - **Tooling / reference**: `docs/dev/ph8-planewave-ref-theta30.nec` (`nec2c`
   induced-current reference, needs `XQ`), plus the reciprocity cross-check against
   the validated RP far-field path.
-- **Result**: design foundation merged in **PR #255** (`4bf66e4`); code
-  foundation (NEC2 classifier + F3 capture + accurate diagnostic) landed
-  2026-07-02 with 540 tests passing and clippy clean. Solve increment pending —
-  this row updates as each staged increment lands.
+- **Result**: design foundation **PR #255**; code foundation **PR #257** (540
+  tests); solve core 2026-07-02 — nec2c induced-current shape parity 4.3%,
+  broadside symmetry exact, Rayleigh–Carson reciprocity vs the validated
+  transmit far-field exact (0.0000 spread), 543 tests passing, clippy clean. The
+  fnec-Hallén-vs-nec2c operator offset is documented (shared with the delta-gap
+  solve). CLI wiring + corpus fixture is the next increment.

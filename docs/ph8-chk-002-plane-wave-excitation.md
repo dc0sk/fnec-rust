@@ -115,5 +115,50 @@ Results: `cargo build --workspace` clean; `cargo test --workspace` **540 passed,
 Manual check: a `EX 1 1 1 0 30 0 45` deck now reports the linear-plane-wave
 diagnostic.
 
-Still pending (next increments): the plane-wave forcing RHS + induced-current
-report + nec2c/reciprocity gates (the "Solve" stage).
+### Increment 2 — solve core (2026-07-02)
+
+The straight-wire plane-wave Hallén solve, validated. Isolated in `nec_solver`;
+the shared delta-gap `solve_hallen` path is **untouched** (no corpus risk).
+
+- **Incident field** (`nec_solver::planewave`): `IncidentPlaneWave` from an EX
+  type 1/2/3 card (θ/φ/η), NEC2 convention `k̂ = −r̂(θ,φ)`,
+  `ê = cos η·θ̂ + sin η·φ̂`.
+- **Forcing RHS** (`build_planewave_hallen`): the tangential incident field is
+  integrated with the same Hallén normalization as the delta-gap builder —
+  `rhs(sₘ) = −j·(2π/η₀)·Σ_p E_t(s_p)·sin(k|sₘ − s_p|)·Δl_p` — plus both `cos`
+  and `sin` homogeneous columns.
+- **2-DOF solve** (`solve_hallen_planewave`): unlike the delta-gap path (one
+  `cos` constant per wire, enough for a *symmetric* source), this carries **both**
+  homogeneous constants per wire — the two DOF classical Hallén needs to satisfy
+  `I = 0` at both endpoints for an *asymmetric* plane-wave current.
+
+**Validation** (`crates/nec_solver/tests/planewave_nec2c.rs`), reference decks
+`docs/dev/ph8-planewave-ref-*.nec`:
+
+1. **nec2c shape parity** — induced-current *distribution* on the λ/2 51-seg wire
+   (θ=30) matches the `nec2c` table to **4.3%** of peak.
+2. **Broadside symmetry** — θ=90 uniform illumination gives a symmetric current
+   to **5×10⁻¹³**.
+3. **Rayleigh–Carson reciprocity** — the receive short-circuit center current
+   tracks the *validated transmit far-field*: `|I_center(θ)|²/G_θ(θ)` is constant
+   across θ ∈ {40,55,70,90}° to **0.0000** spread (identical to 5 sig figs). This
+   is the rigorous internal gate, independent of any external reference.
+
+**Absolute-parity note (important):** fnec's Hallén operator and `nec2c` differ
+systematically — even the *driven* dipole on this geometry shows a constant
+complex offset (`nec2c/fnec ≈ 1.6∠−34°` in current; fnec Z ≈ 57−107 Ω vs nec2c
+67−35 Ω on a coarse 21-seg wire; and 74.2+13.9 Ω vs 79.3+46.2 Ω on the 51-seg
+λ/2). fnec's corpus impedance gates are **regression** gates against fnec's own
+golden values, not tight nec2c parity. The plane-wave solve inherits exactly this
+operator; the offset is a *constant complex factor shared with the delta-gap
+solve*, removed by peak-alignment before the shape comparison. Hence the
+validation gates are shape-parity + reciprocity, not absolute nec2c current
+magnitude.
+
+Results: `cargo test --workspace` **543 passed** (was 540; +3 plane-wave tests),
+0 failed; clippy clean.
+
+Still pending (next increments): wire the solve into the CLI EX type-1 path
+(route plane-wave decks to this solver, report induced currents via `CURRENTS`,
+retire the fail-fast) with a corpus fixture; then elliptic polarization (types
+2/3), multi-angle sweeps, and multi-wire geometry.

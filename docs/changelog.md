@@ -15,6 +15,15 @@ All notable documentation process changes are recorded here.
 - **Project traceability layer** (`docs/project/`): a consolidated
   requirement → design → implementation → tests → results matrix with a
   per-push maintenance rule (#256).
+- **PH8-CHK-002 solve core** — incident plane-wave Hallén solve:
+  `nec_solver::planewave` builds the plane-wave forcing RHS (tangential incident
+  field integrated with the delta-gap Hallén normalization), and
+  `solve_hallen_planewave` solves it with a two-DOF (cos+sin) homogeneous system
+  — the freedom classical Hallén needs for an asymmetric receive current. The
+  shared delta-gap `solve_hallen` is untouched. Validated: nec2c induced-current
+  shape parity 4.3%, broadside symmetry exact, Rayleigh–Carson reciprocity vs the
+  validated transmit far-field exact. Not yet wired into the CLI (next
+  increment).
 - **PH8-CHK-002 code foundation** — NEC2 EX-type alignment in code: an
   `ExcitationKind` classifier (single source of the NEC2 0–5 numbering),
   `ExCard.polarization_deg` (plane-wave polarization field F3, read by the

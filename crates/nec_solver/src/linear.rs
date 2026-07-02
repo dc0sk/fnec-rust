@@ -796,6 +796,105 @@ pub fn solve_hallen(
     })
 }
 
+/// Hallén solve for a **distributed** (asymmetric) excitation such as an
+/// incident plane wave.
+///
+/// Unlike [`solve_hallen`] — which carries a single `cos(k·s)` homogeneous
+/// constant per wire, sufficient for the *symmetric* delta-gap source — this
+/// path carries **both** homogeneous constants per wire (`cos` and `sin`), the
+/// two degrees of freedom classical Hallén needs to satisfy `I = 0` at both wire
+/// endpoints for a general asymmetric current. The delta-gap `solve_hallen`
+/// path is intentionally left unchanged so the validated corpus is unaffected.
+///
+/// The per-segment row is `Z·I − C_cos·cos(k·s) − C_sin·sin(k·s) = rhs`, plus a
+/// `I = 0` constraint at each wire endpoint. The system is square
+/// (`N + 2·wires` unknowns and equations) and solved via regularized normal
+/// equations, mirroring [`solve_hallen`]. Returns the segment currents.
+pub fn solve_hallen_planewave(
+    z: &ZMatrix,
+    rhs: &[Complex64],
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+) -> Result<Vec<Complex64>, SolveError> {
+    let n = z.n;
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n {
+        return Err(SolveError::HallenDimensionMismatch {
+            z_n: n,
+            rhs_len: rhs.len(),
+            cos_len: cos_vec.len().min(sin_vec.len()),
+        });
+    }
+
+    let endpoints: &[(usize, usize)];
+    let fallback_endpoints;
+    if wire_endpoints.is_empty() || n == 0 {
+        fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
+        endpoints = &fallback_endpoints;
+    } else {
+        endpoints = wire_endpoints;
+    }
+
+    let w = endpoints.len();
+    // Two endpoint constraints (I=0 at first and last) per wire.
+    let constraint_rows = 2 * w;
+    let rows = n + constraint_rows;
+    // Two homogeneous constants (cos, sin) per wire.
+    let cols = n + 2 * w;
+    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
+    let mut y = vec![Complex64::new(0.0, 0.0); rows];
+
+    let mut row_wire = vec![0usize; n];
+    for (wi, &(first, last)) in endpoints.iter().enumerate() {
+        for rw in row_wire.iter_mut().take(last + 1).skip(first) {
+            *rw = wi;
+        }
+    }
+
+    for r in 0..n {
+        for c in 0..n {
+            m[r][c] = z.get(r, c);
+        }
+        let wi = row_wire[r];
+        m[r][n + 2 * wi] = Complex64::new(-cos_vec[r], 0.0);
+        m[r][n + 2 * wi + 1] = Complex64::new(-sin_vec[r], 0.0);
+        y[r] = rhs[r];
+    }
+
+    let mut crow = n;
+    for &(first, last) in endpoints.iter() {
+        m[crow][first] = Complex64::new(1.0, 0.0);
+        crow += 1;
+        m[crow][last] = Complex64::new(1.0, 0.0);
+        crow += 1;
+    }
+
+    // Regularized normal equations (mirrors solve_hallen).
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..rows {
+                sum += m[r][i].conj() * m[r][j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..rows {
+            sum += m[r][i].conj() * y[r];
+        }
+        aty[i] = sum;
+    }
+    let lambda = 1e-8;
+    for i in 0..cols {
+        ata[i][i] += Complex64::new(lambda, 0.0);
+    }
+
+    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    Ok(x[..n].to_vec())
+}
+
 fn solve_square_in_place(
     a: &mut [Vec<Complex64>],
     b: &mut [Complex64],
