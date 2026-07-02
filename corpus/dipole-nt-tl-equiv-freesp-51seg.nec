@@ -1,0 +1,8 @@
+CM NT two-port equivalent to TL(Z0=50, len=2.0m) between seg 20 and 32
+CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+NT 1 20 1 32 0.0 -0.029536 0.0 0.035670 0.0 -0.029536
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

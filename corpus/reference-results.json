@@ -290,7 +290,7 @@
         "PT card support is currently deferred"
       ],
       "forbidden_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -306,15 +306,15 @@
     },
     "dipole-nt-freesp-51seg": {
       "deck_file": "dipole-nt-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, NT card parsed with deferred runtime semantics",
+      "description": "Half-wave dipole, 51 seg, 14.2 MHz. This deck's NT card is malformed (8 fields, expected 10), so PH8-CHK-004's stamp path warns and skips it; the dipole solves as free-space (74.23+j13.9). Well-formed NT stamping is covered by dipole-nt-tl-equiv-freesp-51seg.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (Phase-2 regression reference; NT parsed with deferred runtime semantics, emits deferred-support warning)",
+      "reference_source": "fnec: malformed NT card warned + skipped; deck runs as free-space",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
@@ -329,7 +329,33 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: NT card parsed; emits deferred-support warning, deck runs as free-space."
+      "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped."
+    },
+    "dipole-nt-tl-equiv-freesp-51seg": {
+      "deck_file": "dipole-nt-tl-equiv-freesp-51seg.nec",
+      "description": "Half-wave dipole, 51 seg, 14.2 MHz, with a well-formed NT two-port network between segments 20 and 32 whose admittance parameters equal the equivalent of a lossless TL (Z0=50, len=2.0m). PH8-CHK-004: the NT admittance->Z stamp reproduces the equivalent TL feedpoint impedance end to end (matches the TL deck to ~1e-5 ohm), validating the stamp through the full solve.",
+      "frequency_mhz": 14.2,
+      "segments": 51,
+      "wires": 1,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec NT admittance stamp; equals the equivalent TL deck feedpoint impedance",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
+        "NT card ignored",
+        "deferred"
+      ],
+      "feedpoint_impedance": {
+        "real_ohm": 70.6327,
+        "imag_ohm": 14.0088
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05
+      },
+      "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance."
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -341,7 +367,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
@@ -368,7 +394,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
@@ -395,7 +421,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
@@ -422,7 +448,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; repeated NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
@@ -449,7 +475,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved PT+NT; PT unknown, NT parsed with deferred-support warning)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,
@@ -476,7 +502,7 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; interleaved NT+PT; NT parsed with deferred-support warning, PT unknown)",
       "expected_warning_substrings": [
-        "NT card support is currently deferred"
+        "NT card ignored"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,

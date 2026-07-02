@@ -55,7 +55,7 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_current_source_shape,
-    build_hallen_rhs, build_loads, build_planewave_hallen, build_tl_stamps,
+    build_hallen_rhs, build_loads, build_nt_stamps, build_planewave_hallen, build_tl_stamps,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
     scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_hallen_current_source,
     solve_hallen_planewave, solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire,
@@ -662,6 +662,19 @@ pub(super) fn solve_frequency_point(
         eprintln!("warning: {warning}");
     }
     for (row, col, delta) in &tl_stamps {
+        z_mat.add_to_entry(*row, *col, *delta);
+    }
+    // NT two-port networks: admittance-parameter stamp (PH8-CHK-004). Valid cards
+    // stamp the Z matrix; malformed/unsupported cards warn and are skipped.
+    // Warnings are deduplicated so repeated identical cards warn once.
+    let (nt_stamps, nt_warnings) = build_nt_stamps(deck, segs);
+    let mut seen_nt_warnings = std::collections::HashSet::new();
+    for warning in &nt_warnings {
+        if seen_nt_warnings.insert(warning.message.clone()) {
+            eprintln!("warning: {warning}");
+        }
+    }
+    for (row, col, delta) in &nt_stamps {
         z_mat.add_to_entry(*row, *col, *delta);
     }
     let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
