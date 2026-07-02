@@ -55,9 +55,10 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
-    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    build_planewave_hallen, build_tl_stamps, compute_radiation_pattern, detect_wire_junctions,
+    integrate_radiated_power, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_hallen_planewave, solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire,
+    FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -185,6 +186,53 @@ pub(super) fn residual_hallen(
     (res, rel)
 }
 
+/// True if the deck carries an incident-plane-wave EX card (NEC2 types 1/2/3).
+pub(super) fn deck_has_plane_wave(deck: &nec_model::deck::NecDeck) -> bool {
+    deck.cards.iter().any(|c| match c {
+        Card::Ex(ex) => ex.kind().is_plane_wave(),
+        _ => false,
+    })
+}
+
+/// Solve a receiving antenna illuminated by an incident plane wave (PH8-CHK-002).
+///
+/// Supported class: a single straight wire with a linear-polarization plane wave
+/// (EX type 1). Elliptic polarization (types 2/3) and multi-wire geometry fail
+/// fast with an accurate diagnostic until those increments land. `z_mat` is the
+/// assembled Hallén matrix (including any load / TL stamps); the plane-wave solve
+/// adds its own cos/sin homogeneous columns.
+fn solve_plane_wave_hallen(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    wire_endpoints: &[(usize, usize)],
+    freq_hz: f64,
+) -> Result<Vec<Complex64>, String> {
+    use nec_model::card::ExcitationKind;
+    let kind = deck
+        .cards
+        .iter()
+        .find_map(|c| match c {
+            Card::Ex(ex) if ex.kind().is_plane_wave() => Some(ex.kind()),
+            _ => None,
+        })
+        .ok_or_else(|| "EX: no incident-plane-wave card found".to_string())?;
+
+    if matches!(
+        kind,
+        ExcitationKind::PlaneWaveRightElliptic | ExcitationKind::PlaneWaveLeftElliptic
+    ) {
+        return Err(format!(
+            "EX: {} is not yet supported (only linear polarization, type 1, is implemented)",
+            kind.describe()
+        ));
+    }
+
+    let pw = build_planewave_hallen(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+    solve_hallen_planewave(z_mat, &pw.rhs, &pw.cos_vec, &pw.sin_vec, wire_endpoints)
+        .map_err(|e| e.to_string())
+}
+
 pub(super) fn collect_pulse_current_source_constraints(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -260,6 +308,11 @@ pub(super) fn build_feedpoint_rows(
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
+        // Incident plane waves have no feedpoint (receiving antenna); their
+        // tag/segment fields carry NTHETA/NPHI, not a driven segment.
+        if ex.kind().is_plane_wave() {
+            continue;
+        }
         let Some((idx, seg)) = segs
             .iter()
             .enumerate()
@@ -473,6 +526,11 @@ pub(super) fn solve_frequency_point(
     sin_fallback_rel_max: f64,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
+    // Incident plane waves are solved on the Hallén path only (crate::planewave).
+    if deck_has_plane_wave(deck) && !matches!(solver_mode, SolverMode::Hallen) {
+        return Err("EX: incident plane-wave excitation requires --solver hallen".to_string());
+    }
+
     let mut v_vec_pulse = match pulse_rhs_mode {
         PulseRhsMode::Raw => v_vec.to_vec(),
         PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(v_vec, freq_hz),
@@ -556,6 +614,10 @@ pub(super) fn solve_frequency_point(
     let mut sin_rel_res: f64 = 0.0;
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
+        SolverMode::Hallen if deck_has_plane_wave(deck) => {
+            let currents = solve_plane_wave_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
+            (currents, 0.0, 0.0, "hallen-planewave")
+        }
         SolverMode::Hallen => {
             let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
             // Detect wire junctions for continuity constraints.

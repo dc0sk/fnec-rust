@@ -98,31 +98,27 @@
     },
     "dipole-ex1-freesp-51seg": {
       "deck_file": "dipole-ex1-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 source",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 incident plane wave (receiving antenna). NEC2 type 1 = linear plane wave; this deck now SOLVES on --solver hallen (no feedpoint impedance for a receive solve). The induced-current physics is validated by crates/nec_solver/tests/planewave_nec2c.rs (nec2c shape parity + Rayleigh-Carson reciprocity) and the CLI accept-path by apps/nec-cli/tests/ex_cards.rs. This corpus case is skipped here because the reference framework is impedance/feedpoint-centric and does not model a receive-only (no-feedpoint) case.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 1 staged portability; currently mapped like EX type 0)",
+      "reference_source": "nec_solver planewave tests + ex_cards CLI accept-path (see description)",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
-      "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
-      },
+      "feedpoint_impedance": {},
       "tolerance_gates": {
         "R_percent_rel": 0.1,
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 1 deck portability while current-source semantics remain pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 1 = incident plane wave; solves via the plane-wave path. Validated outside the impedance-centric corpus framework (see description)."
     },
     "dipole-ex1-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex1-pulse-current-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 source on the pulse solver path with implemented current-source semantics.",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 (incident plane wave) requested on the pulse solver path. NEC2 plane waves solve only on --solver hallen, so pulse fails fast with an actionable error.",
       "cli_args": [
         "--solver",
         "pulse"
@@ -132,7 +128,7 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec pulse solver EX1 current-source implementation (regression)",
+      "reference_source": "fnec fail-fast: plane wave requires --solver hallen",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [
         "EX type 1 is currently treated like EX type 0"
@@ -147,8 +143,8 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for the first implemented EX type 1 semantics slice: pulse-mode current source without the old portability warning.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-002: EX type 1 = incident plane wave; --solver pulse fails fast (plane wave requires --solver hallen).",
+      "expected_hallen_error_contains": "requires --solver hallen"
     },
     "dipole-ex2-freesp-51seg": {
       "deck_file": "dipole-ex2-freesp-51seg.nec",

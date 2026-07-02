@@ -15,6 +15,12 @@ All notable documentation process changes are recorded here.
 - **Project traceability layer** (`docs/project/`): a consolidated
   requirement → design → implementation → tests → results matrix with a
   per-push maintenance rule (#256).
+- **PH8-CHK-002 CLI wiring** — incident plane-wave decks are now user-runnable:
+  `--solver hallen` on a single straight wire with a linear plane wave (EX type 1)
+  produces a receiving-antenna solve — induced `CURRENTS`, no feedpoint impedance.
+  Elliptic polarization (types 2/3), multi-wire geometry, and non-Hallén solvers
+  fail fast with actionable diagnostics. `docs/card-support-matrix.md` EX type 1
+  → Partial.
 - **PH8-CHK-002 solve core** — incident plane-wave Hallén solve:
   `nec_solver::planewave` builds the plane-wave forcing RHS (tangential incident
   field integrated with the delta-gap Hallén normalization), and

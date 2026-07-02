@@ -154,7 +154,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
 | PH8-CHK-001 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs`, `nec-cli/solve_session.rs` | `ex_cards.rs` (+ new fixture) | — | 📋 |
-| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs` (`ExcitationKind`, `ExCard.polarization_deg`), `nec_parser` (F3), `nec_solver/planewave.rs` (`build_planewave_hallen`), `nec_solver/linear.rs` (`solve_hallen_planewave`, 2-DOF) | `nec_parser` F3 test; `nec_solver/tests/planewave_nec2c.rs` (nec2c shape, broadside symmetry, reciprocity) | **Design** #255. **Code foundation** + **solve core** 2026-07-02: plane-wave RHS + 2-DOF solve (isolated); nec2c shape 4.3%, reciprocity exact; 543 tests. CLI wiring + fixture + elliptic breadth pending. | 🔨 |
+| PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs`, `nec_parser` (F3), `nec_solver/planewave.rs` + `linear.rs` (2-DOF solve), `nec-cli/solve_session.rs` (routing, report) | `nec_solver/tests/planewave_nec2c.rs` (shape, symmetry, reciprocity); `ex_cards.rs`/`parser_warnings.rs` (CLI accept-path) | **Design** #255. **Code foundation** #257. **Solve core** #258 (nec2c shape 4.3%, reciprocity exact). **CLI wiring** 2026-07-02: type-1 linear single-wire solves on hallen (induced `CURRENTS`); elliptic/multi-wire/non-hallen fail fast; 544 tests. EX type 1 → Partial. Elliptic + sweeps + multi-wire pending. | 🔨 |
 | PH8-CHK-003 | CP-003, PRT-002 | roadmap row | `nec_solver/excitation.rs` | `ex_cards.rs` (+ fixture) | — | 📋 |
 | PH8-CHK-004 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (`build_nt_stamps`) | new `nt_*` fixture | — | 📋 |
 | PH8-CHK-005 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (lossy) | `tl_cards.rs` (+ fixture) | — | 📋 |
@@ -175,20 +175,19 @@ Full chain for the item currently being implemented:
   wires), not the delta-gap RHS.
 - **Implementation** (staged): ✅ *code foundation* — `ExcitationKind` NEC2
   classifier + `ExCard.polarization_deg` F3 + accurate reject diagnostic.
-  ✅ *solve core* — `nec_solver::planewave` (`IncidentPlaneWave`,
-  `build_planewave_hallen`) + `solve_hallen_planewave` (2-DOF cos/sin Hallén,
-  isolated from the delta-gap path). ⏳ *pending* — CLI wiring (route EX type-1
-  decks to the solve, `CURRENTS` report, retire fail-fast) + corpus fixture;
-  elliptic (types 2/3) + multi-wire breadth.
+  ✅ *solve core* — `nec_solver::planewave` + `solve_hallen_planewave` (2-DOF,
+  isolated). ✅ *CLI wiring* — `nec-cli::solve_session` routes single-straight-wire
+  linear plane waves to the solve (induced `CURRENTS`, no feedpoint); elliptic,
+  multi-wire, and non-Hallén decks fail fast. ⏳ *pending* — elliptic (types 2/3),
+  NTHETA/NPHI sweeps, multi-wire geometry.
 - **Tests**: `apps/nec-cli/tests/ex_cards.rs` extended; new corpus fixture
   `dipole-ex2-planewave-*`; external `nec2c` parity + internal Rayleigh–Carson
   reciprocity gates.
 - **Tooling / reference**: `docs/dev/ph8-planewave-ref-theta30.nec` (`nec2c`
   induced-current reference, needs `XQ`), plus the reciprocity cross-check against
   the validated RP far-field path.
-- **Result**: design foundation **PR #255**; code foundation **PR #257** (540
-  tests); solve core 2026-07-02 — nec2c induced-current shape parity 4.3%,
-  broadside symmetry exact, Rayleigh–Carson reciprocity vs the validated
-  transmit far-field exact (0.0000 spread), 543 tests passing, clippy clean. The
-  fnec-Hallén-vs-nec2c operator offset is documented (shared with the delta-gap
-  solve). CLI wiring + corpus fixture is the next increment.
+- **Result**: design **#255**, code foundation **#257**, solve core **#258**
+  (nec2c shape 4.3%, reciprocity exact). CLI wiring 2026-07-02 — single-straight-
+  wire linear plane waves solve on `--solver hallen` with induced `CURRENTS`;
+  elliptic/multi-wire/non-Hallén fail fast; type-1 → Partial; 544 tests passing,
+  clippy clean. Remaining: elliptic polarization, angle sweeps, multi-wire.
