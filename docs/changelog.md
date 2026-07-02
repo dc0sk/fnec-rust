@@ -12,6 +12,12 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-004 NT two-port network stamp core** — `nec_solver::build_nt_stamps`
+  converts an `NT` card's admittance parameters to impedance parameters
+  (`[Z]=[Y]⁻¹`) and stamps them into the Z matrix like the TL path. Validated
+  identical to a TL built from equivalent Y-parameters (|Δ|<1e-9), with
+  singular-admittance and missing-endpoint guards. Stamp core only — CLI wiring
+  is a follow-on.
 - **PH8-CHK-001 current source (NEC2 EX type 4)** — user-runnable end to end:
   `solve_hallen_current_source` treats the port voltage as an unknown and forces
   `I[src]=i0`, the exact dual of the delta-gap voltage source; validated by

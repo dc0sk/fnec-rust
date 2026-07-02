@@ -83,7 +83,7 @@ no longer silently treated as EX type 0.
 |------|---------|-------|
 | TL type 0 | Partial | Lossless; supported `NSEG` range: 0, 1, and >1 — all treated as a **single-section stamp** (no per-segment subdivision); `NSEG=0` is normalised to 1; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
 | TL other | Deferred | Lossy / complex variants: card is ignored with a warning |
-| NT | Deferred | Parsed for staged portability; ignored at runtime with a warning |
+| NT | Deferred | Parsed for staged portability; ignored at runtime with a warning. The stamp algorithm (`nec_solver::build_nt_stamps`, admittance→Z, validated identical to the TL stamp) exists (PH8-CHK-004) but is not yet wired into the CLI solve path |
 | PT | Deferred | Parsed for staged portability; ignored at runtime with a warning |
 
 ### TL field mapping

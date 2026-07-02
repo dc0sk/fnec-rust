@@ -161,7 +161,7 @@ pub fn build_tl_stamps(
     (stamps, warnings)
 }
 
-fn find_segment_index(
+pub(crate) fn find_segment_index(
     segs: &[Segment],
     tag: u32,
     segment: u32,

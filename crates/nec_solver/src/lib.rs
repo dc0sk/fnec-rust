@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod linear;
 pub mod loads;
 pub mod matrix;
+pub mod network;
 pub mod planewave;
 pub mod tl;
 
@@ -34,5 +35,6 @@ pub use loads::{build_loads, LoadWarning};
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };
+pub use network::{build_nt_stamps, NtStamp, NtWarning};
 pub use planewave::{build_planewave_hallen, IncidentPlaneWave, PlaneWaveError, PlaneWaveHallen};
 pub use tl::{build_tl_stamps, TlStamp, TlWarning};

@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-001-current-source-cli` (base `0b60ccc` main) |
+| Commit | branch `feat/ph8-chk-004-nt-stamp-core` (base `3bb9990` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,14 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-547 passed; 0 failed; 0 ignored — across 55 test binaries
+550 passed; 0 failed; 0 ignored — across 56 test binaries
 exit code 0
 ```
 
-547 (unchanged count; the type-4 integration/corpus contracts were flipped from
-"rejected" to the accept-path). The `dipole-ex4-freesp-51seg` corpus case now
-validates the current-source feedpoint impedance (74.23+j13.9). The shared
-voltage-source `solve_hallen` path is untouched.
+550 = 547 (PH8-CHK-001 complete) + 3 NT-stamp tests (`nt_network.rs`:
+TL-equivalence, singular-Y guard, missing-endpoint guard). The NT stamp core is
+not yet wired into the CLI solve path.
 
 ### Current-source solve validation (PH8-CHK-001 solve core)
 
