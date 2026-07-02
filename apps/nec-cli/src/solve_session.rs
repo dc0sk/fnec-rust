@@ -209,26 +209,8 @@ fn solve_plane_wave_hallen(
     wire_endpoints: &[(usize, usize)],
     freq_hz: f64,
 ) -> Result<Vec<Complex64>, String> {
-    use nec_model::card::ExcitationKind;
-    let kind = deck
-        .cards
-        .iter()
-        .find_map(|c| match c {
-            Card::Ex(ex) if ex.kind().is_plane_wave() => Some(ex.kind()),
-            _ => None,
-        })
-        .ok_or_else(|| "EX: no incident-plane-wave card found".to_string())?;
-
-    if matches!(
-        kind,
-        ExcitationKind::PlaneWaveRightElliptic | ExcitationKind::PlaneWaveLeftElliptic
-    ) {
-        return Err(format!(
-            "EX: {} is not yet supported (only linear polarization, type 1, is implemented)",
-            kind.describe()
-        ));
-    }
-
+    // Linear (type 1) and elliptic (types 2/3) plane waves are all handled by
+    // build_planewave_hallen via the complex polarization vector.
     let pw = build_planewave_hallen(deck, segs, freq_hz).map_err(|e| e.to_string())?;
     solve_hallen_planewave(z_mat, &pw.rhs, &pw.cos_vec, &pw.sin_vec, wire_endpoints)
         .map_err(|e| e.to_string())

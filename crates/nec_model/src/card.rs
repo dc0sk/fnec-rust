@@ -150,6 +150,10 @@ pub struct ExCard {
     /// EX field F3 — plane-wave polarization angle η (deg); unused for source
     /// types. Defaults to 0.0 when the card omits it.
     pub polarization_deg: f64,
+    /// EX field F6 — plane-wave axial ratio (minor/major axis of the
+    /// polarization ellipse) for the elliptic types 2/3. 0.0 = linear; unused
+    /// for source types. Defaults to 0.0 when the card omits it.
+    pub polarization_ratio: f64,
 }
 
 impl ExCard {

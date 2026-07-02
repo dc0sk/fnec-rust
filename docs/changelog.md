@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-002 elliptic plane waves (EX types 2/3)** — right- and left-hand
+  elliptic incident plane waves now solve on `--solver hallen`. The incident
+  field uses a complex polarization vector (`ê = û_maj + j·sense·AR·û_minor`,
+  axial ratio from EX F6, handedness from the type). Validated: on a z-wire (or
+  axial ratio 0) elliptic reduces exactly to linear; on a tilted wire the induced
+  currents match nec2c's elliptic reference (5.4% shape). `ExCard` gains a
+  `polarization_ratio` field. The legacy `--ex3-i4-mode` flag is now an obsolete
+  no-op (type 3 is a plane wave). EX types 2/3 → Partial.
 - **PH8-CHK-004 NT two-port network** — user-runnable: `NT` cards are stamped
   into the Z matrix by converting their admittance parameters to impedance
   parameters (`[Z]=[Y]⁻¹`), mirroring the TL stamp. A well-formed reciprocal NT

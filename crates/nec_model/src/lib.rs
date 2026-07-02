@@ -175,6 +175,7 @@ mod tests {
             voltage_real: 1.0,
             voltage_imag: 0.0,
             polarization_deg: 0.0,
+            polarization_ratio: 0.0,
         })
     }
 

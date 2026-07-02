@@ -662,16 +662,15 @@ fn ex_type3_runs_without_unsupported_error() {
 
     let _ = fs::remove_file(&deck_path);
 
-    // Phase-1: EX type 3 is rejected.
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 3 should be rejected as not yet supported"
-    );
-
+    // PH8-CHK-002: EX type 3 (left-elliptic plane wave) solves on --solver hallen.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 3 plane wave should solve; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 3 plane wave must not be rejected, got stderr:\n{stderr}"
     );
 }
 
@@ -787,19 +786,19 @@ fn ex_type2_runs_with_portability_warning_without_unsupported_error() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 2 should be rejected as not yet supported"
-    );
-
+    // PH8-CHK-002: EX type 2 (right-elliptic plane wave) solves on --solver hallen.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 2, got stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 2 plane wave should solve; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 2 plane wave must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 2 is currently treated like EX type 0"),
-        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
+        "must not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
@@ -914,19 +913,20 @@ fn ex_type3_non_default_i4_emits_normalization_warning() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 3 non-default I4 should be rejected as not yet supported"
-    );
-
+    // PH8-CHK-002: EX type 3 is a plane wave; I4 is unused for plane waves and
+    // the deck solves regardless of its value.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 3 plane wave (non-default I4) should solve; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 3 plane wave must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 3 with non-default I4 is currently treated like EX type 0"),
-        "Phase-1 should not emit old normalization warning, got stderr:\n{stderr}"
+        "must not emit old normalization warning, got stderr:\n{stderr}"
     );
 }
 
@@ -960,21 +960,21 @@ fn ex_type3_non_default_i4_divide_by_i4_mode_emits_experimental_warning() {
 
     let _ = fs::remove_file(&deck_path);
 
-    // Phase-1: --ex3-i4-mode silently ignored; EX type 3 still rejected.
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 3 should be rejected even with --ex3-i4-mode"
-    );
-
+    // PH8-CHK-002: EX type 3 solves as a plane wave; the obsolete --ex3-i4-mode
+    // flag is a no-op and does not prevent the solve.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 3, got stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 3 plane wave should solve with the obsolete --ex3-i4-mode; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 3 plane wave must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains(
             "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
         ),
-        "Phase-1 should not emit old divide-by-i4 experimental warning, got stderr:\n{stderr}"
+        "must not emit old divide-by-i4 experimental warning, got stderr:\n{stderr}"
     );
 }
