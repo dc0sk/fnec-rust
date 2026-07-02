@@ -51,7 +51,29 @@ version = "*"
 [advisories]
 version = 2
 # Treat all unignored security advisories as errors.
-ignore = []
+# See docs/dependency-policy.md § Exception process for the review record.
+ignore = [
+    # quick-xml DoS advisories — SCOPED, BUILD-TIME-ONLY EXCEPTION.
+    # quick-xml v0.39.x enters the graph solely as a compile-time dependency of
+    # `wayland-scanner` (a proc-macro that parses the trusted, in-crate Wayland
+    # protocol XML shipped with wayland-rs). It is pulled in via
+    # wayland-scanner → smithay-client-toolkit → winit → iced → nec-gui, and only
+    # runs on the developer/build machine over vendored, non-attacker-controlled
+    # input. Neither advisory is reachable from any runtime path in fnec-rust:
+    # the solver, CLI, workers, and GUI never feed untrusted data to quick-xml.
+    #
+    # Root fix (quick-xml >= 0.41.0) is BLOCKED UPSTREAM: the newest published
+    # wayland-scanner (0.31.10) still requires `quick-xml ^0.39`; no released
+    # Wayland-stack version accepts >= 0.41 yet, so a dependency bump cannot reach
+    # a fixed lockfile today.
+    #
+    # Review date: 2026-07-02 (DC0SK, user-approved).
+    # REVISIT TRIGGER: remove BOTH entries once a wayland-scanner release depends
+    # on quick-xml >= 0.41.0 (then `cargo update -p quick-xml`). Tracked as a
+    # Phase 8 dependency-hygiene follow-up.
+    "RUSTSEC-2026-0194", # quick-xml: quadratic run time on duplicate attribute names
+    "RUSTSEC-2026-0195", # quick-xml: unbounded namespace-declaration allocation (NsReader)
+]
 
 # ── Bans ──────────────────────────────────────────────────────────────────────
 [bans]
