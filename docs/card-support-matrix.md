@@ -47,7 +47,7 @@ no longer silently treated as EX type 0.
 | EX type 1 | Partial | Incident plane wave, linear polarization. **Solves** on `--solver hallen` for a single straight wire (receiving antenna → induced `CURRENTS`, no feedpoint); validated vs nec2c shape + reciprocity (PH8-CHK-002). Multi-wire geometry and `--solver pulse` fail fast with an actionable diagnostic |
 | EX type 2 | Deferred | Incident plane wave, right-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
 | EX type 3 | Deferred | Incident plane wave, left-hand elliptic. Recognized; fails fast pending elliptic plane-wave RHS (PH8-CHK-002 breadth stage) |
-| EX type 4 | Deferred | Current source. Recognized; fails fast pending current-source semantics (PH8-CHK-001) |
+| EX type 4 | Partial | Current source. **Solves** on `--solver hallen` for a single straight wire: forces the specified current and reports feedpoint `Z=V/i0` (equals the voltage-source impedance; PH8-CHK-001). Multi-wire geometry and `--solver pulse` fail fast |
 | EX type 5 | Deferred | Voltage source with current-slope discontinuity. Recognized; fails fast pending runtime semantics (PH8-CHK-003) |
 
 ## Load cards

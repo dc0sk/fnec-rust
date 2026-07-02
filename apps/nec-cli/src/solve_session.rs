@@ -54,9 +54,10 @@ use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
 };
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs, build_loads,
-    build_planewave_hallen, build_tl_stamps, compute_radiation_pattern, detect_wire_junctions,
-    integrate_radiated_power, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_current_source_shape,
+    build_hallen_rhs, build_loads, build_planewave_hallen, build_tl_stamps,
+    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
+    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_hallen_current_source,
     solve_hallen_planewave, solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire,
     FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
@@ -233,6 +234,58 @@ fn solve_plane_wave_hallen(
         .map_err(|e| e.to_string())
 }
 
+/// True if the deck carries a current-source EX card (NEC2 type 4).
+pub(super) fn deck_has_current_source(deck: &nec_model::deck::NecDeck) -> bool {
+    deck.cards.iter().any(|c| match c {
+        Card::Ex(ex) => ex.kind() == nec_model::card::ExcitationKind::CurrentSource,
+        _ => false,
+    })
+}
+
+/// Solve a current-source-driven antenna (PH8-CHK-001, NEC2 EX type 4): force the
+/// specified current on the source segment and return the segment currents plus
+/// the port voltage `V` (feedpoint impedance `Z = V/i0`).
+///
+/// Supported class: a single straight wire (no junctions). Multi-wire geometry
+/// fails fast until that increment lands. `z_mat` is the assembled Hallén matrix
+/// (including any load / TL stamps).
+fn solve_current_source_hallen(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    wire_endpoints: &[(usize, usize)],
+    freq_hz: f64,
+) -> Result<(Vec<Complex64>, Complex64), String> {
+    let cs = deck
+        .cards
+        .iter()
+        .find_map(|c| match c {
+            Card::Ex(ex) if ex.kind() == nec_model::card::ExcitationKind::CurrentSource => Some(ex),
+            _ => None,
+        })
+        .ok_or_else(|| "EX: no current-source card found".to_string())?;
+
+    // Single straight wire only in this increment.
+    let mut unique_tags: Vec<u32> = segs.iter().map(|s| s.tag).collect();
+    unique_tags.sort_unstable();
+    unique_tags.dedup();
+    if unique_tags.len() > 1 {
+        return Err(format!(
+            "EX: current source is only supported on a single straight wire (found {} wires); \
+             multi-wire current source is not yet supported",
+            unique_tags.len()
+        ));
+    }
+
+    let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
+    let (shape, cos_vec, src_seg) =
+        build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
+            .map_err(|e| e.to_string())?;
+    let sol = solve_hallen_current_source(z_mat, &shape, &cos_vec, src_seg, i0, wire_endpoints)
+        .map_err(|e| e.to_string())?;
+    Ok((sol.currents, sol.port_voltage))
+}
+
 pub(super) fn collect_pulse_current_source_constraints(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -295,6 +348,7 @@ pub(super) fn pulse_current_source_voltage(
     -(impressed_field * seg_length * (C0 / freq_hz))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -302,6 +356,7 @@ pub(super) fn build_feedpoint_rows(
     i_vec: &[Complex64],
     pulse_current_sources: &[PulseCurrentSourceConstraint],
     solver_mode: SolverMode,
+    current_source_port: Option<Complex64>,
     freq_hz: f64,
 ) -> Vec<FeedpointRow> {
     let mut rows = Vec::new();
@@ -322,16 +377,23 @@ pub(super) fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if ex.kind() == nec_model::card::ExcitationKind::CurrentSource
-            && matches!(solver_mode, SolverMode::Pulse)
-        {
-            pulse_current_sources
-                .iter()
-                .find(|constraint| constraint.seg_index == idx)
-                .map(|constraint| {
-                    pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
-                })
-                .unwrap_or(v_vec[idx] * seg.length)
+        let v_source = if ex.kind() == nec_model::card::ExcitationKind::CurrentSource {
+            // Hallén current source: the solved port voltage V (feedpoint Z=V/i0).
+            // The dormant pulse path is retained as a fallback but is unreachable
+            // now that current sources require --solver hallen.
+            current_source_port.unwrap_or_else(|| {
+                if matches!(solver_mode, SolverMode::Pulse) {
+                    pulse_current_sources
+                        .iter()
+                        .find(|constraint| constraint.seg_index == idx)
+                        .map(|constraint| {
+                            pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                        })
+                        .unwrap_or(v_vec[idx] * seg.length)
+                } else {
+                    v_vec[idx] * seg.length
+                }
+            })
         } else {
             v_vec[idx] * seg.length
         };
@@ -526,9 +588,13 @@ pub(super) fn solve_frequency_point(
     sin_fallback_rel_max: f64,
     freq_hz: f64,
 ) -> Result<FrequencySolveResult, String> {
-    // Incident plane waves are solved on the Hallén path only (crate::planewave).
+    // Incident plane waves and current sources are solved on the Hallén path
+    // only (crate::planewave / solve_hallen_current_source).
     if deck_has_plane_wave(deck) && !matches!(solver_mode, SolverMode::Hallen) {
         return Err("EX: incident plane-wave excitation requires --solver hallen".to_string());
+    }
+    if deck_has_current_source(deck) && !matches!(solver_mode, SolverMode::Hallen) {
+        return Err("EX: current-source excitation requires --solver hallen".to_string());
     }
 
     let mut v_vec_pulse = match pulse_rhs_mode {
@@ -612,11 +678,19 @@ pub(super) fn solve_frequency_point(
     }
     let diag_spread = matrix_diagonal_spread(&z_mat);
     let mut sin_rel_res: f64 = 0.0;
+    // Set by the current-source path: the solved port voltage V (feedpoint Z=V/i0).
+    let mut current_source_port: Option<Complex64> = None;
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen if deck_has_plane_wave(deck) => {
             let currents = solve_plane_wave_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
             (currents, 0.0, 0.0, "hallen-planewave")
+        }
+        SolverMode::Hallen if deck_has_current_source(deck) => {
+            let (currents, port_v) =
+                solve_current_source_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
+            current_source_port = Some(port_v);
+            (currents, 0.0, 0.0, "hallen-current-source")
         }
         SolverMode::Hallen => {
             let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
@@ -766,6 +840,7 @@ pub(super) fn solve_frequency_point(
         &i_vec,
         &pulse_current_sources,
         solver_mode,
+        current_source_port,
         freq_hz,
     );
 
