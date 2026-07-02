@@ -1,0 +1,24 @@
+# cargo-audit configuration for fnec-rust.
+# Run: cargo audit   (also invoked by the pre-push hook, .githooks/pre-push)
+# Policy record and rationale: docs/dependency-policy.md § Exception process.
+#
+# This ignore list must stay in sync with the [advisories].ignore block in
+# deny.toml (cargo-deny) — both gate the same advisories from different tools.
+
+[advisories]
+ignore = [
+    # quick-xml DoS advisories — SCOPED, BUILD-TIME-ONLY EXCEPTION (2026-07-02).
+    # quick-xml v0.39.x is a compile-time-only dependency of `wayland-scanner`
+    # (a proc-macro parsing the trusted, in-crate Wayland protocol XML), reached
+    # via wayland-scanner → smithay-client-toolkit → winit → iced → nec-gui. It
+    # never processes attacker-controlled input at runtime, so neither DoS
+    # advisory is reachable from any fnec-rust runtime path.
+    #
+    # Root fix (quick-xml >= 0.41.0) is blocked upstream: the newest published
+    # wayland-scanner (0.31.10) still requires `quick-xml ^0.39`.
+    #
+    # REVISIT TRIGGER: remove both once a wayland-scanner release depends on
+    # quick-xml >= 0.41.0, then `cargo update -p quick-xml`.
+    "RUSTSEC-2026-0194", # quick-xml: quadratic run time on duplicate attribute names
+    "RUSTSEC-2026-0195", # quick-xml: unbounded namespace-declaration allocation (NsReader)
+]

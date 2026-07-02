@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/README.md
 status: living
-last_updated: 2026-04-22
+last_updated: 2026-07-02
 ---
 
 # Documentation Overview
@@ -21,6 +21,7 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 
 ## Document index
 
+- `docs/project/` — **traceability layer**: end-to-end requirement → design → implementation → tests → results matrix ([docs/project/README.md](project/README.md), [traceability-matrix.md](project/traceability-matrix.md))
 - `docs/requirements.md` — functional and non-functional requirements
 - `docs/steering.md` — governance and decision ownership
 - `docs/roadmap.md` — phased execution plan

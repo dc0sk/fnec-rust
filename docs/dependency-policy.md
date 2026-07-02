@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/dependency-policy.md
 status: living
-last_updated: 2026-05-02
+last_updated: 2026-07-02
 ---
 
 # Dependency Policy
@@ -97,6 +97,23 @@ Exceptions are re-reviewed whenever the affected crate's version is bumped.
 | Crate | Version | Allowed license(s) | Rationale | Review date |
 |:------|:--------|:-------------------|:----------|:------------|
 | `self_cell` | `*` | `Apache-2.0 OR GPL-2.0-only` | Multi-license; we select Apache-2.0. Transitive dep of iced/winit. | 2026-05-02 |
+
+### Security advisory exceptions
+
+Security advisories (RUSTSEC) are gated by two tools that must stay in sync:
+`cargo audit` (pre-push hook `.githooks/pre-push`, ignore list in
+`.cargo/audit.toml`) and `cargo deny` (`deny.toml` `[advisories].ignore`). A
+vulnerability advisory may be ignored **only** with a documented, dated rationale
+and a concrete revisit trigger, added to **both** files.
+
+| Advisory | Crate | Category | Rationale | Revisit trigger | Review date |
+|:---------|:------|:---------|:----------|:----------------|:------------|
+| RUSTSEC-2026-0194 | `quick-xml` | DoS (quadratic on duplicate attrs) | Build-time-only dep of `wayland-scanner` (proc-macro parsing trusted in-crate Wayland protocol XML via winit/iced/nec-gui). Not reachable from any runtime path. | Remove once wayland-scanner depends on `quick-xml >= 0.41.0`, then `cargo update -p quick-xml`. | 2026-07-02 |
+| RUSTSEC-2026-0195 | `quick-xml` | DoS (unbounded NsReader allocation) | Same build-time-only `wayland-scanner` path; no untrusted runtime input. | Same as RUSTSEC-2026-0194. | 2026-07-02 |
+
+Root fix is blocked upstream: the newest published `wayland-scanner` (0.31.10)
+still requires `quick-xml ^0.39`, so no dependency bump reaches a fixed lockfile
+today. Tracked as a Phase 8 dependency-hygiene follow-up.
 
 ---
 
