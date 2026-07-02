@@ -124,9 +124,9 @@ pub struct PlaneWaveHallen {
 pub enum PlaneWaveError {
     /// No plane-wave (EX type 1/2/3) card present in the deck.
     NoPlaneWaveCard,
-    /// The deck has more than one wire; only the single straight-wire class is
-    /// supported in this increment.
-    MultiWireNotSupported { wire_count: usize },
+    /// The geometry contains a wire junction; only straight, non-junctioned wires
+    /// (one or more) are supported.
+    JunctionedGeometryNotSupported,
 }
 
 impl std::fmt::Display for PlaneWaveError {
@@ -135,10 +135,10 @@ impl std::fmt::Display for PlaneWaveError {
             PlaneWaveError::NoPlaneWaveCard => {
                 write!(f, "EX: no incident-plane-wave (type 1/2/3) card found")
             }
-            PlaneWaveError::MultiWireNotSupported { wire_count } => write!(
+            PlaneWaveError::JunctionedGeometryNotSupported => write!(
                 f,
-                "EX: incident plane wave is only supported on a single straight wire \
-                 (found {wire_count} wires); multi-wire plane-wave is not yet supported"
+                "EX: incident plane wave is supported on straight, non-junctioned wires; \
+                 junctioned geometry is not yet supported"
             ),
         }
     }
@@ -151,7 +151,14 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 /// Build the Hallén forcing + homogeneous columns for the first incident
-/// plane-wave EX card in `deck`, over the single straight wire in `segs`.
+/// plane-wave EX card in `deck`.
+///
+/// Supports one or more **straight, non-junctioned** wires (e.g. a parallel
+/// dipole array). Each wire carries its own Hallén particular solution: the
+/// tangential field uses that wire's axis, the along-wire coordinate is measured
+/// from that wire's midpoint, and the `sin(k|sₘ−s_p|)` kernel sums only over
+/// segments on the same wire. Junctioned geometry is rejected (its continuity
+/// constraints are not modelled by [`crate::solve_hallen_planewave`]).
 pub fn build_planewave_hallen(
     deck: &NecDeck,
     segs: &[Segment],
@@ -166,64 +173,70 @@ pub fn build_planewave_hallen(
         })
         .ok_or(PlaneWaveError::NoPlaneWaveCard)?;
 
-    // Single straight wire only in this increment.
-    let mut tags: Vec<u32> = segs.iter().map(|s| s.tag).collect();
-    tags.dedup();
-    let unique_tags = {
-        let mut t = tags.clone();
-        t.sort_unstable();
-        t.dedup();
-        t.len()
-    };
-    if unique_tags > 1 {
-        return Err(PlaneWaveError::MultiWireNotSupported {
-            wire_count: unique_tags,
-        });
+    let n = segs.len();
+    let wire_endpoints = crate::geometry::wire_endpoints_from_segs(segs);
+    if !crate::geometry::detect_wire_junctions(segs, &wire_endpoints, 1e-6).is_empty() {
+        return Err(PlaneWaveError::JunctionedGeometryNotSupported);
     }
 
-    let n = segs.len();
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
     let r_hat = wave.r_hat();
     let pol_hat = wave.pol_hat();
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
 
-    // Wire axis and geometric midpoint (single straight wire).
-    let wire_dir = segs[0].direction;
-    let wire_mid = {
-        let first = segs[0].midpoint;
-        let last = segs[n - 1].midpoint;
-        [
-            (first[0] + last[0]) / 2.0,
-            (first[1] + last[1]) / 2.0,
-            (first[2] + last[2]) / 2.0,
-        ]
-    };
+    // Map each segment to its wire index (from the endpoint ranges) and cache
+    // per-wire axis + geometric midpoint.
+    let mut wire_of = vec![0usize; n];
+    for (wi, &(first, last)) in wire_endpoints.iter().enumerate() {
+        for w in wire_of.iter_mut().take(last + 1).skip(first) {
+            *w = wi;
+        }
+    }
+    let wire_dir: Vec<[f64; 3]> = wire_endpoints
+        .iter()
+        .map(|&(first, _)| segs[first].direction)
+        .collect();
+    let wire_mid: Vec<[f64; 3]> = wire_endpoints
+        .iter()
+        .map(|&(first, last)| {
+            let (a, b) = (segs[first].midpoint, segs[last].midpoint);
+            [
+                (a[0] + b[0]) / 2.0,
+                (a[1] + b[1]) / 2.0,
+                (a[2] + b[2]) / 2.0,
+            ]
+        })
+        .collect();
 
-    // Per-segment: along-wire coordinate s (from wire midpoint) and the complex
-    // tangential incident field E_t(s) = (ê·û)·E₀·exp(+j k r̂·r).
+    // Per-segment along-wire coordinate s (from its wire's midpoint) and the
+    // complex tangential incident field E_t(s) = (ê·û)·E₀·exp(+j k r̂·r).
     let mut s_coord = vec![0.0f64; n];
     let mut e_tan = vec![Complex64::new(0.0, 0.0); n];
-    // Complex tangential coupling ê·û (complex for elliptic polarization).
-    let tangential_coupling: Complex64 =
-        (0..3).map(|i| pol_hat[i] * wire_dir[i]).sum::<Complex64>() * wave.e0;
     for (i, seg) in segs.iter().enumerate() {
+        let w = wire_of[i];
+        let dir = wire_dir[w];
         let d = [
-            seg.midpoint[0] - wire_mid[0],
-            seg.midpoint[1] - wire_mid[1],
-            seg.midpoint[2] - wire_mid[2],
+            seg.midpoint[0] - wire_mid[w][0],
+            seg.midpoint[1] - wire_mid[w][1],
+            seg.midpoint[2] - wire_mid[w][2],
         ];
-        s_coord[i] = dot(d, wire_dir);
+        s_coord[i] = dot(d, dir);
+        let coupling: Complex64 = (0..3).map(|c| pol_hat[c] * dir[c]).sum::<Complex64>() * wave.e0;
         let phase = k * dot(r_hat, seg.midpoint); // +j k r̂·r
-        e_tan[i] = tangential_coupling * Complex64::from_polar(1.0, phase);
+        e_tan[i] = coupling * Complex64::from_polar(1.0, phase);
     }
 
-    // Hallén forcing: rhs(sₘ) = −j·(2π/η₀)·Σ_p E_t(s_p)·sin(k|sₘ − s_p|)·Δl_p.
-    let scale = 2.0 * std::f64::consts::PI / ETA0;
+    // Hallén forcing per wire: rhs(sₘ) = −j·(2π/η₀)·Σ_{p∈wire(m)} E_t(s_p)·
+    // sin(k|sₘ − s_p|)·Δl_p. The homogeneous cos/sin columns use the per-wire s.
     let mut rhs = vec![Complex64::new(0.0, 0.0); n];
     let mut cos_vec = vec![0.0f64; n];
     let mut sin_vec = vec![0.0f64; n];
     for m in 0..n {
         let mut acc = Complex64::new(0.0, 0.0);
         for p in 0..n {
+            if wire_of[p] != wire_of[m] {
+                continue;
+            }
             let kernel = (k * (s_coord[m] - s_coord[p]).abs()).sin();
             acc += e_tan[p] * kernel * segs[p].length;
         }

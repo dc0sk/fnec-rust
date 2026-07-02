@@ -247,16 +247,14 @@ fn solve_current_source_hallen(
         })
         .ok_or_else(|| "EX: no current-source card found".to_string())?;
 
-    // Single straight wire only in this increment.
-    let mut unique_tags: Vec<u32> = segs.iter().map(|s| s.tag).collect();
-    unique_tags.sort_unstable();
-    unique_tags.dedup();
-    if unique_tags.len() > 1 {
-        return Err(format!(
-            "EX: current source is only supported on a single straight wire (found {} wires); \
-             multi-wire current source is not yet supported",
-            unique_tags.len()
-        ));
+    // Straight, non-junctioned wires (one or more). Junctioned geometry needs
+    // continuity constraints that solve_hallen_current_source does not model.
+    if !detect_wire_junctions(segs, wire_endpoints, 1e-6).is_empty() {
+        return Err(
+            "EX: current source is supported on straight, non-junctioned wires; \
+             junctioned geometry is not yet supported"
+                .to_string(),
+        );
     }
 
     let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);

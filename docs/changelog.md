@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-001/002 non-junctioned multi-wire** — incident plane waves and
+  current sources now solve on **one or more straight, non-junctioned wires**
+  (e.g. a parallel dipole array), not just a single wire. The plane-wave Hallén
+  forcing is per-wire (own axis, own along-wire coordinate, same-wire kernel
+  sum). Validated: each wire's induced-current shape matches nec2c (~10%); a
+  symmetric-broadside wave induces equal currents on two parallel wires (5e-11);
+  a two-wire current-source port impedance matches the voltage source. Junctioned
+  geometry fails fast.
 - **PH8-CHK-002 elliptic plane waves (EX types 2/3)** — right- and left-hand
   elliptic incident plane waves now solve on `--solver hallen`. The incident
   field uses a complex polarization vector (`ê = û_maj + j·sense·AR·û_minor`,

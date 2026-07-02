@@ -224,4 +224,30 @@ the accept-path. The `--ex3-i4-mode` flag is retained as a documented no-op.
 Results: `cargo test --workspace` **553 passed**, 0 failed; clippy clean.
 `docs/card-support-matrix.md` EX types 1/2/3 → **Partial** (single straight wire).
 
-Still pending: multi-angle NTHETA/NPHI sweeps and multi-wire geometry.
+### Increment 5 — non-junctioned multi-wire (2026-07-02)
+
+`build_planewave_hallen` now supports **one or more straight, non-junctioned
+wires** (e.g. a parallel dipole array). Each wire carries its own Hallén
+particular solution: the tangential field uses that wire's axis, the along-wire
+coordinate is measured from that wire's midpoint, and the `sin(k|sₘ−s_p|)` kernel
+sums only over segments on the **same** wire. `solve_hallen_planewave` already
+carries per-wire cos/sin homogeneous constants + two endpoint constraints per
+wire. Junctioned geometry is rejected (`PlaneWaveError::JunctionedGeometryNotSupported`)
+because its continuity constraints are not modelled.
+
+**Validation** (`planewave_nec2c.rs`, two parallel z-dipoles at 28 MHz):
+1. **Per-wire nec2c shape** — each wire's induced-current distribution matches
+   nec2c to ~10–11% (aligned on its **own** peak). The fnec-vs-nec2c operator
+   offset is *per-wire* here (wire 1 ≈1.49∠−26°, wire 2 ≈0.94∠−24°) — the same
+   operator difference as the single wire, now manifested through the mutual
+   coupling — so a single global alignment does not apply.
+2. **Symmetric-broadside symmetry** — a wave from (θ=90, φ=90) hits two parallel
+   z-wires with identical phase, so the induced currents on the two wires are
+   **equal to 5×10⁻¹¹** — a self-consistent confirmation of the multi-wire
+   coupling, independent of any external reference.
+3. **Junction rejection** — junctioned geometry fails fast.
+
+Results: `cargo test --workspace` **557 passed**, 0 failed; clippy clean.
+
+Still pending: multi-angle NTHETA/NPHI sweeps; junctioned multi-wire (needs
+continuity constraints in the plane-wave solve).

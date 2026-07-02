@@ -109,4 +109,8 @@ Results: `cargo test --workspace` **547 passed**, 0 failed; clippy clean.
    `build_current_source_shape`, impedance-consistency validated.
 2. **CLI wiring** (this increment) — routing + `FEEDPOINTS` report + corpus/test
    accept-path flip.
-3. **Breadth** — multi-wire geometry; interaction with loads/TL.
+3. **Breadth** — ✅ *non-junctioned multi-wire* (2026-07-02): the current-source
+   guard now rejects only junctioned geometry, so a current source drives a
+   parallel-wire array. The port impedance-consistency gate holds on a two-wire
+   array (`current_source_two_wire_array_matches_voltage_source`, rel < 5×10⁻³).
+   Junctioned geometry and loads/TL interaction remain.

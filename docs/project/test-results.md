@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-002-elliptic` (base `89f7c86` main) |
+| Commit | branch `feat/ph8-multi-wire` (base `b3da117` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,21 +27,21 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-553 passed; 0 failed; 0 ignored — across 56 test binaries
+557 passed; 0 failed; 0 ignored — across 56 test binaries
 exit code 0
 ```
 
-553 = 550 + 3 elliptic plane-wave tests (`planewave_nec2c.rs`: z-wire reduction,
-AR=0 reduction, tilted-wire nec2c shape). The `dipole-ex2`/`dipole-ex3` (and
-obsolete `dipole-ex3-i4-*`) contracts were flipped from "rejected" to the
-accept-path (skip in the impedance-centric framework, receive-only).
+557 = 553 + 4 multi-wire tests (`planewave_nec2c.rs`: two-wire per-wire shape,
+symmetric-broadside symmetry, junction rejection; `current_source.rs`: two-wire
+array Z-consistency).
 
-### Elliptic plane-wave validation (PH8-CHK-002 breadth)
+### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 
 ```
-z-wire elliptic (any AR) == linear:                exact (<1e-9)
-tilted-wire elliptic AR=0 == linear:               exact (<1e-9)
-tilted-wire elliptic AR=0.5 vs nec2c shape:        5.4% (coarse non-resonant wire)
+two-wire plane wave, per-wire nec2c shape:         wire1 10.0%, wire2 11.1%
+two-wire symmetric-broadside currents equal:       5.3e-11 (exact)
+two-wire current source Z == voltage source Z:     rel 2e-4
+junctioned geometry:                               rejected (fail-fast)
 ```
 
 ### Current-source solve validation (PH8-CHK-001 solve core)
