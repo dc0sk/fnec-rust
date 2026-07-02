@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-002-planewave-cli` (base `97865a3` main) |
+| Commit | branch `feat/ph8-chk-001-current-source-solve` (base `9cccf6d` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,14 +27,22 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-544 passed; 0 failed; 0 ignored — across 54 test binaries
+547 passed; 0 failed; 0 ignored — across 55 test binaries
 exit code 0
 ```
 
-544 = 539 baseline + F3 parser test + 3 plane-wave solve tests + the plane-wave
-CLI accept-path net additions. The type-1 corpus/integration contracts were
-flipped from "rejected" to the accept-path (see PH8-CHK-002 CLI wiring); the
-shared delta-gap `solve_hallen` path remains untouched.
+547 = 544 (PH8-CHK-002 complete) + 3 current-source tests (`current_source.rs`:
+impedance-consistency, linearity, off-center feed). The shared voltage-source
+`solve_hallen` path is untouched.
+
+### Current-source solve validation (PH8-CHK-001 solve core)
+
+```
+Z(current source) vs Z(voltage source), center-fed λ/2 51-seg:  rel 2e-4
+forced feed current:                                            exact (1.0)
+linearity (double i0 → double currents, Z unchanged):           rel < 1e-9
+off-center feed (seg 18):                                       rel ~9e-4
+```
 
 ### Plane-wave solve validation (PH8-CHK-002 solve core)
 
