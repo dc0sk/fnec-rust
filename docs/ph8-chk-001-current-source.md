@@ -76,11 +76,37 @@ formulations — the current-source path enforces `I=0` at the ends exactly, whi
 `cargo test --workspace`: **547 passed**, 0 failed (was 544; +3 current-source
 tests); clippy clean. The shared voltage-source `solve_hallen` path is untouched.
 
+## Increment 2 — CLI wiring (2026-07-02)
+
+Current-source decks are now user-runnable end to end.
+
+- **Routing** (`nec-cli::solve_session`): the Hallén path detects a current-source
+  EX card (`deck_has_current_source`) and routes the single-straight-wire class
+  through `solve_current_source_hallen` (`build_current_source_shape` +
+  `solve_hallen_current_source`). Diag label `hallen-current-source`.
+- **Report**: `build_feedpoint_rows` uses the solved port voltage for a
+  current-source card, so `FEEDPOINTS` shows `V=V_port`, `I=i0`, `Z=V/i0`.
+- **Delta-gap builders** (`build_excitation`, `build_hallen_rhs`) now treat the
+  current source as *not a delta-gap source* (skip); type 5 still errors.
+- **Fail-fast kept**: multi-wire current source and non-Hallén solvers fail fast
+  ("multi-wire current source is not yet supported" / "requires --solver hallen").
+
+**Contract updates**: `ex_cards.rs`/`parser_warnings.rs` type-4 tests flipped from
+"rejected" to the accept-path. Corpus `dipole-ex4-freesp-51seg` now **solves** and
+is validated against the dipole feedpoint impedance (74.23+j13.9 — the same value
+the current-source path is internally consistent with); the pulse variant's error
+contract became "requires --solver hallen".
+
+Manual CLI check: `EX 4 1 26 0 1.0 0.0` on `--solver hallen` →
+`FEEDPOINTS: V=74.228+j13.897, I=1.0, Z=74.228+j13.897`.
+
+Results: `cargo test --workspace` **547 passed**, 0 failed; clippy clean.
+`docs/card-support-matrix.md` EX type 4 → **Partial**.
+
 ## Staged delivery
 
-1. **Solve core (this increment)** — `solve_hallen_current_source` +
+1. **Solve core** (#260) — `solve_hallen_current_source` +
    `build_current_source_shape`, impedance-consistency validated.
-2. **CLI wiring** — route EX type-4 decks on `--solver hallen` to the solve,
-   report `Z = V/i0` in `FEEDPOINTS`; flip the `dipole-ex4` corpus/ex_cards
-   contracts from "rejected" to the accept-path.
+2. **CLI wiring** (this increment) — routing + `FEEDPOINTS` report + corpus/test
+   accept-path flip.
 3. **Breadth** — multi-wire geometry; interaction with loads/TL.

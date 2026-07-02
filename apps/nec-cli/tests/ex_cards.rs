@@ -147,8 +147,9 @@ fn ex_type1_plane_wave_requires_hallen_solver() {
 }
 
 #[test]
-fn ex_type4_pulse_imposes_requested_segment_current_without_portability_warning() {
-    // Phase-1: EX type 4 is rejected (not yet supported), even in pulse-solver mode.
+fn ex_type4_current_source_requires_hallen_solver() {
+    // PH8-CHK-001: EX type 4 (current source) is solved only on the Hallén path;
+    // --solver pulse fails fast with an actionable diagnostic.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -166,11 +167,11 @@ fn ex_type4_pulse_imposes_requested_segment_current_without_portability_warning(
 
     assert!(
         !output.status.success(),
-        "EX type 4 (pulse mode) should fail with 'not yet supported', but succeeded; stderr:\n{stderr}"
+        "EX type 4 current source under --solver pulse should fail fast; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("is not yet supported"),
-        "EX type 4 (pulse mode) stderr should contain 'is not yet supported', got:\n{stderr}"
+        stderr.contains("requires --solver hallen"),
+        "EX type 4 pulse stderr should say the current source requires --solver hallen, got:\n{stderr}"
     );
 }
 
@@ -209,9 +210,42 @@ fn ex_type2_matches_ex_type0_feedpoint_impedance() {
 }
 
 #[test]
-fn ex_type4_matches_ex_type0_feedpoint_impedance() {
+fn ex_type4_current_source_matches_voltage_source_impedance() {
+    // PH8-CHK-001: a current source (type 4, i0=1) at the feed yields the same
+    // feedpoint impedance as a voltage source (type 0) at the same feed — the
+    // port impedance is a property of the antenna, independent of drive type.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    assert_ex_unsupported(4, &workspace_root);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+
+    let geom = "GW 1 51 0 0 -5.282 0 0 5.282 0.001";
+    let fr = "FR 0 1 0 0 14.2 0.0\nEN\n";
+
+    let v_path = std::env::temp_dir().join(format!("fnec-ex0-{now}.nec"));
+    fs::write(&v_path, format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}")).expect("write v deck");
+    let v_out = run_fnec_output(&v_path, &workspace_root, &["--solver", "hallen"]);
+    let (zr_v, zi_v) = first_feedpoint_impedance(&String::from_utf8_lossy(&v_out.stdout));
+    let _ = fs::remove_file(&v_path);
+
+    let c_path = std::env::temp_dir().join(format!("fnec-ex4-{now}.nec"));
+    fs::write(&c_path, format!("{geom}\nEX 4 1 26 0 1.0 0.0\n{fr}")).expect("write cs deck");
+    let c_out = run_fnec_output(&c_path, &workspace_root, &["--solver", "hallen"]);
+    let c_stdout = String::from_utf8_lossy(&c_out.stdout).into_owned();
+    let (zr_c, zi_c) = first_feedpoint_impedance(&c_stdout);
+    let _ = fs::remove_file(&c_path);
+
+    assert!(
+        c_out.status.success(),
+        "EX type 4 current source should solve on --solver hallen"
+    );
+    // Same port impedance within a modest tolerance (the two augmented-system
+    // formulations agree to ~0.02% on this dipole).
+    assert!(
+        (zr_c - zr_v).abs() < 0.5 && (zi_c - zi_v).abs() < 0.5,
+        "current-source Z ({zr_c:.3}+j{zi_c:.3}) != voltage-source Z ({zr_v:.3}+j{zi_v:.3})"
+    );
 }
 
 #[test]

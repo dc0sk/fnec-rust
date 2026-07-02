@@ -172,13 +172,13 @@
     },
     "dipole-ex4-freesp-51seg": {
       "deck_file": "dipole-ex4-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 4 source",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 4 current source (i0=1 A at the center). PH8-CHK-001: solves on --solver hallen; the current-source feedpoint impedance Z=V/i0 equals the voltage-source dipole impedance (74.23+j13.9), which is exactly the internal consistency the current-source path is validated against.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 4 staged portability; currently mapped like EX type 0)",
+      "reference_source": "fnec Hallen current-source solve; Z = V_port / i0 (equals the voltage-source dipole impedance)",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "feedpoint_impedance": {
@@ -191,8 +191,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 4 deck portability while segment-current semantics remain pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole."
     },
     "dipole-ex4-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex4-pulse-current-freesp-51seg.nec",
@@ -221,8 +220,8 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for the first implemented EX type 4 semantics slice: pulse-mode driven-segment current without the old portability warning.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-001: EX type 4 = current source; --solver pulse fails fast (current source requires --solver hallen).",
+      "expected_hallen_error_contains": "requires --solver hallen"
     },
     "dipole-ex5-freesp-51seg": {
       "deck_file": "dipole-ex5-freesp-51seg.nec",

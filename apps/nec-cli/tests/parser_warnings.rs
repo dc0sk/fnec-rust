@@ -804,8 +804,9 @@ fn ex_type2_runs_with_portability_warning_without_unsupported_error() {
 }
 
 #[test]
-fn ex_type4_runs_with_portability_warning_without_unsupported_error() {
-    // Phase-1: EX type 4 is not yet supported; deck fails.
+fn ex_type4_current_source_solves_without_legacy_warning() {
+    // PH8-CHK-001: EX type 4 (current source) solves on --solver hallen and must
+    // not emit the old "treated like EX type 0" portability warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -825,23 +826,22 @@ fn ex_type4_runs_with_portability_warning_without_unsupported_error() {
         .arg(&deck_path)
         .current_dir(&workspace_root)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type4 warning test: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to run fnec for EX type4 test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 4 should be rejected as not yet supported"
-    );
-
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 4, got stderr:\n{stderr}"
+        output.status.success(),
+        "PH8-CHK-001: EX type 4 current source should solve on hallen; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 4 current source must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 4 is currently treated like EX type 0"),
-        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
+        "must not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 
