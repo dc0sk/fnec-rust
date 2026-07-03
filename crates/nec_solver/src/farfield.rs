@@ -126,6 +126,74 @@ fn far_field_components(
     (f_theta, f_phi)
 }
 
+const EPS0: f64 = 8.854_187_812_8e-12; // F/m
+
+/// Fresnel reflection coefficients for a wave reflecting off a homogeneous
+/// ground of relative permittivity `eps_r` and conductivity `sigma` (S/m), at an
+/// observation polar angle `theta` (degrees from zenith — equal to the incidence
+/// angle from the ground normal).
+///
+/// Returns `(Γ_v, Γ_h)` — the vertical (parallel, E in the plane of incidence)
+/// and horizontal (perpendicular) reflection coefficients. In the PEC limit
+/// (`eps_r → ∞`) these tend to `(+1, −1)`; at grazing (`theta → 90°`) both tend
+/// to `−1`, giving the horizon null.
+fn fresnel_coeffs(theta_deg: f64, eps_r: f64, sigma: f64, k: f64) -> (Complex64, Complex64) {
+    let omega = k * SPEED_OF_LIGHT;
+    // Complex relative permittivity ε_c = ε_r − j σ/(ω ε₀).
+    let eps_c = Complex64::new(eps_r, -sigma / (omega * EPS0));
+    let th = theta_deg.to_radians();
+    let cos_i = Complex64::new(th.cos(), 0.0);
+    let sin2 = th.sin() * th.sin();
+    let root = (eps_c - Complex64::new(sin2, 0.0)).sqrt();
+    let gamma_v = (eps_c * cos_i - root) / (eps_c * cos_i + root);
+    let gamma_h = (cos_i - root) / (cos_i + root);
+    (gamma_v, gamma_h)
+}
+
+/// Far-field θ/φ components over a finite (imperfect) ground, using the Fresnel
+/// reflection-coefficient approximation.
+///
+/// The reflected ray is the PEC image contribution scaled per polarization by the
+/// Fresnel coefficients: `E_θ = E_θ_direct + Γ_v · (image θ)` and
+/// `E_φ = E_φ_direct − Γ_h · (image φ)`. This recovers the PEC image exactly for
+/// `Γ_v = +1, Γ_h = −1` (see `fresnel_coeffs` and `far_field_components_with_image`).
+fn far_field_components_fresnel(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    k: f64,
+    theta_deg: f64,
+    phi_deg: f64,
+    eps_r: f64,
+    sigma: f64,
+) -> (Complex64, Complex64) {
+    let (r_hat, theta_hat, phi_hat) = unit_vectors(theta_deg, phi_deg);
+    let (gamma_v, gamma_h) = fresnel_coeffs(theta_deg, eps_r, sigma, k);
+
+    let mut f_theta = Complex64::new(0.0, 0.0);
+    let mut f_phi = Complex64::new(0.0, 0.0);
+
+    for (n, seg) in segs.iter().enumerate() {
+        let i_n = i_vec[n];
+
+        // Direct contribution.
+        let phase_arg = k * dot3(seg.midpoint, r_hat);
+        let phase = Complex64::new(phase_arg.cos(), phase_arg.sin());
+        let weighted = i_n * (seg.length * phase);
+        f_theta += weighted * dot3(seg.direction, theta_hat);
+        f_phi += weighted * dot3(seg.direction, phi_hat);
+
+        // Fresnel-reflected image contribution (PEC image, scaled per polarization).
+        let img = pec_image_farfield(seg);
+        let img_phase_arg = k * dot3(img.midpoint, r_hat);
+        let img_phase = Complex64::new(img_phase_arg.cos(), img_phase_arg.sin());
+        let img_weighted = i_n * (img.length * img_phase);
+        f_theta += gamma_v * (img_weighted * dot3(img.direction, theta_hat));
+        f_phi -= gamma_h * (img_weighted * dot3(img.direction, phi_hat));
+    }
+
+    (f_theta, f_phi)
+}
+
 // ---------------------------------------------------------------------------
 // Normalisation integral
 // ---------------------------------------------------------------------------
@@ -138,10 +206,6 @@ fn far_field_components(
 /// no radiation exists below the ground plane).
 ///
 /// Returns the normalisation denominator `∫ U dΩ` (in sr × [|F|²] units).
-fn integrate_power(segs: &[Segment], i_vec: &[Complex64], k: f64, pec_ground: bool) -> f64 {
-    integrate_radiated_power_inner(segs, i_vec, k, pec_ground)
-}
-
 /// Compute the total radiated power normalisation integral.
 ///
 /// Used by GPU acceleration paths (e.g. wgpu RP kernel) to obtain the same
@@ -157,6 +221,53 @@ pub fn integrate_radiated_power(
 ) -> f64 {
     let k = 2.0 * PI / (SPEED_OF_LIGHT / freq_hz);
     integrate_radiated_power_inner(segs, i_vec, k, pec_ground)
+}
+
+/// Total-radiated-power normalisation integral that is aware of the ground
+/// model. Ground planes (PEC or finite) integrate the upper hemisphere with the
+/// corresponding far-field (image / Fresnel); free space integrates the sphere.
+fn integrate_power_for_ground(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    k: f64,
+    ground: &GroundModel,
+) -> f64 {
+    let has_ground = !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let (n_theta, theta_max_deg): (usize, f64) = if has_ground { (91, 90.0) } else { (181, 180.0) };
+    let n_phi = 360usize;
+    let d_theta = theta_max_deg.to_radians() / (n_theta as f64 - 1.0);
+    let d_phi = 2.0 * PI / n_phi as f64;
+
+    let mut total = 0.0_f64;
+    for it in 0..n_theta {
+        let theta_deg = it as f64 * theta_max_deg / (n_theta as f64 - 1.0);
+        let sin_theta = theta_deg.to_radians().sin();
+        if sin_theta == 0.0 {
+            continue;
+        }
+        let w_theta = if it == 0 || it == n_theta - 1 {
+            0.5 * d_theta
+        } else {
+            d_theta
+        };
+        for ip in 0..n_phi {
+            let phi_deg = ip as f64;
+            let (f_t, f_p) = match ground {
+                GroundModel::PerfectConductor => {
+                    far_field_components_with_image(segs, i_vec, k, theta_deg, phi_deg)
+                }
+                GroundModel::SimpleFiniteGround { eps_r, sigma } => {
+                    far_field_components_fresnel(segs, i_vec, k, theta_deg, phi_deg, *eps_r, *sigma)
+                }
+                _ => far_field_components(segs, i_vec, k, theta_deg, phi_deg),
+            };
+            total += (f_t.norm_sqr() + f_p.norm_sqr()) * sin_theta * w_theta * d_phi;
+        }
+    }
+    total
 }
 
 fn integrate_radiated_power_inner(
@@ -267,13 +378,16 @@ pub fn compute_radiation_pattern(
     let k = 2.0 * PI / lambda;
 
     let pec = matches!(ground, GroundModel::PerfectConductor);
-    let total_radiated = integrate_power(segs, i_vec, k, pec);
+    let finite = matches!(ground, GroundModel::SimpleFiniteGround { .. });
+    // Any ground plane confines radiation to the upper hemisphere.
+    let has_ground = pec || finite;
+    let total_radiated = integrate_power_for_ground(segs, i_vec, k, ground);
 
     points
         .iter()
         .map(|pt| {
-            // Below-ground points are null for a PEC plane.
-            if pec && pt.theta_deg > 90.0 {
+            // Below-ground points are null for any ground plane.
+            if has_ground && pt.theta_deg > 90.0 {
                 return FarFieldResult {
                     theta_deg: pt.theta_deg,
                     phi_deg: pt.phi_deg,
@@ -284,10 +398,20 @@ pub fn compute_radiation_pattern(
                 };
             }
 
-            let (f_t, f_p) = if pec {
-                far_field_components_with_image(segs, i_vec, k, pt.theta_deg, pt.phi_deg)
-            } else {
-                far_field_components(segs, i_vec, k, pt.theta_deg, pt.phi_deg)
+            let (f_t, f_p) = match ground {
+                GroundModel::PerfectConductor => {
+                    far_field_components_with_image(segs, i_vec, k, pt.theta_deg, pt.phi_deg)
+                }
+                GroundModel::SimpleFiniteGround { eps_r, sigma } => far_field_components_fresnel(
+                    segs,
+                    i_vec,
+                    k,
+                    pt.theta_deg,
+                    pt.phi_deg,
+                    *eps_r,
+                    *sigma,
+                ),
+                _ => far_field_components(segs, i_vec, k, pt.theta_deg, pt.phi_deg),
             };
             let u_total = f_t.norm_sqr() + f_p.norm_sqr();
             let u_theta = f_t.norm_sqr();

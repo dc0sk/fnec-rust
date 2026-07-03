@@ -158,7 +158,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | PH8-CHK-003 | CP-003, PRT-002 | `ph8-chk-003-ex-type5.md` | `nec_model/card.rs` (`is_voltage_source`), `nec_solver/excitation.rs` | `ex_cards.rs` (type-5 Z == type-0); `corpus` `dipole-ex5-*` | **Done** 2026-07-03: EX type 5 as voltage source (applied-field); Z == type 0; solves on hallen + pulse; 557 tests. NEC current-slope (~6%) documented non-goal. EX type 5 → Partial. | ✅ |
 | PH8-CHK-004 | CP-003, PRT-002 | `ph8-chk-004-nt-network.md` | `nec_solver/network.rs` (`build_nt_stamps`, Y→Z), `nec-cli/solve_session.rs` (stamp application) | `nec_solver/tests/nt_network.rs` (TL-equivalence, guards); `corpus` `dipole-nt-tl-equiv` (end-to-end NT==TL) | **Stamp core** #262 (identical to TL stamp). **CLI wiring** 2026-07-02: stamps applied in solve; real fixture reproduces TL impedance (~1e-5 Ω); deferred warning removed; 550 tests. NT → Partial. Non-reciprocal breadth pending. | 🔨 |
 | PH8-CHK-005 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (lossy) | `tl_cards.rs` (+ fixture) | — | 📋 |
-| PH8-CHK-006 | CP-002, PRT-001 | `nec4-support.md` | `nec_solver` ground path | `ground_diagnostics.rs`, corpus | — | 📋 |
+| PH8-CHK-006 | CP-002, PRT-001 | `ph8-chk-006-finite-ground-rp.md` | `nec_solver/farfield.rs` (Fresnel reflection far field) | `nec_solver/tests/finite_ground_rp.rs` (PEC limit, nec2c shape, horizon null) | **In progress** 2026-07-03: RP over finite ground via Fresnel coefficients (was free-space); PEC limit <0.05 dB, nec2c shape 0.053 dB; 560 tests. Directivity (gain offset documented). Buried/Sommerfeld remain. | 🔨 |
 
 ---
 
