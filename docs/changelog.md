@@ -12,6 +12,15 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-006 radiation pattern over finite ground** — the far-field over a
+  finite (imperfect) ground now uses the Fresnel reflection-coefficient
+  approximation instead of the free-space pattern (only PEC ground had an image
+  before). A horizontal/vertical antenna over real earth now shows the correct
+  ground lobe and horizon null. Validated: PEC limit matches to <0.05 dB; the
+  pattern shape matches nec2c to 0.053 dB (horizontal dipole over average ground).
+  fnec reports directivity; the ~1.3 dB offset vs nec2c gain (ground-loss
+  efficiency) is documented.
+
 - **PH8-CHK-003 EX type 5 (voltage source)** — EX type 5 (voltage source,
   current-slope discontinuity) now solves: fnec models it via its applied-field
   method, so the feedpoint impedance equals type 0's, on both `--solver hallen`

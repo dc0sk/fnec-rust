@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-003-ex-type5` (base `2161f12` main) |
+| Commit | branch `feat/ph8-chk-006-finite-ground-rp` (base `74bfbba` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-557 passed; 0 failed; 0 ignored — across 56 test binaries
+560 passed; 0 failed; 0 ignored — across 57 test binaries
 exit code 0
 ```
 
-557 (unchanged count; PH8-CHK-003 flipped the `dipole-ex5` corpus/integration
-contracts from "rejected" to the accept-path — EX type 5 is a voltage source that
-solves == type 0 on both `--solver hallen` and `--solver pulse`).
+560 = 557 + 3 finite-ground RP tests (`finite_ground_rp.rs`: PEC high-σ limit,
+nec2c pattern shape, horizon null). Existing PEC / free-space RP corpus cases are
+unaffected (the change only touches the `SimpleFiniteGround` far-field path).
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 
@@ -42,6 +42,14 @@ two-wire plane wave, per-wire nec2c shape:         wire1 10.0%, wire2 11.1%
 two-wire symmetric-broadside currents equal:       5.3e-11 (exact)
 two-wire current source Z == voltage source Z:     rel 2e-4
 junctioned geometry:                               rejected (fail-fast)
+```
+
+### Finite-ground radiation pattern (PH8-CHK-006)
+
+```
+finite ground (high σ) vs PEC pattern:             < 0.05 dB (PEC-limit correctness)
+horizontal dipole over avg ground vs nec2c shape:  0.053 dB (offset 1.3 dB removed)
+horizon null (θ >= 90):                            null
 ```
 
 ### Current-source solve validation (PH8-CHK-001 solve core)
