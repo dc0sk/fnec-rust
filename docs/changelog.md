@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-003 EX type 5 (voltage source)** — EX type 5 (voltage source,
+  current-slope discontinuity) now solves: fnec models it via its applied-field
+  method, so the feedpoint impedance equals type 0's, on both `--solver hallen`
+  and `--solver pulse`. This completes the EX-source family (types 0–5).
+  Deck-portability (CP-003): type-5 decks run instead of failing. NEC's separate
+  current-slope numerics (~6% different) are a documented non-goal.
+  `docs/card-support-matrix.md` EX type 5 → Partial.
+
 - **PH8-CHK-001/002 non-junctioned multi-wire** — incident plane waves and
   current sources now solve on **one or more straight, non-junctioned wires**
   (e.g. a parallel dipole array), not just a single wire. The plane-wave Hallén

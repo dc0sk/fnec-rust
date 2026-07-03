@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-multi-wire` (base `b3da117` main) |
+| Commit | branch `feat/ph8-chk-003-ex-type5` (base `2161f12` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -31,9 +31,9 @@ rule in [README.md](README.md)).
 exit code 0
 ```
 
-557 = 553 + 4 multi-wire tests (`planewave_nec2c.rs`: two-wire per-wire shape,
-symmetric-broadside symmetry, junction rejection; `current_source.rs`: two-wire
-array Z-consistency).
+557 (unchanged count; PH8-CHK-003 flipped the `dipole-ex5` corpus/integration
+contracts from "rejected" to the accept-path — EX type 5 is a voltage source that
+solves == type 0 on both `--solver hallen` and `--solver pulse`).
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

@@ -47,34 +47,6 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
     panic!("no feedpoint rows found in stdout:\n{stdout}");
 }
 
-/// Helper: write a temporary deck, run fnec, check it fails with the expected error message,
-/// then clean up the temp file.
-fn assert_ex_unsupported(ex_type: u8, workspace_root: &Path) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let deck_path = std::env::temp_dir().join(format!("fnec-ex{ex_type}-unsupported-{now}.nec"));
-    let deck = format!(
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX {ex_type} 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n"
-    );
-    fs::write(&deck_path, deck).expect("failed to write deck");
-
-    let output = run_fnec_output(&deck_path, workspace_root, &[]);
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        !output.status.success(),
-        "EX type {ex_type} should fail with 'not yet supported', but command succeeded; stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("is not yet supported"),
-        "EX type {ex_type} stderr should contain 'is not yet supported', got:\n{stderr}"
-    );
-}
-
 /// Helper: an incident plane-wave EX type (1/2/3) solves on --solver hallen and
 /// reports induced CURRENTS (receive solve). Used for the elliptic types 2/3.
 fn assert_ex_plane_wave_solves(ex_type: u8, workspace_root: &Path) {
@@ -207,8 +179,9 @@ fn ex_type4_current_source_requires_hallen_solver() {
 }
 
 #[test]
-fn ex_type5_pulse_imposes_requested_segment_current_without_portability_warning() {
-    // Phase-1: EX type 5 is rejected (not yet supported), even in pulse-solver mode.
+fn ex_type5_voltage_source_solves_under_pulse() {
+    // PH8-CHK-003: EX type 5 is a voltage source; it solves under --solver pulse
+    // (fnec models it via the applied-field method, same as type 0).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -225,12 +198,12 @@ fn ex_type5_pulse_imposes_requested_segment_current_without_portability_warning(
     let _ = fs::remove_file(&ex5_path);
 
     assert!(
-        !output.status.success(),
-        "EX type 5 (pulse mode) should fail with 'not yet supported', but succeeded; stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 5 voltage source should solve under --solver pulse; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("is not yet supported"),
-        "EX type 5 (pulse mode) stderr should contain 'is not yet supported', got:\n{stderr}"
+        !stderr.contains("is not yet supported"),
+        "EX type 5 voltage source must not be rejected; stderr:\n{stderr}"
     );
 }
 
@@ -281,8 +254,37 @@ fn ex_type4_current_source_matches_voltage_source_impedance() {
 
 #[test]
 fn ex_type5_matches_ex_type0_feedpoint_impedance() {
+    // PH8-CHK-003: EX type 5 (voltage source, current-slope) is modelled by fnec
+    // via the applied-field method, so its feedpoint impedance equals type 0's.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    assert_ex_unsupported(5, &workspace_root);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let geom = "GW 1 51 0 0 -5.282 0 0 5.282 0.001";
+    let fr = "FR 0 1 0 0 14.2 0.0\nEN\n";
+
+    let p0 = std::env::temp_dir().join(format!("fnec-ex0-cmp-{now}.nec"));
+    fs::write(&p0, format!("{geom}\nEX 0 1 26 0 1.0 0.0\n{fr}")).expect("write");
+    let (zr0, zi0) = first_feedpoint_impedance(&String::from_utf8_lossy(
+        &run_fnec_output(&p0, &workspace_root, &["--solver", "hallen"]).stdout,
+    ));
+    let _ = fs::remove_file(&p0);
+
+    let p5 = std::env::temp_dir().join(format!("fnec-ex5-cmp-{now}.nec"));
+    fs::write(&p5, format!("{geom}\nEX 5 1 26 0 1.0 0.0\n{fr}")).expect("write");
+    let out5 = run_fnec_output(&p5, &workspace_root, &["--solver", "hallen"]);
+    let (zr5, zi5) = first_feedpoint_impedance(&String::from_utf8_lossy(&out5.stdout));
+    let _ = fs::remove_file(&p5);
+
+    assert!(
+        out5.status.success(),
+        "EX type 5 should solve on --solver hallen"
+    );
+    assert!(
+        (zr5 - zr0).abs() < 1e-3 && (zi5 - zi0).abs() < 1e-3,
+        "EX type 5 Z ({zr5:.4}+j{zi5:.4}) != type 0 Z ({zr0:.4}+j{zi0:.4})"
+    );
 }
 
 #[test]

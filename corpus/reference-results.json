@@ -217,13 +217,13 @@
     },
     "dipole-ex5-freesp-51seg": {
       "deck_file": "dipole-ex5-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 5 source",
+      "description": "Half-wave dipole, free space, 51 seg, 14.2 MHz, EX type 5 (voltage source, current-slope discontinuity). PH8-CHK-003: fnec models type 5 as a voltage source via the applied-field method, giving the same result as type 0 (NEC's separate current-slope numerics, ~6% different, are not modelled).",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (regression reference for EX type 5 staged portability; currently mapped like EX type 0)",
+      "reference_source": "fnec Hallen voltage-source solve (EX type 5 = applied-field voltage source == type 0)",
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "feedpoint_impedance": {
@@ -236,12 +236,11 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for EX type 5 deck portability while qdsrc semantics remain pending.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0."
     },
     "dipole-ex5-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex5-pulse-current-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 5 source on the pulse solver path with the first implemented qdsrc-style driven-segment current semantics slice.",
+      "description": "Half-wave dipole, 51 seg, 14.2 MHz, EX type 5 voltage source on the pulse solver path. PH8-CHK-003: type 5 is a voltage source and solves under --solver pulse (same value as type 0).",
       "cli_args": [
         "--solver",
         "pulse"
@@ -266,8 +265,7 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for the first implemented EX type 5 pulse semantics slice: driven-segment current without the legacy portability warning.",
-      "expected_hallen_error_contains": "is not yet supported"
+      "status": "PH8-CHK-003: EX type 5 = voltage source; solves under --solver pulse."
     },
     "dipole-pt-freesp-51seg": {
       "deck_file": "dipole-pt-freesp-51seg.nec",

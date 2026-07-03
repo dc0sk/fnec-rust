@@ -48,7 +48,7 @@ no longer silently treated as EX type 0.
 | EX type 2 | Partial | Incident plane wave, right-hand elliptic. **Solves** on `--solver hallen` for a single straight wire via the complex polarization vector (axial ratio F6); reduces to linear for a z-wire / AR=0; tilted-wire currents match nec2c (PH8-CHK-002). Non-junctioned multi-wire supported |
 | EX type 3 | Partial | Incident plane wave, left-hand elliptic. Same as type 2 with opposite handedness. The legacy `--ex3-i4-mode` flag is an obsolete no-op |
 | EX type 4 | Partial | Current source. **Solves** on `--solver hallen` for a single straight wire: forces the specified current and reports feedpoint `Z=V/i0` (equals the voltage-source impedance; PH8-CHK-001). Straight non-junctioned multi-wire (parallel arrays) supported; junctioned geometry and `--solver pulse` fail fast |
-| EX type 5 | Deferred | Voltage source with current-slope discontinuity. Recognized; fails fast pending runtime semantics (PH8-CHK-003) |
+| EX type 5 | Partial | Voltage source (current-slope discontinuity). **Solves** as a voltage source via fnec's applied-field method — same result as type 0 (PH8-CHK-003). NEC's separate current-slope numerics (~6% different) are a documented non-goal |
 
 ## Load cards
 

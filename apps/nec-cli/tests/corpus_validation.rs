@@ -836,14 +836,13 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         }
     }
 
-    // Phase-1 simplification: EX types 1 and 5 are no longer accepted by the solver.
-    // The pulse-current variants must now have an expected_hallen_error_contains contract
-    // documenting the hard error, and a forbidden_warning_substrings list ensuring the
-    // old portability fallback warning text is not present.
-    for (case_key, label) in [
-        ("dipole-ex1-pulse-current-freesp-51seg", "EX1"),
-        ("dipole-ex5-pulse-current-freesp-51seg", "EX5"),
-    ] {
+    // Under the NEC2 EX-type alignment, EX type 1 is a plane wave (rejected under
+    // --solver pulse), so its pulse-current variant keeps an
+    // expected_hallen_error_contains contract plus a forbidden legacy-warning list.
+    // (EX type 5 is a voltage source and now solves under pulse, so it is no longer
+    // in this must-error list.)
+    {
+        let (case_key, label) = ("dipole-ex1-pulse-current-freesp-51seg", "EX1");
         let pulse_case = cases
             .get(case_key)
             .and_then(Value::as_object)
