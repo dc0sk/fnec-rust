@@ -131,7 +131,9 @@ pub fn build_hallen_rhs(
         if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
             continue;
         }
-        if ex.excitation_type != 0 {
+        // Voltage-source types: applied-field (0) and current-slope (5). fnec
+        // models both with the applied-field (delta-gap) method.
+        if !ex.kind().is_voltage_source() {
             return Err(ExcitationError::UnsupportedType {
                 ex_type: ex.excitation_type,
                 tag: ex.tag,
@@ -170,7 +172,7 @@ pub fn build_hallen_rhs(
         BTreeMap::from([(driven_tag, (feed_idx, v_source))]);
     for card in &deck.cards {
         let Card::Ex(ex2) = card else { continue };
-        if ex2.excitation_type != 0 || ex2.tag == driven_tag {
+        if !ex2.kind().is_voltage_source() || ex2.tag == driven_tag {
             continue;
         }
         if let Some(idx) = segs
@@ -289,7 +291,8 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
     if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
         return Ok(());
     }
-    if ex.excitation_type != 0 {
+    // Voltage-source types (applied-field 0, current-slope 5) impress V/Δl.
+    if !ex.kind().is_voltage_source() {
         return Err(ExcitationError::UnsupportedType {
             ex_type: ex.excitation_type,
             tag: ex.tag,
@@ -417,7 +420,7 @@ mod tests {
             radius: 0.001,
         }));
         deck.cards.push(Card::Ex(ExCard {
-            excitation_type: 5, // not supported
+            excitation_type: 6, // unknown (types 0,5 are voltage sources)
             tag: 1,
             segment: 2,
             i4: 0,
@@ -430,7 +433,7 @@ mod tests {
         assert!(matches!(
             build_excitation(&deck, &segs),
             Err(ExcitationError::UnsupportedType {
-                ex_type: 5,
+                ex_type: 6,
                 tag: 1,
                 segment: 2,
                 i4: 0,
@@ -698,32 +701,32 @@ mod tests {
                 "expected {expected}, got {}", v[1]);
         }
 
-        /// EX type 5 (current-slope voltage) is not implemented: build_excitation
-        /// must return UnsupportedType error, not panic. Types 1/2/3 (plane wave)
-        /// and 4 (current source) are handled by dedicated paths and are skipped.
+        /// EX type 6+ is unknown: build_excitation must return UnsupportedType
+        /// error, not panic. Types 1/2/3 (plane wave) and 4 (current source) are
+        /// handled by dedicated paths; types 0 and 5 are voltage sources.
         #[test]
         fn proptest_unsupported_ex_types_return_error(
             v_re in -1e6_f64..=1e6_f64,
             v_im in -1e6_f64..=1e6_f64,
         ) {
-            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 5, 2);
+            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 6, 2);
             let result = build_excitation(&deck, &segs);
             prop_assert!(
-                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: 5, .. })),
-                "expected UnsupportedType(5), got {result:?}"
+                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: 6, .. })),
+                "expected UnsupportedType(6), got {result:?}"
             );
         }
 
-        /// EX type 5: build_hallen_rhs must return UnsupportedType error, not panic.
+        /// EX type 6+: build_hallen_rhs must return UnsupportedType error, not panic.
         #[test]
         fn proptest_hallen_rhs_unsupported_ex_types_return_error(
             seg_idx in 1_u32..=3_u32,
         ) {
-            let (deck, segs) = three_seg_deck_with_ex(1.0, 0.0, 5, seg_idx);
+            let (deck, segs) = three_seg_deck_with_ex(1.0, 0.0, 6, seg_idx);
             let result = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ);
             prop_assert!(
-                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: 5, .. })),
-                "expected UnsupportedType(5), got {result:?}"
+                matches!(result, Err(ExcitationError::UnsupportedType { ex_type: 6, .. })),
+                "expected UnsupportedType(6), got {result:?}"
             );
         }
 

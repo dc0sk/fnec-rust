@@ -870,19 +870,19 @@ fn ex_type5_runs_with_portability_warning_without_unsupported_error() {
 
     let _ = fs::remove_file(&deck_path);
 
-    assert!(
-        !output.status.success(),
-        "Phase-1: EX type 5 should be rejected as not yet supported"
-    );
-
+    // PH8-CHK-003: EX type 5 (voltage source) solves on --solver hallen.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("is not yet supported"),
-        "expected unsupported error for EX type 5, got stderr:\n{stderr}"
+        output.status.success(),
+        "EX type 5 voltage source should solve; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "EX type 5 voltage source must not be rejected, got stderr:\n{stderr}"
     );
     assert!(
         !stderr.contains("EX type 5 is currently treated like EX type 0"),
-        "Phase-1 should not emit old portability warning, got stderr:\n{stderr}"
+        "must not emit old portability warning, got stderr:\n{stderr}"
     );
 }
 

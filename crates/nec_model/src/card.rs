@@ -85,6 +85,16 @@ impl ExcitationKind {
         }
     }
 
+    /// True for the voltage-source types: applied-field (0) and current-slope
+    /// discontinuity (5). fnec models both with its applied-field (delta-gap)
+    /// method; NEC's separate current-slope numerics for type 5 are not modelled.
+    pub fn is_voltage_source(self) -> bool {
+        matches!(
+            self,
+            ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope
+        )
+    }
+
     /// True for the incident-plane-wave types (1, 2, 3).
     pub fn is_plane_wave(self) -> bool {
         matches!(
