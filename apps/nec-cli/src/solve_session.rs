@@ -57,9 +57,9 @@ use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_current_source_shape,
     build_hallen_rhs, build_loads, build_nt_stamps, build_planewave_hallen, build_tl_stamps,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    scale_excitation_for_pulse_rhs, solve, solve_hallen, solve_hallen_current_source,
-    solve_hallen_planewave, solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire,
-    FarFieldPoint, GroundModel, Segment, ZMatrix,
+    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_hallen_current_source, solve_hallen_planewave, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -850,7 +850,7 @@ pub(super) fn solve_frequency_point(
     let source_table = build_source_rows(deck);
     let load_table = build_load_rows(deck);
 
-    let pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
+    let mut pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
     } else if execution_mode == ExecutionMode::Gpu {
         // Attempt wgpu RP kernel dispatch (gate G4).
@@ -927,6 +927,33 @@ pub(super) fn solve_frequency_point(
             })
             .collect()
     };
+
+    // PH9-CHK-003: over a lossy finite ground the pattern gain is the directivity
+    // reduced by the radiation efficiency η = P_radiated / P_input (ground-absorbed
+    // power). compute_radiation_pattern returns directivity; convert to gain here so
+    // the reported dBi matches nec2c's gain. (Free-space / PEC are lossless → η ≈ 1,
+    // and are left as directivity so their corpus gates are unchanged.)
+    if matches!(ground, GroundModel::SimpleFiniteGround { .. }) && !pattern_table.is_empty() {
+        let p_in: f64 = rows
+            .iter()
+            .map(|r| 0.5 * (r.v_source * r.current.conj()).re)
+            .sum();
+        if p_in > 0.0 {
+            let eta = radiation_efficiency(segs, &i_vec, freq_hz, ground, p_in);
+            let delta_db = 10.0 * eta.log10();
+            for row in &mut pattern_table {
+                for g in [
+                    &mut row.gain_total_dbi,
+                    &mut row.gain_theta_dbi,
+                    &mut row.gain_phi_dbi,
+                ] {
+                    if *g > -900.0 {
+                        *g += delta_db;
+                    }
+                }
+            }
+        }
+    }
 
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,

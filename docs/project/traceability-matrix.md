@@ -162,6 +162,11 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 
 ### Phase 9 — accuracy frontier & scattering breadth (planned, draft)
 
+| Checklist ID | Req | Design | Impl | Tests | Result | S |
+|:---|:----|:-------|:-----|:------|:-------|:-:|
+| PH9-CHK-003 | CP-002, PRT-001 | `ph9-chk-003-absolute-gain-ground.md` | `nec_solver/farfield.rs` (`radiation_efficiency`), `nec-cli/solve_session.rs` (gain scaling) | `nec_solver/tests/finite_ground_rp.rs` (lossless η≈1; absolute gain vs nec2c 0.06 dB) | **Done** 2026-07-04: gain = directivity + 10log10(η) over finite ground; matches nec2c absolute gain to 0.06 dB; free-space η=0.9996 validates the constant; 566 tests. Closes the PH8-CHK-006 directivity-vs-gain offset. | ✅ |
+
+
 Drafted 2026-07-04 (`docs/roadmap.md` "Phase 9"). Six planned items (📋): angle
 sweeps + receive pattern (PH9-CHK-001), junctioned multi-wire receive solves
 (002), absolute gain over lossy ground (003), PT + full RP output modes (004),

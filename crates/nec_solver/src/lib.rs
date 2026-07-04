@@ -18,8 +18,8 @@ pub use excitation::{
     ExcitationError, HallenRhs,
 };
 pub use farfield::{
-    bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, rp_card_points,
-    FarFieldPoint, FarFieldResult, RpGainGrid,
+    bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power,
+    radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, RpGainGrid,
 };
 pub use geometry::{
     build_geometry, detect_wire_junctions, ground_model_from_deck, wire_endpoints_from_segs,

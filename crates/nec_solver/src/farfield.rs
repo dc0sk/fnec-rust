@@ -127,6 +127,35 @@ fn far_field_components(
 }
 
 const EPS0: f64 = 8.854_187_812_8e-12; // F/m
+const MU0: f64 = 4.0 * PI * 1e-7; // H/m
+const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
+
+/// Radiation efficiency `η = P_radiated / P_input` for an antenna over the given
+/// ground, from the far-field integral and the delivered input power.
+///
+/// `P_radiated = (k²·η₀/32π²)·∮|F|²dΩ` (ground-aware: upper hemisphere over a
+/// ground plane), where `F` is the [`compute_radiation_pattern`] far-field sum.
+/// `input_power` is the real power delivered at the feed,
+/// `½·Re(Σ V_m·conj(I_m))`. Over a lossless case (free space, PEC) η ≈ 1; over a
+/// lossy finite ground η < 1 (ground-absorbed power). Used to convert the pattern
+/// **directivity** to **gain** (`gain_dBi = directivity_dBi + 10·log10 η`).
+///
+/// Returns 1.0 when `input_power <= 0` (no meaningful reference).
+pub fn radiation_efficiency(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+    ground: &GroundModel,
+    input_power: f64,
+) -> f64 {
+    if input_power <= 0.0 {
+        return 1.0;
+    }
+    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let integral = integrate_power_for_ground(segs, i_vec, k, ground);
+    let p_rad = k * k * ETA0 / (32.0 * PI * PI) * integral;
+    (p_rad / input_power).clamp(0.0, 1.0)
+}
 
 /// Fresnel reflection coefficients for a wave reflecting off a homogeneous
 /// ground of relative permittivity `eps_r` and conductivity `sigma` (S/m), at an

@@ -10,6 +10,17 @@ last_updated: 2026-07-04
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Added
+
+- **PH9-CHK-003 absolute gain over finite ground** — the radiation pattern over a
+  lossy finite ground now reports **gain** (not directivity): it is scaled by the
+  radiation efficiency `η = P_radiated / P_input` (the ground-absorbed power), so
+  the reported dBi matches nec2c's absolute gain. Closes the ~1.3 dB
+  directivity-vs-gain offset documented in PH8-CHK-006. The normalization constant
+  is validated by a lossless free-space dipole (η = 0.9996 ≈ 1); a horizontal
+  dipole over average ground matches nec2c's absolute gain to 0.06 dB. Free-space /
+  PEC (lossless, η ≈ 1) are unchanged. New public `radiation_efficiency`.
+
 ### Docs
 
 - **Phase 9 drafted** (`docs/roadmap.md` "Phase 9: accuracy frontier & scattering
