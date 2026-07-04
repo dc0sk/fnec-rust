@@ -10,8 +10,14 @@ last_updated: 2026-07-04
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Fixed
 
-*(nothing currently queued)*
+- **`RP` card XNDA field** — the radiation-pattern card parser now accepts the
+  canonical 8-field NEC form (`RP mode Nθ Nφ XNDA θ0 φ0 Δθ Δφ`) in addition to
+  fnec's legacy 7-field form. Previously a standard 8-field `RP` card mis-parsed
+  θ0 (it read the XNDA/I4 value as θ0), so real 4nec2 pattern decks produced an
+  all-null pattern. Distinguished by field count; XNDA does not affect the angle
+  grid.
 
 ## [0.8.0] — 2026-07-04 — Phase 8 complete: mainstream deck portability
 ### Added
