@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-07-04
 ---
 
 # Traceability matrix
@@ -33,7 +33,7 @@ Status legend: ✅ done · 🔨 in progress · 📋 planned.
 |:------------|:-------------|:------|
 | FR-001 reusable Rust crates | 7 crates + 2 apps | ✅ |
 | FR-002 CLI + GUI | `apps/nec-cli`, `apps/nec-gui` | ✅ |
-| FR-003 execute real NEC decks | Phases 1–2; Phase 8 residual cards | 🔨 (Phase 8) |
+| FR-003 execute real NEC decks | Phases 1–2, Phase 8 (EX 0–5, NT, TL, ground) | ✅ (PT deferred) |
 | FR-004 Markdown project I/O | `nec_project` (GAP-015) | ✅ |
 | FR-005 4nec2-like text reports | PH2-CHK-004 report contract v1 | ✅ |
 | FR-006 plugin/scripting | EP-1..4 (Phase 3–4) | ✅ |
@@ -49,8 +49,8 @@ Status legend: ✅ done · 🔨 in progress · 📋 planned.
 | COMP-001 tolerant parsing | `nec_parser` | ✅ |
 | COMP-002/008 tolerance-gated accuracy | corpus gate | ✅ |
 | COMP-003 versioned NEC-4 scope | `nec4-support.md`, `card-support-matrix.md` | ✅ (living) |
-| PRT-001 ground modeling | Phase 2; PH8-CHK-006 extends | 🔨 (Phase 8) |
-| PRT-002 loads/TL/network/source | Phase 2; PH8-CHK-001..005 | 🔨 (Phase 8) |
+| PRT-001 ground modeling | Phase 2 + PH8-CHK-006 (finite-ground RP); Sommerfeld → Phase 9 | 🔨 (Phase 9) |
+| PRT-002 loads/TL/network/source | Phase 2 + PH8-CHK-001..005 | ✅ |
 | PRT-003 sweep/gain/pattern/report | Phase 1–2 | ✅ |
 | PRT-004 GUI/workflow | Phase 3 | ✅ |
 | PRT-005/006 optimization/automation | Phase 3–4 | ✅ |
@@ -59,7 +59,7 @@ Status legend: ✅ done · 🔨 in progress · 📋 planned.
 | PRT-009 NEC-5 surfaces | wire-only decision (`nec5-frontier.md`) | ✅ (decided) |
 | PRT-010 NEC-5 validation matrix | PH2-CHK-007 | ✅ |
 | PRT-011 distributed execution | Phases 6–7 | ✅ |
-| CP-003 deck-portability cards | **Phase 8 (in flight)** | 🔨 |
+| CP-003 deck-portability cards | Phase 8 (EX 0–5, NT, lossy TL) | ✅ |
 | GAP-002..015, BLK-001..005 | see [register](requirements-register.md) | ✅ all resolved |
 
 ---
@@ -160,34 +160,27 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | PH8-CHK-005 | CP-003, PRT-002 | `ph8-chk-005-lossy-tl.md` | `nec_solver/tl.rs` (lossy `coth/csch(γℓ)`) | `nec_solver/tests/lossy_tl.rs` (lossless limit, attenuation, matched-line) | **Done** 2026-07-04: lossy line stamp; F3=loss dB; reduces to lossless at 0 dB; 563 tests. TL other → Partial. | ✅ |
 | PH8-CHK-006 | CP-002, PRT-001 | `ph8-chk-006-finite-ground-rp.md` | `nec_solver/farfield.rs` (Fresnel reflection far field) | `nec_solver/tests/finite_ground_rp.rs` (PEC limit, nec2c shape, horizon null) | **In progress** 2026-07-03: RP over finite ground via Fresnel coefficients (was free-space); PEC limit <0.05 dB, nec2c shape 0.053 dB; 560 tests. Directivity (gain offset documented). Buried/Sommerfeld = documented frontier deferral. | ✅ |
 
+### Phase 9 — accuracy frontier & scattering breadth (planned, draft)
+
+Drafted 2026-07-04 (`docs/roadmap.md` "Phase 9"). Six planned items (📋): angle
+sweeps + receive pattern (PH9-CHK-001), junctioned multi-wire receive solves
+(002), absolute gain over lossy ground (003), PT + full RP output modes (004),
+difficult-geometry accuracy corpus (005), first Sommerfeld/buried near-ground
+increment (006). Theme ordering and first-frontier priority are a **product
+decision** — matrix rows land here as each item is scheduled.
+
 ---
 
-## In-flight focus: PH8-CHK-002
+## Current status (2026-07-04)
 
-Full chain for the item currently being implemented:
-
-- **Requirement**: CP-003 (missing source cards break deck portability),
-  PRT-002. Roadmap `PH8-CHK-002`.
-- **Design / decisions**: `docs/ph8-chk-002-plane-wave-excitation.md` — two
-  decisions: (1) **align EX-type numbering to NEC2** (type 1 = plane wave; current
-  source → type 4), user-approved 2026-06-27; (2) plane-wave RHS lives in the
-  integral-equation **forcing term** (`exp(-jk_s s)` closed form for straight
-  wires), not the delta-gap RHS.
-- **Implementation** (staged): ✅ *code foundation* — `ExcitationKind` NEC2
-  classifier + `ExCard.polarization_deg` F3 + accurate reject diagnostic.
-  ✅ *solve core* — `nec_solver::planewave` + `solve_hallen_planewave` (2-DOF,
-  isolated). ✅ *CLI wiring* — `nec-cli::solve_session` routes single-straight-wire
-  linear plane waves to the solve (induced `CURRENTS`, no feedpoint); elliptic,
-  multi-wire, and non-Hallén decks fail fast. ⏳ *pending* — elliptic (types 2/3),
-  NTHETA/NPHI sweeps, multi-wire geometry.
-- **Tests**: `apps/nec-cli/tests/ex_cards.rs` extended; new corpus fixture
-  `dipole-ex2-planewave-*`; external `nec2c` parity + internal Rayleigh–Carson
-  reciprocity gates.
-- **Tooling / reference**: `docs/dev/ph8-planewave-ref-theta30.nec` (`nec2c`
-  induced-current reference, needs `XQ`), plus the reciprocity cross-check against
-  the validated RP far-field path.
-- **Result**: design **#255**, code foundation **#257**, solve core **#258**
-  (nec2c shape 4.3%, reciprocity exact). CLI wiring 2026-07-02 — single-straight-
-  wire linear plane waves solve on `--solver hallen` with induced `CURRENTS`;
-  elliptic/multi-wire/non-Hallén fail fast; type-1 → Partial; 544 tests passing,
-  clippy clean. Remaining: elliptic polarization, angle sweeps, multi-wire.
+- **Released**: **v0.8.0** — Phase 8 complete (mainstream deck portability). All
+  six PH8-CHK items delivered and validated; every EX source card (0–5), NT
+  networks, lossy TL, and the finite-ground radiation pattern are user-runnable.
+- **Latest tests**: 564 passing, clippy clean (see [test-results.md](test-results.md)).
+- **Next**: **Phase 9 (planned, draft)** — accuracy frontier & scattering breadth
+  (`docs/roadmap.md` "Phase 9"). The first-frontier priority (receive-side breadth
+  vs advanced ground vs difficult-geometry accuracy) is a product decision; no
+  PH9 item is scheduled yet.
+- **Open frontier deferrals** (each with a recorded blocker): junctioned-multi-wire
+  plane wave, NTHETA/NPHI sweeps, buried/Sommerfeld ground, non-reciprocal NT,
+  absolute gain over lossy ground — all folded into the Phase 9 draft.

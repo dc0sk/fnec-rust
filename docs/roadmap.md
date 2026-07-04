@@ -354,6 +354,45 @@ with accuracy trade-offs documented where fnec's Hallén model diverges from NEC
 blocker): junctioned-multi-wire plane wave (DOF-count reformulation); NTHETA/NPHI
 plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT. (The `RP`-card `XNDA` parser field was fixed 2026-07-04.)
 
+## Phase 9 (planned): accuracy frontier & scattering breadth
+
+**Goals**: Phase 8 made mainstream decks *run*; Phase 9 makes fnec *trustworthy on
+hard models* and *complete for receive/scattering*. It closes the accuracy and
+breadth gaps that the source/network/ground portability work opened up: accurate
+ground (impedance, not just the pattern), difficult geometry (junctioned
+receive-solves, stepped diameter), and the full receive/RCS output path. The
+wire-only continuation still stands (NEC-5 surfaces remain out of scope — see
+`docs/nec5-frontier.md`).
+
+**Why now**: the Phase 8 frontier deferrals and the surviving `PRT-*` parity gaps
+cluster into a coherent accuracy program. `PRT-001` (ground short of NEC-4/EZNEC),
+`PRT-008` (accuracy breadth), and `PRT-009`/`PRT-010` (difficult-geometry /
+NEC-5-informed robustness) are the remaining "better than compatible" gaps.
+
+**Scope note**: several items are genuinely harder physics than Phase 8's stamps
+(Sommerfeld ground, junction reformulation). Each ships a validated increment with
+an honest documented boundary; a hard item may land as a bounded first slice with
+the remainder deferred, as GN2/ROCm did in earlier phases.
+
+### Phase 9 implementation checklist (draft for review)
+
+Execution order recommendation (easier / receive-side first, then harder ground /
+geometry): PH9-CHK-001 → 003 → 002 → 004 → 005 → 006.
+
+| Checklist ID | Roadmap IDs | Implementation target | Validation artifacts | Done signal | Status |
+|:-------------|:------------|:----------------------|:---------------------|:------------|:-------|
+| PH9-CHK-001 | CP-003, PRT-003 | NTHETA/NPHI incident-angle sweep for plane waves: loop the incidence direction over the EX card's Nθ/Nφ + Δθ/Δφ, emit a receive-pattern section. (**Product decision**: the per-angle receive scalar — open-circuit terminal voltage vs peak induced current.) | New: EX F4/F5 (Δθ/Δφ) capture; `RECEIVE_PATTERN` report section; corpus fixture; reciprocity gate. | Per-angle receive response matches the transmit far-field pattern by reciprocity across the sweep; report contract stable. | Planned |
+| PH9-CHK-002 | CP-003, PRT-002/008 | Junctioned multi-wire for the plane-wave and current-source solves: extend the 2-DOF (cos/sin) Hallén system with junction-continuity constraints (resolve the DOF-count mismatch), so bent / connected receiving geometries solve. | Existing: `solve_hallen_planewave`, `solve_hallen_current_source`. New: junction rows; nec2c + reciprocity gates on an L-antenna. | Junctioned receive geometry solves; per-wire nec2c shape + reciprocity pass; the fail-fast is removed for the supported class. | Planned |
+| PH9-CHK-003 | CP-002, PRT-001 | Absolute gain over lossy ground: account for the ground-absorbed power so **gain** (not just directivity) matches nec2c over finite ground — closes the documented ~1.3 dB directivity-vs-gain offset. | Existing: `farfield.rs` Fresnel path, `docs/ph8-chk-006-finite-ground-rp.md`. New: ground-loss power term; nec2c absolute-gain gate. | Finite-ground gain matches nec2c within a documented tolerance (not just the shape); efficiency reported. | Planned |
+| PH9-CHK-004 | CP-003, PRT-003 | `PT` (print-control) runtime semantics + full `RP` output modes (`XNDA` normalization: X gain-normalization, N/D/A options) beyond the angle-grid fix. | Existing: `apps/nec-cli` PT warning path, RP parser (XNDA now read). New: PT semantics; RP normalization modes; contract tests. | PT controls output per its documented subset (no deferred warning for the supported form); RP normalization modes are contract-gated. | Planned |
+| PH9-CHK-005 | PRT-008/009/010 | Difficult-geometry accuracy program: a stepped-diameter / small-loop / junction sensitivity corpus mapped to the NEC-5 validation themes, with fnec's behavior and any mitigation documented and regression-tracked. | Existing: `docs/corpus-validation-strategy.md` (`PH2N5-*`), `docs/nec5-frontier.md`. New: `PH9N5-*` sensitivity cases + tolerances. | ≥3 difficult-geometry cases added with tolerances and a documented accuracy characterization; regression-gated. | Planned |
+| PH9-CHK-006 | CP-002, PRT-001 | First accurate near-ground **impedance** increment beyond the Fresnel approximation (Sommerfeld/Norton), or a bounded buried-wire first slice — with an explicit supported/deferred boundary and fail-fast for out-of-scope classes. | Existing: `nec_solver` ground path, `docs/nec4-support.md`. New: first Sommerfeld/buried case + reference gate; boundary doc. | One accurate near-ground / buried class passes a tolerance gate; deferred classes still fail fast; boundary documented. | Planned |
+
+**Estimated start**: after v0.8.0; **target completion**: TBD. This checklist is a
+**draft for review** — the theme ordering and which frontier to attempt first
+(receive-side breadth vs advanced ground vs difficult-geometry accuracy) are
+product decisions.
+
 ## Gaps and blockers (from requirements.md)
 
 | Gap | Title | Priority | Target | Owner | Resolution criteria |

@@ -10,6 +10,16 @@ last_updated: 2026-07-04
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Docs
+
+- **Phase 9 drafted** (`docs/roadmap.md` "Phase 9: accuracy frontier & scattering
+  breadth") — six planned items grounded in the surviving `PRT-*` gaps and the
+  Phase 8 frontier deferrals: incidence-angle sweeps + receive pattern, junctioned
+  multi-wire receive solves, absolute gain over lossy ground, PT + full RP output
+  modes, a difficult-geometry accuracy corpus, and a first Sommerfeld/buried
+  near-ground increment. A draft for review; first-frontier priority is a product
+  decision.
+
 ### Fixed
 
 - **`RP` card XNDA field** — the radiation-pattern card parser now accepts the
