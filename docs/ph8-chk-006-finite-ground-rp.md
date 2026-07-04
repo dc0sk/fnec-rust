@@ -51,14 +51,14 @@ and nulls θ > 90°.
   (max deviation, after removing a constant offset).
 - **Horizon null** (`finite_ground_has_horizon_null`) — θ ≥ 90° is null.
 
-### Directivity vs gain (the constant offset)
+### Directivity vs gain (the constant offset) — resolved in PH9-CHK-003
 
-fnec reports **directivity** (relative to radiated power); nec2c's **gain**
-includes the ground-loss efficiency. On average ground the two differ by a
-constant **~1.3 dB** (≈ 75 % efficiency, `10^0.13`). The design-relevant
-quantity — the pattern *shape* (lobe angle, nulls, relative levels) — matches to
-0.05 dB. Absolute-gain parity would require the ground-absorbed power (a
-near-field / Poynting computation); that is a documented follow-on.
+This increment reported **directivity** (relative to radiated power); nec2c's
+**gain** includes the ground-loss efficiency, leaving a constant **~1.3 dB**
+offset (≈ 75 % efficiency). **Resolved 2026-07-04** by `PH9-CHK-003`: the pattern
+over finite ground is now scaled by the radiation efficiency
+`η = P_radiated / P_input`, so the reported dBi is **gain** and matches nec2c's
+absolute gain to 0.06 dB. See `docs/ph9-chk-003-absolute-gain-ground.md`.
 
 ## Test results
 

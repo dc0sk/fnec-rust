@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `fix/rp-xnda-field` (base `14fcaec` main) |
+| Commit | branch `feat/ph9-chk-003-gain-ground` (base `3171281` main) |
 | Version | fnec-rust 0.8.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-564 passed; 0 failed; 0 ignored — across 58 test binaries
+566 passed; 0 failed; 0 ignored — across 58 test binaries
 exit code 0
 ```
 
-564 = 563 (Phase 8 / v0.8.0) + 1 RP-parser test
-(`rp_card_accepts_both_7_field_and_8_field_xnda_forms`). The corpus 7-field RP
-decks are unaffected.
+566 = 564 + 2 radiation-efficiency tests (`finite_ground_rp.rs`: lossless η≈1;
+finite-ground absolute gain vs nec2c). First Phase 9 increment (PH9-CHK-003).
+Corpus PEC / free-space RP cases are unaffected.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

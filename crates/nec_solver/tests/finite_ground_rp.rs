@@ -8,7 +8,7 @@ use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, compute_radiation_pattern,
-    solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel,
+    radiation_efficiency, solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel,
 };
 
 const FREQ_HZ: f64 = 14.2e6;
@@ -137,4 +137,86 @@ fn finite_ground_has_horizon_null() {
         g[0]
     );
     assert!(g[1] < -100.0, "below horizon should be null, got {}", g[1]);
+}
+
+// ── Absolute gain over ground via radiation efficiency (PH9-CHK-003) ─────────
+
+fn input_power(
+    deck: &NecDeck,
+    ground: &GroundModel,
+) -> (Vec<num_complex::Complex64>, f64, Vec<nec_solver::Segment>) {
+    let segs = build_geometry(deck).unwrap();
+    let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, ground);
+    let h = build_hallen_rhs(deck, &segs, FREQ_HZ).unwrap();
+    let ep = wire_endpoints_from_segs(&segs);
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &ep, &[]).unwrap();
+    let i_feed = sol.currents[25];
+    let p_in = 0.5 * (num_complex::Complex64::new(1.0, 0.0) * i_feed.conj()).re;
+    (sol.currents, p_in, segs)
+}
+
+fn free_dipole() -> NecDeck {
+    let mut d = NecDeck::new();
+    d.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: 51,
+        start: [0.0, 0.0, -5.282],
+        end: [0.0, 0.0, 5.282],
+        radius: 0.001,
+    }));
+    d.cards.push(Card::Ex(ExCard {
+        excitation_type: 0,
+        tag: 1,
+        segment: 26,
+        i4: 0,
+        voltage_real: 1.0,
+        voltage_imag: 0.0,
+        polarization_deg: 0.0,
+        polarization_ratio: 0.0,
+    }));
+    d
+}
+
+#[test]
+fn radiation_efficiency_is_unity_for_lossless() {
+    // Free-space and PEC ground are lossless → efficiency ≈ 1 (so gain == directivity).
+    for g in [GroundModel::FreeSpace, GroundModel::PerfectConductor] {
+        let (i, p_in, segs) = input_power(&free_dipole(), &g);
+        let eta = radiation_efficiency(&segs, &i, FREQ_HZ, &g, p_in);
+        assert!(
+            (eta - 1.0).abs() < 0.01,
+            "lossless efficiency {eta:.4} should be ≈ 1 for {g:?}"
+        );
+    }
+}
+
+#[test]
+fn finite_ground_absolute_gain_matches_nec2c() {
+    // gain = directivity + 10·log10(η). Over average ground the ground-loss
+    // efficiency (~0.74) converts fnec's directivity to gain that matches nec2c's
+    // ABSOLUTE gain (not just the shape). nec2c total gain, θ = 0..85°.
+    let nec2c: [f64; 18] = [
+        -5.02, -4.92, -4.59, -3.98, -3.11, -2.12, -1.19, -0.47, -0.07, -0.06, -0.49, -1.43, -2.94,
+        -5.06, -7.75, -10.72, -13.62, -17.78,
+    ];
+    let g = GroundModel::SimpleFiniteGround {
+        eps_r: 13.0,
+        sigma: 0.005,
+    };
+    let deck = horizontal_dipole_10m();
+    let (i, p_in, _segs) = input_power(&deck, &g);
+    let eta = radiation_efficiency(&build_geometry(&deck).unwrap(), &i, FREQ_HZ, &g, p_in);
+    let gain_offset = 10.0 * eta.log10();
+    let thetas: Vec<f64> = (0..18).map(|k| k as f64 * 5.0).collect();
+    let directivity = solve_and_pattern(&g, &thetas);
+    let mut max_dev = 0.0f64;
+    for k in 0..18 {
+        let gain = directivity[k] + gain_offset;
+        max_dev = max_dev.max((gain - nec2c[k]).abs());
+    }
+    println!("efficiency = {eta:.4}, gain offset = {gain_offset:.3} dB, max |gain − nec2c| = {max_dev:.3} dB");
+    assert!(
+        max_dev < 0.15,
+        "finite-ground absolute gain deviates from nec2c by {max_dev:.3} dB"
+    );
 }
