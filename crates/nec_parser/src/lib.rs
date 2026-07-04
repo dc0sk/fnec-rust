@@ -251,14 +251,21 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             "RP" => {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "RP", &fields, 7)?;
+                // Canonical NEC RP card: RP mode N1 N2 XNDA θ0 φ0 Δθ Δφ (8 fields,
+                // XNDA = output/normalization options at I4). fnec historically
+                // also accepts a 7-field form without XNDA. Distinguish by count:
+                // with >= 8 fields the four angle floats start at index 4 (after
+                // XNDA); with 7 they start at index 3. XNDA does not affect the
+                // angle grid and is not stored.
+                let a = if fields.len() >= 8 { 4 } else { 3 };
                 deck.cards.push(Card::Rp(RpCard {
                     mode: parse_u32(lineno, "RP", 1, fields[0])?,
                     n_theta: parse_u32(lineno, "RP", 2, fields[1])?,
                     n_phi: parse_u32(lineno, "RP", 3, fields[2])?,
-                    theta0: parse_f64(lineno, "RP", 4, fields[3])?,
-                    phi0: parse_f64(lineno, "RP", 5, fields[4])?,
-                    d_theta: parse_f64(lineno, "RP", 6, fields[5])?,
-                    d_phi: parse_f64(lineno, "RP", 7, fields[6])?,
+                    theta0: parse_f64(lineno, "RP", a + 1, fields[a])?,
+                    phi0: parse_f64(lineno, "RP", a + 2, fields[a + 1])?,
+                    d_theta: parse_f64(lineno, "RP", a + 3, fields[a + 2])?,
+                    d_phi: parse_f64(lineno, "RP", a + 4, fields[a + 3])?,
                 }));
             }
             "LD" => {
@@ -582,6 +589,20 @@ EN
                 polarization_ratio: 0.0,
             })
         );
+    }
+
+    #[test]
+    fn rp_card_accepts_both_7_field_and_8_field_xnda_forms() {
+        // Canonical NEC RP has 8 fields (with XNDA at I4); fnec also accepts a
+        // 7-field form. Both must parse the SAME angle grid.
+        let seven = parse("RP 0 19 1 30.0 0.0 5.0 0.0\nEN\n").expect("parse 7-field");
+        let eight = parse("RP 0 19 1 1000 30.0 0.0 5.0 0.0\nEN\n").expect("parse 8-field");
+        let (Card::Rp(r7), Card::Rp(r8)) = (&seven.deck.cards[0], &eight.deck.cards[0]) else {
+            panic!("expected RP cards");
+        };
+        assert_eq!(r7, r8, "7-field and 8-field RP must parse identical angles");
+        assert_eq!(r8.theta0, 30.0, "8-field θ0 must be 30, not XNDA=1000");
+        assert_eq!(r8.d_theta, 5.0);
     }
 
     #[test]

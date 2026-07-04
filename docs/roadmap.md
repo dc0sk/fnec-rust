@@ -352,9 +352,7 @@ with accuracy trade-offs documented where fnec's Hallén model diverges from NEC
 
 **Documented frontier deferrals** (beyond the checklist, each with a recorded
 blocker): junctioned-multi-wire plane wave (DOF-count reformulation); NTHETA/NPHI
-plane-wave angle sweeps; buried-wire / Sommerfeld ground; non-reciprocal NT; and
-the `RP`-card `XNDA` (I4) parser field (a deck-portability fix noted in
-`docs/ph8-chk-006-finite-ground-rp.md`).
+plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT. (The `RP`-card `XNDA` parser field was fixed 2026-07-04.)
 
 ## Gaps and blockers (from requirements.md)
 

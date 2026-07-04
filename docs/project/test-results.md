@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-005-lossy-tl` (base `ef5c4ba` main) |
+| Commit | branch `fix/rp-xnda-field` (base `14fcaec` main) |
 | Version | fnec-rust 0.8.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-563 passed; 0 failed; 0 ignored — across 58 test binaries
+564 passed; 0 failed; 0 ignored — across 58 test binaries
 exit code 0
 ```
 
-563 = 560 + 3 lossy-TL tests (`lossy_tl.rs`: lossless limit, attenuation
-monotonicity, matched-line limit). This completes the Phase 8 checklist
-(PH8-CHK-001..006). The lossless corpus TL cases are unaffected.
+564 = 563 (Phase 8 / v0.8.0) + 1 RP-parser test
+(`rp_card_accepts_both_7_field_and_8_field_xnda_forms`). The corpus 7-field RP
+decks are unaffected.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

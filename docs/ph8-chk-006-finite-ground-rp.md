@@ -65,9 +65,10 @@ near-field / Poynting computation); that is a documented follow-on.
 `cargo test --workspace`: **560 passed**, 0 failed (was 557; +3 finite-ground RP
 tests); clippy clean. Existing PEC / free-space RP corpus cases are unaffected.
 
-## Related known issue
+## Related issue — resolved
 
-fnec's `RP` card parser omits the standard NEC **XNDA (I4)** field (it reads
-`RP mode Nθ Nφ θ0 φ0 Δθ Δφ`, 7 fields, not the canonical 8). A standard 8-field
-`RP` card mis-parses θ0. This is a separate deck-portability bug, noted here for a
-future increment.
+fnec's `RP` card parser previously omitted the standard NEC **XNDA (I4)** field
+(it read 7 fields), so a canonical 8-field `RP` card mis-parsed θ0. **Fixed
+2026-07-04**: the parser now accepts both the canonical 8-field form
+(`RP mode Nθ Nφ XNDA θ0 φ0 Δθ Δφ`) and fnec's legacy 7-field form, distinguished
+by field count; XNDA is parsed for portability but does not affect the angle grid.
