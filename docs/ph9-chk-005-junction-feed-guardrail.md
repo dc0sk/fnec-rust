@@ -53,7 +53,10 @@ the CLI emits:
 
 The result is still printed (the currents away from the feed are still meaningful),
 but the impedance is no longer silently presented as trustworthy. A feed *away*
-from a junction, or a single-wire geometry, is unaffected.
+from a junction, or a single-wire geometry, does not warn. (Note: a junction at a
+*high-current* region can still be mis-solved even when fed elsewhere — see the
+PH9-CHK-002 diagnosis; the junction-*fed* warning is a deliberately conservative
+signal, not a complete junction-accuracy check.)
 
 ## Validation (`apps/nec-cli/tests/junction_feedpoint.rs`)
 
