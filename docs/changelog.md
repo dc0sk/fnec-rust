@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-005 junction-fed feedpoint guardrail** — feeding a segment that sits
+  at a wire junction gives an unphysical impedance in fnec's per-segment `V/I` (a
+  half-wave dipole split into two wires and fed at the junction reports
+  −34−j1447 Ω instead of the true 74+j14 Ω, because the feed current splits across
+  the joined wires). The CLI now **warns** when the driven segment is on a
+  junction instead of silently reporting the wrong impedance; the accurate fix is
+  PH9-CHK-002. Feeds away from junctions and single-wire geometries are unaffected.
+
 - **PH9-CHK-001 incident-plane-wave receive-pattern sweep** — a plane-wave `EX`
   card with an incidence-angle grid (NTHETA×NPHI, Δθ/Δφ) now produces a
   `RECEIVE_PATTERN` section: the antenna's response vs the wave's arrival

@@ -398,6 +398,50 @@ pub(super) fn pulse_current_source_voltage(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// PH9-CHK-005: emit a warning when a voltage/current source drives a segment
+/// that sits at a wire junction. fnec's `V/I` on the single driven segment is not
+/// the true feedpoint impedance there — the feed current splits across the joined
+/// wires — so the reported `Z` can be unphysical (negative resistance). Accurate
+/// junction-fed impedance is deferred to PH9-CHK-002; this makes the limitation
+/// visible instead of silently returning a wrong number.
+fn warn_if_feedpoint_at_junction(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    wire_endpoints: &[(usize, usize)],
+) {
+    let junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
+    if junctions.is_empty() {
+        return;
+    }
+    let mut junction_segs = std::collections::HashSet::new();
+    for j in &junctions {
+        junction_segs.insert(j.seg_a);
+        junction_segs.insert(j.seg_b);
+    }
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        if ex.kind().is_plane_wave() {
+            continue; // receiving antenna, no feedpoint
+        }
+        if let Some((idx, _)) = segs
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
+        {
+            if junction_segs.contains(&idx) {
+                eprintln!(
+                    "warning: feedpoint at tag {} segment {} is on a wire junction; \
+                     the feed current splits across the joined wires, so the reported \
+                     impedance (V/I on one segment) is not accurate and may be unphysical \
+                     (junction-fed impedance is deferred — see PH9-CHK-002)",
+                    ex.tag, ex.segment
+                );
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -905,6 +949,13 @@ pub(super) fn solve_frequency_point(
         current_source_port,
         freq_hz,
     );
+
+    // PH9-CHK-005: guard the junction-fed feedpoint limitation. When the driven
+    // segment sits at a wire junction the feed current splits across the joined
+    // wires, so the single-segment V/I is not the true feedpoint impedance and can
+    // be unphysical (e.g. negative resistance). Warn rather than report it as
+    // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
+    warn_if_feedpoint_at_junction(deck, segs, wire_endpoints);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()
