@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph8-chk-006-finite-ground-rp` (base `74bfbba` main) |
+| Commit | branch `feat/ph8-chk-005-lossy-tl` (base `ef5c4ba` main) |
 | Version | fnec-rust 0.7.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-560 passed; 0 failed; 0 ignored — across 57 test binaries
+563 passed; 0 failed; 0 ignored — across 58 test binaries
 exit code 0
 ```
 
-560 = 557 + 3 finite-ground RP tests (`finite_ground_rp.rs`: PEC high-σ limit,
-nec2c pattern shape, horizon null). Existing PEC / free-space RP corpus cases are
-unaffected (the change only touches the `SimpleFiniteGround` far-field path).
+563 = 560 + 3 lossy-TL tests (`lossy_tl.rs`: lossless limit, attenuation
+monotonicity, matched-line limit). This completes the Phase 8 checklist
+(PH8-CHK-001..006). The lossless corpus TL cases are unaffected.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

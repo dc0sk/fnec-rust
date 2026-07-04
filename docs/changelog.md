@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH8-CHK-005 lossy transmission line** — `TL` cards with `tl_type != 0` now
+  stamp a lossy line, `Z0·coth(γℓ)` / `Z0·csch(γℓ)` with complex `γℓ = αℓ + jβℓ`
+  (velocity factor 1, `F3` = matched-line loss in dB). Reduces exactly to the
+  lossless `−jZ0·cot/csc` at 0 dB. Validated: lossless limit <1e-9, attenuation
+  monotone with loss, high-loss input impedance → Z0. **Completes the Phase 8
+  checklist (PH8-CHK-001..006).** `docs/card-support-matrix.md` `TL other` →
+  Partial.
+
 - **PH8-CHK-006 radiation pattern over finite ground** — the far-field over a
   finite (imperfect) ground now uses the Fresnel reflection-coefficient
   approximation instead of the free-space pattern (only PEC ground had an image

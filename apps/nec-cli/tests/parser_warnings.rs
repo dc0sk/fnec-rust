@@ -82,9 +82,9 @@ fn supported_tl_card_runs_without_deferred_warning() {
 }
 
 #[test]
-fn unsupported_tl_type_emits_warning_but_run_succeeds() {
-    // Phase-2: TL is parsed.  TL type=1 is not yet implemented in the solver;
-    // it emits "TL type 1 ... is not yet supported; TL card ignored".
+fn lossy_tl_type_solves_without_unsupported_warning() {
+    // PH8-CHK-005: TL type != 0 is a lossy line (Z0·coth/csch(γℓ), F3 = matched-
+    // line loss in dB). It stamps the Z matrix and solves — no "not yet supported".
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -110,14 +110,16 @@ fn unsupported_tl_type_emits_warning_but_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("unknown card 'TL'"),
-        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{stderr}"
+        output.status.success(),
+        "PH8-CHK-005: lossy TL should solve; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains(
-            "TL type 1 between (1, 26) and (2, 26) is not yet supported; TL card ignored"
-        ),
-        "expected solver-level warning for unsupported TL type 1, got:\n{stderr}"
+        !stderr.contains("unknown card 'TL'"),
+        "TL should be parsed, not produce unknown-card warning; got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("is not yet supported"),
+        "lossy TL must not be rejected as unsupported, got:\n{stderr}"
     );
 }
 

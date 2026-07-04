@@ -345,7 +345,9 @@ pub struct TlCard {
     pub z0: f64,
     /// Transmission-line length (m).
     pub length: f64,
-    /// Angle (°) for lossy models or velocity factor (ratio) for lossless.
+    /// Velocity factor (ratio) for a lossless line (`tl_type == 0`); for a lossy
+    /// line (`tl_type != 0`) it is the total matched-line loss in dB (velocity
+    /// factor is taken as 1). See `docs/ph8-chk-005-lossy-tl.md`.
     pub f3: f64,
 }
 

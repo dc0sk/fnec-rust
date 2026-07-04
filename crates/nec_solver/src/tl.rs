@@ -57,15 +57,8 @@ pub fn build_tl_stamps(
     for card in &deck.cards {
         let Card::Tl(tl) = card else { continue };
 
-        if tl.tl_type != 0 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL type {} between ({}, {}) and ({}, {}) is not yet supported; TL card ignored",
-                    tl.tl_type, tl.tag1, tl.segment1, tl.tag2, tl.segment2
-                ),
-            });
-            continue;
-        }
+        // tl_type != 0 selects the lossy line (handled below after endpoint
+        // resolution); tl_type == 0 is the lossless line.
         // NSEG>1 cards are accepted using the same uniform-line stamp semantics
         // as a single-section card; NSEG=0 remains a single-section shorthand.
         let _effective_num_segments = if tl.num_segments == 0 {
@@ -127,6 +120,35 @@ pub fn build_tl_stamps(
                     tl.tag1, tl.segment1, tl.tag2, tl.segment2, tl.length
                 ),
             });
+            continue;
+        }
+
+        // Lossy line (tl_type != 0): complex propagation γℓ = αℓ + jβℓ. The
+        // 2-port impedance parameters are Z11=Z22=Z0·coth(γℓ), Z12=Z21=Z0·csch(γℓ),
+        // which reduce to the lossless −jZ0·cot/csc when αℓ = 0. fnec's TL card has
+        // a single spare float (F3), so the lossy form takes velocity factor 1 and
+        // reads F3 as the **total matched-line loss in dB** (αℓ = F3·ln10/20).
+        if tl.tl_type != 0 {
+            let beta_l = k * tl.length; // vf = 1 for the lossy form
+            let alpha_l = tl.f3 * std::f64::consts::LN_10 / 20.0; // dB → nepers
+            let gl = Complex64::new(alpha_l, beta_l);
+            let sinh = gl.sinh();
+            if sinh.norm() < 1e-9 {
+                warnings.push(TlWarning {
+                    message: format!(
+                        "TL between ({}, {}) and ({}, {}): lossy line near a singular sinh point; TL card ignored",
+                        tl.tag1, tl.segment1, tl.tag2, tl.segment2
+                    ),
+                });
+                continue;
+            }
+            let z0c = Complex64::new(tl.z0, 0.0);
+            let z_diag = z0c * gl.cosh() / sinh; // Z0·coth(γℓ)
+            let z_off = z0c / sinh; // Z0·csch(γℓ)
+            stamps.push((i1, i1, z_diag));
+            stamps.push((i2, i2, z_diag));
+            stamps.push((i1, i2, z_off));
+            stamps.push((i2, i1, z_off));
             continue;
         }
 
@@ -361,7 +383,8 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_tl_type_emits_warning() {
+    fn lossy_tl_type_stamps_without_warning() {
+        // PH8-CHK-005: tl_type != 0 is a lossy line and stamps (no warning).
         let segs = segs_two_wire_geometry();
         let mut deck = NecDeck::new();
         deck.cards.push(Card::Tl(TlCard {
@@ -373,13 +396,12 @@ mod tests {
             tl_type: 1,
             z0: 50.0,
             length: 1.0,
-            f3: 1.0,
+            f3: 3.0, // 3 dB matched-line loss
         }));
 
         let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert!(stamps.is_empty());
-        assert_eq!(warns.len(), 1);
-        assert!(warns[0].message.contains("not yet supported"));
+        assert_eq!(stamps.len(), 4, "lossy TL should stamp a 2x2 block");
+        assert!(warns.is_empty(), "lossy TL should not warn: {warns:?}");
     }
 
     #[test]

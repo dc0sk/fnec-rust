@@ -82,7 +82,7 @@ no longer silently treated as EX type 0.
 | Card | Support | Notes |
 |------|---------|-------|
 | TL type 0 | Partial | Lossless; supported `NSEG` range: 0, 1, and >1 — all treated as a **single-section stamp** (no per-segment subdivision); `NSEG=0` is normalised to 1; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
-| TL other | Deferred | Lossy / complex variants: card is ignored with a warning |
+| TL other | Partial | Lossy line (`tl_type != 0`): stamps `Z0·coth/csch(γℓ)` with `F3` = matched-line loss in dB, velocity factor 1 (PH8-CHK-005). Reduces exactly to the lossless form at 0 dB |
 | NT | Partial | Two-port network **stamped** into the Z matrix (`nec_solver::build_nt_stamps`, admittance→Z parameters `[Z]=[Y]⁻¹`; PH8-CHK-004). A well-formed reciprocal NT reproduces the equivalent TL feedpoint impedance end to end. Malformed / singular-admittance / missing-endpoint cards warn and are skipped |
 | PT | Deferred | Parsed for staged portability; ignored at runtime with a warning |
 
@@ -95,7 +95,7 @@ no longer silently treated as EX type 0.
 | tag1, seg1 | Port 1 endpoint |
 | tag2, seg2 | Port 2 endpoint |
 | NSEG | Number of TL sections; supported range: 0, 1, or >1 — all use a single-section stamp (no subdivision); `NSEG=0` is normalised to 1 before stamping |
-| type | 0 = lossless (supported); non-zero = lossy/complex (deferred) |
+| type | 0 = lossless; non-zero = lossy (Z0·coth/csch(γℓ), F3 = matched-line loss dB) |
 | F1 | Characteristic impedance Z₀ (Ω, default 50) |
 | F2 | Transmission-line length (m) |
 | F3 | Velocity factor (ratio, default 1.0) for lossless; angle (°) for lossy (deferred) |
