@@ -41,6 +41,8 @@ fn voltage_source_impedance(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Com
         voltage_imag: 0.0,
         polarization_deg: 0.0,
         polarization_ratio: 0.0,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
     }));
     let segs = build_geometry(&d).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
@@ -70,6 +72,8 @@ fn current_source_impedance(
         voltage_imag: i0.im,
         polarization_deg: 0.0,
         polarization_ratio: 0.0,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
     }));
     let segs = build_geometry(&d).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);

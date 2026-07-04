@@ -216,6 +216,75 @@ fn solve_plane_wave_hallen(
         .map_err(|e| e.to_string())
 }
 
+/// Incident-plane-wave receive-pattern sweep (PH9-CHK-001).
+///
+/// The plane-wave EX card's `tag` = NTHETA, `segment` = NPHI, `voltage_real`/
+/// `voltage_imag` = θ0/φ0, and `theta_inc`/`phi_inc` = Δθ/Δφ define a grid of
+/// incidence directions. For each direction the receiving antenna is solved and
+/// the peak induced current recorded; the peak current tracks the transmit gain
+/// pattern by reciprocity, so the normalized response (dB, 0 at the sweep peak) is
+/// the receive pattern. Returns an empty vector for a single incidence
+/// (NTHETA·NPHI ≤ 1).
+fn plane_wave_receive_sweep(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    wire_endpoints: &[(usize, usize)],
+    freq_hz: f64,
+) -> Result<Vec<nec_report::ReceivePatternRow>, String> {
+    let ex = deck
+        .cards
+        .iter()
+        .find_map(|c| match c {
+            Card::Ex(e) if e.kind().is_plane_wave() => Some(e.clone()),
+            _ => None,
+        })
+        .ok_or("no plane-wave EX card for receive sweep")?;
+    let n_theta = ex.tag.max(1);
+    let n_phi = ex.segment.max(1);
+    if n_theta * n_phi <= 1 {
+        return Ok(Vec::new());
+    }
+
+    let mut raw: Vec<(f64, f64, f64)> = Vec::new(); // (θ, φ, peak|I|)
+    for it in 0..n_theta {
+        for ip in 0..n_phi {
+            let theta = ex.voltage_real + it as f64 * ex.theta_inc;
+            let phi = ex.voltage_imag + ip as f64 * ex.phi_inc;
+            // Single-incidence deck at this arrival direction.
+            let mut d = deck.clone();
+            for c in &mut d.cards {
+                if let Card::Ex(e) = c {
+                    if e.kind().is_plane_wave() {
+                        e.tag = 1;
+                        e.segment = 1;
+                        e.voltage_real = theta;
+                        e.voltage_imag = phi;
+                        e.theta_inc = 0.0;
+                        e.phi_inc = 0.0;
+                    }
+                }
+            }
+            let currents = solve_plane_wave_hallen(&d, segs, z_mat, wire_endpoints, freq_hz)?;
+            let peak = currents.iter().map(|c| c.norm()).fold(0.0f64, f64::max);
+            raw.push((theta, phi, peak));
+        }
+    }
+    let max_peak = raw.iter().map(|r| r.2).fold(0.0f64, f64::max);
+    Ok(raw
+        .into_iter()
+        .map(|(theta, phi, peak)| nec_report::ReceivePatternRow {
+            theta_deg: theta,
+            phi_deg: phi,
+            response_db: if peak > 0.0 && max_peak > 0.0 {
+                20.0 * (peak / max_peak).log10()
+            } else {
+                -999.99
+            },
+        })
+        .collect())
+}
+
 /// True if the deck carries a current-source EX card (NEC2 type 4).
 pub(super) fn deck_has_current_source(deck: &nec_model::deck::NecDeck) -> bool {
     deck.cards.iter().any(|c| match c {
@@ -955,6 +1024,13 @@ pub(super) fn solve_frequency_point(
         }
     }
 
+    // PH9-CHK-001: incident-plane-wave receive-pattern sweep (NTHETA·NPHI > 1).
+    let receive_pattern_table = if deck_has_plane_wave(deck) {
+        plane_wave_receive_sweep(deck, segs, &z_mat, wire_endpoints, freq_hz)?
+    } else {
+        Vec::new()
+    };
+
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,
         pulse_rhs: pulse_rhs_mode.as_contract_str(),
@@ -964,6 +1040,7 @@ pub(super) fn solve_frequency_point(
         load_table: &load_table,
         current_table: &current_table,
         pattern_table: &pattern_table,
+        receive_pattern_table: &receive_pattern_table,
     });
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,

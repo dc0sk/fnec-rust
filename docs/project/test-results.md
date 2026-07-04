@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-003-gain-ground` (base `3171281` main) |
+| Commit | branch `feat/ph9-chk-001-receive-pattern` (base `ddeac4c` main) |
 | Version | fnec-rust 0.8.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-566 passed; 0 failed; 0 ignored — across 58 test binaries
+568 passed; 0 failed; 0 ignored — across 59 test binaries
 exit code 0
 ```
 
-566 = 564 + 2 radiation-efficiency tests (`finite_ground_rp.rs`: lossless η≈1;
-finite-ground absolute gain vs nec2c). First Phase 9 increment (PH9-CHK-003).
-Corpus PEC / free-space RP cases are unaffected.
+568 = 566 + 2 receive-pattern tests (`receive_pattern.rs`: sweep shape; transmit
+reciprocity <0.01 dB). PH9-CHK-001. The `RECEIVE_PATTERN` section only appears for
+sweep decks, so existing report contracts are unaffected.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

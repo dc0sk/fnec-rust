@@ -186,6 +186,11 @@ RADIATION_PATTERN
 N_POINTS <n>
 THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO
 ...
+
+RECEIVE_PATTERN
+N_POINTS <n>
+THETA PHI RESPONSE_DB
+...
 ```
 
 Feedpoint table columns:
@@ -209,6 +214,7 @@ Formatting and ordering rules:
 - `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
+- `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
 
 ## Diagnostics (stderr)
 
