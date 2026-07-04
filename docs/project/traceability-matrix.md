@@ -164,6 +164,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 
 | Checklist ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
+| PH9-CHK-001 | CP-003, PRT-003 | `ph9-chk-001-receive-pattern.md` | `nec_model/card.rs` (ExCard F4/F5), `nec-cli/solve_session.rs` (`plane_wave_receive_sweep`), `nec_report` (`ReceivePatternRow`) | `nec-cli/tests/receive_pattern.rs` (sweep shape; reciprocity <0.01 dB) | **Done** 2026-07-04: NTHETA×NPHI receive sweep → RECEIVE_PATTERN; peak-current scalar matches transmit gain by reciprocity to <0.01 dB; 568 tests. | ✅ |
 | PH9-CHK-003 | CP-002, PRT-001 | `ph9-chk-003-absolute-gain-ground.md` | `nec_solver/farfield.rs` (`radiation_efficiency`), `nec-cli/solve_session.rs` (gain scaling) | `nec_solver/tests/finite_ground_rp.rs` (lossless η≈1; absolute gain vs nec2c 0.06 dB) | **Done** 2026-07-04: gain = directivity + 10log10(η) over finite ground; matches nec2c absolute gain to 0.06 dB; free-space η=0.9996 validates the constant; 566 tests. Closes the PH8-CHK-006 directivity-vs-gain offset. | ✅ |
 
 

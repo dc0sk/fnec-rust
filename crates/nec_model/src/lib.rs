@@ -176,6 +176,8 @@ mod tests {
             voltage_imag: 0.0,
             polarization_deg: 0.0,
             polarization_ratio: 0.0,
+            theta_inc: 0.0,
+            phi_inc: 0.0,
         })
     }
 

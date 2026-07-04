@@ -72,6 +72,20 @@ pub struct PatternRow {
     pub axial_ratio: f64,
 }
 
+/// One row of an incident-plane-wave receive pattern (PH9-CHK-001): the antenna's
+/// normalized response as a function of the wave's arrival direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReceivePatternRow {
+    /// Incidence zenith angle θ in degrees.
+    pub theta_deg: f64,
+    /// Incidence azimuth angle φ in degrees.
+    pub phi_deg: f64,
+    /// Normalized receive response in dB (0 dB at the sweep's peak). Derived from
+    /// the peak induced current, which tracks the transmit gain pattern by
+    /// reciprocity.
+    pub response_db: f64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReportInput<'a> {
     pub solver_mode: &'a str,
@@ -88,6 +102,9 @@ pub struct ReportInput<'a> {
     /// Radiation-pattern table.  When non-empty, appended after the currents
     /// section as `RADIATION_PATTERN / THETA PHI GAIN_DB GAIN_V_DB GAIN_H_DB AXIAL_RATIO` rows.
     pub pattern_table: &'a [PatternRow],
+    /// Incident-plane-wave receive pattern.  When non-empty, appended as
+    /// `RECEIVE_PATTERN / THETA PHI RESPONSE_DB` rows (PH9-CHK-001).
+    pub receive_pattern_table: &'a [ReceivePatternRow],
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -186,6 +203,7 @@ pub trait ResultFilter {
 ///     load_table: &[],
 ///     current_table: &[],
 ///     pattern_table: &[],
+///     receive_pattern_table: &[],
 /// };
 /// let section = ImpedanceSummary { rows: &[row] };
 /// let report = render_text_report_with_sections(&input, &[&section]);
@@ -227,7 +245,7 @@ pub trait ReportSection {
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
-///     current_table: &[], pattern_table: &[],
+///     current_table: &[], pattern_table: &[], receive_pattern_table: &[],
 /// };
 /// let report = render_text_report_with_sections(&input, &[&Banner]);
 /// assert!(report.contains("MY_SECTION\nhello world\n"));
@@ -301,6 +319,19 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         for row in input.pattern_table {
             out.push_str(&format_pattern_row(row));
             out.push('\n');
+        }
+    }
+
+    if !input.receive_pattern_table.is_empty() {
+        out.push('\n');
+        out.push_str("RECEIVE_PATTERN\n");
+        out.push_str(&format!("N_POINTS {}\n", input.receive_pattern_table.len()));
+        out.push_str("THETA PHI RESPONSE_DB\n");
+        for row in input.receive_pattern_table {
+            out.push_str(&format!(
+                "{:.4} {:.4} {:.4}\n",
+                row.theta_deg, row.phi_deg, row.response_db
+            ));
         }
     }
 
@@ -395,6 +426,7 @@ mod tests {
             load_table: &[],
             current_table: &[],
             pattern_table: &[],
+            receive_pattern_table: &[],
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -438,6 +470,7 @@ mod tests {
             load_table: &[],
             current_table: &current_table,
             pattern_table: &[],
+            receive_pattern_table: &[],
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -521,6 +554,7 @@ mod tests {
             load_table: &[],
             current_table: &[],
             pattern_table: &pattern,
+            receive_pattern_table: &[],
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
@@ -562,6 +596,7 @@ mod tests {
             load_table: &load_table,
             current_table: &[],
             pattern_table: &[],
+            receive_pattern_table: &[],
         });
 
         let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
@@ -594,6 +629,7 @@ mod tests {
             load_table: &[],
             current_table: &[],
             pattern_table: &[],
+            receive_pattern_table: &[],
         }
     }
 
@@ -702,6 +738,7 @@ mod tests {
             load_table: &[],
             current_table: &[],
             pattern_table: &[],
+            receive_pattern_table: &[],
         });
         assert!(report.contains("FEEDPOINTS\n"));
         assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));

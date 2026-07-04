@@ -109,6 +109,8 @@ fn plane_wave_card(theta_deg: f64, phi_deg: f64, eta_deg: f64) -> Card {
         voltage_imag: phi_deg,
         polarization_deg: eta_deg,
         polarization_ratio: 0.0,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
     })
 }
 
@@ -183,6 +185,8 @@ fn planewave_reciprocity_matches_transmit_pattern() {
         voltage_imag: 0.0,
         polarization_deg: 0.0,
         polarization_ratio: 0.0,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
     }));
     let segs = build_geometry(&driven).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
@@ -284,6 +288,8 @@ fn ex_card(ex_type: u32, theta: f64, phi: f64, eta: f64, ar: f64) -> Card {
         voltage_imag: phi,
         polarization_deg: eta,
         polarization_ratio: ar,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
     })
 }
 

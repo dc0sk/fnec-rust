@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-001 incident-plane-wave receive-pattern sweep** — a plane-wave `EX`
+  card with an incidence-angle grid (NTHETA×NPHI, Δθ/Δφ) now produces a
+  `RECEIVE_PATTERN` section: the antenna's response vs the wave's arrival
+  direction. The per-angle response is the peak induced current — resolved
+  empirically to match the transmit gain pattern by reciprocity to <0.01 dB, so no
+  arbitrary terminal is needed. `ExCard` gains F4/F5 (Δθ/Δφ). EX types 1/2/3 →
+  angle sweeps supported.
+
 - **PH9-CHK-003 absolute gain over finite ground** — the radiation pattern over a
   lossy finite ground now reports **gain** (not directivity): it is scaled by the
   radiation efficiency `η = P_radiated / P_input` (the ground-absorbed power), so

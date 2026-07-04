@@ -164,6 +164,14 @@ pub struct ExCard {
     /// polarization ellipse) for the elliptic types 2/3. 0.0 = linear; unused
     /// for source types. Defaults to 0.0 when the card omits it.
     pub polarization_ratio: f64,
+    /// EX field F4 — plane-wave θ incidence increment (deg) for an incidence-angle
+    /// sweep (`tag` = NTHETA steps). 0.0 for a single incidence; unused for source
+    /// types. See PH9-CHK-001.
+    pub theta_inc: f64,
+    /// EX field F5 — plane-wave φ azimuth increment (deg) for an incidence-angle
+    /// sweep (`segment` = NPHI steps). 0.0 for a single incidence; unused for
+    /// source types.
+    pub phi_inc: f64,
 }
 
 impl ExCard {
