@@ -2,10 +2,62 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-07-04
 ---
 
 # Release Notes
+
+## 0.8.0 — Phase 8 complete: mainstream deck portability
+
+This release closes the remaining source, network, transmission-line, and
+ground-pattern gaps that forced users to hand-simplify mainstream NEC-2 / 4nec2
+decks. Every card below is user-runnable and validated; where fnec's Hallén model
+diverges from NEC the trade-off is documented.
+
+### Excitation sources (EX)
+
+- **NEC2 EX-type alignment.** fnec's EX-type numbering now matches NEC2: type 0
+  voltage source, types 1/2/3 incident plane waves (linear / right- / left-elliptic),
+  type 4 current source, type 5 voltage source. Real 4nec2 decks are no longer
+  misread.
+- **Incident plane wave (EX 1/2/3)** — a receiving-antenna solve on `--solver hallen`:
+  induced `CURRENTS`, no feedpoint. Linear and elliptic polarization (axial ratio
+  from EX F6); one or more straight, non-junctioned wires (parallel arrays).
+  Validated against `nec2c` induced-current shape and by Rayleigh–Carson
+  reciprocity against the transmit far-field.
+- **Current source (EX 4)** — forces a specified current and reports the feedpoint
+  `Z = V/I`; validated by impedance-consistency with the voltage source (2×10⁻⁴).
+  Also supports non-junctioned multi-wire arrays.
+- **EX type 5** — solved as a voltage source (applied-field model), so type-5 decks
+  run. NEC's separate current-slope numerics (~6 %) are a documented non-goal.
+
+### Networks and transmission lines
+
+- **NT two-port networks** — the network's admittance parameters are converted to
+  impedance parameters (`[Z] = [Y]⁻¹`) and stamped into the matrix like a TL. A
+  well-formed NT reproduces the equivalent TL feedpoint impedance end to end.
+- **Lossy transmission line** (`tl_type ≠ 0`) — stamps `Z0·coth(γℓ)` / `Z0·csch(γℓ)`
+  with complex `γℓ = αℓ + jβℓ` (`F3` = matched-line loss in dB). Reduces exactly to
+  the lossless line at 0 dB.
+
+### Ground
+
+- **Radiation pattern over finite ground** — the far field over imperfect ground now
+  uses the Fresnel reflection-coefficient model (was free-space). Antennas over real
+  earth show the correct ground lobe and horizon null; the pattern shape matches
+  `nec2c` to 0.05 dB. fnec reports directivity (a documented ~1.3 dB offset from
+  `nec2c` gain reflects ground-loss efficiency).
+
+### Project
+
+- **Traceability layer** (`docs/project/`) — a consolidated requirement → design →
+  implementation → tests → results matrix, kept current before every push.
+
+### Deferred (documented frontiers)
+
+Junctioned-multi-wire plane wave, NTHETA/NPHI angle sweeps, buried-wire / Sommerfeld
+ground, non-reciprocal NT, and the `RP`-card `XNDA` parser field — each recorded with
+its specific blocker.
 
 ## 0.7.0 — Phase 7 complete: GPU productionization
 

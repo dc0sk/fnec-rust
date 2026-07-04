@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-07-04
 ---
 
 # Changelog
@@ -10,6 +10,10 @@ last_updated: 2026-07-02
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+
+*(nothing currently queued)*
+
+## [0.8.0] — 2026-07-04 — Phase 8 complete: mainstream deck portability
 ### Added
 
 - **PH8-CHK-005 lossy transmission line** — `TL` cards with `tl_type != 0` now
