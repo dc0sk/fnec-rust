@@ -149,7 +149,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | PH7-CHK-005 | DEC-008, CP-009 | `ph7-chk-005-real-gpu-benchmark.md` | `examples/gpu_crossover.rs` | benchmark artifact | ~240× Z-fill at 1536 seg | ✅ |
 | PH7-CHK-006 | DEC-008, CP-009 | `multi-vendor-gpu.md` | — | frontmatter gate | dated ROCm/SYCL deferral | ✅ |
 
-### Phase 8 — deck-portability frontier (in progress)
+### Phase 8 — deck-portability frontier (complete 2026-07-04)
 
 | ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
@@ -157,8 +157,8 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | PH8-CHK-002 | CP-003, PRT-002 | `ph8-chk-002-plane-wave-excitation.md` | `nec_model/card.rs`, `nec_parser` (F3), `nec_solver/planewave.rs` + `linear.rs` (2-DOF solve), `nec-cli/solve_session.rs` (routing, report) | `nec_solver/tests/planewave_nec2c.rs` (shape, symmetry, reciprocity); `ex_cards.rs`/`parser_warnings.rs` (CLI accept-path) | **Design** #255. **Code foundation** #257. **Solve core** #258 (nec2c shape 4.3%, reciprocity exact). **CLI wiring** #259: type-1 linear single-wire solves on hallen. **Elliptic** (types 2/3) 2026-07-02: complex polarization (axial ratio F6); z-wire/AR=0 reduce to linear, tilted-wire nec2c shape 5.4%; EX types 1/2/3 → Partial. **Multi-wire** (non-junctioned) 2026-07-02: per-wire forcing; two-wire nec2c shape ~10%, symmetric currents equal; 557 tests. Sweeps + junctioned multi-wire pending. | 🔨 |
 | PH8-CHK-003 | CP-003, PRT-002 | `ph8-chk-003-ex-type5.md` | `nec_model/card.rs` (`is_voltage_source`), `nec_solver/excitation.rs` | `ex_cards.rs` (type-5 Z == type-0); `corpus` `dipole-ex5-*` | **Done** 2026-07-03: EX type 5 as voltage source (applied-field); Z == type 0; solves on hallen + pulse; 557 tests. NEC current-slope (~6%) documented non-goal. EX type 5 → Partial. | ✅ |
 | PH8-CHK-004 | CP-003, PRT-002 | `ph8-chk-004-nt-network.md` | `nec_solver/network.rs` (`build_nt_stamps`, Y→Z), `nec-cli/solve_session.rs` (stamp application) | `nec_solver/tests/nt_network.rs` (TL-equivalence, guards); `corpus` `dipole-nt-tl-equiv` (end-to-end NT==TL) | **Stamp core** #262 (identical to TL stamp). **CLI wiring** 2026-07-02: stamps applied in solve; real fixture reproduces TL impedance (~1e-5 Ω); deferred warning removed; 550 tests. NT → Partial. Non-reciprocal breadth pending. | 🔨 |
-| PH8-CHK-005 | CP-003, PRT-002 | roadmap row | `nec_solver/tl.rs` (lossy) | `tl_cards.rs` (+ fixture) | — | 📋 |
-| PH8-CHK-006 | CP-002, PRT-001 | `ph8-chk-006-finite-ground-rp.md` | `nec_solver/farfield.rs` (Fresnel reflection far field) | `nec_solver/tests/finite_ground_rp.rs` (PEC limit, nec2c shape, horizon null) | **In progress** 2026-07-03: RP over finite ground via Fresnel coefficients (was free-space); PEC limit <0.05 dB, nec2c shape 0.053 dB; 560 tests. Directivity (gain offset documented). Buried/Sommerfeld remain. | 🔨 |
+| PH8-CHK-005 | CP-003, PRT-002 | `ph8-chk-005-lossy-tl.md` | `nec_solver/tl.rs` (lossy `coth/csch(γℓ)`) | `nec_solver/tests/lossy_tl.rs` (lossless limit, attenuation, matched-line) | **Done** 2026-07-04: lossy line stamp; F3=loss dB; reduces to lossless at 0 dB; 563 tests. TL other → Partial. | ✅ |
+| PH8-CHK-006 | CP-002, PRT-001 | `ph8-chk-006-finite-ground-rp.md` | `nec_solver/farfield.rs` (Fresnel reflection far field) | `nec_solver/tests/finite_ground_rp.rs` (PEC limit, nec2c shape, horizon null) | **In progress** 2026-07-03: RP over finite ground via Fresnel coefficients (was free-space); PEC limit <0.05 dB, nec2c shape 0.053 dB; 560 tests. Directivity (gain offset documented). Buried/Sommerfeld = documented frontier deferral. | ✅ |
 
 ---
 
