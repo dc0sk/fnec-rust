@@ -2,10 +2,56 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ---
 
 # Release Notes
+
+## 0.9.0 — Phase 9 progress: receive patterns, ground gain, junction robustness
+
+This release consolidates the first wave of Phase 9 (the accuracy & scattering
+frontier). Phase 9 is **not complete** — the general junction-basis reformulation
+and Sommerfeld ground remain — but these increments are validated and worth
+shipping.
+
+### Receiving antennas and scattering
+
+- **Incident-plane-wave receive pattern.** A plane-wave `EX` card with an
+  incidence-angle grid (NTHETA×NPHI, Δθ/Δφ) now produces a `RECEIVE_PATTERN`
+  section — the antenna's response versus the wave's arrival direction. The
+  per-angle response is the peak induced current, which was shown to match the
+  transmit gain pattern by reciprocity to < 0.01 dB.
+
+### Ground
+
+- **Absolute gain over finite ground.** The radiation pattern over a lossy ground
+  is now reported as **gain** (not directivity): it is scaled by the radiation
+  efficiency `η = P_radiated / P_input`, so the reported dBi matches nec2c's
+  absolute gain (0.06 dB on a horizontal dipole over average ground). This closes
+  the ~1.3 dB directivity-vs-gain offset noted in 0.8.0.
+
+### Junction robustness
+
+- **Collinear junction fix.** A straight conductor split across several `GW` cards
+  is now solved as one wire. Root cause: fnec's Hallén homogeneous solution
+  (`cos(k·s)` + constant) was built per `GW` wire and reset at each junction. A
+  λ/2 dipole split at its feed now solves **74.41 + j14.52 Ω** (was −34 − j1447 —
+  a negative resistance). The fix is a strict no-op for single wires, parallel
+  arrays, bends, and stepped-radius junctions.
+- **Junction guardrails.** Two complementary checks make the *remaining* junction
+  limitations visible instead of silently wrong: a pre-solve warning when a
+  feedpoint sits on a wire junction, and a post-solve warning when the Hallén
+  feedpoint resistance is negative (physically impossible for a passive antenna).
+  A result without a warning can be trusted to be physical.
+- **Diagnosis.** The junction failure mode is documented with a verified
+  root-cause analysis and a scoped fix plan (`docs/ph9-chk-002-junction-feed-diagnosis.md`).
+
+### Fixed
+
+- **`RP` card `XNDA` field.** The radiation-pattern parser now accepts the
+  canonical 8-field NEC `RP` card (with the `XNDA`/I4 output-options field), not
+  only fnec's legacy 7-field form. Real 4nec2 pattern decks previously mis-parsed
+  θ0 and produced an all-null pattern.
 
 ## 0.8.0 — Phase 8 complete: mainstream deck portability
 
