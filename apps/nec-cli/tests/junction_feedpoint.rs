@@ -70,4 +70,24 @@ fn single_wire_feedpoint_does_not_warn() {
         !stderr.contains("is on a wire junction"),
         "single-wire dipole should not warn; stderr:\n{stderr}"
     );
+    assert!(
+        !stderr.contains("negative resistance"),
+        "single-wire dipole (R>0) must not trip the negative-resistance check; stderr:\n{stderr}"
+    );
+}
+
+// A dipole modeled as two arms bent 15° at the feed, fed on one arm AWAY from the
+// bend (segment 7). The junction-*fed* warning does not fire (feed is not on the
+// junction), but the geometry is still mis-solved → negative resistance, which the
+// post-solve check must catch.
+const BENT_DIPOLE_FED_AWAY: &str =
+    "GW 1 26 0 0 0 1.367 0 5.104 0.001\nGW 2 26 0 0 0 -1.367 0 -5.104 0.001\nGE 0\nEX 0 1 7 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+#[test]
+fn negative_resistance_is_flagged_when_junction_warning_is_missed() {
+    let stderr = run_stderr(BENT_DIPOLE_FED_AWAY, "bent-fed-away");
+    assert!(
+        stderr.contains("negative resistance") && stderr.contains("PH9-CHK-002"),
+        "an unphysical negative-R junction result should warn; stderr:\n{stderr}"
+    );
 }

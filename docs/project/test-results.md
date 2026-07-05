@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-002-collinear-fix` (base `84067cb` main) |
+| Commit | branch `feat/ph9-negative-resistance-guard` (base `a00959a` main) |
 | Version | fnec-rust 0.8.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,14 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-576 passed; 0 failed; 0 ignored — across 61 test binaries
+577 passed; 0 failed; 0 ignored — across 61 test binaries
 exit code 0
 ```
 
-576 = 571 + 5 collinear-merge tests (`collinear_merge.rs`: split chain recovers
-the single-wire impedance; merge is a no-op for single/bent/stepped geometry).
-PH9-CHK-002 collinear fix — validated zero regression (single-wire, dipole-loaded,
-Yagi, TL-linked all byte-for-byte unchanged).
+577 = 576 + 1 negative-resistance guardrail test (`junction_feedpoint.rs`: a bent
+dipole fed away from the bend now warns). Complements the PH9-CHK-002 collinear fix.
+No valid Hallén corpus case trips the negative-R check.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

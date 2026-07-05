@@ -58,6 +58,20 @@ from a junction, or a single-wire geometry, does not warn. (Note: a junction at 
 PH9-CHK-002 diagnosis; the junction-*fed* warning is a deliberately conservative
 signal, not a complete junction-accuracy check.)
 
+## Complementary post-solve check: negative resistance
+
+The junction-*fed* warning is a pre-solve check on the feed location, so it misses
+a genuinely mis-solved junction geometry that happens to be fed *away* from the
+junction (e.g. a bent dipole fed mid-arm still yields a nonsense impedance).
+`warn_if_negative_resistance` closes that gap after the solve: **a passive antenna
+cannot have a negative input resistance**, so a negative `Re(Z)` on the Hallén path
+is a reliable, general signal that the result is unphysical (in practice a
+junctioned-geometry limitation — see PH9-CHK-002). It is scoped to `--solver hallen`
+because the pulse current-source path has documented negative-`R` corpus values.
+Together the two checks cover both junction-fed and fed-away failure modes without
+false-warning on any valid geometry (all passing corpus/reference cases on the
+Hallén path have `Re(Z) > 0`).
+
 ## Validation (`apps/nec-cli/tests/junction_feedpoint.rs`)
 
 - **Junction-fed warns** — the split-dipole-fed-at-junction deck warns and names
