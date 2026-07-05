@@ -2,21 +2,24 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-junction-feed-diagnosis.md
 status: living
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ---
 
 # PH9-CHK-002: multi-wire junction accuracy — root-cause diagnosis & fix plan
 
 ## Status
 
-**Collinear case FIXED (2026-07-05); general case (bends, start-to-start, T/Y) still
-open.** The confirmed mechanism (below) led to a targeted, validated fix for the
-most common junction artifact — a straight conductor split across several `GW`
-cards. A λ/2 dipole split into two end-to-start wires and fed at the join now
-solves at **74.41 + j14.52 Ω** (was −34 − j1447), matching the single-wire model
-exactly, with **zero regression** across the suite. Non-collinear bends,
-start-to-start splits, and T/Y junctions remain guarded by PH9-CHK-005 and await
-the general junction-basis work.
+**Collinear case FIXED (2026-07-05); all degree-2 junctions FIXED (2026-07-05);
+degree-3+ (T/Y) and closed loops still open.** The confirmed mechanism (below) led
+first to a targeted collinear fix, then to the general **degree-2 conductor-path**
+solve that also handles bends, start-to-start / end-to-end splits, and inverted-V
+apex feeds — see `ph9-chk-002-general-junction.md`. A λ/2 dipole split at the feed
+now solves at **74.41 + j14.52 Ω** (was −34 − j1447) whether the join is
+end-to-start or start-to-start; a 30° inverted-V matches nec2c's radiation
+resistance to ~4%. **Zero regression** across the suite. Only degree-3+ (T/Y)
+junctions and closed loops remain guarded by PH9-CHK-005 and await the branching
+junction basis; the receive-side (plane-wave / current-source) junction solve is
+also still deferred.
 
 This document records what was empirically established about *why* junctioned
 geometry is mis-solved (the investigation corrected two mis-hypotheses — everything

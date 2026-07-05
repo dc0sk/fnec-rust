@@ -54,11 +54,12 @@ use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
 };
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_current_source_shape,
-    build_hallen_rhs, build_loads, build_nt_stamps, build_planewave_hallen, build_tl_stamps,
-    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_hallen_current_source, solve_hallen_planewave,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
+    build_current_source_shape, build_hallen_rhs, build_hallen_rhs_paths, build_loads,
+    build_nt_stamps, build_planewave_hallen, build_tl_stamps, compute_radiation_pattern,
+    detect_wire_junctions, integrate_radiated_power, merge_collinear_wire_endpoints,
+    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
     solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
     GroundModel, Segment, ZMatrix,
 };
@@ -182,6 +183,37 @@ pub(super) fn residual_hallen(
         r[row] = lhs - rhs[row];
     }
 
+    let res = l2_norm(&r);
+    let denom = l2_norm(rhs);
+    let rel = if denom > 0.0 { res / denom } else { res };
+    (res, rel)
+}
+
+/// Residual of the conductor-path Hallén system (PH9-CHK-002): the counterpart of
+/// [`residual_hallen`] for the general-junction solve, where the homogeneous
+/// constant is grouped by conductor path (`path_of_seg`) rather than by contiguous
+/// wire range. `cos_vec` already carries the path sign.
+pub(super) fn residual_hallen_paths(
+    z: &ZMatrix,
+    i_vec: &[Complex64],
+    c_hom_per_path: &[Complex64],
+    cos_vec: &[f64],
+    rhs: &[Complex64],
+    path_of_seg: &[usize],
+) -> (f64, f64) {
+    let n = z.n;
+    let mut r = vec![Complex64::new(0.0, 0.0); n];
+    for row in 0..n {
+        let mut zi = Complex64::new(0.0, 0.0);
+        for (col, i_col) in i_vec.iter().enumerate().take(n) {
+            zi += z.get(row, col) * *i_col;
+        }
+        let c_row = c_hom_per_path
+            .get(path_of_seg[row])
+            .copied()
+            .unwrap_or(Complex64::new(0.0, 0.0));
+        r[row] = (zi - c_row * cos_vec[row]) - rhs[row];
+    }
     let res = l2_norm(&r);
     let denom = l2_norm(rhs);
     let rel = if denom > 0.0 { res / denom } else { res };
@@ -406,6 +438,14 @@ pub(super) fn pulse_current_source_voltage(
 /// junction-fed impedance is deferred to PH9-CHK-002; this makes the limitation
 /// visible instead of silently returning a wrong number.
 fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
+    // PH9-CHK-002 general junction: when the whole deck decomposes into supported
+    // degree-2 conductor paths, every junction feed (bends, start-to-start splits,
+    // inverted-V apex) is now solved correctly on a continuous basis, so there is
+    // nothing to warn about. Only decks with an out-of-scope junction (degree-3
+    // T/Y, or a closed loop) reach the per-junction check below.
+    if build_conductor_paths(segs).is_some() {
+        return;
+    }
     // Use the merged (collinear-conductor) grouping so a junction that PH9-CHK-002
     // now solves correctly — a straight conductor split across GW cards — is not
     // flagged. Only genuine, unmerged junctions (bends, T/Y, start-to-start) remain.
@@ -967,6 +1007,47 @@ pub(super) fn solve_frequency_point(
                 solve_current_source_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
             current_source_port = Some(port_v);
             (currents, 0.0, 0.0, "hallen-current-source")
+        }
+        SolverMode::Hallen
+            if build_conductor_paths(segs).is_some_and(|ps| ps.iter().any(|p| !p.is_trivial())) =>
+        {
+            // PH9-CHK-002 general junction: the deck contains a degree-2 conductor
+            // chain the collinear merge cannot handle (a bend, start-to-start /
+            // end-to-end split, or inverted-V apex feed). Solve on continuous
+            // conductor paths — one shared homogeneous constant per path, signed
+            // arc-length `cos(k·s)`, and `I = 0` only at the true free ends — so the
+            // Hallén basis stays continuous across the junction. Reducible decks
+            // (single wires, collinear chains) and out-of-scope topologies (degree-3
+            // T/Y, closed loops) fall through to the pre-existing path below.
+            let paths = build_conductor_paths(segs).expect("checked in guard");
+            let hallen_rhs =
+                build_hallen_rhs_paths(deck, segs, freq_hz, &paths).map_err(|e| e.to_string())?;
+            let mut path_of = vec![0usize; segs.len()];
+            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
+            for (pi, p) in paths.iter().enumerate() {
+                for &m in &p.segs {
+                    path_of[m] = pi;
+                }
+                free_ends.push(p.free_ends.0);
+                free_ends.push(p.free_ends.1);
+            }
+            let sol = solve_hallen_paths(
+                &z_mat,
+                &hallen_rhs.rhs,
+                &hallen_rhs.cos_vec,
+                &path_of,
+                &free_ends,
+            )
+            .map_err(|e| e.to_string())?;
+            let (a, r) = residual_hallen_paths(
+                &z_mat,
+                &sol.currents,
+                &sol.c_hom_per_wire,
+                &hallen_rhs.cos_vec,
+                &hallen_rhs.rhs,
+                &path_of,
+            );
+            (sol.currents, a, r, "hallen")
         }
         SolverMode::Hallen => {
             let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;

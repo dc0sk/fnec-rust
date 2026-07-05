@@ -337,6 +337,251 @@ pub fn detect_wire_junctions(
     junctions
 }
 
+/// A logical conductor: a maximal chain of physical wires connected end-to-end
+/// through **degree-2** junctions (bends, start-to-start / end-to-end splits, or
+/// collinear continuations), forming a single continuous current path.
+///
+/// This is the general-junction generalization of [`merge_collinear_wire_endpoints`]
+/// (PH9-CHK-002). Where the collinear merge only joins straight end-to-start `GW`
+/// chains, a `ConductorPath` walks *any* degree-2 chain — including reversed
+/// (start-to-start) and bent connections — and carries the per-segment traversal
+/// **sign** and signed **arc-length** needed to make the Hallén homogeneous basis
+/// (`cos(k·s)`) continuous across the junction.
+///
+/// The current on segment `m` in its own (NEC) direction is `sign[m] · I_path(s)`,
+/// where `I_path` is the continuous path current and `s = s_mid[m]` is the signed
+/// arc-length of the segment midpoint measured from the path's arc-length centre.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConductorPath {
+    /// Global segment indices along the path, in traversal order.
+    pub segs: Vec<usize>,
+    /// Per-listed-segment sign: `+1.0` if the segment's own direction aligns with
+    /// path traversal, `-1.0` if it is traversed in reverse. Parallel to `segs`.
+    pub signs: Vec<f64>,
+    /// Signed arc-length at each segment midpoint, measured from the path's
+    /// arc-length centre (`s = 0` at the middle of the total path length).
+    /// Parallel to `segs`.
+    pub s_mid: Vec<f64>,
+    /// The two terminal (free-end) segment indices where the `I = 0` boundary
+    /// condition applies (the outermost segments of the open chain).
+    pub free_ends: (usize, usize),
+}
+
+impl ConductorPath {
+    /// Whether this path is a plain single wire or a collinear end-to-start chain
+    /// — i.e. all segments traversed forward (`sign = +1`) in contiguous ascending
+    /// index order. Such a path is handled identically by the pre-existing
+    /// collinear-merge Hallén code, so the general path solver is only needed when
+    /// at least one path is **not** trivial (a reversed or bent junction).
+    pub fn is_trivial(&self) -> bool {
+        if self.signs.iter().any(|&s| s != 1.0) {
+            return false;
+        }
+        self.segs.windows(2).all(|w| w[1] == w[0] + 1)
+    }
+}
+
+/// Decompose the geometry into [`ConductorPath`]s for the general-junction Hallén
+/// solve (PH9-CHK-002).
+///
+/// Returns `Some(paths)` **only** when every junction node in the deck is a simple
+/// **degree-2** connection and every conductor is an **open chain** (exactly two
+/// free ends). This is the supported class for the continuous-basis fix: single
+/// wires, collinear splits, bent dipoles / inverted-V, and end-to-end or
+/// start-to-start splits.
+///
+/// Returns `None` when the topology is out of scope for this slice — any node
+/// where **three or more** wire ends meet (T/Y junctions), or a **closed loop**
+/// (a conductor with no free end). Those cases fall back to the guarded per-wire
+/// path and still require the general junction-basis work.
+///
+/// A single straight wire maps to one path with all `signs = +1` and `s_mid`
+/// identical to the straight-axis coordinate used by [`build_hallen_rhs`], so the
+/// decomposition is a numeric no-op for the non-junction case.
+///
+/// [`build_hallen_rhs`]: crate::build_hallen_rhs
+pub fn build_conductor_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
+    let wires = wire_endpoints_from_segs(segs);
+    let w = wires.len();
+    if w == 0 {
+        return Some(Vec::new());
+    }
+
+    const TOL: f64 = 1e-6; // metres
+
+    // Endpoint identity: 2 per wire. `end = 0` is the wire start (segs[first].start),
+    // `end = 1` is the wire end (segs[last].end).
+    let ep_point = |wi: usize, end: usize| -> [f64; 3] {
+        let (first, last) = wires[wi];
+        if end == 0 {
+            segs[first].start
+        } else {
+            segs[last].end
+        }
+    };
+
+    // Cluster the 2·W endpoints into coincident nodes. `node_of[wi*2 + end]` is the
+    // node id; `node_members[node]` lists the (wi, end) endpoints at that node.
+    let mut node_of = vec![usize::MAX; 2 * w];
+    let mut node_members: Vec<Vec<(usize, usize)>> = Vec::new();
+    for wi in 0..w {
+        for end in 0..2 {
+            let id = wi * 2 + end;
+            if node_of[id] != usize::MAX {
+                continue;
+            }
+            let p = ep_point(wi, end);
+            let node = node_members.len();
+            let mut members = vec![(wi, end)];
+            node_of[id] = node;
+            // Find all other unassigned endpoints coincident with p.
+            for wj in 0..w {
+                for endj in 0..2 {
+                    let idj = wj * 2 + endj;
+                    if node_of[idj] != usize::MAX {
+                        continue;
+                    }
+                    if dist2(p, ep_point(wj, endj)) < TOL * TOL {
+                        node_of[idj] = node;
+                        members.push((wj, endj));
+                    }
+                }
+            }
+            node_members.push(members);
+        }
+    }
+
+    // Any node where 3+ ends meet is out of scope for this slice (T/Y junction).
+    if node_members.iter().any(|m| m.len() >= 3) {
+        return None;
+    }
+
+    // Group wires into connected chains via degree-2 nodes (union-find).
+    let mut parent: Vec<usize> = (0..w).collect();
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        let mut r = x;
+        while parent[r] != r {
+            r = parent[r];
+        }
+        let mut c = x;
+        while parent[c] != c {
+            let next = parent[c];
+            parent[c] = r;
+            c = next;
+        }
+        r
+    }
+    for members in &node_members {
+        if members.len() == 2 {
+            let (a, _) = members[0];
+            let (b, _) = members[1];
+            // A degree-2 node joining a wire to itself is a closed single-wire loop.
+            if a == b {
+                return None;
+            }
+            let ra = find(&mut parent, a);
+            let rb = find(&mut parent, b);
+            parent[ra] = rb;
+        }
+    }
+
+    // For each component, order the wires into a linear chain and emit a path.
+    let mut comp_wires: std::collections::BTreeMap<usize, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for wi in 0..w {
+        let r = find(&mut parent, wi);
+        comp_wires.entry(r).or_default().push(wi);
+    }
+
+    let mut paths: Vec<ConductorPath> = Vec::new();
+    for (_, group) in comp_wires {
+        // Count free ends (degree-1 nodes) in this component. A valid open chain
+        // has exactly two; anything else (cycle, isolated closed loop) is skipped.
+        let mut free_ends: Vec<(usize, usize)> = Vec::new(); // (wi, end)
+        for &wi in &group {
+            for end in 0..2 {
+                let node = node_of[wi * 2 + end];
+                if node_members[node].len() == 1 {
+                    free_ends.push((wi, end));
+                }
+            }
+        }
+        if free_ends.len() != 2 {
+            return None;
+        }
+
+        // Walk from one free end through the chain, appending segments with signs
+        // and cumulative arc-length. Track visited wires to avoid revisiting.
+        let (start_wi, start_end) = free_ends[0];
+        let mut ordered_segs: Vec<usize> = Vec::new();
+        let mut signs: Vec<f64> = Vec::new();
+        let mut u_mid: Vec<f64> = Vec::new(); // arc-length at midpoint (from path start)
+        let mut arc = 0.0f64;
+
+        let mut cur_wi = start_wi;
+        // Enter from `start_end`; we traverse *away* from the entry node.
+        // entry end 0 (wire start) → forward (start→end), sign +1.
+        // entry end 1 (wire end)   → reverse (end→start), sign -1.
+        let mut enter_end = start_end;
+        let mut visited = vec![false; w];
+        loop {
+            visited[cur_wi] = true;
+            let (first, last) = wires[cur_wi];
+            let forward = enter_end == 0;
+            let sign = if forward { 1.0 } else { -1.0 };
+            // Segment order along traversal.
+            let seg_iter: Vec<usize> = if forward {
+                (first..=last).collect()
+            } else {
+                (first..=last).rev().collect()
+            };
+            for m in seg_iter {
+                let half = segs[m].length * 0.5;
+                u_mid.push(arc + half);
+                arc += segs[m].length;
+                ordered_segs.push(m);
+                signs.push(sign);
+            }
+            // Exit node is the opposite end of this wire.
+            let exit_end = 1 - enter_end;
+            let exit_node = node_of[cur_wi * 2 + exit_end];
+            // Find the next wire at the exit node (degree-2) that we have not visited.
+            let members = &node_members[exit_node];
+            if members.len() == 1 {
+                break; // reached the other free end
+            }
+            // degree-2: pick the partner wire.
+            let mut next: Option<(usize, usize)> = None;
+            for &(mwi, mend) in members {
+                if mwi != cur_wi && !visited[mwi] {
+                    next = Some((mwi, mend));
+                }
+            }
+            match next {
+                Some((nwi, nend)) => {
+                    cur_wi = nwi;
+                    // We arrive at the partner's `nend`; traverse away from it.
+                    enter_end = nend;
+                }
+                None => break, // no unvisited partner (defensive; should be a free end)
+            }
+        }
+
+        // Re-centre arc-length so s = 0 is the path midpoint.
+        let s_mid: Vec<f64> = u_mid.iter().map(|u| u - arc * 0.5).collect();
+        let free_a = *ordered_segs.first().unwrap();
+        let free_b = *ordered_segs.last().unwrap();
+        paths.push(ConductorPath {
+            segs: ordered_segs,
+            signs,
+            s_mid,
+            free_ends: (free_a, free_b),
+        });
+    }
+
+    Some(paths)
+}
+
 ///
 /// Cards are processed in deck order:
 /// - `GW` appends new segments.

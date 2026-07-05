@@ -796,6 +796,103 @@ pub fn solve_hallen(
     })
 }
 
+/// Hallén solve over **conductor paths** — the general-junction delta-gap solver
+/// (PH9-CHK-002).
+///
+/// This generalizes [`solve_hallen`] from contiguous single wires to arbitrary
+/// degree-2 conductor chains (bends, start-to-start / end-to-end splits). The
+/// difference is entirely in how the homogeneous term and the `I = 0` boundary
+/// condition are addressed:
+///
+/// - `path_of_seg[m]` assigns each segment to a logical conductor path; all
+///   segments on a path **share one** homogeneous constant `C`. There is one `C`
+///   column per distinct path.
+/// - `free_end_segs` lists the segments that get the `I = 0` constraint — the two
+///   physical free ends of each open chain, *not* every `GW` endpoint. Interior
+///   degree-2 junctions receive no constraint (the current flows through them
+///   continuously, exactly as inside a single wire).
+///
+/// The caller must pass a `cos_vec` and `rhs` already built with the path sign and
+/// signed arc-length convention (see [`build_hallen_rhs`]): the current on
+/// segment `m` in its own direction is `sign[m]·I_path(s_m)`, so
+/// `cos_vec[m] = sign[m]·cos(k·s_m)` and the source term carries the same sign.
+///
+/// Solved via regularized normal equations, mirroring [`solve_hallen`].
+///
+/// [`build_hallen_rhs`]: crate::build_hallen_rhs
+pub fn solve_hallen_paths(
+    z: &ZMatrix,
+    rhs: &[Complex64],
+    cos_vec: &[f64],
+    path_of_seg: &[usize],
+    free_end_segs: &[usize],
+) -> Result<HallenSolution, SolveError> {
+    let n = z.n;
+    if rhs.len() != n || cos_vec.len() != n || path_of_seg.len() != n {
+        return Err(SolveError::HallenDimensionMismatch {
+            z_n: n,
+            rhs_len: rhs.len(),
+            cos_len: cos_vec.len(),
+        });
+    }
+
+    let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
+    let constraint_rows = free_end_segs.len();
+    let rows = n + constraint_rows;
+    let cols = n + num_paths;
+    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
+    let mut y = vec![Complex64::new(0.0, 0.0); rows];
+
+    for r in 0..n {
+        for c in 0..n {
+            m[r][c] = z.get(r, c);
+        }
+        let c_col = n + path_of_seg[r];
+        m[r][c_col] = Complex64::new(-cos_vec[r], 0.0);
+        y[r] = rhs[r];
+    }
+
+    // Free-end I = 0 constraints (the open-chain terminals only).
+    let mut crow = n;
+    for &seg in free_end_segs {
+        m[crow][seg] = Complex64::new(1.0, 0.0);
+        crow += 1;
+    }
+
+    // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..rows {
+                sum += m[r][i].conj() * m[r][j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..rows {
+            sum += m[r][i].conj() * y[r];
+        }
+        aty[i] = sum;
+    }
+    let lambda = 1e-8;
+    for i in 0..cols {
+        ata[i][i] += Complex64::new(lambda, 0.0);
+    }
+
+    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let c_hom_per_wire = x[n..].to_vec();
+    Ok(HallenSolution {
+        currents: x[..n].to_vec(),
+        c_hom: c_hom_per_wire
+            .first()
+            .copied()
+            .unwrap_or(Complex64::new(0.0, 0.0)),
+        c_hom_per_wire,
+    })
+}
+
 /// Hallén solve for a **distributed** (asymmetric) excitation such as an
 /// incident plane wave.
 ///
