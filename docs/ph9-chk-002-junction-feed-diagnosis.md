@@ -26,28 +26,42 @@ be implemented deliberately. The investigation corrected an initial mis-hypothes
 | collinear end-to-start chain | at the centre junction | −34.5 − j1447 | ❌ (identical) |
 | 2-wire dipole bent 15° | off-centre (seg 13), away from bend | −0.04 − j887 | ❌ |
 | 2-wire dipole bent 15° | at the apex junction | −34.5 − j1447 | ❌ |
+| **single 52-seg `GW` wire** (same physical dipole) | ~centre (seg 27) | **74.41 + j14.52** | ✅ target |
+| collinear chain, **merged endpoint block, no junction** | at the junction | −76 − j1900 | ❌ (rules out the grouping) |
 
 `--solver pulse` / `continuity` / `sinusoidal` all fail these too (different wrong
 numbers, same conclusion).
 
-## Corrected root cause
+## Root cause (verified by controlled experiment)
 
-- **Rejected hypothesis A** (source-at-junction-endpoint): feeding *away* from the
-  junction on a two-wire-dipole is also wrong, so it is not only the source.
-- **Rejected hypothesis B** (collinear junctions specifically): a 15°-*bent*
-  two-wire dipole fails identically, so it is not collinearity.
-- **Supported cause**: fnec's junction handling enforces **current continuity**
-  (`I[seg_a] + sign·I[seg_b] = 0`) but not **charge / current-derivative
-  continuity** across the node. That approximation is fine when the junction
-  carries *low current* — `dipole-loaded`'s top-hat sits at the dipole's tip
-  (a current node) and solves correctly — but it is grossly wrong when a
-  *high-current* junction is required, e.g. a dipole **split or bent at its centre
-  feed**, where the current is at its maximum. The error scales with the junction
-  current, which is why low-current loading junctions work and centre junctions
-  do not.
+Hypotheses were formed and then **tested**; two were falsified:
 
-This is a formulation gap (it reproduces exactly across solvers and mesh
-densities), not a tolerance issue.
+- **Rejected A** (source-at-junction-endpoint only): feeding *away* from the
+  junction on a two-wire dipole is also wrong.
+- **Rejected B** (collinear-specific): a 15°-*bent* two-wire dipole fails
+  identically.
+- **Rejected C** (the wire grouping / current-continuity constraint): solving the
+  collinear chain with the two wires **merged into one endpoint block and no
+  junction constraint** still gives garbage (−76 − j1900), so the
+  `I[a] + sign·I[b] = 0` machinery is *not* the cause.
+
+**Confirmed mechanism.** The distinguishing experiment: the identical physical
+dipole modeled as a **single 52-segment `GW` wire** solves correctly
+(74.41 + j14.52 Ω), while the two-wire chain does not — even with merged grouping.
+The only remaining difference is the **Hallén homogeneous solution**. fnec builds
+its along-wire coordinate for `cos_vec` (the `cos(k·s)` homogeneous basis)
+**per `GW` wire**, so `s` resets to 0 at every wire start, and it assigns an
+**independent homogeneous constant `C_k` per wire** (`linear.rs:556`). Across a
+junction the homogeneous basis is therefore *discontinuous* (a phase reset in
+`cos(k·s)`) and its constant is uncoupled. For a single physical conductor spanning
+a junction this is simply the wrong basis, and the least-squares solve returns a
+self-consistent but unphysical current (negative resistance). The error is largest
+where the junction current is largest (centre feeds), which is why low-current
+loading junctions (`dipole-loaded`'s top-hat) look fine.
+
+This is a formulation gap in the Hallén homogeneous solution, not the
+current-continuity constraint and not a tolerance issue — it reproduces exactly
+across solvers and mesh densities.
 
 ## Practical impact
 
@@ -57,22 +71,28 @@ their feedpoint impedance is currently unreliable. Antennas whose junctions are
 end-loading or parasitic (top-hats, Yagi directors/reflectors as separate wires)
 are unaffected.
 
-## Fix plan
+## Fix plan (redirected by the confirmed mechanism)
 
-1. **Junction basis functions (NEC-standard, general).** Basis functions spanning
-   each junction node enforce *both* current and charge continuity, with a source
-   at the node handled as an interior excitation of the spanning function. Correct
-   for all cases (centre-fed bends, T/Y, stepped). Largest effort; the right
-   long-term answer.
-2. **Charge-continuity constraint (incremental).** Add the missing derivative
-   condition at each junction to the existing continuity system before attempting
-   the full basis rework — may recover high-current junctions at lower risk.
-   Validate against nec2c on an inverted-V and against the single-wire reference
-   for a split straight dipole.
+The fix must make the **Hallén homogeneous solution continuous across junctions** —
+not add a current/charge constraint (the current-continuity machinery is already
+present and is not the cause).
 
-Validate every increment against: the single-wire reference (split straight dipole
-must recover 74 + j14 Ω), nec2c on an inverted-V, and the already-passing
-`dipole-loaded` (must not regress).
+1. **Junction-continuous homogeneous basis (collinear first).** Compute the
+   `cos(k·s)` along-wire coordinate `s` with a *path-continuous* arc length across
+   connected wires, and share one homogeneous constant per *connected component*
+   rather than per `GW` wire. For a collinear chain this is exactly the single-wire
+   basis and should recover 74 + j14 Ω — directly validatable. This is the
+   smallest correct step and touches `build_hallen_rhs` (`cos_vec`) and the
+   per-wire `C_k` assignment in `solve_hallen`.
+2. **General junction basis functions (NEC-standard).** For non-collinear branches
+   (bends, T/Y, stepped), basis functions spanning each junction node with the
+   source as an interior excitation. Largest effort; the general answer.
+
+Validate every increment against: the **single-wire reference** (split straight
+dipole must recover 74.41 + j14.52 Ω), **nec2c** on an inverted-V, and the
+already-passing **`dipole-loaded`** (must not regress). The key regression risk is
+`cos_vec`/`C_k` changes leaking into single-wire and low-current-junction solves —
+gate those explicitly.
 
 ## Guardrail in place
 
