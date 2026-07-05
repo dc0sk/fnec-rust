@@ -442,6 +442,30 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
     }
 }
 
+/// PH9-CHK-005: a passive antenna cannot have a negative input resistance. On the
+/// Hallén path a negative `Re(Z)` is therefore a reliable post-solve signal that
+/// the result is unphysical — in practice a junctioned-geometry limitation (a
+/// bend, stepped-radius, or start-to-start split that the collinear fix does not
+/// cover; see PH9-CHK-002). This catches cases the pre-solve junction-*fed* warning
+/// misses, e.g. a bent antenna fed away from the bend. Scoped to `Hallen`: the
+/// pulse current-source path has documented negative-`R` corpus values.
+fn warn_if_negative_resistance(rows: &[FeedpointRow], solver_mode: SolverMode) {
+    if !matches!(solver_mode, SolverMode::Hallen) {
+        return;
+    }
+    for r in rows {
+        if r.z_in.re < 0.0 {
+            eprintln!(
+                "warning: feedpoint tag {} segment {} has negative resistance \
+                 (Re Z = {:.3} Ω), which is physically impossible for a passive antenna; \
+                 the result is unreliable — commonly a junctioned-geometry limitation \
+                 (see PH9-CHK-002)",
+                r.tag, r.seg, r.z_in.re
+            );
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
@@ -970,6 +994,7 @@ pub(super) fn solve_frequency_point(
     // be unphysical (e.g. negative resistance). Warn rather than report it as
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
     warn_if_feedpoint_at_junction(deck, segs);
+    warn_if_negative_resistance(&rows, solver_mode);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()

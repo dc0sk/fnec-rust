@@ -12,6 +12,14 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **Negative-resistance guardrail (PH9-CHK-005)** — a passive antenna cannot have a
+  negative input resistance, so a negative `Re(Z)` on the Hallén path now warns that
+  the result is unphysical (a junctioned-geometry limitation; see PH9-CHK-002). This
+  complements the junction-*fed* warning by catching cases fed *away* from a bad
+  junction (e.g. a bent dipole fed mid-arm). Scoped to `--solver hallen` (the pulse
+  current-source path has documented negative-`R` values); no valid Hallén corpus
+  case trips it.
+
 - **PH9-CHK-002 collinear junction fix** — a straight conductor split across
   several `GW` cards is now solved as one wire. Root cause: fnec's Hallén
   homogeneous solution (`cos(k·s)` + constant) was built per `GW` wire and reset at
