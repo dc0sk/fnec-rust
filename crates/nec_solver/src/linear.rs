@@ -992,6 +992,105 @@ pub fn solve_hallen_planewave(
     Ok(x[..n].to_vec())
 }
 
+/// Hallén solve for a **distributed** excitation over **conductor paths** — the
+/// general-junction receive solver (PH9-CHK-002).
+///
+/// This is to [`solve_hallen_planewave`] what [`solve_hallen_paths`] is to
+/// [`solve_hallen`]: it generalizes the asymmetric two-DOF (cos/sin) plane-wave
+/// solve from contiguous single wires to arbitrary degree-2 conductor chains
+/// (bends, start-to-start / end-to-end splits), so a *receiving* bent or connected
+/// antenna solves on one continuous current path across each junction.
+///
+/// The classical Hallén homogeneous solution on a continuous conductor is
+/// `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path arc-length `s`; both DOF are
+/// needed because a distributed incident field induces a general asymmetric
+/// current. Each path therefore carries **two** homogeneous constants and gets the
+/// `I = 0` boundary condition at its **two free ends only** — interior degree-2
+/// junctions flow continuously, exactly as inside a single wire.
+///
+/// - `path_of_seg[m]` assigns each segment to a logical conductor path; all
+///   segments on a path share the same two `C` columns (`n + 2·p` and `n + 2·p+1`).
+/// - `free_end_segs` lists the segments that get the `I = 0` constraint — the two
+///   physical free ends of each open chain (two per path).
+///
+/// The caller must pass `cos_vec`, `sin_vec` and `rhs` already built with the path
+/// sign and signed-arc-length convention (see [`crate::build_planewave_hallen_paths`]):
+/// the current on segment `m` in its own NEC direction is `sign[m]·I_path(s_m)`, so
+/// `cos_vec[m] = sign[m]·cos(k·s_m)`, `sin_vec[m] = sign[m]·sin(k·s_m)`, and the
+/// forcing carries the same sign. For a single straight wire (`sign = +1`,
+/// arc-length = the wire axis) this reduces exactly to [`solve_hallen_planewave`].
+///
+/// Solved via regularized normal equations, mirroring [`solve_hallen_planewave`].
+/// Returns the segment currents.
+pub fn solve_hallen_planewave_paths(
+    z: &ZMatrix,
+    rhs: &[Complex64],
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    path_of_seg: &[usize],
+    free_end_segs: &[usize],
+) -> Result<Vec<Complex64>, SolveError> {
+    let n = z.n;
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
+        return Err(SolveError::HallenDimensionMismatch {
+            z_n: n,
+            rhs_len: rhs.len(),
+            cos_len: cos_vec.len().min(sin_vec.len()),
+        });
+    }
+
+    let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
+    // Two homogeneous constants (cos, sin) per path.
+    let cols = n + 2 * num_paths;
+    // One I = 0 constraint per free-end segment (two per open-chain path).
+    let constraint_rows = free_end_segs.len();
+    let rows = n + constraint_rows;
+    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
+    let mut y = vec![Complex64::new(0.0, 0.0); rows];
+
+    for r in 0..n {
+        for c in 0..n {
+            m[r][c] = z.get(r, c);
+        }
+        let p = path_of_seg[r];
+        m[r][n + 2 * p] = Complex64::new(-cos_vec[r], 0.0);
+        m[r][n + 2 * p + 1] = Complex64::new(-sin_vec[r], 0.0);
+        y[r] = rhs[r];
+    }
+
+    // Free-end I = 0 constraints (the open-chain terminals only).
+    let mut crow = n;
+    for &seg in free_end_segs {
+        m[crow][seg] = Complex64::new(1.0, 0.0);
+        crow += 1;
+    }
+
+    // Regularized normal equations (mirrors solve_hallen_planewave).
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..rows {
+                sum += m[r][i].conj() * m[r][j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..rows {
+            sum += m[r][i].conj() * y[r];
+        }
+        aty[i] = sum;
+    }
+    let lambda = 1e-8;
+    for i in 0..cols {
+        ata[i][i] += Complex64::new(lambda, 0.0);
+    }
+
+    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    Ok(x[..n].to_vec())
+}
+
 /// Result of a current-source Hallén solve (PH8-CHK-001).
 #[derive(Debug, Clone)]
 pub struct CurrentSourceSolution {

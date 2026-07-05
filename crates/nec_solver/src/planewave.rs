@@ -28,7 +28,7 @@ use num_complex::Complex64;
 use nec_model::card::Card;
 use nec_model::deck::NecDeck;
 
-use crate::geometry::Segment;
+use crate::geometry::{ConductorPath, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
@@ -243,6 +243,100 @@ pub fn build_planewave_hallen(
         rhs[m] = Complex64::new(0.0, -scale) * acc;
         cos_vec[m] = (k * s_coord[m]).cos();
         sin_vec[m] = (k * s_coord[m]).sin();
+    }
+
+    Ok(PlaneWaveHallen {
+        rhs,
+        cos_vec,
+        sin_vec,
+        wave,
+    })
+}
+
+/// Build the plane-wave Hallén forcing + homogeneous columns over **conductor
+/// paths** — the general-junction receive path (PH9-CHK-002), consumed by
+/// [`crate::solve_hallen_planewave_paths`].
+///
+/// This is the path-aware counterpart of [`build_planewave_hallen`], mirroring how
+/// [`crate::build_hallen_rhs_paths`] generalizes the delta-gap forcing. Instead of
+/// a per-`GW` along-wire coordinate, the homogeneous basis and the incident-field
+/// integral use the **signed arc-length** `s` along each [`ConductorPath`] with the
+/// traversal **sign**, so `cos(k·s)` / `sin(k·s)` stay continuous across a bent or
+/// reversed (start-to-start) junction and the `sin(k|sₘ−s_p|)` kernel sums over the
+/// whole conductor path rather than resetting at each `GW` boundary:
+///
+/// - The current on segment `m` in its own NEC direction is `sign[m]·I_path(s_m)`.
+///   The incident tangential field in the *path traversal* direction is
+///   `E_path(s_p) = sign[p]·(ê·d̂_p)·E₀·exp(+j k r̂·r_p)`.
+/// - `rhs[m] = sign[m]·(−j·2π/η₀)·Σ_{p∈path(m)} E_path(s_p)·sin(k|s_m−s_p|)·Δl_p`.
+/// - `cos_vec[m] = sign[m]·cos(k·s_m)`, `sin_vec[m] = sign[m]·sin(k·s_m)`.
+///
+/// For a single straight wire (`sign = +1`, arc-length = the wire axis) this
+/// reduces exactly to [`build_planewave_hallen`]. Because the paths already model
+/// the junction continuity, this builder does **not** reject junctioned geometry;
+/// the caller selects it for the non-trivial (bent / connected) receive class.
+pub fn build_planewave_hallen_paths(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    paths: &[ConductorPath],
+) -> Result<PlaneWaveHallen, PlaneWaveError> {
+    let wave = deck
+        .cards
+        .iter()
+        .find_map(|card| match card {
+            Card::Ex(ex) if ex.kind().is_plane_wave() => Some(IncidentPlaneWave::from_ex_card(ex)),
+            _ => None,
+        })
+        .ok_or(PlaneWaveError::NoPlaneWaveCard)?;
+
+    let n = segs.len();
+    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let r_hat = wave.r_hat();
+    let pol_hat = wave.pol_hat();
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
+
+    // Per-segment path index, traversal sign, and signed arc-length from the paths.
+    let mut path_of = vec![0usize; n];
+    let mut sign_of = vec![1.0f64; n];
+    let mut s_of = vec![0.0f64; n];
+    for (pi, p) in paths.iter().enumerate() {
+        for (j, &m) in p.segs.iter().enumerate() {
+            path_of[m] = pi;
+            sign_of[m] = p.signs[j];
+            s_of[m] = p.s_mid[j];
+        }
+    }
+
+    // Incident tangential field in the path-traversal direction at each segment:
+    // E_path(s_p) = sign[p]·(ê·d̂_p)·E₀·exp(+j k r̂·r_p).
+    let mut e_path = vec![Complex64::new(0.0, 0.0); n];
+    for (p, seg) in segs.iter().enumerate() {
+        let coupling: Complex64 = (0..3)
+            .map(|c| pol_hat[c] * seg.direction[c])
+            .sum::<Complex64>()
+            * wave.e0;
+        let phase = k * dot(r_hat, seg.midpoint); // +j k r̂·r
+        e_path[p] = coupling * Complex64::from_polar(1.0, phase) * sign_of[p];
+    }
+
+    // Hallén forcing per path: rhs(sₘ) = sign[m]·(−j·2π/η₀)·Σ_{p∈path(m)} E_path(s_p)·
+    // sin(k|sₘ − s_p|)·Δl_p. The homogeneous cos/sin columns carry the same sign.
+    let mut rhs = vec![Complex64::new(0.0, 0.0); n];
+    let mut cos_vec = vec![0.0f64; n];
+    let mut sin_vec = vec![0.0f64; n];
+    for m in 0..n {
+        let mut acc = Complex64::new(0.0, 0.0);
+        for p in 0..n {
+            if path_of[p] != path_of[m] {
+                continue;
+            }
+            let kernel = (k * (s_of[m] - s_of[p]).abs()).sin();
+            acc += e_path[p] * kernel * segs[p].length;
+        }
+        rhs[m] = Complex64::new(0.0, -scale) * acc * sign_of[m];
+        cos_vec[m] = sign_of[m] * (k * s_of[m]).cos();
+        sin_vec[m] = sign_of[m] * (k * s_of[m]).sin();
     }
 
     Ok(PlaneWaveHallen {

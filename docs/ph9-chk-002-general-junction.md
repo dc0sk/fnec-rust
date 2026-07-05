@@ -16,10 +16,18 @@ continuous *conductor path* rather than per `GW` wire. This closes the headline
 junction-fed-feedpoint limitation for the mainstream bent/branched-at-the-feed
 antennas (inverted-V, bent dipole, split-fed dipole).
 
+**Receive-side (plane-wave) junction solve core landed (2026-07-05).** The same
+conductor-path model now backs a *distributed*-excitation solver
+(`solve_hallen_planewave_paths` / `build_planewave_hallen_paths`), so a **receiving**
+bent or connected antenna solves on continuous paths — see
+[Receive-side junctions](#receive-side-junctions-plane-wave) below. This increment
+is the self-contained solve core (new solver + validation); wiring it into the CLI
+receive path (`solve_session`) is the follow-up increment.
+
 Still deferred to the remaining general work: **degree-3+** (T/Y) junctions,
-**closed loops**, and the **receive-side** (plane-wave / current-source) junction
-solve. Those out-of-scope classes fall back to the guarded per-wire path
-(PH9-CHK-005) and still warn.
+**closed loops**, and the **current-source** receive-side junction solve. Those
+out-of-scope classes fall back to the guarded per-wire path (PH9-CHK-005) and still
+warn.
 
 ## What was fixed
 
@@ -96,12 +104,46 @@ inverted-V resistance vs nec2c, path-decomposition unit tests) and
 `apps/nec-cli/tests/junction_feedpoint.rs` (degree-2 now solves; degree-3 still
 guarded).
 
+## Receive-side junctions (plane wave)
+
+The transmit fix above solves a *symmetric* delta-gap source, for which one
+homogeneous constant (`cos(k·s)`) per path suffices. A **receiving** antenna sees a
+*distributed, asymmetric* incident field, so its Hallén homogeneous solution needs
+**both** degrees of freedom — `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path
+arc-length `s`. `solve_hallen_planewave_paths` (`linear.rs`) is the path-aware
+counterpart of `solve_hallen_planewave`: two `C` columns per conductor path, and the
+`I = 0` boundary condition applied at each path's **two free ends only**, so the
+induced current stays continuous across the junction.
+
+`build_planewave_hallen_paths` (`planewave.rs`) builds the forcing over the whole
+conductor path with the same sign + signed-arc-length convention as
+`build_hallen_rhs_paths`: the incident tangential field is taken in the path
+traversal direction (`E_path(s_p) = σ_p·(ê·d̂_p)·E₀·exp(+j k r̂·r_p)`), the
+`sin(k|s_m−s_p|)` kernel sums over the entire path (not resetting per `GW`), and
+`cos_vec[m] = σ_m·cos(k·s_m)`, `sin_vec[m] = σ_m·sin(k·s_m)`. For a single straight
+wire this reduces exactly to `build_planewave_hallen`.
+
+### Validation (14.2 MHz, free space)
+
+Two internal gates, neither needing an external reference
+(`crates/nec_solver/tests/planewave_junction.rs`):
+
+| gate | geometry | result |
+|:-----|:---------|:-------|
+| **degeneracy** | λ/2 dipole as a start-to-start split (one arm reversed), identical 52-seg mesh | path receive solver reproduces the validated per-wire solver's peak current to **~1e-11** (machine precision), θ = 35–90° |
+| **reciprocity** | bent inverted-V (not collinear), apex feed | short-circuit feed current tracks the transmit far-field: `|I_feed|²/G_θ` constant to **1.5 %** across θ = 40–85° (≈8× gain range) |
+
+The degeneracy gate proves the sign / arc-length bookkeeping is exactly right on a
+reversed arm; the reciprocity gate proves the genuinely-bent case is physically
+correct against the already-validated conductor-path transmit + farfield paths.
+
 ## Boundary
 
 | class | status |
 |:------|:-------|
 | single wire, collinear split | solved (unchanged) |
-| bend / start-to-start / end-to-end (degree-2) | **solved (this increment)** |
+| bend / start-to-start / end-to-end (degree-2) — transmit | **solved** |
+| bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solve core landed (this increment); CLI wiring pending** |
 | degree-3+ T/Y junction | deferred → guarded (PH9-CHK-005) |
 | closed loop | deferred → guarded |
-| receive-side (plane-wave / current-source) junction | deferred |
+| current-source receive-side junction | deferred |
