@@ -12,6 +12,16 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-002 collinear junction fix** — a straight conductor split across
+  several `GW` cards is now solved as one wire. Root cause: fnec's Hallén
+  homogeneous solution (`cos(k·s)` + constant) was built per `GW` wire and reset at
+  each junction. `merge_collinear_wire_endpoints` merges end-to-start, equal-radius,
+  collinear wire chains into one logical conductor for the homogeneous basis; a λ/2
+  dipole split at its feed now solves **74.41 + j14.52 Ω** (was −34 − j1447 —
+  negative resistance). The merge is a strict no-op for single wires, parallel
+  arrays, bends, and stepped-radius junctions, so those are byte-for-byte unchanged.
+  Non-collinear junctions (bends, T/Y) remain guarded by PH9-CHK-005.
+
 - **PH9-CHK-005 junction-fed feedpoint guardrail** — feeding a segment that sits
   at a wire junction gives an unphysical impedance in fnec's per-segment `V/I` (a
   half-wave dipole split into two wires and fed at the junction reports
@@ -46,8 +56,7 @@ All notable documentation process changes are recorded here.
   Hallén **homogeneous solution**: the `cos(k·s)` along-wire coordinate resets per
   `GW` wire and the homogeneous constant is independent per wire, so the basis is
   discontinuous across a junction. It is *not* the current-continuity constraint.
-  The fix (a junction-continuous homogeneous basis, collinear case first) is scoped
-  with validation targets and deferred. See `docs/ph9-chk-002-junction-feed-diagnosis.md`.
+  The collinear case of this fix is now implemented (see the PH9-CHK-002 Added entry above); bends/T-junctions remain. See `docs/ph9-chk-002-junction-feed-diagnosis.md`.
 
 - **Phase 9 drafted** (`docs/roadmap.md` "Phase 9: accuracy frontier & scattering
   breadth") — six planned items grounded in the surviving `PRT-*` gaps and the

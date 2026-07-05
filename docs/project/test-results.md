@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-005-junction-guardrail` (base `3b470a4` main) |
+| Commit | branch `feat/ph9-chk-002-collinear-fix` (base `84067cb` main) |
 | Version | fnec-rust 0.8.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,14 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-571 passed; 0 failed; 0 ignored — across 60 test binaries
+576 passed; 0 failed; 0 ignored — across 61 test binaries
 exit code 0
 ```
 
-571 = 568 + 3 junction-feedpoint guardrail tests (`junction_feedpoint.rs`:
-junction-fed warns; fed-away / single-wire quiet). PH9-CHK-005. No existing corpus
-case feeds at a junction, so none newly warns.
+576 = 571 + 5 collinear-merge tests (`collinear_merge.rs`: split chain recovers
+the single-wire impedance; merge is a no-op for single/bent/stepped geometry).
+PH9-CHK-002 collinear fix — validated zero regression (single-wire, dipole-loaded,
+Yagi, TL-linked all byte-for-byte unchanged).
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

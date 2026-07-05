@@ -183,6 +183,62 @@ pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
     out
 }
 
+/// Merge tag-based wire chains that are **collinear continuations** of one another
+/// into single logical wires, for the Hallén homogeneous solution (PH9-CHK-002).
+///
+/// Two consecutive wire blocks are merged when the first block's last segment
+/// connects **end-to-start** to the next block's first segment, the two segments
+/// share direction (collinear) and radius, and they are contiguous in the segment
+/// array. The result is the natural single-wire grouping for a straight conductor
+/// that was split across several `GW` cards — so `cos(k·s)` and the homogeneous
+/// constant are shared across the whole conductor rather than reset at each split.
+///
+/// For any geometry without such collinear splits (single wires, parallel arrays,
+/// bends, T/Y junctions) this returns exactly [`wire_endpoints_from_segs`] — the
+/// merge is a strict no-op there.
+pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
+    let base = wire_endpoints_from_segs(segs);
+    if base.len() < 2 {
+        return base;
+    }
+    const POS_TOL: f64 = 1e-6; // metres
+    const DIR_TOL: f64 = 1e-6;
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    let mut cur = base[0];
+    for &next in &base[1..] {
+        let a = &segs[cur.1]; // last segment of the current (possibly merged) block
+        let b = &segs[next.0]; // first segment of the candidate block
+        let contiguous = cur.1 + 1 == next.0;
+        let connects = dist2(a.end, b.start) < POS_TOL * POS_TOL;
+        let collinear = dir_aligned(a.direction, b.direction, DIR_TOL);
+        let same_radius = (a.radius - b.radius).abs() < POS_TOL;
+        if contiguous && connects && collinear && same_radius {
+            cur = (cur.0, next.1); // extend the merged chain
+        } else {
+            merged.push(cur);
+            cur = next;
+        }
+    }
+    merged.push(cur);
+    merged
+}
+
+fn dist2(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+}
+
+fn dir_aligned(a: [f64; 3], b: [f64; 3], tol: f64) -> bool {
+    // Same direction (not merely parallel): the cross product ~0 and dot > 0.
+    let cross = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    dist2(cross, [0.0, 0.0, 0.0]) < tol * tol && dot > 0.0
+}
+
 /// A detected physical junction between two wire endpoints.
 ///
 /// Encodes the current-continuity constraint that must be applied in
