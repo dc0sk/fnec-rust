@@ -12,6 +12,18 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-002 receive-side junctions CLI-wired (degree-2, plane wave)** — the CLI
+  plane-wave receive path (`solve_plane_wave_hallen`) now routes degree-2 junctioned
+  geometry through the conductor-path solver, so a **receiving** bent or connected
+  antenna (bend, start-to-start / end-to-end split, inverted-V) solves and emits a
+  `RECEIVE_PATTERN` where it previously failed fast with `JunctionedGeometryNotSupported`.
+  Reducible decks (single wires, collinear chains, parallel arrays) keep the
+  validated per-wire path; degree-3+ (T/Y) and closed loops still fail fast.
+  End-to-end gate: a start-to-start split dipole's receive sweep shows the correct
+  z-dipole shape and matches its own transmit gain pattern by reciprocity to
+  0.025 dB (`apps/nec-cli/tests/receive_junction.rs`). `docs/card-support-matrix.md`
+  EX type 1 updated. See `docs/ph9-chk-002-general-junction.md`.
+
 - **PH9-CHK-002 receive-side junction solve core (degree-2, plane wave)** — the
   conductor-path model now backs a *distributed*-excitation solver, so a
   **receiving** bent or connected antenna solves on continuous paths. A plane wave

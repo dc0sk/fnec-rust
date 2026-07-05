@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-05 |
-| Commit | branch `feat/ph9-chk-002-receive-junction-solve-core` (base `2de83bb` main) |
+| Commit | branch `feat/ph9-chk-002-receive-junction-cli-wiring` (base `030a5ef` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,15 +27,21 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-596 passed; 0 failed; 0 ignored
+598 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-596 = 594 + 2 receive-side junction tests (`planewave_junction.rs`: start-to-start
-split-dipole receive reproduces the per-wire plane-wave solver to machine precision
-(~1e-11) on the identical mesh; bent inverted-V short-circuit feed current tracks
-its transmit far-field by reciprocity to 1.5% across a ~8× gain range). Adds the
-PH9-CHK-002 receive-side (plane-wave) conductor-path solve core.
+598 = 596 + 2 CLI junctioned-receive tests (`receive_junction.rs`: a start-to-start
+split-dipole plane-wave sweep now solves through the CLI, emits a `RECEIVE_PATTERN`
+with the correct z-dipole shape, and matches its own transmit gain pattern by
+reciprocity to 0.025 dB). Completes the PH9-CHK-002 receive-side (plane-wave)
+junction slice — solve core (596) + CLI wiring (598).
+
+### Prior run — 2026-07-05, base `2de83bb` (receive-side solve core)
+
+`596 passed` (594 + 2 `planewave_junction.rs`: start-to-start split-dipole receive
+reproduces the per-wire solver to ~1e-11; bent inverted-V reciprocity 1.5%). Added
+the receive-side conductor-path solve core (PR #285).
 
 ### Prior run — 2026-07-02, base `b3cdda2`
 
