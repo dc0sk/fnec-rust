@@ -40,13 +40,14 @@ All notable documentation process changes are recorded here.
 ### Docs
 
 - **PH9-CHK-002 junction accuracy diagnosed** — a verified root-cause analysis of
-  why junctioned multi-wire feedpoints are mis-solved: fnec enforces current
-  continuity but not charge/derivative continuity at junctions, which is accurate
-  for low-current loading junctions (top-hats, `dipole-loaded` works) but grossly
-  wrong for high-current centre junctions (a dipole split or bent at its feed →
-  negative resistance). The fix (junction basis functions / a charge-continuity
-  constraint) is scoped with validation targets; deferred to a dedicated effort.
-  See `docs/ph9-chk-002-junction-feed-diagnosis.md`.
+  why junctioned multi-wire feedpoints are mis-solved. A controlled experiment
+  (single 52-seg wire → 74.41+j14.52 Ω; the same dipole as two wires → negative
+  resistance; *merging* the wire grouping does **not** help) pins the cause to the
+  Hallén **homogeneous solution**: the `cos(k·s)` along-wire coordinate resets per
+  `GW` wire and the homogeneous constant is independent per wire, so the basis is
+  discontinuous across a junction. It is *not* the current-continuity constraint.
+  The fix (a junction-continuous homogeneous basis, collinear case first) is scoped
+  with validation targets and deferred. See `docs/ph9-chk-002-junction-feed-diagnosis.md`.
 
 - **Phase 9 drafted** (`docs/roadmap.md` "Phase 9: accuracy frontier & scattering
   breadth") — six planned items grounded in the surviving `PRT-*` gaps and the
