@@ -297,9 +297,15 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // XNDA = output/normalization options at I4). fnec historically
                 // also accepts a 7-field form without XNDA. Distinguish by count:
                 // with >= 8 fields the four angle floats start at index 4 (after
-                // XNDA); with 7 they start at index 3. XNDA does not affect the
-                // angle grid and is not stored.
+                // XNDA); with 7 they start at index 3. The XNDA `X` digit (its
+                // thousands digit) requests normalized-gain output.
                 let a = if fields.len() >= 8 { 4 } else { 3 };
+                let normalize = if fields.len() >= 8 {
+                    let xnda = parse_u32(lineno, "RP", 4, fields[3])?;
+                    (xnda / 1000) % 10 != 0
+                } else {
+                    false
+                };
                 deck.cards.push(Card::Rp(RpCard {
                     mode: parse_u32(lineno, "RP", 1, fields[0])?,
                     n_theta: parse_u32(lineno, "RP", 2, fields[1])?,
@@ -308,6 +314,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     phi0: parse_f64(lineno, "RP", a + 2, fields[a + 1])?,
                     d_theta: parse_f64(lineno, "RP", a + 3, fields[a + 2])?,
                     d_phi: parse_f64(lineno, "RP", a + 4, fields[a + 3])?,
+                    normalize,
                 }));
             }
             "LD" => {
@@ -569,6 +576,7 @@ EN
                 phi0: 0.0,
                 d_theta: 5.0,
                 d_phi: 0.0,
+                normalize: false,
             })
         );
         // EN
@@ -640,15 +648,23 @@ EN
     #[test]
     fn rp_card_accepts_both_7_field_and_8_field_xnda_forms() {
         // Canonical NEC RP has 8 fields (with XNDA at I4); fnec also accepts a
-        // 7-field form. Both must parse the SAME angle grid.
+        // 7-field form. Both must parse the SAME angle grid (XNDA only affects
+        // output options, here the normalize flag).
         let seven = parse("RP 0 19 1 30.0 0.0 5.0 0.0\nEN\n").expect("parse 7-field");
         let eight = parse("RP 0 19 1 1000 30.0 0.0 5.0 0.0\nEN\n").expect("parse 8-field");
         let (Card::Rp(r7), Card::Rp(r8)) = (&seven.deck.cards[0], &eight.deck.cards[0]) else {
             panic!("expected RP cards");
         };
-        assert_eq!(r7, r8, "7-field and 8-field RP must parse identical angles");
+        // Angles identical; the XNDA=1000 value must NOT leak into θ0.
         assert_eq!(r8.theta0, 30.0, "8-field θ0 must be 30, not XNDA=1000");
-        assert_eq!(r8.d_theta, 5.0);
+        assert_eq!(
+            (r7.mode, r7.n_theta, r7.n_phi, r7.theta0, r7.phi0, r7.d_theta, r7.d_phi),
+            (r8.mode, r8.n_theta, r8.n_phi, r8.theta0, r8.phi0, r8.d_theta, r8.d_phi),
+            "7-field and 8-field RP must parse identical angles"
+        );
+        // XNDA=1000 → X digit 1 → normalized output requested.
+        assert!(r8.normalize, "XNDA X-digit 1 must request normalization");
+        assert!(!r7.normalize, "7-field RP has no XNDA, so no normalization");
     }
 
     #[test]
