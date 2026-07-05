@@ -12,6 +12,20 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-002 general junction basis (degree-2)** — the Hallén delta-gap solve now
+  handles **any degree-2 conductor chain** — bends, start-to-start / end-to-end
+  splits, and inverted-V apex feeds — not just collinear splits. `build_conductor_paths`
+  walks the wire-endpoint graph into continuous *conductor paths* and the solve
+  carries a per-segment traversal sign and signed arc-length, so the homogeneous
+  `cos(k·s)` basis stays continuous across the junction with one shared constant per
+  path (`build_hallen_rhs_paths` / `solve_hallen_paths`). A λ/2 dipole split at the
+  feed now solves 74.41 + j14.52 Ω whether the join is end-to-start or start-to-start
+  (was −34 − j1447); a 30°/45°/90° inverted-V matches nec2c's radiation resistance to
+  2–4 %. The junction-fed feedpoint warning is suppressed for these now-correct
+  cases; degree-3+ (T/Y) junctions, closed loops, and receive-side junctions remain
+  guarded (PH9-CHK-005). Zero regression (594 tests). See
+  `docs/ph9-chk-002-general-junction.md`.
+
 - **PH9-CHK-004 near electric and magnetic field (`NE` / `NH` cards)** — fnec can now compute the near
   electric field on a rectangular grid of observation points (`NE I1 NX NY NZ X0
   Y0 Z0 DX DY DZ`), emitting a `NEAR_FIELD` report section. The field is the

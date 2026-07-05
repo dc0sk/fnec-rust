@@ -14,8 +14,8 @@ pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
-    build_current_source_shape, build_excitation, build_hallen_rhs, scale_excitation_for_pulse_rhs,
-    ExcitationError, HallenRhs,
+    build_current_source_shape, build_excitation, build_hallen_rhs, build_hallen_rhs_paths,
+    scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, near_e_field,
@@ -23,11 +23,12 @@ pub use farfield::{
     NearFieldH, NearFieldPoint, RpGainGrid,
 };
 pub use geometry::{
-    build_geometry, detect_wire_junctions, ground_model_from_deck, merge_collinear_wire_endpoints,
-    wire_endpoints_from_segs, GeometryError, GroundModel, Segment, WireJunction,
+    build_conductor_paths, build_geometry, detect_wire_junctions, ground_model_from_deck,
+    merge_collinear_wire_endpoints, wire_endpoints_from_segs, ConductorPath, GeometryError,
+    GroundModel, Segment, WireJunction,
 };
 pub use linear::{
-    solve, solve_hallen, solve_hallen_current_source, solve_hallen_planewave,
+    solve, solve_hallen, solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
     solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, CurrentSourceSolution, HallenSolution, SolveError,

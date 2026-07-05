@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use nec_model::card::{Card, ExCard, ExcitationKind};
 use nec_model::deck::NecDeck;
 
-use crate::geometry::{merge_collinear_wire_endpoints, Segment};
+use crate::geometry::{merge_collinear_wire_endpoints, ConductorPath, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
@@ -238,6 +238,103 @@ pub fn build_hallen_rhs(
             let s = d[0] * src_dir[0] + d[1] * src_dir[1] + d[2] * src_dir[2];
             rhs[m] += Complex64::new(0.0, -scale * (k * s.abs()).sin()) * vsrc;
         }
+    }
+
+    Ok(HallenRhs { rhs, cos_vec })
+}
+
+/// Build Hallén RHS data over **conductor paths** — the general-junction delta-gap
+/// path (PH9-CHK-002), used by [`crate::solve_hallen_paths`].
+///
+/// This is the path-aware counterpart of [`build_hallen_rhs`]. Instead of a
+/// per-`GW` straight-axis coordinate, the homogeneous basis uses the **signed
+/// arc-length** `s` along each [`ConductorPath`] with the traversal **sign**, so
+/// `cos(k·s)` stays continuous across a bent or reversed (start-to-start) junction:
+///
+/// - `cos_vec[m] = sign[m]·cos(k·s_m)` where `s_m` is the segment's signed
+///   arc-length on its path.
+/// - Each voltage source drives its whole path; the source term is
+///   `sign[m]·(−j·(2π/η)·V·sin(k·|s_m − s_src|))`, with `s` measured as arc-length
+///   distance along the path.
+///
+/// The sign factor is what carries the fix: the current on segment `m` in its own
+/// NEC direction is `sign[m]·I_path(s_m)`, so both the homogeneous and the driving
+/// term pick up `sign[m]`. For a single straight wire (`sign = +1`, arc-length =
+/// straight-axis coordinate) this reduces exactly to [`build_hallen_rhs`].
+pub fn build_hallen_rhs_paths(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    paths: &[ConductorPath],
+) -> Result<HallenRhs, ExcitationError> {
+    let n = segs.len();
+    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
+
+    // Per-segment path index, sign, and signed arc-length.
+    let mut path_of = vec![0usize; n];
+    let mut sign_of = vec![1.0f64; n];
+    let mut s_of = vec![0.0f64; n];
+    for (pi, p) in paths.iter().enumerate() {
+        for (j, &m) in p.segs.iter().enumerate() {
+            path_of[m] = pi;
+            sign_of[m] = p.signs[j];
+            s_of[m] = p.s_mid[j];
+        }
+    }
+
+    let mut cos_vec = vec![0.0; n];
+    for m in 0..n {
+        cos_vec[m] = sign_of[m] * (k * s_of[m]).cos();
+    }
+
+    // Collect voltage-source segments (type 0/5), superposing across the deck.
+    let mut rhs = vec![Complex64::new(0.0, 0.0); n];
+    let mut any_source = false;
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
+            continue;
+        }
+        if !ex.kind().is_voltage_source() {
+            return Err(ExcitationError::UnsupportedType {
+                ex_type: ex.excitation_type,
+                tag: ex.tag,
+                segment: ex.segment,
+                i4: ex.i4,
+            });
+        }
+        let fi = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            .ok_or(ExcitationError::SegmentNotFound {
+                tag: ex.tag,
+                segment: ex.segment,
+            })?;
+        any_source = true;
+        let vsrc = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        let src_path = path_of[fi];
+        let s_src = s_of[fi];
+        // The EX voltage is applied in the feed segment's own NEC direction, which
+        // is `sign_of[fi]` relative to the path traversal. Referencing the driving
+        // term to the feed sign keeps V/I[feed] positive regardless of which arm of
+        // a start-to-start junction the feed lands on.
+        let feed_sign = sign_of[fi];
+        for m in 0..n {
+            if path_of[m] != src_path {
+                continue;
+            }
+            let ds = (s_of[m] - s_src).abs();
+            rhs[m] +=
+                Complex64::new(0.0, -scale * (k * ds).sin()) * vsrc * (sign_of[m] * feed_sign);
+        }
+    }
+
+    if !any_source {
+        return Ok(HallenRhs {
+            rhs: vec![Complex64::new(0.0, 0.0); n],
+            cos_vec,
+        });
     }
 
     Ok(HallenRhs { rhs, cos_vec })
