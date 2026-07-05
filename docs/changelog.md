@@ -10,8 +10,14 @@ last_updated: 2026-07-05
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Added
 
-*(nothing currently queued)*
+- **PH9-CHK-004 `PT` print-control** — the `PT` (print-control) card is now applied
+  at runtime instead of being parsed-and-ignored: `I1 ≤ −1` suppresses the segment
+  current output, `I1 = 0` prints all currents (default), and `I1 ≥ 1` restricts
+  the output to tag `I2` and the optional segment range `I3..I4` (last `PT` card
+  wins). The former "PT card support is currently deferred" warning is removed;
+  `docs/card-support-matrix.md` `PT` → Partial.
 
 ## [0.9.0] — 2026-07-05 — Phase 9 progress: receive patterns, ground gain, junction robustness
 ### Added

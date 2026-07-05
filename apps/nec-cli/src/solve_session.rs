@@ -442,6 +442,53 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
     }
 }
 
+/// PH9-CHK-004: apply the `PT` (print-control) card to the segment current table.
+///
+/// Supported subset (NEC-2 `PT I1 I2 I3 I4`): `I1 ≤ −1` suppresses the current
+/// output entirely (fnec prints no charge densities, so all negative modes map to
+/// "no currents"); `I1 = 0` prints all currents (the default); `I1 ≥ 1` restricts
+/// the output to tag `I2` and, when given, the segment range `I3..=I4`. The last
+/// `PT` card in the deck wins. Fields that are absent or unparsable default to 0.
+fn apply_pt_current_filter(
+    current_table: Vec<CurrentRow>,
+    deck: &nec_model::deck::NecDeck,
+) -> Vec<CurrentRow> {
+    let Some(pt) = deck.cards.iter().rev().find_map(|c| match c {
+        Card::Pt(p) => Some(p),
+        _ => None,
+    }) else {
+        return current_table;
+    };
+    let field = |i: usize| -> i64 {
+        pt.raw_fields
+            .get(i)
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .map(|v| v as i64)
+            .unwrap_or(0)
+    };
+    let mode = field(0);
+    let tag = field(1);
+    let seg_first = field(2);
+    let seg_last = field(3);
+
+    if mode <= -1 {
+        return Vec::new(); // suppress current output
+    }
+    if mode == 0 {
+        return current_table; // print all
+    }
+    // mode >= 1: restrict to tag (and optional segment range).
+    current_table
+        .into_iter()
+        .filter(|r| {
+            let tag_ok = tag == 0 || r.tag as i64 == tag;
+            let seg_ok = seg_first == 0
+                || (r.seg as i64 >= seg_first && (seg_last == 0 || r.seg as i64 <= seg_last));
+            tag_ok && seg_ok
+        })
+        .collect()
+}
+
 /// PH9-CHK-005: a passive antenna cannot have a negative input resistance. On the
 /// Hallén path a negative `Re(Z)` is therefore a reliable post-solve signal that
 /// the result is unphysical — in practice a junctioned-geometry limitation (a
@@ -1005,6 +1052,8 @@ pub(super) fn solve_frequency_point(
             current: i_vec[idx],
         })
         .collect();
+    // PH9-CHK-004: apply PT (print-control) filtering to the segment current output.
+    let current_table = apply_pt_current_filter(current_table, deck);
 
     let source_table = build_source_rows(deck);
     let load_table = build_load_rows(deck);

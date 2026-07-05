@@ -94,11 +94,5 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 // path via `nec_solver::build_nt_stamps`, which warns on malformed/unsupported
 // cards. The former blanket "deferred support" warning was removed.
 
-pub(super) fn warn_pt_card_deferred_support(deck: &nec_model::deck::NecDeck) {
-    let has_pt = deck.cards.iter().any(|c| matches!(c, Card::Pt(_)));
-    if has_pt {
-        eprintln!(
-            "warning: PT card support is currently deferred; PT cards are parsed for portability but ignored at runtime"
-        );
-    }
-}
+// PT cards are applied to the current output in solve_session (PH9-CHK-004);
+// no deferred-support warning is emitted.

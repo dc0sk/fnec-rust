@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-negative-resistance-guard` (base `a00959a` main) |
+| Commit | branch `feat/ph9-chk-004-pt-print-control` (base `9dc6fcb` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-577 passed; 0 failed; 0 ignored — across 61 test binaries
+581 passed; 0 failed; 0 ignored — across 62 test binaries
 exit code 0
 ```
 
-577 = 576 + 1 negative-resistance guardrail test (`junction_feedpoint.rs`: a bent
-dipole fed away from the bend now warns). Complements the PH9-CHK-002 collinear fix.
-No valid Hallén corpus case trips the negative-R check.
+581 = 577 + 4 PT print-control tests (`pt_print_control.rs`: mode 0 / suppress /
+tag filter / no-PT). PH9-CHK-004. The PT-deferred warning contract was flipped to a
+forbidden-warning contract across `parser_warnings.rs` and the corpus.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 

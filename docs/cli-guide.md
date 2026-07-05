@@ -215,6 +215,7 @@ Formatting and ordering rules:
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 - `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
+- `CURRENTS` is controlled by a `PT` (print-control) card when present: `I1 ≤ −1` suppresses the section, `I1 = 0` prints all segments, `I1 ≥ 1` restricts output to tag `I2` and the optional segment range `I3..I4` (last `PT` card wins)
 
 ## Diagnostics (stderr)
 
