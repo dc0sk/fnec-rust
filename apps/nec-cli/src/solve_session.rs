@@ -56,12 +56,12 @@ use nec_report::{
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_current_source_shape, build_hallen_rhs, build_hallen_rhs_paths, build_loads,
-    build_nt_stamps, build_planewave_hallen, build_tl_stamps, compute_radiation_pattern,
-    detect_wire_junctions, integrate_radiated_power, merge_collinear_wire_endpoints,
-    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
-    GroundModel, Segment, ZMatrix,
+    build_nt_stamps, build_planewave_hallen, build_planewave_hallen_paths, build_tl_stamps,
+    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
+    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
+    solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -228,11 +228,18 @@ pub(super) fn deck_has_plane_wave(deck: &nec_model::deck::NecDeck) -> bool {
     })
 }
 
-/// Solve a receiving antenna illuminated by an incident plane wave (PH8-CHK-002).
+/// Solve a receiving antenna illuminated by an incident plane wave (PH8-CHK-002,
+/// PH9-CHK-002).
 ///
-/// Supported class: a single straight wire with a linear-polarization plane wave
-/// (EX type 1). Elliptic polarization (types 2/3) and multi-wire geometry fail
-/// fast with an accurate diagnostic until those increments land. `z_mat` is the
+/// Straight, non-junctioned wires (one or more) solve on the per-wire two-DOF
+/// Hallén path. **Junctioned degree-2 geometry** (bends, start-to-start /
+/// end-to-end splits, inverted-V) solves on continuous *conductor paths*
+/// (PH9-CHK-002 receive side): `build_conductor_paths` walks the wire graph and
+/// `solve_hallen_planewave_paths` carries two homogeneous constants (`cos`/`sin`)
+/// per path with the signed-arc-length convention, so the induced current stays
+/// continuous across the junction. Out-of-scope topologies (degree-3+ T/Y,
+/// closed loops) return `None` from `build_conductor_paths` and fall back to the
+/// per-wire builder, which fails fast with an accurate diagnostic. `z_mat` is the
 /// assembled Hallén matrix (including any load / TL stamps); the plane-wave solve
 /// adds its own cos/sin homogeneous columns.
 fn solve_plane_wave_hallen(
@@ -242,6 +249,34 @@ fn solve_plane_wave_hallen(
     wire_endpoints: &[(usize, usize)],
     freq_hz: f64,
 ) -> Result<Vec<Complex64>, String> {
+    // Route junctioned degree-2 geometry through the conductor-path receive solver.
+    // Reducible decks (single wires, collinear chains, parallel arrays) keep the
+    // validated per-wire path; only a non-trivial (bent / reversed) path diverts.
+    if let Some(paths) = build_conductor_paths(segs) {
+        if paths.iter().any(|p| !p.is_trivial()) {
+            let pw = build_planewave_hallen_paths(deck, segs, freq_hz, &paths)
+                .map_err(|e| e.to_string())?;
+            let mut path_of = vec![0usize; segs.len()];
+            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
+            for (pi, p) in paths.iter().enumerate() {
+                for &m in &p.segs {
+                    path_of[m] = pi;
+                }
+                free_ends.push(p.free_ends.0);
+                free_ends.push(p.free_ends.1);
+            }
+            return solve_hallen_planewave_paths(
+                z_mat,
+                &pw.rhs,
+                &pw.cos_vec,
+                &pw.sin_vec,
+                &path_of,
+                &free_ends,
+            )
+            .map_err(|e| e.to_string());
+        }
+    }
+
     // Linear (type 1) and elliptic (types 2/3) plane waves are all handled by
     // build_planewave_hallen via the complex polarization vector.
     let pw = build_planewave_hallen(deck, segs, freq_hz).map_err(|e| e.to_string())?;

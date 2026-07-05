@@ -16,13 +16,13 @@ continuous *conductor path* rather than per `GW` wire. This closes the headline
 junction-fed-feedpoint limitation for the mainstream bent/branched-at-the-feed
 antennas (inverted-V, bent dipole, split-fed dipole).
 
-**Receive-side (plane-wave) junction solve core landed (2026-07-05).** The same
+**Receive-side (plane-wave) junctions solved end-to-end (2026-07-05).** The same
 conductor-path model now backs a *distributed*-excitation solver
-(`solve_hallen_planewave_paths` / `build_planewave_hallen_paths`), so a **receiving**
-bent or connected antenna solves on continuous paths — see
-[Receive-side junctions](#receive-side-junctions-plane-wave) below. This increment
-is the self-contained solve core (new solver + validation); wiring it into the CLI
-receive path (`solve_session`) is the follow-up increment.
+(`solve_hallen_planewave_paths` / `build_planewave_hallen_paths`), and the CLI
+receive path (`solve_plane_wave_hallen` in `solve_session.rs`) routes junctioned
+degree-2 geometry through it — so a **receiving** bent or connected antenna solves
+and emits a `RECEIVE_PATTERN` where it previously failed fast. See
+[Receive-side junctions](#receive-side-junctions-plane-wave) below.
 
 Still deferred to the remaining general work: **degree-3+** (T/Y) junctions,
 **closed loops**, and the **current-source** receive-side junction solve. Those
@@ -137,13 +137,20 @@ The degeneracy gate proves the sign / arc-length bookkeeping is exactly right on
 reversed arm; the reciprocity gate proves the genuinely-bent case is physically
 correct against the already-validated conductor-path transmit + farfield paths.
 
+End-to-end CLI gate (`apps/nec-cli/tests/receive_junction.rs`): a start-to-start
+split dipole illuminated by a `NTHETA` incidence sweep now solves through the CLI
+and emits a `RECEIVE_PATTERN` with the correct z-dipole shape (endfire null,
+broadside peak, monotonic between), and its normalized receive pattern matches its
+own normalized transmit gain pattern by reciprocity to **0.025 dB** — both sides
+solved on conductor paths.
+
 ## Boundary
 
 | class | status |
 |:------|:-------|
 | single wire, collinear split | solved (unchanged) |
 | bend / start-to-start / end-to-end (degree-2) — transmit | **solved** |
-| bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solve core landed (this increment); CLI wiring pending** |
+| bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solved (CLI-wired)** |
 | degree-3+ T/Y junction | deferred → guarded (PH9-CHK-005) |
 | closed loop | deferred → guarded |
 | current-source receive-side junction | deferred |
