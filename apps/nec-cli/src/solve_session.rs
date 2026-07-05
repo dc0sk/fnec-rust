@@ -1284,6 +1284,10 @@ pub(super) fn solve_frequency_point(
         receive_pattern_table: &receive_pattern_table,
         near_field_table: &near_field_table,
         near_h_field_table: &near_h_field_table,
+        normalize_pattern: deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
     });
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,

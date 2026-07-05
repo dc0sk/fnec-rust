@@ -213,6 +213,10 @@ pub struct RpCard {
     pub d_theta: f64,
     /// Phi increment (degrees).
     pub d_phi: f64,
+    /// Normalized-gain output requested by the `XNDA` field's `X` digit (non-zero
+    /// on the canonical 8-field card). When set, a `NORMALIZED_PATTERN` section
+    /// (gain relative to the pattern peak) is emitted. PH9-CHK-004.
+    pub normalize: bool,
 }
 
 /// GN — Ground definition card.

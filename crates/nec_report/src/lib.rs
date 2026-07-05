@@ -135,6 +135,10 @@ pub struct ReportInput<'a> {
     /// Near magnetic-field table.  When non-empty, appended as
     /// `NEAR_H_FIELD / X Y Z HX_RE HX_IM HY_RE HY_IM HZ_RE HZ_IM` rows (PH9-CHK-004).
     pub near_h_field_table: &'a [NearHFieldRow],
+    /// When true (RP `XNDA` X-digit set), a `NORMALIZED_PATTERN /
+    /// THETA PHI GAIN_NORM_DB` section — the total gain relative to the pattern
+    /// peak — is emitted from `pattern_table` (PH9-CHK-004).
+    pub normalize_pattern: bool,
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -236,6 +240,7 @@ pub trait ResultFilter {
 ///     receive_pattern_table: &[],
 ///     near_field_table: &[],
 ///     near_h_field_table: &[],
+///     normalize_pattern: false,
 /// };
 /// let section = ImpedanceSummary { rows: &[row] };
 /// let report = render_text_report_with_sections(&input, &[&section]);
@@ -277,7 +282,7 @@ pub trait ReportSection {
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
-///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[], near_h_field_table: &[],
+///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[], near_h_field_table: &[], normalize_pattern: false,
 /// };
 /// let report = render_text_report_with_sections(&input, &[&Banner]);
 /// assert!(report.contains("MY_SECTION\nhello world\n"));
@@ -393,6 +398,29 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         }
     }
 
+    if input.normalize_pattern && !input.pattern_table.is_empty() {
+        let peak = input
+            .pattern_table
+            .iter()
+            .map(|r| r.gain_total_dbi)
+            .fold(f64::NEG_INFINITY, f64::max);
+        out.push('\n');
+        out.push_str("NORMALIZED_PATTERN\n");
+        out.push_str(&format!("N_POINTS {}\n", input.pattern_table.len()));
+        out.push_str("THETA PHI GAIN_NORM_DB\n");
+        for r in input.pattern_table {
+            let norm = if r.gain_total_dbi > -900.0 {
+                r.gain_total_dbi - peak
+            } else {
+                r.gain_total_dbi
+            };
+            out.push_str(&format!(
+                "{:.4} {:.4} {:.4}\n",
+                r.theta_deg, r.phi_deg, norm
+            ));
+        }
+    }
+
     out
 }
 
@@ -487,6 +515,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -533,6 +562,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -619,6 +649,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
@@ -663,6 +694,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         });
 
         let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
@@ -698,6 +730,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         }
     }
 
@@ -809,6 +842,7 @@ mod tests {
             receive_pattern_table: &[],
             near_field_table: &[],
             near_h_field_table: &[],
+            normalize_pattern: false,
         });
         assert!(report.contains("FEEDPOINTS\n"));
         assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));

@@ -106,7 +106,7 @@ no longer silently treated as EX type 0.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section |
+| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section (PH9-CHK-004) |
 
 ## Unknown / other cards
 

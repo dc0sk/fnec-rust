@@ -214,6 +214,7 @@ Formatting and ordering rules:
 - `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
+- `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `X` digit); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
 - `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
 - `NEAR_FIELD` appears only when an `NE` card is present; it lists the complex `E = (Ex, Ey, Ez)` (V/m) on the card's rectangular grid. `NEAR_H_FIELD` is the magnetic companion for an `NH` card (`H = (Hx, Hy, Hz)`, A/m)
 - `CURRENTS` is controlled by a `PT` (print-control) card when present: `I1 ≤ −1` suppresses the section, `I1 = 0` prints all segments, `I1 ≥ 1` restricts output to tag `I2` and the optional segment range `I3..I4` (last `PT` card wins)

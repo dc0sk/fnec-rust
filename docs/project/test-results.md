@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-004-near-h-field` (base `2c57437` main) |
+| Commit | branch `feat/ph9-chk-004-rp-normalization` (base `b3cdda2` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,13 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-584 passed; 0 failed; 0 ignored — across 63 test binaries
+587 passed; 0 failed; 0 ignored — across 64 test binaries
 exit code 0
 ```
 
-584 = 583 + 1 near-magnetic-field test (`near_field.rs`: far-limit `|E|=η·|H|` and
-azimuthal H). PH9-CHK-004 `NH` card — the magnetic companion to `NE`, reusing the
-same validated infrastructure.
+587 = 584 + 3 RP normalized-pattern tests (`normalized_pattern.rs`: XNDA X-digit
+emits `NORMALIZED_PATTERN` with 0 dB peak; 7-field / X=0 do not). Completes
+PH9-CHK-004 output control.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 
