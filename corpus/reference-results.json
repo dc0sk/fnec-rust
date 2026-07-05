@@ -269,18 +269,16 @@
     },
     "dipole-pt-freesp-51seg": {
       "deck_file": "dipole-pt-freesp-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, PT card parsed with deferred runtime semantics",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, PT card applied at runtime (PH9-CHK-004; mode 0 = all currents printed)",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference for PT staged portability; PT is parsed but ignored at runtime)",
-      "expected_warning_substrings": [
-        "PT card support is currently deferred"
-      ],
       "forbidden_warning_substrings": [
-        "NT card ignored"
+        "NT card ignored",
+        "PT card support is currently deferred"
       ],
       "feedpoint_impedance": {
         "real_ohm": 74.23,

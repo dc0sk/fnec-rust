@@ -241,9 +241,8 @@ fn tl_nseg_zero_runs_without_ignored_warning() {
 }
 
 #[test]
-fn pt_card_emits_deferred_warning_but_run_succeeds() {
-    // PT is now parsed; emits "PT card support is currently deferred" warning
-    // from warn_pt_card_deferred_support; deck runs as free-space.
+fn pt_card_is_applied_without_deferred_warning() {
+    // PT is applied at runtime (PH9-CHK-004): parsed and honored, no deferred warning.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -279,8 +278,9 @@ fn pt_card_emits_deferred_warning_but_run_succeeds() {
         "PT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "Phase-1 should not emit old deferred PT warning, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
 }
 
@@ -330,7 +330,7 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
 
 #[test]
 fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
-    // PT+NT both parsed; both emit deferred-support warnings.
+    // PT+NT both parsed; PT is applied, NT is stamped — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -370,8 +370,9 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'NT'"),
@@ -381,7 +382,7 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
 
 #[test]
 fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
-    // PT+NT both parsed; both emit deferred-support warnings.
+    // PT+NT both parsed; PT is applied, NT is stamped — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -414,8 +415,9 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
     assert!(
         stderr.contains("NT card ignored"),
@@ -433,7 +435,7 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 
 #[test]
 fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
-    // NT+PT both parsed; both emit deferred-support warnings.
+    // NT+PT both parsed; NT is stamped, PT is applied — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -477,14 +479,15 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
         "Phase-2: NT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
 }
 
 #[test]
 fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
-    // NT+PT both parsed; both emit deferred-support warnings.
+    // NT+PT both parsed; NT is stamped, PT is applied — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -521,8 +524,9 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'NT'"),
@@ -577,8 +581,9 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         "expected deferred-support warning for NT, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'NT'"),
@@ -633,8 +638,9 @@ fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
         "Phase-2: NT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("PT card support is currently deferred"),
-        "expected deferred-support warning for PT, got:\n{stderr}"
+        !stderr.contains("PT card support is currently deferred"),
+        "PT is applied at runtime (PH9-CHK-004); the deferred warning must be gone; got:
+{stderr}"
     );
 }
 

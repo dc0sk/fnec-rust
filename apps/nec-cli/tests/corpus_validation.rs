@@ -786,7 +786,9 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         ("dipole-ex4-pulse-current-freesp-51seg", false),
         ("dipole-ex5-freesp-51seg", false),
         ("dipole-ex5-pulse-current-freesp-51seg", false),
-        ("dipole-pt-freesp-51seg", true),
+        // PT is now applied at runtime (PH9-CHK-004) — no deferred warning, so no
+        // warning contract (its forbidden-warning list is checked separately).
+        ("dipole-pt-freesp-51seg", false),
         ("dipole-nt-freesp-51seg", true),
         ("dipole-pt-nt-freesp-51seg", true),
         ("dipole-nt-pt-freesp-51seg", true),

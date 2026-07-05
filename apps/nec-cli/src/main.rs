@@ -40,7 +40,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 use warnings::{
     warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
-    warn_pt_card_deferred_support, warn_pulse_mode_experimental,
+    warn_pulse_mode_experimental,
 };
 
 fn main() -> ExitCode {
@@ -168,8 +168,8 @@ fn main() -> ExitCode {
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
     // NT cards are now stamped in the solve path (PH8-CHK-004); malformed/
-    // unsupported NT cards warn from there. No blanket deferred warning.
-    warn_pt_card_deferred_support(deck);
+    // unsupported NT cards warn from there. PT cards are applied to the current
+    // output in solve_session (PH9-CHK-004). No blanket deferred warnings.
 
     // --- EP-4: run deck validators before geometry build ------------------
     struct NoExCardValidator;
