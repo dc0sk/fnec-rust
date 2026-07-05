@@ -5,7 +5,7 @@ status: living
 last_updated: 2026-07-05
 ---
 
-# PH9-CHK-004: near electric field (NE card)
+# PH9-CHK-004: near electric and magnetic field (NE / NH cards)
 
 ## Requirement / change
 
@@ -38,6 +38,17 @@ radiation pattern at large range.
 - `nec-cli::solve_session::build_near_field_rows` generates the grid and emits a
   `NEAR_FIELD / X Y Z EX_RE EX_IM EY_RE EY_IM EZ_RE EZ_IM` report section.
 
+### Magnetic field (NH card)
+
+The `NH` card is the exact magnetic companion, reusing the same grid layout and
+infrastructure. Each element's field is azimuthal about its axis:
+
+```
+H(P) = Σ_n (I_n·L_n / 4π)·e^{-jk r_n}·(jk / r_n)(1 + 1/(jk r_n))·(û_n × r̂_n)
+```
+
+`nec_solver::near_h_field` emits a `NEAR_H_FIELD / X Y Z HX_RE … HZ_IM` section.
+
 ### Accuracy boundary
 
 The point-element model is accurate away from the wire surface. **Very close to a
@@ -51,12 +62,15 @@ kernel — a documented limitation. Fields at practical near-field distances
   (`E_r/E_θ < 0.01`) and its magnitude matches the independently gain-derived far
   field `|E_θ| = √(G·2η·P_in/4π)/r` to **0.02 %**. This validates both the
   formula and the absolute normalization.
-- **Broadside polarization** — on the equatorial x-axis a z-dipole's field is
+- **Broadside polarization** — on the equatorial x-axis a z-dipole's E field is
   purely z-polarized (parallel to the wire), with `Ey = 0` by symmetry.
+- **Magnetic far-limit** — at 200 λ the ratio `|E|/|H|` equals the free-space
+  impedance `η = 376.73 Ω` (to 0.02 %) and `H` is azimuthal (transverse to `r̂`,
+  purely `φ̂`), confirming the plane-wave `E ⟂ H ⟂ r̂` relationship.
 
 ## Test results
 
-`cargo test --workspace`: **583 passed**, 0 failed (was 581; +2 near-field tests);
+`cargo test --workspace`: **583 passed**, 0 failed (was 581; +3 near-field tests);
 clippy clean. The `NEAR_FIELD` section only appears when an `NE` card is present,
 so existing report contracts are unaffected. `docs/card-support-matrix.md` gains
-`NE` → Partial.
+`NE` and `NH` → Partial.

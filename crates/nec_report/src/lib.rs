@@ -98,6 +98,18 @@ pub struct NearFieldRow {
     pub ez: Complex64,
 }
 
+/// One row of a near magnetic-field table: the complex `H = (Hx, Hy, Hz)` (A/m)
+/// at an observation point (metres). PH9-CHK-004.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NearHFieldRow {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub hx: Complex64,
+    pub hy: Complex64,
+    pub hz: Complex64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReportInput<'a> {
     pub solver_mode: &'a str,
@@ -120,6 +132,9 @@ pub struct ReportInput<'a> {
     /// Near electric-field table.  When non-empty, appended as
     /// `NEAR_FIELD / X Y Z EX_RE EX_IM EY_RE EY_IM EZ_RE EZ_IM` rows (PH9-CHK-004).
     pub near_field_table: &'a [NearFieldRow],
+    /// Near magnetic-field table.  When non-empty, appended as
+    /// `NEAR_H_FIELD / X Y Z HX_RE HX_IM HY_RE HY_IM HZ_RE HZ_IM` rows (PH9-CHK-004).
+    pub near_h_field_table: &'a [NearHFieldRow],
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -220,6 +235,7 @@ pub trait ResultFilter {
 ///     pattern_table: &[],
 ///     receive_pattern_table: &[],
 ///     near_field_table: &[],
+///     near_h_field_table: &[],
 /// };
 /// let section = ImpedanceSummary { rows: &[row] };
 /// let report = render_text_report_with_sections(&input, &[&section]);
@@ -261,7 +277,7 @@ pub trait ReportSection {
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
-///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[],
+///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[], near_h_field_table: &[],
 /// };
 /// let report = render_text_report_with_sections(&input, &[&Banner]);
 /// assert!(report.contains("MY_SECTION\nhello world\n"));
@@ -364,6 +380,19 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         }
     }
 
+    if !input.near_h_field_table.is_empty() {
+        out.push('\n');
+        out.push_str("NEAR_H_FIELD\n");
+        out.push_str(&format!("N_POINTS {}\n", input.near_h_field_table.len()));
+        out.push_str("X Y Z HX_RE HX_IM HY_RE HY_IM HZ_RE HZ_IM\n");
+        for r in input.near_h_field_table {
+            out.push_str(&format!(
+                "{:.4} {:.4} {:.4} {:.6e} {:.6e} {:.6e} {:.6e} {:.6e} {:.6e}\n",
+                r.x, r.y, r.z, r.hx.re, r.hx.im, r.hy.re, r.hy.im, r.hz.re, r.hz.im
+            ));
+        }
+    }
+
     out
 }
 
@@ -457,6 +486,7 @@ mod tests {
             pattern_table: &[],
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -502,6 +532,7 @@ mod tests {
             pattern_table: &[],
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -587,6 +618,7 @@ mod tests {
             pattern_table: &pattern,
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
@@ -630,6 +662,7 @@ mod tests {
             pattern_table: &[],
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         });
 
         let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
@@ -664,6 +697,7 @@ mod tests {
             pattern_table: &[],
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         }
     }
 
@@ -774,6 +808,7 @@ mod tests {
             pattern_table: &[],
             receive_pattern_table: &[],
             near_field_table: &[],
+            near_h_field_table: &[],
         });
         assert!(report.contains("FEEDPOINTS\n"));
         assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));

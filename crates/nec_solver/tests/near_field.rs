@@ -116,3 +116,40 @@ fn near_field_broadside_is_axis_polarized() {
     );
     assert!(e[2].norm() > 0.0, "Ez must be non-zero");
 }
+
+#[test]
+fn near_h_field_far_limit_impedance_and_azimuthal() {
+    let (segs, currents, _) = z_dipole();
+    let eta = 4.0 * std::f64::consts::PI * 1e-7 * 299_792_458.0;
+    let lambda = 299_792_458.0 / FREQ;
+    let r = 200.0 * lambda;
+    let th = 60.0_f64.to_radians();
+    let p = NearFieldPoint {
+        x: r * th.sin(),
+        y: 0.0,
+        z: r * th.cos(),
+    };
+    let e = near_e_field(&segs, &currents, FREQ, &[p])[0].e;
+    let hf = near_h_field(&segs, &currents, FREQ, &[p])[0].h;
+    let emag = (e[0].norm_sqr() + e[1].norm_sqr() + e[2].norm_sqr()).sqrt();
+    let hmag = (hf[0].norm_sqr() + hf[1].norm_sqr() + hf[2].norm_sqr()).sqrt();
+    // Far field: |E| = η·|H|.
+    assert!(
+        ((emag / hmag) - eta).abs() / eta < 0.02,
+        "far-field |E|/|H| = {:.3} must equal η = {:.3}",
+        emag / hmag,
+        eta
+    );
+    // H is azimuthal (transverse to r̂) and, for a z-dipole in the x-z plane,
+    // purely y-directed (φ̂).
+    let r_hat = [th.sin(), 0.0, th.cos()];
+    let h_dot_r = hf[0] * r_hat[0] + hf[2] * r_hat[2];
+    assert!(
+        h_dot_r.norm() / hmag < 0.01,
+        "H must be transverse (azimuthal)"
+    );
+    assert!(
+        hf[0].norm() < 1e-3 * hf[1].norm() && hf[2].norm() < 1e-3 * hf[1].norm(),
+        "H must be y-directed (φ̂) in the x-z plane"
+    );
+}

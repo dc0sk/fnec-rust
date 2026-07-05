@@ -19,8 +19,8 @@ pub use excitation::{
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, near_e_field,
-    radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, NearFieldE,
-    NearFieldPoint, RpGainGrid,
+    near_h_field, radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, NearFieldE,
+    NearFieldH, NearFieldPoint, RpGainGrid,
 };
 pub use geometry::{
     build_geometry, detect_wire_junctions, ground_model_from_deck, merge_collinear_wire_endpoints,

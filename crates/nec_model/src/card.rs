@@ -402,6 +402,7 @@ pub enum Card {
     Fr(FrCard),
     Rp(RpCard),
     Ne(NeCard),
+    Nh(NeCard),
     En(EnCard),
 }
 

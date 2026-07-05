@@ -12,7 +12,7 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
-- **PH9-CHK-004 near electric field (`NE` card)** — fnec can now compute the near
+- **PH9-CHK-004 near electric and magnetic field (`NE` / `NH` cards)** — fnec can now compute the near
   electric field on a rectangular grid of observation points (`NE I1 NX NY NZ X0
   Y0 Z0 DX DY DZ`), emitting a `NEAR_FIELD` report section. The field is the
   Hertzian-element sum over the solved segment currents (full 1/r, 1/r², 1/r³
@@ -20,7 +20,9 @@ All notable documentation process changes are recorded here.
   independently gain-derived far field to 0.02 %; on a dipole's equatorial axis it
   is axis-polarized with the cross-component vanishing by symmetry. Point-element
   accuracy holds away from the wire surface; very-near-the-wire (extended kernel)
-  and spherical grids are out of scope. `docs/card-support-matrix.md` `NE` → Partial.
+  and spherical grids are out of scope. The `NH` card is the exact magnetic
+  companion (`NEAR_H_FIELD` section), validated by the far-field `|E| = η·|H|`
+  relationship. `docs/card-support-matrix.md` `NE`/`NH` → Partial.
 
 - **PH9-CHK-004 `PT` print-control** — the `PT` (print-control) card is now applied
   at runtime instead of being parsed-and-ignored: `I1 ≤ −1` suppresses the segment
