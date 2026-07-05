@@ -113,6 +113,24 @@ pub struct NearFieldE {
     pub e: [Complex64; 3],
 }
 
+/// Complex magnetic field vector `(Hx, Hy, Hz)` at a near-field point (A/m).
+#[derive(Debug, Clone, Copy)]
+pub struct NearFieldH {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub h: [Complex64; 3],
+}
+
+#[inline]
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
 /// Near electric field at each observation point, as the sum of the radiated
 /// fields of the segment currents (PH9-CHK-004).
 ///
@@ -177,6 +195,64 @@ pub fn near_e_field(
                 y: p.y,
                 z: p.z,
                 e,
+            }
+        })
+        .collect()
+}
+
+/// Near magnetic field at each observation point, as the sum of the radiated
+/// fields of the segment currents (PH9-CHK-004).
+///
+/// Each segment is a Hertzian current element `I·L·û` at its midpoint; its
+/// magnetic field is azimuthal about the element axis:
+///
+/// ```text
+/// H(P) = Σ_n (I_n·L_n / 4π)·e^{-jk r_n}·(jk / r_n)(1 + 1/(jk r_n))·(û_n × r̂_n)
+/// ```
+///
+/// The 1/r far term satisfies `|E| = η·|H|` with `E ⟂ H ⟂ r̂` (validated), so the
+/// near magnetic field is consistent with the radiation pattern at large range.
+/// The same close-to-the-wire accuracy caveat as [`near_e_field`] applies.
+pub fn near_h_field(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+    points: &[NearFieldPoint],
+) -> Vec<NearFieldH> {
+    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let coeff = 1.0 / (4.0 * PI);
+    points
+        .iter()
+        .map(|p| {
+            let mut h = [Complex64::new(0.0, 0.0); 3];
+            for (n, seg) in segs.iter().enumerate() {
+                let d = [
+                    p.x - seg.midpoint[0],
+                    p.y - seg.midpoint[1],
+                    p.z - seg.midpoint[2],
+                ];
+                let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if r < 1e-9 {
+                    continue;
+                }
+                let r_hat = [d[0] / r, d[1] / r, d[2] / r];
+                let cross = cross3(seg.direction, r_hat); // û × r̂
+                let il = i_vec[n] * (seg.length * coeff);
+                let phase = Complex64::new((k * r).cos(), -(k * r).sin()); // e^{-jkr}
+                let jkr = Complex64::new(0.0, k * r);
+                let inv_jkr = Complex64::new(1.0, 0.0) / jkr;
+                // (jk/r)(1 + 1/(jkr)) = (jkr/r²)(1 + 1/(jkr))
+                let factor = (jkr / (r * r)) * (Complex64::new(1.0, 0.0) + inv_jkr);
+                let pref = il * phase * factor;
+                for a in 0..3 {
+                    h[a] += pref * cross[a];
+                }
+            }
+            NearFieldH {
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                h,
             }
         })
         .collect()

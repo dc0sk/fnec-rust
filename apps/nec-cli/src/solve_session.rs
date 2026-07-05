@@ -493,6 +493,53 @@ fn build_near_field_rows(
         .collect()
 }
 
+/// PH9-CHK-004: compute the near magnetic field for every `NH` card in the deck
+/// (the magnetic companion to [`build_near_field_rows`]).
+fn build_near_h_field_rows(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+) -> Vec<nec_report::NearHFieldRow> {
+    let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
+    for card in &deck.cards {
+        let Card::Nh(nh) = card else { continue };
+        if nh.coord_type != 0 {
+            eprintln!(
+                "warning: NH coordinate type {} (spherical) is not supported; \
+                 near-field card skipped (only rectangular, I1=0, is supported)",
+                nh.coord_type
+            );
+            continue;
+        }
+        for ix in 0..nh.nx.max(1) {
+            for iy in 0..nh.ny.max(1) {
+                for iz in 0..nh.nz.max(1) {
+                    points.push(nec_solver::NearFieldPoint {
+                        x: nh.x0 + ix as f64 * nh.dx,
+                        y: nh.y0 + iy as f64 * nh.dy,
+                        z: nh.z0 + iz as f64 * nh.dz,
+                    });
+                }
+            }
+        }
+    }
+    if points.is_empty() {
+        return Vec::new();
+    }
+    nec_solver::near_h_field(segs, i_vec, freq_hz, &points)
+        .into_iter()
+        .map(|f| nec_report::NearHFieldRow {
+            x: f.x,
+            y: f.y,
+            z: f.z,
+            hx: f.h[0],
+            hy: f.h[1],
+            hz: f.h[2],
+        })
+        .collect()
+}
+
 /// PH9-CHK-004: apply the `PT` (print-control) card to the segment current table.
 ///
 /// Supported subset (NEC-2 `PT I1 I2 I3 I4`): `I1 ≤ −1` suppresses the current
@@ -1221,8 +1268,9 @@ pub(super) fn solve_frequency_point(
         Vec::new()
     };
 
-    // PH9-CHK-004: near electric field on the NE-card grid(s).
+    // PH9-CHK-004: near electric field on the NE-card grid(s), magnetic on NH.
     let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz);
+    let near_h_field_table = build_near_h_field_rows(deck, segs, &i_vec, freq_hz);
 
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,
@@ -1235,6 +1283,7 @@ pub(super) fn solve_frequency_point(
         pattern_table: &pattern_table,
         receive_pattern_table: &receive_pattern_table,
         near_field_table: &near_field_table,
+        near_h_field_table: &near_h_field_table,
     });
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,
