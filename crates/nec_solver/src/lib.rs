@@ -29,7 +29,7 @@ pub use geometry::{
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
+    solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, CurrentSourceSolution, HallenSolution, SolveError,
 };
@@ -38,5 +38,8 @@ pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };
 pub use network::{build_nt_stamps, NtStamp, NtWarning};
-pub use planewave::{build_planewave_hallen, IncidentPlaneWave, PlaneWaveError, PlaneWaveHallen};
+pub use planewave::{
+    build_planewave_hallen, build_planewave_hallen_paths, IncidentPlaneWave, PlaneWaveError,
+    PlaneWaveHallen,
+};
 pub use tl::{build_tl_stamps, TlStamp, TlWarning};

@@ -12,6 +12,21 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-002 receive-side junction solve core (degree-2, plane wave)** — the
+  conductor-path model now backs a *distributed*-excitation solver, so a
+  **receiving** bent or connected antenna solves on continuous paths. A plane wave
+  induces an asymmetric current, so each conductor path carries **two** homogeneous
+  constants (`cos`/`sin`) with `I = 0` at its two free ends only
+  (`solve_hallen_planewave_paths`); the forcing sums the incident field over the
+  whole path with the traversal-sign + signed-arc-length convention
+  (`build_planewave_hallen_paths`). Validated internally: a start-to-start split
+  dipole (one arm reversed) reproduces the validated per-wire receive solver to
+  machine precision (~1e-11) on the identical mesh, and a bent inverted-V's induced
+  feed current tracks its transmit far-field by reciprocity to 1.5 % across a ~8×
+  gain range. This is the self-contained solve core (new solver + validation, no
+  CLI/corpus churn); routing it into the CLI receive path is the follow-up
+  increment. See `docs/ph9-chk-002-general-junction.md`.
+
 - **PH9-CHK-002 general junction basis (degree-2)** — the Hallén delta-gap solve now
   handles **any degree-2 conductor chain** — bends, start-to-start / end-to-end
   splits, and inverted-V apex feeds — not just collinear splits. `build_conductor_paths`

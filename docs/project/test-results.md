@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-07-05
 ---
 
 # Test results
@@ -18,8 +18,8 @@ rule in [README.md](README.md)).
 
 | Field | Value |
 |:------|:------|
-| Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-004-rp-normalization` (base `b3cdda2` main) |
+| Date | 2026-07-05 |
+| Commit | branch `feat/ph9-chk-002-receive-junction-solve-core` (base `2de83bb` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,21 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-587 passed; 0 failed; 0 ignored — across 64 test binaries
+596 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-587 = 584 + 3 RP normalized-pattern tests (`normalized_pattern.rs`: XNDA X-digit
-emits `NORMALIZED_PATTERN` with 0 dB peak; 7-field / X=0 do not). Completes
-PH9-CHK-004 output control.
+596 = 594 + 2 receive-side junction tests (`planewave_junction.rs`: start-to-start
+split-dipole receive reproduces the per-wire plane-wave solver to machine precision
+(~1e-11) on the identical mesh; bent inverted-V short-circuit feed current tracks
+its transmit far-field by reciprocity to 1.5% across a ~8× gain range). Adds the
+PH9-CHK-002 receive-side (plane-wave) conductor-path solve core.
+
+### Prior run — 2026-07-02, base `b3cdda2`
+
+`587 passed` (584 + 3 RP normalized-pattern tests, `normalized_pattern.rs`:
+XNDA X-digit emits `NORMALIZED_PATTERN` with 0 dB peak; 7-field / X=0 do not).
+Completed PH9-CHK-004 output control.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 
