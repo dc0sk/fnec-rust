@@ -9,11 +9,18 @@ last_updated: 2026-07-04
 
 ## Status
 
-**Diagnosed and scoped; fix deferred to a dedicated effort.** PH9-CHK-005 made the
-junction-*fed* case warn; this document records what was empirically established
-about *why* junctioned multi-wire geometry is mis-solved, so the reformulation can
-be implemented deliberately. The investigation corrected an initial mis-hypothesis
-(below) — everything here is measured, not assumed.
+**Collinear case FIXED (2026-07-05); general case (bends, start-to-start, T/Y) still
+open.** The confirmed mechanism (below) led to a targeted, validated fix for the
+most common junction artifact — a straight conductor split across several `GW`
+cards. A λ/2 dipole split into two end-to-start wires and fed at the join now
+solves at **74.41 + j14.52 Ω** (was −34 − j1447), matching the single-wire model
+exactly, with **zero regression** across the suite. Non-collinear bends,
+start-to-start splits, and T/Y junctions remain guarded by PH9-CHK-005 and await
+the general junction-basis work.
+
+This document records what was empirically established about *why* junctioned
+geometry is mis-solved (the investigation corrected two mis-hypotheses — everything
+here is measured, not assumed) and what the fix does.
 
 ## What was measured (14.2 MHz, `--solver hallen`, all values Ω)
 
@@ -77,22 +84,26 @@ The fix must make the **Hallén homogeneous solution continuous across junctions
 not add a current/charge constraint (the current-continuity machinery is already
 present and is not the cause).
 
-1. **Junction-continuous homogeneous basis (collinear first).** Compute the
-   `cos(k·s)` along-wire coordinate `s` with a *path-continuous* arc length across
-   connected wires, and share one homogeneous constant per *connected component*
-   rather than per `GW` wire. For a collinear chain this is exactly the single-wire
-   basis and should recover 74 + j14 Ω — directly validatable. This is the
-   smallest correct step and touches `build_hallen_rhs` (`cos_vec`) and the
-   per-wire `C_k` assignment in `solve_hallen`.
-2. **General junction basis functions (NEC-standard).** For non-collinear branches
-   (bends, T/Y, stepped), basis functions spanning each junction node with the
-   source as an interior excitation. Largest effort; the general answer.
+1. **Junction-continuous homogeneous basis (collinear) — ✅ DONE (2026-07-05).**
+   `merge_collinear_wire_endpoints` (`geometry.rs`) merges end-to-start,
+   equal-radius, collinear, array-contiguous `GW` chains into one logical
+   conductor. `build_hallen_rhs` then computes `cos(k·s)` from the *merged*
+   conductor's midpoint/axis and applies each source across its whole conductor,
+   and `solve_session` passes the merged endpoints to `solve_hallen` (one
+   homogeneous constant per conductor) and drops the now-internal continuity
+   constraint. The merge is a strict no-op for any geometry without such a split,
+   so single-wire, parallel-array, bent, and stepped-radius solves are byte-for-byte
+   unchanged. Validated: collinear chain → 74.41 + j14.52 Ω; single-wire 74.24 and
+   `dipole-loaded` 12.4 − j918 unchanged; full suite green
+   (`crates/nec_solver/tests/collinear_merge.rs`).
+2. **General junction basis functions (NEC-standard) — open.** For non-collinear
+   branches (bends, start-to-start splits, T/Y, stepped-radius), basis functions
+   spanning each junction node with the source as an interior excitation. Largest
+   effort; the general answer. These cases still warn (PH9-CHK-005).
 
-Validate every increment against: the **single-wire reference** (split straight
-dipole must recover 74.41 + j14.52 Ω), **nec2c** on an inverted-V, and the
-already-passing **`dipole-loaded`** (must not regress). The key regression risk is
-`cos_vec`/`C_k` changes leaking into single-wire and low-current-junction solves —
-gate those explicitly.
+Every increment is validated against: the **single-wire reference** (a split
+straight dipole must recover 74.41 + j14.52 Ω), **nec2c** on an inverted-V (for the
+general fix), and the already-passing **`dipole-loaded`** (must not regress).
 
 ## Guardrail in place
 

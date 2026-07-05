@@ -57,9 +57,10 @@ use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_current_source_shape,
     build_hallen_rhs, build_loads, build_nt_stamps, build_planewave_hallen, build_tl_stamps,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_current_source, solve_hallen_planewave, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_hallen_current_source, solve_hallen_planewave,
+    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
+    GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -404,12 +405,12 @@ pub(super) fn pulse_current_source_voltage(
 /// wires — so the reported `Z` can be unphysical (negative resistance). Accurate
 /// junction-fed impedance is deferred to PH9-CHK-002; this makes the limitation
 /// visible instead of silently returning a wrong number.
-fn warn_if_feedpoint_at_junction(
-    deck: &nec_model::deck::NecDeck,
-    segs: &[Segment],
-    wire_endpoints: &[(usize, usize)],
-) {
-    let junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
+fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
+    // Use the merged (collinear-conductor) grouping so a junction that PH9-CHK-002
+    // now solves correctly — a straight conductor split across GW cards — is not
+    // flagged. Only genuine, unmerged junctions (bends, T/Y, start-to-start) remain.
+    let merged = merge_collinear_wire_endpoints(segs);
+    let junctions = detect_wire_junctions(segs, &merged, 1e-6);
     if junctions.is_empty() {
         return;
     }
@@ -800,11 +801,24 @@ pub(super) fn solve_frequency_point(
         }
         SolverMode::Hallen => {
             let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+            // PH9-CHK-002: collinear-connected wires are merged into one logical
+            // conductor for the Hallén homogeneous solution (matching build_hallen_rhs).
+            // Junctions internal to a merged conductor are handled by the merged
+            // basis, so only cross-conductor junctions keep an explicit continuity
+            // constraint.
+            let merged_endpoints = merge_collinear_wire_endpoints(segs);
+            let mut comp_of = vec![0usize; segs.len()];
+            for (ci, &(first, last)) in merged_endpoints.iter().enumerate() {
+                for slot in comp_of.iter_mut().take(last + 1).skip(first) {
+                    *slot = ci;
+                }
+            }
             // Detect wire junctions for continuity constraints.
             // Tolerance: 1e-6 m — well below any practical segment length.
-            let wire_junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
+            let wire_junctions = detect_wire_junctions(segs, &merged_endpoints, 1e-6);
             let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
                 .iter()
+                .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
                 .map(|j| (j.seg_a, j.seg_b, j.sign))
                 .collect();
 
@@ -817,7 +831,7 @@ pub(super) fn solve_frequency_point(
                 deck,
                 segs,
                 &hallen_rhs,
-                wire_endpoints,
+                &merged_endpoints,
                 &junction_tuples,
                 ground,
                 execution_mode,
@@ -829,7 +843,7 @@ pub(super) fn solve_frequency_point(
                     &z_mat,
                     &hallen_rhs.rhs,
                     &hallen_rhs.cos_vec,
-                    wire_endpoints,
+                    &merged_endpoints,
                     &junction_tuples,
                 )
             })
@@ -840,7 +854,7 @@ pub(super) fn solve_frequency_point(
                 &sol.c_hom_per_wire,
                 &hallen_rhs.cos_vec,
                 &hallen_rhs.rhs,
-                wire_endpoints,
+                &merged_endpoints,
             );
             (sol.currents, a, r, "hallen")
         }
@@ -955,7 +969,7 @@ pub(super) fn solve_frequency_point(
     // wires, so the single-segment V/I is not the true feedpoint impedance and can
     // be unphysical (e.g. negative resistance). Warn rather than report it as
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
-    warn_if_feedpoint_at_junction(deck, segs, wire_endpoints);
+    warn_if_feedpoint_at_junction(deck, segs);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()

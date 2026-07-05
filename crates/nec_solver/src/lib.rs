@@ -22,8 +22,8 @@ pub use farfield::{
     radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, RpGainGrid,
 };
 pub use geometry::{
-    build_geometry, detect_wire_junctions, ground_model_from_deck, wire_endpoints_from_segs,
-    GeometryError, GroundModel, Segment, WireJunction,
+    build_geometry, detect_wire_junctions, ground_model_from_deck, merge_collinear_wire_endpoints,
+    wire_endpoints_from_segs, GeometryError, GroundModel, Segment, WireJunction,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_current_source, solve_hallen_planewave,

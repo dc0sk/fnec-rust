@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use nec_model::card::{Card, ExCard, ExcitationKind};
 use nec_model::deck::NecDeck;
 
-use crate::geometry::Segment;
+use crate::geometry::{merge_collinear_wire_endpoints, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
@@ -186,28 +186,34 @@ pub fn build_hallen_rhs(
         }
     }
 
-    // Group segment indices by tag to compute per-wire geometry.
-    let mut wire_first_by_tag: BTreeMap<u32, usize> = BTreeMap::new();
-    let mut wire_last_by_tag: BTreeMap<u32, usize> = BTreeMap::new();
-    for (i, seg) in segs.iter().enumerate() {
-        wire_first_by_tag.entry(seg.tag).or_insert(i);
-        wire_last_by_tag.insert(seg.tag, i);
+    // Collinear-connected `GW` wires form one logical conductor for the Hallén
+    // homogeneous solution (PH9-CHK-002): the `cos(k·s)` coordinate and the source
+    // term use the merged conductor's shared axis/origin, not each wire's own — so
+    // a straight wire split across several `GW` cards is treated as one wire, as it
+    // physically is. For geometry without collinear splits (single wires, parallel
+    // arrays, bends, T/Y junctions) the merge is a no-op and this reproduces the
+    // per-wire behaviour exactly.
+    let components = merge_collinear_wire_endpoints(segs);
+    let mut comp_of_seg = vec![0usize; segs.len()];
+    for (ci, &(first, last)) in components.iter().enumerate() {
+        for slot in comp_of_seg.iter_mut().take(last + 1).skip(first) {
+            *slot = ci;
+        }
     }
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
 
+    // cos_vec: cos(k·s_local), with s_local measured from the merged conductor's
+    // midpoint along its axis.
     for (m, seg) in segs.iter().enumerate() {
-        let first = wire_first_by_tag[&seg.tag];
-        let last = wire_last_by_tag[&seg.tag];
+        let (first, last) = components[comp_of_seg[m]];
         let wire_dir = segs[first].direction;
-        // Geometric midpoint of the wire (average of first and last segment midpoints).
         let wire_mid = [
             (segs[first].midpoint[0] + segs[last].midpoint[0]) / 2.0,
             (segs[first].midpoint[1] + segs[last].midpoint[1]) / 2.0,
             (segs[first].midpoint[2] + segs[last].midpoint[2]) / 2.0,
         ];
-        // s_local: coordinate along the wire's own axis, s=0 at wire midpoint.
         let dl = [
             seg.midpoint[0] - wire_mid[0],
             seg.midpoint[1] - wire_mid[1],
@@ -215,20 +221,23 @@ pub fn build_hallen_rhs(
         ];
         let s_local = dl[0] * wire_dir[0] + dl[1] * wire_dir[1] + dl[2] * wire_dir[2];
         cos_vec[m] = (k * s_local).cos();
+    }
 
-        if let Some(&(fi, vsrc)) = source_by_tag.get(&seg.tag) {
-            // Driven wire: rhs uses s measured from this wire's source segment midpoint.
-            let src_mid = segs[fi].midpoint;
-            let src_dir = segs[fi].direction;
+    // rhs: each voltage source drives its whole merged conductor; `s` is measured
+    // from the source segment along its axis. (Superposes for multi-source decks.)
+    for &(fi, vsrc) in source_by_tag.values() {
+        let (cf, cl) = components[comp_of_seg[fi]];
+        let src_mid = segs[fi].midpoint;
+        let src_dir = segs[fi].direction;
+        for m in cf..=cl {
             let d = [
-                seg.midpoint[0] - src_mid[0],
-                seg.midpoint[1] - src_mid[1],
-                seg.midpoint[2] - src_mid[2],
+                segs[m].midpoint[0] - src_mid[0],
+                segs[m].midpoint[1] - src_mid[1],
+                segs[m].midpoint[2] - src_mid[2],
             ];
             let s = d[0] * src_dir[0] + d[1] * src_dir[1] + d[2] * src_dir[2];
-            rhs[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * vsrc;
+            rhs[m] += Complex64::new(0.0, -scale * (k * s.abs()).sin()) * vsrc;
         }
-        // else: non-driven wire — rhs[m] stays 0.0.
     }
 
     Ok(HallenRhs { rhs, cos_vec })
