@@ -86,6 +86,18 @@ pub struct ReceivePatternRow {
     pub response_db: f64,
 }
 
+/// One row of a near electric-field table: the complex `E = (Ex, Ey, Ez)` (V/m)
+/// at an observation point (metres). PH9-CHK-004.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NearFieldRow {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub ex: Complex64,
+    pub ey: Complex64,
+    pub ez: Complex64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReportInput<'a> {
     pub solver_mode: &'a str,
@@ -105,6 +117,9 @@ pub struct ReportInput<'a> {
     /// Incident-plane-wave receive pattern.  When non-empty, appended as
     /// `RECEIVE_PATTERN / THETA PHI RESPONSE_DB` rows (PH9-CHK-001).
     pub receive_pattern_table: &'a [ReceivePatternRow],
+    /// Near electric-field table.  When non-empty, appended as
+    /// `NEAR_FIELD / X Y Z EX_RE EX_IM EY_RE EY_IM EZ_RE EZ_IM` rows (PH9-CHK-004).
+    pub near_field_table: &'a [NearFieldRow],
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -204,6 +219,7 @@ pub trait ResultFilter {
 ///     current_table: &[],
 ///     pattern_table: &[],
 ///     receive_pattern_table: &[],
+///     near_field_table: &[],
 /// };
 /// let section = ImpedanceSummary { rows: &[row] };
 /// let report = render_text_report_with_sections(&input, &[&section]);
@@ -245,7 +261,7 @@ pub trait ReportSection {
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
-///     current_table: &[], pattern_table: &[], receive_pattern_table: &[],
+///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[],
 /// };
 /// let report = render_text_report_with_sections(&input, &[&Banner]);
 /// assert!(report.contains("MY_SECTION\nhello world\n"));
@@ -331,6 +347,19 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
             out.push_str(&format!(
                 "{:.4} {:.4} {:.4}\n",
                 row.theta_deg, row.phi_deg, row.response_db
+            ));
+        }
+    }
+
+    if !input.near_field_table.is_empty() {
+        out.push('\n');
+        out.push_str("NEAR_FIELD\n");
+        out.push_str(&format!("N_POINTS {}\n", input.near_field_table.len()));
+        out.push_str("X Y Z EX_RE EX_IM EY_RE EY_IM EZ_RE EZ_IM\n");
+        for r in input.near_field_table {
+            out.push_str(&format!(
+                "{:.4} {:.4} {:.4} {:.6e} {:.6e} {:.6e} {:.6e} {:.6e} {:.6e}\n",
+                r.x, r.y, r.z, r.ex.re, r.ex.im, r.ey.re, r.ey.im, r.ez.re, r.ez.im
             ));
         }
     }
@@ -427,6 +456,7 @@ mod tests {
             current_table: &[],
             pattern_table: &[],
             receive_pattern_table: &[],
+            near_field_table: &[],
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -471,6 +501,7 @@ mod tests {
             current_table: &current_table,
             pattern_table: &[],
             receive_pattern_table: &[],
+            near_field_table: &[],
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -555,6 +586,7 @@ mod tests {
             current_table: &[],
             pattern_table: &pattern,
             receive_pattern_table: &[],
+            near_field_table: &[],
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
@@ -597,6 +629,7 @@ mod tests {
             current_table: &[],
             pattern_table: &[],
             receive_pattern_table: &[],
+            near_field_table: &[],
         });
 
         let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
@@ -630,6 +663,7 @@ mod tests {
             current_table: &[],
             pattern_table: &[],
             receive_pattern_table: &[],
+            near_field_table: &[],
         }
     }
 
@@ -739,6 +773,7 @@ mod tests {
             current_table: &[],
             pattern_table: &[],
             receive_pattern_table: &[],
+            near_field_table: &[],
         });
         assert!(report.contains("FEEDPOINTS\n"));
         assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));

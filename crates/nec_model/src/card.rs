@@ -401,5 +401,28 @@ pub enum Card {
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),
+    Ne(NeCard),
     En(EnCard),
+}
+
+/// NE — Near electric-field request card.
+///
+/// Requests the electric field on a rectangular grid of observation points
+/// (spherical coordinates are not yet supported). Fields follow canonical NEC-2:
+/// `NE I1 NX NY NZ X0 Y0 Z0 DX DY DZ`, where `I1` is the coordinate type
+/// (0 = rectangular), `NX/NY/NZ` are the point counts along each axis, `X0/Y0/Z0`
+/// the first point (metres), and `DX/DY/DZ` the increments (metres).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NeCard {
+    /// Coordinate type (I1): 0 = rectangular. Non-zero (spherical) is rejected.
+    pub coord_type: u32,
+    pub nx: u32,
+    pub ny: u32,
+    pub nz: u32,
+    pub x0: f64,
+    pub y0: f64,
+    pub z0: f64,
+    pub dx: f64,
+    pub dy: f64,
+    pub dz: f64,
 }

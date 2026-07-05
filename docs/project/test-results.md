@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-02 |
-| Commit | branch `feat/ph9-chk-004-pt-print-control` (base `9dc6fcb` main) |
+| Commit | branch `feat/ph9-chk-004-near-field` (base `ff084d9` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,13 +27,14 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-581 passed; 0 failed; 0 ignored — across 62 test binaries
+583 passed; 0 failed; 0 ignored — across 63 test binaries
 exit code 0
 ```
 
-581 = 577 + 4 PT print-control tests (`pt_print_control.rs`: mode 0 / suppress /
-tag filter / no-PT). PH9-CHK-004. The PT-deferred warning contract was flipped to a
-forbidden-warning contract across `parser_warnings.rs` and the corpus.
+583 = 581 + 2 near-field tests (`near_field.rs`: far-limit vs gain-derived far
+field to 0.02%; broadside axis-polarization). PH9-CHK-004 `NE` card. The
+`NEAR_FIELD` section only appears with an NE card, so existing contracts are
+unaffected.
 
 ### Multi-wire (non-junctioned) validation (PH8-CHK-001/002 breadth)
 
