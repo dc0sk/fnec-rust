@@ -4,8 +4,8 @@
 //! NEC deck parser.
 //!
 //! Parses geometry, program-control, and loading cards:
-//! `CM`, `CE`, `GW`, `GE`, `GM`, `GR`, `GN`, `EX`, `FR`, `RP`, `LD`, `TL`,
-//! `NT`, `PT`, `EN`.
+//! `CM`, `CE`, `GW`, `GE`, `GM`, `GR`, `GN`, `EX`, `FR`, `RP`, `NE`, `LD`,
+//! `TL`, `NT`, `PT`, `EN`.
 //!
 //! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
 //! parsing — callers decide whether to treat them as fatal.
@@ -14,7 +14,7 @@ pub mod template;
 
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
-    NtCard, PtCard, RpCard, TlCard,
+    NeCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -238,6 +238,30 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     polarization_ratio: f6,
                     theta_inc: f4,
                     phi_inc: f5,
+                }));
+            }
+            "NE" => {
+                // NE I1 NX NY NZ X0 Y0 Z0 DX DY DZ  (rectangular near-E-field grid)
+                let fields = parse_fields(rest);
+                require_fields(lineno, "NE", &fields, 4)?;
+                let f = |i: usize| -> Result<f64, ParseError> {
+                    if fields.len() > i {
+                        parse_f64(lineno, "NE", i + 1, fields[i])
+                    } else {
+                        Ok(0.0)
+                    }
+                };
+                deck.cards.push(Card::Ne(NeCard {
+                    coord_type: parse_u32(lineno, "NE", 1, fields[0])?,
+                    nx: parse_u32(lineno, "NE", 2, fields[1])?,
+                    ny: parse_u32(lineno, "NE", 3, fields[2])?,
+                    nz: parse_u32(lineno, "NE", 4, fields[3])?,
+                    x0: f(4)?,
+                    y0: f(5)?,
+                    z0: f(6)?,
+                    dx: f(7)?,
+                    dy: f(8)?,
+                    dz: f(9)?,
                 }));
             }
             "FR" => {

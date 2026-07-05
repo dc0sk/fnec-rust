@@ -96,6 +96,92 @@ fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+/// A near-field observation point (metres).
+#[derive(Debug, Clone, Copy)]
+pub struct NearFieldPoint {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// Complex electric field vector `(Ex, Ey, Ez)` at a near-field point (V/m).
+#[derive(Debug, Clone, Copy)]
+pub struct NearFieldE {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub e: [Complex64; 3],
+}
+
+/// Near electric field at each observation point, as the sum of the radiated
+/// fields of the segment currents (PH9-CHK-004).
+///
+/// Each segment is modelled as a Hertzian current element `I·L·û` at its midpoint,
+/// using the full dipole field (the 1/r, 1/r² and 1/r³ terms):
+///
+/// ```text
+/// E(P) = Σ_n (η·I_n·L_n / 4π)·e^{-jk r_n} · [
+///          (2 c_n / r_n²)(1 + 1/(jk r_n))·r̂_n
+///        + (jk / r_n)(1 + 1/(jk r_n) − 1/(k r_n)²)·(c_n·r̂_n − û_n) ]
+/// ```
+///
+/// where `d_n = P − mid_n`, `r_n = |d_n|`, `r̂_n = d_n/r_n`, `c_n = û_n·r̂_n`. The
+/// 1/r far term reduces to fnec's far-field convention (validated), so the near
+/// field is consistent with the radiation pattern at large distance. The
+/// point-element model is accurate away from the wire surface; very close to a
+/// conductor (`r_n` ≈ the wire radius) it departs from NEC's extended thin-wire
+/// kernel — a documented limitation.
+pub fn near_e_field(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+    points: &[NearFieldPoint],
+) -> Vec<NearFieldE> {
+    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let coeff = ETA0 / (4.0 * PI);
+    points
+        .iter()
+        .map(|p| {
+            let mut e = [Complex64::new(0.0, 0.0); 3];
+            for (n, seg) in segs.iter().enumerate() {
+                let d = [
+                    p.x - seg.midpoint[0],
+                    p.y - seg.midpoint[1],
+                    p.z - seg.midpoint[2],
+                ];
+                let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if r < 1e-9 {
+                    continue; // singular on the segment itself
+                }
+                let r_hat = [d[0] / r, d[1] / r, d[2] / r];
+                let u = seg.direction;
+                let c = dot3(u, r_hat); // cosθ
+                let il = i_vec[n] * (seg.length * coeff);
+                let phase = Complex64::new((k * r).cos(), -(k * r).sin()); // e^{-jkr}
+                let pref = il * phase;
+                let jkr = Complex64::new(0.0, k * r);
+                let inv_jkr = Complex64::new(1.0, 0.0) / jkr;
+                let inv_kr2 = 1.0 / (k * r * k * r);
+                // radial term coefficient
+                let rad = (2.0 * c / (r * r)) * (Complex64::new(1.0, 0.0) + inv_jkr);
+                // theta term coefficient (multiplies (c·r̂ − û)): jk/r = jkr/r²
+                let theta = (jkr / (r * r))
+                    * (Complex64::new(1.0, 0.0) + inv_jkr - Complex64::new(inv_kr2, 0.0));
+                for a in 0..3 {
+                    let tan = c * r_hat[a] - u[a];
+                    e[a] += pref * (rad * r_hat[a] + theta * tan);
+                }
+            }
+            NearFieldE {
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                e,
+            }
+        })
+        .collect()
+}
+
 /// Compute the complex far-field θ and φ components for one observation
 /// direction.  Returns `(F_θ, F_φ)` — the normalised far-field sums.
 fn far_field_components(

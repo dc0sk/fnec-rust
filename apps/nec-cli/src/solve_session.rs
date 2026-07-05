@@ -442,6 +442,57 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
     }
 }
 
+/// PH9-CHK-004: compute the near electric field for every `NE` card in the deck.
+///
+/// Each rectangular `NE` card defines an `NX×NY×NZ` grid of observation points;
+/// the near field is the Hertzian-element sum over the solved segment currents
+/// (`nec_solver::near_e_field`), validated to match the far field at large range.
+/// Spherical `NE` cards (`I1 ≠ 0`) are skipped with a warning.
+fn build_near_field_rows(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+) -> Vec<nec_report::NearFieldRow> {
+    let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
+    for card in &deck.cards {
+        let Card::Ne(ne) = card else { continue };
+        if ne.coord_type != 0 {
+            eprintln!(
+                "warning: NE coordinate type {} (spherical) is not supported; \
+                 near-field card skipped (only rectangular, I1=0, is supported)",
+                ne.coord_type
+            );
+            continue;
+        }
+        for ix in 0..ne.nx.max(1) {
+            for iy in 0..ne.ny.max(1) {
+                for iz in 0..ne.nz.max(1) {
+                    points.push(nec_solver::NearFieldPoint {
+                        x: ne.x0 + ix as f64 * ne.dx,
+                        y: ne.y0 + iy as f64 * ne.dy,
+                        z: ne.z0 + iz as f64 * ne.dz,
+                    });
+                }
+            }
+        }
+    }
+    if points.is_empty() {
+        return Vec::new();
+    }
+    nec_solver::near_e_field(segs, i_vec, freq_hz, &points)
+        .into_iter()
+        .map(|f| nec_report::NearFieldRow {
+            x: f.x,
+            y: f.y,
+            z: f.z,
+            ex: f.e[0],
+            ey: f.e[1],
+            ez: f.e[2],
+        })
+        .collect()
+}
+
 /// PH9-CHK-004: apply the `PT` (print-control) card to the segment current table.
 ///
 /// Supported subset (NEC-2 `PT I1 I2 I3 I4`): `I1 ≤ −1` suppresses the current
@@ -1170,6 +1221,9 @@ pub(super) fn solve_frequency_point(
         Vec::new()
     };
 
+    // PH9-CHK-004: near electric field on the NE-card grid(s).
+    let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz);
+
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,
         pulse_rhs: pulse_rhs_mode.as_contract_str(),
@@ -1180,6 +1234,7 @@ pub(super) fn solve_frequency_point(
         current_table: &current_table,
         pattern_table: &pattern_table,
         receive_pattern_table: &receive_pattern_table,
+        near_field_table: &near_field_table,
     });
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,

@@ -84,6 +84,7 @@ no longer silently treated as EX type 0.
 | TL type 0 | Partial | Lossless; supported `NSEG` range: 0, 1, and >1 — all treated as a **single-section stamp** (no per-segment subdivision); `NSEG=0` is normalised to 1; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
 | TL other | Partial | Lossy line (`tl_type != 0`): stamps `Z0·coth/csch(γℓ)` with `F3` = matched-line loss in dB, velocity factor 1 (PH8-CHK-005). Reduces exactly to the lossless form at 0 dB |
 | NT | Partial | Two-port network **stamped** into the Z matrix (`nec_solver::build_nt_stamps`, admittance→Z parameters `[Z]=[Y]⁻¹`; PH8-CHK-004). A well-formed reciprocal NT reproduces the equivalent TL feedpoint impedance end to end. Malformed / singular-admittance / missing-endpoint cards warn and are skipped |
+| NE | Partial | Near electric field on a rectangular grid (PH9-CHK-004): Hertzian-element sum over the solved currents, emits a `NEAR_FIELD` section. Validated vs the far field at large range (0.02%). Spherical grids (`I1≠0`) and very-near-the-wire accuracy are out of scope |
 | PT | Partial | Print-control applied at runtime (PH9-CHK-004): `I1 ≤ −1` suppresses the current output, `I1 = 0` prints all, `I1 ≥ 1` restricts to tag `I2` / segment range `I3..I4`. Last PT card wins |
 
 ### TL field mapping
