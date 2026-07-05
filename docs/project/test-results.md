@@ -20,7 +20,7 @@ rule in [README.md](README.md)).
 |:------|:------|
 | Date | 2026-07-02 |
 | Commit | branch `feat/ph9-negative-resistance-guard` (base `a00959a` main) |
-| Version | fnec-rust 0.8.0 |
+| Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
 

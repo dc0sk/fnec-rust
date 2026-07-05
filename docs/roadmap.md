@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ---
 
 # Roadmap
@@ -355,6 +355,8 @@ blocker): junctioned-multi-wire plane wave (DOF-count reformulation); NTHETA/NPH
 plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT. (The `RP`-card `XNDA` parser field was fixed 2026-07-04.)
 
 ## Phase 9 (planned): accuracy frontier & scattering breadth
+
+**v0.9.0 shipped (2026-07-05)** — first wave: receive-pattern sweep (PH9-CHK-001), absolute gain over finite ground (PH9-CHK-003), collinear junction fix + guardrails + diagnosis (PH9-CHK-002/005), RP XNDA parser fix. Remaining Phase 9 items (general junction basis, Sommerfeld ground, PT/RP output modes) continue toward a later release.
 
 **Goals**: Phase 8 made mainstream decks *run*; Phase 9 makes fnec *trustworthy on
 hard models* and *complete for receive/scattering*. It closes the accuracy and

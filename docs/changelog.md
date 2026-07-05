@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ---
 
 # Changelog
@@ -10,6 +10,10 @@ last_updated: 2026-07-04
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+
+*(nothing currently queued)*
+
+## [0.9.0] — 2026-07-05 — Phase 9 progress: receive patterns, ground gain, junction robustness
 ### Added
 
 - **Negative-resistance guardrail (PH9-CHK-005)** — a passive antenna cannot have a
