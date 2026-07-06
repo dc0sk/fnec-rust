@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The gh-pages deploy step pushes the dashboard to the gh-pages branch, which
+# needs write access to repository contents.
+permissions:
+  contents: write
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -93,44 +98,50 @@ jobs:
           path: benchmark-result.json
           retention-days: 90
 
-      - name: Fail on regression
+      # The real-run timing comparison is INFORMATIONAL, not a hard gate: absolute
+      # times for these sub-10 ms corpus decks (and the GPU-stub first-dispatch
+      # init cost) are dominated by shared-runner noise, so a percentage
+      # "regression" here is not a reliable build signal. The deterministic
+      # gate-injection-test job below is the real gate on the comparison *logic*.
+      # This step surfaces a regression as a warning annotation without failing.
+      - name: Report regression (informational)
         if: steps.compare.outputs.gate == 'failed'
         run: |
-          echo "Benchmark regression gate failed. See the compare report in the step summary."
-          exit 1
+          echo "::warning title=Benchmark regression (informational)::Real-run benchmark comparison flagged a regression on noisy sub-10 ms decks. See the compare report in the step summary; this does not fail the build."
 
       - name: Generate gh-pages index
         if: always()
         run: |
           mkdir -p gh-pages-output
-          cat > gh-pages-output/index.html << 'EOF'
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>fnec-rust Benchmark Dashboard</title>
-<style>
-body{font-family:system-ui,sans-serif;max-width:960px;margin:2em auto;padding:0 1em}
-table{border-collapse:collapse;width:100%}
-th,td{border:1px solid #ccc;padding:6px 10px;text-align:right}
-th{background:#f0f0f0}
-td:first-child{text-align:left}
-h2{margin-top:2em}
-.info{color:#555}
-.fail{color:#c00}
-.pass{color:#080}
-</style></head><body>
-<h1>fnec-rust Benchmark Dashboard</h1>
-<p class="info">Commit: <code>${{ github.sha }}</code> &middot; Run: <code>${{ github.run_id }}</code></p>
-<p class="info">Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>
-<p>Gate result: <strong class="${{ steps.compare.outputs.gate == 'failed' && 'fail' || 'pass' }}">${{ steps.compare.outputs.gate || 'n/a' }}</strong></p>
-<h2>Per-mode summary</h2>
-<table><thead><tr><th>exec_mode</th><th>solver</th><th>deck</th><th>avg_ms</th><th>min_ms</th><th>max_ms</th></tr></thead><tbody>
-EOF
+          gen_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat > gh-pages-output/index.html << EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>fnec-rust Benchmark Dashboard</title>
+          <style>
+          body{font-family:system-ui,sans-serif;max-width:960px;margin:2em auto;padding:0 1em}
+          table{border-collapse:collapse;width:100%}
+          th,td{border:1px solid #ccc;padding:6px 10px;text-align:right}
+          th{background:#f0f0f0}
+          td:first-child{text-align:left}
+          h2{margin-top:2em}
+          .info{color:#555}
+          .fail{color:#c00}
+          .pass{color:#080}
+          </style></head><body>
+          <h1>fnec-rust Benchmark Dashboard</h1>
+          <p class="info">Commit: <code>${{ github.sha }}</code> &middot; Run: <code>${{ github.run_id }}</code></p>
+          <p class="info">Generated at: ${gen_date}</p>
+          <p>Gate result: <strong class="${{ steps.compare.outputs.gate == 'failed' && 'fail' || 'pass' }}">${{ steps.compare.outputs.gate || 'n/a' }}</strong></p>
+          <h2>Per-mode summary</h2>
+          <table><thead><tr><th>exec_mode</th><th>solver</th><th>deck</th><th>avg_ms</th><th>min_ms</th><th>max_ms</th></tr></thead><tbody>
+          EOF
           jq -r '.summary[] | "<tr><td>\(.exec_mode)</td><td>\(.solver)</td><td>\(.deck)</td><td>\(.avg_ms)</td><td>\(.min_ms)</td><td>\(.max_ms)</td></tr>"' benchmark-result.json >> gh-pages-output/index.html
           cat >> gh-pages-output/index.html << 'EOF'
-</tbody></table>
-<hr><p class="info">See <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Actions run</a> for full report.</p>
-</body></html>
-EOF
+          </tbody></table>
+          <hr><p class="info">See <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Actions run</a> for full report.</p>
+          </body></html>
+          EOF
           cp benchmark-result.json gh-pages-output/benchmark-latest.json
 
       - name: Deploy to gh-pages
