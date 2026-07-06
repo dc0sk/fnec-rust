@@ -582,6 +582,87 @@ pub fn build_conductor_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
     Some(paths)
 }
 
+/// Why a geometry is out of scope for the [`ConductorPath`] (degree-2) Hallén
+/// solve — used for accurate user-facing diagnostics (PH9-CHK-002 guardrail).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsupportedTopology {
+    /// A node where **three or more** wire ends meet (a T/Y junction). The current
+    /// splits among the arms with a Kirchhoff constraint that the continuous
+    /// single-path basis cannot represent.
+    HighDegreeJunction,
+    /// A **closed loop** — a conductor with no free end. The Hallén homogeneous
+    /// solution needs a periodic (rather than `I = 0`) closure that is not yet
+    /// modelled.
+    ClosedLoop,
+}
+
+/// Classify why [`build_conductor_paths`] rejects a geometry, so callers can warn
+/// with a class-specific message instead of silently returning an unreliable solve.
+///
+/// Returns `None` exactly when the geometry **is** supported (single wires,
+/// collinear chains, or any degree-2 junctioned conductor path). When
+/// [`build_conductor_paths`] returns `None`, the only causes are a node where 3+
+/// wire ends meet ([`UnsupportedTopology::HighDegreeJunction`]) or a conductor with
+/// no free end ([`UnsupportedTopology::ClosedLoop`]); the high-degree case is
+/// reported in preference when both are present.
+pub fn classify_unsupported_topology(segs: &[Segment]) -> Option<UnsupportedTopology> {
+    if build_conductor_paths(segs).is_some() {
+        return None;
+    }
+    if has_high_degree_node(segs) {
+        Some(UnsupportedTopology::HighDegreeJunction)
+    } else {
+        Some(UnsupportedTopology::ClosedLoop)
+    }
+}
+
+/// Whether any coincident-endpoint node joins **three or more** wire ends (a T/Y
+/// junction), using the same endpoint clustering as [`build_conductor_paths`].
+fn has_high_degree_node(segs: &[Segment]) -> bool {
+    let wires = wire_endpoints_from_segs(segs);
+    let w = wires.len();
+    if w == 0 {
+        return false;
+    }
+    const TOL: f64 = 1e-6; // metres
+    let ep_point = |wi: usize, end: usize| -> [f64; 3] {
+        let (first, last) = wires[wi];
+        if end == 0 {
+            segs[first].start
+        } else {
+            segs[last].end
+        }
+    };
+    let mut assigned = vec![false; 2 * w];
+    for wi in 0..w {
+        for end in 0..2 {
+            let id = wi * 2 + end;
+            if assigned[id] {
+                continue;
+            }
+            let p = ep_point(wi, end);
+            let mut count = 1;
+            assigned[id] = true;
+            for wj in 0..w {
+                for endj in 0..2 {
+                    let idj = wj * 2 + endj;
+                    if assigned[idj] {
+                        continue;
+                    }
+                    if dist2(p, ep_point(wj, endj)) < TOL * TOL {
+                        assigned[idj] = true;
+                        count += 1;
+                    }
+                }
+            }
+            if count >= 3 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 ///
 /// Cards are processed in deck order:
 /// - `GW` appends new segments.

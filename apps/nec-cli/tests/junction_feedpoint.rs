@@ -153,4 +153,29 @@ fn degree3_tee_junction_still_guarded() {
         stderr.contains("negative resistance"),
         "the still-deferred T/Y result is unphysical and must be flagged; stderr:\n{stderr}"
     );
+    // The whole-geometry topology guard also flags the T/Y class explicitly.
+    assert!(
+        stderr.contains("T/Y junction"),
+        "the topology guard must name the T/Y junction class; stderr:\n{stderr}"
+    );
+}
+
+// A 1λ square loop (perimeter ≈ λ at 14.2 MHz), fed mid-wire — away from every
+// corner junction. build_conductor_paths rejects the closed loop, so fnec falls
+// back to the per-wire basis and reports an unreliable impedance (≈20 − j1210 Ω
+// vs the nec2c truth ≈111 − j146 Ω). The feed is NOT on a junction, so only the
+// whole-geometry topology guard catches it.
+const SQUARE_LOOP_FED_MIDWIRE: &str =
+    "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 11 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+#[test]
+fn closed_loop_is_guarded() {
+    // Regression for the previously-silent closed-loop garbage: fnec must now warn
+    // that the loop geometry is unsupported, even though the feed is mid-wire (so
+    // the feedpoint-at-junction guard alone would miss it).
+    let (_stdout, stderr) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
+    assert!(
+        stderr.contains("closed loop") && stderr.contains("PH9-CHK-002"),
+        "a closed loop must be flagged as unsupported; stderr:\n{stderr}"
+    );
 }

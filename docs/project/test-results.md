@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-06 |
-| Commit | branch `feat/ph9-chk-002-current-source-junction-cli-wiring` (base `10d542d` main) |
+| Commit | branch `fix/ph9-chk-002-loop-topology-guard` (base `f7419b6` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,16 +27,26 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-602 passed; 0 failed; 0 ignored
+606 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-602 = 601 + 1 CLI current-source junction test (`current_source_junction.rs`: a
-start-to-start split dipole driven by an EX-type-4 current source now solves through
-the CLI and its reported feedpoint `Z = V/i0` matches the voltage-source deck's `Z`
-to ~2×10⁻⁴). Completes the PH9-CHK-002 current-source junction slice — solve core
-(601) + CLI wiring (602) — and the degree-2 junction work across all three
-excitation classes.
+606 = 602 + 4 out-of-scope-topology guard tests: `general_junction.rs` (×3 —
+`classify_unsupported_topology` returns `None` for supported degree-2 topologies,
+`HighDegreeJunction` for a T/Y, `ClosedLoop` for a square loop) and
+`junction_feedpoint.rs::closed_loop_is_guarded` (a 1λ loop fed mid-wire now warns
+instead of silently returning ≈20 − j1210 Ω). Note: `scriptability_contract.rs`'s
+drop-in-alias test is occasionally flaky under a concurrent rebuild (the alias
+symlink/copy of the freshly-built binary races the build); it passes in isolation
+and is unrelated to this change.
+
+### Prior run — 2026-07-06, base `10d542d` (current-source CLI wiring)
+
+`602 passed` (601 + 1 `apps/nec-cli/tests/current_source_junction.rs`: a
+start-to-start split dipole driven by an EX-type-4 current source solves through the
+CLI and its feedpoint `Z = V/i0` matches the voltage-source deck to ~2×10⁻⁴).
+Completed the PH9-CHK-002 current-source junction slice and the degree-2 junction
+work across all three excitation classes.
 
 ### Prior run — 2026-07-06, base `2f6944a` (current-source solve core)
 

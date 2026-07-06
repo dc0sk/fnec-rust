@@ -258,3 +258,110 @@ fn t_junction_is_unsupported() {
         "degree-3 T/Y junction must fall back (return None)"
     );
 }
+
+#[test]
+fn classify_supported_topologies_return_none() {
+    // Every geometry that build_conductor_paths accepts is "supported" → None.
+    let single = geom(vec![Card::Gw(GwCard {
+        tag: 1,
+        segments: 21,
+        start: [0.0, 0.0, -5.0],
+        end: [0.0, 0.0, 5.0],
+        radius: 0.001,
+    })]);
+    assert_eq!(classify_unsupported_topology(&single), None);
+
+    let start_to_start = geom(vec![
+        Card::Gw(GwCard {
+            tag: 1,
+            segments: 10,
+            start: [0.0, 0.0, 0.0],
+            end: [0.0, 0.0, 5.0],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 2,
+            segments: 10,
+            start: [0.0, 0.0, 0.0],
+            end: [0.0, 0.0, -5.0],
+            radius: 0.001,
+        }),
+    ]);
+    assert_eq!(classify_unsupported_topology(&start_to_start), None);
+}
+
+#[test]
+fn classify_tee_junction_is_high_degree() {
+    let segs = geom(vec![
+        Card::Gw(GwCard {
+            tag: 1,
+            segments: 5,
+            start: [0.0, 0.0, 0.0],
+            end: [5.0, 0.0, 0.0],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 2,
+            segments: 5,
+            start: [0.0, 0.0, 0.0],
+            end: [-5.0, 0.0, 0.0],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 3,
+            segments: 5,
+            start: [0.0, 0.0, 0.0],
+            end: [0.0, 0.0, 5.0],
+            radius: 0.001,
+        }),
+    ]);
+    assert_eq!(
+        classify_unsupported_topology(&segs),
+        Some(UnsupportedTopology::HighDegreeJunction)
+    );
+}
+
+#[test]
+fn classify_square_loop_is_closed_loop() {
+    // Four wires forming a closed square (all degree-2 nodes, no free end).
+    let h = 2.639;
+    let s = 5.278;
+    let segs = geom(vec![
+        Card::Gw(GwCard {
+            tag: 1,
+            segments: 6,
+            start: [-h, 0.0, 0.0],
+            end: [h, 0.0, 0.0],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 2,
+            segments: 6,
+            start: [h, 0.0, 0.0],
+            end: [h, 0.0, s],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 3,
+            segments: 6,
+            start: [h, 0.0, s],
+            end: [-h, 0.0, s],
+            radius: 0.001,
+        }),
+        Card::Gw(GwCard {
+            tag: 4,
+            segments: 6,
+            start: [-h, 0.0, s],
+            end: [-h, 0.0, 0.0],
+            radius: 0.001,
+        }),
+    ]);
+    assert!(
+        build_conductor_paths(&segs).is_none(),
+        "loop must fall back"
+    );
+    assert_eq!(
+        classify_unsupported_topology(&segs),
+        Some(UnsupportedTopology::ClosedLoop)
+    );
+}
