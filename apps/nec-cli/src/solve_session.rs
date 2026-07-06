@@ -57,12 +57,13 @@ use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
     build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
-    build_planewave_hallen_paths, build_tl_stamps, compute_radiation_pattern,
-    detect_wire_junctions, integrate_radiated_power, merge_collinear_wire_endpoints,
-    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
-    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    build_planewave_hallen_paths, build_tl_stamps, classify_unsupported_topology,
+    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
+    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,
+    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
+    GroundModel, Segment, UnsupportedTopology, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -542,6 +543,34 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
                 );
             }
         }
+    }
+}
+
+/// PH9-CHK-002 / PH9-CHK-005 guardrail: warn when the geometry contains a junction
+/// topology the conductor-path Hallén solve does not yet handle — a **closed loop**
+/// or a **degree-3+ (T/Y) junction**. For these classes fnec falls back to the
+/// per-wire basis, which enforces neither the loop's periodic closure nor the
+/// Kirchhoff current split at a branching node, so the reported impedance, currents,
+/// and pattern are unreliable for the *whole* geometry (not only a junction-fed
+/// segment). A 1λ square loop, for instance, reports ≈20 − j1210 Ω versus the true
+/// ≈111 − j146 Ω. This surfaces the limitation instead of silently returning a wrong
+/// number — the loop case in particular is missed by [`warn_if_feedpoint_at_junction`]
+/// because the feed need not sit on the junction.
+fn warn_if_unsupported_topology(segs: &[Segment]) {
+    match classify_unsupported_topology(segs) {
+        Some(UnsupportedTopology::ClosedLoop) => eprintln!(
+            "warning: geometry contains a closed loop (a conductor with no free end); \
+             the Hallén solve does not yet model the periodic loop closure, so the reported \
+             impedance, currents, and pattern for this geometry are unreliable \
+             (loop support is deferred — see PH9-CHK-002)"
+        ),
+        Some(UnsupportedTopology::HighDegreeJunction) => eprintln!(
+            "warning: geometry contains a junction where three or more wires meet (a T/Y \
+             junction); the Hallén solve does not yet model the Kirchhoff current split there, \
+             so the reported impedance, currents, and pattern for this geometry are unreliable \
+             (branching-junction support is deferred — see PH9-CHK-002)"
+        ),
+        None => {}
     }
 }
 
@@ -1282,6 +1311,7 @@ pub(super) fn solve_frequency_point(
     // wires, so the single-segment V/I is not the true feedpoint impedance and can
     // be unphysical (e.g. negative resistance). Warn rather than report it as
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
+    warn_if_unsupported_topology(segs);
     warn_if_feedpoint_at_junction(deck, segs);
     warn_if_negative_resistance(&rows, solver_mode);
 

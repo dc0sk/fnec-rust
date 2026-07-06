@@ -31,9 +31,10 @@ see [Current-source junctions](#current-source-junctions-ex-type-4) below.
 
 All three degree-2 excitation classes (transmit voltage delta-gap, plane-wave
 receive, current source) now solve on conductor paths. Still deferred to the
-remaining general work: **degree-3+** (T/Y) junctions and **closed loops**. Those
-out-of-scope classes fall back to the guarded per-wire path (PH9-CHK-005) and still
-warn.
+remaining general work: **degree-3+** (T/Y) junctions and **closed loops** — see
+[Out-of-scope topologies](#out-of-scope-topologies-degree-3-and-closed-loops).
+These now warn for the *whole geometry* (2026-07-06), not only when the feed sits on
+the junction.
 
 ## What was fixed
 
@@ -197,5 +198,35 @@ it previously failed fast.
 | bend / start-to-start / end-to-end (degree-2) — transmit (voltage delta-gap) | **solved** |
 | bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solved (CLI-wired)** |
 | bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
-| degree-3+ T/Y junction | deferred → guarded (PH9-CHK-005) |
-| closed loop | deferred → guarded |
+| degree-3+ T/Y junction | deferred → **guarded (whole-geometry warning)** |
+| closed loop | deferred → **guarded (whole-geometry warning)** |
+
+## Out-of-scope topologies (degree-3+ and closed loops)
+
+Two topology classes remain out of scope for the conductor-path solve, because the
+single-continuous-path model does not represent them:
+
+- **Degree-3+ (T/Y) junctions** — where three or more wire ends meet, the current
+  splits among the arms under a Kirchhoff constraint; there is no single path.
+- **Closed loops** — a conductor with no free end needs a *periodic* closure of the
+  Hallén homogeneous solution rather than the open-chain `I = 0` at free ends.
+
+For both, `build_conductor_paths` returns `None` and fnec falls back to the per-wire
+basis, whose result is **unreliable for the whole geometry** (not just a junction-fed
+segment). Previously this was only surfaced when the *feed* sat on a junction
+(`warn_if_feedpoint_at_junction`), so a **loop fed mid-wire produced silent garbage**
+— e.g. a 1λ square loop reported ≈20 − j1210 Ω versus the nec2c truth ≈111 − j146 Ω.
+
+`classify_unsupported_topology` (`geometry.rs`) now classifies the rejection cause,
+and `warn_if_unsupported_topology` (`solve_session.rs`) emits a class-specific
+whole-geometry warning (`ClosedLoop` / `HighDegreeJunction`) so the limitation is
+always visible. Tests: `general_junction.rs` (classification units),
+`junction_feedpoint.rs::closed_loop_is_guarded` (loop fed mid-wire now warns).
+
+**Closed-loop solve — prototyped, deferred.** A closed-loop Hallén solve was
+prototyped against a nec2c reference (1λ square loop, 111 − j146 Ω). Several discrete
+closure formulations (value/derivative continuity at an artificial cut; a
+symmetric-feed single-`cos` DOF) were tried and **none reproduced the reference** —
+the loop's periodic Green's-function forcing and closure are materially different
+from the open-chain case, so this is a dedicated solver increment, not a small
+extension. It is deferred with the geometry guarded rather than shipped unvalidated.

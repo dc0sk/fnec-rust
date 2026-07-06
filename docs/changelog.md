@@ -10,6 +10,22 @@ last_updated: 2026-07-06
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Fixed
+
+- **Closed-loop / T-junction geometries no longer silently return garbage
+  (PH9-CHK-002/005 guardrail)** — the conductor-path solve does not handle closed
+  loops or degree-3+ (T/Y) junctions, and fnec falls back to the per-wire basis for
+  them, whose result is unreliable for the whole geometry. Previously this was only
+  warned when the *feed* sat on the junction, so a **loop fed mid-wire produced a
+  silent, wrong impedance** (a 1λ square loop reported ≈20 − j1210 Ω vs the nec2c
+  truth ≈111 − j146 Ω). A new whole-geometry guard (`classify_unsupported_topology`
+  in `geometry.rs`, `warn_if_unsupported_topology` in `solve_session.rs`) now emits a
+  class-specific warning (`closed loop` / `T/Y junction`) whenever the topology is
+  out of scope, regardless of feed placement. A closed-loop Hallén *solve* was
+  prototyped against nec2c but its periodic closure did not validate, so it stays
+  deferred (guarded) rather than shipped unvalidated — see
+  `docs/ph9-chk-002-general-junction.md`.
+
 ### Added
 
 - **PH9-CHK-002 current-source junctions CLI-wired (degree-2)** — the CLI

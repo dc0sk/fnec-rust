@@ -24,9 +24,9 @@ pub use farfield::{
     NearFieldH, NearFieldPoint, RpGainGrid,
 };
 pub use geometry::{
-    build_conductor_paths, build_geometry, detect_wire_junctions, ground_model_from_deck,
-    merge_collinear_wire_endpoints, wire_endpoints_from_segs, ConductorPath, GeometryError,
-    GroundModel, Segment, WireJunction,
+    build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,
+    ground_model_from_deck, merge_collinear_wire_endpoints, wire_endpoints_from_segs,
+    ConductorPath, GeometryError, GroundModel, Segment, UnsupportedTopology, WireJunction,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,
