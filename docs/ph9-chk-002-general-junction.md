@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-07-05
+last_updated: 2026-07-06
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -144,13 +144,46 @@ broadside peak, monotonic between), and its normalized receive pattern matches i
 own normalized transmit gain pattern by reciprocity to **0.025 dB** — both sides
 solved on conductor paths.
 
+## Current-source junctions (EX type 4)
+
+The EX-type-4 current source is the **symmetric-source** cousin of the plane-wave
+receive path: it forces a known current `i0` at the feed and solves for the port
+voltage `V` (feedpoint `Z = V/i0`). Because the driven current is symmetric about
+the feed — exactly like the voltage delta-gap — it needs only **one** homogeneous
+constant `cos(k·s)` per conductor path (not the plane-wave's two), plus the single
+unknown `V`.
+
+`solve_hallen_current_source_paths` (`linear.rs`) is the path-aware counterpart of
+`solve_hallen_current_source`: one `C` column per path, the port-voltage column, the
+`I = 0` constraint at each path's two free ends, and the forced `I[src] = i0` row
+(the exact rows heavily weighted so `V/i0` recovers the true impedance).
+`build_current_source_shape_paths` (`excitation.rs`) builds the unit-voltage source
+shape `g` over the path via `build_hallen_rhs_paths`, so it stays continuous across
+the junction. For a single straight wire both reduce to the pre-existing per-wire
+functions.
+
+### Validation (14.2 MHz, free space)
+
+Internal consistency — the port impedance is a property of the antenna, independent
+of drive, so the current-source `Z = V/i0` must equal the voltage-source
+`Z = 1/I_feed` on the *same* junctioned geometry
+(`crates/nec_solver/tests/current_source_junction.rs`):
+
+| geometry | voltage-source Z (Ω) | current-source Z (Ω) | rel |
+|:---------|:---------------------|:---------------------|:----|
+| start-to-start split dipole, apex feed | 74.41 + j14.52 | 74.40 + j14.52 | ~2×10⁻⁴ |
+| bent inverted-V, apex feed | 55.53 − j11.94 | 55.51 − j11.94 | ~3×10⁻⁴ |
+
+The forced feed current is honoured to <1e-4, and doubling `i0` leaves `Z` unchanged
+(linearity).
+
 ## Boundary
 
 | class | status |
 |:------|:-------|
 | single wire, collinear split | solved (unchanged) |
-| bend / start-to-start / end-to-end (degree-2) — transmit | **solved** |
+| bend / start-to-start / end-to-end (degree-2) — transmit (voltage delta-gap) | **solved** |
 | bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solved (CLI-wired)** |
+| bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solve core landed; CLI wiring pending** |
 | degree-3+ T/Y junction | deferred → guarded (PH9-CHK-005) |
 | closed loop | deferred → guarded |
-| current-source receive-side junction | deferred |

@@ -392,6 +392,61 @@ pub fn build_current_source_shape(
     Ok((h.rhs, h.cos_vec, src_seg))
 }
 
+/// Build the unit-voltage Hallén source shape `g` over **conductor paths** — the
+/// general-junction current-source path (PH9-CHK-002), consumed by
+/// [`crate::solve_hallen_current_source_paths`].
+///
+/// Identical to [`build_current_source_shape`] except the synthesized `V = 1`
+/// delta-gap RHS is built with the path-aware [`build_hallen_rhs_paths`] (signed
+/// arc-length `cos(k·s)`, source term summed along the conductor path) instead of
+/// the per-`GW` [`build_hallen_rhs`], so the source shape stays continuous across a
+/// degree-2 junction. Returns `(source_shape, cos_vec, src_global_index)`.
+pub fn build_current_source_shape_paths(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    src_tag: u32,
+    src_segment: u32,
+    paths: &[ConductorPath],
+) -> Result<(Vec<Complex64>, Vec<f64>, usize), ExcitationError> {
+    let src_seg = segs
+        .iter()
+        .position(|s| s.tag == src_tag && s.tag_index == src_segment)
+        .ok_or(ExcitationError::SegmentNotFound {
+            tag: src_tag,
+            segment: src_segment,
+        })?;
+
+    // Synthesize a V=1 delta-gap at the source segment; drop other EX cards so
+    // build_hallen_rhs_paths sees a single ordinary voltage source.
+    let mut synth = NecDeck::new();
+    let mut placed = false;
+    for card in &deck.cards {
+        match card {
+            Card::Ex(_) if !placed => {
+                synth.cards.push(Card::Ex(ExCard {
+                    excitation_type: 0,
+                    tag: src_tag,
+                    segment: src_segment,
+                    i4: 0,
+                    voltage_real: 1.0,
+                    voltage_imag: 0.0,
+                    polarization_deg: 0.0,
+                    polarization_ratio: 0.0,
+                    theta_inc: 0.0,
+                    phi_inc: 0.0,
+                }));
+                placed = true;
+            }
+            Card::Ex(_) => {}
+            other => synth.cards.push(other.clone()),
+        }
+    }
+
+    let h = build_hallen_rhs_paths(&synth, segs, freq_hz, paths)?;
+    Ok((h.rhs, h.cos_vec, src_seg))
+}
+
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
     // Plane-wave and current-source excitations are not delta-gap voltage
     // sources; they contribute nothing to the EFIE voltage vector (handled by
