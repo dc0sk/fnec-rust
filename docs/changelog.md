@@ -98,6 +98,21 @@ All notable documentation process changes are recorded here.
   wins). The former "PT card support is currently deferred" warning is removed;
   `docs/card-support-matrix.md` `PT` → Partial.
 
+### Fixed
+
+- **Benchmark Dashboard CI workflow** — `.github/workflows/benchmark-dashboard.yml`
+  had never succeeded (0/30 runs, failing at 0 s). Two causes: (1) the gh-pages
+  `index.html` heredocs placed their body at column 0, which terminated the YAML
+  `run: |` block scalar and made the whole workflow file invalid; the heredoc
+  bodies are now indented into the block scalar (and `$(date)` is captured into a
+  shell var so it actually expands). (2) The real-run timing comparison was a hard
+  gate, but absolute times for these sub-10 ms corpus decks (plus the GPU-stub
+  first-dispatch init cost) are dominated by shared-runner noise, so it flagged a
+  "regression" on essentially every run; the real-run comparison is now
+  **informational** (a warning annotation + the published dashboard), while the
+  deterministic `gate-injection-test` job remains the real gate on the comparison
+  logic. Added an explicit `permissions: contents: write` for the gh-pages deploy.
+
 ## [0.9.0] — 2026-07-05 — Phase 9 progress: receive patterns, ground gain, junction robustness
 ### Added
 
