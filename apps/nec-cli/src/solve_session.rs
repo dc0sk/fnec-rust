@@ -55,12 +55,13 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
-    build_current_source_shape, build_hallen_rhs, build_hallen_rhs_paths, build_loads,
-    build_nt_stamps, build_planewave_hallen, build_planewave_hallen_paths, build_tl_stamps,
-    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_hallen_current_source, solve_hallen_paths, solve_hallen_planewave,
-    solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
+    build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
+    build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
+    build_planewave_hallen_paths, build_tl_stamps, compute_radiation_pattern,
+    detect_wire_junctions, integrate_radiated_power, merge_collinear_wire_endpoints,
+    radiation_efficiency, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
+    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
     solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
@@ -361,13 +362,17 @@ pub(super) fn deck_has_current_source(deck: &nec_model::deck::NecDeck) -> bool {
     })
 }
 
-/// Solve a current-source-driven antenna (PH8-CHK-001, NEC2 EX type 4): force the
-/// specified current on the source segment and return the segment currents plus
-/// the port voltage `V` (feedpoint impedance `Z = V/i0`).
+/// Solve a current-source-driven antenna (PH8-CHK-001, PH9-CHK-002, NEC2 EX type
+/// 4): force the specified current on the source segment and return the segment
+/// currents plus the port voltage `V` (feedpoint impedance `Z = V/i0`).
 ///
-/// Supported class: a single straight wire (no junctions). Multi-wire geometry
-/// fails fast until that increment lands. `z_mat` is the assembled Hallén matrix
-/// (including any load / TL stamps).
+/// Straight, non-junctioned wires (one or more) solve on the per-wire path.
+/// **Junctioned degree-2 geometry** (bends, start-to-start / end-to-end splits,
+/// inverted-V) solves on continuous *conductor paths* (PH9-CHK-002): one homogeneous
+/// `cos(k·s)` constant per path plus the port voltage, `I = 0` at the free ends, and
+/// the forced `I[src] = i0`. Out-of-scope topologies (degree-3+ T/Y, closed loops)
+/// return `None` from `build_conductor_paths` and fail fast with a diagnostic.
+/// `z_mat` is the assembled Hallén matrix (including any load / TL stamps).
 fn solve_current_source_hallen(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -384,17 +389,40 @@ fn solve_current_source_hallen(
         })
         .ok_or_else(|| "EX: no current-source card found".to_string())?;
 
-    // Straight, non-junctioned wires (one or more). Junctioned geometry needs
-    // continuity constraints that solve_hallen_current_source does not model.
-    if !detect_wire_junctions(segs, wire_endpoints, 1e-6).is_empty() {
+    let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
+
+    // Route junctioned degree-2 geometry through the conductor-path current-source
+    // solver. Reducible decks (single wires, collinear chains, parallel arrays) keep
+    // the validated per-wire path; only a non-trivial (bent / reversed) path diverts.
+    if let Some(paths) = build_conductor_paths(segs) {
+        if paths.iter().any(|p| !p.is_trivial()) {
+            let (shape, cos_vec, src_seg) =
+                build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
+                    .map_err(|e| e.to_string())?;
+            let mut path_of = vec![0usize; segs.len()];
+            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
+            for (pi, p) in paths.iter().enumerate() {
+                for &m in &p.segs {
+                    path_of[m] = pi;
+                }
+                free_ends.push(p.free_ends.0);
+                free_ends.push(p.free_ends.1);
+            }
+            let sol = solve_hallen_current_source_paths(
+                z_mat, &shape, &cos_vec, src_seg, i0, &path_of, &free_ends,
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok((sol.currents, sol.port_voltage));
+        }
+    } else if !detect_wire_junctions(segs, wire_endpoints, 1e-6).is_empty() {
+        // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
         return Err(
-            "EX: current source is supported on straight, non-junctioned wires; \
-             junctioned geometry is not yet supported"
+            "EX: current source is supported on straight or degree-2 junctioned wires; \
+             degree-3+ (T/Y) junctions and closed loops are not yet supported"
                 .to_string(),
         );
     }
 
-    let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
     let (shape, cos_vec, src_seg) =
         build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
             .map_err(|e| e.to_string())?;

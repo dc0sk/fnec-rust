@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-06 |
-| Commit | branch `feat/ph9-chk-002-current-source-junction-solve-core` (base `2f6944a` main) |
+| Commit | branch `feat/ph9-chk-002-current-source-junction-cli-wiring` (base `10d542d` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,15 +27,23 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-601 passed; 0 failed; 0 ignored
+602 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-601 = 598 + 3 current-source junction tests (`current_source_junction.rs`: on a
-start-to-start split dipole and a bent inverted-V the EX-type-4 current-source
-`Z = V/i0` matches the voltage-source feedpoint impedance to ~2–3×10⁻⁴, the forced
-feed current is honoured, and `Z` is invariant to `i0`). Adds the PH9-CHK-002
-current-source junction solve core.
+602 = 601 + 1 CLI current-source junction test (`current_source_junction.rs`: a
+start-to-start split dipole driven by an EX-type-4 current source now solves through
+the CLI and its reported feedpoint `Z = V/i0` matches the voltage-source deck's `Z`
+to ~2×10⁻⁴). Completes the PH9-CHK-002 current-source junction slice — solve core
+(601) + CLI wiring (602) — and the degree-2 junction work across all three
+excitation classes.
+
+### Prior run — 2026-07-06, base `2f6944a` (current-source solve core)
+
+`601 passed` (598 + 3 `crates/nec_solver/tests/current_source_junction.rs`: EX-4
+`Z=V/i0` == voltage-source Z on split dipole + inverted-V to ~2–3×10⁻⁴; forced
+current honoured; `Z` invariant to `i0`). Added the current-source junction solve
+core (PR #287).
 
 ### Prior run — 2026-07-05, base `030a5ef` (receive-side CLI wiring)
 
