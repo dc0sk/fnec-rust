@@ -12,6 +12,18 @@ All notable documentation process changes are recorded here.
 ## [Unreleased]
 ### Added
 
+- **PH9-CHK-002 current-source junctions CLI-wired (degree-2)** — the CLI
+  current-source path (`solve_current_source_hallen`) now routes degree-2 junctioned
+  geometry through the conductor-path solver, so an EX-type-4 current source on a
+  bent or connected antenna solves and reports a feedpoint `Z = V/i0` where it
+  previously failed fast. Reducible decks keep the per-wire path; degree-3+ (T/Y) and
+  closed loops fail fast with a diagnostic. End-to-end gate: a start-to-start split
+  dipole's CLI current-source feedpoint `Z` (74.40 + j14.52 Ω) matches the
+  voltage-source deck's `Z` (74.41 + j14.52 Ω) to ~2×10⁻⁴
+  (`apps/nec-cli/tests/current_source_junction.rs`). This completes the PH9-CHK-002
+  degree-2 junction work across all three excitation classes (transmit, plane-wave
+  receive, current source). `docs/card-support-matrix.md` EX type 4 updated.
+
 - **PH9-CHK-002 current-source junction solve core (degree-2)** — the conductor-path
   model now also backs the **EX-type-4 current source**, the symmetric-source cousin
   of the plane-wave receive path. Like the voltage delta-gap it needs only one

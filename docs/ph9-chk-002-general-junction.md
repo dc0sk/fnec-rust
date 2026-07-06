@@ -24,8 +24,14 @@ degree-2 geometry through it — so a **receiving** bent or connected antenna so
 and emits a `RECEIVE_PATTERN` where it previously failed fast. See
 [Receive-side junctions](#receive-side-junctions-plane-wave) below.
 
-Still deferred to the remaining general work: **degree-3+** (T/Y) junctions,
-**closed loops**, and the **current-source** receive-side junction solve. Those
+**Current-source (EX type 4) junctions solved end-to-end (2026-07-06).** The
+conductor-path model also backs the forced-current solve (`solve_hallen_current_source_paths`
+/ `build_current_source_shape_paths`), CLI-wired via `solve_current_source_hallen` —
+see [Current-source junctions](#current-source-junctions-ex-type-4) below.
+
+All three degree-2 excitation classes (transmit voltage delta-gap, plane-wave
+receive, current source) now solve on conductor paths. Still deferred to the
+remaining general work: **degree-3+** (T/Y) junctions and **closed loops**. Those
 out-of-scope classes fall back to the guarded per-wire path (PH9-CHK-005) and still
 warn.
 
@@ -177,6 +183,12 @@ of drive, so the current-source `Z = V/i0` must equal the voltage-source
 The forced feed current is honoured to <1e-4, and doubling `i0` leaves `Z` unchanged
 (linearity).
 
+End-to-end CLI gate (`apps/nec-cli/tests/current_source_junction.rs`): a
+start-to-start split dipole driven by an EX-type-4 current source now solves through
+the CLI and its reported feedpoint `Z = V/i0` (74.40 + j14.52 Ω) matches the
+voltage-source deck's feedpoint `Z` (74.41 + j14.52 Ω) on the same geometry — where
+it previously failed fast.
+
 ## Boundary
 
 | class | status |
@@ -184,6 +196,6 @@ The forced feed current is honoured to <1e-4, and doubling `i0` leaves `Z` uncha
 | single wire, collinear split | solved (unchanged) |
 | bend / start-to-start / end-to-end (degree-2) — transmit (voltage delta-gap) | **solved** |
 | bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solved (CLI-wired)** |
-| bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solve core landed; CLI wiring pending** |
+| bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
 | degree-3+ T/Y junction | deferred → guarded (PH9-CHK-005) |
 | closed loop | deferred → guarded |
