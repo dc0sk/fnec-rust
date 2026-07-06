@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-07-05
+last_updated: 2026-07-06
 ---
 
 # Test results
@@ -18,8 +18,8 @@ rule in [README.md](README.md)).
 
 | Field | Value |
 |:------|:------|
-| Date | 2026-07-05 |
-| Commit | branch `feat/ph9-chk-002-receive-junction-cli-wiring` (base `030a5ef` main) |
+| Date | 2026-07-06 |
+| Commit | branch `feat/ph9-chk-002-current-source-junction-solve-core` (base `2f6944a` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,15 +27,21 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-598 passed; 0 failed; 0 ignored
+601 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-598 = 596 + 2 CLI junctioned-receive tests (`receive_junction.rs`: a start-to-start
-split-dipole plane-wave sweep now solves through the CLI, emits a `RECEIVE_PATTERN`
-with the correct z-dipole shape, and matches its own transmit gain pattern by
-reciprocity to 0.025 dB). Completes the PH9-CHK-002 receive-side (plane-wave)
-junction slice — solve core (596) + CLI wiring (598).
+601 = 598 + 3 current-source junction tests (`current_source_junction.rs`: on a
+start-to-start split dipole and a bent inverted-V the EX-type-4 current-source
+`Z = V/i0` matches the voltage-source feedpoint impedance to ~2–3×10⁻⁴, the forced
+feed current is honoured, and `Z` is invariant to `i0`). Adds the PH9-CHK-002
+current-source junction solve core.
+
+### Prior run — 2026-07-05, base `030a5ef` (receive-side CLI wiring)
+
+`598 passed` (596 + 2 `receive_junction.rs`: CLI split-dipole plane-wave sweep
+solves, emits `RECEIVE_PATTERN`, matches transmit by reciprocity to 0.025 dB).
+Completed the PH9-CHK-002 receive-side (plane-wave) junction slice (PR #286).
 
 ### Prior run — 2026-07-05, base `2de83bb` (receive-side solve core)
 

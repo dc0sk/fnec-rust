@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-05
+last_updated: 2026-07-06
 ---
 
 # Changelog
@@ -11,6 +11,20 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 ### Added
+
+- **PH9-CHK-002 current-source junction solve core (degree-2)** — the conductor-path
+  model now also backs the **EX-type-4 current source**, the symmetric-source cousin
+  of the plane-wave receive path. Like the voltage delta-gap it needs only one
+  homogeneous constant `cos(k·s)` per path (the current is symmetric about the feed)
+  plus the unknown port voltage `V`; `solve_hallen_current_source_paths` applies
+  `I = 0` at each path's free ends and forces `I[src] = i0`, and
+  `build_current_source_shape_paths` builds the unit-voltage source shape over the
+  path. Validated by internal consistency: on a start-to-start split dipole and a
+  bent inverted-V the current-source `Z = V/i0` matches the voltage-source feedpoint
+  impedance to ~2–3×10⁻⁴ (74.40+j14.52 Ω split, 55.51−j11.94 Ω inverted-V), with the
+  forced feed current honoured exactly. Self-contained solve core (no CLI/corpus
+  churn); CLI wiring is the follow-up increment. See
+  `docs/ph9-chk-002-general-junction.md`.
 
 - **PH9-CHK-002 receive-side junctions CLI-wired (degree-2, plane wave)** — the CLI
   plane-wave receive path (`solve_plane_wave_hallen`) now routes degree-2 junctioned

@@ -1215,6 +1215,109 @@ pub fn solve_hallen_current_source(
     })
 }
 
+/// Current-source Hallén solve over **conductor paths** — the general-junction
+/// current-source solver (PH9-CHK-002).
+///
+/// This is to [`solve_hallen_current_source`] what [`solve_hallen_paths`] is to
+/// [`solve_hallen`]: it generalizes the forced-current solve from contiguous single
+/// wires to arbitrary degree-2 conductor chains (bends, start-to-start / end-to-end
+/// splits), so a junctioned antenna driven by an EX-type-4 current source solves on
+/// one continuous current path across the junction.
+///
+/// Like the voltage-source delta-gap (a *symmetric* source), the current source
+/// needs only **one** homogeneous constant `cos(k·s)` per path — the current is
+/// symmetric about the feed — plus the single unknown port voltage `V`:
+///
+/// - `path_of_seg[m]` groups all segments on a path onto one shared `C` column
+///   (`n + p`); the port voltage is column `n + num_paths`.
+/// - `free_end_segs` gets the `I = 0` constraint (the two free ends of each open
+///   chain); interior degree-2 junctions flow continuously.
+/// - the source row forces `I[src_seg] = i0`.
+///
+/// The caller passes `source_shape` (the unit-voltage path RHS `g`, from
+/// [`crate::build_current_source_shape_paths`]) and a path-signed `cos_vec`
+/// (`cos_vec[m] = sign[m]·cos(k·s_m)`). The exact `I = 0` / `I[src] = i0` rows are
+/// weighted heavily so the forced current is pinned and `V/i0` recovers the
+/// voltage-source feedpoint impedance, exactly as in [`solve_hallen_current_source`].
+///
+/// For a single straight wire this reduces to [`solve_hallen_current_source`].
+/// Returns the segment currents and the port voltage `V`.
+pub fn solve_hallen_current_source_paths(
+    z: &ZMatrix,
+    source_shape: &[Complex64],
+    cos_vec: &[f64],
+    src_seg: usize,
+    i0: Complex64,
+    path_of_seg: &[usize],
+    free_end_segs: &[usize],
+) -> Result<CurrentSourceSolution, SolveError> {
+    let n = z.n;
+    if source_shape.len() != n || cos_vec.len() != n || path_of_seg.len() != n {
+        return Err(SolveError::HallenDimensionMismatch {
+            z_n: n,
+            rhs_len: source_shape.len(),
+            cos_len: cos_vec.len(),
+        });
+    }
+
+    let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
+    // Columns: N currents + one homogeneous constant per path + the port voltage V.
+    let v_col = n + num_paths;
+    let cols = n + num_paths + 1;
+    // Rows: N Hallén + one I = 0 per free-end segment + one source constraint.
+    let rows = n + free_end_segs.len() + 1;
+    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
+    let mut y = vec![Complex64::new(0.0, 0.0); rows];
+
+    for r in 0..n {
+        for c in 0..n {
+            m[r][c] = z.get(r, c);
+        }
+        m[r][n + path_of_seg[r]] = Complex64::new(-cos_vec[r], 0.0);
+        m[r][v_col] = -source_shape[r];
+        // y[r] = 0 (no impressed voltage; the source is the forced current).
+    }
+
+    // The free-end (I=0) and source (I[src]=i0) constraints are exact linear
+    // equations, not least-squares observations, so weight them heavily (mirrors
+    // solve_hallen_current_source). This pins the forced current exactly.
+    let cw = Complex64::new(1.0e6, 0.0);
+    let mut crow = n;
+    for &seg in free_end_segs {
+        m[crow][seg] = cw;
+        crow += 1;
+    }
+    m[crow][src_seg] = cw;
+    y[crow] = cw * i0;
+
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for r in 0..rows {
+                sum += m[r][i].conj() * m[r][j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for r in 0..rows {
+            sum += m[r][i].conj() * y[r];
+        }
+        aty[i] = sum;
+    }
+    let lambda = 1e-8;
+    for i in 0..cols {
+        ata[i][i] += Complex64::new(lambda, 0.0);
+    }
+
+    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    Ok(CurrentSourceSolution {
+        currents: x[..n].to_vec(),
+        port_voltage: x[v_col],
+    })
+}
+
 fn solve_square_in_place(
     a: &mut [Vec<Complex64>],
     b: &mut [Complex64],
