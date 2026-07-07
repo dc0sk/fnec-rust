@@ -546,6 +546,43 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
     }
 }
 
+/// PH9-CHK-006 guardrail: warn when an antenna sits **very low over finite ground**,
+/// where the feedpoint impedance is only approximate.
+///
+/// fnec models finite ground (GN0/GN2) with a reflection-coefficient image — after
+/// the PH9-CHK-006 sign fix this matches nec2c's reflection-coefficient method (GN0)
+/// and, for heights ≥ ~0.2 λ, the exact Sommerfeld solution (GN2) to ~10 %. Below
+/// ~0.1 λ the two diverge sharply: the Sommerfeld **surface wave** dominates and the
+/// reflection-coefficient approximation (which fnec and nec2c GN0 share) becomes
+/// unreliable — e.g. for a horizontal λ/2 dipole at 0.025 λ the reflection-coefficient
+/// ΔR is −24 Ω while the Sommerfeld truth is **+9 Ω** (a sign error). fnec does not
+/// yet model the surface wave, so it warns rather than silently reporting an
+/// unreliable low-antenna impedance. Threshold: the lowest conductor point below
+/// 0.1 λ over `SimpleFiniteGround`.
+fn warn_if_low_finite_ground(segs: &[Segment], ground: &GroundModel, freq_hz: f64) {
+    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) || freq_hz <= 0.0 {
+        return;
+    }
+    let lambda = C0 / freq_hz;
+    let min_z = segs
+        .iter()
+        .flat_map(|s| [s.start[2], s.end[2]])
+        .fold(f64::INFINITY, f64::min);
+    if !min_z.is_finite() || min_z < 0.0 {
+        return; // buried / below ground is handled by the geometry fail-fast path
+    }
+    if min_z < 0.1 * lambda {
+        eprintln!(
+            "warning: antenna is {:.3} λ ({:.3} m) above finite ground (below ~0.1 λ); the \
+             near-ground feedpoint impedance uses a reflection-coefficient approximation and \
+             does not model the Sommerfeld surface wave, so it is only approximate here \
+             (finite-ground impedance is accurate to ~10% for heights ≥ ~0.2 λ — see PH9-CHK-006)",
+            min_z / lambda,
+            min_z
+        );
+    }
+}
+
 /// PH9-CHK-002 / PH9-CHK-005 guardrail: warn when the geometry contains a junction
 /// topology the conductor-path Hallén solve does not yet handle — a **closed loop**
 /// or a **degree-3+ (T/Y) junction**. For these classes fnec falls back to the
@@ -1313,6 +1350,7 @@ pub(super) fn solve_frequency_point(
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
     warn_if_unsupported_topology(segs);
     warn_if_feedpoint_at_junction(deck, segs);
+    warn_if_low_finite_ground(segs, ground, freq_hz);
     warn_if_negative_resistance(&rows, solver_mode);
 
     let current_table: Vec<CurrentRow> = segs

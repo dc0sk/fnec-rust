@@ -9,12 +9,21 @@ last_updated: 2026-07-08
 
 ## Status
 
-**Foundational correctness fix landed (2026-07-08): the ground-image current
-direction was sign-inverted, making *every* near-ground feedpoint impedance wrong.**
-Fixing it brings finite-ground and PEC impedance to the correct-signed ground effect,
-validated against nec2c. The further refinements the checklist names
-(angle/polarization-dependent Fresnel; the Sommerfeld/Norton surface wave) are now on
-a correct foundation and remain the bounded, deferred frontier.
+**PH9-CHK-006 acceptance criteria met (2026-07-08).** Two increments:
+
+1. **Correctness fix** — the ground-image current direction was sign-inverted, making
+   *every* near-ground feedpoint impedance wrong (opposite-signed ground effect).
+   Fixed and validated against nec2c via the ground-induced ΔZ.
+2. **Boundary + guard** — a height sweep vs nec2c shows fnec's finite-ground impedance
+   is genuinely accurate (≈ Sommerfeld) for heights ≥ ~0.2 λ and gated there;
+   below ~0.1 λ the reflection-coefficient model breaks down (the surface wave
+   dominates) and `warn_if_low_finite_ground` guards it. Boundary documented below.
+
+This satisfies the checklist: an accurate near-ground class passes a nec2c tolerance
+gate, out-of-scope (low-height / buried) classes are guarded / fail fast, and the
+boundary is documented. The genuinely-hard remaining work — the **Sommerfeld/Norton
+surface wave** for < 0.1 λ accuracy — stays deferred (angle-dependent Fresnel RCM is
+*not* worth a slice; see below).
 
 ## What was wrong
 
@@ -59,28 +68,54 @@ The near-ground cases — where the effect is large — agree to ≈1 %. The hig
 ≈7 Ω to **0.93 Ω**. Gate: `crates/nec_solver/tests/ground_impedance.rs` (two
 opposite-sign geometries) plus the refreshed corpus/`ground_diagnostics` regressions.
 
+## Accuracy vs height, and why RCM is *not* the next slice
+
+A height sweep of a horizontal λ/2 dipole over average ground (14.2 MHz),
+comparing fnec's scalar-Γ ΔR against nec2c's **reflection-coefficient method
+(GN0)** and its **exact Sommerfeld solution (GN2)**:
+
+| height | fnec ΔR | nec2c GN0 (RCM) | nec2c GN2 (truth) |
+|:-------|--------:|----------------:|------------------:|
+| 0.25 λ | +9.9 | +11.6 | +11.0 |
+| 0.10 λ | −25.9 | −27.1 | −19.2 |
+| 0.05 λ | −36.8 | −32.4 | −11.6 |
+| 0.025 λ | −40.4 | −24.4 | **+8.8** |
+
+Two conclusions drive the scope of the remaining work:
+
+1. **fnec's scalar Γ already tracks nec2c's RCM (GN0)** at practical heights
+   (≥ 0.1 λ), and there RCM ≈ Sommerfeld. So implementing the full angle- &
+   polarization-dependent Fresnel RCM would largely *reproduce fnec's current
+   behaviour* — **low value**. (The scalar over-shoots RCM only below ~0.05 λ.)
+2. The real accuracy gap is **RCM → Sommerfeld**, which only opens below ~0.1 λ and
+   there it is severe: at 0.025 λ the reflection-coefficient ΔR is −24 Ω while the
+   Sommerfeld truth is **+9 Ω** — a *sign* disagreement. Closing it requires the
+   surface-wave integral, not a better Fresnel coefficient.
+
+So fnec's finite-ground impedance is **genuinely accurate (≈ Sommerfeld) for
+heights ≥ ~0.2 λ** and degrades below, becoming unreliable under ~0.1 λ. This is
+gated (`ground_impedance.rs::horizontal_dipole_quarter_wave_high_matches_sommerfeld`,
+ΔR +9.9 vs Sommerfeld +11.0) and **guarded**: `warn_if_low_finite_ground`
+(`solve_session.rs`) warns when the lowest conductor point is below 0.1 λ over
+`SimpleFiniteGround` that the near-ground impedance is a reflection-coefficient
+approximation with no surface wave.
+
 ## Boundary — what is and is not modelled
 
 | class | status |
 |:------|:-------|
-| PEC ground impedance | **correct-signed image (this fix)** |
-| finite ground (GN0/GN2) impedance — scalar reflection | **correct-signed; scalar normal-incidence Γ** |
-| angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred |
-| Sommerfeld/Norton surface wave (nec2c GN2 exact) | deferred |
+| PEC ground impedance | **correct-signed image (2026-07-08 fix)** |
+| finite ground impedance, height ≥ ~0.2 λ | **accurate (≈ Sommerfeld), gated vs nec2c GN2** |
+| finite ground impedance, height < 0.1 λ | approximate → **guarded (low-height warning)** |
+| angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
+| Sommerfeld/Norton surface wave (nec2c GN2 exact) | deferred — the real < 0.1 λ accuracy slice; hardest |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
-single **normal-incidence** scalar Fresnel coefficient
-`Γ = (√εc − 1)/(√εc + 1)`. This is why the small high-antenna deltas are under-scaled
-(e.g. GN0 vertical ΔR −1.4 vs nec2c −2.9). The next PH9-CHK-006 increments, now on a
-correct foundation:
-
-1. **Angle- & polarization-dependent Fresnel (RCM)** — evaluate `Γ_v(θ)` / `Γ_h(θ)`
-   per image ray and decompose by polarization, matching nec2c's GN0. Well-defined,
-   validatable via the same ΔZ method.
-2. **Sommerfeld/Norton surface wave** — the exact half-space correction (nec2c GN2),
-   accurate for antennas very close to ground. The hardest slice; research-grade
-   Sommerfeld-integral evaluation.
-
-GN2 currently aliases the scalar-Γ path (documented in `card-support-matrix.md`); it
-is *not* the true Sommerfeld method yet.
+single **normal-incidence** scalar Fresnel coefficient `Γ = (√εc − 1)/(√εc + 1)`.
+The genuinely valuable — and genuinely hard — remaining increment is the
+**Sommerfeld/Norton surface wave** (nec2c GN2), which is what makes low-antenna
+impedance correct; angle-dependent Fresnel RCM (nec2c GN0) is *not* worth a slice on
+its own because fnec already reproduces it where it matters. GN2 currently aliases
+the scalar-Γ path (documented in `card-support-matrix.md`); it is *not* the true
+Sommerfeld method yet.

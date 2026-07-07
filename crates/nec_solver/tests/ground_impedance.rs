@@ -101,6 +101,24 @@ fn horizontal_dipole_low_over_ground_resistance_drops() {
 }
 
 #[test]
+fn horizontal_dipole_quarter_wave_high_matches_sommerfeld() {
+    // At ≥ ~0.2 λ the reflection-coefficient method converges to the exact
+    // Sommerfeld solution, so fnec's finite-ground impedance is genuinely accurate
+    // there (not just RCM-accurate). λ/2 horizontal dipole at 0.25 λ (5.28 m).
+    // nec2c GN 2 (Sommerfeld): free space 78.94 + j45.28, over ground 89.97 + j60.91
+    // → ΔR = +11.03 Ω (captured 2026-07-08). Radiation resistance rises.
+    let deck = dipole(21, [-5.28, 0.0, 5.28], [5.28, 0.0, 5.28], 11);
+    let z_fs = feedpoint_z(&deck, &GroundModel::FreeSpace, 1, 11);
+    let z_gr = feedpoint_z(&deck, &GROUND, 1, 11);
+    let dr = z_gr.re - z_fs.re;
+    println!(
+        "horizontal 0.25λ: fs={z_fs:.2} ground={z_gr:.2} ΔR={dr:+.2} (nec2c Sommerfeld +11.03)"
+    );
+    // Tighter than the low-height cases: fnec ≈ Sommerfeld truth here.
+    assert_ground_delta_r(dr, 11.03, "horizontal dipole 0.25λ (vs Sommerfeld)");
+}
+
+#[test]
 fn vertical_dipole_near_ground_resistance_rises() {
     // λ/2 vertical dipole with its base 0.5 m above average ground. nec2c (GN 2):
     // free space 79.35 + j46.22, over ground 97.32 + j44.15 → ΔR = +17.97 Ω

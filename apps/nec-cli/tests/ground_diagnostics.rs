@@ -506,3 +506,60 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~92.27"
     );
 }
+
+// PH9-CHK-006: low-height finite-ground guard. Below ~0.1 λ the reflection-
+// coefficient impedance is only approximate (the Sommerfeld surface wave is not
+// modelled), so fnec warns; higher antennas and free space stay quiet.
+fn run_deck(deck: &str, name: &str) -> String {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
+    fs::write(&deck_path, deck).expect("write temp deck");
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--solver")
+        .arg("hallen")
+        .arg(&deck_path)
+        .current_dir(&workspace_root)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run fnec: {e}"));
+    let _ = fs::remove_file(&deck_path);
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn low_horizontal_dipole_over_finite_ground_warns() {
+    // λ/2 horizontal dipole at 0.1 λ (2.11 m) over GN0 average ground.
+    let deck = "GW 1 21 -5.28 0 2.11 5.28 0 2.11 0.001\nGN 0 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let stderr = run_deck(deck, "lowground");
+    assert!(
+        stderr.contains("above finite ground") && stderr.contains("Sommerfeld"),
+        "low antenna over finite ground must warn about the approximate near-ground impedance; \
+         stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn high_dipole_over_finite_ground_is_quiet() {
+    // Same dipole at 0.25 λ (5.28 m): reflection-coefficient ≈ Sommerfeld here, no warning.
+    let deck = "GW 1 21 -5.28 0 5.28 5.28 0 5.28 0.001\nGN 0 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let stderr = run_deck(deck, "highground");
+    assert!(
+        !stderr.contains("above finite ground"),
+        "an antenna ≥ 0.2 λ over finite ground must not trip the low-height guard; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn low_dipole_free_space_is_quiet() {
+    // No ground → the low-height guard must never fire (free space has no near-ground effect).
+    let deck =
+        "GW 1 21 -5.28 0 2.11 5.28 0 2.11 0.001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let stderr = run_deck(deck, "lowfree");
+    assert!(
+        !stderr.contains("above finite ground"),
+        "free-space deck must not trip the finite-ground low-height guard; stderr:\n{stderr}"
+    );
+}
