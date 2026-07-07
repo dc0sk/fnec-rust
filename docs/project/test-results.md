@@ -19,7 +19,7 @@ rule in [README.md](README.md)).
 | Field | Value |
 |:------|:------|
 | Date | 2026-07-08 |
-| Commit | branch `fix/ph9-chk-006-ground-image-sign` (base `2d693d4` main) |
+| Commit | branch `feat/ph9-chk-006-near-ground-boundary` (base `534961a` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,19 +27,25 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-608 passed; 0 failed; 0 ignored
+612 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-608 = 606 + 2 near-ground impedance tests (`ground_impedance.rs`: the ground-induced
-ΔZ matches nec2c in sign and magnitude for a horizontal dipole low over ground (R
-drops) and a vertical dipole near ground (R rises +18 Ω), gating the ground-image
-current-direction sign fix). The corpus and `ground_diagnostics` ground-case
-references were refreshed to the corrected impedances (the old goldens were fnec
-self-regressions that had pinned the sign bug); the `dipole-ground-51seg` external-X
-gate was widened 30→35 Ω to clear fnec's documented ~32 Ω systematic reactance offset
-(its external-R parity improved from ≈7 to 0.93 Ω under the fix). Note:
-`scriptability_contract.rs`'s
+612 = 608 + 4 near-ground boundary tests: `ground_impedance.rs` +1 (a 0.25 λ
+horizontal dipole ΔR +9.9 Ω matches the exact Sommerfeld truth +11.0 — fnec is
+genuinely accurate at practical heights, not just RCM-accurate) and
+`ground_diagnostics.rs` +3 (`warn_if_low_finite_ground` fires for an antenna < 0.1 λ
+over finite ground, and stays quiet for a 0.25 λ antenna and for free space). This
+completes PH9-CHK-006's boundary + guard.
+
+### Prior run — 2026-07-08, base `2d693d4` (ground-image sign fix)
+
+`608 passed` (606 + 2 `ground_impedance.rs`: the ground-induced ΔZ matches nec2c in
+sign and magnitude for a horizontal dipole low over ground and a vertical dipole near
+ground, gating the ground-image current-direction sign fix). Corpus + `ground_diagnostics`
+ground references refreshed to the corrected impedances; `dipole-ground-51seg`
+external-X gate widened 30→35 Ω for fnec's ~32 Ω systematic reactance offset
+(external-R improved ≈7 → 0.93 Ω under the fix). Note: `scriptability_contract.rs`'s
 drop-in-alias test is occasionally flaky under a concurrent rebuild (the alias
 symlink/copy of the freshly-built binary races the build); it passes in isolation
 and is unrelated to this change.

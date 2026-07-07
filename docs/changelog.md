@@ -10,6 +10,24 @@ last_updated: 2026-07-08
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+### Added
+
+- **Near-ground impedance accuracy boundary + low-height guard (PH9-CHK-006)** — a
+  height sweep against nec2c (reflection-coefficient GN0 vs exact Sommerfeld GN2)
+  characterizes where fnec's finite-ground impedance is trustworthy: it is genuinely
+  accurate (≈ Sommerfeld, within ~10 %) for antenna heights ≥ ~0.2 λ — now gated
+  (`ground_impedance.rs`: a 0.25 λ horizontal dipole ΔR +9.9 Ω vs Sommerfeld +11.0)
+  — and degrades below, becoming unreliable under ~0.1 λ where the surface wave
+  dominates (at 0.025 λ the reflection-coefficient ΔR is −24 Ω vs the +9 Ω truth — a
+  sign error). `warn_if_low_finite_ground` now warns when the lowest conductor point
+  is below 0.1 λ over finite ground that the impedance is a reflection-coefficient
+  approximation with no surface wave. This completes PH9-CHK-006's acceptance
+  criteria (accurate class gated, low-height/buried classes guarded, boundary
+  documented). Notably, angle-dependent Fresnel (nec2c GN0 RCM) is **not** a
+  worthwhile increment — fnec's scalar Γ already reproduces it where it matters; only
+  the Sommerfeld/Norton surface wave (nec2c GN2) closes the < 0.1 λ gap, and it stays
+  deferred. See `docs/ph9-chk-006-sommerfeld-ground.md`.
+
 ### Fixed
 
 - **Near-ground feedpoint impedance had the wrong-signed ground effect

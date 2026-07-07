@@ -21,7 +21,7 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 | GM | Full | Geometry move: rotate and/or translate wire ranges in place; `tag_increment > 0` appends transformed copies |
 | GR | Full | Geometry repeat: successive z-axis rotation copies |
 | GN type −1 | Full | Null-ground explicit free-space (same as omitting GN) |
-| GN type 0 | Partial | Finite ground via a **normal-incidence scalar** reflection coefficient on the (correct-signed, PH9-CHK-006) image. Near-ground impedance now has the correct ground-effect sign, validated vs nec2c by the ΔZ method; angle/polarization-dependent Fresnel (RCM) and the Sommerfeld surface wave are deferred — small high-antenna deltas are under-scaled. Not the true Sommerfeld method despite the historical label |
+| GN type 0 | Partial | Finite ground via a **normal-incidence scalar** reflection coefficient on the (correct-signed, PH9-CHK-006) image. Impedance is accurate (≈ Sommerfeld, ~10%, gated vs nec2c) for antenna heights ≥ ~0.2 λ; below 0.1 λ it is a reflection-coefficient approximation (no surface wave) and fnec **warns**. Angle/polarization-dependent Fresnel (RCM) and the Sommerfeld surface wave are deferred. Not the true Sommerfeld method despite the historical label |
 | GN type 1 | Full | Perfect-conductor (PEC) image method (correct-signed image, PH9-CHK-006) |
 | GN type 2 | Partial | Currently **aliases the GN0 scalar finite-ground path** (not the true Sommerfeld/Norton method); low-height near-ground impedance is regression-gated. Exact Sommerfeld is deferred (PH9-CHK-006) |
 | GN other | Deferred | Unsupported type: treated as free-space with a warning |
