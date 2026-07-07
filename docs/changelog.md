@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-06
+last_updated: 2026-07-08
 ---
 
 # Changelog
@@ -11,6 +11,25 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 ### Fixed
+
+- **Near-ground feedpoint impedance had the wrong-signed ground effect
+  (PH9-CHK-006)** — the method-of-images reflection term in the Hallén Z matrix
+  (`matrix.rs::image_segment`) used the image current `(Jx, Jy, −Jz)` instead of the
+  correct PEC image `(−Jx, −Jy, +Jz)` (Balanis Table 4-1) — the exact negation. So
+  the reflected contribution entered *every* near-ground impedance with the wrong
+  sign: a horizontal λ/2 dipole 0.1 λ over average ground reported 92 − j48 Ω where
+  nec2c gives ≈52 + j63 Ω (radiation resistance rose over ground instead of
+  dropping). The far-field image path was separately correct, so radiation patterns
+  validated while impedance was silently wrong, and the ground-impedance references
+  were fnec self-regressions that had pinned the buggy values. Fixed to match the
+  far-field image; validated against nec2c via the ground-induced ΔZ (which cancels
+  fnec's systematic reactance offset) across four geometries — ΔR sign now correct
+  everywhere, near-ground vertical ΔR +18.0 Ω vs nec2c +18.0, horizontal −26 vs −27,
+  PEC external-R parity tightened from ≈7 Ω to 0.93 Ω. New gate
+  `crates/nec_solver/tests/ground_impedance.rs`; corpus + `ground_diagnostics`
+  ground references refreshed to the corrected values. The finite-ground reflection
+  still uses a normal-incidence scalar Γ (angle-dependent Fresnel / Sommerfeld remain
+  deferred). See `docs/ph9-chk-006-sommerfeld-ground.md`.
 
 - **Closed-loop / T-junction geometries no longer silently return garbage
   (PH9-CHK-002/005 guardrail)** — the conductor-path solve does not handle closed

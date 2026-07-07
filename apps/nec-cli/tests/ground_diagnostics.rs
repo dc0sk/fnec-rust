@@ -123,13 +123,15 @@ fn ge1_without_gn_infers_pec_ground() {
         })
         .expect("no feedpoint row in output");
 
+    // PH9-CHK-006: values corrected after the ground-image current-direction sign
+    // fix (was 81.91 + j16.42, the wrong-sign ground effect).
     assert!(
-        (z_re - 81.914743).abs() < 0.05,
-        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~81.91"
+        (z_re - 73.861164).abs() < 0.05,
+        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~73.86"
     );
     assert!(
-        (z_im - 16.416629).abs() < 0.05,
-        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~16.42"
+        (z_im - 12.226487).abs() < 0.05,
+        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~12.23"
     );
 }
 
@@ -220,9 +222,10 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         })
         .expect("no feedpoint row in output");
 
+    // PH9-CHK-006: corrected after the ground-image sign fix (was 78.17).
     assert!(
-        (z_re - 78.170459).abs() < 0.05,
-        "GN2 regression mismatch: got Z_RE={z_re}, expected ~78.17"
+        (z_re - 72.859147).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~72.86"
     );
 }
 
@@ -495,8 +498,11 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         })
         .expect("no feedpoint row in output");
 
+    // PH9-CHK-006: corrected after the ground-image sign fix (was 69.44). This
+    // near-ground vertical dipole gains a large +18 Ω from ground — the fixed
+    // fnec now matches nec2c's ground-resistance delta (+18.0 vs +18.0 Ω).
     assert!(
-        (z_re - 69.436745).abs() < 0.05,
-        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~69.44"
+        (z_re - 92.266147).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~92.27"
     );
 }
