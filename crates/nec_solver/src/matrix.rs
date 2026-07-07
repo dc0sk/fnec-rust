@@ -245,15 +245,23 @@ pub fn assemble_pocklington_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Mirror a segment across the z = 0 ground plane.
+/// Mirror a segment across the z = 0 ground plane, returning the **image current
+/// element** for the method-of-images reflection term (PH9-CHK-006).
 ///
-/// - Endpoints and midpoint have their z-coordinate negated.
-/// - The direction vector has its z-component negated.
+/// - Endpoints and midpoint have their z-coordinate negated (position mirror).
+/// - The current direction is the image of `J = (Jx, Jy, Jz)`, namely
+///   `(−Jx, −Jy, +Jz)`: the horizontal components reverse (opposite image) and the
+///   vertical component keeps its sign (same-direction image). This is the standard
+///   PEC image (Balanis Table 4-1) — a vertical element's image reinforces
+///   (`cos α = +1`) and a horizontal element's image opposes (`cos α = −1`), which
+///   is what makes a horizontal dipole's radiation resistance *drop* low over
+///   ground. It matches the already-validated far-field image
+///   ([`crate::farfield`]'s `pec_image_farfield`).
 ///
-/// For a perfect electric conductor at z = 0, the image current of a
-/// horizontal element flows in the same direction (cos_alpha = same sign) and
-/// the image of a vertical element flows in the opposite direction
-/// (cos_alpha = −1), which is the correct image-theory reflection coefficient.
+/// This corrects a prior sign inversion (`(Jx, Jy, −Jz)`) that gave every
+/// near-ground feedpoint impedance the wrong-signed ground effect while the
+/// (separately-correct) far-field path still validated — see
+/// `docs/ph9-chk-006-sommerfeld-ground.md`.
 fn image_segment(seg: &Segment) -> Segment {
     Segment {
         tag: seg.tag,
@@ -262,7 +270,7 @@ fn image_segment(seg: &Segment) -> Segment {
         start: [seg.start[0], seg.start[1], -seg.start[2]],
         end: [seg.end[0], seg.end[1], -seg.end[2]],
         midpoint: [seg.midpoint[0], seg.midpoint[1], -seg.midpoint[2]],
-        direction: [seg.direction[0], seg.direction[1], -seg.direction[2]],
+        direction: [-seg.direction[0], -seg.direction[1], seg.direction[2]],
         length: seg.length,
         radius: seg.radius,
     }
@@ -630,12 +638,17 @@ mod tests {
         let s = make_seg(3, 2, 7, [1.0, -2.0, 4.0], [0.0, 0.6, 0.8], SEG_LEN, RADIUS);
         let img = image_segment(&s);
 
+        // Position mirrors across z = 0.
         assert_eq!(img.start[2], -s.start[2]);
         assert_eq!(img.end[2], -s.end[2]);
         assert_eq!(img.midpoint[2], -s.midpoint[2]);
-        assert_eq!(img.direction[0], s.direction[0]);
-        assert_eq!(img.direction[1], s.direction[1]);
-        assert_eq!(img.direction[2], -s.direction[2]);
+        // PH9-CHK-006: the image current is (−Jx, −Jy, +Jz) — horizontal
+        // components reverse, vertical keeps sign (standard PEC image, Balanis
+        // Table 4-1). This matches the far-field `pec_image_farfield` and gives
+        // the correct-signed near-ground impedance.
+        assert_eq!(img.direction[0], -s.direction[0]);
+        assert_eq!(img.direction[1], -s.direction[1]);
+        assert_eq!(img.direction[2], s.direction[2]);
     }
 
     #[test]

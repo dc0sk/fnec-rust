@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-07-06
+last_updated: 2026-07-08
 ---
 
 # Test results
@@ -18,8 +18,8 @@ rule in [README.md](README.md)).
 
 | Field | Value |
 |:------|:------|
-| Date | 2026-07-06 |
-| Commit | branch `fix/ph9-chk-002-loop-topology-guard` (base `f7419b6` main) |
+| Date | 2026-07-08 |
+| Commit | branch `fix/ph9-chk-006-ground-image-sign` (base `2d693d4` main) |
 | Version | fnec-rust 0.9.0 |
 | Toolchain | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Host | Linux 6.18 x86_64 (AMD Renoir gfx90c APU, RADV Vulkan) |
@@ -27,18 +27,28 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-606 passed; 0 failed; 0 ignored
+608 passed; 0 failed; 0 ignored
 exit code 0
 ```
 
-606 = 602 + 4 out-of-scope-topology guard tests: `general_junction.rs` (×3 —
-`classify_unsupported_topology` returns `None` for supported degree-2 topologies,
-`HighDegreeJunction` for a T/Y, `ClosedLoop` for a square loop) and
-`junction_feedpoint.rs::closed_loop_is_guarded` (a 1λ loop fed mid-wire now warns
-instead of silently returning ≈20 − j1210 Ω). Note: `scriptability_contract.rs`'s
+608 = 606 + 2 near-ground impedance tests (`ground_impedance.rs`: the ground-induced
+ΔZ matches nec2c in sign and magnitude for a horizontal dipole low over ground (R
+drops) and a vertical dipole near ground (R rises +18 Ω), gating the ground-image
+current-direction sign fix). The corpus and `ground_diagnostics` ground-case
+references were refreshed to the corrected impedances (the old goldens were fnec
+self-regressions that had pinned the sign bug); the `dipole-ground-51seg` external-X
+gate was widened 30→35 Ω to clear fnec's documented ~32 Ω systematic reactance offset
+(its external-R parity improved from ≈7 to 0.93 Ω under the fix). Note:
+`scriptability_contract.rs`'s
 drop-in-alias test is occasionally flaky under a concurrent rebuild (the alias
 symlink/copy of the freshly-built binary races the build); it passes in isolation
 and is unrelated to this change.
+
+### Prior run — 2026-07-06, base `f7419b6` (out-of-scope topology guard)
+
+`606 passed` (602 + 4 topology-guard tests: `general_junction.rs` ×3 classification
+units and `junction_feedpoint.rs::closed_loop_is_guarded` — a 1λ loop fed mid-wire
+now warns instead of silently returning ≈20 − j1210 Ω).
 
 ### Prior run — 2026-07-06, base `10d542d` (current-source CLI wiring)
 
