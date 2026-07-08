@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-07-06
+last_updated: 2026-07-08
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -230,3 +230,40 @@ symmetric-feed single-`cos` DOF) were tried and **none reproduced the reference*
 the loop's periodic Green's-function forcing and closure are materially different
 from the open-chain case, so this is a dedicated solver increment, not a small
 extension. It is deferred with the geometry guarded rather than shipped unvalidated.
+
+**Degree-3 (T/Y) junction solve — prototyped, deferred (2026-07-08).** A per-arm
+entire-domain Hallén formulation was prototyped against live nec2c references and
+**did not converge**, so it was not shipped. The formulation decomposed the geometry
+into *arms* (maximal degree-2 chains ending at a free end or a junction node), gave
+each arm two homogeneous constants `C_a cos(k s) + D_a sin(k s)` with arc-length `s`
+measured from the node, and closed the system with the theoretically-correct
+condition count (`2·arms = free-ends + Σ_node degree`): `I = 0` at each free end, one
+**KCL** row per node (Σ arm currents into the node = 0), and `degree − 1`
+**scalar-potential-continuity** rows per node (`dÂ/ds|_node = k·D_a + P_a′(0)` equal
+across arms, where `P_a′` is the delta-gap particular-solution derivative on the feed
+arm).
+
+References: a symmetric **Y** (three 5 m arms 120° apart, fed at one arm's midpoint,
+nec2c 71.5 − j67 Ω converged) and an asymmetric **T** (split horizontal dipole plus a
+vertical stub, nec2c 20.4 − j952 Ω). Gates measured: feedpoint `R` vs nec2c, arm-2 ≡
+arm-3 symmetry, KCL residual, and current-distribution shape.
+
+Result — the **reactance converged** cleanly to nec2c under mesh refinement
+(Y: −143 → −93 → −76 → −67 Ω across 11/21/31/41 seg-per-arm, → nec2c −67), and the
+symmetry (≈1e-12) and KCL residual (≈1e-8) gates passed. But the **radiation
+resistance diverged** (Y: 72.4 → 77.4 → 79.3 → 80.3 Ω, monotonically *away* from
+nec2c ≈71.5). The near-node current came out ≈11 % low with a spurious steep drop at
+the node (nec2c has a near-flat current maximum there). The divergence was
+**independent of the KCL current-to-node extrapolation order** (nearest-segment,
+linear, and quadratic 3-point all gave the same diverging R), and the source′ term in
+the potential-continuity row was **essential** (dropping it → 70–95 % R error). The T
+case never got below 15 % R error.
+
+Interpretation: potential-continuity captures the reactive/standing-wave structure
+correctly (X converges), but the entire-domain per-arm basis plus a hard KCL row does
+not yield a convergent *current* distribution at the node — the resistive part
+(radiated power, feed current) is systematically wrong and worsens with refinement.
+A correct degree-3 solve most likely needs proper **overlapping junction basis
+functions** (KCL satisfied by construction, NEC-style) rather than fnec's
+entire-domain homogeneous-constant Hallén scheme — a real architectural change, not a
+small extension. Deferred with the geometry guarded rather than shipped unvalidated.
