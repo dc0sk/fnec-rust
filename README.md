@@ -1,6 +1,6 @@
 # fnec-rust
 
-![version](https://img.shields.io/badge/version-0.9.0-blue)
+![version](https://img.shields.io/badge/version-0.10.0-blue)
 ![license](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.

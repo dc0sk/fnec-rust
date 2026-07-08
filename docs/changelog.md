@@ -10,6 +10,8 @@ last_updated: 2026-07-08
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+
+## [0.10.0] — 2026-07-08 — Phase 9: general junction basis, junction receive/current-source, near-ground impedance
 ### Added
 
 - **Near-ground impedance accuracy boundary + low-height guard (PH9-CHK-006)** — a
