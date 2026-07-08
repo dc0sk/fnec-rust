@@ -356,7 +356,9 @@ plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT.
 
 ## Phase 9 (planned): accuracy frontier & scattering breadth
 
-**v0.9.0 shipped (2026-07-05)** — first wave: receive-pattern sweep (PH9-CHK-001), absolute gain over finite ground (PH9-CHK-003), collinear junction fix + guardrails + diagnosis (PH9-CHK-002/005), RP XNDA parser fix. Remaining Phase 9 items (general junction basis, Sommerfeld ground, PT/RP output modes) continue toward a later release.
+**v0.9.0 shipped (2026-07-05)** — first wave: receive-pattern sweep (PH9-CHK-001), absolute gain over finite ground (PH9-CHK-003), collinear junction fix + guardrails + diagnosis (PH9-CHK-002/005), RP XNDA parser fix.
+
+**v0.10.0 shipped (2026-07-08)** — second wave: **general degree-2 junction basis** across all three excitation classes (transmit / plane-wave receive / current source, PH9-CHK-002), out-of-scope topology guard (closed loops + degree-3 T/Y), near E/H fields + `PT` print-control (PH9-CHK-004), and the **near-ground impedance sign fix + accuracy boundary/guard** (PH9-CHK-006). Remaining Phase 9 items — degree-3+ (T/Y) and closed-loop *solving*, and the Sommerfeld surface wave — are guarded and continue toward a later release.
 
 **Goals**: Phase 8 made mainstream decks *run*; Phase 9 makes fnec *trustworthy on
 hard models* and *complete for receive/scattering*. It closes the accuracy and

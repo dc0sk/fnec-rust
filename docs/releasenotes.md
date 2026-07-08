@@ -2,10 +2,84 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ---
 
 # Release Notes
+
+## 0.10.0 — Phase 9: general junction basis, junction receive/current-source, near-ground impedance
+
+This release carries the second, larger wave of Phase 9 (the accuracy & scattering
+frontier). The headline is the **general degree-2 junction basis** — bent, split, and
+connected antennas now solve correctly across all three excitation classes — together
+with a **foundational fix to near-ground impedance** and honest guards for the
+geometries that are still out of scope. Phase 9 is still not complete (degree-3+ T/Y
+junctions, closed-loop solving, and the Sommerfeld surface wave remain), but every
+increment here is validated against nec2c or by reciprocity/consistency.
+
+### General junction basis (PH9-CHK-002)
+
+The Hallén homogeneous solution (`cos(k·s)` + constant) was previously built per `GW`
+wire and reset at each junction, so any bent or split geometry mis-solved (often to a
+negative resistance). It is now solved on continuous **conductor paths** with a
+per-segment traversal sign and signed arc-length, across **all three excitation
+classes**:
+
+- **Transmit (voltage delta-gap).** Bends, start-to-start / end-to-end splits, and
+  inverted-V apex feeds now solve. A λ/2 dipole split at its feed gives
+  **74.41 + j14.52 Ω** (was −34 − j1447); 30°/45°/90° inverted-Vs match nec2c
+  radiation resistance to 2–4 %.
+- **Plane-wave receive.** A receiving bent/connected antenna solves on continuous
+  paths (two homogeneous DOF for the asymmetric induced current) and emits a
+  `RECEIVE_PATTERN` where it previously failed fast. Validated by reciprocity: the
+  CLI split-dipole receive sweep matches its transmit pattern to 0.025 dB.
+- **Current source (EX type 4).** The forced-current solve on junctioned geometry
+  reports a feedpoint `Z = V/i0` that matches the voltage-source impedance to
+  ~2–3×10⁻⁴ (split dipole and inverted-V).
+
+Out-of-scope topologies — **closed loops** and **degree-3+ (T/Y) junctions** — are now
+**guarded**: a whole-geometry warning fires regardless of feed placement, so a loop
+fed mid-wire no longer silently returns a wrong impedance (a 1λ loop reported
+≈20 − j1210 Ω vs the true ≈111 − j146). A closed-loop solve was prototyped against
+nec2c but its periodic closure did not validate, so it stays deferred rather than
+shipped unvalidated.
+
+### Near-ground impedance (PH9-CHK-006)
+
+- **Ground-image sign fix.** The method-of-images reflection term in the Hallén Z
+  matrix used the image current `(Jx, Jy, −Jz)` instead of the correct PEC image
+  `(−Jx, −Jy, +Jz)` — the exact negation — so *every* near-ground feedpoint impedance
+  had the wrong-signed ground effect (a horizontal dipole 0.1 λ over ground reported
+  92 − j48 Ω where nec2c gives ≈52 + j63). The separately-correct far-field image
+  hid it. Validated against nec2c via the ground-induced ΔZ across four geometries.
+- **Accuracy boundary + guard.** fnec's finite-ground impedance is now accurate
+  (≈ Sommerfeld, ~10 %) for antenna heights ≥ ~0.2 λ (gated vs nec2c GN2) and degrades
+  below; a low-height warning fires under 0.1 λ that the impedance is a
+  reflection-coefficient approximation without the Sommerfeld surface wave.
+
+### Near fields and output control (PH9-CHK-004)
+
+- **Near electric and magnetic fields.** `NE` and `NH` cards compute the near E/H
+  field on a rectangular grid (Hertzian-element sum over the solved currents),
+  emitting `NEAR_FIELD` / `NEAR_H_FIELD` sections; validated against the far field at
+  range (0.02 %) and the `|E| = η·|H|` relation.
+- **`PT` print-control** is applied at runtime (suppress / all / tag-and-segment
+  restriction).
+
+### Tooling
+
+- **Benchmark Dashboard CI** was fixed (it had never passed): invalid heredoc YAML is
+  corrected, the noisy real-run timing comparison is now informational, and the
+  gh-pages deploy has explicit write permission.
+
+### Known limitations (deferred to a later release)
+
+- **Degree-3+ (T/Y) junction solving** and **closed-loop solving** — guarded, not
+  solved; both need a genuinely different basis (branching KCL / periodic closure).
+- **Sommerfeld/Norton surface-wave ground** — the exact near-ground correction for
+  antennas below ~0.1 λ; the reflection-coefficient model is used and guarded there.
+- fnec's Hallén operator carries a documented ~32 Ω systematic reactance offset vs
+  nec2c; validate impedance by shape / delta / reciprocity, not absolute parity.
 
 ## 0.9.0 — Phase 9 progress: receive patterns, ground gain, junction robustness
 
