@@ -119,3 +119,55 @@ impedance correct; angle-dependent Fresnel RCM (nec2c GN0) is *not* worth a slic
 its own because fnec already reproduces it where it matters. GN2 currently aliases
 the scalar-Γ path (documented in `card-support-matrix.md`); it is *not* the true
 Sommerfeld method yet.
+
+## Sommerfeld feasibility study (2026-07-08) — target pinned, deferred as a dedicated increment
+
+A focused feasibility pass quantified the exact correction target and scoped the
+implementation. It did **not** ship a solver change; the scalar-Γ path and the
+low-height guard are unchanged.
+
+**The correction target (horizontal λ/2 dipole, 14.2 MHz, avg ground εr = 13,
+σ = 0.005).** ΔZ = Z(ground) − Z(free space), against the nec2c free-space
+reference 78.85 + j44.70 Ω. fnec's scalar Γ tracks nec2c's reflection-coefficient
+method (GN0); the *surface-wave correction* is the GN2 − GN0 gap:
+
+| height | ΔR GN0 (RCM ≈ fnec) | ΔR GN2 (Sommerfeld) | ΔX GN0 | ΔX GN2 | surface-wave ΔR, ΔX |
+|:-------|--------------------:|--------------------:|-------:|-------:|:--------------------|
+| 0.25 λ | +11.6 | +11.0 | +16.9 | +15.6 | −0.6, −1.2 |
+| 0.10 λ | −27.0 | −19.2 | +18.1 | +13.4 | +7.8, −4.7 |
+| 0.05 λ | −32.4 | −11.6 | +18.9 | +7.9 | +20.8, −11.0 |
+| 0.025 λ | −24.3 | **+9.0** | **+102.2** | +23.9 | **+33.3, −78.3** |
+
+The correction is negligible at 0.25 λ and grows steeply toward the ground: by
+0.025 λ it flips ΔR from −24 to +9 (the lossy ground *adds* radiation/loss
+resistance that RCM misses) and cuts ΔX from +102 to +24. There is no closed form;
+this is the genuine surface-wave contribution. nec2c reference decks:
+`gfs.nec` (free space), `g_{0,2}_{h}.nec` (GN0/GN2 sweep) — regenerate with three-arm
+`GW` + `GN 0|2 0 0 0 13 0.005` + `FR`/`EX`/`XQ`.
+
+**Recommended implementation path — Discrete Complex Image Method (DCIM).** fnec's
+reflected impedance term is `Γ · elem(obs, image_of_src)` — a single scalar times one
+geometric-optics image. The Sommerfeld reflected kernel can be written
+`Σᵢ aᵢ · G(complex_image_i)` (a short sum of *complex* images: complex weights `aᵢ`
+at complex heights, via the Sommerfeld identity applied to a complex-exponential fit
+of the spectral reflection coefficient), plus explicit **surface-wave-pole
+extraction** for accuracy at low height. This maps directly onto fnec's existing
+structure: replace the one `Γ · elem(image)` with a small sum over complex images,
+which only needs a complex-distance Green's kernel (`exp(−jk r)/r` with complex `r`)
+alongside the existing real-image `elem`.
+
+**Why it's a dedicated multi-session increment, not a slice.** The tractable-looking
+DCIM still requires, done correctly and validated at each step: (1) the **horizontal**
+dipole's full half-space dyadic — TE **and** TM reflection with their polarization
+coupling (the vertical dipole is a single clean TM integral and fnec's scalar Γ
+*already* nails it, e.g. vertical λ/2 base 0.5 m ΔR +18 vs nec2c +18; the whole gap is
+the horizontal case); (2) sampling `R_TE(λ)`, `R_TM(λ)` along a deformed spectral
+contour and a **GPOF/Prony complex-exponential fit**; (3) **surface-wave (Zenneck)
+pole** detection + extraction so the low-height regime is captured (the pole is what
+the RCM omits); (4) a complex-image Green's kernel wired into `assemble_z_matrix_with_ground`
+and the far-field path consistently; (5) ΔZ validation across the height sweep above
+plus vertical / PEC regression. Any sign or factor error in the dyadic costs many
+nec2c-comparison iterations. This is comparable in size to the degree-3 and
+closed-loop solver frontiers — a fresh dedicated session with a full validation
+budget, high risk of not validating on the first pass. Deferred; the scalar-Γ model
+and the `warn_if_low_finite_ground` guard remain the shipped behaviour for < 0.1 λ.
