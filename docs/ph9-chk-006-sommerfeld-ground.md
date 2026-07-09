@@ -256,6 +256,18 @@ Evaluate it as a **2-D integral** (radial `sinθ`/`cosh t` substitution × azimu
 grid): a low-risk direct extension of Level 0, and the **oracle** against which the
 Level-2 closed form is checked.
 
+**Progress (2026-07-09):** the general reflected dyadic is validated as a Rust
+**oracle** — `sommerfeld::reflected_e_projected` (2-D angular-spectrum integral),
+gated by a machine-precision PEC self-check across all orientation pairs
+(`sommerfeld.rs::pec_general_dyadic_matches_image_for_all_orientations`) mirroring the
+Python study. **Not yet wired into the CLI:** the 2-D per-element integral is ~0.07 s
+each, so an N² reaction (or a 2-D kernel-cache) costs minutes — impractical. The
+practical Level-1 feature therefore needs the **1-D azimuthal reduction** (reduce the
+`α` integral of the dyadic to `J0/J1/J2` Sommerfeld integrals, as Level 0 did for the
+`φ=0` slice), validated against this 2-D oracle. That reduction is the immediate next
+step, and it is the *same* fast kernel Level 2's DCIM samples — so it is shared work,
+not throwaway.
+
 ### Level 1 — arbitrary orientation, feedpoint ΔZ (post-solve)
 
 Generalize `horizontal_ground_z_correction` to any wire geometry over finite ground

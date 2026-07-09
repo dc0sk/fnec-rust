@@ -275,6 +275,99 @@ pub fn reflected_ex_horizontal(
     Complex64::new(k0 * ETA0 / (8.0 * std::f64::consts::PI), 0.0) * (ip + ie)
 }
 
+/// Azimuth / radial sample counts for the general dyadic (PH9-CHK-006 Levels 1-2).
+/// The 2-D integrand is smooth under the sin/cosh radial substitution; these give
+/// ~1e-6 PEC agreement (validated in `studies/sommerfeld-ground/general_dyadic.py`).
+const NA_DYAD: usize = 96;
+const NR_DYAD: usize = 800;
+
+/// Reflected `E` projected on `obs_dir` from a unit current moment along `src_dir`,
+/// at horizontal offset `(dx, dy)` and height-sum `d = z_obs + z_src`, over a
+/// half-space — the **general reflected dyadic** (arbitrary-orientation
+/// generalization of [`reflected_ex_horizontal`]).
+///
+/// Evaluated as the 2-D angular-spectrum integral (radial `sinθ`/`cosh t`
+/// substitution × azimuth grid). Reduces exactly to `reflected_ex_horizontal` for
+/// x-source/x-obs on-axis, and to a pure-TM integral for a vertical source. `pec`
+/// forces the perfect-conductor limit. This is the shared foundation of the
+/// arbitrary-orientation feedpoint correction (Level 1) and the DCIM Z-matrix kernel
+/// (Level 2).
+#[allow(clippy::too_many_arguments)]
+pub fn reflected_e_projected(
+    src_dir: [f64; 3],
+    obs_dir: [f64; 3],
+    dx: f64,
+    dy: f64,
+    d: f64,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+    pec: bool,
+) -> Complex64 {
+    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c;
+    let [sx, sy, sz] = src_dir;
+    let [ox, oy, oz] = obs_dir;
+
+    // Radial node lists (propagating θ ∈ (0,π/2); evanescent t ∈ (0,t_max)).
+    let th_lo = 1e-9;
+    let th_hi = std::f64::consts::FRAC_PI_2 - 1e-9;
+    let hth = (th_hi - th_lo) / NR_DYAD as f64;
+    let t_max = if d > 0.0 {
+        (45.0 / (k0 * d)).asinh()
+    } else {
+        8.0
+    };
+    let ht = (t_max - 1e-9) / NR_DYAD as f64;
+
+    let dal = 2.0 * std::f64::consts::PI / NA_DYAD as f64;
+    let mut tot = Complex64::new(0.0, 0.0);
+    for ia in 0..NA_DYAD {
+        let al = dal * ia as f64;
+        let (ca, sa) = (al.cos(), al.sin());
+        let s_ds = -sx * sa + sy * ca;
+        let s_do = -ox * sa + oy * ca;
+
+        // accumulate both radial branches
+        let mut radial = Complex64::new(0.0, 0.0);
+        for br in 0..2 {
+            let npts = NR_DYAD;
+            for i in 0..=npts {
+                let (lambda, kz0, wr, hstep, wtrap);
+                if br == 0 {
+                    let theta = th_lo + hth * i as f64;
+                    lambda = k0 * theta.sin();
+                    kz0 = Complex64::new(k0 * theta.cos(), 0.0);
+                    wr = Complex64::new(k0 * theta.sin(), 0.0);
+                    hstep = hth;
+                } else {
+                    let t = 1e-9 + ht * i as f64;
+                    lambda = k0 * t.cosh();
+                    kz0 = Complex64::new(0.0, -k0 * t.sinh());
+                    wr = Complex64::new(0.0, k0 * t.cosh());
+                    hstep = ht;
+                }
+                wtrap = if i == 0 || i == npts { 0.5 } else { 1.0 };
+                let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
+                let (r_te, r_tm) = fresnel_spectral(kz0, kz1, eps_c, pec);
+                let pi_ds = -(kz0 * (sx * ca + sy * sa) + Complex64::new(sz * lambda, 0.0)) / k0;
+                let pr_do = (kz0 * (ox * ca + oy * sa) - Complex64::new(oz * lambda, 0.0)) / k0;
+                let proj = Complex64::new(s_ds * s_do, 0.0) * r_te + pi_ds * pr_do * r_tm;
+                let phase = (Complex64::new(0.0, -1.0) * kz0 * d).exp()
+                    * Complex64::new(0.0, -lambda * (dx * ca + dy * sa)).exp();
+                radial += wtrap * hstep * wr * proj * phase;
+            }
+        }
+        tot += radial;
+    }
+    Complex64::new(
+        k0 * ETA0 / (8.0 * std::f64::consts::PI * std::f64::consts::PI),
+        0.0,
+    ) * tot
+        * Complex64::new(dal, 0.0)
+}
+
 // ---------------------------------------------------------------------------
 // Bessel functions J0, J1, J2 (Abramowitz & Stegun 9.4, ~1e-7 accuracy).
 // ---------------------------------------------------------------------------
@@ -367,6 +460,59 @@ mod tests {
         let d2 = Complex64::new(dx * dx / (r * r), 0.0) * gpp
             + Complex64::new(1.0 / r - dx * dx / r.powi(3), 0.0) * gp;
         Complex64::new(0.0, omega * MU0) * (g + d2 / Complex64::new(k * k, 0.0))
+    }
+
+    /// Exact free-space E projected on `obs_dir` from a unit current moment along
+    /// `src_dir` at offset (dx,dy,dz): E = jωμ0[(ô·ŝ)g + (ô·∇∇g·ŝ)/k0²].
+    fn eproj_freespace(src: [f64; 3], obs: [f64; 3], dx: f64, dy: f64, dz: f64) -> Complex64 {
+        let k = k0();
+        let omega = 2.0 * std::f64::consts::PI * FREQ;
+        let rv = [dx, dy, dz];
+        let r = (dx * dx + dy * dy + dz * dz).sqrt();
+        let e = Complex64::new(0.0, -k * r).exp();
+        let g = e / (4.0 * std::f64::consts::PI * r);
+        let gp = -(Complex64::new(1.0, k * r)) * e / (4.0 * std::f64::consts::PI * r * r);
+        let gpp = e * Complex64::new(2.0 - k * k * r * r, 2.0 * k * r)
+            / (4.0 * std::f64::consts::PI * r.powi(3));
+        let mut quad = Complex64::new(0.0, 0.0);
+        let mut odots = 0.0;
+        for i in 0..3 {
+            odots += obs[i] * src[i];
+            for j in 0..3 {
+                let dij = if i == j { 1.0 } else { 0.0 };
+                let d2 = Complex64::new(rv[i] * rv[j] / (r * r), 0.0) * gpp
+                    + Complex64::new(dij / r - rv[i] * rv[j] / r.powi(3), 0.0) * gp;
+                quad += Complex64::new(obs[i] * src[j], 0.0) * d2;
+            }
+        }
+        Complex64::new(0.0, omega * MU0)
+            * (Complex64::new(odots, 0.0) * g + quad / Complex64::new(k * k, 0.0))
+    }
+
+    /// PEC self-check for the GENERAL reflected dyadic: with (R_TE,R_TM)=(−1,+1) the
+    /// 2-D spectral integral must reproduce the free-space image-dyadic field
+    /// (image source direction (−sx,−sy,+sz)) for every orientation pair.
+    #[test]
+    fn pec_general_dyadic_matches_image_for_all_orientations() {
+        let cases: &[([f64; 3], [f64; 3], f64, f64)] = &[
+            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.3 * LAM, 0.0),
+            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2 * LAM, 0.25 * LAM),
+            ([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 0.2 * LAM, 0.0),
+            ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.25 * LAM, 0.1 * LAM),
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.15 * LAM, 0.2 * LAM),
+        ];
+        for &(src, obs, dx, dy) in cases {
+            for &hl in &[0.1, 0.03] {
+                let d = 2.0 * hl * LAM;
+                let somm = reflected_e_projected(src, obs, dx, dy, d, FREQ, 1.0, 0.0, true);
+                let img = eproj_freespace([-src[0], -src[1], src[2]], obs, dx, dy, d);
+                let rel = (somm - img).norm() / img.norm();
+                assert!(
+                    rel < 1e-3,
+                    "src={src:?} obs={obs:?} dx={dx} dy={dy} h={hl}λ rel={rel:.2e}"
+                );
+            }
+        }
     }
 
     #[test]
