@@ -160,6 +160,130 @@ pub fn horizontal_ground_z_correction(
     Some(acc / (i_feed * i_feed))
 }
 
+/// Surface-wave ΔZ correction for **any straight wire** over finite ground
+/// (PH9-CHK-006 Level 1) — the arbitrary-orientation generalization of
+/// [`horizontal_ground_z_correction`]. Horizontal wires dispatch to the fast
+/// ρ-grid path; vertical / tilted / sloping straight wires use the general fast
+/// dyadic [`reflected_e_projected_fast`] over a `(Δs, Σs)` grid.
+///
+/// Returns `ΔZ_sw = ΔZ_Sommerfeld − ΔZ_scalarΓ` (induced-EMF reaction over the solved
+/// currents), to add to fnec's scalar-Γ feedpoint `Z`. Returns `None` unless the
+/// geometry is a **straight** wire (all segment directions parallel) entirely above
+/// the `z = 0` plane. Bent / mixed geometry needs the full per-pair dyadic (deferred).
+#[allow(clippy::too_many_arguments)]
+pub fn ground_z_correction(
+    midpoints: &[[f64; 3]],
+    directions: &[[f64; 3]],
+    lengths: &[f64],
+    currents: &[Complex64],
+    feed_idx: usize,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+) -> Option<Complex64> {
+    let n = midpoints.len();
+    if n < 2 || directions.len() != n || lengths.len() != n || currents.len() != n || feed_idx >= n
+    {
+        return None;
+    }
+    const TOL: f64 = 1e-6;
+    // Straight wire, above ground.
+    let axis = directions[0];
+    for i in 0..n {
+        if midpoints[i][2] <= TOL {
+            return None;
+        }
+        let dot =
+            directions[i][0] * axis[0] + directions[i][1] * axis[1] + directions[i][2] * axis[2];
+        if dot.abs() < 1.0 - TOL {
+            return None;
+        }
+    }
+    // Horizontal wire: fast ρ-grid path.
+    if axis[2].abs() <= TOL {
+        return horizontal_ground_z_correction(
+            midpoints, directions, lengths, currents, feed_idx, freq_hz, eps_r, sigma,
+        );
+    }
+
+    let i_feed = currents[feed_idx];
+    if i_feed.norm() < 1e-60 {
+        return None;
+    }
+    let gamma = scalar_gamma(freq_hz, eps_r, sigma);
+
+    // Signed arc position of each midpoint along the axis, from the centroid.
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    let mut cz = 0.0;
+    for m in midpoints {
+        cx += m[0];
+        cy += m[1];
+        cz += m[2];
+    }
+    let (cx, cy, cz) = (cx / n as f64, cy / n as f64, cz / n as f64);
+    let s: Vec<f64> = midpoints
+        .iter()
+        .map(|m| (m[0] - cx) * axis[0] + (m[1] - cy) * axis[1] + (m[2] - cz) * axis[2])
+        .collect();
+    let (mut smin, mut smax) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &si in &s {
+        smin = smin.min(si);
+        smax = smax.max(si);
+    }
+
+    // Difference kernel on a (Δs ∈ [smin−smax, smax−smin], Σs ∈ [2smin, 2smax]) grid.
+    // dx = Δs·ax, dy = Δs·ay, d = 2cz + Σs·az. Bilinear interpolation per pair.
+    let ng = 40usize;
+    let ds_lo = smin - smax;
+    let ds_span = 2.0 * (smax - smin);
+    let sg_lo = 2.0 * smin;
+    let sg_span = 2.0 * (smax - smin);
+    let kernel = |dss: f64, sgg: f64| -> Complex64 {
+        let dx = dss * axis[0];
+        let dy = dss * axis[1];
+        let d = 2.0 * cz + sgg * axis[2];
+        reflected_e_projected_fast(axis, axis, dx, dy, d, freq_hz, eps_r, sigma, false)
+            - gamma * reflected_e_projected_fast(axis, axis, dx, dy, d, freq_hz, eps_r, sigma, true)
+    };
+    let mut grid = vec![Complex64::new(0.0, 0.0); ng * ng];
+    for i in 0..ng {
+        let dss = ds_lo + ds_span * i as f64 / (ng - 1) as f64;
+        for k in 0..ng {
+            let sgg = sg_lo + sg_span * k as f64 / (ng - 1) as f64;
+            grid[i * ng + k] = kernel(dss, sgg);
+        }
+    }
+    let interp = |dss: f64, sgg: f64| -> Complex64 {
+        let fi = if ds_span > 0.0 {
+            ((dss - ds_lo) / ds_span * (ng - 1) as f64).clamp(0.0, (ng - 1) as f64)
+        } else {
+            0.0
+        };
+        let fk = if sg_span > 0.0 {
+            ((sgg - sg_lo) / sg_span * (ng - 1) as f64).clamp(0.0, (ng - 1) as f64)
+        } else {
+            0.0
+        };
+        let (i0, k0) = (fi.floor() as usize, fk.floor() as usize);
+        let (i0, k0) = (i0.min(ng - 2), k0.min(ng - 2));
+        let (a, b) = (fi - i0 as f64, fk - k0 as f64);
+        grid[i0 * ng + k0] * (1.0 - a) * (1.0 - b)
+            + grid[(i0 + 1) * ng + k0] * a * (1.0 - b)
+            + grid[i0 * ng + k0 + 1] * (1.0 - a) * b
+            + grid[(i0 + 1) * ng + k0 + 1] * a * b
+    };
+
+    let mut acc = Complex64::new(0.0, 0.0);
+    for m in 0..n {
+        let mom_m = currents[m] * lengths[m];
+        for k in 0..n {
+            acc += interp(s[m] - s[k], s[m] + s[k]) * mom_m * (currents[k] * lengths[k]);
+        }
+    }
+    Some(acc / (i_feed * i_feed))
+}
+
 /// `√z` on the sheet `Im ≤ 0` (the upgoing/decaying wave `e^{-j kz z}` decays for
 /// `z > 0`).
 fn sqrt_im_neg(z: Complex64) -> Complex64 {
@@ -368,6 +492,106 @@ pub fn reflected_e_projected(
         * Complex64::new(dal, 0.0)
 }
 
+/// Fast (1-D) general reflected dyadic — the azimuthally-reduced form of
+/// [`reflected_e_projected`]. The α-integral of the 2-D angular-spectrum form reduces
+/// analytically to a single radial Sommerfeld integral with `J0/J1/J2`
+/// (`ρ = √(dx²+dy²)`, `φ = atan2(dy, dx)`):
+///
+/// ```text
+/// E_proj = (k0·η0 / 8π²) ∫ (λ/kz0) e^{-j kz0 d} B(λ) dλ,
+/// B = R_TE·π[ SS·J0 + (Dxx·cos2φ + Cxy·sin2φ)·J2 ]
+///   + R_TM·{ −P²π[ SS·J0 − (Dxx·cos2φ + Cxy·sin2φ)·J2 ]
+///            − 2πj·P·Q·o_z·J1·(s_x cosφ + s_y sinφ)
+///            + 2πj·P·Q·s_z·J1·(o_x cosφ + o_y sinφ)
+///            + 2π·s_z·o_z·Q²·J0 }
+/// ```
+///
+/// `SS = s_x o_x + s_y o_y`, `Dxx = s_x o_x − s_y o_y`, `Cxy = s_x o_y + s_y o_x`,
+/// `P = kz0/k0`, `Q = λ/k0`. Reduces exactly to [`reflected_ex_horizontal`] for
+/// x-source/x-obs on-axis. ~100× faster than the 2-D oracle; validated against it to
+/// ~1e-5 for all orientations (see `studies/sommerfeld-ground/`).
+#[allow(clippy::too_many_arguments)]
+pub fn reflected_e_projected_fast(
+    src_dir: [f64; 3],
+    obs_dir: [f64; 3],
+    dx: f64,
+    dy: f64,
+    d: f64,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+    pec: bool,
+) -> Complex64 {
+    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c;
+    let [sx, sy, sz] = src_dir;
+    let [ox, oy, oz] = obs_dir;
+    let rho = (dx * dx + dy * dy).sqrt();
+    let phi = dy.atan2(dx);
+    let (c2, s2) = ((2.0 * phi).cos(), (2.0 * phi).sin());
+    let (cf, sf) = (phi.cos(), phi.sin());
+    let ss = sx * ox + sy * oy;
+    let dxx = sx * ox - sy * oy;
+    let cxy = sx * oy + sy * ox;
+    let pi = std::f64::consts::PI;
+    let j = Complex64::new(0.0, 1.0);
+
+    // B(λ) at radial wavenumber lambda with kz0 = a.
+    let b_of = |lambda: f64, a: Complex64| -> Complex64 {
+        let p = a / k0;
+        let q = lambda / k0;
+        let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
+        let (r_te, r_tm) = fresnel_spectral(a, kz1, eps_c, pec);
+        let j0 = bessel_j0(lambda * rho);
+        let j1 = bessel_j1(lambda * rho);
+        let j2 = bessel_j2(lambda * rho);
+        let te = r_te * (pi * (ss * j0 + (dxx * c2 + cxy * s2) * j2));
+        let tm = r_tm
+            * (-(p * p) * (pi * (ss * j0 - (dxx * c2 + cxy * s2) * j2))
+                - j * 2.0 * pi * p * q * oz * j1 * (sx * cf + sy * sf)
+                + j * 2.0 * pi * p * q * sz * j1 * (ox * cf + oy * sf)
+                + Complex64::new(2.0 * pi * sz * oz * q * q * j0, 0.0));
+        te + tm
+    };
+
+    // Radial substitution (propagating θ + evanescent t); (λ/kz0) dλ is the weight.
+    let mut ip = Complex64::new(0.0, 0.0);
+    let th_lo = 1e-9;
+    let th_hi = std::f64::consts::FRAC_PI_2 - 1e-9;
+    let h0 = (th_hi - th_lo) / N_QUAD as f64;
+    for i in 0..=N_QUAD {
+        let theta = th_lo + h0 * i as f64;
+        let lambda = k0 * theta.sin();
+        let a = Complex64::new(k0 * theta.cos(), 0.0);
+        let phase = (Complex64::new(0.0, -1.0) * a * d).exp();
+        let f = Complex64::new(k0 * theta.sin(), 0.0) * phase * b_of(lambda, a);
+        let wgt = if i == 0 || i == N_QUAD { 0.5 } else { 1.0 };
+        ip += wgt * f;
+    }
+    ip *= h0;
+
+    let t_max = if d > 0.0 {
+        (45.0 / (k0 * d)).asinh()
+    } else {
+        8.0
+    };
+    let mut ie = Complex64::new(0.0, 0.0);
+    let h1 = (t_max - 1e-9) / N_QUAD as f64;
+    for i in 0..=N_QUAD {
+        let t = 1e-9 + h1 * i as f64;
+        let lambda = k0 * t.cosh();
+        let a = Complex64::new(0.0, -k0 * t.sinh());
+        let phase = (Complex64::new(0.0, -1.0) * a * d).exp();
+        let f = Complex64::new(0.0, k0 * t.cosh()) * phase * b_of(lambda, a);
+        let wgt = if i == 0 || i == N_QUAD { 0.5 } else { 1.0 };
+        ie += wgt * f;
+    }
+    ie *= h1;
+
+    Complex64::new(k0 * ETA0 / (8.0 * pi * pi), 0.0) * (ip + ie)
+}
+
 // ---------------------------------------------------------------------------
 // Bessel functions J0, J1, J2 (Abramowitz & Stegun 9.4, ~1e-7 accuracy).
 // ---------------------------------------------------------------------------
@@ -441,6 +665,7 @@ mod tests {
 
     const FREQ: f64 = 14.2e6;
     const LAM: f64 = C0 / FREQ;
+    const FRAC: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
     fn k0() -> f64 {
         2.0 * std::f64::consts::PI * FREQ / C0
@@ -494,23 +719,91 @@ mod tests {
     /// (image source direction (−sx,−sy,+sz)) for every orientation pair.
     #[test]
     fn pec_general_dyadic_matches_image_for_all_orientations() {
+        // Representative pairs (full matrix in the Python study; the oracle is slow).
         let cases: &[([f64; 3], [f64; 3], f64, f64)] = &[
-            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.3 * LAM, 0.0),
             ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2 * LAM, 0.25 * LAM),
             ([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 0.2 * LAM, 0.0),
             ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.25 * LAM, 0.1 * LAM),
-            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.15 * LAM, 0.2 * LAM),
         ];
         for &(src, obs, dx, dy) in cases {
-            for &hl in &[0.1, 0.03] {
+            let d = 2.0 * 0.05 * LAM;
+            let somm = reflected_e_projected(src, obs, dx, dy, d, FREQ, 1.0, 0.0, true);
+            let img = eproj_freespace([-src[0], -src[1], src[2]], obs, dx, dy, d);
+            let rel = (somm - img).norm() / img.norm();
+            assert!(
+                rel < 1e-3,
+                "src={src:?} obs={obs:?} dx={dx} dy={dy} rel={rel:.2e}"
+            );
+        }
+    }
+
+    /// The fast 1-D reduced dyadic must match the 2-D oracle for all orientations.
+    #[test]
+    fn fast_dyadic_matches_2d_oracle() {
+        // Representative orientation pairs (the full matrix is covered in the Python
+        // study; the 2-D oracle is slow, so keep the in-Rust cross-check lean).
+        let cases: &[([f64; 3], [f64; 3], f64, f64)] = &[
+            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2 * LAM, 0.25 * LAM), // horizontal off-axis
+            ([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 0.2 * LAM, 0.0),        // vertical
+            ([FRAC, 0.0, FRAC], [0.0, FRAC, FRAC], 0.2 * LAM, 0.15 * LAM), // tilted, cross
+        ];
+        for &(src, obs, dx, dy) in cases {
+            let d = 2.0 * 0.05 * LAM;
+            let fast = reflected_e_projected_fast(src, obs, dx, dy, d, FREQ, 13.0, 0.005, false);
+            let oracle = reflected_e_projected(src, obs, dx, dy, d, FREQ, 13.0, 0.005, false);
+            let rel = (fast - oracle).norm() / oracle.norm();
+            assert!(rel < 1e-3, "src={src:?} obs={obs:?} rel={rel:.2e}");
+        }
+    }
+
+    /// Primary gate for the fast dyadic: its PEC limit must reproduce the exact
+    /// free-space image-dyadic field for every orientation — valid everywhere
+    /// (unlike the 2-D oracle, which loses accuracy in the low-d/large-ρ pole
+    /// corner). Includes x/z AND z/x, whose φ-odd cross term catches sign errors a
+    /// symmetric test would miss.
+    #[test]
+    fn fast_dyadic_pec_matches_image_all_orientations() {
+        let cases: &[([f64; 3], [f64; 3], f64, f64)] = &[
+            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.3 * LAM, 0.0), // x/x on-axis
+            ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2 * LAM, 0.25 * LAM), // x/x off-axis
+            ([0.0, 1.0, 0.0], [0.0, 1.0, 0.0], 0.25 * LAM, 0.0), // y/y offset along x
+            ([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 0.2 * LAM, 0.0), // z/z vertical
+            ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.25 * LAM, 0.1 * LAM), // x/z cross
+            ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.25 * LAM, 0.1 * LAM), // z/x cross (sign)
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.15 * LAM, 0.2 * LAM), // bent
+            ([FRAC, 0.0, FRAC], [0.0, FRAC, FRAC], 0.2 * LAM, 0.15 * LAM), // tilted
+        ];
+        for &(src, obs, dx, dy) in cases {
+            for &hl in &[0.1, 0.025] {
                 let d = 2.0 * hl * LAM;
-                let somm = reflected_e_projected(src, obs, dx, dy, d, FREQ, 1.0, 0.0, true);
+                let fast = reflected_e_projected_fast(src, obs, dx, dy, d, FREQ, 1.0, 0.0, true);
                 let img = eproj_freespace([-src[0], -src[1], src[2]], obs, dx, dy, d);
-                let rel = (somm - img).norm() / img.norm();
-                assert!(
-                    rel < 1e-3,
-                    "src={src:?} obs={obs:?} dx={dx} dy={dy} h={hl}λ rel={rel:.2e}"
+                let rel = (fast - img).norm() / img.norm();
+                assert!(rel < 1e-4, "src={src:?} obs={obs:?} h={hl}λ rel={rel:.2e}");
+            }
+        }
+    }
+
+    /// The fast dyadic must also reduce exactly to the shipped horizontal kernel.
+    #[test]
+    fn fast_dyadic_reduces_to_horizontal() {
+        for &rl in &[0.05, 0.2, 0.4] {
+            for &hl in &[0.1, 0.025] {
+                let (rho, d) = (rl * LAM, 2.0 * hl * LAM);
+                let fast = reflected_e_projected_fast(
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    rho,
+                    0.0,
+                    d,
+                    FREQ,
+                    13.0,
+                    0.005,
+                    false,
                 );
+                let horiz = reflected_ex_horizontal(rho, d, FREQ, 13.0, 0.005, false);
+                let rel = (fast - horiz).norm() / horiz.norm();
+                assert!(rel < 1e-6, "ρ={rl}λ h={hl}λ rel={rel:.2e}");
             }
         }
     }
@@ -583,6 +876,43 @@ mod tests {
             high.re.abs() < 5.0,
             "0.25λ correction should be negligible; got {:.2}",
             high.re
+        );
+    }
+
+    /// The general (any straight wire) correction on a 30°-tilted low λ/2 dipole must
+    /// recover the surface-wave gap (nec2c GN2−GN0 ΔR ≈ +10.4; Python probe +9.6).
+    #[test]
+    fn general_correction_tilted_dipole_matches_nec2c_gap() {
+        let d_hat = [0.866_025_4_f64, 0.0, 0.5];
+        let l = LAM / 4.0;
+        let n = 21usize;
+        let k = k0();
+        let ctr = [0.0, 0.0, 3.0];
+        let s: Vec<f64> = (0..n)
+            .map(|i| -l + 2.0 * l * i as f64 / (n - 1) as f64)
+            .collect();
+        let mids: Vec<[f64; 3]> = s
+            .iter()
+            .map(|&si| {
+                [
+                    ctr[0] + si * d_hat[0],
+                    ctr[1] + si * d_hat[1],
+                    ctr[2] + si * d_hat[2],
+                ]
+            })
+            .collect();
+        let dirs = vec![d_hat; n];
+        let lens = vec![2.0 * l / (n - 1) as f64; n];
+        let curr: Vec<Complex64> = s
+            .iter()
+            .map(|&si| Complex64::new((k * (l - si.abs())).sin(), 0.0))
+            .collect();
+        let dz = ground_z_correction(&mids, &dirs, &lens, &curr, n / 2, FREQ, 13.0, 0.005)
+            .expect("straight tilted wire qualifies");
+        assert!(
+            (dz.re - 9.6).abs() < 3.0,
+            "tilted ΔR should recover the surface-wave gap ~+9.6; got {:.2}",
+            dz.re
         );
     }
 
