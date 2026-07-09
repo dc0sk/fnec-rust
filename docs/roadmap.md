@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ---
 
 # Roadmap
@@ -359,6 +359,8 @@ plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT.
 **v0.9.0 shipped (2026-07-05)** — first wave: receive-pattern sweep (PH9-CHK-001), absolute gain over finite ground (PH9-CHK-003), collinear junction fix + guardrails + diagnosis (PH9-CHK-002/005), RP XNDA parser fix.
 
 **v0.10.0 shipped (2026-07-08)** — second wave: **general degree-2 junction basis** across all three excitation classes (transmit / plane-wave receive / current source, PH9-CHK-002), out-of-scope topology guard (closed loops + degree-3 T/Y), near E/H fields + `PT` print-control (PH9-CHK-004), and the **near-ground impedance sign fix + accuracy boundary/guard** (PH9-CHK-006). Remaining Phase 9 items — degree-3+ (T/Y) and closed-loop *solving*, and the Sommerfeld surface wave — are guarded and continue toward a later release.
+
+**Post-v0.10.0 (2026-07-09):** the **Sommerfeld surface-wave ground** shipped as an opt-in solver (`--ground-solver sommerfeld`) for straight wires (feedpoint Z, Levels 0–1), and its physics is validated end-to-end (incl. correct near-ground *currents* via a mixed-potential EFIE, Level 2 — `docs/ph9-chk-006-sommerfeld-ground.md`). The three remaining hard frontiers — **near-ground currents/patterns (Level 2), degree-3 (T/Y) junctions, and closed loops** — all reduce to one build: a **subsectional MPIE solver**. Its scope, phasing, and gates are in **[`docs/mpie-solver-scope.md`](mpie-solver-scope.md)**.
 
 **Goals**: Phase 8 made mainstream decks *run*; Phase 9 makes fnec *trustworthy on
 hard models* and *complete for receive/scattering*. It closes the accuracy and
