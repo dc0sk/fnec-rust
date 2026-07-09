@@ -18,7 +18,8 @@ de-risked, clearly-scoped increment.
 
 | File | Purpose |
 |------|---------|
-| `horizontal_dipole_sommerfeld.py` | Reflected E_x Sommerfeld integral + PEC self-check + induced-EMF ΔZ vs nec2c GN1/GN2/GN0 |
+| `horizontal_dipole_sommerfeld.py` | **Level 0** — reflected E_x Sommerfeld integral (φ=0, x/x) + PEC self-check + induced-EMF ΔZ vs nec2c GN1/GN2/GN0 |
+| `general_dyadic.py` | **Levels 1 & 2 foundation** — the full reflected half-space dyadic for arbitrary source/obs orientation + arbitrary offset (2-D spectral integral); PEC self-check to ~1e-6 for every orientation pair, and an end-to-end tilted-dipole reaction ΔZ vs nec2c GN2 (<10%). See the "Generalization roadmap" in `docs/ph9-chk-006-sommerfeld-ground.md` |
 
 ## The formulation
 

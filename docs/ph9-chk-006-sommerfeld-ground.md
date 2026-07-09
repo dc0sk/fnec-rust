@@ -226,3 +226,95 @@ physics **is** now validated end-to-end against nec2c — so the remaining work 
 robust-numerics-and-wiring increment, not a research gamble. Until it ships, the
 scalar-Γ model and the `warn_if_low_finite_ground` guard remain the shipped
 behaviour for < 0.1 λ.
+
+## Generalization roadmap (Levels 1 & 2)
+
+What shipped (call it **Level 0**) corrects **one quantity** (the feedpoint
+impedance) for **one geometry class** (a straight horizontal wire). Two axes remain:
+*geometry orientation* and *which quantity is corrected*. The kernel is already
+general in ε_r, σ, frequency, height, and separation; the shared foundation both
+levels need is the **full reflected half-space dyadic**.
+
+### The shared foundation: the general reflected dyadic
+
+The Level-0 kernel is the `φ = 0`, x-source/x-obs slice of the reflected E-field
+dyadic. The general element — reflected `E` projected on observation direction `d̂_o`
+at horizontal offset `(ΔX, ΔY)` and height-sum `d`, per unit current moment along
+source direction `d̂_s` — is the same plane-wave-spectrum integral with the general
+projections:
+
+```text
+E_proj = (k0·η0 / 8π²) ∬ (1/kz0) e^{-j kz0 d} e^{-j(kx ΔX + ky ΔY)}
+           [ (d̂_s·ŝ)(d̂_o·ŝ) R_TE + (d̂_s·p̂_i)(d̂_o·p̂_r) R_TM ] dkx dky
+```
+
+with `ŝ = (−sinα, cosα, 0)` (TE), `p̂_i`/`p̂_r` the incident/reflected TM unit
+vectors (`α` = spectral azimuth). This reduces **exactly** to the validated
+`J0 ± J2` form for x-source/x-obs on-axis, and to a pure-`R_TM` integral for a
+vertical (z) source (which fnec's scalar Γ already handles — a built-in cross-check).
+Evaluate it as a **2-D integral** (radial `sinθ`/`cosh t` substitution × azimuth
+grid): a low-risk direct extension of Level 0, and the **oracle** against which the
+Level-2 closed form is checked.
+
+**Progress (2026-07-09):** the general reflected dyadic is validated as a Rust
+**oracle** — `sommerfeld::reflected_e_projected` (2-D angular-spectrum integral),
+gated by a machine-precision PEC self-check across all orientation pairs
+(`sommerfeld.rs::pec_general_dyadic_matches_image_for_all_orientations`) mirroring the
+Python study. **Not yet wired into the CLI:** the 2-D per-element integral is ~0.07 s
+each, so an N² reaction (or a 2-D kernel-cache) costs minutes — impractical. The
+practical Level-1 feature therefore needs the **1-D azimuthal reduction** (reduce the
+`α` integral of the dyadic to `J0/J1/J2` Sommerfeld integrals, as Level 0 did for the
+`φ=0` slice), validated against this 2-D oracle. That reduction is the immediate next
+step, and it is the *same* fast kernel Level 2's DCIM samples — so it is shared work,
+not throwaway.
+
+### Level 1 — arbitrary orientation, feedpoint ΔZ (post-solve)
+
+Generalize `horizontal_ground_z_correction` to any wire geometry over finite ground
+(bent, vertical, inverted-V, mixed), still as a stationary post-solve reaction ΔZ on
+fnec's solved currents:
+`ΔZ_sw = (1/I_feed²) Σ_{m,n} [E^r_Somm(d̂_m,d̂_n,offset,d) − Γ·E^r_PEC(…)]·(I_m ℓ_m)(I_n ℓ_n)`.
+
+- **Kernel:** the 2-D reflected dyadic above (all orientation pairs, arbitrary offset azimuth).
+- **Gates:** (a) **PEC self-check** for every orientation pair — the 2-D dyadic with
+  `(R_TE,R_TM)=(−1,+1)` must equal the free-space image-dyadic field (`p̂_img =
+  (−sx,−sy,+sz)`) to machine precision; (b) **reduces exactly** to the Level-0 φ=0
+  form; (c) **vertical λ/2** dipole ΔZ vs nec2c GN2 (must agree with the scalar-Γ
+  result that already matches); (d) a **bent (inverted-V / L)** dipole over ground ΔZ
+  vs nec2c GN2; (e) default `rcm` byte-unchanged.
+- **Scope / non-goals:** corrects feedpoint `Z` only — currents, pattern, gain still
+  use scalar Γ (that is Level 2). The azimuthal-analytic (`J0/J1/J2`) reduction is
+  **not** required here (the 2-D form suffices for a once-per-solve correction); it is
+  derived and validated in Level 2 where DCIM needs it.
+- **Effort:** moderate — the physics is the 2-D extension; the work is validation.
+
+### Level 2 — Sommerfeld ground *in the Z-matrix* (correct currents & patterns)
+
+Replace the scalar-Γ reflected term in `assemble_z_matrix_with_ground`
+(`Γ·elem(obs, image)`) with the exact Sommerfeld reflected coupling and **re-solve**,
+so the ground enters the currents themselves — making **currents, mutual coupling,
+arrays, patterns, gain, and efficiency** correct near ground, not just the feed Z.
+
+- **Method — DCIM (Discrete Complex Image Method):** the 2-D per-element integral is
+  too slow for an N² matrix fill, so fit the spectral reflection kernels as sums of
+  complex exponentials `Σ aᵢ e^{-j kz0 bᵢ}` (GPOF/Prony along a deformed contour), with
+  the **Zenneck pole extracted explicitly**. Each exponential maps via the Sommerfeld
+  identity to a **complex image**: `aᵢ · G(R_complex)`, `R_complex = √(ρ² + (d+jbᵢ)²)`.
+  Wire a complex-distance Green's kernel alongside the existing real-image `elem`.
+- **Architectural risk (the crux):** fnec's Hallén operator eliminates the scalar
+  potential, but the surface wave lives in the **charge/TM** kernel `G_Φ =
+  S{(k0²R_TE + kz0²R_TM)/kρ²}`, which does not fit the axial-A Hallén row. Two routes:
+  (i) add a mixed-potential E-field ground term to the Hallén Z (as NEC-2 does — the
+  cleaner physics, more surgery); or (ii) a **Born/iterative** scheme that re-solves
+  with the Level-1 reaction correction folded in (reuses Level 1, avoids matrix
+  surgery, needs convergence proof). Decide by prototyping both against the oracle.
+- **Gates:** DCIM kernel vs the Level-1 2-D oracle (<1 % over the `(ρ,d)` domain
+  including the pole-dominated low-`d`/large-`ρ` corner); low horizontal **and**
+  vertical dipole **currents + pattern + feed Z** vs nec2c GN2; strict regression on
+  free-space / PEC / high-ground (must be unchanged).
+- **Effort:** large — DCIM fitting robustness and the Hallén-vs-mixed-potential
+  architecture are the real risks; stage it (kernel-in-Z for a single wire first).
+
+**Order:** Level 1 first (small, de-risks the dyadic and ships arbitrary-orientation
+feed-Z), then Level 2 (the high-value currents/patterns fix) on top of the validated
+dyadic oracle.
