@@ -47,6 +47,7 @@
 //! A closed loop is a cyclic chain: every node is degree 2, there is no free
 //! end, and the same basis handles it with no endpoint condition.
 
+use crate::geometry::Segment;
 use crate::linear::{solve_square_in_place, SolveError};
 use num_complex::Complex64;
 
@@ -387,6 +388,51 @@ pub fn solve_mpie_free_space(
 ) -> Result<MpieSolution, MpieError> {
     // In a chain, interior node j hosts basis j−1, so feed_basis b ↔ node b+1.
     solve_mpie(&wire.geometry(), freq_hz, feed_basis + 1)
+}
+
+/// Recover the per-segment midpoint currents (signed along each segment's
+/// `p0 → p1` tangent) from a solved basis-current vector, for the far-field sum.
+///
+/// A segment's current is a sum of triangle-basis ramps; at the midpoint each
+/// leg contributes `I_basis · f(½) · (flow·tangent)`, and `f(½) = ½` for every
+/// triangle leg — so the midpoint current is the average of the touching nodal
+/// currents (the mean value of the piecewise-linear current over the segment,
+/// which is exactly the radiation moment per unit length).
+pub fn segment_currents(geom: &MpieGeometry, basis_currents: &[Complex64]) -> Vec<Complex64> {
+    let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
+    let mut i = vec![Complex64::new(0.0, 0.0); geom.segments.len()];
+    for (bi, basis) in bases.iter().enumerate() {
+        let c = basis_currents.get(bi).copied().unwrap_or_default();
+        for leg in basis {
+            let sign = if leg.v_is_p1 { 1.0 } else { -1.0 } * if leg.toward { 1.0 } else { -1.0 };
+            i[leg.seg] += c * (0.5 * sign);
+        }
+    }
+    i
+}
+
+/// Build far-field-ready [`Segment`]s from the wire graph. Pair with
+/// [`segment_currents`] and feed both into `compute_radiation_pattern`.
+pub fn segments_for_farfield(geom: &MpieGeometry) -> Vec<Segment> {
+    seg_geom(geom)
+        .iter()
+        .enumerate()
+        .map(|(i, s)| Segment {
+            tag: 1,
+            tag_index: (i + 1) as u32,
+            global_index: i,
+            start: s.p0,
+            end: s.p1,
+            midpoint: [
+                0.5 * (s.p0[0] + s.p1[0]),
+                0.5 * (s.p0[1] + s.p1[1]),
+                0.5 * (s.p0[2] + s.p1[2]),
+            ],
+            direction: s.tangent,
+            length: s.len,
+            radius: geom.radius,
+        })
+        .collect()
 }
 
 /// Build a straight wire of `nseg` equal segments from `start` to `end`.
