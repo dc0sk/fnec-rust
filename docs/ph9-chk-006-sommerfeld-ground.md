@@ -324,7 +324,36 @@ Hallén hybrid: either **(a)** a full EFIE MoM with the Sommerfeld reflected **d
 in the impedance matrix (a parallel solver path — large), or **(b)** the reflected
 **vector-potential** dyadic (not the E-field) + DCIM into `elem`, which must resolve
 the open question that fnec's Hallén *eliminates the scalar potential*, exactly where
-the surface wave lives. This is a dedicated multi-session solver increment.
+the surface wave lives.
+
+**Route (a) VALIDATED — the full EFIE reproduces nec2c GN2 (2026-07-09).**
+`studies/sommerfeld-ground/efie_mpie_ground.py` implements a mixed-potential EFIE
+(MPIE) with a triangle (piecewise-linear) basis, Galerkin-tested, and puts the
+Sommerfeld reflected **vector-potential** and **scalar-potential** kernels in the
+impedance matrix. MPIE keeps the scalar potential explicit — exactly where the
+surface wave lives — so it captures what the Hallén hybrid cannot. Measured
+(horizontal λ/2 dipole, εr=13/σ=0.005, N=40):
+
+| case | MPIE | nec2c |
+|:-----|:-----|:------|
+| free space | 74.4 + j41.4 | 78.85 + j44.70 |
+| PEC (GN1) 0.05 λ | 5.9 + j34.1 | 6.16 + j38.18 |
+| GN2 0.05 λ | 64.0 + j49.2 | 67.26 + j52.61 |
+| GN2 0.025 λ | 83.5 + j66.3 | 87.81 + j68.64 |
+
+**~5 % on both R and X at both heights** — including the correct *absolute* reactance
+(no Hallén offset), the PEC image cancellation, the surface wave, **and the current
+distribution** (not just the feed Z). The residual is `N = 40` discretization. Key
+formulation points: reflected kernels `G_A = −j·S{R_TE}` and
+`G_Φ = −j·S{(k0²R_TE + kz0²R_TM)/λ²}` with `S{f}(ρ,d) = ∫(λ/kz0) f J0(λρ) e^{-jkz0 d} dλ`
+— the **`−j` is essential** (the Sommerfeld identity gives `S{1} = +j·e^{-jk r_img}/r_img`,
+so the reflected Green's functions need the `−j` to match the direct `G = e^{-jkR}/R`).
+
+So Level 2's physics is **proven**. What remains is a large but de-risked Rust
+increment: a new MPIE solver path (triangle basis, Galerkin, vector + scalar
+potential), the reflected potential kernels, the full dyadic for arbitrary
+orientation (the 3-scalar set `V_TE=S{R_TE}`, `V_TM=S{R_TM}`, `U=S{(R_TE+R_TM)/λ²}`),
+far-field from the MPIE currents, and CLI wiring. A dedicated multi-session effort.
 
 - **Method — DCIM (Discrete Complex Image Method):** the 2-D per-element integral is
   too slow for an N² matrix fill, so fit the spectral reflection kernels as sums of
