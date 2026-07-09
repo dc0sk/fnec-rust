@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ---
 
 # NEC Card Support Matrix
@@ -21,9 +21,9 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 | GM | Full | Geometry move: rotate and/or translate wire ranges in place; `tag_increment > 0` appends transformed copies |
 | GR | Full | Geometry repeat: successive z-axis rotation copies |
 | GN type −1 | Full | Null-ground explicit free-space (same as omitting GN) |
-| GN type 0 | Partial | Finite ground via a **normal-incidence scalar** reflection coefficient on the (correct-signed, PH9-CHK-006) image. Impedance is accurate (≈ Sommerfeld, ~10%, gated vs nec2c) for antenna heights ≥ ~0.2 λ; below 0.1 λ it is a reflection-coefficient approximation (no surface wave) and fnec **warns**. Angle/polarization-dependent Fresnel (RCM) and the Sommerfeld surface wave are deferred. Not the true Sommerfeld method despite the historical label |
+| GN type 0 | Partial | Finite ground via a **normal-incidence scalar** reflection coefficient on the (correct-signed, PH9-CHK-006) image. Impedance is accurate (≈ Sommerfeld, ~10%, gated vs nec2c) for antenna heights ≥ ~0.2 λ; below 0.1 λ it is a reflection-coefficient approximation (no surface wave) and fnec **warns** — unless the exact **Sommerfeld surface wave** is enabled via `--ground-solver sommerfeld` for a straight horizontal wire (PH9-CHK-006), which reproduces nec2c GN2 incl. the low-height sign flip. Angle/polarization-dependent Fresnel (RCM) is deferred |
 | GN type 1 | Full | Perfect-conductor (PEC) image method (correct-signed image, PH9-CHK-006) |
-| GN type 2 | Partial | Currently **aliases the GN0 scalar finite-ground path** (not the true Sommerfeld/Norton method); low-height near-ground impedance is regression-gated. Exact Sommerfeld is deferred (PH9-CHK-006) |
+| GN type 2 | Partial | Aliases the GN0 scalar finite-ground path by default; the true Sommerfeld surface wave is available via `--ground-solver sommerfeld` for a straight horizontal wire (nec2c GN2, PH9-CHK-006). Bent/vertical/mixed geometry still uses the scalar path |
 | GN other | Deferred | Unsupported type: treated as free-space with a warning |
 
 ## Program-control cards

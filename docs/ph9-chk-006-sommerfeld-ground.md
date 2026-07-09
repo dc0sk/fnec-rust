@@ -110,7 +110,8 @@ approximation with no surface wave.
 | finite ground impedance, height ≥ ~0.2 λ | **accurate (≈ Sommerfeld), gated vs nec2c GN2** |
 | finite ground impedance, height < 0.1 λ | approximate → **guarded (low-height warning)** |
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
-| Sommerfeld/Norton surface wave (nec2c GN2 exact) | **kernel implemented + validated** (`crates/nec_solver/src/sommerfeld.rs`, reproduces GN2 + sign flip); **not yet wired into the solve** — feedpoint Z still uses scalar Γ |
+| Sommerfeld/Norton surface wave (nec2c GN2 exact) — straight horizontal wire | **implemented + wired** as an opt-in solver: `fnec --ground-solver sommerfeld` (default `rcm`); reproduces nec2c GN2 incl. the low-height sign flip |
+| Sommerfeld surface wave — bent / vertical / mixed geometry | deferred (needs the full reflected dyadic); `--ground-solver sommerfeld` silently declines (keeps RCM) |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
@@ -185,16 +186,25 @@ structure: replace the one `Γ · elem(image)` with a small sum over complex ima
 which only needs a complex-distance Green's kernel (`exp(−jk r)/r` with complex `r`)
 alongside the existing real-image `elem`.
 
-**Production step 1 landed (2026-07-09).** The reflected-field kernel is now
-implemented in Rust — `crates/nec_solver/src/sommerfeld.rs`
-(`reflected_ex_horizontal`), with Bessel J0/J1/J2 (A&S) and the sin/cosh substitution
-quadrature. Gated by a **machine-precision PEC self-check** (reflected field vs the
-exact opposite-current image, `sommerfeld.rs` unit tests) and an **end-to-end nec2c
-GN2 gate** (`crates/nec_solver/tests/sommerfeld_ground.rs`: the reaction-integral ΔZ
-reproduces the surface-wave sign flip at 0.025 λ — ΔR positive near +9, vs RCM's
-wrong-signed −24). It is **not yet wired into the solve**: the feedpoint impedance
-still uses the scalar-Γ image. Next increment: apply the post-solve reaction ΔZ
-correction to the reported near-ground feedpoint impedance for horizontal geometry.
+**Production landed (2026-07-09) — `fnec --ground-solver sommerfeld`.** Two increments:
+
+1. **Kernel** — `crates/nec_solver/src/sommerfeld.rs` (`reflected_ex_horizontal`),
+   Bessel J0/J1/J2 (A&S) + the sin/cosh substitution quadrature. Gated by a
+   **machine-precision PEC self-check** and an **end-to-end nec2c GN2 gate**
+   (`crates/nec_solver/tests/sommerfeld_ground.rs`).
+2. **Wiring** — a new opt-in ground solver `--ground-solver <rcm|sommerfeld>` (default
+   `rcm` = the unchanged scalar-Γ behaviour). When `sommerfeld` is selected over
+   finite ground and the geometry is a **straight horizontal wire**,
+   `horizontal_ground_z_correction` adds the surface-wave reaction ΔZ
+   (`ΔZ_Sommerfeld − ΔZ_scalarΓ`, over fnec's solved currents) to the reported
+   feedpoint `Z`. Non-horizontal/bent/mixed geometry is silently declined (keeps RCM).
+
+**Measured end-to-end** (horizontal λ/2 dipole 0.025 λ over εr=13/σ=0.005; ΔR vs
+fnec free space 67.2 Ω): `--ground-solver rcm` → 26.8 Ω (**ΔR −40**, the wrong-signed
+RCM result); `--ground-solver sommerfeld` → 77.2 Ω (**ΔR +10.1**, matching nec2c GN2
+ΔR +9.0 to ~13 %). The additive correction is self-consistent because fnec's solved
+current drives *both* the scalar-Γ baseline it subtracts and the Sommerfeld term it
+adds. CLI gate: `apps/nec-cli/tests/sommerfeld_ground_cli.rs`.
 
 **What remains for production — now de-risked.** The hardest and riskiest step (the
 **horizontal** dipole's half-space reflected kernel with correct TE+TM coupling, and

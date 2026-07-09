@@ -47,6 +47,119 @@ pub fn complex_permittivity(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
     Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0))
 }
 
+/// Normal-incidence scalar Fresnel coefficient `Γ = (√εc − 1)/(√εc + 1)` — the
+/// coefficient fnec's default (RCM) ground model applies to the geometric image
+/// (mirror of `matrix::fresnel_reflection_scalar`).
+pub fn scalar_gamma(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
+    let sq = complex_permittivity(freq_hz, eps_r, sigma).sqrt();
+    (sq - Complex64::new(1.0, 0.0)) / (sq + Complex64::new(1.0, 0.0))
+}
+
+/// Surface-wave correction to the near-ground feedpoint impedance of a **straight
+/// horizontal wire** over finite ground (PH9-CHK-006).
+///
+/// Returns `ΔZ_sw = ΔZ_Sommerfeld − ΔZ_scalarΓ`, the ground-effect difference between
+/// the exact Sommerfeld reflected field and the scalar-Γ (reflection-coefficient)
+/// image fnec's default model already accounts for. Added to fnec's reported
+/// near-ground feedpoint `Z` (which ≈ the scalar-Γ / GN0 result), it upgrades that to
+/// the surface-wave-inclusive Sommerfeld (nec2c GN2) value — in particular flipping
+/// the sign of the radiation-resistance delta below ~0.05 λ.
+///
+/// Computed as an induced-EMF reaction integral over the solved segment currents
+/// (`currents[m]`, moment `currents[m]·lengths[m]`), so it is stationary in the
+/// current to first order. `feed_idx` is the driven segment (reference `I`).
+///
+/// Returns `None` when the geometry is **not** a straight horizontal wire at a single
+/// height above the `z = 0` plane — the class the collinear-axis kernel is validated
+/// for. (Bent / vertical / mixed geometry needs the full reflected dyadic, deferred.)
+#[allow(clippy::too_many_arguments)]
+pub fn horizontal_ground_z_correction(
+    midpoints: &[[f64; 3]],
+    directions: &[[f64; 3]],
+    lengths: &[f64],
+    currents: &[Complex64],
+    feed_idx: usize,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+) -> Option<Complex64> {
+    let n = midpoints.len();
+    if n == 0 || directions.len() != n || lengths.len() != n || currents.len() != n || feed_idx >= n
+    {
+        return None;
+    }
+    const TOL: f64 = 1e-6;
+    let h = midpoints[0][2];
+    if h <= TOL {
+        return None; // must be above the ground plane
+    }
+    let axis = directions[0];
+    for i in 0..n {
+        // horizontal (no vertical component)
+        if directions[i][2].abs() > TOL {
+            return None;
+        }
+        // parallel to a common horizontal axis (straight wire)
+        let dot =
+            directions[i][0] * axis[0] + directions[i][1] * axis[1] + directions[i][2] * axis[2];
+        if dot.abs() < 1.0 - TOL {
+            return None;
+        }
+        // single height
+        if (midpoints[i][2] - h).abs() > TOL {
+            return None;
+        }
+    }
+
+    let i_feed = currents[feed_idx];
+    if i_feed.norm() < 1e-60 {
+        return None;
+    }
+    let gamma = scalar_gamma(freq_hz, eps_r, sigma);
+    let d = 2.0 * h;
+
+    // The difference kernel is smooth in ρ, so precompute it on a grid and
+    // interpolate — O(grid) integral evaluations instead of O(n²).
+    let mut rho_max = 0.0f64;
+    for m in 0..n {
+        for k in 0..n {
+            let dx = midpoints[m][0] - midpoints[k][0];
+            let dy = midpoints[m][1] - midpoints[k][1];
+            rho_max = rho_max.max((dx * dx + dy * dy).sqrt());
+        }
+    }
+    let ng = 256usize;
+    let step = rho_max / (ng - 1) as f64;
+    let grid: Vec<Complex64> = (0..ng)
+        .map(|g| {
+            let rho = step * g as f64;
+            reflected_ex_horizontal(rho, d, freq_hz, eps_r, sigma, false)
+                - gamma * reflected_ex_horizontal(rho, d, freq_hz, eps_r, sigma, true)
+        })
+        .collect();
+    let interp = |rho: f64| -> Complex64 {
+        if step <= 0.0 {
+            return grid[0];
+        }
+        let t = (rho / step).min((ng - 1) as f64);
+        let i = (t.floor() as usize).min(ng - 2);
+        let frac = t - i as f64;
+        grid[i] * (1.0 - frac) + grid[i + 1] * frac
+    };
+
+    let mut acc = Complex64::new(0.0, 0.0);
+    for m in 0..n {
+        let mom_m = currents[m] * lengths[m];
+        for k in 0..n {
+            let dx = midpoints[m][0] - midpoints[k][0];
+            let dy = midpoints[m][1] - midpoints[k][1];
+            let rho = (dx * dx + dy * dy).sqrt();
+            acc += interp(rho) * mom_m * (currents[k] * lengths[k]);
+        }
+    }
+    Some(acc / (i_feed * i_feed))
+}
+
 /// `√z` on the sheet `Im ≤ 0` (the upgoing/decaying wave `e^{-j kz z}` decays for
 /// `z > 0`).
 fn sqrt_im_neg(z: Complex64) -> Complex64 {
@@ -289,6 +402,55 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The reaction ΔZ correction (ΔZ_Sommerfeld − ΔZ_scalarΓ) must capture the
+    /// surface-wave gap: large-positive at 0.025 λ (nec2c GN2−GN0 ΔR ≈ +33, flipping
+    /// fnec's ≈−24 toward +9), and negligible at 0.25 λ where the surface wave dies.
+    #[test]
+    fn ground_correction_captures_surface_wave_gap() {
+        let build = |hl: f64| -> Option<Complex64> {
+            let l = LAM / 4.0;
+            let n = 41usize;
+            let k0 = k0();
+            let h = hl * LAM;
+            let xs: Vec<f64> = (0..n)
+                .map(|i| -l + 2.0 * l * i as f64 / (n - 1) as f64)
+                .collect();
+            let mids: Vec<[f64; 3]> = xs.iter().map(|&x| [x, 0.0, h]).collect();
+            let dirs = vec![[1.0, 0.0, 0.0]; n];
+            let lens = vec![2.0 * l / (n - 1) as f64; n];
+            let curr: Vec<Complex64> = xs
+                .iter()
+                .map(|&x| Complex64::new((k0 * (l - x.abs())).sin(), 0.0))
+                .collect();
+            horizontal_ground_z_correction(&mids, &dirs, &lens, &curr, n / 2, FREQ, 13.0, 0.005)
+        };
+        let low = build(0.025).expect("straight horizontal geometry qualifies");
+        let high = build(0.25).expect("straight horizontal geometry qualifies");
+        assert!(
+            low.re > 15.0,
+            "0.025λ correction ΔR must be large-positive (surface-wave gap); got {:.2}",
+            low.re
+        );
+        assert!(
+            high.re.abs() < 5.0,
+            "0.25λ correction should be negligible; got {:.2}",
+            high.re
+        );
+    }
+
+    /// Non-horizontal / vertical geometry must be declined (returns None).
+    #[test]
+    fn ground_correction_declines_vertical_geometry() {
+        let mids = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]];
+        let dirs = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
+        let lens = vec![1.0, 1.0];
+        let curr = vec![Complex64::new(1.0, 0.0), Complex64::new(0.5, 0.0)];
+        assert!(
+            horizontal_ground_z_correction(&mids, &dirs, &lens, &curr, 0, FREQ, 13.0, 0.005)
+                .is_none()
+        );
     }
 
     /// Lossy ground: the reflected kernel must produce a *positive* real part at the
