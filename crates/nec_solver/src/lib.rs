@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod linear;
 pub mod loads;
 pub mod matrix;
+pub mod mpie;
 pub mod network;
 pub mod planewave;
 pub mod sommerfeld;
@@ -39,6 +40,9 @@ pub use linear::{
 pub use loads::{build_loads, LoadWarning};
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
+};
+pub use mpie::{
+    assemble_free_space_z, solve_mpie_free_space, straight_wire, MpieSolution, MpieWire,
 };
 pub use network::{build_nt_stamps, NtStamp, NtWarning};
 pub use planewave::{
