@@ -19,6 +19,7 @@ de-risked, clearly-scoped increment.
 | File | Purpose |
 |------|---------|
 | `horizontal_dipole_sommerfeld.py` | **Level 0** — reflected E_x Sommerfeld integral (φ=0, x/x) + PEC self-check + induced-EMF ΔZ vs nec2c GN1/GN2/GN0 |
+| `fast_1d_reduction.py` | **Level 1 fast kernel** — the 1-D azimuthal reduction of the general dyadic (single radial J0/J1/J2 integral, ~100× faster); validated vs the 2-D oracle to ~1e-6 for all orientations. Mirrors Rust `sommerfeld::reflected_e_projected_fast` |
 | `general_dyadic.py` | **Levels 1 & 2 foundation** — the full reflected half-space dyadic for arbitrary source/obs orientation + arbitrary offset (2-D spectral integral); PEC self-check to ~1e-6 for every orientation pair, and an end-to-end tilted-dipole reaction ΔZ vs nec2c GN2 (<10%). See the "Generalization roadmap" in `docs/ph9-chk-006-sommerfeld-ground.md` |
 
 ## The formulation

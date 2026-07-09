@@ -860,9 +860,10 @@ pub(super) fn build_feedpoint_rows(
         };
 
         // PH9-CHK-006: add the Sommerfeld surface-wave correction to the near-ground
-        // feedpoint impedance for a straight horizontal wire (declined otherwise).
+        // feedpoint impedance for any straight wire — horizontal, vertical, or tilted
+        // (bent / mixed geometry is declined and keeps the scalar-Γ result).
         if let Some((eps_r, sigma)) = sommerfeld_ground {
-            if let Some(dz) = nec_solver::sommerfeld::horizontal_ground_z_correction(
+            if let Some(dz) = nec_solver::sommerfeld::ground_z_correction(
                 &midpoints,
                 &directions,
                 &lengths,

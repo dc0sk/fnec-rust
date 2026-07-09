@@ -110,8 +110,9 @@ approximation with no surface wave.
 | finite ground impedance, height ≥ ~0.2 λ | **accurate (≈ Sommerfeld), gated vs nec2c GN2** |
 | finite ground impedance, height < 0.1 λ | approximate → **guarded (low-height warning)** |
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
-| Sommerfeld/Norton surface wave (nec2c GN2 exact) — straight horizontal wire | **implemented + wired** as an opt-in solver: `fnec --ground-solver sommerfeld` (default `rcm`); reproduces nec2c GN2 incl. the low-height sign flip |
-| Sommerfeld surface wave — bent / vertical / mixed geometry | deferred (needs the full reflected dyadic); `--ground-solver sommerfeld` silently declines (keeps RCM) |
+| Sommerfeld/Norton surface wave (nec2c GN2 exact) — straight horizontal wire | **implemented + wired** as an opt-in solver: `fnec --ground-solver sommerfeld` (default `rcm`); reproduces nec2c GN2 incl. the low-height sign flip (~13 %) |
+| Sommerfeld surface wave — straight vertical / tilted / sloping wire | **implemented** (Level 1, general reflected dyadic); adds the surface-wave gap correctly, though absolute GN2 match is looser off-horizontal (bounded by fnec's scalar-Γ baseline) |
+| Sommerfeld surface wave — bent / mixed geometry, and currents/patterns | deferred; `--ground-solver sommerfeld` declines bent geometry (keeps RCM). Correct currents/patterns near ground = Level 2 (kernel in the Z-matrix via DCIM) |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
@@ -256,17 +257,27 @@ Evaluate it as a **2-D integral** (radial `sinθ`/`cosh t` substitution × azimu
 grid): a low-risk direct extension of Level 0, and the **oracle** against which the
 Level-2 closed form is checked.
 
-**Progress (2026-07-09):** the general reflected dyadic is validated as a Rust
-**oracle** — `sommerfeld::reflected_e_projected` (2-D angular-spectrum integral),
-gated by a machine-precision PEC self-check across all orientation pairs
-(`sommerfeld.rs::pec_general_dyadic_matches_image_for_all_orientations`) mirroring the
-Python study. **Not yet wired into the CLI:** the 2-D per-element integral is ~0.07 s
-each, so an N² reaction (or a 2-D kernel-cache) costs minutes — impractical. The
-practical Level-1 feature therefore needs the **1-D azimuthal reduction** (reduce the
-`α` integral of the dyadic to `J0/J1/J2` Sommerfeld integrals, as Level 0 did for the
-`φ=0` slice), validated against this 2-D oracle. That reduction is the immediate next
-step, and it is the *same* fast kernel Level 2's DCIM samples — so it is shared work,
-not throwaway.
+**Level 1 LANDED (2026-07-09) — `--ground-solver sommerfeld` now corrects any straight wire.**
+The 1-D azimuthal reduction was derived and validated: the α-integral of the 2-D
+dyadic reduces to a single radial `J0/J1/J2` Sommerfeld integral —
+`sommerfeld::reflected_e_projected_fast` — ~100× faster than the oracle, matching it
+to ~1e-5 for all orientations and reducing exactly to `reflected_ex_horizontal` for
+the x/x slice (`sommerfeld.rs::fast_dyadic_*` tests). `ground_z_correction` uses it
+over a `(Δs, Σs)` grid to correct **horizontal, vertical, or tilted straight wires**
+(the CLI dispatches horizontal to the fast ρ-grid path; bent/mixed geometry is still
+declined and keeps the scalar-Γ result). The reflected dyadic is also kept as a
+validated 2-D oracle (`reflected_e_projected` + `pec_general_dyadic_*`).
+
+**Accuracy caveat (honest).** The correction adds the *surface-wave gap*
+(`ΔZ_Sommerfeld − ΔZ_scalarΓ`) correctly for any straight wire — e.g. a 30°-tilted
+low λ/2 dipole: the reaction correction is +9.2 Ω, matching the nec2c GN2−GN0 gap
++10.4. But it is added to fnec's scalar-Γ **baseline**, and the additive scheme is
+exact only when fnec's RCM ground effect equals the induced-EMF RCM (true for
+horizontal, where the corrected ΔR lands within ~13 % of nec2c GN2). Off-horizontal,
+fnec's scalar Γ is a poorer RCM approximation and its solved current carries a
+larger 2-nd-order reaction error, so the *absolute* GN2 match is looser (tilted:
+corrected ΔR +1.3 vs GN2 +8.1 — a clear improvement over RCM's −7.9, but not exact).
+Closing that residual is Level 2 (Sommerfeld current, not just feed Z).
 
 ### Level 1 — arbitrary orientation, feedpoint ΔZ (post-solve)
 
