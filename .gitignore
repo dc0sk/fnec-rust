@@ -13,3 +13,7 @@ pr_body.txt
 
 # External reference PDFs (added locally for study; not committed)
 docs/external/
+
+# Python bytecode (study scripts)
+__pycache__/
+*.pyc
