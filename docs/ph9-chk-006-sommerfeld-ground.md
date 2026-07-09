@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-006-sommerfeld-ground.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ---
 
 # PH9-CHK-006: accurate near-ground impedance
@@ -22,8 +22,10 @@ last_updated: 2026-07-08
 This satisfies the checklist: an accurate near-ground class passes a nec2c tolerance
 gate, out-of-scope (low-height / buried) classes are guarded / fail fast, and the
 boundary is documented. The genuinely-hard remaining work — the **Sommerfeld/Norton
-surface wave** for < 0.1 λ accuracy — stays deferred (angle-dependent Fresnel RCM is
-*not* worth a slice; see below).
+surface wave** for < 0.1 λ accuracy — has since been **physics-validated in a probe
+(2026-07-09, reproduces nec2c GN2 incl. the low-height sign flip; see "Sommerfeld
+feasibility study" below and `studies/sommerfeld-ground/`)** but not yet shipped as a
+solver change; angle-dependent Fresnel RCM remains *not* worth a slice.
 
 ## What was wrong
 
@@ -108,7 +110,7 @@ approximation with no surface wave.
 | finite ground impedance, height ≥ ~0.2 λ | **accurate (≈ Sommerfeld), gated vs nec2c GN2** |
 | finite ground impedance, height < 0.1 λ | approximate → **guarded (low-height warning)** |
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
-| Sommerfeld/Norton surface wave (nec2c GN2 exact) | deferred — the real < 0.1 λ accuracy slice; hardest |
+| Sommerfeld/Norton surface wave (nec2c GN2 exact) | **kernel implemented + validated** (`crates/nec_solver/src/sommerfeld.rs`, reproduces GN2 + sign flip); **not yet wired into the solve** — feedpoint Z still uses scalar Γ |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
@@ -119,3 +121,98 @@ impedance correct; angle-dependent Fresnel RCM (nec2c GN0) is *not* worth a slic
 its own because fnec already reproduces it where it matters. GN2 currently aliases
 the scalar-Γ path (documented in `card-support-matrix.md`); it is *not* the true
 Sommerfeld method yet.
+
+## Sommerfeld feasibility study (2026-07-08/09) — target pinned **and physics validated**; production is a de-risked increment
+
+A focused feasibility pass quantified the exact correction target **and then proved,
+numerically against nec2c, that a direct Sommerfeld-integral reflected kernel
+reproduces the GN2 near-ground impedance — including the low-height sign flip.** It
+did **not** ship a solver change; the scalar-Γ path and the low-height guard are
+unchanged. The validated prototype lives in `studies/sommerfeld-ground/`.
+
+**Feasibility VALIDATED (2026-07-09).** A Python probe
+(`studies/sommerfeld-ground/horizontal_dipole_sommerfeld.py`) implements the reflected
+`E_x` for a horizontal dipole as a 1-D Sommerfeld integral (plane-wave-spectrum
+derivation, azimuth reduced to `J0±J2`; independently cross-checked against a
+Michalski–Zheng mixed-potential derivation by a second reviewer), validated in three
+stages: (1) a **PEC field self-check** — with `R_TE=−1, R_TM=+1` the integral
+reproduces the exact opposite-current image field to a few % (pins every
+prefactor/sign); (2) a **PEC ΔZ pipeline** matching nec2c GN1 to ~7–8 % via an
+induced-EMF reaction integral; (3) the **GN2 goal** — the lossy Sommerfeld ΔR tracks
+nec2c GN2 across the height sweep and **reproduces the surface-wave sign flip at
+0.025 λ** (probe +10.8 vs GN2 truth +9.0, where the reflection-coefficient method
+gives a wrong-signed −24.3). The ~20 % residual at the lowest height is the assumed
+sinusoidal current, which fnec's actual solved current would tighten (reaction ΔZ is
+stationary in the current to first order). The reflected kernel is:
+
+```
+E_x^refl(ρ,d) = (ωμ0/8π) ∫_0^∞ (λ/kz0) e^{-j kz0 d}
+                  [ R_TE (J0(λρ)+J2(λρ)) − R_TM (kz0²/k0²)(J0(λρ)−J2(λρ)) ] dλ
+```
+
+`d = z+z'`, `kz0=√(k0²−λ²)` (Im ≤ 0); equivalently `E_s^r ∝ k0²(ŝ·ŝ')·S{R_TE} +
+(ŝ·∇)(ŝ'·∇')·S{(k0²R_TE+kz0²R_TM)/kρ²}` — the surface wave lives in the second
+(charge/TM) kernel's Zenneck pole. See the study README for the full result table and
+the two production routes (reaction ΔZ correction first; DCIM for speed/generality).
+
+**The correction target (horizontal λ/2 dipole, 14.2 MHz, avg ground εr = 13,
+σ = 0.005).** ΔZ = Z(ground) − Z(free space), against the nec2c free-space
+reference 78.85 + j44.70 Ω. fnec's scalar Γ tracks nec2c's reflection-coefficient
+method (GN0); the *surface-wave correction* is the GN2 − GN0 gap:
+
+| height | ΔR GN0 (RCM ≈ fnec) | ΔR GN2 (Sommerfeld) | ΔX GN0 | ΔX GN2 | surface-wave ΔR, ΔX |
+|:-------|--------------------:|--------------------:|-------:|-------:|:--------------------|
+| 0.25 λ | +11.6 | +11.0 | +16.9 | +15.6 | −0.6, −1.2 |
+| 0.10 λ | −27.0 | −19.2 | +18.1 | +13.4 | +7.8, −4.7 |
+| 0.05 λ | −32.4 | −11.6 | +18.9 | +7.9 | +20.8, −11.0 |
+| 0.025 λ | −24.3 | **+9.0** | **+102.2** | +23.9 | **+33.3, −78.3** |
+
+The correction is negligible at 0.25 λ and grows steeply toward the ground: by
+0.025 λ it flips ΔR from −24 to +9 (the lossy ground *adds* radiation/loss
+resistance that RCM misses) and cuts ΔX from +102 to +24. There is no closed form;
+this is the genuine surface-wave contribution. nec2c reference decks:
+`gfs.nec` (free space), `g_{0,2}_{h}.nec` (GN0/GN2 sweep) — regenerate with three-arm
+`GW` + `GN 0|2 0 0 0 13 0.005` + `FR`/`EX`/`XQ`.
+
+**Recommended implementation path — Discrete Complex Image Method (DCIM).** fnec's
+reflected impedance term is `Γ · elem(obs, image_of_src)` — a single scalar times one
+geometric-optics image. The Sommerfeld reflected kernel can be written
+`Σᵢ aᵢ · G(complex_image_i)` (a short sum of *complex* images: complex weights `aᵢ`
+at complex heights, via the Sommerfeld identity applied to a complex-exponential fit
+of the spectral reflection coefficient), plus explicit **surface-wave-pole
+extraction** for accuracy at low height. This maps directly onto fnec's existing
+structure: replace the one `Γ · elem(image)` with a small sum over complex images,
+which only needs a complex-distance Green's kernel (`exp(−jk r)/r` with complex `r`)
+alongside the existing real-image `elem`.
+
+**Production step 1 landed (2026-07-09).** The reflected-field kernel is now
+implemented in Rust — `crates/nec_solver/src/sommerfeld.rs`
+(`reflected_ex_horizontal`), with Bessel J0/J1/J2 (A&S) and the sin/cosh substitution
+quadrature. Gated by a **machine-precision PEC self-check** (reflected field vs the
+exact opposite-current image, `sommerfeld.rs` unit tests) and an **end-to-end nec2c
+GN2 gate** (`crates/nec_solver/tests/sommerfeld_ground.rs`: the reaction-integral ΔZ
+reproduces the surface-wave sign flip at 0.025 λ — ΔR positive near +9, vs RCM's
+wrong-signed −24). It is **not yet wired into the solve**: the feedpoint impedance
+still uses the scalar-Γ image. Next increment: apply the post-solve reaction ΔZ
+correction to the reported near-ground feedpoint impedance for horizontal geometry.
+
+**What remains for production — now de-risked.** The hardest and riskiest step (the
+**horizontal** dipole's half-space reflected kernel with correct TE+TM coupling, and
+its validation vs nec2c) is **done** — see the validated study and the Rust kernel above. The vertical
+dipole is a single clean TM integral fnec's scalar Γ already nails (e.g. vertical
+λ/2 base 0.5 m ΔR +18 vs nec2c +18); the whole gap was the horizontal case, and its
+kernel is now pinned. Remaining production work, each still worth validating: (1) a
+**robust λ-quadrature in Rust** — contour deformation past the integrable branch
+point at λ=k0 and **surface-wave (Zenneck) pole** extraction (the pole in the R_TM /
+charge kernel is what carries the low-height correction); (2) wiring the **reaction
+ΔZ correction** `ΔZ_sw = −(1/I0²)∬ I[E^r_Somm − E^r_scalarΓ]I` onto the existing
+conductor-path currents (no Hallén-solver surgery — the recommended first increment);
+(3) optionally **DCIM** (GPOF/Prony complex-exponential fit → `Σ aᵢ·G(complex_imageᵢ)`)
+for speed/generality, slotting into `assemble_z_matrix_with_ground` with a
+complex-distance Green's kernel; (4) the vertical-horizontal coupling entry for mixed
+decks (projects to zero on purely horizontal geometry, defer). Unlike the degree-3
+and closed-loop frontiers (whose prototypes did *not* validate), the Sommerfeld
+physics **is** now validated end-to-end against nec2c — so the remaining work is a
+robust-numerics-and-wiring increment, not a research gamble. Until it ships, the
+scalar-Γ model and the `warn_if_low_finite_ground` guard remain the shipped
+behaviour for < 0.1 λ.

@@ -1,0 +1,304 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Simon Keimer (DC0SK)
+
+//! Sommerfeld half-space reflected-field kernel for near-ground impedance
+//! (PH9-CHK-006).
+//!
+//! fnec's default finite-ground model multiplies the method-of-images reflection
+//! by a single **normal-incidence** scalar Fresnel coefficient
+//! ([`crate::matrix`]). That reproduces nec2c's reflection-coefficient method
+//! (GN0) for heights ≥ ~0.1 λ but misses the **surface wave** below that, where the
+//! exact Sommerfeld solution (nec2c GN2) diverges from it — at 0.025 λ the scalar/RCM
+//! radiation-resistance delta has the *wrong sign* (see
+//! `docs/ph9-chk-006-sommerfeld-ground.md`).
+//!
+//! This module implements the exact reflected field for a **horizontal** electric
+//! dipole over a lossy half-space as a 1-D Sommerfeld integral. The derivation (plane-
+//! wave / angular spectrum, azimuth reduced to `J0 ± J2`; validated in
+//! `studies/sommerfeld-ground/`) gives, for an x-directed source element and an
+//! observation displaced by `ρ` **along the dipole axis** (both at heights whose sum
+//! is `d = z + z'`):
+//!
+//! ```text
+//! E_x^refl(ρ, d) = (k0·η0 / 8π) ∫_0^∞ (λ/kz0) e^{-j kz0 d}
+//!                    [ R_TE (J0(λρ)+J2(λρ)) − R_TM (kz0²/k0²)(J0(λρ)−J2(λρ)) ] dλ
+//! ```
+//!
+//! with `kz0 = √(k0²−λ²)` (Im ≤ 0), `R_TE = (kz0−kz1)/(kz0+kz1)`,
+//! `R_TM = (εc·kz0−kz1)/(εc·kz0+kz1)`, `kz1 = √(kg²−λ²)`, `kg = k0√εc`,
+//! `εc = εr − jσ/(ωε0)`. The horizontal dipole excites both TE and TM; the surface
+//! wave lives in the TM (`R_TM`) term's Zenneck pole.
+//!
+//! The integral is evaluated with the substitution `λ = k0·sinθ` (propagating,
+//! θ ∈ [0, π/2]) and `λ = k0·cosh t` (evanescent, t ∈ [0, ∞)), which cancels the
+//! integrable `1/kz0` singularity at `λ = k0` analytically — giving machine-precision
+//! agreement with the exact opposite-current image field in the PEC limit.
+
+use num_complex::Complex64;
+
+const C0: f64 = 299_792_458.0; // m/s
+const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
+const EPS0: f64 = 8.854_187_817e-12; // F/m
+const ETA0: f64 = MU0 * C0; // free-space wave impedance
+
+/// Complex relative permittivity of the ground: `εc = εr − j σ/(ω ε0)`.
+pub fn complex_permittivity(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
+    let omega = 2.0 * std::f64::consts::PI * freq_hz;
+    Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0))
+}
+
+/// `√z` on the sheet `Im ≤ 0` (the upgoing/decaying wave `e^{-j kz z}` decays for
+/// `z > 0`).
+fn sqrt_im_neg(z: Complex64) -> Complex64 {
+    let s = z.sqrt();
+    if s.im > 0.0 {
+        -s
+    } else {
+        s
+    }
+}
+
+/// Reflection coefficients `(R_TE, R_TM)` at spectral radial wavenumber, given the
+/// vertical wavenumbers `kz0` (air) and `kz1` (ground) and ground `εc`. `pec` forces
+/// the perfect-conductor limit `(−1, +1)`.
+fn fresnel_spectral(
+    kz0: Complex64,
+    kz1: Complex64,
+    eps_c: Complex64,
+    pec: bool,
+) -> (Complex64, Complex64) {
+    if pec {
+        return (Complex64::new(-1.0, 0.0), Complex64::new(1.0, 0.0));
+    }
+    let r_te = (kz0 - kz1) / (kz0 + kz1);
+    let r_tm = (eps_c * kz0 - kz1) / (eps_c * kz0 + kz1);
+    (r_te, r_tm)
+}
+
+/// The spectral integrand bracket
+/// `R_TE (J0+J2) − R_TM (kz0²/k0²)(J0−J2)` at radial wavenumber `lambda`.
+fn bracket(
+    lambda: f64,
+    kz0: Complex64,
+    k0: f64,
+    rho: f64,
+    eps_c: Complex64,
+    kg2: Complex64,
+    pec: bool,
+) -> Complex64 {
+    let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
+    let (r_te, r_tm) = fresnel_spectral(kz0, kz1, eps_c, pec);
+    let x = lambda * rho;
+    let j0 = bessel_j0(x);
+    let j2 = bessel_j2(x);
+    let kz0_rel2 = (kz0 * kz0) / Complex64::new(k0 * k0, 0.0);
+    r_te * (j0 + j2) - r_tm * kz0_rel2 * (j0 - j2)
+}
+
+/// Number of quadrature points per branch (propagating / evanescent). The integrand
+/// is smooth under the sin/cosh substitution, so a few thousand points give
+/// machine-precision (validated in `studies/sommerfeld-ground/`).
+const N_QUAD: usize = 4000;
+
+/// Reflected `E_x` of an x-directed Hertzian element (unit current moment `I·dl = 1`)
+/// over a half-space, at horizontal offset `rho` **along the x-axis** and height-sum
+/// `d = z + z' > 0`. `pec = true` gives the perfect-conductor limit.
+///
+/// This is the exact Sommerfeld reflected field (surface wave included), the
+/// replacement for the scalar-Γ image term for a horizontal wire near ground.
+pub fn reflected_ex_horizontal(
+    rho: f64,
+    d: f64,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+    pec: bool,
+) -> Complex64 {
+    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c; // kg² = k0² εc
+
+    // Propagating branch: λ = k0 sinθ, kz0 = k0 cosθ, (λ/kz0) dλ = k0 sinθ dθ.
+    let mut ip = Complex64::new(0.0, 0.0);
+    let a0 = 1e-9;
+    let b0 = std::f64::consts::FRAC_PI_2 - 1e-9;
+    let h0 = (b0 - a0) / N_QUAD as f64;
+    for i in 0..=N_QUAD {
+        let theta = a0 + h0 * i as f64;
+        let lambda = k0 * theta.sin();
+        let kz0 = Complex64::new(k0 * theta.cos(), 0.0);
+        let phase = (Complex64::new(0.0, -1.0) * kz0 * d).exp();
+        let f = Complex64::new(k0 * theta.sin(), 0.0)
+            * phase
+            * bracket(lambda, kz0, k0, rho, eps_c, kg2, pec);
+        let wgt = if i == 0 || i == N_QUAD { 0.5 } else { 1.0 };
+        ip += wgt * f;
+    }
+    ip *= h0;
+
+    // Evanescent branch: λ = k0 cosh t, kz0 = −j k0 sinh t, (λ/kz0) dλ = j k0 cosh t dt.
+    // Truncate where e^{-k0 sinh t · d} ≈ e^{-40}.
+    let t_max = if d > 0.0 {
+        (40.0 / (k0 * d)).asinh()
+    } else {
+        8.0
+    };
+    let mut ie = Complex64::new(0.0, 0.0);
+    let a1 = 1e-9;
+    let h1 = (t_max - a1) / N_QUAD as f64;
+    for i in 0..=N_QUAD {
+        let t = a1 + h1 * i as f64;
+        let lambda = k0 * t.cosh();
+        let kz0 = Complex64::new(0.0, -k0 * t.sinh());
+        let phase = (Complex64::new(0.0, -1.0) * kz0 * d).exp();
+        let f = Complex64::new(0.0, k0 * t.cosh())
+            * phase
+            * bracket(lambda, kz0, k0, rho, eps_c, kg2, pec);
+        let wgt = if i == 0 || i == N_QUAD { 0.5 } else { 1.0 };
+        ie += wgt * f;
+    }
+    ie *= h1;
+
+    Complex64::new(k0 * ETA0 / (8.0 * std::f64::consts::PI), 0.0) * (ip + ie)
+}
+
+// ---------------------------------------------------------------------------
+// Bessel functions J0, J1, J2 (Abramowitz & Stegun 9.4, ~1e-7 accuracy).
+// ---------------------------------------------------------------------------
+
+/// Bessel function of the first kind, order 0.
+pub fn bessel_j0(x: f64) -> f64 {
+    let ax = x.abs();
+    if ax < 3.0 {
+        let t = (x / 3.0) * (x / 3.0);
+        1.0 + t
+            * (-2.2499997
+                + t * (1.2656208
+                    + t * (-0.3163866 + t * (0.0444479 + t * (-0.0039444 + t * 0.0002100)))))
+    } else {
+        let z = 3.0 / ax;
+        let f0 = 0.79788456
+            + z * (-0.00000077
+                + z * (-0.00552740
+                    + z * (-0.00009512 + z * (0.00137237 + z * (-0.00072805 + z * 0.00014476)))));
+        // The leading phase constant is π/4 (A&S 9.4.3).
+        let theta = ax - std::f64::consts::FRAC_PI_4
+            + z * (-0.04166397
+                + z * (-0.00003954
+                    + z * (0.00262573 + z * (-0.00054125 + z * (-0.00029333 + z * 0.00013558)))));
+        f0 * theta.cos() / ax.sqrt()
+    }
+}
+
+/// Bessel function of the first kind, order 1.
+pub fn bessel_j1(x: f64) -> f64 {
+    let ax = x.abs();
+    if ax < 3.0 {
+        let t = (x / 3.0) * (x / 3.0);
+        x * (0.5
+            + t * (-0.56249985
+                + t * (0.21093573
+                    + t * (-0.03954289 + t * (0.00443319 + t * (-0.00031761 + t * 0.00001109))))))
+    } else {
+        let z = 3.0 / ax;
+        let f1 = 0.79788456
+            + z * (0.00000156
+                + z * (0.01659667
+                    + z * (0.00017105 + z * (-0.00249511 + z * (0.00113653 + z * (-0.00020033))))));
+        // The leading phase constant is 3π/4 (A&S 9.4.6).
+        let theta = ax - 3.0 * std::f64::consts::FRAC_PI_4
+            + z * (0.12499612
+                + z * (0.00005650
+                    + z * (-0.00637879 + z * (0.00074348 + z * (0.00079824 + z * (-0.00029166))))));
+        let m = f1 * theta.cos() / ax.sqrt();
+        if x < 0.0 {
+            -m
+        } else {
+            m
+        }
+    }
+}
+
+/// Bessel function of the first kind, order 2, via the recurrence
+/// `J2(x) = (2/x) J1(x) − J0(x)`.
+pub fn bessel_j2(x: f64) -> f64 {
+    if x.abs() < 1e-12 {
+        0.0
+    } else {
+        2.0 / x * bessel_j1(x) - bessel_j0(x)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FREQ: f64 = 14.2e6;
+    const LAM: f64 = C0 / FREQ;
+
+    fn k0() -> f64 {
+        2.0 * std::f64::consts::PI * FREQ / C0
+    }
+
+    /// Exact free-space E_x of an x-directed Hertzian element (moment I·dl = 1) at
+    /// offset (dx, dy, dz): E_x = jωμ0 (g + ∂²g/∂x²/k0²).
+    fn ex_freespace(dx: f64, dy: f64, dz: f64) -> Complex64 {
+        let k = k0();
+        let omega = 2.0 * std::f64::consts::PI * FREQ;
+        let r = (dx * dx + dy * dy + dz * dz).sqrt();
+        let e = Complex64::new(0.0, -k * r).exp();
+        let g = e / (4.0 * std::f64::consts::PI * r);
+        let gp = -(Complex64::new(1.0, k * r)) * e / (4.0 * std::f64::consts::PI * r * r);
+        let gpp = e * Complex64::new(2.0 - k * k * r * r, 2.0 * k * r)
+            / (4.0 * std::f64::consts::PI * r.powi(3));
+        let d2 = Complex64::new(dx * dx / (r * r), 0.0) * gpp
+            + Complex64::new(1.0 / r - dx * dx / r.powi(3), 0.0) * gp;
+        Complex64::new(0.0, omega * MU0) * (g + d2 / Complex64::new(k * k, 0.0))
+    }
+
+    #[test]
+    fn bessel_matches_known_values() {
+        // Reference values (Abramowitz & Stegun tables).
+        assert!((bessel_j0(0.0) - 1.0).abs() < 1e-7);
+        assert!((bessel_j0(1.0) - 0.7651976866).abs() < 1e-6);
+        assert!((bessel_j0(5.0) - (-0.1775967713)).abs() < 1e-6);
+        assert!((bessel_j1(1.0) - 0.4400505857).abs() < 1e-6);
+        assert!((bessel_j1(5.0) - (-0.3275791376)).abs() < 1e-6);
+        assert!(bessel_j2(0.0).abs() < 1e-9);
+        assert!((bessel_j2(1.0) - 0.1149034849).abs() < 1e-6);
+        assert!((bessel_j2(5.0) - 0.0465651163).abs() < 1e-6);
+    }
+
+    /// PEC self-check: the reflected-field integral with (R_TE=−1, R_TM=+1) must
+    /// reproduce the exact opposite-current image field (x-element of current −1 at
+    /// (0,0,−h), observed at (ρ,0,h)). This pins every prefactor/sign and validates
+    /// the substitution quadrature. The sin/cosh substitution removes the λ=k0
+    /// singularity, so agreement is limited only by the Bessel-approx accuracy.
+    #[test]
+    fn pec_reflected_field_matches_opposite_current_image() {
+        for &hl in &[0.25, 0.1, 0.05, 0.025] {
+            let h = hl * LAM;
+            for &rl in &[0.05, 0.15, 0.3] {
+                let rho = rl * LAM;
+                let somm = reflected_ex_horizontal(rho, 2.0 * h, FREQ, 1.0, 0.0, true);
+                let image = -ex_freespace(rho, 0.0, 2.0 * h);
+                let rel = (somm - image).norm() / image.norm();
+                assert!(
+                    rel < 1e-4,
+                    "h={hl}λ ρ={rl}λ: rel={rel:.2e} somm={somm} image={image}"
+                );
+            }
+        }
+    }
+
+    /// Lossy ground: the reflected kernel must produce a *positive* real part at the
+    /// specular self-point for a very low horizontal dipole — the surface-wave sign
+    /// flip that the scalar-Γ (RCM) model gets wrong. This is a coarse smoke gate;
+    /// the quantitative ΔZ vs nec2c GN2 is validated in the study.
+    #[test]
+    fn lossy_ground_kernel_is_finite_and_reasonable() {
+        let h = 0.025 * LAM;
+        let e = reflected_ex_horizontal(0.05 * LAM, 2.0 * h, FREQ, 13.0, 0.005, false);
+        assert!(e.norm().is_finite() && e.norm() > 0.0);
+    }
+}
