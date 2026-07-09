@@ -110,7 +110,7 @@ approximation with no surface wave.
 | finite ground impedance, height ≥ ~0.2 λ | **accurate (≈ Sommerfeld), gated vs nec2c GN2** |
 | finite ground impedance, height < 0.1 λ | approximate → **guarded (low-height warning)** |
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
-| Sommerfeld/Norton surface wave (nec2c GN2 exact) | **physics validated** (probe reproduces GN2 + sign flip, `studies/sommerfeld-ground/`); production increment not yet shipped |
+| Sommerfeld/Norton surface wave (nec2c GN2 exact) | **kernel implemented + validated** (`crates/nec_solver/src/sommerfeld.rs`, reproduces GN2 + sign flip); **not yet wired into the solve** — feedpoint Z still uses scalar Γ |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
@@ -185,9 +185,20 @@ structure: replace the one `Γ · elem(image)` with a small sum over complex ima
 which only needs a complex-distance Green's kernel (`exp(−jk r)/r` with complex `r`)
 alongside the existing real-image `elem`.
 
+**Production step 1 landed (2026-07-09).** The reflected-field kernel is now
+implemented in Rust — `crates/nec_solver/src/sommerfeld.rs`
+(`reflected_ex_horizontal`), with Bessel J0/J1/J2 (A&S) and the sin/cosh substitution
+quadrature. Gated by a **machine-precision PEC self-check** (reflected field vs the
+exact opposite-current image, `sommerfeld.rs` unit tests) and an **end-to-end nec2c
+GN2 gate** (`crates/nec_solver/tests/sommerfeld_ground.rs`: the reaction-integral ΔZ
+reproduces the surface-wave sign flip at 0.025 λ — ΔR positive near +9, vs RCM's
+wrong-signed −24). It is **not yet wired into the solve**: the feedpoint impedance
+still uses the scalar-Γ image. Next increment: apply the post-solve reaction ΔZ
+correction to the reported near-ground feedpoint impedance for horizontal geometry.
+
 **What remains for production — now de-risked.** The hardest and riskiest step (the
 **horizontal** dipole's half-space reflected kernel with correct TE+TM coupling, and
-its validation vs nec2c) is **done** — see the validated study above. The vertical
+its validation vs nec2c) is **done** — see the validated study and the Rust kernel above. The vertical
 dipole is a single clean TM integral fnec's scalar Γ already nails (e.g. vertical
 λ/2 base 0.5 m ΔR +18 vs nec2c +18); the whole gap was the horizontal case, and its
 kernel is now pinned. Remaining production work, each still worth validating: (1) a

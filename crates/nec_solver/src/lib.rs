@@ -10,6 +10,7 @@ pub mod loads;
 pub mod matrix;
 pub mod network;
 pub mod planewave;
+pub mod sommerfeld;
 pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
