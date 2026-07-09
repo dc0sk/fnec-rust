@@ -1318,7 +1318,7 @@ pub fn solve_hallen_current_source_paths(
     })
 }
 
-fn solve_square_in_place(
+pub(crate) fn solve_square_in_place(
     a: &mut [Vec<Complex64>],
     b: &mut [Complex64],
 ) -> Result<Vec<Complex64>, SolveError> {
