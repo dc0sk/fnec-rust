@@ -24,6 +24,15 @@ impl SolverMode {
     }
 }
 
+/// Near-ground impedance model (PH9-CHK-006). `Rcm` is the default scalar-Γ
+/// reflection-coefficient image; `Sommerfeld` adds the surface-wave correction for
+/// straight horizontal wires (accurate below ~0.1 λ, = nec2c GN2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum GroundSolver {
+    Rcm,
+    Sommerfeld,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PulseRhsMode {
     Raw,
@@ -790,8 +799,23 @@ pub(super) fn build_feedpoint_rows(
     solver_mode: SolverMode,
     current_source_port: Option<Complex64>,
     freq_hz: f64,
+    ground: &GroundModel,
+    ground_solver: GroundSolver,
 ) -> Vec<FeedpointRow> {
     let mut rows = Vec::new();
+
+    // PH9-CHK-006: precompute the Sommerfeld surface-wave ΔZ correction inputs once
+    // (applied per feedpoint below) when the user selects the sommerfeld ground
+    // solver over finite ground.
+    let sommerfeld_ground = match (ground_solver, ground) {
+        (GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
+            Some((*eps_r, *sigma))
+        }
+        _ => None,
+    };
+    let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
+    let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
+    let lengths: Vec<f64> = segs.iter().map(|s| s.length).collect();
 
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
@@ -829,11 +853,28 @@ pub(super) fn build_feedpoint_rows(
         } else {
             v_vec[idx] * seg.length
         };
-        let z_in = if current.norm() > 1e-60 {
+        let mut z_in = if current.norm() > 1e-60 {
             v_source / current
         } else {
             v_source
         };
+
+        // PH9-CHK-006: add the Sommerfeld surface-wave correction to the near-ground
+        // feedpoint impedance for a straight horizontal wire (declined otherwise).
+        if let Some((eps_r, sigma)) = sommerfeld_ground {
+            if let Some(dz) = nec_solver::sommerfeld::horizontal_ground_z_correction(
+                &midpoints,
+                &directions,
+                &lengths,
+                i_vec,
+                idx,
+                freq_hz,
+                eps_r,
+                sigma,
+            ) {
+                z_in += dz;
+            }
+        }
 
         rows.push(FeedpointRow {
             tag: seg.tag as usize,
@@ -1019,6 +1060,7 @@ pub(super) fn solve_frequency_point(
     execution_mode: ExecutionMode,
     sin_fallback_rel_max: f64,
     freq_hz: f64,
+    ground_solver: GroundSolver,
 ) -> Result<FrequencySolveResult, String> {
     // Incident plane waves and current sources are solved on the Hallén path
     // only (crate::planewave / solve_hallen_current_source).
@@ -1341,6 +1383,8 @@ pub(super) fn solve_frequency_point(
         solver_mode,
         current_source_port,
         freq_hz,
+        ground,
+        ground_solver,
     );
 
     // PH9-CHK-005: guard the junction-fed feedpoint limitation. When the driven

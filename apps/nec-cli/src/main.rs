@@ -33,7 +33,7 @@ use nec_worker::{
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
-    FrequencySolveResult, PulseRhsMode, SolverMode, SweepPointSummary,
+    FrequencySolveResult, GroundSolver, PulseRhsMode, SolverMode, SweepPointSummary,
     SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
@@ -68,6 +68,7 @@ fn main() -> ExitCode {
 
     let ParsedArgs {
         solver_mode,
+        ground_solver,
         pulse_rhs_mode,
         mut execution_mode,
         enable_benchmarking,
@@ -316,6 +317,7 @@ fn main() -> ExitCode {
             execution_mode,
             sin_fallback_rel_max,
             freq_hz,
+            ground_solver,
         )
     };
 
@@ -759,6 +761,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             ExecutionMode::Cpu,
             SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
             freq_hz,
+            GroundSolver::Rcm,
         )?;
 
         let summary = solve_result.sweep_summary.ok_or_else(|| {

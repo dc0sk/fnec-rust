@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
-use super::solve_session::{PulseRhsMode, SolverMode};
+use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -15,6 +15,7 @@ pub enum OutputFormat {
 #[derive(Debug, Clone)]
 pub struct ParsedArgs {
     pub solver_mode: SolverMode,
+    pub ground_solver: GroundSolver,
     pub pulse_rhs_mode: PulseRhsMode,
     pub execution_mode: ExecutionMode,
     pub enable_benchmarking: bool,
@@ -29,6 +30,7 @@ pub struct ParsedArgs {
 
 pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut solver_mode = SolverMode::Hallen;
+    let mut ground_solver = GroundSolver::Rcm;
     let mut pulse_rhs_mode = PulseRhsMode::Nec2;
     let mut execution_mode = ExecutionMode::Cpu;
     let mut enable_benchmarking = false;
@@ -59,6 +61,24 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                     other => {
                         return Err(format!(
                             "invalid --solver value '{other}' (expected: hallen|pulse|continuity|sinusoidal)"
+                        ))
+                    }
+                };
+            }
+            "--ground-solver" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --ground-solver (expected: rcm|sommerfeld)"
+                            .to_string(),
+                    );
+                }
+                ground_solver = match args[i].as_str() {
+                    "rcm" => GroundSolver::Rcm,
+                    "sommerfeld" => GroundSolver::Sommerfeld,
+                    other => {
+                        return Err(format!(
+                            "invalid --ground-solver value '{other}' (expected: rcm|sommerfeld)"
                         ))
                     }
                 };
@@ -209,6 +229,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let path = deck_path.ok_or_else(|| "missing deck path".to_string())?;
     Ok(ParsedArgs {
         solver_mode,
+        ground_solver,
         pulse_rhs_mode,
         execution_mode,
         enable_benchmarking,
