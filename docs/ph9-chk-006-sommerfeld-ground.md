@@ -306,6 +306,26 @@ Replace the scalar-Γ reflected term in `assemble_z_matrix_with_ground`
 so the ground enters the currents themselves — making **currents, mutual coupling,
 arrays, patterns, gain, and efficiency** correct near ground, not just the feed Z.
 
+**Architecture probe (2026-07-09) — the cheap routes do NOT work; recorded to save
+the next attempt.** `studies/sommerfeld-ground/level2_architecture_probe.py` tested
+whether the validated Level-1 **E-field** reflected dyadic can be fed into fnec's
+Hallén solve to correct the currents on a low horizontal dipole (0.05 λ, nec2c GN2):
+
+- **Born iteration** (feed the extra Sommerfeld field back as a distributed Hallén
+  source, iterate) **diverges** — at 0.05 λ the surface wave is a *strong* coupling,
+  not a small perturbation, so the fixed point is not a contraction.
+- **Direct matrix** (move the field→RHS correction to the LHS and solve once) improves
+  the feedpoint ΔR (−36.8 → −8.0, toward GN2 −11.6) but gives the **wrong current
+  shape** and is **not rigorous** — it mixes an E-field correction into the A-domain
+  Hallén operator. It does not beat Level 1's reaction correction on Z.
+
+So a correct Level 2 needs a *rigorous* formulation, not a perturbative patch on the
+Hallén hybrid: either **(a)** a full EFIE MoM with the Sommerfeld reflected **dyadic**
+in the impedance matrix (a parallel solver path — large), or **(b)** the reflected
+**vector-potential** dyadic (not the E-field) + DCIM into `elem`, which must resolve
+the open question that fnec's Hallén *eliminates the scalar potential*, exactly where
+the surface wave lives. This is a dedicated multi-session solver increment.
+
 - **Method — DCIM (Discrete Complex Image Method):** the 2-D per-element integral is
   too slow for an N² matrix fill, so fit the spectral reflection kernels as sums of
   complex exponentials `Σ aᵢ e^{-j kz0 bᵢ}` (GPOF/Prony along a deformed contour), with
