@@ -165,10 +165,47 @@ def solve_y(nseg_arm):
     return Zin
 
 
+def build_loop(nseg_side, circ_lam=1.0):
+    """Planar square loop (xz-plane), cyclic chain. A closed loop is just an
+    all-degree-2 graph with no free end — the SAME basis handles it, with no
+    endpoint condition (the Hallen solver needed a periodic closure that never
+    validated). Feed at the midpoint node of the bottom side."""
+    lam = C0 / F
+    a = circ_lam * lam / 4.0
+    corners = [(-a / 2, 0, -a / 2), (a / 2, 0, -a / 2),
+               (a / 2, 0, a / 2), (-a / 2, 0, a / 2)]
+    n = 4 * nseg_side
+    nodes = []
+    for k in range(n):
+        s = k * (4 * a) / n
+        side = int(s // a)
+        frac = (s - side * a) / a
+        c0 = np.array(corners[side])
+        c1 = np.array(corners[(side + 1) % 4])
+        nodes.append(tuple(c0 + frac * (c1 - c0)))
+    return np.array(nodes), [(k, (k + 1) % n) for k in range(n)], nseg_side // 2
+
+
+def solve_loop(nseg_side, circ_lam=1.0):
+    nodes, segs, feed_node = build_loop(nseg_side, circ_lam)
+    bases, node_feed = build_bases(nodes, segs)
+    Z = assemble(nodes, segs, bases)
+    feed = node_feed[feed_node]
+    V = np.zeros(len(bases), complex)
+    V[feed] = 1.0
+    Zin = 1.0 / np.linalg.solve(Z, V)[feed]
+    print(f"  side={nseg_side:3d} : {Zin.real:8.3f}{Zin.imag:+9.3f}j")
+    return Zin
+
+
 def main():
     print("Y-junction MPIE (nec2c 11/21/41 seg: 71.78/71.60/71.50 - j~67):")
     for ns in [10, 20, 40, 80]:
         solve_y(ns)
+    print("\n1-wavelength square loop MPIE "
+          "(nec2c 11/21/41 seg/side: 111.0/110.2/109.7 - j146.2):")
+    for ns in [10, 20, 40]:
+        solve_loop(ns)
 
 
 if __name__ == "__main__":
