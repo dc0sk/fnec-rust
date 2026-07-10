@@ -1305,3 +1305,53 @@ fn sweep_cursor_point_none_without_sweep() {
     assert!(state.sweep_cursor_point().is_none());
     assert!(state.sweep_points().is_empty());
 }
+
+// ── Streaming sweep (GUI-CHK-009) ────────────────────────────────────────────
+
+#[test]
+fn streaming_sweep_accumulates_points_then_finalizes() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("d.nec".into()));
+    state.apply(&Message::RunSweep); // → Running
+    assert_eq!(state.sweep_phase, SweepPhase::Running);
+
+    // Points arrive incrementally.
+    state.apply(&Message::SweepPointComputed(SweepPoint {
+        freq_mhz: 14.0,
+        z_re: 60.0,
+        z_im: -10.0,
+    }));
+    assert!(matches!(state.sweep_phase, SweepPhase::Streaming(ref p) if p.len() == 1));
+    // The chart/table can already read the partial data, and Run is disabled.
+    assert_eq!(state.sweep_points().len(), 1);
+    assert!(!state.can_sweep());
+
+    state.apply(&Message::SweepPointComputed(SweepPoint {
+        freq_mhz: 15.0,
+        z_re: 72.0,
+        z_im: 0.0,
+    }));
+    assert!(state.sweep_status_text().contains('2'));
+
+    state.apply(&Message::SweepStreamDone);
+    assert!(matches!(state.sweep_phase, SweepPhase::Done(ref p) if p.len() == 2));
+    assert!(state.can_sweep(), "Run re-enables once the sweep is done");
+}
+
+#[test]
+fn streaming_sweep_empty_stream_is_a_failure() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("d.nec".into()));
+    state.apply(&Message::RunSweep);
+    // Force a Streaming phase with no points, then finish.
+    state.apply(&Message::SweepPointComputed(SweepPoint {
+        freq_mhz: 14.0,
+        z_re: 1.0,
+        z_im: 0.0,
+    }));
+    if let SweepPhase::Streaming(pts) = &mut state.sweep_phase {
+        pts.clear();
+    }
+    state.apply(&Message::SweepStreamDone);
+    assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
+}

@@ -47,6 +47,8 @@ pub enum SweepPhase {
     #[default]
     Idle,
     Running,
+    /// Points arriving incrementally from the streaming sweep (GUI-CHK-009).
+    Streaming(Vec<SweepPoint>),
     Done(Vec<SweepPoint>),
     Failed(String),
 }
@@ -274,8 +276,12 @@ pub enum Message {
     SweepStepChanged(String),
     /// User clicked the Run Sweep button.
     RunSweep,
-    /// Background sweep task completed.
+    /// Background sweep task completed (batch path / error).
     SweepComplete(Result<Vec<SweepPoint>, String>),
+    /// One sweep point arrived from the streaming sweep.
+    SweepPointComputed(SweepPoint),
+    /// The streaming sweep finished (finalize the accumulated points).
+    SweepStreamDone,
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -390,6 +396,23 @@ impl AppState {
             }
             Message::SweepComplete(Err(e)) => {
                 self.sweep_phase = SweepPhase::Failed(e.clone());
+            }
+            Message::SweepPointComputed(pt) => {
+                // Accumulate into a Streaming phase (starting one if needed).
+                match &mut self.sweep_phase {
+                    SweepPhase::Streaming(pts) => pts.push(pt.clone()),
+                    _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
+                }
+            }
+            Message::SweepStreamDone => {
+                // Finalize whatever streamed in (empty stream → a failure note).
+                if let SweepPhase::Streaming(pts) = &self.sweep_phase {
+                    self.sweep_phase = if pts.is_empty() {
+                        SweepPhase::Failed("sweep produced no points".into())
+                    } else {
+                        SweepPhase::Done(pts.clone())
+                    };
+                }
             }
             Message::SweepSortBy(col) => {
                 if self.sweep_sort_col == *col {
@@ -631,7 +654,11 @@ impl AppState {
 
     /// Returns `true` when the Run Sweep button should be enabled.
     pub fn can_sweep(&self) -> bool {
-        !self.deck_path.is_empty() && !matches!(self.sweep_phase, SweepPhase::Running)
+        !self.deck_path.is_empty()
+            && !matches!(
+                self.sweep_phase,
+                SweepPhase::Running | SweepPhase::Streaming(_)
+            )
     }
 
     /// Returns `true` when the Run Pattern button should be enabled.
@@ -675,9 +702,9 @@ impl AppState {
         Ok((start, end, step))
     }
 
-    /// Returns sorted rows for the sweep result table.
+    /// Returns sorted rows for the sweep result table (streaming or done).
     pub fn sorted_sweep_rows(&self) -> Vec<SweepPoint> {
-        let SweepPhase::Done(rows) = &self.sweep_phase else {
+        let (SweepPhase::Streaming(rows) | SweepPhase::Done(rows)) = &self.sweep_phase else {
             return Vec::new();
         };
         let mut v = rows.clone();
@@ -695,10 +722,11 @@ impl AppState {
         v
     }
 
-    /// The swept points in their computed (frequency) order, if a sweep is done.
+    /// The swept points in their computed (frequency) order — available both
+    /// while streaming and once done.
     pub fn sweep_points(&self) -> &[SweepPoint] {
         match &self.sweep_phase {
-            SweepPhase::Done(pts) => pts,
+            SweepPhase::Streaming(pts) | SweepPhase::Done(pts) => pts,
             _ => &[],
         }
     }
@@ -735,6 +763,7 @@ impl AppState {
         match &self.sweep_phase {
             SweepPhase::Idle => String::from("Enter a frequency range and click Run Sweep."),
             SweepPhase::Running => String::from("Sweeping…"),
+            SweepPhase::Streaming(pts) => format!("Sweeping… {} points", pts.len()),
             SweepPhase::Done(pts) => format!("Done — {} points", pts.len()),
             SweepPhase::Failed(e) => format!("Error: {e}"),
         }

@@ -26,8 +26,8 @@ use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow}
 use nec_gui::plot::PlotMetric;
 use nec_gui::solve::{
     current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
-    pattern_grid_path, pattern_slice_deck_path, solve_deck_path, solve_deck_str, sweep_deck_path,
-    SolveResult, SweepPoint,
+    pattern_grid_path, pattern_slice_deck_path, read_deck_text, solve_deck_path, solve_deck_str,
+    SolveResult, SweepJob, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -142,10 +142,43 @@ impl FnecGui {
                     } else {
                         Some(self.state.vars_path.clone())
                     };
-                    Task::perform(
-                        async move { sweep_deck_path(&path, vars.as_deref(), start, end, step) },
-                        Message::SweepComplete,
-                    )
+                    // Read + substitute now (fast, surfaces file errors early), then
+                    // stream the per-frequency solves so the chart fills in live.
+                    match read_deck_text(&path, vars.as_deref()) {
+                        Ok(deck_text) => Task::run(
+                            iced::stream::channel(64, move |mut output| async move {
+                                use iced::futures::SinkExt;
+                                match SweepJob::prepare(&deck_text, start, end, step) {
+                                    Ok(job) => {
+                                        for &f in job.freqs_mhz() {
+                                            match job.solve_at(f) {
+                                                Ok(pt) => {
+                                                    let _ = output
+                                                        .send(Message::SweepPointComputed(pt))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = output
+                                                        .send(Message::SweepComplete(Err(e)))
+                                                        .await;
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                        let _ = output.send(Message::SweepStreamDone).await;
+                                    }
+                                    Err(e) => {
+                                        let _ = output.send(Message::SweepComplete(Err(e))).await;
+                                    }
+                                }
+                            }),
+                            |m| m,
+                        ),
+                        Err(e) => {
+                            self.state.apply(&Message::SweepComplete(Err(e)));
+                            Task::none()
+                        }
+                    }
                 }
                 Err(e) => {
                     // Surface parameter error as a completed sweep failure.
@@ -449,7 +482,7 @@ impl FnecGui {
         let status = text(self.state.sweep_status_text());
 
         let result_section: Element<Message> = match &self.state.sweep_phase {
-            SweepPhase::Done(_) => self.sweep_chart_and_table(),
+            SweepPhase::Streaming(_) | SweepPhase::Done(_) => self.sweep_chart_and_table(),
             _ => text("").into(),
         };
 
