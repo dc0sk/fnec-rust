@@ -116,6 +116,22 @@ pub struct ViewportState {
     pub scene: Option<std::sync::Arc<crate::mesh::MeshData>>,
     pub scene_rev: u64,
     pub status: String,
+    /// Bounding sphere `(center, radius)` of the loaded geometry, for Reset View.
+    pub fit_bounds: Option<([f32; 3], f32)>,
+}
+
+/// A camera-interaction message for the 3-D viewport (GUI-CHK-003). Deltas are
+/// already in camera units — the widget's `Program::update` converts raw pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewportMsg {
+    /// Orbit by yaw/pitch deltas in radians.
+    Orbit { d_yaw: f32, d_pitch: f32 },
+    /// Zoom by scroll steps (positive = closer).
+    Zoom(f32),
+    /// Pan the target by screen-fraction deltas (`dx` right, `dy` up).
+    Pan { dx: f32, dy: f32 },
+    /// Re-frame the camera on the loaded geometry.
+    ResetView,
 }
 
 impl Default for AppState {
@@ -194,6 +210,8 @@ pub enum Message {
     LoadGeometry,
     /// Background geometry build completed (parse + `build_geometry`, no solve).
     GeometryLoaded(Result<crate::mesh::SceneGeometry, String>),
+    /// Camera interaction from the 3-D viewport widget (GUI-CHK-003).
+    Viewport(ViewportMsg),
 }
 
 impl AppState {
@@ -268,6 +286,7 @@ impl AppState {
             Message::GeometryLoaded(Ok(geo)) => {
                 let (center, radius) = geo.bounds();
                 self.viewport.camera.fit(center, radius);
+                self.viewport.fit_bounds = Some((center, radius));
                 self.viewport.scene = Some(std::sync::Arc::new(crate::mesh::build_scene(geo)));
                 self.viewport.scene_rev = self.viewport.scene_rev.wrapping_add(1);
                 self.viewport.status = format!("{} wire segments", geo.wires.len());
@@ -275,6 +294,22 @@ impl AppState {
             Message::GeometryLoaded(Err(e)) => {
                 self.viewport.scene = None;
                 self.viewport.status = format!("Error: {e}");
+            }
+            Message::Viewport(vp) => {
+                let cam = &mut self.viewport.camera;
+                match vp {
+                    ViewportMsg::Orbit { d_yaw, d_pitch } => cam.orbit(*d_yaw, *d_pitch),
+                    ViewportMsg::Zoom(steps) => cam.zoom(*steps),
+                    ViewportMsg::Pan { dx, dy } => cam.pan(*dx, *dy),
+                    ViewportMsg::ResetView => {
+                        if let Some((c, r)) = self.viewport.fit_bounds {
+                            // Restore the default orientation *and* re-frame.
+                            let mut fresh = crate::camera::Camera::default();
+                            fresh.fit(c, r);
+                            *cam = fresh;
+                        }
+                    }
+                }
             }
         }
     }

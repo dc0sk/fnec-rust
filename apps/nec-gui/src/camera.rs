@@ -72,6 +72,28 @@ impl Camera {
     pub fn zoom(&mut self, steps: f32) {
         self.distance = (self.distance * 0.88f32.powf(steps)).clamp(0.05, 1.0e6);
     }
+
+    /// The camera's right and up axes in world space (z-up look-at basis).
+    fn screen_axes(&self) -> (Vec3, Vec3) {
+        let forward = (self.target - self.eye()).normalize_or_zero();
+        let mut right = forward.cross(Vec3::Z);
+        if right.length_squared() < 1e-8 {
+            // Looking straight down/up: fall back to world x.
+            right = Vec3::X;
+        }
+        let right = right.normalize();
+        let up = right.cross(forward).normalize();
+        (right, up)
+    }
+
+    /// Pan the target in the view plane by screen-space fractions of the viewport
+    /// (`dx` right, `dy` up). Scaled by distance so it feels consistent at any zoom.
+    pub fn pan(&mut self, dx: f32, dy: f32) {
+        let (right, up) = self.screen_axes();
+        // 2·distance·tan(fov/2) ≈ the visible world height at the target plane.
+        let world_per_frac = 2.0 * self.distance * (self.fov_y * 0.5).tan();
+        self.target += (right * (-dx) + up * dy) * world_per_frac;
+    }
 }
 
 #[cfg(test)]
@@ -123,6 +145,21 @@ mod tests {
         assert!(c.pitch <= PITCH_LIMIT + 1e-6);
         c.orbit(0.0, -100.0);
         assert!(c.pitch >= -PITCH_LIMIT - 1e-6);
+    }
+
+    #[test]
+    fn pan_moves_target_in_view_plane_not_toward_camera() {
+        let mut c = Camera::default();
+        c.fit([0.0; 3], 5.0);
+        let d0 = c.distance;
+        let fwd = (c.target - c.eye()).normalize();
+        c.pan(0.1, 0.0);
+        // Target moved, distance to the eye direction unchanged (in-plane move).
+        assert!(c.target.length() > 1e-4, "target should move");
+        assert!((c.distance - d0).abs() < 1e-4, "pan must not change zoom");
+        // The move is perpendicular to the view direction.
+        let moved = c.target; // was origin
+        assert!(moved.dot(fwd).abs() < 1e-3, "pan is in the view plane");
     }
 
     #[test]
