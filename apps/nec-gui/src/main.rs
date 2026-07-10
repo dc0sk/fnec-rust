@@ -13,19 +13,19 @@ mod viewport;
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::pane_grid::{Axis, Split};
 use iced::widget::{
-    button, checkbox, column, container, pane_grid, progress_bar, row, scrollable, shader, text,
-    text_input,
+    button, checkbox, column, container, pane_grid, pick_list, progress_bar, row, scrollable,
+    shader, text, text_input,
 };
 use iced::{Border, Element, Length, Subscription, Task, Theme};
 use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
 };
-use nec_gui::model_doc::{WireField, WireRow};
+use nec_gui::model_doc::{ControlEdit, PostSlot, WireField, WireRow};
 use nec_gui::solve::{
     current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
-    pattern_grid_path, pattern_slice_deck_path, solve_deck_path, sweep_deck_path, SolveResult,
-    SweepPoint,
+    pattern_grid_path, pattern_slice_deck_path, solve_deck_path, solve_deck_str, sweep_deck_path,
+    SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -111,6 +111,7 @@ impl FnecGui {
         let spawn_pattern_3d = matches!(message, Message::LoadPattern3d);
         let spawn_edit_load = matches!(message, Message::EditDeckLoad);
         let spawn_save = matches!(message, Message::SaveDeck);
+        let spawn_apply_solve = matches!(message, Message::EditApplySolve);
         // Pane resize is an iced-layout concern handled here (not in AppState).
         if let Message::PaneResized(ratio) = message {
             self.panes.resize(self.main_split, ratio);
@@ -241,6 +242,15 @@ impl FnecGui {
                     self.state.apply(&Message::DeckSaved(Err(msg)));
                     Task::none()
                 }
+            }
+        } else if spawn_apply_solve {
+            // Solve the edited in-memory deck (apply() already validated it and set
+            // the Solving phase; on an invalid deck it recorded the error instead).
+            match self.state.editor.doc.to_deck_string() {
+                Ok(text) => {
+                    Task::perform(async move { solve_deck_str(&text) }, Message::SolveComplete)
+                }
+                Err(_) => Task::none(),
             }
         } else {
             Task::none()
@@ -507,6 +517,181 @@ fn wire_edit_row(row: usize, w: &WireRow) -> Element<'_, Message> {
     .into()
 }
 
+// ── Control-card editors (GUI-CHK-008) ────────────────────────────────────────
+
+/// Width for the mnemonic label at the start of a control row.
+const W_MNEMONIC: Length = Length::Fixed(34.0);
+
+/// A control-card text field; `make` is the [`ControlEdit`] tuple-variant
+/// constructor for this field (e.g. `ControlEdit::ExVr`).
+fn ctrl_cell(
+    slot: usize,
+    value: &str,
+    width: Length,
+    make: fn(String) -> ControlEdit,
+) -> Element<'_, Message> {
+    text_input("", value)
+        .on_input(move |v| Message::EditControl {
+            slot,
+            edit: make(v),
+        })
+        .width(width)
+        .into()
+}
+
+/// A labelled control-card text field (`label: [box]`).
+fn ctrl_field<'a>(
+    slot: usize,
+    label: &'static str,
+    value: &'a str,
+    width: Length,
+    make: fn(String) -> ControlEdit,
+) -> Element<'a, Message> {
+    row![text(label), ctrl_cell(slot, value, width, make)]
+        .spacing(3)
+        .align_y(iced::Alignment::Center)
+        .into()
+}
+
+/// A ground-type pick-list choice (`GN I1`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GroundChoice(i32);
+impl std::fmt::Display for GroundChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self.0 {
+            -1 => "-1 none",
+            0 => "0 reflection",
+            1 => "1 perfect",
+            2 => "2 finite",
+            _ => "?",
+        };
+        f.write_str(s)
+    }
+}
+const GROUND_CHOICES: [GroundChoice; 4] = [
+    GroundChoice(-1),
+    GroundChoice(0),
+    GroundChoice(1),
+    GroundChoice(2),
+];
+
+/// An `LD` load-type pick-list choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LoadChoice(i32);
+impl std::fmt::Display for LoadChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self.0 {
+            0 => "0 series RLC",
+            1 => "1 parallel RLC",
+            2 => "2 series (per-m)",
+            3 => "3 parallel (per-m)",
+            4 => "4 impedance Z",
+            5 => "5 wire conductivity",
+            _ => "?",
+        };
+        f.write_str(s)
+    }
+}
+const LOAD_CHOICES: [LoadChoice; 6] = [
+    LoadChoice(0),
+    LoadChoice(1),
+    LoadChoice(2),
+    LoadChoice(3),
+    LoadChoice(4),
+    LoadChoice(5),
+];
+
+/// An `FR` step-type pick-list choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StepChoice(u32);
+impl std::fmt::Display for StepChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0 == 0 {
+            "0 linear"
+        } else {
+            "1 multiplicative"
+        })
+    }
+}
+const STEP_CHOICES: [StepChoice; 2] = [StepChoice(0), StepChoice(1)];
+
+/// Build an inline editor for one post slot, or `None` for a preserved card that
+/// has no editor (comments, GE, RP, EN, …).
+fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>> {
+    let r: Element<Message> = match s {
+        PostSlot::Ex(ex) => row![
+            text("EX").width(W_MNEMONIC),
+            ctrl_field(slot, "type", &ex.kind, W_INT, ControlEdit::ExKind),
+            ctrl_field(slot, "tag", &ex.tag, W_INT, ControlEdit::ExTag),
+            ctrl_field(slot, "seg", &ex.segment, W_INT, ControlEdit::ExSegment),
+            ctrl_field(slot, "Vr", &ex.vr, W_COORD, ControlEdit::ExVr),
+            ctrl_field(slot, "Vi", &ex.vi, W_COORD, ControlEdit::ExVi),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into(),
+        PostSlot::Gn(gn) => row![
+            text("GN").width(W_MNEMONIC),
+            pick_list(
+                GROUND_CHOICES,
+                Some(GroundChoice(gn.ground_type)),
+                move |c| {
+                    Message::EditControl {
+                        slot,
+                        edit: ControlEdit::GnType(c.0),
+                    }
+                }
+            ),
+            ctrl_field(slot, "εr", &gn.eps_r, W_COORD, ControlEdit::GnEps),
+            ctrl_field(slot, "σ", &gn.sigma, W_COORD, ControlEdit::GnSigma),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into(),
+        PostSlot::Ld(ld) => row![
+            text("LD").width(W_MNEMONIC),
+            pick_list(LOAD_CHOICES, Some(LoadChoice(ld.load_type)), move |c| {
+                Message::EditControl {
+                    slot,
+                    edit: ControlEdit::LdType(c.0),
+                }
+            }),
+            ctrl_field(slot, "tag", &ld.tag, W_INT, ControlEdit::LdTag),
+            ctrl_field(slot, "segₐ", &ld.seg_first, W_INT, ControlEdit::LdSegFirst),
+            ctrl_field(slot, "segᵦ", &ld.seg_last, W_INT, ControlEdit::LdSegLast),
+            ctrl_field(slot, "F1", &ld.f1, W_COORD, ControlEdit::LdF1),
+            ctrl_field(slot, "F2", &ld.f2, W_COORD, ControlEdit::LdF2),
+            ctrl_field(slot, "F3", &ld.f3, W_COORD, ControlEdit::LdF3),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into(),
+        PostSlot::Fr(fr) => row![
+            text("FR").width(W_MNEMONIC),
+            pick_list(STEP_CHOICES, Some(StepChoice(fr.step_type)), move |c| {
+                Message::EditControl {
+                    slot,
+                    edit: ControlEdit::FrStepType(c.0),
+                }
+            }),
+            ctrl_field(slot, "steps", &fr.steps, W_INT, ControlEdit::FrSteps),
+            ctrl_field(
+                slot,
+                "MHz",
+                &fr.frequency_mhz,
+                W_COORD,
+                ControlEdit::FrFrequency
+            ),
+            ctrl_field(slot, "Δ", &fr.step_mhz, W_COORD, ControlEdit::FrStep),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .into(),
+        PostSlot::Other(_) => return None,
+    };
+    Some(r)
+}
+
 // ── Stand-alone helper widgets ────────────────────────────────────────────────
 
 /// Small impedance result widget for the single-frequency tab.
@@ -679,6 +864,8 @@ impl FnecGui {
             button("Redo")
         };
 
+        let apply_btn = button("Apply + Solve").on_press(Message::EditApplySolve);
+
         let dirty = if self.state.editor.doc.dirty {
             "  •unsaved"
         } else {
@@ -695,10 +882,33 @@ impl FnecGui {
         };
         let save_status = text(self.state.editor.save_status.clone()).width(Length::Fill);
 
+        // ── Sources & environment (EX/GN/LD/FR editors) ──────────────────────
+        let mut controls = column![text("Sources & environment")].spacing(4);
+        let mut any_control = false;
+        for (i, slot) in self.state.editor.doc.post_slots().iter().enumerate() {
+            if let Some(editor) = control_editor_row(i, slot) {
+                controls = controls.push(editor);
+                any_control = true;
+            }
+        }
+        if !any_control {
+            controls = controls
+                .push(text("(no EX / GN / LD / FR cards in this deck)").width(Length::Fill));
+        }
+        let controls = scrollable(controls)
+            .direction(scrollable::Direction::Horizontal(
+                scrollable::Scrollbar::default(),
+            ))
+            .width(Length::Fill);
+
+        let solve_line = text(self.state.status_text()).width(Length::Fill);
+
         column![
-            row![load_btn, add_btn, undo_btn, redo_btn, save_btn].spacing(8),
+            row![load_btn, add_btn, undo_btn, redo_btn, save_btn, apply_btn].spacing(8),
             table,
             status,
+            controls,
+            solve_line,
             save_status,
         ]
         .spacing(8)

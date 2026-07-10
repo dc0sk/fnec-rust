@@ -329,6 +329,13 @@ pub enum Message {
     EditUndo,
     /// Redo the last undone wire-table change (button or Ctrl+Shift+Z / Ctrl+Y).
     EditRedo,
+    /// User edited one field of a control card (EX/GN/LD/FR) at post-slot `slot`.
+    EditControl {
+        slot: usize,
+        edit: crate::model_doc::ControlEdit,
+    },
+    /// User clicked "Apply + Solve": solve the edited in-memory deck.
+    EditApplySolve,
 }
 
 impl AppState {
@@ -508,6 +515,25 @@ impl AppState {
                     self.refresh_editor_preview();
                 }
             }
+            Message::EditControl { slot, edit } => {
+                self.editor.history.before_field_edit(
+                    &self.editor.doc,
+                    &format!("ctrl:{slot}:{}", edit.field_key()),
+                );
+                self.editor.doc.edit_control(*slot, edit);
+                // Control edits leave the geometry unchanged but invalidate any
+                // prior solve; refresh clears stale overlays and re-validates.
+                self.refresh_editor_preview();
+            }
+            Message::EditApplySolve => match self.editor.doc.to_deck_string() {
+                Ok(_) => {
+                    self.editor.error = None;
+                    self.phase = SolvePhase::Solving;
+                }
+                Err(e) => {
+                    self.editor.error = Some(e);
+                }
+            },
             Message::SaveDeck => {
                 self.editor.save_status = "Saving…".into();
             }

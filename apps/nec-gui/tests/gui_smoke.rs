@@ -1095,3 +1095,87 @@ fn editor_undo_add_and_empty_noop() {
         "undo removes the added wire"
     );
 }
+
+// ── Control-card editor + Apply-and-Solve (GUI-CHK-008) ──────────────────────
+
+use nec_gui::model_doc::{ControlEdit, PostSlot};
+
+/// Editing a control card (FR frequency) updates the document and the rendered
+/// deck text.
+#[test]
+fn editor_control_edit_changes_frequency() {
+    let mut state = loaded_editor();
+    let fr_slot = state
+        .editor
+        .doc
+        .post_slots()
+        .iter()
+        .position(|s| matches!(s, PostSlot::Fr(_)))
+        .expect("EDITOR_DECK has an FR card");
+    state.apply(&Message::EditControl {
+        slot: fr_slot,
+        edit: ControlEdit::FrFrequency("21.0".into()),
+    });
+    assert!(state.editor.doc.dirty);
+    let text = state.editor.doc.to_deck_string().expect("valid deck");
+    assert!(
+        text.contains("21"),
+        "rendered deck should carry the new frequency:\n{text}"
+    );
+}
+
+/// A control edit to the wrong slot kind is a no-op (defensive against stale UI
+/// messages).
+#[test]
+fn editor_control_edit_kind_mismatch_is_ignored() {
+    let mut state = loaded_editor();
+    let fr_slot = state
+        .editor
+        .doc
+        .post_slots()
+        .iter()
+        .position(|s| matches!(s, PostSlot::Fr(_)))
+        .unwrap();
+    let before = state.editor.doc.to_deck_string().unwrap();
+    // Send an LD edit to the FR slot — must not change anything.
+    state.apply(&Message::EditControl {
+        slot: fr_slot,
+        edit: ControlEdit::LdF1("999".into()),
+    });
+    assert_eq!(state.editor.doc.to_deck_string().unwrap(), before);
+}
+
+/// Apply + Solve validates the edited deck and enters the Solving phase; a
+/// completion transitions to Done.
+#[test]
+fn editor_apply_solve_enters_solving_then_done() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditApplySolve);
+    assert!(
+        matches!(state.phase, SolvePhase::Solving),
+        "a valid edited deck should start solving"
+    );
+    state.apply(&Message::SolveComplete(Ok(SolveResult {
+        freq_mhz: 14.2,
+        z_re: 73.0,
+        z_im: 5.0,
+    })));
+    assert!(matches!(state.phase, SolvePhase::Done(_)));
+}
+
+/// Apply + Solve on an invalid edit records the error and does not start solving.
+#[test]
+fn editor_apply_solve_rejects_invalid_deck() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Radius,
+        value: "0".into(), // invalid → deck won't render
+    });
+    state.apply(&Message::EditApplySolve);
+    assert!(
+        !matches!(state.phase, SolvePhase::Solving),
+        "an invalid deck must not start solving"
+    );
+    assert!(state.editor.error.is_some());
+}
