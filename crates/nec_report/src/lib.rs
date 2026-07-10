@@ -139,6 +139,10 @@ pub struct ReportInput<'a> {
     /// THETA PHI GAIN_NORM_DB` section — the total gain relative to the pattern
     /// peak — is emitted from `pattern_table` (PH9-CHK-004).
     pub normalize_pattern: bool,
+    /// When set (RP `XNDA` A-digit), an `AVERAGE_POWER_GAIN <value>` line — the
+    /// solid-angle-weighted mean gain over the pattern region — is emitted
+    /// (PH9-CHK-004).
+    pub avg_power_gain: Option<f64>,
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -241,6 +245,7 @@ pub trait ResultFilter {
 ///     near_field_table: &[],
 ///     near_h_field_table: &[],
 ///     normalize_pattern: false,
+///     avg_power_gain: None,
 /// };
 /// let section = ImpedanceSummary { rows: &[row] };
 /// let report = render_text_report_with_sections(&input, &[&section]);
@@ -282,7 +287,7 @@ pub trait ReportSection {
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
-///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[], near_h_field_table: &[], normalize_pattern: false,
+///     current_table: &[], pattern_table: &[], receive_pattern_table: &[], near_field_table: &[], near_h_field_table: &[], normalize_pattern: false, avg_power_gain: None,
 /// };
 /// let report = render_text_report_with_sections(&input, &[&Banner]);
 /// assert!(report.contains("MY_SECTION\nhello world\n"));
@@ -421,6 +426,11 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         }
     }
 
+    if let Some(apg) = input.avg_power_gain {
+        out.push('\n');
+        out.push_str(&format!("AVERAGE_POWER_GAIN {apg:.4}\n"));
+    }
+
     out
 }
 
@@ -516,6 +526,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         });
 
         assert!(report.starts_with("FNEC FEEDPOINT REPORT\nFORMAT_VERSION 1\n"));
@@ -563,6 +574,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         });
 
         assert!(report.contains("CURRENTS\n"));
@@ -650,6 +662,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         });
         assert!(report.contains("RADIATION_PATTERN\n"));
         assert!(report.contains("N_POINTS 1\n"));
@@ -695,6 +708,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         });
 
         let feed_idx = report.find("FEEDPOINTS\n").expect("missing FEEDPOINTS");
@@ -731,6 +745,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         }
     }
 
@@ -843,6 +858,7 @@ mod tests {
             near_field_table: &[],
             near_h_field_table: &[],
             normalize_pattern: false,
+            avg_power_gain: None,
         });
         assert!(report.contains("FEEDPOINTS\n"));
         assert!(report.contains("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n"));

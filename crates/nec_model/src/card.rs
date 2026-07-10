@@ -217,6 +217,11 @@ pub struct RpCard {
     /// on the canonical 8-field card). When set, a `NORMALIZED_PATTERN` section
     /// (gain relative to the pattern peak) is emitted. PH9-CHK-004.
     pub normalize: bool,
+    /// Average-power-gain output requested by the `XNDA` field's `A` (units) digit.
+    /// When set, an `AVERAGE_POWER_GAIN` line (the solid-angle-weighted mean gain
+    /// over the pattern region, = radiation efficiency over the full sphere) is
+    /// emitted, matching nec2c's "AVERAGE POWER GAIN". PH9-CHK-004.
+    pub avg_power_gain: bool,
 }
 
 /// GN — Ground definition card.

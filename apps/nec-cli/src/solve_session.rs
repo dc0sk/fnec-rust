@@ -1681,6 +1681,30 @@ pub(super) fn solve_frequency_point(
     let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz);
     let near_h_field_table = build_near_h_field_rows(deck, segs, &i_vec, freq_hz);
 
+    // PH9-CHK-004: average power gain (RP XNDA A-digit) — the solid-angle-weighted
+    // mean gain over the pattern region (= radiation efficiency over the full
+    // sphere). Uniform (θ,φ) grid, so the Δθ·Δφ weights cancel and each point is
+    // weighted by sinθ; below-horizon nulls over ground are skipped.
+    let avg_power_gain = if deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Rp(rp) if rp.avg_power_gain))
+        && !pattern_table.is_empty()
+    {
+        let (mut num, mut den) = (0.0_f64, 0.0_f64);
+        for row in &pattern_table {
+            if row.gain_total_dbi <= -900.0 {
+                continue;
+            }
+            let w = row.theta_deg.to_radians().sin();
+            num += 10f64.powf(row.gain_total_dbi / 10.0) * w;
+            den += w;
+        }
+        (den > 0.0).then(|| num / den)
+    } else {
+        None
+    };
+
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,
         pulse_rhs: pulse_rhs_mode.as_contract_str(),
@@ -1697,6 +1721,7 @@ pub(super) fn solve_frequency_point(
             .cards
             .iter()
             .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
+        avg_power_gain,
     });
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,
