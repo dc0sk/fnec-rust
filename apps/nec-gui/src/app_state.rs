@@ -118,6 +118,42 @@ pub struct ViewportState {
     pub status: String,
     /// Bounding sphere `(center, radius)` of the loaded geometry, for Reset View.
     pub fit_bounds: Option<([f32; 3], f32)>,
+    /// Raw geometry, retained so the mesh can be rebuilt on a currents toggle.
+    pub geometry: Option<crate::mesh::SceneGeometry>,
+    /// Per-segment current magnitudes (mA), aligned to `geometry.wires`.
+    pub currents_ma: Option<Vec<f32>>,
+    /// Whether to paint the wires by current magnitude (GUI-CHK-004).
+    pub show_currents: bool,
+}
+
+impl ViewportState {
+    /// Rebuild the wire mesh from `geometry`, coloring by current magnitude when
+    /// `show_currents` is on and currents are available; bumps the scene revision.
+    fn rebuild_scene(&mut self) {
+        let Some(geo) = &self.geometry else {
+            return;
+        };
+        let mags = if self.show_currents {
+            self.currents_ma.as_deref()
+        } else {
+            None
+        };
+        self.scene = Some(std::sync::Arc::new(crate::mesh::build_scene_colored(
+            geo, mags,
+        )));
+        self.scene_rev = self.scene_rev.wrapping_add(1);
+    }
+
+    /// Min/max current magnitude (mA) for the legend, when currents are loaded.
+    pub fn current_range_ma(&self) -> Option<(f32, f32)> {
+        let m = self.currents_ma.as_ref()?;
+        if m.is_empty() {
+            return None;
+        }
+        let lo = m.iter().copied().fold(f32::INFINITY, f32::min);
+        let hi = m.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        Some((lo, hi))
+    }
 }
 
 /// A camera-interaction message for the 3-D viewport (GUI-CHK-003). Deltas are
@@ -212,6 +248,12 @@ pub enum Message {
     GeometryLoaded(Result<crate::mesh::SceneGeometry, String>),
     /// Camera interaction from the 3-D viewport widget (GUI-CHK-003).
     Viewport(ViewportMsg),
+    /// User clicked "Solve currents" in the 3-D view.
+    LoadCurrents,
+    /// Background geometry+currents solve completed (GUI-CHK-004).
+    CurrentsSolved(Result<crate::mesh::GeometryCurrents, String>),
+    /// User toggled current-magnitude coloring.
+    ToggleCurrents(bool),
 }
 
 impl AppState {
@@ -287,13 +329,40 @@ impl AppState {
                 let (center, radius) = geo.bounds();
                 self.viewport.camera.fit(center, radius);
                 self.viewport.fit_bounds = Some((center, radius));
-                self.viewport.scene = Some(std::sync::Arc::new(crate::mesh::build_scene(geo)));
-                self.viewport.scene_rev = self.viewport.scene_rev.wrapping_add(1);
                 self.viewport.status = format!("{} wire segments", geo.wires.len());
+                self.viewport.geometry = Some(geo.clone());
+                self.viewport.currents_ma = None;
+                self.viewport.rebuild_scene();
             }
             Message::GeometryLoaded(Err(e)) => {
                 self.viewport.scene = None;
                 self.viewport.status = format!("Error: {e}");
+            }
+            Message::LoadCurrents => {
+                self.viewport.status = "Solving currents…".into();
+            }
+            Message::CurrentsSolved(Ok(gc)) => {
+                let (center, radius) = gc.geometry.bounds();
+                self.viewport.camera.fit(center, radius);
+                self.viewport.fit_bounds = Some((center, radius));
+                self.viewport.geometry = Some(gc.geometry.clone());
+                self.viewport.currents_ma = Some(gc.currents_ma.clone());
+                self.viewport.show_currents = true;
+                self.viewport.status = match self.viewport.current_range_ma() {
+                    Some((lo, hi)) => format!(
+                        "|I| {lo:.2}–{hi:.2} mA over {} segments",
+                        gc.currents_ma.len()
+                    ),
+                    None => format!("{} segments", gc.currents_ma.len()),
+                };
+                self.viewport.rebuild_scene();
+            }
+            Message::CurrentsSolved(Err(e)) => {
+                self.viewport.status = format!("Error: {e}");
+            }
+            Message::ToggleCurrents(on) => {
+                self.viewport.show_currents = *on;
+                self.viewport.rebuild_scene();
             }
             Message::Viewport(vp) => {
                 let cam = &mut self.viewport.camera;

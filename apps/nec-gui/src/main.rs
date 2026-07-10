@@ -10,15 +10,17 @@
 
 mod viewport;
 
-use iced::widget::{button, column, container, row, scrollable, shader, text, text_input};
+use iced::widget::{
+    button, checkbox, column, container, row, scrollable, shader, text, text_input,
+};
 use iced::{Element, Length, Task, Theme};
 use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
 };
 use nec_gui::solve::{
-    current_distribution_deck_path, load_geometry_path, pattern_slice_deck_path, solve_deck_path,
-    sweep_deck_path, SolveResult, SweepPoint,
+    current_distribution_deck_path, load_currents_path, load_geometry_path,
+    pattern_slice_deck_path, solve_deck_path, sweep_deck_path, SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -41,6 +43,7 @@ impl FnecGui {
         let spawn_pattern = matches!(message, Message::RunPattern);
         let spawn_currents = matches!(message, Message::RunCurrents);
         let spawn_geometry = matches!(message, Message::LoadGeometry);
+        let spawn_currents_3d = matches!(message, Message::LoadCurrents);
         self.state.apply(&message);
 
         if spawn_solve {
@@ -116,6 +119,17 @@ impl FnecGui {
             Task::perform(
                 async move { load_geometry_path(&path, vars.as_deref()) },
                 Message::GeometryLoaded,
+            )
+        } else if spawn_currents_3d {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
+            Task::perform(
+                async move { load_currents_path(&path, vars.as_deref()) },
+                Message::CurrentsSolved,
             )
         } else {
             Task::none()
@@ -220,19 +234,29 @@ impl FnecGui {
         } else {
             button("Reset view")
         };
-        let controls = row![
-            load_btn,
-            reset_btn,
-            text("· drag = orbit · wheel = zoom · middle/right-drag = pan"),
-            status,
-        ]
-        .spacing(12)
-        .align_y(iced::Alignment::Center);
+        let currents_btn = if self.state.deck_path.is_empty() {
+            button("Solve currents")
+        } else {
+            button("Solve currents").on_press(Message::LoadCurrents)
+        };
+        let currents_toggle = checkbox("Color by |I|", self.state.viewport.show_currents)
+            .on_toggle(Message::ToggleCurrents);
+        let controls = row![load_btn, currents_btn, currents_toggle, reset_btn, status]
+            .spacing(12)
+            .align_y(iced::Alignment::Center);
+        let hint: Element<Message> = match self.state.viewport.current_range_ma() {
+            Some((lo, hi)) if self.state.viewport.show_currents => text(format!(
+                "|I| legend: cold {lo:.2} mA  →  hot {hi:.2} mA   · drag orbit · wheel zoom · middle-drag pan"
+            ))
+            .into(),
+            _ => text("· drag = orbit · wheel = zoom · middle/right-drag = pan").into(),
+        };
         let scene = shader(viewport::Scene::new(&self.state.viewport))
             .width(Length::Fill)
             .height(Length::Fill);
         column![
             controls,
+            hint,
             container(scene).width(Length::Fill).height(Length::Fill)
         ]
         .spacing(8)

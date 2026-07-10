@@ -401,6 +401,44 @@ fn viewport_camera_messages_move_and_reset() {
     assert_eq!(state.viewport.camera, fit);
 }
 
+/// GUI-CHK-004: solving currents attaches per-segment magnitudes, enables
+/// coloring, exposes a legend range, and the toggle rebuilds the scene.
+#[test]
+fn currents_solve_colors_wires_and_toggles() {
+    // Center-fed λ/2 dipole → current peaks at the feed (middle segment).
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let gc = nec_gui::solve::load_currents_str(deck).expect("currents solve");
+    assert_eq!(gc.currents_ma.len(), 11);
+    // The peak |I| is at (or adjacent to) the center-fed segment, not a tip.
+    let peak_i = gc
+        .currents_ma
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .unwrap()
+        .0;
+    assert!(
+        (4..=6).contains(&peak_i),
+        "current should peak near center, got seg {peak_i}"
+    );
+
+    let mut state = AppState::default();
+    let rev0 = state.viewport.scene_rev;
+    state.apply(&Message::CurrentsSolved(Ok(gc)));
+    assert!(state.viewport.show_currents, "currents coloring turns on");
+    assert!(state.viewport.currents_ma.is_some());
+    assert!(state.viewport.scene.is_some());
+    assert!(state.viewport.scene_rev > rev0);
+    let (lo, hi) = state.viewport.current_range_ma().expect("legend range");
+    assert!(hi > lo && lo >= 0.0, "legend range {lo}–{hi}");
+
+    // Toggling off rebuilds the scene (uniform color) and bumps the revision.
+    let rev1 = state.viewport.scene_rev;
+    state.apply(&Message::ToggleCurrents(false));
+    assert!(!state.viewport.show_currents);
+    assert!(state.viewport.scene_rev > rev1);
+}
+
 /// sorted_sweep_rows returns rows sorted by |Z| descending when requested.
 #[test]
 fn sorted_sweep_rows_zmag_descending() {
