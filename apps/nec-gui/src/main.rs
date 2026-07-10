@@ -21,7 +21,7 @@ use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
 };
-use nec_gui::model_doc::{ControlEdit, PostSlot, WireField, WireRow};
+use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow};
 use nec_gui::solve::{
     current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
     pattern_grid_path, pattern_slice_deck_path, solve_deck_path, solve_deck_str, sweep_deck_path,
@@ -626,6 +626,7 @@ fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>>
             ctrl_field(slot, "seg", &ex.segment, W_INT, ControlEdit::ExSegment),
             ctrl_field(slot, "Vr", &ex.vr, W_COORD, ControlEdit::ExVr),
             ctrl_field(slot, "Vi", &ex.vi, W_COORD, ControlEdit::ExVi),
+            control_del_button(slot),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -644,6 +645,7 @@ fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>>
             ),
             ctrl_field(slot, "εr", &gn.eps_r, W_COORD, ControlEdit::GnEps),
             ctrl_field(slot, "σ", &gn.sigma, W_COORD, ControlEdit::GnSigma),
+            control_del_button(slot),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -662,6 +664,7 @@ fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>>
             ctrl_field(slot, "F1", &ld.f1, W_COORD, ControlEdit::LdF1),
             ctrl_field(slot, "F2", &ld.f2, W_COORD, ControlEdit::LdF2),
             ctrl_field(slot, "F3", &ld.f3, W_COORD, ControlEdit::LdF3),
+            control_del_button(slot),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -683,6 +686,7 @@ fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>>
                 ControlEdit::FrFrequency
             ),
             ctrl_field(slot, "Δ", &fr.step_mhz, W_COORD, ControlEdit::FrStep),
+            control_del_button(slot),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -690,6 +694,14 @@ fn control_editor_row(slot: usize, s: &PostSlot) -> Option<Element<'_, Message>>
         PostSlot::Other(_) => return None,
     };
     Some(r)
+}
+
+/// The per-row delete button shared by all control-card editors.
+fn control_del_button(slot: usize) -> Element<'static, Message> {
+    button(text("Del"))
+        .on_press(Message::EditDeleteControl(slot))
+        .width(W_DEL)
+        .into()
 }
 
 // ── Stand-alone helper widgets ────────────────────────────────────────────────
@@ -883,7 +895,15 @@ impl FnecGui {
         let save_status = text(self.state.editor.save_status.clone()).width(Length::Fill);
 
         // ── Sources & environment (EX/GN/LD/FR editors) ──────────────────────
-        let mut controls = column![text("Sources & environment")].spacing(4);
+        let add_bar = row![
+            text("Sources & environment"),
+            button(text("+ Ground")).on_press(Message::EditAddControl(ControlKind::Gn)),
+            button(text("+ Load")).on_press(Message::EditAddControl(ControlKind::Ld)),
+            button(text("+ Source")).on_press(Message::EditAddControl(ControlKind::Ex)),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+        let mut controls = column![add_bar].spacing(4);
         let mut any_control = false;
         for (i, slot) in self.state.editor.doc.post_slots().iter().enumerate() {
             if let Some(editor) = control_editor_row(i, slot) {

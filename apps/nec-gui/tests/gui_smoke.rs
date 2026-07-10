@@ -1179,3 +1179,65 @@ fn editor_apply_solve_rejects_invalid_deck() {
     );
     assert!(state.editor.error.is_some());
 }
+
+/// Adding a ground card to a free-space deck inserts a GN editor and keeps the
+/// deck renderable; deleting it restores the original.
+#[test]
+fn editor_add_and_delete_ground_card() {
+    use nec_gui::model_doc::ControlKind;
+    let mut state = loaded_editor();
+    let gn_before = state
+        .editor
+        .doc
+        .post_slots()
+        .iter()
+        .filter(|s| matches!(s, PostSlot::Gn(_)))
+        .count();
+    assert_eq!(gn_before, 0, "EDITOR_DECK is free-space");
+
+    state.apply(&Message::EditAddControl(ControlKind::Gn));
+    let gn_slot = state
+        .editor
+        .doc
+        .post_slots()
+        .iter()
+        .position(|s| matches!(s, PostSlot::Gn(_)))
+        .expect("ground card was added");
+    assert!(state.editor.doc.dirty);
+    assert!(state.editor.doc.to_deck_string().is_ok(), "GN 1 is valid");
+
+    state.apply(&Message::EditDeleteControl(gn_slot));
+    assert!(
+        !state
+            .editor
+            .doc
+            .post_slots()
+            .iter()
+            .any(|s| matches!(s, PostSlot::Gn(_))),
+        "ground card removed"
+    );
+}
+
+/// Add-control is undoable in one step.
+#[test]
+fn editor_add_control_is_undoable() {
+    use nec_gui::model_doc::ControlKind;
+    let mut state = loaded_editor();
+    state.apply(&Message::EditAddControl(ControlKind::Ld));
+    assert!(state
+        .editor
+        .doc
+        .post_slots()
+        .iter()
+        .any(|s| matches!(s, PostSlot::Ld(_))));
+    state.apply(&Message::EditUndo);
+    assert!(
+        !state
+            .editor
+            .doc
+            .post_slots()
+            .iter()
+            .any(|s| matches!(s, PostSlot::Ld(_))),
+        "undo removes the added load"
+    );
+}
