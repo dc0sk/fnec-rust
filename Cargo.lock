@@ -2209,6 +2209,7 @@ dependencies = [
  "nec_project",
  "nec_solver",
  "num-complex",
+ "serde",
  "toml",
 ]
 
