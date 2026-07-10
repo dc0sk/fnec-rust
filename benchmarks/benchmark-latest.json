@@ -1,14 +1,14 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-07-10T17:10:06Z",
-  "git_sha": "4fee880",
+  "generated_at": "2026-07-10T17:24:46Z",
+  "git_sha": "26db580",
   "runner_nproc": 4,
   "runs": [
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -44,181 +44,181 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 50
+      "elapsed_ms": 213
     },
     {
       "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 2
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
       "elapsed_ms": 4
     },
     {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "gpu",
-      "elapsed_ms": 4
-    },
-    {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
       "elapsed_ms": 3
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-single",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
       "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
-      "solver": "pulse",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
       "exec_mode": "gpu",
       "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
     }
   ],
   "summary": [
@@ -229,7 +229,7 @@
       "n_runs": 3,
       "avg_ms": 2,
       "min_ms": 2,
-      "max_ms": 3
+      "max_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -245,9 +245,9 @@
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 18,
+      "avg_ms": 73,
       "min_ms": 3,
-      "max_ms": 50
+      "max_ms": 213
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -265,7 +265,7 @@
       "n_runs": 3,
       "avg_ms": 2,
       "min_ms": 2,
-      "max_ms": 3
+      "max_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -274,7 +274,7 @@
       "n_runs": 3,
       "avg_ms": 2,
       "min_ms": 2,
-      "max_ms": 3
+      "max_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
@@ -301,7 +301,7 @@
       "n_runs": 3,
       "avg_ms": 3,
       "min_ms": 3,
-      "max_ms": 4
+      "max_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
@@ -328,7 +328,7 @@
       "n_runs": 3,
       "avg_ms": 2,
       "min_ms": 2,
-      "max_ms": 3
+      "max_ms": 2
     }
   ]
 }
