@@ -175,7 +175,8 @@ fn closed_loop_is_guarded() {
     // the feedpoint-at-junction guard alone would miss it).
     let (_stdout, stderr) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
     assert!(
-        stderr.contains("closed loop") && stderr.contains("PH9-CHK-002"),
-        "a closed loop must be flagged as unsupported; stderr:\n{stderr}"
+        stderr.contains("closed loop") && stderr.contains("--solver mpie"),
+        "a closed loop must be flagged as unsupported and point to --solver mpie; \
+         stderr:\n{stderr}"
     );
 }

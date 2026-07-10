@@ -127,3 +127,38 @@ EN
         "missing LD rejection message:\n{stderr}"
     );
 }
+
+/// A degree-3 Y-junction on the DEFAULT (Hallén) solver keeps its guard warning
+/// (results are not silently changed), and the warning now points the user to
+/// `--solver mpie` as the fix.
+#[test]
+fn guarded_topology_warning_recommends_mpie() {
+    let deck = write_deck(
+        "yguard",
+        "\
+CM Y-junction on the default solver
+CE
+GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
+GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
+GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+EN
+",
+    );
+    let out = run_fnec(&[deck.to_str().unwrap()]); // no --solver flag
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--solver mpie"),
+        "guard warning should recommend --solver mpie:\n{stderr}"
+    );
+    // And using the MPIE explicitly clears the warning and solves it physically.
+    let out2 = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out2.status.success());
+    let stderr2 = String::from_utf8_lossy(&out2.stderr);
+    assert!(
+        !stderr2.contains("unreliable"),
+        "MPIE solve should not emit the unreliable-topology warning:\n{stderr2}"
+    );
+}
