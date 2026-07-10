@@ -166,6 +166,37 @@ pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, 
     Ok(crate::mesh::SceneGeometry::from_segments(wires, has_ground))
 }
 
+/// Solve a deck and return its geometry **with** per-segment current magnitudes
+/// (mA), aligned to the wire order, for current-colored 3-D display (GUI-CHK-004).
+pub fn load_currents_path(
+    path: &Path,
+    vars_path: Option<&str>,
+) -> Result<crate::mesh::GeometryCurrents, String> {
+    let input = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
+    load_currents_str(&input)
+}
+
+/// Build geometry + current magnitudes from a raw NEC deck string.
+pub fn load_currents_str(deck_text: &str) -> Result<crate::mesh::GeometryCurrents, String> {
+    let (segs, currents, _freq_hz, ground) = solve_for_currents(deck_text)?;
+    let has_ground = !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+    let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
+    let currents_ma = currents
+        .iter()
+        .map(|i| (i.norm() * 1000.0) as f32)
+        .collect();
+    Ok(crate::mesh::GeometryCurrents {
+        geometry: crate::mesh::SceneGeometry::from_segments(wires, has_ground),
+        currents_ma,
+    })
+}
+
 /// Run a Hallen solve on `deck_text` (a raw NEC deck string).
 pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;

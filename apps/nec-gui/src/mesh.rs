@@ -97,11 +97,25 @@ const AXIS_X: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
 const AXIS_Y: [f32; 4] = [0.30, 0.75, 0.35, 1.0];
 const AXIS_Z: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 
-/// Assemble the full scene mesh: ground grid (if any) → axes → wires. Wires are
-/// appended **last** so their indices are stable for per-segment recoloring
-/// (currents, GUI-CHK-004): wire segment `i` occupies vertices
-/// `[wire_base + 2i, wire_base + 2i + 1]`.
+/// Solved geometry plus per-segment current magnitudes (mA), aligned to
+/// `geometry.wires` — the payload for the current-coloring path (GUI-CHK-004).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeometryCurrents {
+    pub geometry: SceneGeometry,
+    pub currents_ma: Vec<f32>,
+}
+
+/// Assemble the full scene mesh with uniform wire color.
 pub fn build_scene(geo: &SceneGeometry) -> MeshData {
+    build_scene_colored(geo, None)
+}
+
+/// Assemble the scene mesh, optionally coloring each wire segment by its current
+/// magnitude (per-segment `currents_ma`, aligned to `geo.wires`). Magnitudes are
+/// normalized by the maximum, so the feedpoint (peak `|I|`) is hot and the tips
+/// (near-zero) are cold. Grid/axes precede the wires, whose vertices stay at the
+/// stable base (see [`wire_vertex_base`]).
+pub fn build_scene_colored(geo: &SceneGeometry, currents_ma: Option<&[f32]>) -> MeshData {
     let (center, radius) = geo.bounds();
     let mut v = Vec::new();
 
@@ -109,11 +123,41 @@ pub fn build_scene(geo: &SceneGeometry) -> MeshData {
         push_ground_grid(&mut v, center, radius);
     }
     push_axes(&mut v, radius);
-    for (a, b) in &geo.wires {
-        v.push(LineVertex::new(*a, WIRE_COLOR));
-        v.push(LineVertex::new(*b, WIRE_COLOR));
+
+    let peak = currents_ma
+        .map(|m| m.iter().copied().fold(0.0_f32, f32::max))
+        .filter(|&p| p > 0.0);
+    for (i, (a, b)) in geo.wires.iter().enumerate() {
+        let color = match (currents_ma, peak) {
+            (Some(mags), Some(pk)) => colormap(mags.get(i).copied().unwrap_or(0.0) / pk),
+            _ => WIRE_COLOR,
+        };
+        v.push(LineVertex::new(*a, color));
+        v.push(LineVertex::new(*b, color));
     }
     MeshData { vertices: v }
+}
+
+/// A perceptual-ish "cool → hot" colormap for a normalized value `t ∈ [0,1]`
+/// (dark blue → cyan → green → yellow → red). Pure and unit-tested.
+pub fn colormap(t: f32) -> [f32; 4] {
+    const STOPS: [[f32; 3]; 5] = [
+        [0.10, 0.15, 0.45], // 0.00  dark blue
+        [0.10, 0.55, 0.75], // 0.25  cyan
+        [0.20, 0.70, 0.30], // 0.50  green
+        [0.90, 0.75, 0.15], // 0.75  yellow
+        [0.85, 0.20, 0.15], // 1.00  red
+    ];
+    let t = t.clamp(0.0, 1.0) * 4.0;
+    let i = (t.floor() as usize).min(3);
+    let f = t - i as f32;
+    let (lo, hi) = (STOPS[i], STOPS[i + 1]);
+    [
+        lo[0] + (hi[0] - lo[0]) * f,
+        lo[1] + (hi[1] - lo[1]) * f,
+        lo[2] + (hi[2] - lo[2]) * f,
+        1.0,
+    ]
 }
 
 /// Index of the first wire vertex in a mesh built by [`build_scene`], so callers
@@ -229,5 +273,49 @@ mod tests {
         let g = SceneGeometry::from_segments(vec![], false);
         assert_eq!(g.bbox_min, [-1.0, -1.0, -1.0]);
         assert_eq!(g.bbox_max, [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn colormap_hits_its_stops_and_clamps() {
+        let close = |a: [f32; 4], b: [f32; 4]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-5);
+        assert!(close(colormap(0.0), [0.10, 0.15, 0.45, 1.0]));
+        assert!(close(colormap(0.5), [0.20, 0.70, 0.30, 1.0]));
+        assert!(close(colormap(1.0), [0.85, 0.20, 0.15, 1.0]));
+        // Out-of-range clamps to the endpoints.
+        assert_eq!(colormap(-1.0), colormap(0.0));
+        assert_eq!(colormap(2.0), colormap(1.0));
+        // Midpoint of the first segment interpolates.
+        let q = colormap(0.125);
+        assert!((q[1] - 0.35).abs() < 1e-5, "cyan channel lerps");
+    }
+
+    #[test]
+    fn current_coloring_paints_peak_hot_and_zero_cold() {
+        // Two collinear segments, currents 0 and 10 mA → tip cold, peak hot.
+        let g = SceneGeometry::from_segments(
+            vec![
+                ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+                ([0.0, 0.0, 1.0], [0.0, 0.0, 2.0]),
+            ],
+            false,
+        );
+        let m = build_scene_colored(&g, Some(&[0.0, 10.0]));
+        let base = wire_vertex_base(&g);
+        // First segment (mag 0) → colormap(0); second (mag 10 = peak) → colormap(1).
+        assert_eq!(m.vertices[base].color, colormap(0.0));
+        assert_eq!(m.vertices[base + 1].color, colormap(0.0));
+        assert_eq!(m.vertices[base + 2].color, colormap(1.0));
+        assert_eq!(m.vertices[base + 3].color, colormap(1.0));
+    }
+
+    #[test]
+    fn no_currents_uses_uniform_wire_color() {
+        let g = SceneGeometry::from_segments(vec![([0.0; 3], [1.0, 0.0, 0.0])], false);
+        let m = build_scene_colored(&g, None);
+        let base = wire_vertex_base(&g);
+        assert_eq!(m.vertices[base].color, WIRE_COLOR);
+        // All-zero currents also fall back to uniform (no valid peak).
+        let m0 = build_scene_colored(&g, Some(&[0.0]));
+        assert_eq!(m0.vertices[base].color, WIRE_COLOR);
     }
 }
