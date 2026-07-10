@@ -162,3 +162,81 @@ EN
         "MPIE solve should not emit the unreliable-topology warning:\n{stderr2}"
     );
 }
+
+/// `--solver mpie` composes with `--output-format json` — the feedpoint impedance
+/// is emitted in the machine-readable stream like any other solver.
+#[test]
+fn mpie_composes_with_json_output() {
+    let deck = write_deck("dipole_json", DIPOLE);
+    let out = run_fnec(&[
+        "--solver",
+        "mpie",
+        "--output-format",
+        "json",
+        deck.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "mpie+json failed: {out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"z_re\":74.") && stdout.contains("\"z_im\":41."),
+        "expected MPIE feedpoint Z in JSON:\n{stdout}"
+    );
+}
+
+/// `--solver mpie` composes with a multi-point `FR` frequency sweep — one
+/// feedpoint section per frequency.
+#[test]
+fn mpie_composes_with_frequency_sweep() {
+    let deck = write_deck(
+        "dipole_sweep",
+        "\
+CM dipole sweep
+CE
+GW 1 41 0 0 -5.2782 0 0 5.2782 0.001
+GE 0
+FR 0 3 0 0 14.0 0.2
+EX 0 1 21 0 1.0 0.0
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie+sweep failed: {out:?}");
+    let n_feedpoints = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.trim_start().starts_with("FEEDPOINTS"))
+        .count();
+    assert_eq!(n_feedpoints, 3, "expected 3 swept feedpoint sections");
+}
+
+/// `--solver mpie` over finite ground produces a radiation pattern (MPIE currents
+/// feed the existing far-field sum) and does NOT emit the reflection-coefficient
+/// low-ground warning — the MPIE models the Sommerfeld surface wave in its Z-matrix.
+#[test]
+fn mpie_ground_pattern_and_no_rcm_warning() {
+    let deck = write_deck(
+        "dipole_ground_rp",
+        "\
+CM horizontal dipole over GN2 with pattern
+CE
+GW 1 41 -5.2782 0 2.1 5.2782 0 2.1 0.001
+GE 0
+GN 2 0 0 0 13.0 0.005
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+RP 0 19 1 1000 0 0 10 0
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie ground+RP failed: {out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("RADIATION_PATTERN"),
+        "expected a radiation pattern:\n{stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("reflection-coefficient approximation"),
+        "MPIE models the surface wave; the RCM low-ground warning must not fire:\n{stderr}"
+    );
+}

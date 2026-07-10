@@ -1498,12 +1498,15 @@ pub(super) fn solve_frequency_point(
     // wires, so the single-segment V/I is not the true feedpoint impedance and can
     // be unphysical (e.g. negative resistance). Warn rather than report it as
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
-    // The MPIE solves these topologies correctly, so only warn on other solvers.
+    // These warn about limitations of the Hallén + scalar-Γ paths — unsupported
+    // topologies, junction-fed V/I inaccuracy, and the reflection-coefficient
+    // near-ground impedance. The MPIE solves all three correctly (junctions/loops,
+    // and the Sommerfeld surface wave in the Z-matrix), so skip them there.
     if !matches!(solver_mode, SolverMode::Mpie) {
         warn_if_unsupported_topology(deck, segs);
+        warn_if_feedpoint_at_junction(deck, segs);
+        warn_if_low_finite_ground(segs, ground, freq_hz);
     }
-    warn_if_feedpoint_at_junction(deck, segs);
-    warn_if_low_finite_ground(segs, ground, freq_hz);
     warn_if_negative_resistance(&rows, solver_mode);
 
     let current_table: Vec<CurrentRow> = segs
