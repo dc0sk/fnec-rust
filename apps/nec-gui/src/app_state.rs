@@ -96,6 +96,10 @@ pub struct AppState {
     pub sweep_sort_asc: bool,
     /// Sweep pipeline phase.
     pub sweep_phase: SweepPhase,
+    /// Chart metric (SWR vs |Z|) for the sweep plot.
+    pub sweep_metric: crate::plot::PlotMetric,
+    /// Frequency cursor as a fraction `0..=1` of the swept range (GUI-CHK-009).
+    pub sweep_cursor: f32,
     // ── Pattern tab state ──────────────────────────────────────────────────
     /// Azimuth angle (φ, degrees) for the elevation-plane pattern slice.
     pub pattern_phi_deg: String,
@@ -225,6 +229,8 @@ impl Default for AppState {
             sweep_sort_col: SweepSortCol::FreqMhz,
             sweep_sort_asc: true,
             sweep_phase: SweepPhase::default(),
+            sweep_metric: crate::plot::PlotMetric::Swr,
+            sweep_cursor: 0.5,
             pattern_phi_deg: "0.0".into(),
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
@@ -272,6 +278,10 @@ pub enum Message {
     SweepComplete(Result<Vec<SweepPoint>, String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
+    /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
+    SweepCursorChanged(f32),
+    /// User picked the sweep-chart metric (SWR vs |Z|).
+    SweepMetricSelected(crate::plot::PlotMetric),
     // ── Pattern tab ───────────────────────────────────────────────────────
     /// User edited the pattern azimuth angle.
     PatternPhiChanged(String),
@@ -388,6 +398,12 @@ impl AppState {
                     self.sweep_sort_col = *col;
                     self.sweep_sort_asc = true;
                 }
+            }
+            Message::SweepCursorChanged(frac) => {
+                self.sweep_cursor = frac.clamp(0.0, 1.0);
+            }
+            Message::SweepMetricSelected(m) => {
+                self.sweep_metric = *m;
             }
             Message::PatternPhiChanged(s) => self.pattern_phi_deg = s.clone(),
             Message::RunPattern => {
@@ -677,6 +693,28 @@ impl AppState {
             }),
         }
         v
+    }
+
+    /// The swept points in their computed (frequency) order, if a sweep is done.
+    pub fn sweep_points(&self) -> &[SweepPoint] {
+        match &self.sweep_phase {
+            SweepPhase::Done(pts) => pts,
+            _ => &[],
+        }
+    }
+
+    /// The sweep point under the frequency cursor (nearest swept frequency to the
+    /// cursor fraction), for the chart readout. `None` if no sweep is loaded.
+    pub fn sweep_cursor_point(&self) -> Option<SweepPoint> {
+        let pts = self.sweep_points();
+        if pts.is_empty() {
+            return None;
+        }
+        let freqs: Vec<f64> = pts.iter().map(|p| p.freq_mhz).collect();
+        let (fmin, fmax) = crate::plot::finite_bounds(&freqs)?;
+        let target = crate::plot::map_range(f64::from(self.sweep_cursor), 0.0, 1.0, fmin, fmax);
+        let idx = crate::plot::nearest_index(&freqs, target)?;
+        Some(pts[idx].clone())
     }
 
     /// Human-readable status line for the single-frequency tab.

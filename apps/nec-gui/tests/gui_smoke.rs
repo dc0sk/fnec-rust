@@ -1241,3 +1241,67 @@ fn editor_add_control_is_undoable() {
         "undo removes the added load"
     );
 }
+
+// ── Sweep chart cursor + metric (GUI-CHK-009) ────────────────────────────────
+
+use nec_gui::plot::PlotMetric;
+
+fn done_sweep() -> AppState {
+    let mut state = AppState::default();
+    let pts = vec![
+        SweepPoint {
+            freq_mhz: 14.0,
+            z_re: 60.0,
+            z_im: -20.0,
+        },
+        SweepPoint {
+            freq_mhz: 15.0,
+            z_re: 72.0,
+            z_im: 0.0,
+        },
+        SweepPoint {
+            freq_mhz: 16.0,
+            z_re: 90.0,
+            z_im: 30.0,
+        },
+    ];
+    state.apply(&Message::SweepComplete(Ok(pts)));
+    state
+}
+
+#[test]
+fn sweep_metric_and_cursor_messages() {
+    let mut state = AppState::default();
+    assert_eq!(state.sweep_metric, PlotMetric::Swr);
+    state.apply(&Message::SweepMetricSelected(PlotMetric::ZMag));
+    assert_eq!(state.sweep_metric, PlotMetric::ZMag);
+    // Cursor is clamped to [0, 1].
+    state.apply(&Message::SweepCursorChanged(1.5));
+    assert!((state.sweep_cursor - 1.0).abs() < 1e-6);
+    state.apply(&Message::SweepCursorChanged(-0.2));
+    assert!(state.sweep_cursor.abs() < 1e-6);
+}
+
+#[test]
+fn sweep_cursor_selects_nearest_point() {
+    let mut state = done_sweep();
+    // Cursor at the far right → highest swept frequency.
+    state.apply(&Message::SweepCursorChanged(1.0));
+    let p = state
+        .sweep_cursor_point()
+        .expect("a point under the cursor");
+    assert!((p.freq_mhz - 16.0).abs() < 1e-9);
+    // Cursor at the left → lowest frequency.
+    state.apply(&Message::SweepCursorChanged(0.0));
+    assert!((state.sweep_cursor_point().unwrap().freq_mhz - 14.0).abs() < 1e-9);
+    // Middle → the 15 MHz point.
+    state.apply(&Message::SweepCursorChanged(0.5));
+    assert!((state.sweep_cursor_point().unwrap().freq_mhz - 15.0).abs() < 1e-9);
+}
+
+#[test]
+fn sweep_cursor_point_none_without_sweep() {
+    let state = AppState::default();
+    assert!(state.sweep_cursor_point().is_none());
+    assert!(state.sweep_points().is_empty());
+}
