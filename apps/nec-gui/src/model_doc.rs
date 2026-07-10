@@ -194,6 +194,22 @@ impl ExRow {
         }
     }
 
+    /// A default 1 V voltage source on tag 1, segment 1.
+    fn new_default() -> Self {
+        Self::from_card(&ExCard {
+            excitation_type: 0,
+            tag: 1,
+            segment: 1,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+            polarization_deg: 0.0,
+            polarization_ratio: 0.0,
+            theta_inc: 0.0,
+            phi_inc: 0.0,
+        })
+    }
+
     fn to_card(&self) -> Result<ExCard, String> {
         Ok(ExCard {
             excitation_type: parse_u(&self.kind, "EX type")?,
@@ -225,6 +241,15 @@ impl GnRow {
             ground_type: c.ground_type,
             eps_r: c.eps_r.map(fmt_f).unwrap_or_default(),
             sigma: c.sigma.map(fmt_f).unwrap_or_default(),
+        }
+    }
+
+    /// A default perfect-conductor ground (`GN 1`, no medium).
+    fn new_default() -> Self {
+        Self {
+            ground_type: 1,
+            eps_r: String::new(),
+            sigma: String::new(),
         }
     }
 
@@ -260,6 +285,19 @@ impl LdRow {
             f2: fmt_f(c.f2),
             f3: fmt_f(c.f3),
         }
+    }
+
+    /// A default series-impedance load (`LD 4`) of 0 Ω on tag 1, segment 1.
+    fn new_default() -> Self {
+        Self::from_card(&LdCard {
+            load_type: 4,
+            tag: 1,
+            seg_first: 1,
+            seg_last: 1,
+            f1: 0.0,
+            f2: 0.0,
+            f3: 0.0,
+        })
     }
 
     fn to_card(&self) -> Result<LdCard, String> {
@@ -342,6 +380,33 @@ impl PostSlot {
             PostSlot::Fr(r) => Card::Fr(r.to_card()?),
             PostSlot::Other(c) => c.clone(),
         })
+    }
+}
+
+/// A kind of control card that can be inserted into a deck that lacks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlKind {
+    Gn,
+    Ld,
+    Ex,
+}
+
+impl PostSlot {
+    /// NEC deck-ordering rank, used to insert a new control card in a sensible
+    /// place: geometry/comments (0) < GN (1) < LD (2) < EX (3) < FR (4) <
+    /// output/misc RP/NE/… (5) < EN (9).
+    fn order_rank(&self) -> u8 {
+        match self {
+            PostSlot::Gn(_) => 1,
+            PostSlot::Ld(_) => 2,
+            PostSlot::Ex(_) => 3,
+            PostSlot::Fr(_) => 4,
+            PostSlot::Other(c) => match c {
+                Card::Comment(_) | Card::Ge(_) | Card::Gm(_) | Card::Gr(_) => 0,
+                Card::En(_) => 9,
+                _ => 5,
+            },
+        }
     }
 }
 
@@ -483,6 +548,33 @@ impl ModelDoc {
     pub fn edit_control(&mut self, slot: usize, edit: &ControlEdit) {
         if let Some(s) = self.post.get_mut(slot) {
             edit.apply_to(s);
+            self.dirty = true;
+        }
+    }
+
+    /// Insert a new default control card (`GN`/`LD`/`EX`), placed in canonical
+    /// NEC order among the existing post cards, and mark the document dirty.
+    pub fn add_control(&mut self, kind: ControlKind) {
+        let slot = match kind {
+            ControlKind::Gn => PostSlot::Gn(GnRow::new_default()),
+            ControlKind::Ld => PostSlot::Ld(LdRow::new_default()),
+            ControlKind::Ex => PostSlot::Ex(ExRow::new_default()),
+        };
+        let rank = slot.order_rank();
+        // Insert before the first existing card that should sort after the new one.
+        let idx = self
+            .post
+            .iter()
+            .position(|s| s.order_rank() > rank)
+            .unwrap_or(self.post.len());
+        self.post.insert(idx, slot);
+        self.dirty = true;
+    }
+
+    /// Remove a post slot by index (no-op if out of range) and mark dirty.
+    pub fn delete_control(&mut self, slot: usize) {
+        if slot < self.post.len() {
+            self.post.remove(slot);
             self.dirty = true;
         }
     }
@@ -915,5 +1007,51 @@ EN
         d.edit_control(4, &ControlEdit::FrFrequency("abc".into()));
         let err = d.to_deck().unwrap_err();
         assert!(err.contains("FR frequency"), "unexpected: {err}");
+    }
+
+    /// Adding GN/LD/EX to a free-space deck inserts them in canonical NEC order
+    /// (GN before LD before EX before FR) and the result still round-trips.
+    #[test]
+    fn add_control_inserts_in_canonical_order() {
+        // Free-space dipole: post = [EX, FR, EN].
+        let mut d = doc();
+        d.add_control(ControlKind::Gn);
+        d.add_control(ControlKind::Ld);
+        assert!(d.dirty);
+        let kinds: Vec<&str> = d
+            .post_slots()
+            .iter()
+            .map(|s| match s {
+                PostSlot::Gn(_) => "gn",
+                PostSlot::Ld(_) => "ld",
+                PostSlot::Ex(_) => "ex",
+                PostSlot::Fr(_) => "fr",
+                PostSlot::Other(_) => "other",
+            })
+            .collect();
+        // GE stays first, GN and LD land before EX/FR, EN stays last.
+        assert_eq!(kinds, ["other", "gn", "ld", "ex", "fr", "other"]);
+        // The synthesised cards are valid and round-trip.
+        let rebuilt = d.to_deck().expect("valid");
+        let reparsed = parse(&write_deck(&rebuilt)).unwrap().deck;
+        assert!(reparsed.cards.iter().any(|c| matches!(c, Card::Gn(_))));
+        assert!(reparsed.cards.iter().any(|c| matches!(c, Card::Ld(_))));
+    }
+
+    #[test]
+    fn add_then_delete_control_restores_post() {
+        let mut d = doc();
+        let before = d.post_slots().len();
+        d.add_control(ControlKind::Ex);
+        assert_eq!(d.post_slots().len(), before + 1);
+        // Delete the newly added EX (it sorts to index 0 of post, before the
+        // original EX/FR/EN in a free-space deck).
+        let ex_idx = d
+            .post_slots()
+            .iter()
+            .position(|s| matches!(s, PostSlot::Ex(_)))
+            .unwrap();
+        d.delete_control(ex_idx);
+        assert_eq!(d.post_slots().len(), before);
     }
 }

@@ -336,6 +336,10 @@ pub enum Message {
     },
     /// User clicked "Apply + Solve": solve the edited in-memory deck.
     EditApplySolve,
+    /// User clicked "Add ground / load / source" to insert a control card.
+    EditAddControl(crate::model_doc::ControlKind),
+    /// User clicked the delete button on a control card at post-slot `slot`.
+    EditDeleteControl(usize),
 }
 
 impl AppState {
@@ -534,6 +538,16 @@ impl AppState {
                     self.editor.error = Some(e);
                 }
             },
+            Message::EditAddControl(kind) => {
+                self.editor.history.before_structural(&self.editor.doc);
+                self.editor.doc.add_control(*kind);
+                self.refresh_editor_preview();
+            }
+            Message::EditDeleteControl(slot) => {
+                self.editor.history.before_structural(&self.editor.doc);
+                self.editor.doc.delete_control(*slot);
+                self.refresh_editor_preview();
+            }
             Message::SaveDeck => {
                 self.editor.save_status = "Saving…".into();
             }
