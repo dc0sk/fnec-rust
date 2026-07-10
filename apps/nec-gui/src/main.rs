@@ -237,11 +237,8 @@ impl FnecGui {
                     },
                     Message::DeckSaved,
                 ),
-                Err((row, reason)) => {
-                    self.state.apply(&Message::DeckSaved(Err(format!(
-                        "wire {}: {reason}",
-                        row + 1
-                    ))));
+                Err(msg) => {
+                    self.state.apply(&Message::DeckSaved(Err(msg)));
                     Task::none()
                 }
             }

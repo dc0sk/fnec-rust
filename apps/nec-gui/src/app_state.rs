@@ -484,7 +484,7 @@ impl AppState {
             Message::EditWireField { row, field, value } => {
                 self.editor
                     .history
-                    .before_field_edit(&self.editor.doc, *row, *field);
+                    .before_field_edit(&self.editor.doc, &format!("wire:{row}:{field:?}"));
                 self.editor.doc.edit(*row, *field, value.clone());
                 self.refresh_editor_preview();
             }
@@ -562,8 +562,8 @@ impl AppState {
                 }
                 Err(e) => self.editor.error = Some(e),
             },
-            Err((row, reason)) => {
-                self.editor.error = Some(format!("wire {}: {reason}", row + 1));
+            Err(msg) => {
+                self.editor.error = Some(msg);
             }
         }
     }
