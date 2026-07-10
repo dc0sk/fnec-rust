@@ -319,6 +319,18 @@ fn tab_switching_changes_active_tab() {
     assert_eq!(state.active_tab, ActiveTab::Solve);
 }
 
+/// GUI-CHK-001: the 3-D viewport tab is selectable through the same headless
+/// state machine (the shader widget itself renders only under a real display).
+#[test]
+fn viewport_tab_selectable() {
+    let mut state = AppState::default();
+    state.apply(&Message::TabSelected(ActiveTab::Viewport));
+    assert_eq!(state.active_tab, ActiveTab::Viewport);
+    // Switching away from the viewport works too (no state trapped in the tab).
+    state.apply(&Message::TabSelected(ActiveTab::Solve));
+    assert_eq!(state.active_tab, ActiveTab::Solve);
+}
+
 /// sorted_sweep_rows returns rows sorted by |Z| descending when requested.
 #[test]
 fn sorted_sweep_rows_zmag_descending() {
