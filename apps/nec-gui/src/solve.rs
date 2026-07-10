@@ -12,7 +12,7 @@ use nec_parser::parse;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
     build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck,
-    solve_hallen, wire_endpoints_from_segs, FarFieldPoint,
+    solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel,
 };
 use num_complex::Complex64;
 
@@ -134,6 +134,36 @@ pub fn solve_deck_path(path: &Path, vars_path: Option<&str>) -> Result<SolveResu
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
     solve_deck_str(&input)
+}
+
+/// Parse a deck (with optional `$VAR` substitution) and build **only** its
+/// geometry — no solve — for the 3-D viewport (GUI-CHK-002). Cheap enough to run
+/// on every valid edit for instant visual feedback.
+pub fn load_geometry_path(
+    path: &Path,
+    vars_path: Option<&str>,
+) -> Result<crate::mesh::SceneGeometry, String> {
+    let input = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
+    load_geometry_str(&input)
+}
+
+/// Build the viewport geometry from a raw NEC deck string.
+pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, String> {
+    let parsed = parse(deck_text).map_err(|e| e.to_string())?;
+    let deck = &parsed.deck;
+    let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+    if segs.is_empty() {
+        return Err("deck has no wire geometry (no GW cards?)".to_string());
+    }
+    let has_ground = !matches!(
+        ground_model_from_deck(deck),
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+    let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
+    Ok(crate::mesh::SceneGeometry::from_segments(wires, has_ground))
 }
 
 /// Run a Hallen solve on `deck_text` (a raw NEC deck string).

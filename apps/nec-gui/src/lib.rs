@@ -5,4 +5,6 @@
 //! the iced binary and the headless test suite.
 
 pub mod app_state;
+pub mod camera;
+pub mod mesh;
 pub mod solve;
