@@ -106,7 +106,7 @@ no longer silently treated as EX type 0.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section (PH9-CHK-004) |
+| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section; `XNDA` A-digit → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%) (PH9-CHK-004). The `N`/`D` digits (gain-component labeling / dB-vs-ratio output-format toggles) are deferred — fnec always emits vertical/horizontal/total gain in dBi |
 
 ## Unknown / other cards
 

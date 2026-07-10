@@ -299,12 +299,16 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // with >= 8 fields the four angle floats start at index 4 (after
                 // XNDA); with 7 they start at index 3. The XNDA `X` digit (its
                 // thousands digit) requests normalized-gain output.
+                // With >= 8 fields the four angle floats start at index 4 (after
+                // XNDA); with 7 they start at index 3. The XNDA `X` (thousands)
+                // digit requests normalized-gain output; the `A` (units) digit
+                // requests the average power gain.
                 let a = if fields.len() >= 8 { 4 } else { 3 };
-                let normalize = if fields.len() >= 8 {
+                let (normalize, avg_power_gain) = if fields.len() >= 8 {
                     let xnda = parse_u32(lineno, "RP", 4, fields[3])?;
-                    (xnda / 1000) % 10 != 0
+                    ((xnda / 1000) % 10 != 0, xnda % 10 != 0)
                 } else {
-                    false
+                    (false, false)
                 };
                 deck.cards.push(Card::Rp(RpCard {
                     mode: parse_u32(lineno, "RP", 1, fields[0])?,
@@ -315,6 +319,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     d_theta: parse_f64(lineno, "RP", a + 3, fields[a + 2])?,
                     d_phi: parse_f64(lineno, "RP", a + 4, fields[a + 3])?,
                     normalize,
+                    avg_power_gain,
                 }));
             }
             "LD" => {
@@ -577,6 +582,7 @@ EN
                 d_theta: 5.0,
                 d_phi: 0.0,
                 normalize: false,
+                avg_power_gain: false,
             })
         );
         // EN
