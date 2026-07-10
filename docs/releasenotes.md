@@ -2,10 +2,89 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-07-10
 ---
 
 # Release Notes
+
+## 0.11.0 — MPIE second solver + Sommerfeld surface-wave ground
+
+This release ships the two largest remaining Phase-9 efforts. Both are **opt-in**;
+the default Hallén solver and scalar-Γ ground are unchanged, so nothing in the
+validated corpus moves.
+
+### `--solver mpie` — a second solver (PH9-CHK-007)
+
+fnec's default Hallén solver is fast and accurate for the mainstream case, but its
+formulation folds the scalar potential into a per-wire homogeneous `cos(k·s)` term.
+Three important geometry classes live *in* that scalar potential, so Hallén cannot
+represent them and instead guards or mis-solves them: degree-3 (T/Y) junctions,
+closed loops, and the near-ground surface wave.
+
+`--solver mpie` is a subsectional **mixed-potential EFIE** with a piecewise-linear
+(triangle) current basis that carries the vector and scalar potentials separately.
+It retires all three frontiers:
+
+- **Degree-3 junctions.** A degree-N junction node carries N−1 arm-pair basis
+  functions, so Kirchhoff's current law holds by construction — no explicit
+  constraint row. A symmetric Y-junction (3 × 5 m arms at 120°) converges
+  *monotonically* to nec2c's 71.5 Ω under mesh refinement (68.75 / 69.33 / 69.84 Ω
+  at 10 / 20 / 40 segments per arm). The earlier entire-domain Hallén prototype
+  *diverged* on this case (radiation resistance climbed past 80 Ω).
+- **Closed loops.** A loop is a cyclic all-degree-2 chain with no free end; the same
+  basis handles it with no endpoint condition. A 1 λ square loop converges to
+  nec2c's 109.7 − j146.2 Ω. (The Hallén periodic closure never validated: it gave
+  ≈20 − j1210 Ω.)
+- **Near-ground currents and patterns.** The Sommerfeld reflected potential kernels
+  (horizontal wires) and a reflected-E-field-dyadic reaction (any straight or bent
+  orientation) are added to the impedance matrix, so the surface wave enters the
+  *current solution* — not just the feedpoint Z. A horizontal λ/2 dipole over
+  average ground (GN2) matches nec2c to <8 %, a vertical dipole to ~7 %, and an
+  apex-fed inverted-V captures the surface-wave reactance shift.
+
+Because the MPIE keeps the scalar potential explicit, its absolute reactance tracks
+nec2c without the Hallén ~32 Ω offset — a λ/2 dipole reports 74 + j42 Ω versus
+Hallén's 74 + j5 Ω (nec2c 78.85 + j44.70). Free-space radiation patterns and gain
+reuse the existing radiation sum (λ/2 dipole 2.15 dBi, planar Y-junction 1.94 dBi,
+both matching nec2c).
+
+**Scope.** The MPIE models geometry driven by voltage sources (`EX` type 0). Loads
+(`LD`), transmission lines (`TL`), networks (`NT`), incident plane waves, and
+current sources are rejected on this path — use the Hallén solver for those. Over
+ground it handles any wire (straight or bent, any orientation) *above* the `z = 0`
+plane; a wire that crosses the ground plane (buried geometry) is out of scope.
+
+**Usage.**
+
+```
+fnec --solver mpie deck.nec
+```
+
+The feed is a delta-gap at the graph node nearest the `EX`-driven segment (a
+half-segment offset from NEC's segment-gap feed that vanishes under refinement).
+See `docs/cli-guide.md` and `docs/mpie-solver-scope.md`.
+
+### `--ground-solver sommerfeld` — surface-wave near-ground impedance (PH9-CHK-006)
+
+On the Hallén path, finite ground uses a normal-incidence scalar reflection
+coefficient (RCM). That is accurate for antenna heights ≥ ~0.2 λ but misses the
+surface wave below that — at 0.025 λ the scalar model even gets the *sign* of the
+resistance shift wrong. `--ground-solver sommerfeld` replaces the scalar image with
+the exact Sommerfeld half-space correction for a straight wire's feedpoint
+impedance (nec2c GN2), including the low-height sign flip. The default (`rcm`) is
+unchanged.
+
+```
+fnec --ground-solver sommerfeld deck.nec
+```
+
+For near-ground *currents and patterns* (not just feedpoint Z), use `--solver mpie`.
+See `docs/ph9-chk-006-sommerfeld-ground.md`.
+
+### No migration needed
+
+Both features are additive and opt-in. Existing decks and flags behave exactly as
+in 0.10.0.
 
 ## 0.10.0 — Phase 9: general junction basis, junction receive/current-source, near-ground impedance
 
