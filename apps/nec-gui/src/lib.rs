@@ -6,5 +6,7 @@
 
 pub mod app_state;
 pub mod camera;
+pub mod deck_write;
 pub mod mesh;
+pub mod model_doc;
 pub mod solve;
