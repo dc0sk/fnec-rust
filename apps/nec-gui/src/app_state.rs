@@ -21,6 +21,8 @@ pub enum ActiveTab {
     Pattern,
     /// Segment current-distribution bar chart.
     Currents,
+    /// Visual wire (GW) editor with live 3-D preview (GUI-CHK-007).
+    Editor,
     /// GPU 3-D viewport (GUI redesign — `docs/gui-redesign-plan.md`).
     Viewport,
 }
@@ -105,6 +107,24 @@ pub struct AppState {
     // ── 3-D viewport state (GUI redesign) ──────────────────────────────────
     /// GPU viewport: camera + built line mesh + status (`docs/gui-redesign-plan.md`).
     pub viewport: ViewportState,
+    // ── Wire-editor state (GUI-CHK-007) ────────────────────────────────────
+    /// Editable deck document + editor UI status.
+    pub editor: EditorState,
+}
+
+/// State of the visual wire editor (GUI-CHK-007). Holds the editable document
+/// plus the last preview error and save status. The 3-D preview itself lives in
+/// [`ViewportState`]: every valid edit rebuilds `viewport.scene` from the doc.
+#[derive(Debug, Clone, Default)]
+pub struct EditorState {
+    /// The editable deck (wire table + preserved control cards).
+    pub doc: crate::model_doc::ModelDoc,
+    /// Whether a deck has been loaded into the editor yet.
+    pub loaded: bool,
+    /// Last validation/preview error (row/reason), shown under the table.
+    pub error: Option<String>,
+    /// Result of the most recent Save, shown to the user.
+    pub save_status: String,
 }
 
 /// State of the GPU 3-D viewport. The camera and mesh are pure data (rendered by
@@ -207,6 +227,7 @@ impl Default for AppState {
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
             viewport: ViewportState::default(),
+            editor: EditorState::default(),
         }
     }
 }
@@ -283,6 +304,25 @@ pub enum Message {
     /// User dragged the workbench pane divider (new split ratio in [0,1]). The
     /// `pane_grid::State` itself lives in the binary; this carries only the ratio.
     PaneResized(f32),
+    // ── Wire editor (GUI-CHK-007) ─────────────────────────────────────────
+    /// User clicked "Load deck into editor".
+    EditDeckLoad,
+    /// Background parse of the deck into an editable document completed.
+    EditDeckLoaded(Result<crate::model_doc::ModelDoc, String>),
+    /// User edited one field of one wire row.
+    EditWireField {
+        row: usize,
+        field: crate::model_doc::WireField,
+        value: String,
+    },
+    /// User clicked "Add wire".
+    EditWireAdd,
+    /// User clicked the delete button on a wire row.
+    EditWireDelete(usize),
+    /// User clicked "Save deck" (the binary performs the file write).
+    SaveDeck,
+    /// Background deck write completed (`Ok(path)` or an error message).
+    DeckSaved(Result<String, String>),
 }
 
 impl AppState {
@@ -416,6 +456,46 @@ impl AppState {
             }
             // Pane layout lives in the iced binary (see main.rs); no core state.
             Message::PaneResized(_) => {}
+            Message::EditDeckLoad => {
+                self.editor.save_status = "Loading deck into editor…".into();
+            }
+            Message::EditDeckLoaded(Ok(doc)) => {
+                self.editor.doc = doc.clone();
+                self.editor.loaded = true;
+                self.editor.error = None;
+                self.editor.save_status.clear();
+                self.refresh_editor_preview();
+                // Frame the camera on the freshly loaded geometry (once).
+                if let Some((c, r)) = self.viewport.fit_bounds {
+                    self.viewport.camera.fit(c, r);
+                }
+            }
+            Message::EditDeckLoaded(Err(e)) => {
+                self.editor.error = Some(e.clone());
+                self.editor.save_status.clear();
+            }
+            Message::EditWireField { row, field, value } => {
+                self.editor.doc.edit(*row, *field, value.clone());
+                self.refresh_editor_preview();
+            }
+            Message::EditWireAdd => {
+                self.editor.doc.add_wire();
+                self.refresh_editor_preview();
+            }
+            Message::EditWireDelete(row) => {
+                self.editor.doc.delete_wire(*row);
+                self.refresh_editor_preview();
+            }
+            Message::SaveDeck => {
+                self.editor.save_status = "Saving…".into();
+            }
+            Message::DeckSaved(Ok(path)) => {
+                self.editor.doc.mark_saved();
+                self.editor.save_status = format!("Saved to {path}");
+            }
+            Message::DeckSaved(Err(e)) => {
+                self.editor.save_status = format!("Save failed: {e}");
+            }
             Message::Viewport(vp) => {
                 let cam = &mut self.viewport.camera;
                 match vp {
@@ -431,6 +511,37 @@ impl AppState {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Rebuild the 3-D preview from the current editor document.
+    ///
+    /// On any valid edit the document is rendered to deck text and its geometry
+    /// rebuilt into `viewport.scene` (no solve) for instant feedback. A validation
+    /// or build failure is stored in `editor.error` and the last good preview is
+    /// left on screen. The camera is **not** refitted here — edits keep the view
+    /// steady; only [`Message::EditDeckLoaded`] frames the geometry.
+    fn refresh_editor_preview(&mut self) {
+        match self.editor.doc.to_deck_string() {
+            Ok(text) => match crate::solve::load_geometry_str(&text) {
+                Ok(geo) => {
+                    self.editor.error = None;
+                    let (center, radius) = geo.bounds();
+                    self.viewport.fit_bounds = Some((center, radius));
+                    self.viewport.geometry = Some(geo);
+                    // Editing the geometry invalidates any solved overlays.
+                    self.viewport.currents_ma = None;
+                    self.viewport.show_currents = false;
+                    self.viewport.grid = None;
+                    self.viewport.show_pattern = false;
+                    self.viewport.rebuild_scene();
+                    self.viewport.rebuild_lobe();
+                }
+                Err(e) => self.editor.error = Some(e),
+            },
+            Err((row, reason)) => {
+                self.editor.error = Some(format!("wire {}: {reason}", row + 1));
             }
         }
     }

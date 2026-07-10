@@ -20,9 +20,11 @@ use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
 };
+use nec_gui::model_doc::{WireField, WireRow};
 use nec_gui::solve::{
-    current_distribution_deck_path, load_currents_path, load_geometry_path, pattern_grid_path,
-    pattern_slice_deck_path, solve_deck_path, sweep_deck_path, SolveResult, SweepPoint,
+    current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
+    pattern_grid_path, pattern_slice_deck_path, solve_deck_path, sweep_deck_path, SolveResult,
+    SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -76,6 +78,8 @@ impl FnecGui {
         let spawn_geometry = matches!(message, Message::LoadGeometry);
         let spawn_currents_3d = matches!(message, Message::LoadCurrents);
         let spawn_pattern_3d = matches!(message, Message::LoadPattern3d);
+        let spawn_edit_load = matches!(message, Message::EditDeckLoad);
+        let spawn_save = matches!(message, Message::SaveDeck);
         // Pane resize is an iced-layout concern handled here (not in AppState).
         if let Message::PaneResized(ratio) = message {
             self.panes.resize(self.main_split, ratio);
@@ -178,6 +182,38 @@ impl FnecGui {
                 async move { pattern_grid_path(&path, vars.as_deref()) },
                 Message::Pattern3dComplete,
             )
+        } else if spawn_edit_load {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
+            Task::perform(
+                async move { load_model_doc_path(&path, vars.as_deref()) },
+                Message::EditDeckLoaded,
+            )
+        } else if spawn_save {
+            // Render the edited deck and write it back over the loaded path.
+            let path = self.state.deck_path.clone();
+            match self.state.editor.doc.to_deck_string() {
+                Ok(text) => Task::perform(
+                    async move {
+                        match std::fs::write(&path, &text) {
+                            Ok(()) => Ok(path),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    },
+                    Message::DeckSaved,
+                ),
+                Err((row, reason)) => {
+                    self.state.apply(&Message::DeckSaved(Err(format!(
+                        "wire {}: {reason}",
+                        row + 1
+                    ))));
+                    Task::none()
+                }
+            }
         } else {
             Task::none()
         }
@@ -218,6 +254,7 @@ impl FnecGui {
             tab("Sweep", ActiveTab::Sweep),
             tab("Pattern", ActiveTab::Pattern),
             tab("Currents", ActiveTab::Currents),
+            tab("Edit", ActiveTab::Editor),
         ]
         .spacing(4);
 
@@ -247,6 +284,7 @@ impl FnecGui {
             ActiveTab::Sweep => self.sweep_view(),
             ActiveTab::Pattern => self.pattern_view(),
             ActiveTab::Currents => self.currents_view(),
+            ActiveTab::Editor => self.editor_view(),
             // The viewport is its own pane now; this tab is unreachable via UI.
             ActiveTab::Viewport => self.solve_view(),
         };
@@ -399,6 +437,48 @@ fn pane_container_style(theme: &Theme) -> container::Style {
     }
 }
 
+// ── Wire-editor row widgets (GUI-CHK-007) ─────────────────────────────────────
+
+/// Column width for the integer fields (tag, segments).
+const W_INT: Length = Length::Fixed(52.0);
+/// Column width for the coordinate/radius fields.
+const W_COORD: Length = Length::Fixed(74.0);
+/// Column width for the delete button.
+const W_DEL: Length = Length::Fixed(44.0);
+
+/// One field text box in a wire row. Borrows the field string, so the returned
+/// element's lifetime is tied to the [`WireRow`] (the row can't be `'static`).
+fn wire_cell(row: usize, field: WireField, value: &str, width: Length) -> Element<'_, Message> {
+    text_input("", value)
+        .on_input(move |v| Message::EditWireField {
+            row,
+            field,
+            value: v,
+        })
+        .width(width)
+        .into()
+}
+
+/// One editable wire row: nine text boxes + a delete button.
+fn wire_edit_row(row: usize, w: &WireRow) -> Element<'_, Message> {
+    iced::widget::row![
+        wire_cell(row, WireField::Tag, &w.tag, W_INT),
+        wire_cell(row, WireField::Segments, &w.segments, W_INT),
+        wire_cell(row, WireField::X1, &w.x1, W_COORD),
+        wire_cell(row, WireField::Y1, &w.y1, W_COORD),
+        wire_cell(row, WireField::Z1, &w.z1, W_COORD),
+        wire_cell(row, WireField::X2, &w.x2, W_COORD),
+        wire_cell(row, WireField::Y2, &w.y2, W_COORD),
+        wire_cell(row, WireField::Z2, &w.z2, W_COORD),
+        wire_cell(row, WireField::Radius, &w.radius, W_COORD),
+        button(text("Del"))
+            .on_press(Message::EditWireDelete(row))
+            .width(W_DEL),
+    ]
+    .spacing(4)
+    .into()
+}
+
 // ── Stand-alone helper widgets ────────────────────────────────────────────────
 
 /// Small impedance result widget for the single-frequency tab.
@@ -512,6 +592,79 @@ impl FnecGui {
         column![phi_row, run_btn, status, result_section]
             .spacing(8)
             .into()
+    }
+
+    // ── Wire editor (GUI-CHK-007) ─────────────────────────────────────────
+    fn editor_view(&self) -> Element<'_, Message> {
+        let load_btn = if self.state.deck_path.is_empty() {
+            button("Load deck into editor")
+        } else {
+            button("Load deck into editor").on_press(Message::EditDeckLoad)
+        };
+
+        if !self.state.editor.loaded {
+            return column![
+                load_btn,
+                text(
+                    "Load a deck to edit its GW wires. Every valid edit previews \
+                     live in the 3-D view."
+                )
+                .width(Length::Fill),
+            ]
+            .spacing(8)
+            .into();
+        }
+
+        let header = row![
+            text("Tag").width(W_INT),
+            text("Segs").width(W_INT),
+            text("x1").width(W_COORD),
+            text("y1").width(W_COORD),
+            text("z1").width(W_COORD),
+            text("x2").width(W_COORD),
+            text("y2").width(W_COORD),
+            text("z2").width(W_COORD),
+            text("radius").width(W_COORD),
+            text("").width(W_DEL),
+        ]
+        .spacing(4);
+
+        let mut table = column![header].spacing(3);
+        for (i, w) in self.state.editor.doc.wires.iter().enumerate() {
+            table = table.push(wire_edit_row(i, w));
+        }
+        let table = scrollable(table).direction(scrollable::Direction::Both {
+            vertical: scrollable::Scrollbar::default(),
+            horizontal: scrollable::Scrollbar::default(),
+        });
+
+        let add_btn = button("+ Add wire").on_press(Message::EditWireAdd);
+        let save_btn = button("Save deck").on_press(Message::SaveDeck);
+
+        let dirty = if self.state.editor.doc.dirty {
+            "  •unsaved"
+        } else {
+            ""
+        };
+        let status: Element<Message> = match &self.state.editor.error {
+            Some(e) => text(format!("⚠ {e}")).width(Length::Fill).into(),
+            None => text(format!(
+                "Preview OK — {} wire(s){dirty}",
+                self.state.editor.doc.wire_count()
+            ))
+            .width(Length::Fill)
+            .into(),
+        };
+        let save_status = text(self.state.editor.save_status.clone()).width(Length::Fill);
+
+        column![
+            row![load_btn, add_btn, save_btn].spacing(8),
+            table,
+            status,
+            save_status,
+        ]
+        .spacing(8)
+        .into()
     }
 
     // ── Currents view ─────────────────────────────────────────────────────

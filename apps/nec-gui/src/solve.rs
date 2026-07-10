@@ -166,6 +166,24 @@ pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, 
     Ok(crate::mesh::SceneGeometry::from_segments(wires, has_ground))
 }
 
+/// Parse a deck file (with optional `$VAR` substitution) into an editable
+/// [`ModelDoc`] for the visual wire editor (GUI-CHK-007). No solve.
+pub fn load_model_doc_path(
+    path: &Path,
+    vars_path: Option<&str>,
+) -> Result<crate::model_doc::ModelDoc, String> {
+    let input = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
+    load_model_doc_str(&input)
+}
+
+/// Build an editable [`ModelDoc`] from a raw NEC deck string.
+pub fn load_model_doc_str(deck_text: &str) -> Result<crate::model_doc::ModelDoc, String> {
+    let parsed = parse(deck_text).map_err(|e| e.to_string())?;
+    Ok(crate::model_doc::ModelDoc::from_deck(&parsed.deck))
+}
+
 /// Solve a deck and return its geometry **with** per-segment current magnitudes
 /// (mA), aligned to the wire order, for current-colored 3-D display (GUI-CHK-004).
 pub fn load_currents_path(
