@@ -373,7 +373,7 @@ headless).
 | # | ID | Goal | Effort |
 |:--|:---|:-----|:-----|
 | 0 | GUI-CHK-001 | Shader-widget spike: hello-triangle in a Viewport tab — **✅ code + headless gates done (2026-07-10)**; visual gates pending a display | 1–2 d |
-| 1 | GUI-CHK-002 | Wire geometry rendered in 3-D (+ axes, ground grid) | 2–3 d |
+| 1 | GUI-CHK-002 | Wire geometry rendered in 3-D (+ axes, ground grid) — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 2–3 d |
 | 2 | GUI-CHK-003 | Orbit / zoom / pan camera | 2 d |
 | 3 | GUI-CHK-004 | Currents painted on wires + colormap legend | 1–2 d |
 | 4 | GUI-CHK-005 | 3-D pattern lobe overlay (full-sphere, rayon) | 3 d |

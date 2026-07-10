@@ -102,6 +102,20 @@ pub struct AppState {
     // ── Currents tab state ─────────────────────────────────────────────────
     /// Current-distribution phase.
     pub currents_phase: CurrentsPhase,
+    // ── 3-D viewport state (GUI redesign) ──────────────────────────────────
+    /// GPU viewport: camera + built line mesh + status (`docs/gui-redesign-plan.md`).
+    pub viewport: ViewportState,
+}
+
+/// State of the GPU 3-D viewport. The camera and mesh are pure data (rendered by
+/// the binary's `viewport/` wgpu module); `scene_rev` bumps whenever the mesh
+/// changes so the renderer knows to re-upload the vertex buffer.
+#[derive(Debug, Clone, Default)]
+pub struct ViewportState {
+    pub camera: crate::camera::Camera,
+    pub scene: Option<std::sync::Arc<crate::mesh::MeshData>>,
+    pub scene_rev: u64,
+    pub status: String,
 }
 
 impl Default for AppState {
@@ -120,6 +134,7 @@ impl Default for AppState {
             pattern_phi_deg: "0.0".into(),
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
+            viewport: ViewportState::default(),
         }
     }
 }
@@ -174,6 +189,11 @@ pub enum Message {
     RunCurrents,
     /// Background current-distribution computation completed.
     CurrentsComplete(Result<Vec<CurrentPoint>, String>),
+    // ── 3-D viewport ──────────────────────────────────────────────────────
+    /// User clicked "Load geometry" in the 3-D view.
+    LoadGeometry,
+    /// Background geometry build completed (parse + `build_geometry`, no solve).
+    GeometryLoaded(Result<crate::mesh::SceneGeometry, String>),
 }
 
 impl AppState {
@@ -241,6 +261,20 @@ impl AppState {
             }
             Message::CurrentsComplete(Err(e)) => {
                 self.currents_phase = CurrentsPhase::Failed(e.clone());
+            }
+            Message::LoadGeometry => {
+                self.viewport.status = "Loading geometry…".into();
+            }
+            Message::GeometryLoaded(Ok(geo)) => {
+                let (center, radius) = geo.bounds();
+                self.viewport.camera.fit(center, radius);
+                self.viewport.scene = Some(std::sync::Arc::new(crate::mesh::build_scene(geo)));
+                self.viewport.scene_rev = self.viewport.scene_rev.wrapping_add(1);
+                self.viewport.status = format!("{} wire segments", geo.wires.len());
+            }
+            Message::GeometryLoaded(Err(e)) => {
+                self.viewport.scene = None;
+                self.viewport.status = format!("Error: {e}");
             }
         }
     }

@@ -331,6 +331,47 @@ fn viewport_tab_selectable() {
     assert_eq!(state.active_tab, ActiveTab::Solve);
 }
 
+/// GUI-CHK-002: loading a deck's geometry builds a scene mesh, bumps the scene
+/// revision, and frames the camera on the geometry — all headlessly.
+#[test]
+fn geometry_load_builds_scene_and_fits_camera() {
+    // A center-fed λ/2 dipole along z, 0.5λ ≈ 10 m at ~14 MHz.
+    let deck = "\
+CM dipole\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let geo = nec_gui::solve::load_geometry_str(deck).expect("geometry builds");
+    assert_eq!(geo.wires.len(), 11, "11 segments → 11 wire lines");
+    assert!(!geo.has_ground, "free-space deck has no ground");
+    assert!((geo.bbox_min[2] + 5.0).abs() < 1e-3 && (geo.bbox_max[2] - 5.0).abs() < 1e-3);
+
+    let mut state = AppState::default();
+    assert!(state.viewport.scene.is_none());
+    let rev0 = state.viewport.scene_rev;
+    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    let vp = &state.viewport;
+    assert!(vp.scene.is_some(), "scene mesh should be built");
+    assert!(vp.scene_rev > rev0, "scene revision must bump");
+    // Camera framed on the geometry: target at the dipole center, backed off.
+    assert!(
+        vp.camera.target.z.abs() < 1e-3,
+        "camera target centered on wire"
+    );
+    assert!(vp.camera.distance > 5.0, "camera outside the geometry");
+    assert!(
+        vp.status.contains("11"),
+        "status reports segment count: {}",
+        vp.status
+    );
+}
+
+/// GUI-CHK-002: a bad deck surfaces an error and leaves no scene.
+#[test]
+fn geometry_load_error_clears_scene() {
+    let mut state = AppState::default();
+    state.apply(&Message::GeometryLoaded(Err("no geometry".into())));
+    assert!(state.viewport.scene.is_none());
+    assert!(state.viewport.status.starts_with("Error:"));
+}
+
 /// sorted_sweep_rows returns rows sorted by |Z| descending when requested.
 #[test]
 fn sorted_sweep_rows_zmag_descending() {

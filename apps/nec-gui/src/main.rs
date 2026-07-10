@@ -16,8 +16,8 @@ use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
 };
 use nec_gui::solve::{
-    current_distribution_deck_path, pattern_slice_deck_path, solve_deck_path, sweep_deck_path,
-    SolveResult, SweepPoint,
+    current_distribution_deck_path, load_geometry_path, pattern_slice_deck_path, solve_deck_path,
+    sweep_deck_path, SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -39,6 +39,7 @@ impl FnecGui {
         let spawn_sweep = matches!(message, Message::RunSweep);
         let spawn_pattern = matches!(message, Message::RunPattern);
         let spawn_currents = matches!(message, Message::RunCurrents);
+        let spawn_geometry = matches!(message, Message::LoadGeometry);
         self.state.apply(&message);
 
         if spawn_solve {
@@ -103,6 +104,17 @@ impl FnecGui {
             Task::perform(
                 async move { current_distribution_deck_path(&path, vars.as_deref()) },
                 Message::CurrentsComplete,
+            )
+        } else if spawn_geometry {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
+            Task::perform(
+                async move { load_geometry_path(&path, vars.as_deref()) },
+                Message::GeometryLoaded,
             )
         } else {
             Task::none()
@@ -192,15 +204,24 @@ impl FnecGui {
     /// (a triangle) to prove the iced-0.13 custom-wgpu integration; later phases
     /// replace it with the wire geometry, currents, and pattern lobe.
     fn viewport_view(&self) -> Element<'_, Message> {
-        let caption = text(
-            "GPU 3-D viewport (Phase 0 spike). The colored triangle confirms the \
-             wgpu shader-widget integration; wire geometry lands in GUI-CHK-002.",
-        );
-        let scene = shader(viewport::Scene)
+        let load_btn = if self.state.deck_path.is_empty() {
+            button("Load geometry")
+        } else {
+            button("Load geometry").on_press(Message::LoadGeometry)
+        };
+        let status = text(if self.state.viewport.status.is_empty() {
+            "Load a deck's geometry to view it in 3-D (wires, axes, ground grid).".to_string()
+        } else {
+            self.state.viewport.status.clone()
+        });
+        let controls = row![load_btn, status]
+            .spacing(12)
+            .align_y(iced::Alignment::Center);
+        let scene = shader(viewport::Scene::new(&self.state.viewport))
             .width(Length::Fill)
             .height(Length::Fill);
         column![
-            caption,
+            controls,
             container(scene).width(Length::Fill).height(Length::Fill)
         ]
         .spacing(8)
