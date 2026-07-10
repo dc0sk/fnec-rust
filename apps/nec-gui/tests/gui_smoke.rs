@@ -1382,3 +1382,16 @@ fn viewport_axes_and_grid_toggles_rebuild_scene() {
     let bare = state.viewport.scene.as_ref().unwrap().vertices.len();
     assert!(bare < no_axes, "grid off → fewer still");
 }
+
+/// The Browse messages are handled by the binary (native dialogs); in the pure
+/// state machine they are no-ops and must not alter or panic the state.
+#[test]
+fn browse_messages_are_noops_in_core_state() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("keep.nec".into()));
+    let before = state.deck_path.clone();
+    state.apply(&Message::BrowseDeck);
+    state.apply(&Message::BrowseVars);
+    state.apply(&Message::BrowseSaveDeck);
+    assert_eq!(state.deck_path, before, "browse must not change core state");
+}
