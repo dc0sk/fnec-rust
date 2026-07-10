@@ -608,22 +608,28 @@ fn warn_if_low_finite_ground(segs: &[Segment], ground: &GroundModel, freq_hz: f6
 /// ≈111 − j146 Ω. This surfaces the limitation instead of silently returning a wrong
 /// number — the loop case in particular is missed by [`warn_if_feedpoint_at_junction`]
 /// because the feed need not sit on the junction.
-fn warn_if_unsupported_topology(segs: &[Segment]) {
-    match classify_unsupported_topology(segs) {
-        Some(UnsupportedTopology::ClosedLoop) => eprintln!(
-            "warning: geometry contains a closed loop (a conductor with no free end); \
-             the Hallén solve does not yet model the periodic loop closure, so the reported \
-             impedance, currents, and pattern for this geometry are unreliable \
-             (loop support is deferred — see PH9-CHK-002)"
-        ),
-        Some(UnsupportedTopology::HighDegreeJunction) => eprintln!(
-            "warning: geometry contains a junction where three or more wires meet (a T/Y \
-             junction); the Hallén solve does not yet model the Kirchhoff current split there, \
-             so the reported impedance, currents, and pattern for this geometry are unreliable \
-             (branching-junction support is deferred — see PH9-CHK-002)"
-        ),
-        None => {}
-    }
+fn warn_if_unsupported_topology(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
+    let kind = match classify_unsupported_topology(segs) {
+        Some(UnsupportedTopology::ClosedLoop) => {
+            "a closed loop (a conductor with no free end); the Hallén solve does not model \
+             the periodic loop closure"
+        }
+        Some(UnsupportedTopology::HighDegreeJunction) => {
+            "a junction where three or more wires meet (a T/Y junction); the Hallén solve does \
+             not model the Kirchhoff current split there"
+        }
+        None => return,
+    };
+    // The MPIE second solver handles both topologies; point the user to it when
+    // the deck is MPIE-compatible, otherwise say support is deferred.
+    let remedy = if mpie_compatible_deck(deck) {
+        "so the reported impedance, currents, and pattern are unreliable — re-run with \
+         `--solver mpie`, which solves this geometry correctly (PH9-CHK-007)"
+    } else {
+        "so the reported impedance, currents, and pattern for this geometry are unreliable \
+         (support for this combination is deferred — see PH9-CHK-002)"
+    };
+    eprintln!("warning: geometry contains {kind}, {remedy}");
 }
 
 /// PH9-CHK-004: compute the near electric field for every `NE` card in the deck.
@@ -1100,6 +1106,28 @@ fn solve_mpie_session(
     Ok(segment_currents(&geom, &sol.basis_currents))
 }
 
+/// Whether a deck can be solved on the MPIE path: it is driven by at least one
+/// voltage source (`EX` type 0) and has no loads / transmission lines / networks
+/// and no plane-wave or current-source excitation (all unsupported by the MPIE).
+fn mpie_compatible_deck(deck: &nec_model::deck::NecDeck) -> bool {
+    let mut has_voltage_source = false;
+    for card in &deck.cards {
+        match card {
+            Card::Ld(_) | Card::Tl(_) | Card::Nt(_) => return false,
+            Card::Ex(ex) => {
+                if ex.kind().is_plane_wave()
+                    || ex.kind() == nec_model::card::ExcitationKind::CurrentSource
+                {
+                    return false;
+                }
+                has_voltage_source = true;
+            }
+            _ => {}
+        }
+    }
+    has_voltage_source
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn solve_frequency_point(
     deck: &nec_model::deck::NecDeck,
@@ -1470,7 +1498,10 @@ pub(super) fn solve_frequency_point(
     // wires, so the single-segment V/I is not the true feedpoint impedance and can
     // be unphysical (e.g. negative resistance). Warn rather than report it as
     // trustworthy; accurate junction-fed impedance is PH9-CHK-002.
-    warn_if_unsupported_topology(segs);
+    // The MPIE solves these topologies correctly, so only warn on other solvers.
+    if !matches!(solver_mode, SolverMode::Mpie) {
+        warn_if_unsupported_topology(deck, segs);
+    }
     warn_if_feedpoint_at_junction(deck, segs);
     warn_if_low_finite_ground(segs, ground, freq_hz);
     warn_if_negative_resistance(&rows, solver_mode);
