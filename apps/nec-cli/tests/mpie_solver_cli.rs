@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Simon Keimer (DC0SK)
+//
+// PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring.
+//
+// The opt-in mixed-potential EFIE is now reachable from the CLI. It reuses the
+// whole feedpoint / far-field / report path (its per-segment currents are aligned
+// to the deck segments), so these contract tests drive `fnec --solver mpie`
+// end-to-end and check the reported impedance is physical — including the
+// degree-3 Y-junction that the Hallén solver returns garbage for.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn run_fnec(args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(args)
+        .current_dir(workspace_root())
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"))
+}
+
+/// Write a deck to a unique temp path and return it.
+fn write_deck(name: &str, body: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("fnec_mpie_{name}.nec"));
+    std::fs::write(&path, body).unwrap();
+    path
+}
+
+/// Parse `Z_RE Z_IM` from the FEEDPOINTS data line of a report.
+fn feedpoint_z(stdout: &str) -> (f64, f64) {
+    let mut lines = stdout.lines();
+    while let Some(l) = lines.next() {
+        if l.trim_start().starts_with("FEEDPOINTS") {
+            let _header = lines.next();
+            let data = lines.next().expect("feedpoint data line");
+            let f: Vec<f64> = data
+                .split_whitespace()
+                .filter_map(|t| t.parse().ok())
+                .collect();
+            assert!(f.len() >= 8, "unexpected feedpoint line: {data}");
+            return (f[6], f[7]);
+        }
+    }
+    panic!("no FEEDPOINTS section in:\n{stdout}");
+}
+
+const DIPOLE: &str = "\
+CM half-wave dipole 14.2 MHz
+CE
+GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+XQ
+EN
+";
+
+/// A straight λ/2 dipole solves to a physical impedance whose reactance tracks
+/// nec2c (~+42 Ω), not the Hallén ~32 Ω low offset — MPIE keeps the scalar
+/// potential, so its absolute reactance is right.
+#[test]
+fn dipole_mpie_reports_physical_impedance() {
+    let deck = write_deck("dipole", DIPOLE);
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie dipole failed: {:?}", out);
+    let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
+    assert!((70.0..80.0).contains(&r), "R={r} out of dipole range");
+    assert!((35.0..50.0).contains(&x), "X={x} not near nec2c +44.7");
+}
+
+/// The degree-3 Y-junction — which the Hallén solver cannot feed at the junction
+/// (it returns unphysical R≈8, X≈−960) — solves to a physical impedance on the
+/// MPIE path.
+#[test]
+fn y_junction_mpie_solves() {
+    let deck = write_deck(
+        "yjunction",
+        "\
+CM Y-junction, feed mid arm 1
+CE
+GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
+GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
+GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie Y-junction failed: {:?}", out);
+    let (r, _x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
+    // Physical radiation resistance (nec2c ~71.5 Ω; feed slightly off-centre here),
+    // decisively unlike the Hallén junction-fed garbage (R≈8).
+    assert!((40.0..90.0).contains(&r), "Y-junction R={r} not physical");
+}
+
+/// Loads are not modelled by the MPIE triangle-basis system, so an `LD` deck is
+/// rejected rather than silently ignored.
+#[test]
+fn loads_rejected_with_mpie() {
+    let deck = write_deck(
+        "loaded",
+        "\
+CM loaded dipole
+CE
+GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+LD 0 1 21 21 0.0 100.0 0.0
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(!out.status.success(), "expected LD rejection");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not supported with --solver mpie"),
+        "missing LD rejection message:\n{stderr}"
+    );
+}

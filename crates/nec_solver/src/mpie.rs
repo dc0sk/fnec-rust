@@ -557,6 +557,51 @@ pub fn solve_mpie_free_space(
     solve_mpie(&wire.geometry(), freq_hz, feed_basis + 1)
 }
 
+/// Build an [`MpieGeometry`] from fnec [`Segment`]s, deduplicating shared
+/// endpoints (within `1e-6` m) into graph nodes. `geom.segments` is in the **same
+/// order** as `segs`, so a current vector from [`segment_currents`] aligns 1:1
+/// with the input segments — the bridge from a parsed NEC deck to the MPIE.
+pub fn geometry_from_segments(segs: &[Segment]) -> MpieGeometry {
+    const TOL: f64 = 1e-6;
+    let mut nodes: Vec<[f64; 3]> = Vec::new();
+    let find_or_add = |p: [f64; 3], nodes: &mut Vec<[f64; 3]>| -> usize {
+        for (i, q) in nodes.iter().enumerate() {
+            if norm(sub(p, *q)) < TOL {
+                return i;
+            }
+        }
+        nodes.push(p);
+        nodes.len() - 1
+    };
+    let mut segments = Vec::with_capacity(segs.len());
+    for s in segs {
+        let a = find_or_add(s.start, &mut nodes);
+        let b = find_or_add(s.end, &mut nodes);
+        segments.push([a, b]);
+    }
+    let radius = segs.first().map(|s| s.radius).unwrap_or(0.001);
+    MpieGeometry {
+        nodes,
+        segments,
+        radius,
+    }
+}
+
+/// The interior (degree-2) node to feed for a delta-gap on segment `seg_idx`:
+/// its start node if feedable, else its end node, else `None` (a junction feed,
+/// which the nodal MPIE does not support — matching the Hallén guard).
+pub fn feed_node_for_segment(geom: &MpieGeometry, seg_idx: usize) -> Option<usize> {
+    let (_, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
+    let [a, b] = geom.segments.get(seg_idx).copied()?;
+    if node_feed.get(a).copied().flatten().is_some() {
+        Some(a)
+    } else if node_feed.get(b).copied().flatten().is_some() {
+        Some(b)
+    } else {
+        None
+    }
+}
+
 /// Recover the per-segment midpoint currents (signed along each segment's
 /// `p0 → p1` tangent) from a solved basis-current vector, for the far-field sum.
 ///
@@ -676,6 +721,23 @@ mod tests {
             (sol.z_in.im - 41.36).abs() < 0.1,
             "X={} (oracle 41.36)",
             sol.z_in.im
+        );
+    }
+
+    /// `geometry_from_segments` round-trips a dipole: solving the segment-derived
+    /// graph equals the chain solve (the deck → MPIE bridge preserves the physics).
+    #[test]
+    fn geometry_from_segments_round_trips_a_dipole() {
+        let wire = half_wave_dipole(20);
+        let segs = segments_for_farfield(&wire.geometry());
+        let rebuilt = geometry_from_segments(&segs);
+        assert_eq!(rebuilt.segments.len(), 20);
+        let feed = feed_node_for_segment(&rebuilt, 10).unwrap();
+        let z_rebuilt = solve_mpie(&rebuilt, FREQ, feed).unwrap().z_in;
+        let z_chain = solve_mpie_free_space(&wire, FREQ, 9).unwrap().z_in;
+        assert!(
+            (z_rebuilt - z_chain).norm() < 1e-6,
+            "rebuilt {z_rebuilt} vs chain {z_chain}"
         );
     }
 

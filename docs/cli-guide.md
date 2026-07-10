@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-06-23
+last_updated: 2026-07-10
 ---
 
 # CLI Guide — fnec (v0.2.0)
@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 ```
 
@@ -34,7 +34,7 @@ Compatibility profile note:
 
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
-| `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` | `hallen` | MoM solver to use (see below) |
+| `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
@@ -142,6 +142,32 @@ Residual budget precedence:
 - `--sin-fallback-rel-max <value>` (if provided)
 - `FNEC_SIN_FALLBACK_REL_MAX` environment variable
 - built-in default `1e-2`
+
+### `mpie` (second solver — reaches junctions, loops, near-ground currents)
+
+Opt-in mixed-potential EFIE with a subsectional (triangle) current basis
+(PH9-CHK-007). Unlike the Hallen hybrid — which folds the scalar potential into a
+per-wire homogeneous term and so cannot represent it — the MPIE carries the
+vector and scalar potentials separately. That lets it solve three geometry
+classes the Hallen path cannot:
+
+- **degree-3 (T/Y) junctions** — Kirchhoff's current law is satisfied by the
+  junction basis itself; the Hallen path returns unphysical junction-fed
+  impedance (e.g. a Y-junction reports R ≈ 8 Ω where the MPIE gives ≈ 64 Ω).
+- **closed loops** — a cyclic chain with no endpoint condition.
+- **near-ground currents (Sommerfeld)** — with `GN`/finite ground, the reflected
+  potential kernels put the surface wave into the current solution (a **straight
+  horizontal wire** for now; other orientations over ground report an error).
+
+Because it keeps the scalar potential, the MPIE's absolute reactance matches
+nec2c without the Hallen ~32 Ω offset (a λ/2 dipole gives ≈ 74 + j42 Ω vs
+Hallen's 74 + j5 Ω).
+
+The MPIE feeds a delta-gap at the graph node nearest the `EX`-driven segment (a
+half-segment offset from NEC's segment-gap feed, vanishing under refinement). It
+models geometry + voltage sources (`EX` type 0) only: `LD` loads, `TL`
+transmission lines, `NT` networks, incident plane waves, and current sources are
+rejected on this path.
 
 ## `--pulse-rhs` values
 

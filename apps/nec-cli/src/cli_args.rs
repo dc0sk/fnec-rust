@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--hosts <hosts.toml>] <deck.nec>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -49,7 +49,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 i += 1;
                 if i >= args.len() {
                     return Err(
-                        "missing value after --solver (expected: hallen|pulse|continuity|sinusoidal)"
+                        "missing value after --solver (expected: hallen|pulse|continuity|sinusoidal|mpie)"
                             .to_string(),
                     );
                 }
@@ -58,9 +58,10 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                     "pulse" => SolverMode::Pulse,
                     "continuity" => SolverMode::Continuity,
                     "sinusoidal" => SolverMode::Sinusoidal,
+                    "mpie" => SolverMode::Mpie,
                     other => {
                         return Err(format!(
-                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity|sinusoidal)"
+                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity|sinusoidal|mpie)"
                         ))
                     }
                 };

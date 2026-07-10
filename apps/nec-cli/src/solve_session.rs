@@ -11,6 +11,10 @@ pub(super) enum SolverMode {
     Pulse,
     Continuity,
     Sinusoidal,
+    /// Mixed-potential EFIE (triangle basis) — the opt-in second solver
+    /// (PH9-CHK-007). Reaches degree-3 junctions, closed loops, and near-ground
+    /// currents (Sommerfeld) that the Hallén basis cannot represent.
+    Mpie,
 }
 
 impl SolverMode {
@@ -20,6 +24,7 @@ impl SolverMode {
             SolverMode::Pulse => "pulse",
             SolverMode::Continuity => "continuity",
             SolverMode::Sinusoidal => "sinusoidal",
+            SolverMode::Mpie => "mpie",
         }
     }
 }
@@ -67,11 +72,12 @@ use nec_solver::{
     build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
     build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
     build_planewave_hallen_paths, build_tl_stamps, classify_unsupported_topology,
-    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,
-    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
+    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment,
+    geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
+    radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
+    solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
+    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
+    solve_mpie, solve_mpie_ground, solve_with_continuity_basis_per_wire, FarFieldPoint,
     GroundModel, Segment, UnsupportedTopology, ZMatrix,
 };
 use num_complex::Complex64;
@@ -1047,6 +1053,53 @@ fn maybe_gpu_resident_hallen(
     })
 }
 
+/// Solve a deck on the MPIE path (PH9-CHK-007): build the triangle-basis graph
+/// from the segments, feed a delta-gap at the node nearest the driven segment,
+/// solve (free space or Sommerfeld half-space), and return the per-segment
+/// currents **aligned to `segs`** so the existing feedpoint / far-field / report
+/// machinery consumes them unchanged.
+///
+/// Note the feed model differs from the Hallén path: NEC's `EX` drives a segment
+/// gap, while the MPIE drives the nearest interior node — a half-segment offset
+/// that vanishes under refinement. The MPIE's value is the topologies the Hallén
+/// basis cannot reach (degree-3 junctions, closed loops, near-ground currents).
+fn solve_mpie_session(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+) -> Result<Vec<Complex64>, String> {
+    let ex = deck
+        .cards
+        .iter()
+        .find_map(|c| match c {
+            Card::Ex(ex) if !ex.kind().is_plane_wave() => Some(ex),
+            _ => None,
+        })
+        .ok_or("--solver mpie requires a voltage source (EX type 0)")?;
+    let driven_idx = segs
+        .iter()
+        .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+        .ok_or_else(|| format!("EX: driven segment {}/{} not found", ex.tag, ex.segment))?;
+
+    let geom = geometry_from_segments(segs);
+    let feed_node = feed_node_for_segment(&geom, driven_idx)
+        .ok_or("--solver mpie: the feed segment has no interior (degree-2) node to drive")?;
+
+    let has_ground = !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let sol = if has_ground {
+        solve_mpie_ground(&geom, freq_hz, feed_node, ground)
+    } else {
+        solve_mpie(&geom, freq_hz, feed_node)
+    }
+    .map_err(|e| format!("--solver mpie: {e}"))?;
+
+    Ok(segment_currents(&geom, &sol.basis_currents))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn solve_frequency_point(
     deck: &nec_model::deck::NecDeck,
@@ -1070,6 +1123,21 @@ pub(super) fn solve_frequency_point(
     }
     if deck_has_current_source(deck) && !matches!(solver_mode, SolverMode::Hallen) {
         return Err("EX: current-source excitation requires --solver hallen".to_string());
+    }
+    if matches!(solver_mode, SolverMode::Mpie) {
+        // The MPIE path models geometry + delta-gap voltage sources over free
+        // space or a Sommerfeld half-space; loads / transmission lines / networks
+        // are not stamped into its triangle-basis system, so reject them rather
+        // than silently ignoring their effect.
+        for card in &deck.cards {
+            let unsupported = match card {
+                Card::Ld(_) => "LD (loads)",
+                Card::Tl(_) => "TL (transmission line)",
+                Card::Nt(_) => "NT (network)",
+                _ => continue,
+            };
+            return Err(format!("{unsupported}: not supported with --solver mpie"));
+        }
     }
 
     let mut v_vec_pulse = match pulse_rhs_mode {
@@ -1125,6 +1193,11 @@ pub(super) fn solve_frequency_point(
             // the solve step, not the matrix assembly.
             assemble_z_matrix_with_ground(segs, freq_hz, ground)
         }
+        // The MPIE assembles and solves its own (triangle-basis) system in the
+        // i_vec step below; this Hallén Z-matrix is unused by it. Assembling it
+        // keeps the downstream load/TL/NT stamps and diagnostics well-formed
+        // (MPIE decks with those cards are rejected before this point).
+        SolverMode::Mpie => assemble_z_matrix_with_ground(segs, freq_hz, ground),
     };
 
     let (load_vec, load_warnings) = build_loads(deck, segs, freq_hz);
@@ -1372,6 +1445,10 @@ pub(super) fn solve_frequency_point(
                     (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                 }
             }
+        }
+        SolverMode::Mpie => {
+            let currents = solve_mpie_session(deck, segs, ground, freq_hz)?;
+            (currents, 0.0, 0.0, "mpie")
         }
     };
 
