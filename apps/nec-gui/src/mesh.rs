@@ -105,24 +105,53 @@ pub struct GeometryCurrents {
     pub currents_ma: Vec<f32>,
 }
 
-/// Assemble the full scene mesh with uniform wire color.
+/// Viewport display toggles for the reference geometry (GUI-CHK-010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneOptions {
+    /// Draw the xyz axis triad.
+    pub show_axes: bool,
+    /// Draw the z=0 ground grid (only when the deck has a ground plane).
+    pub show_grid: bool,
+}
+
+impl Default for SceneOptions {
+    fn default() -> Self {
+        Self {
+            show_axes: true,
+            show_grid: true,
+        }
+    }
+}
+
+/// Assemble the full scene mesh with uniform wire color and default options.
 pub fn build_scene(geo: &SceneGeometry) -> MeshData {
     build_scene_colored(geo, None)
+}
+
+/// Assemble the scene mesh with default view options (axes + grid on).
+pub fn build_scene_colored(geo: &SceneGeometry, currents_ma: Option<&[f32]>) -> MeshData {
+    build_scene_opts(geo, currents_ma, SceneOptions::default())
 }
 
 /// Assemble the scene mesh, optionally coloring each wire segment by its current
 /// magnitude (per-segment `currents_ma`, aligned to `geo.wires`). Magnitudes are
 /// normalized by the maximum, so the feedpoint (peak `|I|`) is hot and the tips
 /// (near-zero) are cold. Grid/axes precede the wires, whose vertices stay at the
-/// stable base (see [`wire_vertex_base`]).
-pub fn build_scene_colored(geo: &SceneGeometry, currents_ma: Option<&[f32]>) -> MeshData {
+/// stable base (see [`wire_vertex_base`]); `opts` toggles the axes and ground grid.
+pub fn build_scene_opts(
+    geo: &SceneGeometry,
+    currents_ma: Option<&[f32]>,
+    opts: SceneOptions,
+) -> MeshData {
     let (center, radius) = geo.bounds();
     let mut v = Vec::new();
 
-    if geo.has_ground {
+    if geo.has_ground && opts.show_grid {
         push_ground_grid(&mut v, center, radius);
     }
-    push_axes(&mut v, radius);
+    if opts.show_axes {
+        push_axes(&mut v, radius);
+    }
 
     let peak = currents_ma
         .map(|m| m.iter().copied().fold(0.0_f32, f32::max))
@@ -386,6 +415,44 @@ mod tests {
         // The last two vertices are the single wire.
         assert_eq!(m.vertices[base].pos, [0.0, 0.0, 1.0]);
         assert_eq!(m.vertices[base + 1].pos, [0.0, 0.0, 3.0]);
+    }
+
+    #[test]
+    fn scene_options_toggle_axes_and_grid() {
+        // Free space, axes off → wires only.
+        let g = tri_deck_geo();
+        let m = build_scene_opts(
+            &g,
+            None,
+            SceneOptions {
+                show_axes: false,
+                show_grid: true,
+            },
+        );
+        assert_eq!(m.vertices.len(), 3 * 2, "axes off → just the 3 wires");
+
+        // Ground, grid off → axes + wires, no grid.
+        let gg = SceneGeometry::from_segments(vec![([0.0, 0.0, 1.0], [0.0, 0.0, 3.0])], true);
+        let no_grid = build_scene_opts(
+            &gg,
+            None,
+            SceneOptions {
+                show_axes: true,
+                show_grid: false,
+            },
+        );
+        assert_eq!(no_grid.vertices.len(), AXIS_VERTS + 2, "grid off");
+
+        // Everything off → wires only.
+        let bare = build_scene_opts(
+            &gg,
+            None,
+            SceneOptions {
+                show_axes: false,
+                show_grid: false,
+            },
+        );
+        assert_eq!(bare.vertices.len(), 2, "axes+grid off → just the wire");
     }
 
     #[test]
