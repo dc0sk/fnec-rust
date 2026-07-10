@@ -21,6 +21,8 @@ pub enum ActiveTab {
     Pattern,
     /// Segment current-distribution bar chart.
     Currents,
+    /// GPU 3-D viewport (GUI redesign — `docs/gui-redesign-plan.md`).
+    Viewport,
 }
 
 /// Current phase of the single-frequency solver pipeline.

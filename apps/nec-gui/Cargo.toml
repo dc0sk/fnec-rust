@@ -25,7 +25,9 @@ nec_solver  = { workspace = true }
 nec_project = { workspace = true }
 num-complex = { workspace = true }
 toml        = { workspace = true }
-iced        = "0.13"
+iced        = { version = "0.13", features = ["advanced"] }
+glam        = { workspace = true }
+bytemuck    = { workspace = true }
 
 [lints]
 workspace = true

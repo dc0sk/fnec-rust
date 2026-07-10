@@ -35,3 +35,4 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 - `docs/solver-findings.md` — recent MoM kernel findings, experiments, and learnings
 - `docs/applied-math.md` — applied electromagnetics/math formulas used by the solver
 - `docs/rooftop-basis-plan.md` — next-step plan for continuity-enforcing basis support
+- `docs/gui-redesign-plan.md` — phased action plan for the GPU-accelerated 3D GUI workbench (iced + wgpu)

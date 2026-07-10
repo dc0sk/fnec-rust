@@ -8,7 +8,9 @@
 //! cargo run -p nec-gui
 //! ```
 
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+mod viewport;
+
+use iced::widget::{button, column, container, row, scrollable, shader, text, text_input};
 use iced::{Element, Length, Task, Theme};
 use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
@@ -129,7 +131,19 @@ impl FnecGui {
         } else {
             button("  Currents  ").on_press(Message::TabSelected(ActiveTab::Currents))
         };
-        let tab_bar = row![tab_solve, tab_sweep, tab_pattern, tab_currents].spacing(4);
+        let tab_viewport = if self.state.active_tab == ActiveTab::Viewport {
+            button("[ 3D View ]").on_press(Message::TabSelected(ActiveTab::Viewport))
+        } else {
+            button("  3D View  ").on_press(Message::TabSelected(ActiveTab::Viewport))
+        };
+        let tab_bar = row![
+            tab_solve,
+            tab_sweep,
+            tab_pattern,
+            tab_currents,
+            tab_viewport
+        ]
+        .spacing(4);
 
         // ── Shared deck-path row ─────────────────────────────────────────
         let path_row = row![
@@ -160,6 +174,7 @@ impl FnecGui {
             ActiveTab::Sweep => self.sweep_view(),
             ActiveTab::Pattern => self.pattern_view(),
             ActiveTab::Currents => self.currents_view(),
+            ActiveTab::Viewport => self.viewport_view(),
         };
 
         let content = column![tab_bar, path_row, vars_row, tab_content]
@@ -173,6 +188,25 @@ impl FnecGui {
     }
 
     // ── Single-frequency solve view ──────────────────────────────────────
+    /// GUI-CHK-001: the GPU 3-D viewport. Phase 0 renders a shader-widget spike
+    /// (a triangle) to prove the iced-0.13 custom-wgpu integration; later phases
+    /// replace it with the wire geometry, currents, and pattern lobe.
+    fn viewport_view(&self) -> Element<'_, Message> {
+        let caption = text(
+            "GPU 3-D viewport (Phase 0 spike). The colored triangle confirms the \
+             wgpu shader-widget integration; wire geometry lands in GUI-CHK-002.",
+        );
+        let scene = shader(viewport::Scene)
+            .width(Length::Fill)
+            .height(Length::Fill);
+        column![
+            caption,
+            container(scene).width(Length::Fill).height(Length::Fill)
+        ]
+        .spacing(8)
+        .into()
+    }
+
     fn solve_view(&self) -> Element<'_, Message> {
         let solve_btn = if self.state.can_solve() {
             button("Solve").on_press(Message::Solve)
