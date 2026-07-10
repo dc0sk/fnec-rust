@@ -49,7 +49,7 @@
 
 use crate::geometry::{GroundModel, Segment};
 use crate::linear::{solve_square_in_place, SolveError};
-use crate::sommerfeld::reflected_potential_kernels;
+use crate::sommerfeld::{reflected_e_projected_fast, reflected_potential_kernels};
 use num_complex::Complex64;
 
 const C0: f64 = 299_792_458.0;
@@ -82,9 +82,9 @@ pub enum MpieError {
     /// The requested feed node cannot host a delta-gap source (it is a free end,
     /// a junction, or out of range) — only degree-2 nodes are feedable.
     InvalidFeed { node: usize },
-    /// The Sommerfeld MPIE ground is implemented for a **horizontal wire above
-    /// the ground** only (Phase D); the geometry is non-horizontal or buried.
-    /// Arbitrary orientation is Phase E (the full reflected dyadic).
+    /// The Sommerfeld MPIE ground supports any **straight wire above the ground**
+    /// (horizontal / vertical / tilted); the geometry is bent or buried. Bent
+    /// geometry over ground needs the full per-pair reflected dyadic (deferred).
     UnsupportedGround,
 }
 
@@ -97,7 +97,7 @@ impl std::fmt::Display for MpieError {
             }
             MpieError::UnsupportedGround => write!(
                 f,
-                "MPIE Sommerfeld ground supports a horizontal wire above ground only (Phase D)"
+                "MPIE Sommerfeld ground supports a straight wire above ground; bent or buried geometry is unsupported"
             ),
         }
     }
@@ -425,12 +425,14 @@ impl GroundKernelGrid {
 }
 
 /// Assemble the MPIE impedance matrix with a Sommerfeld half-space added to the
-/// free-space fill (PH9-CHK-007 Phase D). The reflected vector- and
-/// scalar-potential kernels are added exactly where the free-space `e^{-jkR}/R`
-/// sits, so the surface wave enters the currents themselves (not just the feed Z).
+/// free-space fill (PH9-CHK-007 Phase D/E). The reflected term is added exactly
+/// where the free-space `e^{-jkR}/R` sits, so the surface wave enters the currents
+/// themselves (not just the feed Z).
 ///
-/// Phase D supports a **horizontal wire above ground**; other orientations
-/// return [`MpieError::UnsupportedGround`] (arbitrary orientation is Phase E).
+/// Supports any **straight wire above ground**: a horizontal wire uses the fast
+/// reflected potential kernels (Phase D), and a vertical / tilted / sloping wire
+/// uses the general reflected-E-field-dyadic reaction (Phase E). Bent geometry
+/// over ground returns [`MpieError::UnsupportedGround`] (deferred).
 pub fn assemble_with_ground(
     geom: &MpieGeometry,
     freq_hz: f64,
@@ -446,12 +448,21 @@ pub fn assemble_with_ground(
         GroundModel::SimpleFiniteGround { eps_r, sigma } => (false, *eps_r, *sigma),
     };
 
-    // Phase D: horizontal wire above ground only. Require a common height z > 0.
+    // The wire must lie entirely above the ground plane.
     let lam = C0 / freq_hz;
+    if geom.nodes.iter().any(|n| n[2] <= 1e-6 * lam) {
+        return Err(MpieError::UnsupportedGround);
+    }
     let z0 = geom.nodes[0][2];
     let horizontal = geom.nodes.iter().all(|n| (n[2] - z0).abs() < 1e-6 * lam);
-    if !horizontal || z0 <= 0.0 {
-        return Err(MpieError::UnsupportedGround);
+
+    if !horizontal {
+        // Non-horizontal wire (vertical / tilted / sloping): the reflected term
+        // uses the general reflected-E-field dyadic as a Galerkin reaction added
+        // to the free-space Z. Requires a STRAIGHT wire (Phase E); bent geometry
+        // over ground needs the full per-pair dyadic and is deferred.
+        add_general_ground_reaction(&mut z, geom, &segs, &bases, freq_hz, pec, eps_r, sigma)?;
+        return Ok(z);
     }
     let d = 2.0 * z0; // source-to-image separation (both at height z0)
 
@@ -510,8 +521,137 @@ pub fn assemble_with_ground(
     Ok(z)
 }
 
-/// Solve the MPIE with a Sommerfeld half-space (Phase D, horizontal wire) for a
-/// delta-gap at degree-2 `feed_node`.
+/// Add the Sommerfeld reflected contribution for a **straight, non-horizontal**
+/// wire (vertical / tilted / sloping) as a Galerkin reaction of the general
+/// reflected-E-field dyadic (`reflected_e_projected_fast`) — which equals the
+/// reflected mutual impedance and therefore adds directly to the free-space Z
+/// (verified: the E-field reaction reproduces the free-space potential-form Z).
+///
+/// The kernel depends only on `(Δs, Σs)` along the wire axis for a straight wire,
+/// so it is precomputed on a grid and bilinearly interpolated (as in the Level-1
+/// feedpoint correction). Bent geometry over ground needs the full per-pair
+/// dyadic and returns [`MpieError::UnsupportedGround`].
+#[allow(clippy::too_many_arguments)]
+fn add_general_ground_reaction(
+    z: &mut [Vec<Complex64>],
+    geom: &MpieGeometry,
+    segs: &[SegGeom],
+    bases: &[Vec<Leg>],
+    freq_hz: f64,
+    pec: bool,
+    eps_r: f64,
+    sigma: f64,
+) -> Result<(), MpieError> {
+    let axis = segs[0].tangent;
+    // Straight wire only: every segment parallel to a common axis.
+    if segs.iter().any(|s| dot(s.tangent, axis).abs() < 1.0 - 1e-6) {
+        return Err(MpieError::UnsupportedGround);
+    }
+
+    // Centroid and signed arc-position range along the axis.
+    let nn = geom.nodes.len() as f64;
+    let mut c = [0.0; 3];
+    for p in &geom.nodes {
+        c[0] += p[0] / nn;
+        c[1] += p[1] / nn;
+        c[2] += p[2] / nn;
+    }
+    let (mut smin, mut smax) = (f64::INFINITY, f64::NEG_INFINITY);
+    for p in &geom.nodes {
+        let s = dot(sub(*p, c), axis);
+        smin = smin.min(s);
+        smax = smax.max(s);
+    }
+
+    // Precompute the reflected kernel on a (Δs, Σs) grid; dx=Δs·ax, dy=Δs·ay,
+    // d = 2·c_z + Σs·az (the height-sum of two axis points about the centroid).
+    const NG: usize = 40;
+    let ds_lo = smin - smax;
+    let ds_sp = 2.0 * (smax - smin);
+    let sg_lo = 2.0 * smin;
+    let sg_sp = 2.0 * (smax - smin);
+    let mut grid = vec![Complex64::new(0.0, 0.0); NG * NG];
+    for i in 0..NG {
+        let ds = ds_lo + ds_sp * i as f64 / (NG - 1) as f64;
+        for k in 0..NG {
+            let sg = sg_lo + sg_sp * k as f64 / (NG - 1) as f64;
+            let d = 2.0 * c[2] + sg * axis[2];
+            grid[i * NG + k] = reflected_e_projected_fast(
+                axis,
+                axis,
+                ds * axis[0],
+                ds * axis[1],
+                d,
+                freq_hz,
+                eps_r,
+                sigma,
+                pec,
+            );
+        }
+    }
+    let interp = |ds: f64, sg: f64| -> Complex64 {
+        let fi = if ds_sp > 0.0 {
+            ((ds - ds_lo) / ds_sp * (NG - 1) as f64).clamp(0.0, (NG - 1) as f64)
+        } else {
+            0.0
+        };
+        let fk = if sg_sp > 0.0 {
+            ((sg - sg_lo) / sg_sp * (NG - 1) as f64).clamp(0.0, (NG - 1) as f64)
+        } else {
+            0.0
+        };
+        let (i0, k0) = (
+            (fi.floor() as usize).min(NG - 2),
+            (fk.floor() as usize).min(NG - 2),
+        );
+        let (a, b) = (fi - i0 as f64, fk - k0 as f64);
+        grid[i0 * NG + k0] * (1.0 - a) * (1.0 - b)
+            + grid[(i0 + 1) * NG + k0] * a * (1.0 - b)
+            + grid[i0 * NG + k0 + 1] * (1.0 - a) * b
+            + grid[(i0 + 1) * NG + k0 + 1] * a * b
+    };
+
+    // Galerkin fill with the signed current ramps: the reflected E-field kernel is
+    // linear in the source/observation directions, so K(σ_m·axis, σ_n·axis) =
+    // σ_m·σ_n·K(axis, axis) with σ = flow_tangent·axis (±1 on a straight wire).
+    let nb = bases.len();
+    for m in 0..nb {
+        for n in m..nb {
+            let mut acc = Complex64::new(0.0, 0.0);
+            for lm in &bases[m] {
+                let sm = &segs[lm.seg];
+                let sig_m = dot(lm.flow_tangent(segs), axis);
+                for ln in &bases[n] {
+                    let sn = &segs[ln.seg];
+                    let sig = sig_m * dot(ln.flow_tangent(segs), axis);
+                    for gi in 0..6 {
+                        let ua = 0.5 * (GL_NODES[gi] + 1.0);
+                        let wa = 0.5 * GL_WEIGHTS[gi] * sm.len;
+                        let ra = quad_point(sm, ua);
+                        let fm = lm.f_scalar(ua);
+                        let sa = dot(sub(ra, c), axis);
+                        for gj in 0..6 {
+                            let ub = 0.5 * (GL_NODES[gj] + 1.0);
+                            let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
+                            let rb = quad_point(sn, ub);
+                            let fn_ = ln.f_scalar(ub);
+                            let sb = dot(sub(rb, c), axis);
+                            acc += wa * wb * fm * fn_ * sig * interp(sa - sb, sa + sb);
+                        }
+                    }
+                }
+            }
+            z[m][n] += acc;
+            if n != m {
+                z[n][m] += acc;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Solve the MPIE with a Sommerfeld half-space (any straight wire above ground)
+/// for a delta-gap at degree-2 `feed_node`.
 pub fn solve_mpie_ground(
     geom: &MpieGeometry,
     freq_hz: f64,
