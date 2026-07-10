@@ -47,8 +47,9 @@
 //! A closed loop is a cyclic chain: every node is degree 2, there is no free
 //! end, and the same basis handles it with no endpoint condition.
 
-use crate::geometry::Segment;
+use crate::geometry::{GroundModel, Segment};
 use crate::linear::{solve_square_in_place, SolveError};
+use crate::sommerfeld::reflected_potential_kernels;
 use num_complex::Complex64;
 
 const C0: f64 = 299_792_458.0;
@@ -81,6 +82,10 @@ pub enum MpieError {
     /// The requested feed node cannot host a delta-gap source (it is a free end,
     /// a junction, or out of range) — only degree-2 nodes are feedable.
     InvalidFeed { node: usize },
+    /// The Sommerfeld MPIE ground is implemented for a **horizontal wire above
+    /// the ground** only (Phase D); the geometry is non-horizontal or buried.
+    /// Arbitrary orientation is Phase E (the full reflected dyadic).
+    UnsupportedGround,
 }
 
 impl std::fmt::Display for MpieError {
@@ -90,6 +95,10 @@ impl std::fmt::Display for MpieError {
             MpieError::InvalidFeed { node } => {
                 write!(f, "node {node} is not a valid degree-2 feed node")
             }
+            MpieError::UnsupportedGround => write!(
+                f,
+                "MPIE Sommerfeld ground supports a horizontal wire above ground only (Phase D)"
+            ),
         }
     }
 }
@@ -359,6 +368,164 @@ pub fn solve_mpie(
         .ok_or(MpieError::InvalidFeed { node: feed_node })?;
 
     let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
+    let nb = z.len();
+    let mut v = vec![Complex64::new(0.0, 0.0); nb];
+    v[feed_basis] = Complex64::new(1.0, 0.0);
+    let currents = solve_square_in_place(&mut z, &mut v)?;
+    let z_in = Complex64::new(1.0, 0.0) / currents[feed_basis];
+    Ok(MpieSolution {
+        z_in,
+        basis_currents: currents,
+        feed_basis,
+    })
+}
+
+/// A uniform ρ-grid of the reflected potential kernels `(G_A, G_Φ)` at a fixed
+/// height-sum `d`, precomputed once and linearly interpolated during the Z-fill
+/// (the direct per-element Sommerfeld integral is far too slow). This is the
+/// oracle's acceleration and keeps the ground fill at free-space cost + O(grid).
+struct GroundKernelGrid {
+    d_rho: f64,
+    ga: Vec<Complex64>,
+    gp: Vec<Complex64>,
+}
+
+impl GroundKernelGrid {
+    fn new(
+        max_rho: f64,
+        d: f64,
+        freq_hz: f64,
+        eps_r: f64,
+        sigma: f64,
+        pec: bool,
+        n: usize,
+    ) -> Self {
+        let d_rho = max_rho / n as f64;
+        let mut ga = Vec::with_capacity(n + 1);
+        let mut gp = Vec::with_capacity(n + 1);
+        for i in 0..=n {
+            let rho = (i as f64 * d_rho).max(1e-6);
+            let (a, p) = reflected_potential_kernels(rho, d, freq_hz, eps_r, sigma, pec);
+            ga.push(a);
+            gp.push(p);
+        }
+        Self { d_rho, ga, gp }
+    }
+
+    /// Linear interpolation at horizontal offset `rho` (clamped to the grid).
+    fn interp(&self, rho: f64) -> (Complex64, Complex64) {
+        let t = (rho / self.d_rho).max(0.0);
+        let i = (t.floor() as usize).min(self.ga.len() - 2);
+        let f = t - i as f64;
+        (
+            self.ga[i] * (1.0 - f) + self.ga[i + 1] * f,
+            self.gp[i] * (1.0 - f) + self.gp[i + 1] * f,
+        )
+    }
+}
+
+/// Assemble the MPIE impedance matrix with a Sommerfeld half-space added to the
+/// free-space fill (PH9-CHK-007 Phase D). The reflected vector- and
+/// scalar-potential kernels are added exactly where the free-space `e^{-jkR}/R`
+/// sits, so the surface wave enters the currents themselves (not just the feed Z).
+///
+/// Phase D supports a **horizontal wire above ground**; other orientations
+/// return [`MpieError::UnsupportedGround`] (arbitrary orientation is Phase E).
+pub fn assemble_with_ground(
+    geom: &MpieGeometry,
+    freq_hz: f64,
+    ground: &GroundModel,
+) -> Result<Vec<Vec<Complex64>>, MpieError> {
+    let segs = seg_geom(geom);
+    let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
+    let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
+
+    let (pec, eps_r, sigma) = match ground {
+        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return Ok(z),
+        GroundModel::PerfectConductor => (true, 1.0, 0.0),
+        GroundModel::SimpleFiniteGround { eps_r, sigma } => (false, *eps_r, *sigma),
+    };
+
+    // Phase D: horizontal wire above ground only. Require a common height z > 0.
+    let lam = C0 / freq_hz;
+    let z0 = geom.nodes[0][2];
+    let horizontal = geom.nodes.iter().all(|n| (n[2] - z0).abs() < 1e-6 * lam);
+    if !horizontal || z0 <= 0.0 {
+        return Err(MpieError::UnsupportedGround);
+    }
+    let d = 2.0 * z0; // source-to-image separation (both at height z0)
+
+    // Grid spans the largest horizontal offset between any two quadrature points.
+    let mut max_rho = 0.0_f64;
+    for a in &geom.nodes {
+        for b in &geom.nodes {
+            let dr = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+            max_rho = max_rho.max(dr);
+        }
+    }
+    let grid = GroundKernelGrid::new(max_rho * 1.05 + 1e-6, d, freq_hz, eps_r, sigma, pec, 240);
+
+    let w = 2.0 * std::f64::consts::PI * freq_hz;
+    let pre_a = Complex64::new(0.0, w * MU0 / (4.0 * std::f64::consts::PI));
+    let pre_p =
+        Complex64::new(1.0, 0.0) / Complex64::new(0.0, w * EPS0 * 4.0 * std::f64::consts::PI);
+    let nb = bases.len();
+    for m in 0..nb {
+        for n in m..nb {
+            let mut za = Complex64::new(0.0, 0.0);
+            let mut zp = Complex64::new(0.0, 0.0);
+            for lm in &bases[m] {
+                let sm = &segs[lm.seg];
+                let tm = lm.flow_tangent(&segs);
+                let cm = lm.charge(&segs);
+                for ln in &bases[n] {
+                    let sn = &segs[ln.seg];
+                    let tt = dot(tm, ln.flow_tangent(&segs));
+                    let cc = cm * ln.charge(&segs);
+                    for gi in 0..6 {
+                        let ua = 0.5 * (GL_NODES[gi] + 1.0);
+                        let wa = 0.5 * GL_WEIGHTS[gi] * sm.len;
+                        let ra = quad_point(sm, ua);
+                        let fm = lm.f_scalar(ua);
+                        for gj in 0..6 {
+                            let ub = 0.5 * (GL_NODES[gj] + 1.0);
+                            let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
+                            let rb = quad_point(sn, ub);
+                            let fn_ = ln.f_scalar(ub);
+                            let rho = ((ra[0] - rb[0]).powi(2) + (ra[1] - rb[1]).powi(2)).sqrt();
+                            let (ga, gp) = grid.interp(rho);
+                            za += wa * wb * fm * fn_ * tt * ga;
+                            zp += wa * wb * cc * gp;
+                        }
+                    }
+                }
+            }
+            let refl = pre_a * za + pre_p * zp;
+            z[m][n] += refl;
+            if n != m {
+                z[n][m] += refl;
+            }
+        }
+    }
+    Ok(z)
+}
+
+/// Solve the MPIE with a Sommerfeld half-space (Phase D, horizontal wire) for a
+/// delta-gap at degree-2 `feed_node`.
+pub fn solve_mpie_ground(
+    geom: &MpieGeometry,
+    freq_hz: f64,
+    feed_node: usize,
+    ground: &GroundModel,
+) -> Result<MpieSolution, MpieError> {
+    let (_, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
+    let feed_basis = node_feed
+        .get(feed_node)
+        .copied()
+        .flatten()
+        .ok_or(MpieError::InvalidFeed { node: feed_node })?;
+
+    let mut z = assemble_with_ground(geom, freq_hz, ground)?;
     let nb = z.len();
     let mut v = vec![Complex64::new(0.0, 0.0); nb];
     v[feed_basis] = Complex64::new(1.0, 0.0);
