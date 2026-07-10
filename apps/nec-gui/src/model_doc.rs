@@ -256,6 +256,95 @@ impl ModelDoc {
     }
 }
 
+/// Upper bound on retained undo/redo snapshots (guards against unbounded growth
+/// during a long editing session).
+const MAX_HISTORY: usize = 200;
+
+/// Undo/redo history for the wire editor (GUI-CHK-007).
+///
+/// Snapshots are whole [`ModelDoc`] clones. Consecutive edits to the **same**
+/// `(row, field)` are *coalesced*: only the pre-run state is snapshotted, so
+/// typing `-5.232` into one box is a single undo step, not one step per keystroke.
+/// Structural changes (add/delete) and any undo/redo break the run.
+#[derive(Debug, Clone, Default)]
+pub struct EditHistory {
+    undo: Vec<ModelDoc>,
+    redo: Vec<ModelDoc>,
+    /// The field currently absorbing coalesced edits, if a run is open.
+    last_field: Option<(usize, WireField)>,
+}
+
+impl EditHistory {
+    /// Whether an undo is available.
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    /// Whether a redo is available.
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Clear all history (called when a fresh deck is loaded into the editor).
+    pub fn reset(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+        self.last_field = None;
+    }
+
+    fn push_undo(&mut self, doc: &ModelDoc) {
+        self.undo.push(doc.clone());
+        if self.undo.len() > MAX_HISTORY {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+    }
+
+    /// Snapshot the pre-edit state before a field edit, coalescing consecutive
+    /// edits to the same `(row, field)` into one undo step. Call *before*
+    /// mutating the document.
+    pub fn before_field_edit(&mut self, doc: &ModelDoc, row: usize, field: WireField) {
+        if self.last_field == Some((row, field)) {
+            return;
+        }
+        self.push_undo(doc);
+        self.last_field = Some((row, field));
+    }
+
+    /// Snapshot the pre-change state before a structural edit (add/delete row).
+    /// Never coalesced. Call *before* mutating the document.
+    pub fn before_structural(&mut self, doc: &ModelDoc) {
+        self.push_undo(doc);
+        self.last_field = None;
+    }
+
+    /// Restore the previous snapshot into `doc`, pushing the current state onto
+    /// the redo stack. Returns `false` (and leaves `doc` untouched) if empty.
+    pub fn undo(&mut self, doc: &mut ModelDoc) -> bool {
+        match self.undo.pop() {
+            Some(prev) => {
+                self.redo.push(std::mem::replace(doc, prev));
+                self.last_field = None;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Re-apply the next redo snapshot into `doc`, pushing the current state onto
+    /// the undo stack. Returns `false` (and leaves `doc` untouched) if empty.
+    pub fn redo(&mut self, doc: &mut ModelDoc) -> bool {
+        match self.redo.pop() {
+            Some(next) => {
+                self.undo.push(std::mem::replace(doc, next));
+                self.last_field = None;
+                true
+            }
+            None => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,5 +447,80 @@ EN
         // Typing resumes cleanly.
         d.edit(0, WireField::Z2, "5.232".into());
         assert!(d.to_deck().is_ok());
+    }
+
+    // ── EditHistory ──────────────────────────────────────────────────────────
+
+    /// One field edited several times in a row is a single undo step, and undo
+    /// restores the original value.
+    #[test]
+    fn history_coalesces_consecutive_same_field_edits() {
+        let mut d = doc();
+        let mut h = EditHistory::default();
+        for v in ["5", "5.", "5.2", "5.23"] {
+            h.before_field_edit(&d, 0, WireField::Z2);
+            d.edit(0, WireField::Z2, v.into());
+        }
+        assert_eq!(d.wires[0].z2, "5.23");
+        assert!(h.can_undo());
+        assert!(h.undo(&mut d), "one undo");
+        assert_eq!(d.wires[0].z2, "5.232", "undo restores the pre-run value");
+        assert!(!h.can_undo(), "the whole typing run was one step");
+    }
+
+    /// Editing a different field opens a new undo step.
+    #[test]
+    fn history_separates_different_fields() {
+        let mut d = doc();
+        let mut h = EditHistory::default();
+        h.before_field_edit(&d, 0, WireField::Z2);
+        d.edit(0, WireField::Z2, "6".into());
+        h.before_field_edit(&d, 0, WireField::X1);
+        d.edit(0, WireField::X1, "1".into());
+
+        assert!(h.undo(&mut d)); // undoes X1
+        assert_eq!(d.wires[0].x1, "0");
+        assert_eq!(d.wires[0].z2, "6", "Z2 edit still applied");
+        assert!(h.undo(&mut d)); // undoes Z2
+        assert_eq!(d.wires[0].z2, "5.232");
+    }
+
+    /// Add/delete are their own undo steps and are not coalesced with edits.
+    #[test]
+    fn history_structural_changes_and_redo() {
+        let mut d = doc();
+        let mut h = EditHistory::default();
+        h.before_structural(&d);
+        d.add_wire();
+        assert_eq!(d.wire_count(), 2);
+
+        assert!(h.undo(&mut d));
+        assert_eq!(d.wire_count(), 1, "undo removes the added wire");
+        assert!(h.can_redo());
+        assert!(h.redo(&mut d));
+        assert_eq!(d.wire_count(), 2, "redo re-adds it");
+    }
+
+    /// A fresh edit after an undo clears the redo stack.
+    #[test]
+    fn history_new_edit_clears_redo() {
+        let mut d = doc();
+        let mut h = EditHistory::default();
+        h.before_field_edit(&d, 0, WireField::Z2);
+        d.edit(0, WireField::Z2, "6".into());
+        h.undo(&mut d);
+        assert!(h.can_redo());
+        h.before_field_edit(&d, 0, WireField::Z2);
+        d.edit(0, WireField::Z2, "7".into());
+        assert!(!h.can_redo(), "a new edit invalidates redo");
+    }
+
+    #[test]
+    fn history_undo_redo_on_empty_is_a_noop() {
+        let mut d = doc();
+        let mut h = EditHistory::default();
+        assert!(!h.undo(&mut d));
+        assert!(!h.redo(&mut d));
+        assert_eq!(d.wire_count(), 1);
     }
 }

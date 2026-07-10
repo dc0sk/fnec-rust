@@ -1052,3 +1052,46 @@ fn editor_edit_clears_stale_currents_overlay() {
     );
     assert!(state.viewport.currents_ma.is_none());
 }
+
+/// Undo/redo via messages restores and re-applies a wire edit, and refreshes
+/// the 3-D preview each time.
+#[test]
+fn editor_undo_redo_restores_state() {
+    let mut state = loaded_editor();
+    assert_eq!(state.editor.doc.wires[0].z2, "2.5");
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "3.0".into(),
+    });
+    assert_eq!(state.editor.doc.wires[0].z2, "3.0");
+    let rev_after_edit = state.viewport.scene_rev;
+
+    state.apply(&Message::EditUndo);
+    assert_eq!(state.editor.doc.wires[0].z2, "2.5", "undo restores");
+    assert_ne!(
+        state.viewport.scene_rev, rev_after_edit,
+        "undo rebuilds the preview"
+    );
+
+    state.apply(&Message::EditRedo);
+    assert_eq!(state.editor.doc.wires[0].z2, "3.0", "redo re-applies");
+}
+
+/// Undo reverses an Add, and undo/redo on an empty history is a harmless no-op.
+#[test]
+fn editor_undo_add_and_empty_noop() {
+    let mut state = loaded_editor();
+    // Empty history: undo does nothing, no panic.
+    state.apply(&Message::EditUndo);
+    assert_eq!(state.editor.doc.wire_count(), 1);
+
+    state.apply(&Message::EditWireAdd);
+    assert_eq!(state.editor.doc.wire_count(), 2);
+    state.apply(&Message::EditUndo);
+    assert_eq!(
+        state.editor.doc.wire_count(),
+        1,
+        "undo removes the added wire"
+    );
+}

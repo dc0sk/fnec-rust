@@ -10,12 +10,13 @@
 
 mod viewport;
 
+use iced::keyboard::{Key, Modifiers};
 use iced::widget::pane_grid::{Axis, Split};
 use iced::widget::{
     button, checkbox, column, container, pane_grid, progress_bar, row, scrollable, shader, text,
     text_input,
 };
-use iced::{Border, Element, Length, Task, Theme};
+use iced::{Border, Element, Length, Subscription, Task, Theme};
 use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
@@ -30,8 +31,29 @@ use std::path::PathBuf;
 
 fn main() -> iced::Result {
     iced::application("fnec-gui — Antenna Modeler", FnecGui::update, FnecGui::view)
+        .subscription(FnecGui::subscription)
         .theme(|_| Theme::Dark)
         .run()
+}
+
+/// Map a Ctrl/Cmd-modified key press to an editor undo/redo message.
+///
+/// `Ctrl+Z` undoes, `Ctrl+Shift+Z` / `Ctrl+Y` redoes. Only wired while the Edit
+/// tab is active (see [`FnecGui::subscription`]), so it never shadows typing in
+/// the other tabs.
+fn editor_hotkey(key: Key, mods: Modifiers) -> Option<Message> {
+    if !mods.command() {
+        return None;
+    }
+    match key.as_ref() {
+        Key::Character(c) if c.eq_ignore_ascii_case("z") => Some(if mods.shift() {
+            Message::EditRedo
+        } else {
+            Message::EditUndo
+        }),
+        Key::Character(c) if c.eq_ignore_ascii_case("y") => Some(Message::EditRedo),
+        _ => None,
+    }
 }
 
 /// Which workbench pane a `pane_grid` cell holds.
@@ -70,6 +92,15 @@ impl Default for FnecGui {
 }
 
 impl FnecGui {
+    /// Listen for undo/redo hotkeys, but only while the wire editor is open.
+    fn subscription(&self) -> Subscription<Message> {
+        if self.state.active_tab == ActiveTab::Editor {
+            iced::keyboard::on_key_press(editor_hotkey)
+        } else {
+            Subscription::none()
+        }
+    }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         let spawn_solve = matches!(message, Message::Solve);
         let spawn_sweep = matches!(message, Message::RunSweep);
@@ -640,6 +671,16 @@ impl FnecGui {
 
         let add_btn = button("+ Add wire").on_press(Message::EditWireAdd);
         let save_btn = button("Save deck").on_press(Message::SaveDeck);
+        let undo_btn = if self.state.editor.history.can_undo() {
+            button("Undo").on_press(Message::EditUndo)
+        } else {
+            button("Undo")
+        };
+        let redo_btn = if self.state.editor.history.can_redo() {
+            button("Redo").on_press(Message::EditRedo)
+        } else {
+            button("Redo")
+        };
 
         let dirty = if self.state.editor.doc.dirty {
             "  •unsaved"
@@ -658,7 +699,7 @@ impl FnecGui {
         let save_status = text(self.state.editor.save_status.clone()).width(Length::Fill);
 
         column![
-            row![load_btn, add_btn, save_btn].spacing(8),
+            row![load_btn, add_btn, undo_btn, redo_btn, save_btn].spacing(8),
             table,
             status,
             save_status,

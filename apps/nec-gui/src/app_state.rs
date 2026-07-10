@@ -119,6 +119,8 @@ pub struct AppState {
 pub struct EditorState {
     /// The editable deck (wire table + preserved control cards).
     pub doc: crate::model_doc::ModelDoc,
+    /// Undo/redo history for the wire table.
+    pub history: crate::model_doc::EditHistory,
     /// Whether a deck has been loaded into the editor yet.
     pub loaded: bool,
     /// Last validation/preview error (row/reason), shown under the table.
@@ -323,6 +325,10 @@ pub enum Message {
     SaveDeck,
     /// Background deck write completed (`Ok(path)` or an error message).
     DeckSaved(Result<String, String>),
+    /// Undo the last wire-table change (button or Ctrl+Z).
+    EditUndo,
+    /// Redo the last undone wire-table change (button or Ctrl+Shift+Z / Ctrl+Y).
+    EditRedo,
 }
 
 impl AppState {
@@ -461,6 +467,7 @@ impl AppState {
             }
             Message::EditDeckLoaded(Ok(doc)) => {
                 self.editor.doc = doc.clone();
+                self.editor.history.reset();
                 self.editor.loaded = true;
                 self.editor.error = None;
                 self.editor.save_status.clear();
@@ -475,16 +482,31 @@ impl AppState {
                 self.editor.save_status.clear();
             }
             Message::EditWireField { row, field, value } => {
+                self.editor
+                    .history
+                    .before_field_edit(&self.editor.doc, *row, *field);
                 self.editor.doc.edit(*row, *field, value.clone());
                 self.refresh_editor_preview();
             }
             Message::EditWireAdd => {
+                self.editor.history.before_structural(&self.editor.doc);
                 self.editor.doc.add_wire();
                 self.refresh_editor_preview();
             }
             Message::EditWireDelete(row) => {
+                self.editor.history.before_structural(&self.editor.doc);
                 self.editor.doc.delete_wire(*row);
                 self.refresh_editor_preview();
+            }
+            Message::EditUndo => {
+                if self.editor.history.undo(&mut self.editor.doc) {
+                    self.refresh_editor_preview();
+                }
+            }
+            Message::EditRedo => {
+                if self.editor.history.redo(&mut self.editor.doc) {
+                    self.refresh_editor_preview();
+                }
             }
             Message::SaveDeck => {
                 self.editor.save_status = "Saving…".into();
