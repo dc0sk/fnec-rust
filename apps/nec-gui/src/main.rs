@@ -24,6 +24,7 @@ use nec_gui::app_state::{
 };
 use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow};
 use nec_gui::plot::PlotMetric;
+use nec_gui::session::Session;
 use nec_gui::solve::{
     current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
     pattern_grid_path, pattern_slice_deck_path, read_deck_text, solve_deck_path, solve_deck_str,
@@ -85,8 +86,14 @@ impl Default for FnecGui {
             .expect("initial pane split");
         // Give the controls pane a bit less than half by default.
         panes.resize(split, 0.42);
+        // Restore the last session (deck/vars paths, sweep range, camera, view
+        // options) if one was saved; otherwise start fresh.
+        let mut state = AppState::default();
+        if let Some(session) = Session::load() {
+            session.apply_to(&mut state);
+        }
         Self {
-            state: AppState::default(),
+            state,
             panes,
             main_split: split,
         }
@@ -114,11 +121,29 @@ impl FnecGui {
         let spawn_edit_load = matches!(message, Message::EditDeckLoad);
         let spawn_save = matches!(message, Message::SaveDeck);
         let spawn_apply_solve = matches!(message, Message::EditApplySolve);
+        // Settings changes worth persisting to the session file.
+        let persist = matches!(
+            message,
+            Message::DeckPathChanged(_)
+                | Message::VarsPathChanged(_)
+                | Message::SweepStartChanged(_)
+                | Message::SweepEndChanged(_)
+                | Message::SweepStepChanged(_)
+                | Message::SweepMetricSelected(_)
+                | Message::ToggleAxes(_)
+                | Message::ToggleGrid(_)
+                | Message::Viewport(ViewportMsg::ResetView)
+        );
         // Pane resize is an iced-layout concern handled here (not in AppState).
         if let Message::PaneResized(ratio) = message {
             self.panes.resize(self.main_split, ratio);
         }
         self.state.apply(&message);
+
+        if persist {
+            // Fails soft: a missing config dir just skips persistence.
+            let _ = Session::from_state(&self.state).save();
+        }
 
         if spawn_solve {
             let path = PathBuf::from(self.state.deck_path.clone());
