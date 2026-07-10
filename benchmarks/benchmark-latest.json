@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-07-10T17:41:05Z",
-  "git_sha": "f7c7bec",
+  "generated_at": "2026-07-10T17:42:35Z",
+  "git_sha": "685664f",
   "runner_nproc": 4,
   "runs": [
     {
@@ -44,7 +44,7 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 102
+      "elapsed_ms": 13
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -245,9 +245,9 @@
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 36,
+      "avg_ms": 7,
       "min_ms": 4,
-      "max_ms": 102
+      "max_ms": 13
     },
     {
       "deck": "dipole-freesp-51seg",
