@@ -372,6 +372,35 @@ fn geometry_load_error_clears_scene() {
     assert!(state.viewport.status.starts_with("Error:"));
 }
 
+/// GUI-CHK-003: viewport camera messages mutate the camera through `apply`, and
+/// Reset View re-frames on the loaded geometry.
+#[test]
+fn viewport_camera_messages_move_and_reset() {
+    use nec_gui::app_state::ViewportMsg;
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let geo = nec_gui::solve::load_geometry_str(deck).unwrap();
+    let mut state = AppState::default();
+    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    let fit = state.viewport.camera;
+
+    // Orbit changes yaw/pitch.
+    state.apply(&Message::Viewport(ViewportMsg::Orbit {
+        d_yaw: 0.3,
+        d_pitch: 0.1,
+    }));
+    assert!((state.viewport.camera.yaw - fit.yaw).abs() > 1e-6);
+    // Zoom in shrinks distance.
+    state.apply(&Message::Viewport(ViewportMsg::Zoom(1.0)));
+    assert!(state.viewport.camera.distance < fit.distance);
+    // Pan moves the look-at target.
+    state.apply(&Message::Viewport(ViewportMsg::Pan { dx: 0.1, dy: 0.0 }));
+    assert!(state.viewport.camera.target != fit.target);
+
+    // Reset View restores the full loaded framing (orientation + fit).
+    state.apply(&Message::Viewport(ViewportMsg::ResetView));
+    assert_eq!(state.viewport.camera, fit);
+}
+
 /// sorted_sweep_rows returns rows sorted by |Z| descending when requested.
 #[test]
 fn sorted_sweep_rows_zmag_descending() {

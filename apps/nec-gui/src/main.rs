@@ -13,7 +13,8 @@ mod viewport;
 use iced::widget::{button, column, container, row, scrollable, shader, text, text_input};
 use iced::{Element, Length, Task, Theme};
 use nec_gui::app_state::{
-    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
+    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
+    SweepSortCol, ViewportMsg,
 };
 use nec_gui::solve::{
     current_distribution_deck_path, load_geometry_path, pattern_slice_deck_path, solve_deck_path,
@@ -214,9 +215,19 @@ impl FnecGui {
         } else {
             self.state.viewport.status.clone()
         });
-        let controls = row![load_btn, status]
-            .spacing(12)
-            .align_y(iced::Alignment::Center);
+        let reset_btn = if self.state.viewport.fit_bounds.is_some() {
+            button("Reset view").on_press(Message::Viewport(ViewportMsg::ResetView))
+        } else {
+            button("Reset view")
+        };
+        let controls = row![
+            load_btn,
+            reset_btn,
+            text("· drag = orbit · wheel = zoom · middle/right-drag = pan"),
+            status,
+        ]
+        .spacing(12)
+        .align_y(iced::Alignment::Center);
         let scene = shader(viewport::Scene::new(&self.state.viewport))
             .width(Length::Fill)
             .height(Length::Fill);
