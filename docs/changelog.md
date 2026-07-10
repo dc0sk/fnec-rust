@@ -11,6 +11,63 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-10 — MPIE second solver + Sommerfeld surface-wave ground
+
+This release ships two large Phase-9 efforts. The headline is a **second solver**,
+`--solver mpie` (a subsectional mixed-potential EFIE), which retires the three
+frontiers the Hallén architecture structurally could not reach — degree-3 (T/Y)
+junctions, closed loops, and near-ground currents/patterns. Alongside it, the
+**Sommerfeld surface-wave ground** is available on the Hallén path as an opt-in
+feedpoint-Z correction, `--ground-solver sommerfeld`. Every increment was
+de-risked in Python and validated against live nec2c before landing. The default
+Hallén path is unchanged, so the validated corpus is untouched.
+
+### Added
+
+- **`--solver mpie` — subsectional mixed-potential EFIE (PH9-CHK-007).** An opt-in
+  second solver with a piecewise-linear (triangle) current basis that carries the
+  vector and scalar potentials separately (the Hallén reduction folds the scalar
+  potential into a per-wire homogeneous term and so cannot represent it). This
+  reaches geometry classes the Hallén path guards or mis-solves:
+  - **Degree-3 (T/Y) junctions** — Kirchhoff's current law is satisfied by the
+    junction basis itself (N−1 arm-pair "dipole" bases per degree-N node), so a
+    symmetric Y-junction converges monotonically to nec2c (R 68.75/69.33/69.84 at
+    N=10/20/40 → 71.5 Ω) where the entire-domain Hallén prototype *diverged* past
+    80 Ω.
+  - **Closed loops** — a cyclic all-degree-2 chain the same basis handles with no
+    endpoint condition; a 1λ square loop converges to nec2c 109.7 − j146.2.
+  - **Near-ground currents/patterns (Sommerfeld in the Z-matrix)** — the reflected
+    mixed-potential kernels (horizontal) and a reflected-E-field-dyadic reaction
+    (any straight or bent orientation) put the surface wave into the *current
+    solution*, not just the feedpoint Z: a horizontal λ/2 dipole over GN2
+    reproduces nec2c to <8 %, a vertical dipole to ~7 %, and an inverted-V captures
+    the surface-wave shift.
+  - Because it keeps the scalar potential, the MPIE's absolute reactance tracks
+    nec2c without the Hallén ~32 Ω offset (a λ/2 dipole reports 74 + j42 Ω vs
+    Hallén's 74 + j5 Ω). Free-space patterns/gain reuse the existing radiation sum
+    (λ/2 dipole 2.15 dBi, planar Y-junction 1.94 dBi = nec2c). Models geometry +
+    voltage sources (`EX` type 0); `LD`/`TL`/`NT`, plane waves, and current sources
+    are rejected on this path. New `crates/nec_solver/src/mpie.rs`; wired through
+    `--solver mpie`. See `docs/mpie-solver-scope.md` and `docs/cli-guide.md`.
+
+- **`--ground-solver sommerfeld` — Sommerfeld surface-wave near-ground impedance
+  (PH9-CHK-006).** An opt-in correction on the Hallén path that upgrades the
+  feedpoint impedance of a straight wire over finite ground from the
+  reflection-coefficient (RCM) approximation to the exact Sommerfeld half-space
+  (nec2c GN2), including the surface-wave sign flip below ~0.05 λ that the scalar
+  model gets wrong. Default `rcm` is unchanged (zero behavior change). Built on a
+  validated 1-D Sommerfeld reflected-field kernel and its arbitrary-orientation
+  dyadic (`crates/nec_solver/src/sommerfeld.rs`). See
+  `docs/ph9-chk-006-sommerfeld-ground.md`.
+
+### Notes
+
+- The MPIE and Sommerfeld ground solver are **opt-in**; the default Hallén +
+  scalar-Γ paths are unchanged, so the validated corpus and every existing gate are
+  untouched (zero regression).
+- Out of scope on the MPIE ground path: wires that cross the `z = 0` plane (buried
+  geometry, a different physical problem).
+
 ## [0.10.0] — 2026-07-08 — Phase 9: general junction basis, junction receive/current-source, near-ground impedance
 ### Added
 
