@@ -632,12 +632,67 @@ fn warn_if_unsupported_topology(deck: &nec_model::deck::NecDeck, segs: &[Segment
     eprintln!("warning: geometry contains {kind}, {remedy}");
 }
 
+/// Expand an `NE`/`NH` observation grid into Cartesian points (PH9-CHK-004).
+///
+/// `coord_type = 0` is a rectangular `NX×NY×NZ` grid over `(x0,y0,z0)` with steps
+/// `(dx,dy,dz)`. `coord_type ≠ 0` is a **spherical** grid (NEC-2 `I1 = 1`): the
+/// fields are reinterpreted as `NX→R (r0=x0, Δr=dx)`, `NY→φ (φ0=y0°, Δφ=dy°)`,
+/// `NZ→θ (θ0=z0°, Δθ=dz°)` with `θ` measured from `+z`, and each point maps to
+/// `(r sinθ cosφ, r sinθ sinφ, r cosθ)`. The nesting (θ outer, φ middle, R inner)
+/// matches nec2c's point order. The field is then evaluated at the Cartesian
+/// point, so it is consistent with the rectangular path.
+#[allow(clippy::too_many_arguments)]
+fn near_field_grid_points(
+    coord_type: u32,
+    nx: u32,
+    ny: u32,
+    nz: u32,
+    x0: f64,
+    y0: f64,
+    z0: f64,
+    dx: f64,
+    dy: f64,
+    dz: f64,
+) -> Vec<nec_solver::NearFieldPoint> {
+    let mut points = Vec::new();
+    if coord_type == 0 {
+        for ix in 0..nx.max(1) {
+            for iy in 0..ny.max(1) {
+                for iz in 0..nz.max(1) {
+                    points.push(nec_solver::NearFieldPoint {
+                        x: x0 + ix as f64 * dx,
+                        y: y0 + iy as f64 * dy,
+                        z: z0 + iz as f64 * dz,
+                    });
+                }
+            }
+        }
+    } else {
+        // Spherical: R = nx, φ = ny, θ = nz; nec2c orders θ outer, φ mid, R inner.
+        for it in 0..nz.max(1) {
+            let theta = (z0 + it as f64 * dz).to_radians();
+            for ip in 0..ny.max(1) {
+                let phi = (y0 + ip as f64 * dy).to_radians();
+                for ir in 0..nx.max(1) {
+                    let r = x0 + ir as f64 * dx;
+                    points.push(nec_solver::NearFieldPoint {
+                        x: r * theta.sin() * phi.cos(),
+                        y: r * theta.sin() * phi.sin(),
+                        z: r * theta.cos(),
+                    });
+                }
+            }
+        }
+    }
+    points
+}
+
 /// PH9-CHK-004: compute the near electric field for every `NE` card in the deck.
 ///
-/// Each rectangular `NE` card defines an `NX×NY×NZ` grid of observation points;
-/// the near field is the Hertzian-element sum over the solved segment currents
+/// Each `NE` card defines an `NX×NY×NZ` grid of observation points (rectangular or
+/// spherical — see [`near_field_grid_points`]); the near field is the
+/// Hertzian-element sum over the solved segment currents
 /// (`nec_solver::near_e_field`), validated to match the far field at large range.
-/// Spherical `NE` cards (`I1 ≠ 0`) are skipped with a warning.
 fn build_near_field_rows(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -647,25 +702,18 @@ fn build_near_field_rows(
     let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
     for card in &deck.cards {
         let Card::Ne(ne) = card else { continue };
-        if ne.coord_type != 0 {
-            eprintln!(
-                "warning: NE coordinate type {} (spherical) is not supported; \
-                 near-field card skipped (only rectangular, I1=0, is supported)",
-                ne.coord_type
-            );
-            continue;
-        }
-        for ix in 0..ne.nx.max(1) {
-            for iy in 0..ne.ny.max(1) {
-                for iz in 0..ne.nz.max(1) {
-                    points.push(nec_solver::NearFieldPoint {
-                        x: ne.x0 + ix as f64 * ne.dx,
-                        y: ne.y0 + iy as f64 * ne.dy,
-                        z: ne.z0 + iz as f64 * ne.dz,
-                    });
-                }
-            }
-        }
+        points.extend(near_field_grid_points(
+            ne.coord_type,
+            ne.nx,
+            ne.ny,
+            ne.nz,
+            ne.x0,
+            ne.y0,
+            ne.z0,
+            ne.dx,
+            ne.dy,
+            ne.dz,
+        ));
     }
     if points.is_empty() {
         return Vec::new();
@@ -694,25 +742,18 @@ fn build_near_h_field_rows(
     let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
     for card in &deck.cards {
         let Card::Nh(nh) = card else { continue };
-        if nh.coord_type != 0 {
-            eprintln!(
-                "warning: NH coordinate type {} (spherical) is not supported; \
-                 near-field card skipped (only rectangular, I1=0, is supported)",
-                nh.coord_type
-            );
-            continue;
-        }
-        for ix in 0..nh.nx.max(1) {
-            for iy in 0..nh.ny.max(1) {
-                for iz in 0..nh.nz.max(1) {
-                    points.push(nec_solver::NearFieldPoint {
-                        x: nh.x0 + ix as f64 * nh.dx,
-                        y: nh.y0 + iy as f64 * nh.dy,
-                        z: nh.z0 + iz as f64 * nh.dz,
-                    });
-                }
-            }
-        }
+        points.extend(near_field_grid_points(
+            nh.coord_type,
+            nh.nx,
+            nh.ny,
+            nh.nz,
+            nh.x0,
+            nh.y0,
+            nh.z0,
+            nh.dx,
+            nh.dy,
+            nh.dz,
+        ));
     }
     if points.is_empty() {
         return Vec::new();
