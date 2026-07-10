@@ -42,8 +42,9 @@ pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };
 pub use mpie::{
-    assemble_free_space_z, segment_currents, segments_for_farfield, solve_mpie,
-    solve_mpie_free_space, straight_wire, MpieError, MpieGeometry, MpieSolution, MpieWire,
+    assemble_free_space_z, assemble_with_ground, segment_currents, segments_for_farfield,
+    solve_mpie, solve_mpie_free_space, solve_mpie_ground, straight_wire, MpieError, MpieGeometry,
+    MpieSolution, MpieWire,
 };
 pub use network::{build_nt_stamps, NtStamp, NtWarning};
 pub use planewave::{

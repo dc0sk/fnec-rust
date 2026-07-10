@@ -399,6 +399,96 @@ pub fn reflected_ex_horizontal(
     Complex64::new(k0 * ETA0 / (8.0 * std::f64::consts::PI), 0.0) * (ip + ie)
 }
 
+/// Quadrature sample count for the reflected **potential** kernels. The `1/λ²`
+/// factor in `G_Φ` makes the small-λ region delicate, but the sin/cosh
+/// substitution keeps the integrand smooth; this reproduces the Python oracle
+/// (`efie_mpie_ground.py`) to ~1e-4.
+const N_QUAD_POT: usize = 3000;
+
+/// Reflected mixed-potential Green's functions for a **horizontal** current
+/// element over a half-space, used to add the Sommerfeld ground to the MPIE
+/// Z-matrix (PH9-CHK-007 Phase D). Returns `(G_A, G_Φ)` where
+///
+/// ```text
+/// G_A = −j·S{R_TE},   G_Φ = −j·S{(k0² R_TE + kz0² R_TM)/λ²},
+/// S{f}(ρ,d) = ∫₀^∞ (λ/kz0) f J0(λρ) e^{−j kz0 d} dλ,
+/// ```
+///
+/// at horizontal offset `rho` and height-sum `d = z + z' > 0`. `pec = true` is
+/// the perfect-conductor limit. The `−j` matches the Sommerfeld identity
+/// `S{1} = +j·e^{−jkr}/r`, so the PEC limit reproduces the exact image and the
+/// kernels drop into the Z-fill exactly where the free-space `e^{−jkR}/R` sits
+/// (validated in `studies/sommerfeld-ground/efie_mpie_ground.py`).
+///
+/// The reduced kernel `R = √(ρ²+a²)` is **not** applied here — the height-sum `d`
+/// keeps source and image separated (`d > 0`), so the integrand is non-singular.
+pub fn reflected_potential_kernels(
+    rho: f64,
+    d: f64,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+    pec: bool,
+) -> (Complex64, Complex64) {
+    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c;
+    let k0sq = Complex64::new(k0 * k0, 0.0);
+    let neg_j = Complex64::new(0.0, -1.0);
+
+    // Accumulate S{R_TE} (→ G_A) and S{(k0²R_TE+kz0²R_TM)/λ²} (→ G_Φ) together;
+    // they share the reflection coefficients, J0, and phase at each spectral point.
+    let integrate = |lambda: f64, kz0: Complex64, measure: Complex64| -> (Complex64, Complex64) {
+        let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
+        let (r_te, r_tm) = fresnel_spectral(kz0, kz1, eps_c, pec);
+        let base = measure * (neg_j * kz0 * d).exp() * bessel_j0(lambda * rho);
+        let f_phi = (k0sq * r_te + kz0 * kz0 * r_tm) / Complex64::new(lambda * lambda, 0.0);
+        (base * r_te, base * f_phi)
+    };
+
+    // Propagating branch: λ = k0 sinθ, kz0 = k0 cosθ, (λ/kz0)dλ = k0 sinθ dθ.
+    let (mut sa, mut sp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
+    let a0 = 1e-7;
+    let b0 = std::f64::consts::FRAC_PI_2 - 1e-7;
+    let h0 = (b0 - a0) / N_QUAD_POT as f64;
+    for i in 0..=N_QUAD_POT {
+        let theta = a0 + h0 * i as f64;
+        let measure = Complex64::new(k0 * theta.sin(), 0.0);
+        let (da, dp) = integrate(
+            k0 * theta.sin(),
+            Complex64::new(k0 * theta.cos(), 0.0),
+            measure,
+        );
+        let wgt = if i == 0 || i == N_QUAD_POT { 0.5 } else { 1.0 };
+        sa += wgt * da;
+        sp += wgt * dp;
+    }
+    sa *= h0;
+    sp *= h0;
+
+    // Evanescent branch: λ = k0 cosh t, kz0 = −j k0 sinh t, (λ/kz0)dλ = j k0 cosh t dt.
+    let t_max = if d > 0.0 {
+        (40.0 / (k0 * d)).asinh()
+    } else {
+        8.0
+    };
+    let (mut ea, mut ep) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
+    let a1 = 1e-7;
+    let h1 = (t_max - a1) / N_QUAD_POT as f64;
+    for i in 0..=N_QUAD_POT {
+        let t = a1 + h1 * i as f64;
+        let measure = Complex64::new(0.0, k0 * t.cosh());
+        let (da, dp) = integrate(k0 * t.cosh(), Complex64::new(0.0, -k0 * t.sinh()), measure);
+        let wgt = if i == 0 || i == N_QUAD_POT { 0.5 } else { 1.0 };
+        ea += wgt * da;
+        ep += wgt * dp;
+    }
+    ea *= h1;
+    ep *= h1;
+
+    (neg_j * (sa + ea), neg_j * (sp + ep))
+}
+
 /// Azimuth / radial sample counts for the general dyadic (PH9-CHK-006 Levels 1-2).
 /// The 2-D integrand is smooth under the sin/cosh radial substitution; these give
 /// ~1e-6 PEC agreement (validated in `studies/sommerfeld-ground/general_dyadic.py`).
@@ -819,6 +909,41 @@ mod tests {
         assert!(bessel_j2(0.0).abs() < 1e-9);
         assert!((bessel_j2(1.0) - 0.1149034849).abs() < 1e-6);
         assert!((bessel_j2(5.0) - 0.0465651163).abs() < 1e-6);
+    }
+
+    /// The reflected potential kernels reproduce the Python oracle
+    /// (`efie_mpie_ground.py::sommerfeld`) to ~1e-3 (14.2 MHz, εr=13, σ=0.005).
+    /// Reference `(ρ/λ, d/λ) → (G_A, G_Φ[, G_A^pec])`.
+    #[test]
+    fn potential_kernels_match_python_oracle() {
+        let f = 14.2e6;
+        let lam = C0 / f;
+        let (er, sig) = (13.0, 0.005);
+        let cases = [
+            // rho/λ, d/λ, GA_re, GA_im, GP_re, GP_im
+            (0.1, 0.1, -0.15841, 0.09312, -0.17705, 0.23844),
+            (0.3, 0.1, 0.03542, 0.11865, 0.05740, 0.12078),
+            (0.05, 0.05, -0.26906, -0.04053, -0.52118, 0.28015),
+            (0.2, 0.2, 0.00576, 0.10586, 0.03638, 0.14491),
+        ];
+        for (rl, dl, ga_re, ga_im, gp_re, gp_im) in cases {
+            let (ga, gp) = reflected_potential_kernels(rl * lam, dl * lam, f, er, sig, false);
+            assert!(
+                (ga - Complex64::new(ga_re, ga_im)).norm() < 2e-3,
+                "GA(ρ={rl}λ,d={dl}λ)={ga} vs oracle {ga_re}{ga_im:+}j"
+            );
+            assert!(
+                (gp - Complex64::new(gp_re, gp_im)).norm() < 2e-3,
+                "GΦ(ρ={rl}λ,d={dl}λ)={gp} vs oracle {gp_re}{gp_im:+}j"
+            );
+        }
+
+        // PEC limit at (0.05λ, 0.05λ): oracle G_A^pec = −0.60483 + 0.28792j.
+        let (ga_pec, _) = reflected_potential_kernels(0.05 * lam, 0.05 * lam, f, er, sig, true);
+        assert!(
+            (ga_pec - Complex64::new(-0.60483, 0.28792)).norm() < 2e-3,
+            "GA_pec={ga_pec} vs oracle −0.60483+0.28792j"
+        );
     }
 
     /// PEC self-check: the reflected-field integral with (R_TE=−1, R_TM=+1) must
