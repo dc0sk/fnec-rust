@@ -82,9 +82,9 @@ pub enum MpieError {
     /// The requested feed node cannot host a delta-gap source (it is a free end,
     /// a junction, or out of range) — only degree-2 nodes are feedable.
     InvalidFeed { node: usize },
-    /// The Sommerfeld MPIE ground supports any **straight wire above the ground**
-    /// (horizontal / vertical / tilted); the geometry is bent or buried. Bent
-    /// geometry over ground needs the full per-pair reflected dyadic (deferred).
+    /// The Sommerfeld MPIE ground requires the wire to lie **entirely above** the
+    /// `z = 0` ground plane (the reflected kernel needs a positive height-sum);
+    /// the geometry is buried or touches the plane.
     UnsupportedGround,
 }
 
@@ -97,7 +97,7 @@ impl std::fmt::Display for MpieError {
             }
             MpieError::UnsupportedGround => write!(
                 f,
-                "MPIE Sommerfeld ground supports a straight wire above ground; bent or buried geometry is unsupported"
+                "MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane"
             ),
         }
     }
@@ -429,10 +429,11 @@ impl GroundKernelGrid {
 /// where the free-space `e^{-jkR}/R` sits, so the surface wave enters the currents
 /// themselves (not just the feed Z).
 ///
-/// Supports any **straight wire above ground**: a horizontal wire uses the fast
-/// reflected potential kernels (Phase D), and a vertical / tilted / sloping wire
-/// uses the general reflected-E-field-dyadic reaction (Phase E). Bent geometry
-/// over ground returns [`MpieError::UnsupportedGround`] (deferred).
+/// Supports any wire **above ground**: a horizontal wire uses the fast reflected
+/// potential kernels (Phase D); a vertical / tilted / sloping straight wire uses
+/// the general reflected-E-field-dyadic reaction on a `(Δs, Σs)` grid; and a bent
+/// wire uses the per-segment-pair reflected reaction. A wire that reaches the
+/// `z = 0` plane returns [`MpieError::UnsupportedGround`].
 pub fn assemble_with_ground(
     geom: &MpieGeometry,
     freq_hz: f64,
@@ -529,8 +530,7 @@ pub fn assemble_with_ground(
 ///
 /// The kernel depends only on `(Δs, Σs)` along the wire axis for a straight wire,
 /// so it is precomputed on a grid and bilinearly interpolated (as in the Level-1
-/// feedpoint correction). Bent geometry over ground needs the full per-pair
-/// dyadic and returns [`MpieError::UnsupportedGround`].
+/// feedpoint correction). A bent wire is dispatched to [`add_bent_ground_reaction`].
 #[allow(clippy::too_many_arguments)]
 fn add_general_ground_reaction(
     z: &mut [Vec<Complex64>],
@@ -543,9 +543,11 @@ fn add_general_ground_reaction(
     sigma: f64,
 ) -> Result<(), MpieError> {
     let axis = segs[0].tangent;
-    // Straight wire only: every segment parallel to a common axis.
+    // A bent wire (segments not all parallel) uses the per-segment-pair reflected
+    // reaction; a straight wire uses the faster (Δs, Σs) grid below.
     if segs.iter().any(|s| dot(s.tangent, axis).abs() < 1.0 - 1e-6) {
-        return Err(MpieError::UnsupportedGround);
+        add_bent_ground_reaction(z, segs, bases, freq_hz, pec, eps_r, sigma);
+        return Ok(());
     }
 
     // Centroid and signed arc-position range along the axis.
@@ -648,6 +650,73 @@ fn add_general_ground_reaction(
         }
     }
     Ok(())
+}
+
+/// Reflected ground reaction for a **bent** wire (segments not all parallel).
+///
+/// The reflected E-field kernel is smooth (source and image are separated by
+/// `d = z + z' > 0`), so it is precomputed **once per segment pair** at the
+/// segment midpoints — `nseg²` evaluations — and each basis pair is filled with
+/// the analytic triangle overlap `∬ f = (ℓ_m/2)(ℓ_n/2)`. The kernel is linear in
+/// the source/observation directions, so the flow-tangent orientation enters as
+/// `σ = flow·tangent (±1)`. This handles arbitrary per-segment orientations that
+/// the straight-wire `(Δs, Σs)` grid cannot.
+#[allow(clippy::too_many_arguments)]
+fn add_bent_ground_reaction(
+    z: &mut [Vec<Complex64>],
+    segs: &[SegGeom],
+    bases: &[Vec<Leg>],
+    freq_hz: f64,
+    pec: bool,
+    eps_r: f64,
+    sigma: f64,
+) {
+    let nseg = segs.len();
+    let mid: Vec<[f64; 3]> = segs
+        .iter()
+        .map(|s| {
+            [
+                0.5 * (s.p0[0] + s.p1[0]),
+                0.5 * (s.p0[1] + s.p1[1]),
+                0.5 * (s.p0[2] + s.p1[2]),
+            ]
+        })
+        .collect();
+    // Kseg[a][b]: reflected E on segment a (obs) from a source element on segment b.
+    let mut kseg = vec![vec![Complex64::new(0.0, 0.0); nseg]; nseg];
+    for a in 0..nseg {
+        for b in 0..nseg {
+            kseg[a][b] = reflected_e_projected_fast(
+                segs[b].tangent,
+                segs[a].tangent,
+                mid[a][0] - mid[b][0],
+                mid[a][1] - mid[b][1],
+                mid[a][2] + mid[b][2],
+                freq_hz,
+                eps_r,
+                sigma,
+                pec,
+            );
+        }
+    }
+    let nb = bases.len();
+    for m in 0..nb {
+        for n in m..nb {
+            let mut acc = Complex64::new(0.0, 0.0);
+            for lm in &bases[m] {
+                let sig_m = dot(lm.flow_tangent(segs), segs[lm.seg].tangent);
+                for ln in &bases[n] {
+                    let sig = sig_m * dot(ln.flow_tangent(segs), segs[ln.seg].tangent);
+                    let overlap = 0.25 * segs[lm.seg].len * segs[ln.seg].len;
+                    acc += sig * overlap * kseg[lm.seg][ln.seg];
+                }
+            }
+            z[m][n] += acc;
+            if n != m {
+                z[n][m] += acc;
+            }
+        }
+    }
 }
 
 /// Solve the MPIE with a Sommerfeld half-space (any straight wire above ground)
