@@ -379,7 +379,7 @@ headless).
 | 4 | GUI-CHK-005 | 3-D pattern lobe overlay (full-sphere) — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3 d |
 | 5 | GUI-CHK-006 | pane_grid layout shell; tabs dissolve into panes — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 2–3 d |
 | 6 | GUI-CHK-007 | Deck writer + GW wire table editor (live preview) — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3–4 d |
-| 7 | GUI-CHK-008 | EX / GN / LD / FR editors + Apply-and-Solve | 3 d |
+| 7 | GUI-CHK-008 | EX / GN / LD / FR editors + Apply-and-Solve — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3 d |
 | 8 | GUI-CHK-009 | Streaming sweep, SWR/|Z| canvas plot, frequency slider | 3 d |
 | 9 | GUI-CHK-010 | Polish: file dialogs, view options, fit/reset, project save | 2–3 d |
 
