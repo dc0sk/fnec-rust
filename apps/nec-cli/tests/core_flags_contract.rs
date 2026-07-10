@@ -24,7 +24,7 @@ fn missing_solver_value_reports_contract_error_and_usage() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal>]"),
+        stderr.contains("Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal|mpie>]"),
         "missing usage contract in stderr:\n{stderr}"
     );
     assert!(

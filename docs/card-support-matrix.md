@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-07-09
+last_updated: 2026-07-10
 ---
 
 # NEC Card Support Matrix
@@ -23,7 +23,7 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 | GN type −1 | Full | Null-ground explicit free-space (same as omitting GN) |
 | GN type 0 | Partial | Finite ground via a **normal-incidence scalar** reflection coefficient on the (correct-signed, PH9-CHK-006) image. Impedance is accurate (≈ Sommerfeld, ~10%, gated vs nec2c) for antenna heights ≥ ~0.2 λ; below 0.1 λ it is a reflection-coefficient approximation (no surface wave) and fnec **warns** — unless the exact **Sommerfeld surface wave** is enabled via `--ground-solver sommerfeld` for a straight horizontal wire (PH9-CHK-006), which reproduces nec2c GN2 incl. the low-height sign flip. Angle/polarization-dependent Fresnel (RCM) is deferred |
 | GN type 1 | Full | Perfect-conductor (PEC) image method (correct-signed image, PH9-CHK-006) |
-| GN type 2 | Partial | Aliases the GN0 scalar finite-ground path by default; the true Sommerfeld surface wave is available via `--ground-solver sommerfeld` for a straight horizontal wire (nec2c GN2, PH9-CHK-006). Bent/vertical/mixed geometry still uses the scalar path |
+| GN type 2 | Partial | Aliases the GN0 scalar finite-ground path by default; the true Sommerfeld surface wave is available via `--ground-solver sommerfeld` for a straight horizontal wire (feedpoint Z only, nec2c GN2, PH9-CHK-006), or via `--solver mpie` for the full near-ground **currents/patterns** on a straight horizontal wire (PH9-CHK-007 Phase D, reproduces GN2 to <8%). Bent/vertical/mixed geometry over ground still uses the scalar path |
 | GN other | Deferred | Unsupported type: treated as free-space with a warning |
 
 ## Program-control cards
@@ -43,7 +43,7 @@ others are **recognized** (classified per NEC2 and given an accurate, category-n
 diagnostic) but fail fast until their runtime semantics land in Phase 8 — they are
 no longer silently treated as EX type 0.
 
-| EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal) |
+| EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal, mpie). `--solver mpie` (PH9-CHK-007) additionally solves **degree-3 (T/Y) junctions** and **closed loops** — which the Hallen path returns unphysical junction-fed impedance for — and gives near-ground currents over Sommerfeld ground; it feeds the graph node nearest the driven segment |
 | EX type 1 | Partial | Incident plane wave, linear polarization. **Solves** on `--solver hallen` for a single straight wire (receiving antenna → induced `CURRENTS`, no feedpoint); validated vs nec2c shape + reciprocity (PH8-CHK-002). Straight non-junctioned multi-wire (parallel arrays) supported; **degree-2 junctioned geometry** (bends, start-to-start / end-to-end splits, inverted-V) now solves on continuous conductor paths (PH9-CHK-002 receive side, validated by reciprocity); degree-3+ (T/Y), closed loops, and `--solver pulse` fail fast. NTHETA×NPHI incidence-angle sweeps emit a `RECEIVE_PATTERN` (PH9-CHK-001) |
 | EX type 2 | Partial | Incident plane wave, right-hand elliptic. **Solves** on `--solver hallen` for a single straight wire via the complex polarization vector (axial ratio F6); reduces to linear for a z-wire / AR=0; tilted-wire currents match nec2c (PH8-CHK-002). Non-junctioned multi-wire supported |
 | EX type 3 | Partial | Incident plane wave, left-hand elliptic. Same as type 2 with opposite handedness. The legacy `--ex3-i4-mode` flag is an obsolete no-op |
