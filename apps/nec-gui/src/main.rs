@@ -15,7 +15,7 @@ use iced::widget::{
     button, checkbox, column, container, pane_grid, progress_bar, row, scrollable, shader, text,
     text_input,
 };
-use iced::{Element, Length, Task, Theme};
+use iced::{Border, Element, Length, Task, Theme};
 use nec_gui::app_state::{
     ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase,
     SweepSortCol, ViewportMsg,
@@ -191,7 +191,9 @@ impl FnecGui {
                 Pane::Main => self.main_pane(),
                 Pane::Viewport => self.viewport_view(),
             };
-            pane_grid::Content::new(container(body).padding(6))
+            // A bordered, filled container makes the inter-pane gap read as a
+            // visible divider (the pane_grid split itself only highlights on hover).
+            pane_grid::Content::new(container(body).padding(6).style(pane_container_style))
         })
         .on_resize(8, |e| Message::PaneResized(e.ratio))
         .spacing(6)
@@ -291,29 +293,35 @@ impl FnecGui {
         };
         let pattern_toggle = checkbox("Show pattern", self.state.viewport.show_pattern)
             .on_toggle(Message::TogglePattern);
-        let controls = row![
-            load_btn,
-            currents_btn,
-            currents_toggle,
-            pattern_btn,
-            pattern_toggle,
-            reset_btn,
-            status,
-        ]
-        .spacing(12)
-        .align_y(iced::Alignment::Center);
+        // Two shorter control rows instead of one long one — a single row of every
+        // button + the status text is wider than the pane and forces the whole
+        // window to overflow (iced rows do not wrap).
+        let geo_controls = row![load_btn, currents_btn, currents_toggle]
+            .spacing(10)
+            .align_y(iced::Alignment::Center);
+        let view_controls = row![pattern_btn, pattern_toggle, reset_btn]
+            .spacing(10)
+            .align_y(iced::Alignment::Center);
+        // Long free-form text must be Fill-width so it wraps to the pane instead of
+        // widening it (text defaults to Shrink = single unbroken line).
+        let status = status.width(Length::Fill);
         let hint: Element<Message> = match self.state.viewport.current_range_ma() {
             Some((lo, hi)) if self.state.viewport.show_currents => text(format!(
-                "|I| legend: cold {lo:.2} mA  →  hot {hi:.2} mA   · drag orbit · wheel zoom · middle-drag pan"
+                "|I| legend: cold {lo:.2} mA → hot {hi:.2} mA   · drag orbit · wheel zoom · middle-drag pan"
             ))
+            .width(Length::Fill)
             .into(),
-            _ => text("· drag = orbit · wheel = zoom · middle/right-drag = pan").into(),
+            _ => text("· drag = orbit · wheel = zoom · middle/right-drag = pan")
+                .width(Length::Fill)
+                .into(),
         };
         let scene = shader(viewport::Scene::new(&self.state.viewport))
             .width(Length::Fill)
             .height(Length::Fill);
         column![
-            controls,
+            geo_controls,
+            view_controls,
+            status,
             hint,
             container(scene).width(Length::Fill).height(Length::Fill)
         ]
@@ -370,6 +378,24 @@ impl FnecGui {
         column![freq_inputs, run_btn, status, result_section]
             .spacing(8)
             .into()
+    }
+}
+
+// ── Styling ───────────────────────────────────────────────────────────────────
+
+/// Pane background + border. The 1-px border on each pane, combined with the
+/// pane_grid spacing, gives a divider that is always visible (the split handle
+/// itself only highlights while the cursor rests on it).
+fn pane_container_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: Border {
+            color: palette.background.strong.color,
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        ..container::Style::default()
     }
 }
 
