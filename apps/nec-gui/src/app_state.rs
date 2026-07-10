@@ -160,6 +160,8 @@ pub struct ViewportState {
     pub lobe_rev: u64,
     /// Whether to overlay the 3-D radiation-pattern lobe.
     pub show_pattern: bool,
+    /// Reference-geometry display toggles (axes / ground grid) — GUI-CHK-010.
+    pub scene_opts: crate::mesh::SceneOptions,
 }
 
 impl ViewportState {
@@ -174,8 +176,10 @@ impl ViewportState {
         } else {
             None
         };
-        self.scene = Some(std::sync::Arc::new(crate::mesh::build_scene_colored(
-            geo, mags,
+        self.scene = Some(std::sync::Arc::new(crate::mesh::build_scene_opts(
+            geo,
+            mags,
+            self.scene_opts,
         )));
         self.scene_rev = self.scene_rev.wrapping_add(1);
     }
@@ -319,6 +323,10 @@ pub enum Message {
     Pattern3dComplete(Result<crate::mesh::PatternSolve, String>),
     /// User toggled the 3-D radiation-pattern lobe overlay.
     TogglePattern(bool),
+    /// User toggled the xyz axis triad (GUI-CHK-010).
+    ToggleAxes(bool),
+    /// User toggled the z=0 ground grid (GUI-CHK-010).
+    ToggleGrid(bool),
     /// User dragged the workbench pane divider (new split ratio in [0,1]). The
     /// `pane_grid::State` itself lives in the binary; this carries only the ratio.
     PaneResized(f32),
@@ -509,6 +517,14 @@ impl AppState {
             Message::TogglePattern(on) => {
                 self.viewport.show_pattern = *on;
                 self.viewport.rebuild_lobe();
+            }
+            Message::ToggleAxes(on) => {
+                self.viewport.scene_opts.show_axes = *on;
+                self.viewport.rebuild_scene();
+            }
+            Message::ToggleGrid(on) => {
+                self.viewport.scene_opts.show_grid = *on;
+                self.viewport.rebuild_scene();
             }
             // Pane layout lives in the iced binary (see main.rs); no core state.
             Message::PaneResized(_) => {}

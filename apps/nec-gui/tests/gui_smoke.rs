@@ -1355,3 +1355,30 @@ fn streaming_sweep_empty_stream_is_a_failure() {
     state.apply(&Message::SweepStreamDone);
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
 }
+
+// ── Viewport view options (GUI-CHK-010) ──────────────────────────────────────
+
+#[test]
+fn viewport_axes_and_grid_toggles_rebuild_scene() {
+    let mut state = AppState::default();
+    // Load a grounded geometry so both axes and grid are present.
+    let geo = nec_gui::solve::load_geometry_str("GW 1 5 0 0 1 0 0 3 0.001\nGE 1\nGN 1\nEN\n")
+        .expect("geometry");
+    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    assert!(state.viewport.scene_opts.show_axes);
+    assert!(state.viewport.scene_opts.show_grid);
+    let full = state.viewport.scene.as_ref().unwrap().vertices.len();
+
+    // Turning axes off rebuilds with fewer vertices.
+    let rev = state.viewport.scene_rev;
+    state.apply(&Message::ToggleAxes(false));
+    assert!(!state.viewport.scene_opts.show_axes);
+    assert_ne!(state.viewport.scene_rev, rev);
+    let no_axes = state.viewport.scene.as_ref().unwrap().vertices.len();
+    assert!(no_axes < full, "axes off → fewer vertices");
+
+    // Turning the grid off too removes more.
+    state.apply(&Message::ToggleGrid(false));
+    let bare = state.viewport.scene.as_ref().unwrap().vertices.len();
+    assert!(bare < no_axes, "grid off → fewer still");
+}

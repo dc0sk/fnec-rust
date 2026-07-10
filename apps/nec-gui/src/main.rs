@@ -404,15 +404,25 @@ impl FnecGui {
         };
         let pattern_toggle = checkbox("Show pattern", self.state.viewport.show_pattern)
             .on_toggle(Message::TogglePattern);
+        let axes_toggle = checkbox("Axes", self.state.viewport.scene_opts.show_axes)
+            .on_toggle(Message::ToggleAxes);
+        let grid_toggle = checkbox("Grid", self.state.viewport.scene_opts.show_grid)
+            .on_toggle(Message::ToggleGrid);
         // Two shorter control rows instead of one long one — a single row of every
         // button + the status text is wider than the pane and forces the whole
         // window to overflow (iced rows do not wrap).
         let geo_controls = row![load_btn, currents_btn, currents_toggle]
             .spacing(10)
             .align_y(iced::Alignment::Center);
-        let view_controls = row![pattern_btn, pattern_toggle, reset_btn]
-            .spacing(10)
-            .align_y(iced::Alignment::Center);
+        let view_controls = row![
+            pattern_btn,
+            pattern_toggle,
+            axes_toggle,
+            grid_toggle,
+            reset_btn
+        ]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
         // Long free-form text must be Fill-width so it wraps to the pane instead of
         // widening it (text defaults to Shrink = single unbroken line).
         let status = status.width(Length::Fill);
