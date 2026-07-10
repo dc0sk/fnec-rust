@@ -360,6 +360,12 @@ pub enum Message {
     },
     /// User clicked "Apply + Solve": solve the edited in-memory deck.
     EditApplySolve,
+    /// Open a native file picker for the deck path (handled in the binary).
+    BrowseDeck,
+    /// Open a native file picker for the vars path (handled in the binary).
+    BrowseVars,
+    /// Open a native save dialog for the edited deck (handled in the binary).
+    BrowseSaveDeck,
     /// User clicked "Add ground / load / source" to insert a control card.
     EditAddControl(crate::model_doc::ControlKind),
     /// User clicked the delete button on a control card at post-slot `slot`.
@@ -584,6 +590,10 @@ impl AppState {
                 // prior solve; refresh clears stale overlays and re-validates.
                 self.refresh_editor_preview();
             }
+            // Native file dialogs are opened in the binary's update(); the
+            // resulting path change arrives as DeckPathChanged/VarsPathChanged/
+            // DeckSaved, so these are no-ops in the pure state machine.
+            Message::BrowseDeck | Message::BrowseVars | Message::BrowseSaveDeck => {}
             Message::EditApplySolve => match self.editor.doc.to_deck_string() {
                 Ok(_) => {
                     self.editor.error = None;

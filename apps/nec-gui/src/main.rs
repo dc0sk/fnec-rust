@@ -312,6 +312,42 @@ impl FnecGui {
                 }
                 Err(_) => Task::none(),
             }
+        } else if matches!(message, Message::BrowseDeck) {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter("NEC deck", &["nec", "txt"])
+                .pick_file()
+            {
+                self.state
+                    .apply(&Message::DeckPathChanged(p.to_string_lossy().into_owned()));
+                let _ = Session::from_state(&self.state).save();
+            }
+            Task::none()
+        } else if matches!(message, Message::BrowseVars) {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter("Vars file", &["toml", "json"])
+                .pick_file()
+            {
+                self.state
+                    .apply(&Message::VarsPathChanged(p.to_string_lossy().into_owned()));
+                let _ = Session::from_state(&self.state).save();
+            }
+            Task::none()
+        } else if matches!(message, Message::BrowseSaveDeck) {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter("NEC deck", &["nec", "txt"])
+                .set_file_name("antenna.nec")
+                .save_file()
+            {
+                let path = p.to_string_lossy().into_owned();
+                let saved = match self.state.editor.doc.to_deck_string() {
+                    Ok(text) => std::fs::write(&path, text)
+                        .map(|()| path)
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e),
+                };
+                self.state.apply(&Message::DeckSaved(saved));
+            }
+            Task::none()
         } else {
             Task::none()
         }
@@ -361,6 +397,7 @@ impl FnecGui {
             text_input("Path to .nec file…", &self.state.deck_path)
                 .on_input(Message::DeckPathChanged)
                 .width(Length::Fill),
+            button(text("Browse…")).on_press(Message::BrowseDeck),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
@@ -373,6 +410,7 @@ impl FnecGui {
             )
             .on_input(Message::VarsPathChanged)
             .width(Length::Fill),
+            button(text("Browse…")).on_press(Message::BrowseVars),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center);
@@ -997,6 +1035,7 @@ impl FnecGui {
 
         let add_btn = button("+ Add wire").on_press(Message::EditWireAdd);
         let save_btn = button("Save deck").on_press(Message::SaveDeck);
+        let save_as_btn = button("Save as…").on_press(Message::BrowseSaveDeck);
         let undo_btn = if self.state.editor.history.can_undo() {
             button("Undo").on_press(Message::EditUndo)
         } else {
@@ -1056,7 +1095,16 @@ impl FnecGui {
         let solve_line = text(self.state.status_text()).width(Length::Fill);
 
         column![
-            row![load_btn, add_btn, undo_btn, redo_btn, save_btn, apply_btn].spacing(8),
+            row![
+                load_btn,
+                add_btn,
+                undo_btn,
+                redo_btn,
+                save_btn,
+                save_as_btn,
+                apply_btn
+            ]
+            .spacing(8),
             table,
             status,
             controls,
