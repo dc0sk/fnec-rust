@@ -381,7 +381,7 @@ headless).
 | 6 | GUI-CHK-007 | Deck writer + GW wire table editor (live preview) — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3–4 d |
 | 7 | GUI-CHK-008 | EX / GN / LD / FR editors + Apply-and-Solve — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3 d |
 | 8 | GUI-CHK-009 | Streaming sweep, SWR/|Z| canvas plot, frequency slider — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 3 d |
-| 9 | GUI-CHK-010 | Polish: file dialogs, view options, fit/reset, project save | 2–3 d |
+| 9 | GUI-CHK-010 | Polish: file dialogs, view options, fit/reset, project save — **✅ code + headless gates done (2026-07-10)**; visual pending a display | 2–3 d |
 
 Total ≈ 22–28 dev-days. 0→4 de-risk the GPU path first; 5→8 build the
 workbench; 9 polishes. Phases 3/4 are swappable; 6 blocks 7.
