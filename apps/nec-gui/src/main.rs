@@ -10,8 +10,10 @@
 
 mod viewport;
 
+use iced::widget::pane_grid::{Axis, Split};
 use iced::widget::{
-    button, checkbox, column, container, progress_bar, row, scrollable, shader, text, text_input,
+    button, checkbox, column, container, pane_grid, progress_bar, row, scrollable, shader, text,
+    text_input,
 };
 use iced::{Element, Length, Task, Theme};
 use nec_gui::app_state::{
@@ -30,10 +32,39 @@ fn main() -> iced::Result {
         .run()
 }
 
-/// Root application struct wrapping the headless [`AppState`].
-#[derive(Debug, Default)]
+/// Which workbench pane a `pane_grid` cell holds.
+#[derive(Debug, Clone, Copy)]
+enum Pane {
+    /// Controls + result tables (deck path, tabs, feedpoint/sweep/pattern/currents).
+    Main,
+    /// The always-visible GPU 3-D viewport.
+    Viewport,
+}
+
+/// Root application struct wrapping the headless [`AppState`] plus the (iced-only)
+/// pane layout. The single divider's `Split` id is kept so a resize needs only
+/// the new ratio (which is all the core `Message::PaneResized` carries).
+#[derive(Debug)]
 struct FnecGui {
     state: AppState,
+    panes: pane_grid::State<Pane>,
+    main_split: Split,
+}
+
+impl Default for FnecGui {
+    fn default() -> Self {
+        let (mut panes, main) = pane_grid::State::new(Pane::Main);
+        let (_, split) = panes
+            .split(Axis::Vertical, main, Pane::Viewport)
+            .expect("initial pane split");
+        // Give the controls pane a bit less than half by default.
+        panes.resize(split, 0.42);
+        Self {
+            state: AppState::default(),
+            panes,
+            main_split: split,
+        }
+    }
 }
 
 impl FnecGui {
@@ -45,6 +76,10 @@ impl FnecGui {
         let spawn_geometry = matches!(message, Message::LoadGeometry);
         let spawn_currents_3d = matches!(message, Message::LoadCurrents);
         let spawn_pattern_3d = matches!(message, Message::LoadPattern3d);
+        // Pane resize is an iced-layout concern handled here (not in AppState).
+        if let Message::PaneResized(ratio) = message {
+            self.panes.resize(self.main_split, ratio);
+        }
         self.state.apply(&message);
 
         if spawn_solve {
@@ -149,42 +184,41 @@ impl FnecGui {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        // ── Tab bar ──────────────────────────────────────────────────────
-        let tab_solve = if self.state.active_tab == ActiveTab::Solve {
-            button("[ Solve ]").on_press(Message::TabSelected(ActiveTab::Solve))
-        } else {
-            button("  Solve  ").on_press(Message::TabSelected(ActiveTab::Solve))
-        };
-        let tab_sweep = if self.state.active_tab == ActiveTab::Sweep {
-            button("[ Sweep ]").on_press(Message::TabSelected(ActiveTab::Sweep))
-        } else {
-            button("  Sweep  ").on_press(Message::TabSelected(ActiveTab::Sweep))
-        };
-        let tab_pattern = if self.state.active_tab == ActiveTab::Pattern {
-            button("[ Pattern ]").on_press(Message::TabSelected(ActiveTab::Pattern))
-        } else {
-            button("  Pattern  ").on_press(Message::TabSelected(ActiveTab::Pattern))
-        };
-        let tab_currents = if self.state.active_tab == ActiveTab::Currents {
-            button("[ Currents ]").on_press(Message::TabSelected(ActiveTab::Currents))
-        } else {
-            button("  Currents  ").on_press(Message::TabSelected(ActiveTab::Currents))
-        };
-        let tab_viewport = if self.state.active_tab == ActiveTab::Viewport {
-            button("[ 3D View ]").on_press(Message::TabSelected(ActiveTab::Viewport))
-        } else {
-            button("  3D View  ").on_press(Message::TabSelected(ActiveTab::Viewport))
+        // GUI-CHK-006: xnec2c-style single window — a resizable split with the
+        // controls/results on the left and the always-visible 3-D viewport right.
+        let grid = pane_grid::PaneGrid::new(&self.panes, |_id, kind, _maximized| {
+            let body: Element<Message> = match kind {
+                Pane::Main => self.main_pane(),
+                Pane::Viewport => self.viewport_view(),
+            };
+            pane_grid::Content::new(container(body).padding(6))
+        })
+        .on_resize(8, |e| Message::PaneResized(e.ratio))
+        .spacing(6)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        container(grid).padding(6).into()
+    }
+
+    /// The left workbench pane: deck inputs, tab bar, and the active result table.
+    fn main_pane(&self) -> Element<'_, Message> {
+        let tab = |label: &str, on: ActiveTab| {
+            let caption = if self.state.active_tab == on {
+                format!("[ {label} ]")
+            } else {
+                format!("  {label}  ")
+            };
+            button(text(caption)).on_press(Message::TabSelected(on))
         };
         let tab_bar = row![
-            tab_solve,
-            tab_sweep,
-            tab_pattern,
-            tab_currents,
-            tab_viewport
+            tab("Solve", ActiveTab::Solve),
+            tab("Sweep", ActiveTab::Sweep),
+            tab("Pattern", ActiveTab::Pattern),
+            tab("Currents", ActiveTab::Currents),
         ]
         .spacing(4);
 
-        // ── Shared deck-path row ─────────────────────────────────────────
         let path_row = row![
             text("Deck file:").width(Length::Fixed(80.0)),
             text_input("Path to .nec file…", &self.state.deck_path)
@@ -194,7 +228,6 @@ impl FnecGui {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        // ── Optional variable-substitution file row ──────────────────────
         let vars_row = row![
             text("Vars file:").width(Length::Fixed(80.0)),
             text_input(
@@ -207,23 +240,21 @@ impl FnecGui {
         .spacing(8)
         .align_y(iced::Alignment::Center);
 
-        // ── Active tab content ───────────────────────────────────────────
         let tab_content: Element<Message> = match self.state.active_tab {
             ActiveTab::Solve => self.solve_view(),
             ActiveTab::Sweep => self.sweep_view(),
             ActiveTab::Pattern => self.pattern_view(),
             ActiveTab::Currents => self.currents_view(),
-            ActiveTab::Viewport => self.viewport_view(),
+            // The viewport is its own pane now; this tab is unreachable via UI.
+            ActiveTab::Viewport => self.solve_view(),
         };
 
-        let content = column![tab_bar, path_row, vars_row, tab_content]
-            .spacing(12)
-            .padding(20);
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        scrollable(
+            column![tab_bar, path_row, vars_row, tab_content]
+                .spacing(12)
+                .padding(12),
+        )
+        .into()
     }
 
     // ── Single-frequency solve view ──────────────────────────────────────

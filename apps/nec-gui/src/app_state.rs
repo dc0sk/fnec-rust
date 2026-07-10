@@ -280,6 +280,9 @@ pub enum Message {
     Pattern3dComplete(Result<crate::mesh::PatternSolve, String>),
     /// User toggled the 3-D radiation-pattern lobe overlay.
     TogglePattern(bool),
+    /// User dragged the workbench pane divider (new split ratio in [0,1]). The
+    /// `pane_grid::State` itself lives in the binary; this carries only the ratio.
+    PaneResized(f32),
 }
 
 impl AppState {
@@ -411,6 +414,8 @@ impl AppState {
                 self.viewport.show_pattern = *on;
                 self.viewport.rebuild_lobe();
             }
+            // Pane layout lives in the iced binary (see main.rs); no core state.
+            Message::PaneResized(_) => {}
             Message::Viewport(vp) => {
                 let cam = &mut self.viewport.camera;
                 match vp {
