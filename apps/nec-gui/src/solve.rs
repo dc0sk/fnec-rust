@@ -197,6 +197,54 @@ pub fn load_currents_str(deck_text: &str) -> Result<crate::mesh::GeometryCurrent
     })
 }
 
+/// Solve a deck and return its geometry plus a full-sphere far-field gain grid
+/// for the 3-D radiation-pattern lobe (GUI-CHK-005).
+pub fn pattern_grid_path(
+    path: &Path,
+    vars_path: Option<&str>,
+) -> Result<crate::mesh::PatternSolve, String> {
+    let input = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
+    let input = apply_vars(&input, vars_path)?;
+    pattern_grid_str(&input)
+}
+
+/// Build geometry + full-sphere pattern grid from a raw NEC deck string.
+pub fn pattern_grid_str(deck_text: &str) -> Result<crate::mesh::PatternSolve, String> {
+    use crate::mesh::{LOBE_N_PHI, LOBE_N_THETA};
+    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text)?;
+
+    let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
+    let mut points = Vec::with_capacity(nt * np);
+    for it in 0..nt {
+        let theta = it as f64 * 180.0 / (nt - 1) as f64;
+        for ip in 0..np {
+            let phi = ip as f64 * 360.0 / (np - 1) as f64;
+            points.push(FarFieldPoint {
+                theta_deg: theta,
+                phi_deg: phi,
+            });
+        }
+    }
+    let results = compute_radiation_pattern(&segs, &currents, freq_hz, &points, &ground);
+    let gains_dbi = results.iter().map(|r| r.gain_total_dbi as f32).collect();
+
+    let has_ground = !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+    let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
+    Ok(crate::mesh::PatternSolve {
+        geometry: crate::mesh::SceneGeometry::from_segments(wires, has_ground),
+        grid: crate::mesh::PatternGrid {
+            n_theta: nt,
+            n_phi: np,
+            gains_dbi,
+        },
+    })
+}
+
 /// Run a Hallen solve on `deck_text` (a raw NEC deck string).
 pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;

@@ -19,7 +19,7 @@ use nec_gui::app_state::{
     SweepSortCol, ViewportMsg,
 };
 use nec_gui::solve::{
-    current_distribution_deck_path, load_currents_path, load_geometry_path,
+    current_distribution_deck_path, load_currents_path, load_geometry_path, pattern_grid_path,
     pattern_slice_deck_path, solve_deck_path, sweep_deck_path, SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
@@ -44,6 +44,7 @@ impl FnecGui {
         let spawn_currents = matches!(message, Message::RunCurrents);
         let spawn_geometry = matches!(message, Message::LoadGeometry);
         let spawn_currents_3d = matches!(message, Message::LoadCurrents);
+        let spawn_pattern_3d = matches!(message, Message::LoadPattern3d);
         self.state.apply(&message);
 
         if spawn_solve {
@@ -130,6 +131,17 @@ impl FnecGui {
             Task::perform(
                 async move { load_currents_path(&path, vars.as_deref()) },
                 Message::CurrentsSolved,
+            )
+        } else if spawn_pattern_3d {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
+            Task::perform(
+                async move { pattern_grid_path(&path, vars.as_deref()) },
+                Message::Pattern3dComplete,
             )
         } else {
             Task::none()
@@ -241,9 +253,24 @@ impl FnecGui {
         };
         let currents_toggle = checkbox("Color by |I|", self.state.viewport.show_currents)
             .on_toggle(Message::ToggleCurrents);
-        let controls = row![load_btn, currents_btn, currents_toggle, reset_btn, status]
-            .spacing(12)
-            .align_y(iced::Alignment::Center);
+        let pattern_btn = if self.state.deck_path.is_empty() {
+            button("Solve pattern")
+        } else {
+            button("Solve pattern").on_press(Message::LoadPattern3d)
+        };
+        let pattern_toggle = checkbox("Show pattern", self.state.viewport.show_pattern)
+            .on_toggle(Message::TogglePattern);
+        let controls = row![
+            load_btn,
+            currents_btn,
+            currents_toggle,
+            pattern_btn,
+            pattern_toggle,
+            reset_btn,
+            status,
+        ]
+        .spacing(12)
+        .align_y(iced::Alignment::Center);
         let hint: Element<Message> = match self.state.viewport.current_range_ma() {
             Some((lo, hi)) if self.state.viewport.show_currents => text(format!(
                 "|I| legend: cold {lo:.2} mA  →  hot {hi:.2} mA   · drag orbit · wheel zoom · middle-drag pan"

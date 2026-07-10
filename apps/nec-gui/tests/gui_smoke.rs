@@ -439,6 +439,31 @@ fn currents_solve_colors_wires_and_toggles() {
     assert!(state.viewport.scene_rev > rev1);
 }
 
+/// GUI-CHK-005: solving the pattern builds a lobe overlay that toggles on/off.
+#[test]
+fn pattern_solve_builds_lobe_and_toggles() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let ps = nec_gui::solve::pattern_grid_str(deck).expect("pattern solve");
+    assert_eq!(ps.grid.gains_dbi.len(), ps.grid.n_theta * ps.grid.n_phi);
+
+    let mut state = AppState::default();
+    state.apply(&Message::Pattern3dComplete(Ok(ps)));
+    assert!(state.viewport.show_pattern, "pattern overlay turns on");
+    let lobe = state.viewport.lobe.as_ref().expect("lobe built");
+    assert!(lobe.triangle_count() > 1000, "lobe has a triangle surface");
+    assert!(
+        state.viewport.scene.is_some(),
+        "wires still present under the lobe"
+    );
+    let lrev = state.viewport.lobe_rev;
+
+    // Toggling off drops the lobe and bumps its revision (renderer stops drawing).
+    state.apply(&Message::TogglePattern(false));
+    assert!(!state.viewport.show_pattern);
+    assert!(state.viewport.lobe.is_none());
+    assert!(state.viewport.lobe_rev > lrev);
+}
+
 /// sorted_sweep_rows returns rows sorted by |Z| descending when requested.
 #[test]
 fn sorted_sweep_rows_zmag_descending() {
