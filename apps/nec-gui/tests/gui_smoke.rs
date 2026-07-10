@@ -439,6 +439,21 @@ fn currents_solve_colors_wires_and_toggles() {
     assert!(state.viewport.scene_rev > rev1);
 }
 
+/// GUI-CHK-006: the pane-resize message is a pure layout concern (handled in the
+/// iced binary), so `apply` leaves the core solver state untouched.
+#[test]
+fn pane_resize_is_a_layout_noop_on_core_state() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("deck.nec".into()));
+    let before = state.deck_path.clone();
+    state.apply(&Message::PaneResized(0.3));
+    assert_eq!(
+        state.deck_path, before,
+        "pane resize must not touch core state"
+    );
+    assert!(state.can_solve());
+}
+
 /// GUI-CHK-005: solving the pattern builds a lobe overlay that toggles on/off.
 #[test]
 fn pattern_solve_builds_lobe_and_toggles() {
