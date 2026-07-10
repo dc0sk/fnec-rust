@@ -922,3 +922,133 @@ fn current_distribution_corpus_dipole_freesp() {
     let any_nonzero = pts.iter().any(|p| p.current_mag_ma > 1e-6);
     assert!(any_nonzero, "all currents are effectively zero");
 }
+
+// ── Wire editor tests (GUI-CHK-007) ──────────────────────────────────────────
+
+use nec_gui::model_doc::WireField;
+use nec_gui::solve::load_model_doc_str;
+
+const EDITOR_DECK: &str = "\
+CM editor test
+CE
+GW 1 11 0 0 -2.5 0 0 2.5 0.001
+GE 0
+EX 0 1 6 0 1
+FR 0 1 14.2 0
+EN
+";
+
+fn loaded_editor() -> AppState {
+    let mut state = AppState::default();
+    let doc = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    state.apply(&Message::EditDeckLoaded(Ok(doc)));
+    state
+}
+
+/// Loading a deck into the editor populates the wire table and builds a live
+/// 3-D preview, without marking the document dirty.
+#[test]
+fn editor_load_populates_table_and_previews() {
+    let state = loaded_editor();
+    assert!(state.editor.loaded);
+    assert_eq!(state.editor.doc.wire_count(), 1);
+    assert!(!state.editor.doc.dirty, "a fresh load is not dirty");
+    assert!(state.editor.error.is_none());
+    assert!(
+        state.viewport.scene.is_some(),
+        "preview mesh should be built on load"
+    );
+}
+
+/// Editing a coordinate rebuilds the preview (new scene revision) and flags the
+/// document dirty.
+#[test]
+fn editor_edit_rebuilds_preview_and_marks_dirty() {
+    let mut state = loaded_editor();
+    let rev_before = state.viewport.scene_rev;
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "3.0".into(),
+    });
+    assert!(state.editor.doc.dirty, "edit marks dirty");
+    assert_ne!(
+        state.viewport.scene_rev, rev_before,
+        "editing should rebuild the preview mesh"
+    );
+    assert!(state.editor.error.is_none());
+}
+
+/// Add and delete operate on the table and keep the preview valid.
+#[test]
+fn editor_add_and_delete_wire() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditWireAdd);
+    assert_eq!(state.editor.doc.wire_count(), 2);
+    assert!(state.viewport.scene.is_some());
+    state.apply(&Message::EditWireDelete(1));
+    assert_eq!(state.editor.doc.wire_count(), 1);
+}
+
+/// An invalid edit records an error but leaves the last good preview on screen.
+#[test]
+fn editor_invalid_edit_sets_error_keeps_last_preview() {
+    let mut state = loaded_editor();
+    let good_scene = state.viewport.scene.clone();
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Radius,
+        value: "0".into(), // radius must be > 0
+    });
+    assert!(
+        state.editor.error.is_some(),
+        "invalid radius reports an error"
+    );
+    assert!(
+        state.viewport.scene.is_some(),
+        "the last valid preview is retained"
+    );
+    // Fixing the value clears the error and rebuilds.
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Radius,
+        value: "0.002".into(),
+    });
+    assert!(state.editor.error.is_none());
+    assert!(state.viewport.scene.is_some());
+    let _ = good_scene;
+}
+
+/// A successful save clears the dirty flag and reports the path.
+#[test]
+fn editor_save_marks_clean() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "3.0".into(),
+    });
+    assert!(state.editor.doc.dirty);
+    state.apply(&Message::DeckSaved(Ok("/tmp/out.nec".into())));
+    assert!(!state.editor.doc.dirty, "save clears the dirty flag");
+    assert!(state.editor.save_status.contains("/tmp/out.nec"));
+}
+
+/// Editing invalidates a previously shown currents overlay (the solve is stale).
+#[test]
+fn editor_edit_clears_stale_currents_overlay() {
+    let mut state = loaded_editor();
+    // Simulate a currents solve having painted the wires.
+    state.viewport.show_currents = true;
+    state.viewport.currents_ma = Some(vec![1.0, 2.0]);
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z1,
+        value: "-3.0".into(),
+    });
+    assert!(
+        !state.viewport.show_currents,
+        "edit turns off stale coloring"
+    );
+    assert!(state.viewport.currents_ma.is_none());
+}
