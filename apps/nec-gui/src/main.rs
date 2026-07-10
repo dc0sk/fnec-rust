@@ -11,7 +11,7 @@
 mod viewport;
 
 use iced::widget::{
-    button, checkbox, column, container, row, scrollable, shader, text, text_input,
+    button, checkbox, column, container, progress_bar, row, scrollable, shader, text, text_input,
 };
 use iced::{Element, Length, Task, Theme};
 use nec_gui::app_state::{
@@ -469,15 +469,25 @@ fn pattern_table(app: &FnecGui) -> Element<'_, Message> {
 }
 
 fn pattern_row(r: nec_gui::app_state::PatternDisplayRow) -> Element<'static, Message> {
-    // Bar: '█' chars scaled to 0..40 columns.
-    let bar_len = (r.bar_width_frac * 40.0).round() as usize;
-    let bar: String = "█".repeat(bar_len);
     row![
         text(format!("{:5.1}", r.theta_deg)).width(Length::Fixed(70.0)),
         text(format!("{:+7.2}", r.gain_dbi)).width(Length::Fixed(90.0)),
-        text(bar).width(Length::Fill),
+        magnitude_bar(r.bar_width_frac as f32),
     ]
     .spacing(4)
+    .align_y(iced::Alignment::Center)
+    .into()
+}
+
+/// A proportional bar drawn as a real widget (iced `progress_bar`), replacing the
+/// old Unicode block-character bars that rendered as tofu in the default font.
+fn magnitude_bar(frac: f32) -> Element<'static, Message> {
+    container(
+        progress_bar(0.0..=1.0, frac.clamp(0.0, 1.0))
+            .width(Length::Fill)
+            .height(Length::Fixed(14.0)),
+    )
+    .width(Length::Fill)
     .into()
 }
 
@@ -501,13 +511,12 @@ fn currents_bars(app: &FnecGui) -> Element<'_, Message> {
 }
 
 fn current_bar_row(b: nec_gui::app_state::CurrentDisplayBar) -> Element<'static, Message> {
-    let bar_len = (b.bar_width_frac * 40.0).round() as usize;
-    let bar: String = "█".repeat(bar_len);
     row![
         text(format!("{:4}", b.seg_idx)).width(Length::Fixed(50.0)),
         text(format!("{:8.4}", b.current_mag_ma)).width(Length::Fixed(90.0)),
-        text(bar).width(Length::Fill),
+        magnitude_bar(b.bar_width_frac as f32),
     ]
     .spacing(4)
+    .align_y(iced::Alignment::Center)
     .into()
 }
