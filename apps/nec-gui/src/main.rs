@@ -8,13 +8,14 @@
 //! cargo run -p nec-gui
 //! ```
 
+mod sweep_plot;
 mod viewport;
 
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::pane_grid::{Axis, Split};
 use iced::widget::{
-    button, checkbox, column, container, pane_grid, pick_list, progress_bar, row, scrollable,
-    shader, text, text_input,
+    button, canvas, checkbox, column, container, pane_grid, pick_list, progress_bar, row,
+    scrollable, shader, slider, text, text_input,
 };
 use iced::{Border, Element, Length, Subscription, Task, Theme};
 use nec_gui::app_state::{
@@ -22,6 +23,7 @@ use nec_gui::app_state::{
     SweepSortCol, ViewportMsg,
 };
 use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow};
+use nec_gui::plot::PlotMetric;
 use nec_gui::solve::{
     current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
     pattern_grid_path, pattern_slice_deck_path, solve_deck_path, solve_deck_str, sweep_deck_path,
@@ -447,13 +449,75 @@ impl FnecGui {
         let status = text(self.state.sweep_status_text());
 
         let result_section: Element<Message> = match &self.state.sweep_phase {
-            SweepPhase::Done(_) => sweep_result_table(self),
+            SweepPhase::Done(_) => self.sweep_chart_and_table(),
             _ => text("").into(),
         };
 
         column![freq_inputs, run_btn, status, result_section]
             .spacing(8)
             .into()
+    }
+
+    /// The sweep chart (SWR/|Z| canvas + metric picker + frequency cursor) above
+    /// the sortable result table (GUI-CHK-009).
+    fn sweep_chart_and_table(&self) -> Element<'_, Message> {
+        let metric_row = row![
+            text("Chart:"),
+            pick_list(
+                &PlotMetric::ALL[..],
+                Some(self.state.sweep_metric),
+                Message::SweepMetricSelected,
+            ),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        let chart = canvas(sweep_plot::SweepPlot {
+            points: self.state.sweep_points().to_vec(),
+            metric: self.state.sweep_metric,
+            cursor_frac: self.state.sweep_cursor,
+        })
+        .width(Length::Fill)
+        .height(Length::Fixed(220.0));
+
+        let cursor_readout = match self.state.sweep_cursor_point() {
+            Some(p) => {
+                let swr = nec_gui::plot::swr(p.z_re, p.z_im, 50.0);
+                let zmag = nec_gui::plot::z_mag(p.z_re, p.z_im);
+                text(format!(
+                    "cursor: {:.3} MHz   Z = {:.2} {} j{:.2} Ω   |Z| = {:.1} Ω   SWR = {}",
+                    p.freq_mhz,
+                    p.z_re,
+                    if p.z_im < 0.0 { "-" } else { "+" },
+                    p.z_im.abs(),
+                    zmag,
+                    if swr.is_finite() {
+                        format!("{swr:.2}")
+                    } else {
+                        "∞".to_string()
+                    }
+                ))
+                .width(Length::Fill)
+            }
+            None => text("").width(Length::Fill),
+        };
+
+        let cursor_slider = slider(
+            0.0..=1.0,
+            self.state.sweep_cursor,
+            Message::SweepCursorChanged,
+        )
+        .step(0.001_f32);
+
+        column![
+            metric_row,
+            chart,
+            cursor_readout,
+            cursor_slider,
+            sweep_result_table(self),
+        ]
+        .spacing(8)
+        .into()
     }
 }
 

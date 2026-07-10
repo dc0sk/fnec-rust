@@ -25,6 +25,15 @@ impl PlotMetric {
             PlotMetric::ZMag => "|Z| (Ω)",
         }
     }
+
+    /// The metrics offered in the chart selector.
+    pub const ALL: [PlotMetric; 2] = [PlotMetric::Swr, PlotMetric::ZMag];
+}
+
+impl std::fmt::Display for PlotMetric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
 }
 
 /// Voltage standing-wave ratio for a load `Z = z_re + j·z_im` on a line of
