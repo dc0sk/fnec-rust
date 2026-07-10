@@ -138,6 +138,126 @@ pub fn build_scene_colored(geo: &SceneGeometry, currents_ma: Option<&[f32]>) -> 
     MeshData { vertices: v }
 }
 
+/// A full-sphere far-field gain grid: `gains_dbi` row-major over `n_theta` zenith
+/// rows (θ = 0°…180°) × `n_phi` azimuth columns (φ = 0°…360°) at 5° steps, with
+/// the last φ column duplicating the first to close the seam. `-999.99` marks a
+/// null (e.g. below a ground plane). This is the input to [`build_lobe`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternGrid {
+    pub n_theta: usize,
+    pub n_phi: usize,
+    pub gains_dbi: Vec<f32>,
+}
+
+/// θ/φ sample counts for the full-sphere lobe (0–180° and 0–360° at 5°).
+pub const LOBE_N_THETA: usize = 37;
+pub const LOBE_N_PHI: usize = 73;
+
+/// Opacity of the translucent gain lobe.
+pub const LOBE_ALPHA: f32 = 0.55;
+
+/// Solved geometry plus its far-field lobe grid — the payload for the 3-D pattern
+/// overlay (GUI-CHK-005).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternSolve {
+    pub geometry: SceneGeometry,
+    pub grid: PatternGrid,
+}
+
+/// One vertex of the translucent gain lobe (position + gain-mapped color).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
+pub struct LobeVertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 4],
+}
+
+/// The 3-D radiation-pattern lobe: an indexed triangle surface.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LobeMesh {
+    pub vertices: Vec<LobeVertex>,
+    pub indices: Vec<u32>,
+}
+
+impl LobeMesh {
+    pub fn triangle_count(&self) -> usize {
+        self.indices.len() / 3
+    }
+}
+
+/// Build the far-field lobe surface: radius `r(θ,φ) = norm(gain)` along the
+/// direction `(sinθcosφ, sinθsinφ, cosθ)` (z-up), scaled to `radius` and centered
+/// at `center`; vertex color = `colormap(norm)`. Gains are normalized over a 40 dB
+/// window below the peak; nulls (`-999.99`) collapse to the center. Pure.
+pub fn build_lobe(grid: &PatternGrid, center: [f32; 3], radius: f32) -> LobeMesh {
+    let (nt, np) = (grid.n_theta, grid.n_phi);
+    if nt < 2 || np < 2 || grid.gains_dbi.len() != nt * np {
+        return LobeMesh::default();
+    }
+    let g_max = grid
+        .gains_dbi
+        .iter()
+        .copied()
+        .filter(|&g| g > -900.0)
+        .fold(f32::NEG_INFINITY, f32::max);
+    if !g_max.is_finite() {
+        return LobeMesh::default();
+    }
+    let g_min_raw = grid
+        .gains_dbi
+        .iter()
+        .copied()
+        .filter(|&g| g > -900.0)
+        .fold(f32::INFINITY, f32::min);
+    let g_min = g_min_raw.max(g_max - 40.0);
+    let span = g_max - g_min;
+    // A (near-)uniform pattern has no dynamic range → draw a full sphere.
+    let uniform = span < 1e-3;
+
+    let d_theta = std::f32::consts::PI / (nt - 1) as f32; // 0..π
+    let d_phi = std::f32::consts::TAU / (np - 1) as f32; // 0..2π (last col = first)
+
+    let mut vertices = Vec::with_capacity(nt * np);
+    for it in 0..nt {
+        let theta = it as f32 * d_theta;
+        let (st, ct) = (theta.sin(), theta.cos());
+        for ip in 0..np {
+            let phi = ip as f32 * d_phi;
+            let g = grid.gains_dbi[it * np + ip];
+            let r = if g <= -900.0 {
+                0.0
+            } else if uniform {
+                1.0
+            } else {
+                ((g - g_min) / span).clamp(0.0, 1.0)
+            };
+            let dir = [st * phi.cos(), st * phi.sin(), ct];
+            let mut color = colormap(r);
+            color[3] = LOBE_ALPHA; // translucent so the wires stay visible inside
+            vertices.push(LobeVertex {
+                pos: [
+                    center[0] + radius * r * dir[0],
+                    center[1] + radius * r * dir[1],
+                    center[2] + radius * r * dir[2],
+                ],
+                color,
+            });
+        }
+    }
+
+    let mut indices = Vec::with_capacity((nt - 1) * (np - 1) * 6);
+    for it in 0..nt - 1 {
+        for ip in 0..np - 1 {
+            let a = (it * np + ip) as u32;
+            let b = (it * np + ip + 1) as u32;
+            let c = ((it + 1) * np + ip) as u32;
+            let d = ((it + 1) * np + ip + 1) as u32;
+            indices.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+    LobeMesh { vertices, indices }
+}
+
 /// A perceptual-ish "cool → hot" colormap for a normalized value `t ∈ [0,1]`
 /// (dark blue → cyan → green → yellow → red). Pure and unit-tested.
 pub fn colormap(t: f32) -> [f32; 4] {
@@ -306,6 +426,81 @@ mod tests {
         assert_eq!(m.vertices[base + 1].color, colormap(0.0));
         assert_eq!(m.vertices[base + 2].color, colormap(1.0));
         assert_eq!(m.vertices[base + 3].color, colormap(1.0));
+    }
+
+    fn grid_from(f: impl Fn(usize, usize) -> f32) -> PatternGrid {
+        let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
+        let gains_dbi = (0..nt)
+            .flat_map(|it| (0..np).map(move |ip| (it, ip)))
+            .map(|(it, ip)| f(it, ip))
+            .collect();
+        PatternGrid {
+            n_theta: nt,
+            n_phi: np,
+            gains_dbi,
+        }
+    }
+
+    fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn lobe_counts_and_seam() {
+        let m = build_lobe(&grid_from(|_, _| 0.0), [0.0; 3], 1.0);
+        assert_eq!(m.vertices.len(), LOBE_N_THETA * LOBE_N_PHI);
+        assert_eq!(
+            m.triangle_count(),
+            (LOBE_N_THETA - 1) * (LOBE_N_PHI - 1) * 2
+        );
+    }
+
+    #[test]
+    fn isotropic_pattern_is_a_sphere() {
+        // Equal gain everywhere → all radii equal → every vertex on the sphere.
+        let m = build_lobe(&grid_from(|_, _| 3.0), [0.0; 3], 2.0);
+        for v in &m.vertices {
+            assert!(
+                (dist(v.pos, [0.0; 3]) - 2.0).abs() < 1e-4,
+                "not on sphere: {:?}",
+                v.pos
+            );
+        }
+    }
+
+    #[test]
+    fn dipole_pattern_nulls_on_axis() {
+        // A z-dipole-like pattern: gain ∝ sin(θ), nulls at θ=0 and θ=180.
+        let m = build_lobe(
+            &grid_from(|it, _| {
+                let theta = it as f32 * std::f32::consts::PI / (LOBE_N_THETA - 1) as f32;
+                20.0 * theta.sin().max(1e-3).log10() // dB, peaks at θ=90°, dives on axis
+            }),
+            [0.0; 3],
+            1.0,
+        );
+        let np = LOBE_N_PHI;
+        // θ=0 row (indices 0..np) collapses to the center.
+        for v in &m.vertices[0..np] {
+            assert!(dist(v.pos, [0.0; 3]) < 0.05, "axis should be a null");
+        }
+        // Equator (θ=90° → row 18) reaches full radius.
+        let eq = &m.vertices[18 * np];
+        assert!(dist(eq.pos, [0.0; 3]) > 0.9, "equator should be the peak");
+    }
+
+    #[test]
+    fn nulls_and_degenerate_grids_are_safe() {
+        // All-null grid → empty mesh (no finite peak).
+        let m = build_lobe(&grid_from(|_, _| -999.99), [0.0; 3], 1.0);
+        assert!(m.vertices.is_empty());
+        // Mismatched length → empty.
+        let bad = PatternGrid {
+            n_theta: 4,
+            n_phi: 4,
+            gains_dbi: vec![0.0; 3],
+        };
+        assert!(build_lobe(&bad, [0.0; 3], 1.0).vertices.is_empty());
     }
 
     #[test]

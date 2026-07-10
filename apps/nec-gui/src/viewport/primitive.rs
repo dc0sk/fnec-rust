@@ -14,27 +14,56 @@ use std::sync::Arc;
 
 use iced::widget::shader::{self, wgpu};
 use iced::Rectangle;
-use nec_gui::mesh::{LineVertex, MeshData};
+use nec_gui::mesh::{LineVertex, LobeMesh, LobeVertex, MeshData};
 
-/// A cheap per-frame handle bundle: the camera matrix plus an `Arc` to the
-/// current mesh and its revision (buffers re-upload only when `rev` changes).
+/// A cheap per-frame handle bundle: the camera matrix plus `Arc`s to the current
+/// wire mesh and pattern lobe and their revisions (buffers re-upload only when a
+/// revision changes).
 #[derive(Debug)]
 pub struct ScenePrimitive {
     pub view_proj: [[f32; 4]; 4],
     pub mesh: Option<Arc<MeshData>>,
     pub rev: u64,
+    pub lobe: Option<Arc<LobeMesh>>,
+    pub lobe_rev: u64,
 }
 
 /// GPU resources cached in the shader `Storage` (keyed by type) across frames.
 struct Pipeline {
     pipeline: wgpu::RenderPipeline,
+    lobe_pipeline: wgpu::RenderPipeline,
     uniform: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     vertices: Option<wgpu::Buffer>,
     vertex_count: u32,
     uploaded_rev: Option<u64>,
+    lobe_vertices: Option<wgpu::Buffer>,
+    lobe_indices: Option<wgpu::Buffer>,
+    lobe_index_count: u32,
+    lobe_uploaded_rev: Option<u64>,
     depth: wgpu::TextureView,
     depth_size: (u32, u32),
+}
+
+/// Shared vertex layout for the line and lobe meshes (`{ pos:f32x3, color:f32x4 }`).
+fn vertex_layout(stride: u64) -> wgpu::VertexBufferLayout<'static> {
+    const ATTRS: [wgpu::VertexAttribute; 2] = [
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 12,
+            shader_location: 1,
+        },
+    ];
+    wgpu::VertexBufferLayout {
+        array_stride: stride,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &ATTRS,
+    }
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -77,37 +106,23 @@ impl Pipeline {
             bind_group_layouts: &[&bgl],
             push_constant_ranges: &[],
         });
+        let color_target = wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
+        };
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("gui.viewport.lines.pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<LineVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x4,
-                            offset: 12,
-                            shader_location: 1,
-                        },
-                    ],
-                }],
+                buffers: &[vertex_layout(std::mem::size_of::<LineVertex>() as u64)],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[Some(color_target.clone())],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::LineList,
@@ -123,13 +138,48 @@ impl Pipeline {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
+        // The translucent lobe: triangles, alpha-blended, depth-TESTED but not
+        // depth-WRITTEN, so the wires stay crisp inside it. Drawn after the wires.
+        let lobe_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("gui.viewport.lobe.pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[vertex_layout(std::mem::size_of::<LobeVertex>() as u64)],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(color_target)],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
         Self {
             pipeline,
+            lobe_pipeline,
             uniform,
             bind_group,
             vertices: None,
             vertex_count: 0,
             uploaded_rev: None,
+            lobe_vertices: None,
+            lobe_indices: None,
+            lobe_index_count: 0,
+            lobe_uploaded_rev: None,
             depth: create_depth(device, size),
             depth_size: size,
         }
@@ -168,6 +218,46 @@ impl Pipeline {
         }
         self.vertex_count = mesh.vertices.len() as u32;
         self.uploaded_rev = Some(rev);
+    }
+
+    fn upload_lobe(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        lobe: &LobeMesh,
+        rev: u64,
+    ) {
+        if self.lobe_uploaded_rev == Some(rev) {
+            return;
+        }
+        let vbytes: &[u8] = bytemuck::cast_slice(&lobe.vertices);
+        let ibytes: &[u8] = bytemuck::cast_slice(&lobe.indices);
+        if self.lobe_vertices.as_ref().map_or(0, wgpu::Buffer::size) < vbytes.len() as u64 {
+            self.lobe_vertices = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("gui.viewport.lobe.vertices"),
+                size: (vbytes.len() as u64).max(16),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        if self.lobe_indices.as_ref().map_or(0, wgpu::Buffer::size) < ibytes.len() as u64 {
+            self.lobe_indices = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("gui.viewport.lobe.indices"),
+                size: (ibytes.len() as u64).max(16),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        if !vbytes.is_empty() {
+            if let Some(b) = &self.lobe_vertices {
+                queue.write_buffer(b, 0, vbytes);
+            }
+            if let Some(b) = &self.lobe_indices {
+                queue.write_buffer(b, 0, ibytes);
+            }
+        }
+        self.lobe_index_count = lobe.indices.len() as u32;
+        self.lobe_uploaded_rev = Some(rev);
     }
 }
 
@@ -211,6 +301,9 @@ impl shader::Primitive for ScenePrimitive {
         queue.write_buffer(&p.uniform, 0, bytemuck::cast_slice(&[self.view_proj]));
         if let Some(mesh) = &self.mesh {
             p.upload_mesh(device, queue, mesh, self.rev);
+        }
+        if let Some(lobe) = &self.lobe {
+            p.upload_lobe(device, queue, lobe, self.lobe_rev);
         }
     }
 
@@ -259,12 +352,21 @@ impl shader::Primitive for ScenePrimitive {
             0.0,
             1.0,
         );
-        let (Some(vbuf), true) = (&p.vertices, p.vertex_count > 0) else {
-            return;
-        };
-        pass.set_pipeline(&p.pipeline);
         pass.set_bind_group(0, &p.bind_group, &[]);
-        pass.set_vertex_buffer(0, vbuf.slice(..));
-        pass.draw(0..p.vertex_count, 0..1);
+        // Opaque wires first (depth write on).
+        if let (Some(vbuf), true) = (&p.vertices, p.vertex_count > 0) {
+            pass.set_pipeline(&p.pipeline);
+            pass.set_vertex_buffer(0, vbuf.slice(..));
+            pass.draw(0..p.vertex_count, 0..1);
+        }
+        // Translucent pattern lobe last (depth write off), only when present.
+        if self.lobe.is_some() && p.lobe_index_count > 0 {
+            if let (Some(vbuf), Some(ibuf)) = (&p.lobe_vertices, &p.lobe_indices) {
+                pass.set_pipeline(&p.lobe_pipeline);
+                pass.set_vertex_buffer(0, vbuf.slice(..));
+                pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..p.lobe_index_count, 0, 0..1);
+            }
+        }
     }
 }

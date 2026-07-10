@@ -20,7 +20,7 @@ use iced::widget::shader;
 use iced::{Point, Rectangle};
 use nec_gui::app_state::{Message, ViewportMsg};
 use nec_gui::camera::Camera;
-use nec_gui::mesh::MeshData;
+use nec_gui::mesh::{LobeMesh, MeshData};
 
 /// Radians of orbit per pixel dragged.
 const ORBIT_RAD_PER_PX: f32 = 0.008;
@@ -45,6 +45,8 @@ pub struct Scene {
     camera: Camera,
     mesh: Option<Arc<MeshData>>,
     rev: u64,
+    lobe: Option<Arc<LobeMesh>>,
+    lobe_rev: u64,
 }
 
 impl Scene {
@@ -54,6 +56,8 @@ impl Scene {
             camera: state.camera,
             mesh: state.scene.clone(),
             rev: state.scene_rev,
+            lobe: state.lobe.clone(),
+            lobe_rev: state.lobe_rev,
         }
     }
 }
@@ -139,6 +143,8 @@ impl shader::Program<Message> for Scene {
             view_proj: self.camera.view_proj(aspect).to_cols_array_2d(),
             mesh: self.mesh.clone(),
             rev: self.rev,
+            lobe: self.lobe.clone(),
+            lobe_rev: self.lobe_rev,
         }
     }
 }

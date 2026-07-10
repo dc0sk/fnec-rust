@@ -124,6 +124,14 @@ pub struct ViewportState {
     pub currents_ma: Option<Vec<f32>>,
     /// Whether to paint the wires by current magnitude (GUI-CHK-004).
     pub show_currents: bool,
+    /// Full-sphere far-field gain grid, retained to rebuild the lobe on toggle.
+    pub grid: Option<crate::mesh::PatternGrid>,
+    /// Built radiation-pattern lobe (triangles), when shown (GUI-CHK-005).
+    pub lobe: Option<std::sync::Arc<crate::mesh::LobeMesh>>,
+    /// Revision counter for the lobe mesh (re-upload trigger).
+    pub lobe_rev: u64,
+    /// Whether to overlay the 3-D radiation-pattern lobe.
+    pub show_pattern: bool,
 }
 
 impl ViewportState {
@@ -142,6 +150,18 @@ impl ViewportState {
             geo, mags,
         )));
         self.scene_rev = self.scene_rev.wrapping_add(1);
+    }
+
+    /// Rebuild the pattern-lobe mesh from `grid`, scaled ~1.2× the geometry
+    /// bounding radius and centered on it; bumps the lobe revision.
+    fn rebuild_lobe(&mut self) {
+        self.lobe = match (self.show_pattern, &self.grid, self.fit_bounds) {
+            (true, Some(g), Some((center, radius))) => Some(std::sync::Arc::new(
+                crate::mesh::build_lobe(g, center, radius * 1.2),
+            )),
+            _ => None,
+        };
+        self.lobe_rev = self.lobe_rev.wrapping_add(1);
     }
 
     /// Min/max current magnitude (mA) for the legend, when currents are loaded.
@@ -254,6 +274,12 @@ pub enum Message {
     CurrentsSolved(Result<crate::mesh::GeometryCurrents, String>),
     /// User toggled current-magnitude coloring.
     ToggleCurrents(bool),
+    /// User clicked "Solve pattern" in the 3-D view.
+    LoadPattern3d,
+    /// Background geometry + full-sphere pattern solve completed (GUI-CHK-005).
+    Pattern3dComplete(Result<crate::mesh::PatternSolve, String>),
+    /// User toggled the 3-D radiation-pattern lobe overlay.
+    TogglePattern(bool),
 }
 
 impl AppState {
@@ -363,6 +389,27 @@ impl AppState {
             Message::ToggleCurrents(on) => {
                 self.viewport.show_currents = *on;
                 self.viewport.rebuild_scene();
+            }
+            Message::LoadPattern3d => {
+                self.viewport.status = "Computing radiation pattern…".into();
+            }
+            Message::Pattern3dComplete(Ok(ps)) => {
+                let (center, radius) = ps.geometry.bounds();
+                self.viewport.camera.fit(center, radius);
+                self.viewport.fit_bounds = Some((center, radius));
+                self.viewport.geometry = Some(ps.geometry.clone());
+                self.viewport.grid = Some(ps.grid.clone());
+                self.viewport.show_pattern = true;
+                self.viewport.rebuild_scene();
+                self.viewport.rebuild_lobe();
+                self.viewport.status = "Radiation pattern lobe shown".into();
+            }
+            Message::Pattern3dComplete(Err(e)) => {
+                self.viewport.status = format!("Error: {e}");
+            }
+            Message::TogglePattern(on) => {
+                self.viewport.show_pattern = *on;
+                self.viewport.rebuild_lobe();
             }
             Message::Viewport(vp) => {
                 let cam = &mut self.viewport.camera;
