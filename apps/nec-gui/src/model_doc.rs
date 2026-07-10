@@ -14,7 +14,7 @@
 //! render itself back to deck text via [`crate::deck_write::write_deck`] for the
 //! live 3-D preview and for saving.
 
-use nec_model::card::{Card, GwCard};
+use nec_model::card::{Card, ExCard, FrCard, GnCard, GwCard, LdCard};
 use nec_model::deck::NecDeck;
 
 use crate::deck_write::write_deck;
@@ -159,17 +159,291 @@ fn parse_f(s: &str, name: &str) -> Result<f64, String> {
     Ok(v)
 }
 
+// ── Editable control cards (GUI-CHK-008) ──────────────────────────────────────
+
+/// Editable `EX` excitation (voltage/current source view). The type and driven
+/// segment are edited as strings; the plane-wave-only fields are preserved.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ExRow {
+    pub kind: String,
+    pub tag: String,
+    pub segment: String,
+    pub vr: String,
+    pub vi: String,
+    // Preserved verbatim (not exposed for source-type editing).
+    i4: u32,
+    pol_deg: f64,
+    pol_ratio: f64,
+    theta_inc: f64,
+    phi_inc: f64,
+}
+
+impl ExRow {
+    fn from_card(c: &ExCard) -> Self {
+        Self {
+            kind: c.excitation_type.to_string(),
+            tag: c.tag.to_string(),
+            segment: c.segment.to_string(),
+            vr: fmt_f(c.voltage_real),
+            vi: fmt_f(c.voltage_imag),
+            i4: c.i4,
+            pol_deg: c.polarization_deg,
+            pol_ratio: c.polarization_ratio,
+            theta_inc: c.theta_inc,
+            phi_inc: c.phi_inc,
+        }
+    }
+
+    fn to_card(&self) -> Result<ExCard, String> {
+        Ok(ExCard {
+            excitation_type: parse_u(&self.kind, "EX type")?,
+            tag: parse_u(&self.tag, "EX tag")?,
+            segment: parse_u(&self.segment, "EX segment")?,
+            i4: self.i4,
+            voltage_real: parse_f(&self.vr, "EX voltage (real)")?,
+            voltage_imag: parse_f(&self.vi, "EX voltage (imag)")?,
+            polarization_deg: self.pol_deg,
+            polarization_ratio: self.pol_ratio,
+            theta_inc: self.theta_inc,
+            phi_inc: self.phi_inc,
+        })
+    }
+}
+
+/// Editable `GN` ground. `ground_type` is a fixed choice (pick-list in the UI);
+/// the medium fields are optional strings (empty = omitted).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GnRow {
+    pub ground_type: i32,
+    pub eps_r: String,
+    pub sigma: String,
+}
+
+impl GnRow {
+    fn from_card(c: &GnCard) -> Self {
+        Self {
+            ground_type: c.ground_type,
+            eps_r: c.eps_r.map(fmt_f).unwrap_or_default(),
+            sigma: c.sigma.map(fmt_f).unwrap_or_default(),
+        }
+    }
+
+    fn to_card(&self) -> Result<GnCard, String> {
+        Ok(GnCard {
+            ground_type: self.ground_type,
+            eps_r: parse_opt_f(&self.eps_r, "GN eps_r")?,
+            sigma: parse_opt_f(&self.sigma, "GN sigma")?,
+        })
+    }
+}
+
+/// Editable `LD` load. `load_type` is a fixed choice (pick-list in the UI).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LdRow {
+    pub load_type: i32,
+    pub tag: String,
+    pub seg_first: String,
+    pub seg_last: String,
+    pub f1: String,
+    pub f2: String,
+    pub f3: String,
+}
+
+impl LdRow {
+    fn from_card(c: &LdCard) -> Self {
+        Self {
+            load_type: c.load_type,
+            tag: c.tag.to_string(),
+            seg_first: c.seg_first.to_string(),
+            seg_last: c.seg_last.to_string(),
+            f1: fmt_f(c.f1),
+            f2: fmt_f(c.f2),
+            f3: fmt_f(c.f3),
+        }
+    }
+
+    fn to_card(&self) -> Result<LdCard, String> {
+        Ok(LdCard {
+            load_type: self.load_type,
+            tag: parse_u(&self.tag, "LD tag")?,
+            seg_first: parse_u(&self.seg_first, "LD seg_first")?,
+            seg_last: parse_u(&self.seg_last, "LD seg_last")?,
+            f1: parse_f(&self.f1, "LD F1")?,
+            f2: parse_f(&self.f2, "LD F2")?,
+            f3: parse_f(&self.f3, "LD F3")?,
+        })
+    }
+}
+
+/// Editable `FR` frequency. `step_type` is a fixed choice (pick-list in the UI).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FrRow {
+    pub step_type: u32,
+    pub steps: String,
+    pub frequency_mhz: String,
+    pub step_mhz: String,
+}
+
+impl FrRow {
+    fn from_card(c: &FrCard) -> Self {
+        Self {
+            step_type: c.step_type,
+            steps: c.steps.to_string(),
+            frequency_mhz: fmt_f(c.frequency_mhz),
+            step_mhz: fmt_f(c.step_mhz),
+        }
+    }
+
+    fn to_card(&self) -> Result<FrCard, String> {
+        let steps = parse_u(&self.steps, "FR steps")?;
+        if steps < 1 {
+            return Err("FR steps must be ≥ 1".into());
+        }
+        let frequency_mhz = parse_f(&self.frequency_mhz, "FR frequency")?;
+        if frequency_mhz <= 0.0 {
+            return Err("FR frequency must be > 0".into());
+        }
+        Ok(FrCard {
+            step_type: self.step_type,
+            steps,
+            frequency_mhz,
+            step_mhz: parse_f(&self.step_mhz, "FR step")?,
+        })
+    }
+}
+
+/// A card in the post-geometry section: either an editable control card or an
+/// opaque preserved card (comments, `GE`, `GM`, `RP`, `NE`, `EN`, …).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PostSlot {
+    Ex(ExRow),
+    Gn(GnRow),
+    Ld(LdRow),
+    Fr(FrRow),
+    Other(Card),
+}
+
+impl PostSlot {
+    fn from_card(card: Card) -> Self {
+        match card {
+            Card::Ex(c) => PostSlot::Ex(ExRow::from_card(&c)),
+            Card::Gn(c) => PostSlot::Gn(GnRow::from_card(&c)),
+            Card::Ld(c) => PostSlot::Ld(LdRow::from_card(&c)),
+            Card::Fr(c) => PostSlot::Fr(FrRow::from_card(&c)),
+            other => PostSlot::Other(other),
+        }
+    }
+
+    fn to_card(&self) -> Result<Card, String> {
+        Ok(match self {
+            PostSlot::Ex(r) => Card::Ex(r.to_card()?),
+            PostSlot::Gn(r) => Card::Gn(r.to_card()?),
+            PostSlot::Ld(r) => Card::Ld(r.to_card()?),
+            PostSlot::Fr(r) => Card::Fr(r.to_card()?),
+            PostSlot::Other(c) => c.clone(),
+        })
+    }
+}
+
+/// A single control-card field edit, carried by one message. Applied to the
+/// addressed post slot; a kind mismatch (edit vs slot) is a no-op.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControlEdit {
+    ExKind(String),
+    ExTag(String),
+    ExSegment(String),
+    ExVr(String),
+    ExVi(String),
+    GnType(i32),
+    GnEps(String),
+    GnSigma(String),
+    LdType(i32),
+    LdTag(String),
+    LdSegFirst(String),
+    LdSegLast(String),
+    LdF1(String),
+    LdF2(String),
+    LdF3(String),
+    FrStepType(u32),
+    FrSteps(String),
+    FrFrequency(String),
+    FrStep(String),
+}
+
+impl ControlEdit {
+    /// Short stable key for undo coalescing (same field = same run).
+    pub fn field_key(&self) -> &'static str {
+        match self {
+            ControlEdit::ExKind(_) => "ex.kind",
+            ControlEdit::ExTag(_) => "ex.tag",
+            ControlEdit::ExSegment(_) => "ex.seg",
+            ControlEdit::ExVr(_) => "ex.vr",
+            ControlEdit::ExVi(_) => "ex.vi",
+            ControlEdit::GnType(_) => "gn.type",
+            ControlEdit::GnEps(_) => "gn.eps",
+            ControlEdit::GnSigma(_) => "gn.sigma",
+            ControlEdit::LdType(_) => "ld.type",
+            ControlEdit::LdTag(_) => "ld.tag",
+            ControlEdit::LdSegFirst(_) => "ld.segf",
+            ControlEdit::LdSegLast(_) => "ld.segl",
+            ControlEdit::LdF1(_) => "ld.f1",
+            ControlEdit::LdF2(_) => "ld.f2",
+            ControlEdit::LdF3(_) => "ld.f3",
+            ControlEdit::FrStepType(_) => "fr.steptype",
+            ControlEdit::FrSteps(_) => "fr.steps",
+            ControlEdit::FrFrequency(_) => "fr.freq",
+            ControlEdit::FrStep(_) => "fr.step",
+        }
+    }
+
+    /// Apply this edit to a post slot, if the slot kind matches.
+    fn apply_to(&self, slot: &mut PostSlot) {
+        match (self, slot) {
+            (ControlEdit::ExKind(v), PostSlot::Ex(r)) => r.kind = v.clone(),
+            (ControlEdit::ExTag(v), PostSlot::Ex(r)) => r.tag = v.clone(),
+            (ControlEdit::ExSegment(v), PostSlot::Ex(r)) => r.segment = v.clone(),
+            (ControlEdit::ExVr(v), PostSlot::Ex(r)) => r.vr = v.clone(),
+            (ControlEdit::ExVi(v), PostSlot::Ex(r)) => r.vi = v.clone(),
+            (ControlEdit::GnType(v), PostSlot::Gn(r)) => r.ground_type = *v,
+            (ControlEdit::GnEps(v), PostSlot::Gn(r)) => r.eps_r = v.clone(),
+            (ControlEdit::GnSigma(v), PostSlot::Gn(r)) => r.sigma = v.clone(),
+            (ControlEdit::LdType(v), PostSlot::Ld(r)) => r.load_type = *v,
+            (ControlEdit::LdTag(v), PostSlot::Ld(r)) => r.tag = v.clone(),
+            (ControlEdit::LdSegFirst(v), PostSlot::Ld(r)) => r.seg_first = v.clone(),
+            (ControlEdit::LdSegLast(v), PostSlot::Ld(r)) => r.seg_last = v.clone(),
+            (ControlEdit::LdF1(v), PostSlot::Ld(r)) => r.f1 = v.clone(),
+            (ControlEdit::LdF2(v), PostSlot::Ld(r)) => r.f2 = v.clone(),
+            (ControlEdit::LdF3(v), PostSlot::Ld(r)) => r.f3 = v.clone(),
+            (ControlEdit::FrStepType(v), PostSlot::Fr(r)) => r.step_type = *v,
+            (ControlEdit::FrSteps(v), PostSlot::Fr(r)) => r.steps = v.clone(),
+            (ControlEdit::FrFrequency(v), PostSlot::Fr(r)) => r.frequency_mhz = v.clone(),
+            (ControlEdit::FrStep(v), PostSlot::Fr(r)) => r.step_mhz = v.clone(),
+            // Kind mismatch (stale message vs current slot) — ignore.
+            _ => {}
+        }
+    }
+}
+
+fn parse_opt_f(s: &str, name: &str) -> Result<Option<f64>, String> {
+    if s.trim().is_empty() {
+        Ok(None)
+    } else {
+        parse_f(s, name).map(Some)
+    }
+}
+
 /// An editable deck: the `GW` wires as a table, everything else preserved.
 ///
 /// The non-wire cards are split around the first contiguous block of `GW` cards
-/// into `pre` (leading comments, etc.) and `post` (`GE`, `EX`, `FR`, …). On
-/// [`ModelDoc::to_deck`] they are re-emitted around the edited wire rows, so the
-/// editor never drops the control cards it doesn't yet understand.
+/// into `pre` (leading comments, etc.) and `post` (`GE`, `GN`, `LD`, `EX`, `FR`,
+/// …). Control cards in `post` become typed, editable [`PostSlot`]s; the rest are
+/// preserved verbatim. On [`ModelDoc::to_deck`] everything is re-emitted around
+/// the edited wire rows in original order.
 #[derive(Debug, Clone, Default)]
 pub struct ModelDoc {
     pre: Vec<Card>,
     pub wires: Vec<WireRow>,
-    post: Vec<Card>,
+    post: Vec<PostSlot>,
     pub dirty: bool,
 }
 
@@ -188,7 +462,7 @@ impl ModelDoc {
                     seen_wire = true;
                 }
                 other if !seen_wire => pre.push(other.clone()),
-                other => post.push(other.clone()),
+                other => post.push(PostSlot::from_card(other.clone())),
             }
         }
         Self {
@@ -196,6 +470,20 @@ impl ModelDoc {
             wires,
             post,
             dirty: false,
+        }
+    }
+
+    /// The post-geometry slots (control cards + preserved cards), for the editors.
+    pub fn post_slots(&self) -> &[PostSlot] {
+        &self.post
+    }
+
+    /// Apply a control-card edit to a post slot (no-op on a kind mismatch or an
+    /// out-of-range index) and mark the document dirty.
+    pub fn edit_control(&mut self, slot: usize, edit: &ControlEdit) {
+        if let Some(s) = self.post.get_mut(slot) {
+            edit.apply_to(s);
+            self.dirty = true;
         }
     }
 
@@ -233,20 +521,23 @@ impl ModelDoc {
         }
     }
 
-    /// Validate every wire, returning the reconstructed deck or the first row
-    /// that fails to validate (`(row_index, reason)`).
-    pub fn to_deck(&self) -> Result<NecDeck, (usize, String)> {
+    /// Validate every wire and control card, returning the reconstructed deck or
+    /// the first field that fails to validate (message already prefixed with the
+    /// offending row/card, e.g. `"wire 2: radius must be > 0"`).
+    pub fn to_deck(&self) -> Result<NecDeck, String> {
         let mut cards = self.pre.clone();
         for (i, w) in self.wires.iter().enumerate() {
-            let gw = w.to_card().map_err(|e| (i, e))?;
+            let gw = w.to_card().map_err(|e| format!("wire {}: {e}", i + 1))?;
             cards.push(Card::Gw(gw));
         }
-        cards.extend(self.post.iter().cloned());
+        for slot in &self.post {
+            cards.push(slot.to_card()?);
+        }
         Ok(NecDeck { cards })
     }
 
     /// Render the current document to deck text, or the first validation error.
-    pub fn to_deck_string(&self) -> Result<String, (usize, String)> {
+    pub fn to_deck_string(&self) -> Result<String, String> {
         self.to_deck().map(|d| write_deck(&d))
     }
 
@@ -270,8 +561,10 @@ const MAX_HISTORY: usize = 200;
 pub struct EditHistory {
     undo: Vec<ModelDoc>,
     redo: Vec<ModelDoc>,
-    /// The field currently absorbing coalesced edits, if a run is open.
-    last_field: Option<(usize, WireField)>,
+    /// The field currently absorbing coalesced edits, if a run is open. Keyed by
+    /// an opaque per-field string (e.g. `"wire:0:Z2"`, `"ex:1:vr"`), so any
+    /// editable field — wire or control card — coalesces its own typing run.
+    last_key: Option<String>,
 }
 
 impl EditHistory {
@@ -289,7 +582,7 @@ impl EditHistory {
     pub fn reset(&mut self) {
         self.undo.clear();
         self.redo.clear();
-        self.last_field = None;
+        self.last_key = None;
     }
 
     fn push_undo(&mut self, doc: &ModelDoc) {
@@ -301,21 +594,22 @@ impl EditHistory {
     }
 
     /// Snapshot the pre-edit state before a field edit, coalescing consecutive
-    /// edits to the same `(row, field)` into one undo step. Call *before*
-    /// mutating the document.
-    pub fn before_field_edit(&mut self, doc: &ModelDoc, row: usize, field: WireField) {
-        if self.last_field == Some((row, field)) {
+    /// edits carrying the same `key` into one undo step. Call *before* mutating
+    /// the document. The key identifies the specific field being typed into
+    /// (e.g. `"wire:0:Z2"`), so switching fields opens a fresh step.
+    pub fn before_field_edit(&mut self, doc: &ModelDoc, key: &str) {
+        if self.last_key.as_deref() == Some(key) {
             return;
         }
         self.push_undo(doc);
-        self.last_field = Some((row, field));
+        self.last_key = Some(key.to_string());
     }
 
     /// Snapshot the pre-change state before a structural edit (add/delete row).
     /// Never coalesced. Call *before* mutating the document.
     pub fn before_structural(&mut self, doc: &ModelDoc) {
         self.push_undo(doc);
-        self.last_field = None;
+        self.last_key = None;
     }
 
     /// Restore the previous snapshot into `doc`, pushing the current state onto
@@ -324,7 +618,7 @@ impl EditHistory {
         match self.undo.pop() {
             Some(prev) => {
                 self.redo.push(std::mem::replace(doc, prev));
-                self.last_field = None;
+                self.last_key = None;
                 true
             }
             None => false,
@@ -337,7 +631,7 @@ impl EditHistory {
         match self.redo.pop() {
             Some(next) => {
                 self.undo.push(std::mem::replace(doc, next));
-                self.last_field = None;
+                self.last_key = None;
                 true
             }
             None => false,
@@ -411,16 +705,16 @@ EN
         let mut d = doc();
         d.edit(0, WireField::Radius, "0".into());
         let err = d.to_deck().unwrap_err();
-        assert_eq!(err.0, 0);
-        assert!(err.1.contains("radius"), "unexpected: {}", err.1);
+        assert!(err.contains("wire 1"), "should name the row: {err}");
+        assert!(err.contains("radius"), "unexpected: {err}");
 
         d.edit(0, WireField::Radius, "0.001".into());
         d.edit(0, WireField::Segments, "0".into());
-        assert!(d.to_deck().unwrap_err().1.contains("segments"));
+        assert!(d.to_deck().unwrap_err().contains("segments"));
 
         d.edit(0, WireField::Segments, "51".into());
         d.edit(0, WireField::X1, "abc".into());
-        assert!(d.to_deck().unwrap_err().1.contains("x1"));
+        assert!(d.to_deck().unwrap_err().contains("x1"));
     }
 
     #[test]
@@ -436,7 +730,7 @@ EN
         ] {
             d.edit(0, f, v.into());
         }
-        assert!(d.to_deck().unwrap_err().1.contains("zero-length"));
+        assert!(d.to_deck().unwrap_err().contains("zero-length"));
     }
 
     #[test]
@@ -458,7 +752,7 @@ EN
         let mut d = doc();
         let mut h = EditHistory::default();
         for v in ["5", "5.", "5.2", "5.23"] {
-            h.before_field_edit(&d, 0, WireField::Z2);
+            h.before_field_edit(&d, "wire:0:Z2");
             d.edit(0, WireField::Z2, v.into());
         }
         assert_eq!(d.wires[0].z2, "5.23");
@@ -473,9 +767,9 @@ EN
     fn history_separates_different_fields() {
         let mut d = doc();
         let mut h = EditHistory::default();
-        h.before_field_edit(&d, 0, WireField::Z2);
+        h.before_field_edit(&d, "wire:0:Z2");
         d.edit(0, WireField::Z2, "6".into());
-        h.before_field_edit(&d, 0, WireField::X1);
+        h.before_field_edit(&d, "wire:0:X1");
         d.edit(0, WireField::X1, "1".into());
 
         assert!(h.undo(&mut d)); // undoes X1
@@ -506,11 +800,11 @@ EN
     fn history_new_edit_clears_redo() {
         let mut d = doc();
         let mut h = EditHistory::default();
-        h.before_field_edit(&d, 0, WireField::Z2);
+        h.before_field_edit(&d, "wire:0:Z2");
         d.edit(0, WireField::Z2, "6".into());
         h.undo(&mut d);
         assert!(h.can_redo());
-        h.before_field_edit(&d, 0, WireField::Z2);
+        h.before_field_edit(&d, "wire:0:Z2");
         d.edit(0, WireField::Z2, "7".into());
         assert!(!h.can_redo(), "a new edit invalidates redo");
     }
@@ -522,5 +816,104 @@ EN
         assert!(!h.undo(&mut d));
         assert!(!h.redo(&mut d));
         assert_eq!(d.wire_count(), 1);
+    }
+
+    // ── Control-card slots (GUI-CHK-008) ─────────────────────────────────────
+
+    const GROUND_DECK: &str = "\
+CM ground dipole
+CE
+GW 1 21 0 0 5 0 0 15 0.001
+GE 1
+GN 2 0 0 0 13 0.005
+LD 4 1 11 11 50 10 0
+EX 0 1 11 0 1
+FR 0 1 14.2 0
+EN
+";
+
+    fn gnd_doc() -> ModelDoc {
+        ModelDoc::from_deck(&parse(GROUND_DECK).unwrap().deck)
+    }
+
+    #[test]
+    fn post_slots_are_typed_in_order() {
+        let d = gnd_doc();
+        let kinds: Vec<&str> = d
+            .post_slots()
+            .iter()
+            .map(|s| match s {
+                PostSlot::Gn(_) => "gn",
+                PostSlot::Ld(_) => "ld",
+                PostSlot::Ex(_) => "ex",
+                PostSlot::Fr(_) => "fr",
+                PostSlot::Other(_) => "other",
+            })
+            .collect();
+        // GE(other), GN, LD, EX, FR, EN(other)
+        assert_eq!(kinds, ["other", "gn", "ld", "ex", "fr", "other"]);
+    }
+
+    #[test]
+    fn control_cards_round_trip_through_model_doc() {
+        let d = gnd_doc();
+        let rebuilt = d.to_deck().expect("valid");
+        let reparsed = parse(&write_deck(&rebuilt)).unwrap().deck;
+        assert_eq!(reparsed.cards, parse(GROUND_DECK).unwrap().deck.cards);
+    }
+
+    #[test]
+    fn edit_control_changes_a_frequency_field() {
+        let mut d = gnd_doc();
+        // FR is slot 4.
+        d.edit_control(4, &ControlEdit::FrFrequency("21.0".into()));
+        assert!(d.dirty);
+        let deck = d.to_deck().unwrap();
+        let fr = deck
+            .cards
+            .iter()
+            .find_map(|c| match c {
+                Card::Fr(f) => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(fr.frequency_mhz, 21.0);
+    }
+
+    #[test]
+    fn edit_control_changes_ground_type_and_medium() {
+        let mut d = gnd_doc();
+        // GN is slot 1.
+        d.edit_control(1, &ControlEdit::GnType(1));
+        d.edit_control(1, &ControlEdit::GnEps(String::new()));
+        d.edit_control(1, &ControlEdit::GnSigma(String::new()));
+        let deck = d.to_deck().unwrap();
+        let gn = deck
+            .cards
+            .iter()
+            .find_map(|c| match c {
+                Card::Gn(g) => Some(g),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(gn.ground_type, 1);
+        assert_eq!(gn.eps_r, None, "cleared medium becomes None");
+    }
+
+    #[test]
+    fn edit_control_kind_mismatch_is_a_noop() {
+        let mut d = gnd_doc();
+        // Slot 1 is GN; an LD edit must not touch it.
+        let before = d.post_slots()[1].clone();
+        d.edit_control(1, &ControlEdit::LdF1("999".into()));
+        assert_eq!(d.post_slots()[1], before, "GN slot unchanged by an LD edit");
+    }
+
+    #[test]
+    fn invalid_control_field_is_rejected() {
+        let mut d = gnd_doc();
+        d.edit_control(4, &ControlEdit::FrFrequency("abc".into()));
+        let err = d.to_deck().unwrap_err();
+        assert!(err.contains("FR frequency"), "unexpected: {err}");
     }
 }
