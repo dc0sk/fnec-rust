@@ -1,0 +1,6 @@
+CM Half-wave dipole at 14.2 MHz — smoke-test deck
+CM
+GW 1 11 0 0 -5.282 0 0 3 0.001
+EX 0 1 6 0 1
+FR 0 1 14.2 0
+EN
