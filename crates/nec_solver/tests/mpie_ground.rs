@@ -34,8 +34,9 @@
 //   Gate E2 (consistency): a near-horizontal (2°) wire reproduces the Phase-D
 //     horizontal 64.00 + j49.18 — the E-field reaction agrees with the potential
 //     kernels (the fast dyadic resolves the low-d/large-ρ pole corner).
-//   Gate E3 (boundary): a BENT wire over ground is still rejected (needs the full
-//     per-pair dyadic; deferred).
+//   Gate E3 (bent): an inverted-V (bent) over GN2 solves and captures the
+//     surface-wave ground shift (the per-segment-pair reflected reaction).
+//   Gate E4 (boundary): a buried wire (crossing z ≤ 0) is rejected.
 
 use nec_solver::{solve_mpie_ground, straight_wire, GroundModel, MpieError, MpieGeometry};
 
@@ -153,25 +154,77 @@ fn general_path_reproduces_horizontal_limit() {
     );
 }
 
-/// Gate E3 (boundary): a BENT (non-straight) wire over ground is still rejected —
-/// arbitrary bent geometry needs the full per-pair dyadic (deferred).
-#[test]
-fn bent_wire_over_ground_is_rejected() {
+/// Build an apex-fed 90° inverted-V (two λ/4 arms in the xz-plane) with the tips
+/// at height `tip_h_lam` wavelengths; `n` segments per arm, apex node = `n`.
+fn inverted_v(tip_h_lam: f64, n: usize) -> (MpieGeometry, usize) {
     let lam = C0 / FREQ;
     let q = lam / 4.0;
-    let h = 0.1 * lam;
-    // Inverted-V apex: two arms meeting at a non-straight angle, all above ground.
-    let geom = MpieGeometry {
-        nodes: vec![
-            [-q * 0.7, 0.0, h],
-            [0.0, 0.0, h + q * 0.7],
-            [q * 0.7, 0.0, h],
-        ],
-        segments: vec![[0, 1], [1, 2]],
-        radius: 0.001,
-    };
+    let s = q * (45.0_f64.to_radians()).sin();
+    let v = q * (45.0_f64.to_radians()).cos();
+    let tipz = tip_h_lam * lam;
+    let apexz = tipz + v;
+    let (tip1, apex, tip2) = ([-s, 0.0, tipz], [0.0, 0.0, apexz], [s, 0.0, tipz]);
+    let mut nodes = Vec::new();
+    for i in 0..=n {
+        let t = i as f64 / n as f64;
+        nodes.push([
+            tip1[0] + t * (apex[0] - tip1[0]),
+            0.0,
+            tip1[2] + t * (apex[2] - tip1[2]),
+        ]);
+    }
+    for i in 1..=n {
+        let t = i as f64 / n as f64;
+        nodes.push([
+            apex[0] + t * (tip2[0] - apex[0]),
+            0.0,
+            apex[2] + t * (tip2[2] - apex[2]),
+        ]);
+    }
+    let segments = (0..nodes.len() - 1).map(|i| [i, i + 1]).collect();
+    (
+        MpieGeometry {
+            nodes,
+            segments,
+            radius: 0.001,
+        },
+        n,
+    )
+}
+
+/// Gate E3 (bent over ground): an apex-fed inverted-V over GN2 solves via the
+/// per-segment-pair reflected reaction and captures the surface-wave ground shift.
+/// nec2c: free-space 43.48 + j12.40, GN2 52.81 + j39.16 (ΔZ = +9.3 + j26.8).
+#[test]
+fn inverted_v_over_ground_captures_surface_wave() {
+    let (geom, apex) = inverted_v(0.05, 20);
+    let z_gnd = solve_mpie_ground(&geom, FREQ, apex, &gn2()).unwrap().z_in;
+    let z_free = solve_mpie_ground(&geom, FREQ, apex, &GroundModel::FreeSpace)
+        .unwrap()
+        .z_in;
+    // Physical impedance, within ~12% of nec2c on R.
+    assert!(
+        (z_gnd.re - 52.81).abs() / 52.81 < 0.12,
+        "inverted-V GN2 R={} (nec2c 52.81)",
+        z_gnd.re
+    );
+    // The ground raises the reactance by the surface-wave shift ΔX ≈ nec2c +26.8.
+    let dx = z_gnd.im - z_free.im;
+    assert!(
+        (dx - 26.8).abs() / 26.8 < 0.15,
+        "ground ΔX={dx:.1} (nec2c +26.8)"
+    );
+}
+
+/// Gate E4 (boundary): a wire that crosses/reaches the ground plane (z ≤ 0) is
+/// rejected — the reflected kernel needs a strictly positive height-sum.
+#[test]
+fn buried_wire_is_rejected() {
+    let lam = C0 / FREQ;
+    // Vertical wire whose base sits on the ground plane (z = 0).
+    let wire = straight_wire([0.0, 0.0, 0.0], [0.0, 0.0, lam / 2.0], 40, 0.001);
     assert!(matches!(
-        solve_mpie_ground(&geom, FREQ, 1, &gn2()),
+        solve_mpie_ground(&wire.geometry(), FREQ, 20, &gn2()),
         Err(MpieError::UnsupportedGround)
     ));
 }
