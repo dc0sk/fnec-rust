@@ -21,10 +21,23 @@
 //   Gate D1: horizontal λ/2 dipole over GN2 at 0.05λ and 0.025λ — feed Z matches
 //     the oracle (and hence nec2c to ~5-8%), and the ground pulls R well below the
 //     74 Ω free-space value (a real ground effect, not a small perturbation).
-//   Gate D2: PEC image cancellation (R → ~6 at 0.05λ); non-horizontal geometry is
-//     rejected (Phase D boundary — arbitrary orientation is Phase E).
+//   Gate D2: PEC image cancellation (R → ~6 at 0.05λ).
+//
+// Phase E extends the ground to ANY straight orientation: the reflected term for a
+// vertical/tilted wire is a Galerkin reaction of the general reflected-E-field
+// dyadic (reflected_e_projected_fast) added to the free-space Z. This equals the
+// reflected mutual impedance, so a near-horizontal wire reproduces the Phase-D
+// horizontal result, and a vertical dipole matches nec2c.
+//
+//   Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c
+//     89.75 + j38.52 to the MPIE's ~7% discretization offset.
+//   Gate E2 (consistency): a near-horizontal (2°) wire reproduces the Phase-D
+//     horizontal 64.00 + j49.18 — the E-field reaction agrees with the potential
+//     kernels (the fast dyadic resolves the low-d/large-ρ pole corner).
+//   Gate E3 (boundary): a BENT wire over ground is still rejected (needs the full
+//     per-pair dyadic; deferred).
 
-use nec_solver::{solve_mpie_ground, straight_wire, GroundModel, MpieError};
+use nec_solver::{solve_mpie_ground, straight_wire, GroundModel, MpieError, MpieGeometry};
 
 const C0: f64 = 299_792_458.0;
 const FREQ: f64 = 14.2e6;
@@ -104,21 +117,61 @@ fn pec_image_cancellation() {
     );
 }
 
-/// Gate D2 (boundary): a non-horizontal wire over ground is rejected — arbitrary
-/// orientation is Phase E (the full reflected dyadic).
+/// Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c
+/// (89.75 + j38.52) via the general reflected-dyadic reaction.
 #[test]
-fn vertical_wire_over_ground_is_rejected() {
+fn vertical_dipole_gn2_matches_nec2c() {
     let lam = C0 / FREQ;
-    // Vertical λ/2 dipole with its base above ground.
-    let wire = straight_wire(
-        [0.0, 0.0, 0.1 * lam],
-        [0.0, 0.0, 0.1 * lam + lam / 2.0],
-        40,
-        0.001,
+    let base = 0.05 * lam;
+    let wire = straight_wire([0.0, 0.0, base], [0.0, 0.0, base + lam / 2.0], 40, 0.001);
+    let z = solve_mpie_ground(&wire.geometry(), FREQ, 20, &gn2())
+        .unwrap()
+        .z_in;
+    assert!(
+        (z.re - 89.75).abs() / 89.75 < 0.08 && (z.im - 38.52).abs() / 38.52 < 0.10,
+        "vertical GN2 Z={z} (nec2c 89.75+j38.52)"
     );
-    let geom = wire.geometry();
+}
+
+/// Gate E2 (consistency): the general E-field-reaction path reproduces the
+/// Phase-D horizontal potential-kernel result — a wire tilted just 2° off
+/// horizontal gives ≈ 64.00 + j49.18.
+#[test]
+fn general_path_reproduces_horizontal_limit() {
+    let lam = C0 / FREQ;
+    let q = lam / 4.0;
+    let a = 2.0_f64.to_radians();
+    let (dx, dz) = (q * a.cos(), q * a.sin());
+    let h = 0.05 * lam;
+    let wire = straight_wire([-dx, 0.0, h - dz], [dx, 0.0, h + dz], 40, 0.001);
+    let z = solve_mpie_ground(&wire.geometry(), FREQ, 20, &gn2())
+        .unwrap()
+        .z_in;
+    assert!(
+        (z.re - 64.0).abs() < 1.5 && (z.im - 49.18).abs() < 1.5,
+        "near-horizontal Z={z} should approach Phase-D 64.00+j49.18"
+    );
+}
+
+/// Gate E3 (boundary): a BENT (non-straight) wire over ground is still rejected —
+/// arbitrary bent geometry needs the full per-pair dyadic (deferred).
+#[test]
+fn bent_wire_over_ground_is_rejected() {
+    let lam = C0 / FREQ;
+    let q = lam / 4.0;
+    let h = 0.1 * lam;
+    // Inverted-V apex: two arms meeting at a non-straight angle, all above ground.
+    let geom = MpieGeometry {
+        nodes: vec![
+            [-q * 0.7, 0.0, h],
+            [0.0, 0.0, h + q * 0.7],
+            [q * 0.7, 0.0, h],
+        ],
+        segments: vec![[0, 1], [1, 2]],
+        radius: 0.001,
+    };
     assert!(matches!(
-        solve_mpie_ground(&geom, FREQ, 20, &gn2()),
+        solve_mpie_ground(&geom, FREQ, 1, &gn2()),
         Err(MpieError::UnsupportedGround)
     ));
 }
