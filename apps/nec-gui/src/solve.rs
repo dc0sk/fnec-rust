@@ -12,8 +12,9 @@ use nec_model::deck::NecDeck;
 use nec_parser::parse;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
-    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck,
-    solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
+    build_tl_stamps, classify_unsupported_topology, compute_radiation_pattern,
+    detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
+    FarFieldPoint, GroundModel, Segment, UnsupportedTopology,
 };
 use num_complex::Complex64;
 
@@ -104,7 +105,7 @@ fn apply_vars(input: &str, vars_path: Option<&str>) -> Result<String, String> {
 }
 
 /// Result of a successful single-frequency solve.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SolveResult {
     /// Frequency in MHz.
     pub freq_mhz: f64,
@@ -112,6 +113,10 @@ pub struct SolveResult {
     pub z_re: f64,
     /// Feedpoint reactance (Ω).
     pub z_im: f64,
+    /// Solver caveats for this deck (unreliable topology, deferred ground,
+    /// unsupported loads) — the GUI runs the Hallén solver, so junctions/loops
+    /// and finite-ground currents need the CLI's `--solver mpie`.
+    pub warnings: Vec<String>,
 }
 
 /// One row in the sweep result table.
@@ -265,6 +270,47 @@ pub fn pattern_grid_str(deck_text: &str) -> Result<crate::mesh::PatternSolve, St
 }
 
 /// Run a Hallen solve on `deck_text` (a raw NEC deck string).
+/// Solver caveats the GUI (Hallén-only) should surface for a deck: topologies the
+/// Hallén basis mis-solves (junctions/loops — the CLI's `--solver mpie` handles
+/// them), a deferred/unsupported ground model (treated as free space), and any
+/// loads / transmission lines the builder could not apply.
+fn collect_solve_warnings(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    match classify_unsupported_topology(segs) {
+        Some(UnsupportedTopology::ClosedLoop) => warnings.push(
+            "Geometry contains a closed loop; the Hallén solver does not model the loop \
+             closure, so the impedance, currents, and pattern are unreliable. Solve this \
+             geometry with the CLI: `fnec --solver mpie`."
+                .to_string(),
+        ),
+        Some(UnsupportedTopology::HighDegreeJunction) => warnings.push(
+            "Geometry has a junction where three or more wires meet; the Hallén solver does \
+             not model the current split there, so results are unreliable. Solve this geometry \
+             with the CLI: `fnec --solver mpie`."
+                .to_string(),
+        ),
+        None => {}
+    }
+    if let GroundModel::Deferred { .. } = ground {
+        warnings.push(
+            "The deck's ground model is not supported by this solver and is treated as free \
+             space — results omit ground effects. Use the CLI with `--ground-solver sommerfeld` \
+             for near-ground impedance."
+                .to_string(),
+        );
+    }
+    let (_lv, load_warnings) = build_loads(deck, segs, freq_hz);
+    warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
+    let (_ts, tl_warnings) = build_tl_stamps(deck, segs, freq_hz);
+    warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
+    warnings
+}
+
 pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
@@ -322,6 +368,7 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
         freq_mhz: freq_hz / 1_000_000.0,
         z_re: z.re,
         z_im: z.im,
+        warnings: collect_solve_warnings(deck, &segs, &ground, freq_hz),
     })
 }
 

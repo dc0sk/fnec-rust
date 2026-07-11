@@ -878,7 +878,7 @@ fn control_del_button(slot: usize) -> Element<'static, Message> {
 
 /// Small impedance result widget for the single-frequency tab.
 fn impedance_view(r: &SolveResult) -> Element<'_, Message> {
-    column![
+    let mut col = column![
         text("─── Result ───"),
         text(format!("Frequency  : {:.3} MHz", r.freq_mhz)),
         text(format!("Z_re       : {:.3} Ω", r.z_re)),
@@ -888,8 +888,13 @@ fn impedance_view(r: &SolveResult) -> Element<'_, Message> {
             (r.z_re * r.z_re + r.z_im * r.z_im).sqrt()
         )),
     ]
-    .spacing(4)
-    .into()
+    .spacing(4);
+    // Surface solver caveats (unreliable topology, deferred ground, unsupported
+    // loads) so the GUI never presents a wrong number as trustworthy.
+    for w in &r.warnings {
+        col = col.push(text(format!("⚠ {w}")).width(Length::Fill));
+    }
+    col.into()
 }
 
 /// Sortable sweep result table.  Borrows the full `FnecGui` to access sort state.

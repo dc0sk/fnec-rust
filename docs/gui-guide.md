@@ -54,6 +54,19 @@ Controls above the view:
 Click **Solve** to run a single-frequency solve of the deck; the feedpoint
 frequency, resistance, reactance, and |Z| are shown.
 
+> **Solver note.** The GUI runs the **Hallén** solver. For geometries it does not
+> model accurately — junctions where three or more wires meet, closed loops, and
+> near-ground currents over finite ground — the Solve tab shows a ⚠ warning and
+> the numbers should not be trusted. Solve those with the command line, which has
+> the mixed-potential second solver:
+>
+> ```sh
+> fnec --solver mpie [--ground-solver sommerfeld] your-deck.nec
+> ```
+>
+> The GUI also surfaces ⚠ warnings for deferred ground models (treated as free
+> space) and unsupported loads.
+
 ## Sweep tab
 
 Enter a **Start / End / Step** (MHz) and click **Run Sweep**. Results **stream
