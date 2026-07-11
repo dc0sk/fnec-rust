@@ -17,3 +17,6 @@ docs/external/
 # Python bytecode (study scripts)
 __pycache__/
 *.pyc
+
+# local scratch / benchmark outputs
+tmp/

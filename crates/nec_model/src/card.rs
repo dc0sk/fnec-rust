@@ -368,11 +368,11 @@ pub struct TlCard {
     pub f3: f64,
 }
 
-/// PT — Transmission-line source card.
+/// PT — Print-control card.
 ///
-/// PT semantics are not yet implemented in the solver path. Phase 2 currently
-/// preserves PT fields to improve deck portability and enable explicit runtime
-/// deferred-support warnings.
+/// Controls printing of the segment currents. The supported subset (`I1 ≤ −1`
+/// suppresses current output on the selected segments) is applied to the CURRENTS
+/// table (PH9-CHK-004); other PT options are preserved but not acted on.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PtCard {
     /// Raw PT fields captured after the mnemonic.
@@ -381,9 +381,9 @@ pub struct PtCard {
 
 /// NT — Network definition card.
 ///
-/// NT semantics are not yet implemented in the solver path. Phase 2 currently
-/// preserves NT fields to improve deck portability and enable explicit runtime
-/// deferred-support warnings.
+/// Two-port network connections between segments are assembled into the MoM
+/// matrix as admittance stamps (`build_nt_stamps`, PH8-CHK-004); network forms
+/// outside the supported subset are preserved and warned at solve time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NtCard {
     /// Raw NT fields captured after the mnemonic.

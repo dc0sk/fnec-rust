@@ -80,8 +80,9 @@ pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
                 0 | 2 => GroundModel::SimpleFiniteGround {
                     // Keep GN0 usable even when medium params are omitted.
                     // Values are the same "average ground" defaults commonly
-                    // used in NEC workflows. GN2 currently shares this scoped
-                    // approximation path until full Sommerfeld support lands.
+                    // used in NEC workflows. GN2 shares this scoped scalar-Γ
+                    // approximation by default; the exact Sommerfeld treatment is
+                    // opt-in via `--ground-solver sommerfeld` / `--solver mpie`.
                     eps_r: gn.eps_r.unwrap_or(13.0),
                     sigma: gn.sigma.unwrap_or(0.005),
                 },

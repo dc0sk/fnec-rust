@@ -478,10 +478,10 @@ pub fn assemble_with_ground(
     let horizontal = geom.nodes.iter().all(|n| (n[2] - z0).abs() < 1e-6 * lam);
 
     if !horizontal {
-        // Non-horizontal wire (vertical / tilted / sloping): the reflected term
-        // uses the general reflected-E-field dyadic as a Galerkin reaction added
-        // to the free-space Z. Requires a STRAIGHT wire (Phase E); bent geometry
-        // over ground needs the full per-pair dyadic and is deferred.
+        // Non-horizontal straight wire (vertical / tilted / sloping): the
+        // reflected term uses the general reflected-E-field dyadic as a Galerkin
+        // reaction added to the free-space Z. Bent geometry over ground is handled
+        // separately by add_bent_ground_reaction (per-segment-pair reflected term).
         add_general_ground_reaction(&mut z, geom, &segs, &bases, freq_hz, pec, eps_r, sigma)?;
         return Ok(z);
     }
