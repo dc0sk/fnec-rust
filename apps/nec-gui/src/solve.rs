@@ -723,3 +723,58 @@ fn solve_for_currents(
 
     Ok((segs, sol.currents, freq_hz, ground))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str, body: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("fnec_gui_vars_{name}"));
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn load_vars_toml_strings_ints_floats() {
+        let p = tmp("ok.toml", "A = \"1.5\"\nN = 51\nR = 0.001\n");
+        let m = load_vars(&p).expect("toml vars");
+        assert_eq!(m.get("A").map(String::as_str), Some("1.5"));
+        assert_eq!(m.get("N").map(String::as_str), Some("51"));
+        assert_eq!(m.get("R").map(String::as_str), Some("0.001"));
+    }
+
+    #[test]
+    fn load_vars_toml_rejects_unsupported_type() {
+        let p = tmp("bad.toml", "A = [1, 2, 3]\n");
+        let err = load_vars(&p).unwrap_err();
+        assert!(err.contains("unsupported type"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn load_vars_json_flat_object() {
+        let p = tmp("ok.json", "{\"A\": \"1.5\", \"N\": \"51\"}");
+        let m = load_vars(&p).expect("json vars");
+        assert_eq!(m.get("A").map(String::as_str), Some("1.5"));
+        assert_eq!(m.get("N").map(String::as_str), Some("51"));
+    }
+
+    #[test]
+    fn load_vars_json_requires_object() {
+        let p = tmp("bad.json", "[1, 2, 3]");
+        assert!(load_vars(&p).unwrap_err().contains("top-level object"));
+    }
+
+    #[test]
+    fn load_vars_missing_file_errors() {
+        let err = load_vars(std::path::Path::new("/no/such/vars.toml")).unwrap_err();
+        assert!(err.contains("cannot read"));
+    }
+
+    #[test]
+    fn apply_vars_none_is_passthrough_and_some_substitutes() {
+        assert_eq!(apply_vars("GW 1 $N", None).unwrap(), "GW 1 $N");
+        let p = tmp("sub.toml", "N = 51\n");
+        let out = apply_vars("GW 1 $N 0 0 0", Some(p.to_str().unwrap())).unwrap();
+        assert!(out.contains("51"), "substituted: {out}");
+    }
+}
