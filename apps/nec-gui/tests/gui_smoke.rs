@@ -1450,3 +1450,55 @@ fn sweep_point_count_is_capped() {
     // A sane sweep still prepares fine.
     assert!(SweepJob::prepare(DIPOLE_DECK, 14.0, 14.4, 0.1).is_ok());
 }
+
+// ── Additional app_state arm coverage (pre-release) ──────────────────────────
+
+#[test]
+fn editor_deck_load_error_sets_error_and_clears_save_status() {
+    let mut state = AppState::default();
+    // Prime a save status, then a failed load must record the error and clear it.
+    state.editor.save_status = "Saved to x".into();
+    state.apply(&Message::EditDeckLoaded(Err("bad deck".into())));
+    assert_eq!(state.editor.error.as_deref(), Some("bad deck"));
+    assert!(state.editor.save_status.is_empty());
+    assert!(!state.editor.loaded);
+}
+
+#[test]
+fn status_texts_cover_all_phases() {
+    let mut state = AppState::default();
+    // Currents.
+    assert!(state.currents_status_text().contains("Run Currents"));
+    state.apply(&Message::RunCurrents);
+    assert!(state.currents_status_text().contains("Computing"));
+    state.apply(&Message::CurrentsComplete(Err("boom".into())));
+    assert!(state.currents_status_text().contains("boom"));
+    // Pattern.
+    assert!(
+        state.pattern_status_text().contains("azimuth")
+            || state.pattern_status_text().contains("φ")
+    );
+    state.apply(&Message::RunPattern);
+    assert!(state.pattern_status_text().contains("Computing"));
+    state.apply(&Message::PatternComplete(Err("nope".into())));
+    assert!(state.pattern_status_text().contains("nope"));
+    // Sweep failure text.
+    state.apply(&Message::SweepComplete(Err("range".into())));
+    assert!(state.sweep_status_text().contains("range"));
+}
+
+#[test]
+fn viewport_toggles_without_geometry_are_safe() {
+    // Toggling currents/pattern/axes/grid before any geometry is loaded must not
+    // panic and must leave the scene empty.
+    let mut state = AppState::default();
+    for m in [
+        Message::ToggleCurrents(true),
+        Message::TogglePattern(true),
+        Message::ToggleAxes(false),
+        Message::ToggleGrid(false),
+    ] {
+        state.apply(&m);
+    }
+    assert!(state.viewport.scene.is_none());
+}

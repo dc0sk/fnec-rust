@@ -993,6 +993,105 @@ EN
     }
 
     #[test]
+    fn every_control_edit_variant_applies() {
+        // gnd_doc post slots: GE(0), GN(1), LD(2), EX(3), FR(4), EN(5).
+        let mut d = gnd_doc();
+        // EX (slot 3).
+        d.edit_control(3, &ControlEdit::ExKind("5".into()));
+        d.edit_control(3, &ControlEdit::ExTag("2".into()));
+        d.edit_control(3, &ControlEdit::ExSegment("7".into()));
+        d.edit_control(3, &ControlEdit::ExVr("3".into()));
+        d.edit_control(3, &ControlEdit::ExVi("4".into()));
+        // GN (slot 1).
+        d.edit_control(1, &ControlEdit::GnType(0));
+        d.edit_control(1, &ControlEdit::GnEps("11".into()));
+        d.edit_control(1, &ControlEdit::GnSigma("0.002".into()));
+        // LD (slot 2).
+        d.edit_control(2, &ControlEdit::LdType(1));
+        d.edit_control(2, &ControlEdit::LdTag("3".into()));
+        d.edit_control(2, &ControlEdit::LdSegFirst("4".into()));
+        d.edit_control(2, &ControlEdit::LdSegLast("5".into()));
+        d.edit_control(2, &ControlEdit::LdF1("6".into()));
+        d.edit_control(2, &ControlEdit::LdF2("7".into()));
+        d.edit_control(2, &ControlEdit::LdF3("8".into()));
+        // FR (slot 4).
+        d.edit_control(4, &ControlEdit::FrStepType(1));
+        d.edit_control(4, &ControlEdit::FrSteps("9".into()));
+        d.edit_control(4, &ControlEdit::FrFrequency("28.0".into()));
+        d.edit_control(4, &ControlEdit::FrStep("0.1".into()));
+
+        // Every field landed in its typed row.
+        let slots = d.post_slots();
+        let PostSlot::Ex(ex) = &slots[3] else {
+            panic!()
+        };
+        assert_eq!(
+            (
+                ex.kind.as_str(),
+                ex.tag.as_str(),
+                ex.segment.as_str(),
+                ex.vr.as_str(),
+                ex.vi.as_str()
+            ),
+            ("5", "2", "7", "3", "4")
+        );
+        let PostSlot::Gn(gn) = &slots[1] else {
+            panic!()
+        };
+        assert_eq!(
+            (gn.ground_type, gn.eps_r.as_str(), gn.sigma.as_str()),
+            (0, "11", "0.002")
+        );
+        let PostSlot::Ld(ld) = &slots[2] else {
+            panic!()
+        };
+        assert_eq!(
+            (
+                ld.load_type,
+                ld.tag.as_str(),
+                ld.seg_first.as_str(),
+                ld.seg_last.as_str(),
+                ld.f1.as_str(),
+                ld.f2.as_str(),
+                ld.f3.as_str()
+            ),
+            (1, "3", "4", "5", "6", "7", "8")
+        );
+        let PostSlot::Fr(fr) = &slots[4] else {
+            panic!()
+        };
+        assert_eq!(
+            (
+                fr.step_type,
+                fr.steps.as_str(),
+                fr.frequency_mhz.as_str(),
+                fr.step_mhz.as_str()
+            ),
+            (1, "9", "28.0", "0.1")
+        );
+        // Still renders to a valid deck.
+        assert!(d.to_deck().is_ok());
+    }
+
+    #[test]
+    fn control_field_key_is_stable_per_field() {
+        // Each variant has a distinct coalescing key (used for undo grouping).
+        let keys = [
+            ControlEdit::ExVr(String::new()).field_key(),
+            ControlEdit::ExVi(String::new()).field_key(),
+            ControlEdit::GnType(0).field_key(),
+            ControlEdit::LdF1(String::new()).field_key(),
+            ControlEdit::FrStep(String::new()).field_key(),
+        ];
+        // All distinct.
+        for (i, a) in keys.iter().enumerate() {
+            for b in &keys[i + 1..] {
+                assert_ne!(a, b, "field keys must be distinct");
+            }
+        }
+    }
+
+    #[test]
     fn edit_control_kind_mismatch_is_a_noop() {
         let mut d = gnd_doc();
         // Slot 1 is GN; an LD edit must not touch it.

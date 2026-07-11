@@ -110,15 +110,24 @@ impl Session {
     /// Write this session to [`Session::config_path`], creating the directory.
     pub fn save(&self) -> Result<(), String> {
         let path = Self::config_path().ok_or("no config directory (HOME unset)")?;
+        self.save_to(&path)
+    }
+
+    /// Write this session to an explicit path, creating parent directories.
+    pub fn save_to(&self, path: &std::path::Path) -> Result<(), String> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&path, self.to_toml()?).map_err(|e| e.to_string())
+        std::fs::write(path, self.to_toml()?).map_err(|e| e.to_string())
     }
 
     /// Load the persisted session, or `None` if absent/unreadable/corrupt.
     pub fn load() -> Option<Self> {
-        let path = Self::config_path()?;
+        Self::load_from(&Self::config_path()?)
+    }
+
+    /// Load a session from an explicit path, or `None` if absent/unreadable/corrupt.
+    pub fn load_from(path: &std::path::Path) -> Option<Self> {
         let text = std::fs::read_to_string(path).ok()?;
         Self::from_toml(&text).ok()
     }
@@ -186,5 +195,31 @@ mod tests {
         let session = Session::from_toml("deck_path = \"d.nec\"\n").expect("parse");
         assert_eq!(session.deck_path, "d.nec");
         assert_eq!(session.sweep_start, AppState::default().sweep_start);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn save_to_and_load_from_round_trips_on_disk() {
+        let mut session = Session::default();
+        session.deck_path = "roundtrip.nec".into();
+        session.cam_distance = 9.0;
+        let path = std::env::temp_dir().join("fnec_gui_session_test/session.toml");
+        session.save_to(&path).expect("save creates dirs + writes");
+        let loaded = Session::load_from(&path).expect("load reads it back");
+        assert_eq!(loaded, session);
+        // A missing / unreadable path loads as None (fail-soft).
+        assert!(Session::load_from(std::path::Path::new("/no/such/session.toml")).is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn config_path_points_at_the_app_config_file() {
+        // In any normal environment HOME or XDG_CONFIG_HOME is set.
+        if let Some(p) = Session::config_path() {
+            assert!(
+                p.ends_with("fnec-gui/session.toml"),
+                "unexpected path {p:?}"
+            );
+        }
     }
 }
