@@ -101,6 +101,29 @@ EN
     assert!((40.0..90.0).contains(&r), "Y-junction R={r} not physical");
 }
 
+/// The reported feedpoint impedance must be independent of the `EX` source
+/// voltage (MoM is linear: Z = V/I with I ∝ V). Regression for the bug where the
+/// MPIE always solved at 1 V, so a deck with EX voltage ≠ 1 V had its impedance
+/// scaled by that voltage.
+#[test]
+fn mpie_impedance_is_independent_of_source_voltage() {
+    let deck_1v = write_deck("dipole_1v", DIPOLE);
+    let deck_2v = write_deck(
+        "dipole_2v",
+        &DIPOLE.replace("EX 0 1 21 0 1.0 0.0", "EX 0 1 21 0 2.0 0.0"),
+    );
+    let z1 = feedpoint_z(&String::from_utf8_lossy(
+        &run_fnec(&["--solver", "mpie", deck_1v.to_str().unwrap()]).stdout,
+    ));
+    let z2 = feedpoint_z(&String::from_utf8_lossy(
+        &run_fnec(&["--solver", "mpie", deck_2v.to_str().unwrap()]).stdout,
+    ));
+    assert!(
+        (z1.0 - z2.0).abs() < 1e-3 && (z1.1 - z2.1).abs() < 1e-3,
+        "impedance must not depend on source voltage: 1V={z1:?} vs 2V={z2:?}"
+    );
+}
+
 /// Loads are not modelled by the MPIE triangle-basis system, so an `LD` deck is
 /// rejected rather than silently ignored.
 #[test]

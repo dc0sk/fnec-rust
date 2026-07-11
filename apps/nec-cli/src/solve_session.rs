@@ -1144,7 +1144,16 @@ fn solve_mpie_session(
     }
     .map_err(|e| format!("--solver mpie: {e}"))?;
 
-    Ok(segment_currents(&geom, &sol.basis_currents))
+    // `solve_mpie` drives the feed with a unit (1 V) source; scale the resulting
+    // currents by the deck's actual `EX` voltage so the reported currents are
+    // physical and the feedpoint V/I (in `build_feedpoint_rows`) is independent of
+    // the source voltage — MoM is linear, so I(V) = V·I(1 V).
+    let source_v = Complex64::new(ex.voltage_real, ex.voltage_imag);
+    let mut currents = segment_currents(&geom, &sol.basis_currents);
+    for c in &mut currents {
+        *c *= source_v;
+    }
+    Ok(currents)
 }
 
 /// Whether a deck can be solved on the MPIE path: it is driven by at least one
