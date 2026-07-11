@@ -40,7 +40,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 use warnings::{
     warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
-    warn_pulse_mode_experimental,
+    warn_mpie_mixed_radius, warn_pulse_mode_experimental,
 };
 
 fn main() -> ExitCode {
@@ -287,6 +287,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     warn_deferred_ground_model(&ground);
+    warn_mpie_mixed_radius(solver_mode, &segs);
 
     let pattern_points: Vec<FarFieldPoint> = deck
         .cards

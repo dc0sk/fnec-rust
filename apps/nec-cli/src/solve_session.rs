@@ -859,9 +859,13 @@ pub(super) fn build_feedpoint_rows(
 
     // PH9-CHK-006: precompute the Sommerfeld surface-wave ΔZ correction inputs once
     // (applied per feedpoint below) when the user selects the sommerfeld ground
-    // solver over finite ground.
-    let sommerfeld_ground = match (ground_solver, ground) {
-        (GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
+    // solver over finite ground. This delta upgrades the *Hallén + scalar-Γ* result
+    // to the Sommerfeld impedance; the MPIE path already assembles the exact
+    // reflected (Sommerfeld) kernels into its Z-matrix, so applying the delta there
+    // would double-count the surface wave — skip it for `--solver mpie`.
+    let sommerfeld_ground = match (solver_mode, ground_solver, ground) {
+        (SolverMode::Mpie, _, _) => None,
+        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
             Some((*eps_r, *sigma))
         }
         _ => None,

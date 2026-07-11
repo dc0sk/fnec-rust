@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 use nec_model::card::Card;
-use nec_solver::GroundModel;
+use nec_solver::{GroundModel, Segment};
 
 use super::exec_profile::ExecutionMode;
 use super::solve_session::SolverMode;
@@ -37,6 +37,27 @@ pub(super) fn warn_pulse_mode_experimental(solver_mode: SolverMode) {
 thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution \
 as segment count increases. Use --solver hallen or --solver sinusoidal for accurate results."
     );
+}
+
+/// The MPIE solver's reduced thin-wire kernel uses a single wire radius (the
+/// first segment's) for the whole geometry. Warn once when a `--solver mpie` deck
+/// mixes radii, since the differently-sized wires are then solved approximately.
+pub(super) fn warn_mpie_mixed_radius(solver_mode: SolverMode, segs: &[Segment]) {
+    if !matches!(solver_mode, SolverMode::Mpie) {
+        return;
+    }
+    let Some(first) = segs.first() else { return };
+    let r0 = first.radius;
+    let mixed = segs
+        .iter()
+        .any(|s| (s.radius - r0).abs() > 1e-9 * r0.max(s.radius));
+    if mixed {
+        eprintln!(
+            "warning: --solver mpie models a single wire radius; this deck mixes radii, so \
+all segments are solved with the first wire's radius ({r0} m) — impedance for the \
+differently-sized wires will be approximate"
+        );
+    }
 }
 
 pub(super) fn warn_deferred_ground_model(ground: &GroundModel) {
