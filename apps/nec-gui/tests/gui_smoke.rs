@@ -1435,3 +1435,18 @@ fn solve_clean_dipole_has_no_warnings() {
         r.warnings
     );
 }
+
+/// A runaway sweep (mistyped tiny step over a wide range) is rejected before it
+/// can queue millions of solves and freeze the GUI.
+#[test]
+fn sweep_point_count_is_capped() {
+    use nec_gui::solve::{SweepJob, MAX_SWEEP_POINTS};
+    // 1..1000 MHz at 0.0001 MHz ≈ 10^7 points — must be refused.
+    let err = match SweepJob::prepare(DIPOLE_DECK, 1.0, 1000.0, 0.0001) {
+        Err(e) => e,
+        Ok(_) => panic!("runaway sweep must be rejected"),
+    };
+    assert!(err.contains("max") && err.contains(&MAX_SWEEP_POINTS.to_string()));
+    // A sane sweep still prepares fine.
+    assert!(SweepJob::prepare(DIPOLE_DECK, 14.0, 14.4, 0.1).is_ok());
+}
