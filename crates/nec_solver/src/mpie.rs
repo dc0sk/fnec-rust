@@ -86,6 +86,9 @@ pub enum MpieError {
     /// `z = 0` ground plane (the reflected kernel needs a positive height-sum);
     /// the geometry is buried or touches the plane.
     UnsupportedGround,
+    /// The geometry is empty or contains a zero-length (self-coincident) segment,
+    /// which has no defined tangent — the reduced kernel cannot be built.
+    DegenerateGeometry,
 }
 
 impl std::fmt::Display for MpieError {
@@ -99,8 +102,24 @@ impl std::fmt::Display for MpieError {
                 f,
                 "MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane"
             ),
+            MpieError::DegenerateGeometry => write!(
+                f,
+                "MPIE geometry is empty or has a zero-length segment (no defined tangent)"
+            ),
         }
     }
+}
+
+/// Reject an empty geometry or one with a zero-length (self-coincident) segment,
+/// which would otherwise divide by a zero segment length in the reduced kernel.
+fn check_geometry(geom: &MpieGeometry) -> Result<(), MpieError> {
+    if geom.segments.is_empty() || geom.nodes.is_empty() {
+        return Err(MpieError::DegenerateGeometry);
+    }
+    if geom.segments.iter().any(|&[a, b]| a == b) {
+        return Err(MpieError::DegenerateGeometry);
+    }
+    Ok(())
 }
 
 impl std::error::Error for MpieError {}
@@ -359,6 +378,7 @@ pub fn solve_mpie(
     freq_hz: f64,
     feed_node: usize,
 ) -> Result<MpieSolution, MpieError> {
+    check_geometry(geom)?;
     let segs = seg_geom(geom);
     let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
     let feed_basis = node_feed
@@ -727,6 +747,7 @@ pub fn solve_mpie_ground(
     feed_node: usize,
     ground: &GroundModel,
 ) -> Result<MpieSolution, MpieError> {
+    check_geometry(geom)?;
     let (_, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
     let feed_basis = node_feed
         .get(feed_node)
@@ -881,6 +902,35 @@ mod tests {
         let lam = C0 / FREQ;
         let half = lam / 4.0;
         straight_wire([0.0, 0.0, -half], [0.0, 0.0, half], nseg, 0.001)
+    }
+
+    /// Degenerate geometry (empty, or a zero-length self-coincident segment) is
+    /// rejected with a clear error instead of panicking / producing NaNs.
+    #[test]
+    fn degenerate_geometry_is_rejected() {
+        let empty = MpieGeometry {
+            nodes: vec![],
+            segments: vec![],
+            radius: 0.001,
+        };
+        assert!(matches!(
+            solve_mpie(&empty, FREQ, 0),
+            Err(MpieError::DegenerateGeometry)
+        ));
+
+        let self_loop = MpieGeometry {
+            nodes: vec![[0.0, 0.0, 1.0]],
+            segments: vec![[0, 0]],
+            radius: 0.001,
+        };
+        assert!(matches!(
+            solve_mpie(&self_loop, FREQ, 0),
+            Err(MpieError::DegenerateGeometry)
+        ));
+        assert!(matches!(
+            solve_mpie_ground(&self_loop, FREQ, 0, &GroundModel::FreeSpace),
+            Err(MpieError::DegenerateGeometry)
+        ));
     }
 
     /// Gate A1: the Galerkin impedance matrix is symmetric (Z_mn = Z_nm).
