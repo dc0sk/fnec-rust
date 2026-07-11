@@ -50,7 +50,9 @@ pub struct FarFieldResult {
     pub gain_theta_dbi: f64,
     /// Phi-polarised (horizontal) component directivity (dBi).
     pub gain_phi_dbi: f64,
-    /// Axial ratio |E_θ| / |E_φ|  (clamped to 0 when |E_φ| ≈ 0).
+    /// Polarization axial ratio (NEC-2 convention): signed minor/major axis ratio
+    /// of the polarization ellipse in `[-1, 1]` — 0 = linear, ±1 = circular, sign
+    /// = rotation sense. See [`polarization_axial_ratio`].
     pub axial_ratio: f64,
 }
 
@@ -630,13 +632,7 @@ pub fn compute_radiation_pattern(
                 -999.99
             };
 
-            let e_theta_mag = f_t.norm();
-            let e_phi_mag = f_p.norm();
-            let axial_ratio = if e_phi_mag > 1e-30 {
-                e_theta_mag / e_phi_mag
-            } else {
-                0.0
-            };
+            let axial_ratio = polarization_axial_ratio(f_t, f_p);
 
             FarFieldResult {
                 theta_deg: pt.theta_deg,
@@ -648,6 +644,26 @@ pub fn compute_radiation_pattern(
             }
         })
         .collect()
+}
+
+/// Polarization axial ratio of a far-field point from its complex `E_θ`/`E_φ`
+/// components, in NEC-2's convention: the **signed minor/major axis ratio** of the
+/// polarization ellipse, in `[-1, 1]` — `0` = linear, `±1` = circular, and the
+/// sign encodes the rotation sense.
+///
+/// Computed from the Stokes parameters: with `S0 = |E_θ|²+|E_φ|²` and
+/// `S3 = 2·Im(E_θ·conj(E_φ))`, the ellipticity angle is `χ = ½·asin(S3/S0)` and
+/// the axial ratio is `tan(χ)`. (The previous code reported `|E_θ|/|E_φ|`, which
+/// is not an axial ratio at all — it ignored the relative phase that defines the
+/// ellipse.)
+pub fn polarization_axial_ratio(e_theta: Complex64, e_phi: Complex64) -> f64 {
+    let s0 = e_theta.norm_sqr() + e_phi.norm_sqr();
+    if s0 <= 1e-30 {
+        return 0.0;
+    }
+    let s3 = 2.0 * (e_theta * e_phi.conj()).im;
+    let chi = 0.5 * (s3 / s0).clamp(-1.0, 1.0).asin();
+    chi.tan()
 }
 
 /// Build the list of (θ, φ) sample points described by an RP card.
@@ -767,6 +783,32 @@ mod tests {
     use super::*;
     use crate::geometry::Segment;
     use num_complex::Complex64;
+
+    #[test]
+    fn axial_ratio_linear_circular_limits() {
+        let c = Complex64::new;
+        // Purely θ-polarized (E_φ = 0) → linear → 0.
+        assert!(polarization_axial_ratio(c(1.0, 0.0), c(0.0, 0.0)).abs() < 1e-12);
+        // Purely φ-polarized → linear → 0.
+        assert!(polarization_axial_ratio(c(0.0, 0.0), c(2.0, 0.0)).abs() < 1e-12);
+        // Two components in phase → linear (tilted) → 0.
+        assert!(polarization_axial_ratio(c(1.0, 0.0), c(1.0, 0.0)).abs() < 1e-12);
+        // Equal magnitude, 90° out of phase → circular → |AR| = 1.
+        assert!((polarization_axial_ratio(c(1.0, 0.0), c(0.0, 1.0)).abs() - 1.0) < 1e-9);
+        // Opposite handedness flips the sign.
+        let rh = polarization_axial_ratio(c(1.0, 0.0), c(0.0, 1.0));
+        let lh = polarization_axial_ratio(c(1.0, 0.0), c(0.0, -1.0));
+        assert!(
+            (rh + lh).abs() < 1e-9,
+            "opposite senses cancel: {rh} vs {lh}"
+        );
+        // A 2:1 elliptical case stays within [-1, 1].
+        let ar = polarization_axial_ratio(c(2.0, 0.0), c(0.0, 1.0));
+        assert!(
+            ar.abs() > 0.0 && ar.abs() < 1.0,
+            "elliptical AR {ar} in (0,1)"
+        );
+    }
 
     /// Build a simple z-axis λ/2 dipole segment list (single segment, centred
     /// at origin).  In the far-field this is the textbook Hertzian-dipole
