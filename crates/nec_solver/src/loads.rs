@@ -12,7 +12,7 @@
 //! |  2 | Series RL (lumped)        | R + jωL                                            |
 //! |  3 | Series RC (lumped)        | R − j/(ωC)  (C=0 ⇒ no capacitor term)             |
 //! |  4 | Series impedance Z=R+jX   | R + jX  (flat, frequency-independent)              |
-//! |  5 | Wire conductivity (dist.) | Σ per segment: dl/(2π·a·σ)                        |
+//! |  5 | Wire conductivity (dist.) | Exact round-wire skin-effect Zᵢ (DC↔surface Z)   |
 //!
 //! Other load types are stored in `LdCard` but emit a warning via the returned
 //! `Vec<LoadWarning>` and are otherwise ignored.
@@ -25,6 +25,59 @@ use nec_model::deck::NecDeck;
 use crate::geometry::Segment;
 
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
+const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
+
+/// Ratio `I0(z)/I1(z)` of modified Bessel functions for complex `z`, used by the
+/// round-wire internal-impedance formula. Power series for `|z| ≤ 15`, and the
+/// large-argument asymptotic expansion beyond it (where the series would
+/// overflow). `I0/I1 → 2/z` as `z → 0` and `→ 1` as `|z| → ∞`.
+fn i0_over_i1(z: Complex64) -> Complex64 {
+    if z.norm() > 15.0 {
+        let inv = Complex64::new(1.0, 0.0) / z;
+        // I0/I1 ~ 1 + 1/(2z) + 3/(8z²) + …
+        Complex64::new(1.0, 0.0) + inv * 0.5 + inv * inv * 0.375
+    } else {
+        let half = z * 0.5;
+        let half_sq = half * half;
+        let mut i0 = Complex64::new(1.0, 0.0);
+        let mut term0 = Complex64::new(1.0, 0.0);
+        let mut i1 = half;
+        let mut term1 = half;
+        for k in 1..300 {
+            let kf = f64::from(k);
+            term0 *= half_sq / (kf * kf);
+            i0 += term0;
+            term1 *= half_sq / (kf * (kf + 1.0));
+            i1 += term1;
+            if term0.norm() <= 1e-17 * i0.norm() && term1.norm() <= 1e-17 * i1.norm() {
+                break;
+            }
+        }
+        i0 / i1
+    }
+}
+
+/// Internal (skin-effect) series impedance of a solid round wire of radius `a`
+/// (m), conductivity `sigma` (S/m) and length `dl` (m) at angular frequency
+/// `omega` (rad/s):
+///
+/// ```text
+///   Z = dl · (γ / (2π a σ)) · I0(γa)/I1(γa),   γ = (1+j)/δ,   δ = √(2/(ω μ0 σ))
+/// ```
+///
+/// This is the exact result for a homogeneous round conductor. It reduces to the
+/// DC resistance `dl/(σ π a²)` as `ω → 0` and to the surface impedance
+/// `dl·(1+j)/(2π a σ δ)` once the skin depth `δ` falls below the radius —
+/// matching NEC-2's wire-conductivity (`LD 5`) load. At `ω ≤ 0` the DC resistance
+/// is returned.
+fn wire_internal_impedance(sigma: f64, a: f64, dl: f64, omega: f64) -> Complex64 {
+    if omega <= 0.0 {
+        return Complex64::new(dl / (sigma * std::f64::consts::PI * a * a), 0.0);
+    }
+    let delta = (2.0 / (omega * MU0 * sigma)).sqrt();
+    let gamma = Complex64::new(1.0 / delta, 1.0 / delta); // (1+j)/δ
+    gamma / (TWO_PI * a * sigma) * i0_over_i1(gamma * a) * dl
+}
 
 /// A non-fatal warning produced by load processing.
 #[derive(Debug, Clone, PartialEq)]
@@ -119,7 +172,9 @@ pub fn build_loads(
                     Complex64::new(ld.f1, ld.f2)
                 }
                 5 => {
-                    // Distributed wire conductivity: Z = dl / (2π·a·σ)
+                    // Distributed wire conductivity: exact round-wire internal
+                    // (skin-effect) impedance — DC resistance at low frequency,
+                    // surface impedance once the skin depth drops below the radius.
                     let sigma = ld.f1;
                     if sigma <= 0.0 {
                         warnings.push(LoadWarning {
@@ -130,8 +185,7 @@ pub fn build_loads(
                         });
                         continue;
                     }
-                    let denom = TWO_PI * seg.radius * sigma;
-                    Complex64::new(seg.length / denom, 0.0)
+                    wire_internal_impedance(sigma, seg.radius, seg.length, omega)
                 }
                 other => {
                     warnings.push(LoadWarning {
@@ -240,22 +294,55 @@ mod tests {
     }
 
     #[test]
-    fn type5_conductivity_applies_distributed_resistance() {
-        let segs = vec![seg(1, 1, 0.1, 0.001)];
+    fn type5_conductivity_matches_dc_and_hf_limits() {
+        let sigma = 5.8e7_f64; // copper σ
+        let a = 0.001_f64;
+        let len = 0.1_f64;
+        let segs = vec![seg(1, 1, len, a)];
         let deck = deck_with_ld(LdCard {
             load_type: 5,
             tag: 1,
             seg_first: 1,
             seg_last: 1,
-            f1: 5.8e7, // copper σ
+            f1: sigma,
             f2: 0.0,
             f3: 0.0,
         });
-        let (loads, warns) = build_loads(&deck, &segs, 14.2e6);
+
+        // Low frequency (a ≪ δ): DC resistance dl/(σπa²), negligible reactance.
+        let (lo, warns) = build_loads(&deck, &segs, 1e3);
         assert!(warns.is_empty());
-        let expected_r = 0.1 / (TWO_PI * 0.001 * 5.8e7);
-        assert!((loads[0].re - expected_r).abs() < 1e-15);
-        assert_eq!(loads[0].im, 0.0);
+        let r_dc = len / (sigma * std::f64::consts::PI * a * a);
+        assert!(
+            (lo[0].re - r_dc).abs() < 0.05 * r_dc,
+            "DC Re {} vs {r_dc}",
+            lo[0].re
+        );
+        assert!(
+            lo[0].im.abs() < 0.15 * lo[0].re,
+            "reactance small near DC, got {}",
+            lo[0].im
+        );
+
+        // High frequency (a ≫ δ): surface impedance dl(1+j)/(2πaσδ), Re ≈ Im.
+        let f = 1e9_f64;
+        let omega = TWO_PI * f;
+        let delta = (2.0 / (omega * MU0 * sigma)).sqrt();
+        let r_hf = len / (TWO_PI * a * sigma * delta);
+        let (hi, _) = build_loads(&deck, &segs, f);
+        assert!(
+            (hi[0].re - r_hf).abs() < 0.02 * r_hf,
+            "HF Re {} vs surface {r_hf}",
+            hi[0].re
+        );
+        assert!(
+            (hi[0].im - hi[0].re).abs() < 0.05 * hi[0].re,
+            "HF Re≈Im (skin effect), got {} + j{}",
+            hi[0].re,
+            hi[0].im
+        );
+        // Skin effect drives the resistance far above the DC value.
+        assert!(hi[0].re > 100.0 * r_dc, "HF Re should ≫ DC");
     }
 
     #[test]
@@ -531,9 +618,10 @@ mod tests {
                 "RC reactance should be non-positive, got {}", loads[0].im);
         }
 
-        /// LD type 5 (wire conductivity): Im(Z) = 0, Re(Z) > 0 for σ > 0.
+        /// LD type 5 (wire conductivity): a lossy conductor is passive and
+        /// inductive — Re(Z) > 0 and Im(Z) ≥ 0 (skin reactance) for σ > 0.
         #[test]
-        fn proptest_ld_type5_positive_sigma_gives_real_positive_impedance(
+        fn proptest_ld_type5_positive_sigma_gives_passive_inductive_impedance(
             sigma in 1.0_f64..1e10_f64,
             freq in 1e4_f64..3e10_f64,
         ) {
@@ -547,12 +635,14 @@ mod tests {
             prop_assert!(warns.is_empty());
             prop_assert!(loads[0].re > 0.0,
                 "Re should be positive for σ={sigma}, got {}", loads[0].re);
-            prop_assert_eq!(loads[0].im, 0.0);
+            prop_assert!(loads[0].im >= 0.0,
+                "skin reactance should be non-negative, got {}", loads[0].im);
         }
 
-        /// LD type 5 (wire conductivity): Re(Z) = dl / (2π·a·σ) exactly.
+        /// LD type 5: the internal resistance never drops below the DC value
+        /// dl/(σπa²) — skin effect only raises it with frequency.
         #[test]
-        fn proptest_ld_type5_formula(
+        fn proptest_ld_type5_never_below_dc_resistance(
             sigma in 1.0_f64..1e10_f64,
             freq in 1e4_f64..3e10_f64,
         ) {
@@ -566,9 +656,9 @@ mod tests {
             });
             let (loads, warns) = build_loads(&deck, &segs, freq);
             prop_assert!(warns.is_empty());
-            let expected = seg_len / (TWO_PI * seg_radius * sigma);
-            prop_assert!((loads[0].re - expected).abs() < expected * 1e-12,
-                "Re expected {expected}, got {}", loads[0].re);
+            let r_dc = seg_len / (sigma * std::f64::consts::PI * seg_radius * seg_radius);
+            prop_assert!(loads[0].re >= r_dc * (1.0 - 1e-9),
+                "Re {} below DC floor {r_dc}", loads[0].re);
         }
 
         /// LD type 1 (parallel RLC): Re(Z) ≥ 0 for passive element values.
