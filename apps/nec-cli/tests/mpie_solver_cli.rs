@@ -124,6 +124,45 @@ fn mpie_impedance_is_independent_of_source_voltage() {
     );
 }
 
+/// The MPIE reduced kernel uses one wire radius for the whole geometry; a deck
+/// mixing radii under `--solver mpie` must warn (rather than silently solve the
+/// thin and fat wires with the same radius).
+#[test]
+fn mpie_warns_on_mixed_radii() {
+    let deck = write_deck(
+        "mixed_radii",
+        "\
+CM mixed-radius collinear dipole (fat + thin halves)
+CE
+GW 1 20 0.0 0.0 -2.5 0.0 0.0 0.0 0.002
+GW 2 20 0.0 0.0 0.0 0.0 0.0 2.5 0.0005
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("single wire radius") || stderr.contains("mixes radii"),
+        "expected a mixed-radius warning on the MPIE path:\n{stderr}"
+    );
+}
+
+/// A uniform-radius deck must NOT emit the mixed-radius warning (no false positive).
+#[test]
+fn mpie_uniform_radius_no_mixed_warning() {
+    let deck = write_deck("uniform_radius", DIPOLE);
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("mixes radii"),
+        "uniform-radius deck should not warn about mixed radii:\n{stderr}"
+    );
+}
+
 /// Loads are not modelled by the MPIE triangle-basis system, so an `LD` deck is
 /// rejected rather than silently ignored.
 #[test]
