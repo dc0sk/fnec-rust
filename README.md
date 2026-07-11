@@ -34,7 +34,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - CLI binary `fnec` with selectable solver and RHS modes
 - FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run
-- Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI, TUI
+- Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI
 
 ## Quick start
 
@@ -82,7 +82,7 @@ https://www.paypal.com/donate/?hosted_button_id=WY9U4MQ3ZAQWC
 - Primary compatibility target: 4nec2 input and workflow expectations
 - Secondary input dialect support: xnec2c where it provides real benefit
 - Solver implemented from scratch in Rust
-- CLI, GUI, and optional TUI frontends over a shared core
+- CLI and GUI frontends over a shared core
 - Multithreaded CPU execution with staged GPU acceleration
 - Explicit Linux-on-ARM targets: Raspberry Pi 4 (VideoCore VI GPU) and Raspberry Pi 5 (VideoCore VII GPU)
 
@@ -99,7 +99,6 @@ crates/
 apps/
 	nec-cli/
 	nec-gui/
-	nec-tui/
 docs/
 ```
 

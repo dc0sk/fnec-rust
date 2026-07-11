@@ -2364,7 +2364,6 @@ dependencies = [
  "iced",
  "nec_model",
  "nec_parser",
- "nec_project",
  "nec_solver",
  "num-complex",
  "rfd",

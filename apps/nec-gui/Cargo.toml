@@ -22,7 +22,6 @@ path = "src/main.rs"
 nec_model   = { workspace = true }
 nec_parser  = { workspace = true }
 nec_solver  = { workspace = true }
-nec_project = { workspace = true }
 num-complex = { workspace = true }
 toml        = { workspace = true }
 serde       = { workspace = true }

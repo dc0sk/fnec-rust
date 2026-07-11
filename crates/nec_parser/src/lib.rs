@@ -377,10 +377,9 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "NT" => {
-                // NT — network definition card.
-                // Semantics are not yet implemented in the solver; the card is
-                // parsed and stored for explicit deferred-support warnings at
-                // solve time (replaces the previous "unknown card 'NT'" path).
+                // NT — network definition card. Raw fields are captured here;
+                // the solver stamps the supported two-port forms into the MoM
+                // matrix (build_nt_stamps) and warns on the rest.
                 let fields = parse_fields(rest);
                 deck.cards.push(Card::Nt(NtCard {
                     raw_fields: fields
@@ -390,10 +389,9 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "PT" => {
-                // PT — transmission-line source card.
-                // Semantics are not yet implemented in the solver; the card is
-                // parsed and stored for explicit deferred-support warnings at
-                // solve time (replaces the previous "unknown card 'PT'" path).
+                // PT — print-control card. Raw fields are captured here; the
+                // solver applies the supported current-print-control subset to the
+                // CURRENTS table (apply_pt_current_filter, PH9-CHK-004).
                 let fields = parse_fields(rest);
                 deck.cards.push(Card::Pt(PtCard {
                     raw_fields: fields
