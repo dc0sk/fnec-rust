@@ -58,6 +58,7 @@ fn solve_complete_ok_transitions_to_done() {
         freq_mhz: 14.2,
         z_re: 73.1,
         z_im: -1.5,
+        warnings: Vec::new(),
     };
     state.apply(&Message::SolveComplete(Ok(result.clone())));
     assert_eq!(state.phase, SolvePhase::Done(result));
@@ -127,6 +128,7 @@ fn status_text_done_contains_impedance() {
         freq_mhz: 14.2,
         z_re: 73.1,
         z_im: -1.5,
+        warnings: Vec::new(),
     })));
     let s = state.status_text();
     assert!(s.contains("14.2") || s.contains("MHz"), "freq missing: {s}");
@@ -1159,6 +1161,7 @@ fn editor_apply_solve_enters_solving_then_done() {
         freq_mhz: 14.2,
         z_re: 73.0,
         z_im: 5.0,
+        warnings: Vec::new(),
     })));
     assert!(matches!(state.phase, SolvePhase::Done(_)));
 }
@@ -1394,4 +1397,41 @@ fn browse_messages_are_noops_in_core_state() {
     state.apply(&Message::BrowseVars);
     state.apply(&Message::BrowseSaveDeck);
     assert_eq!(state.deck_path, before, "browse must not change core state");
+}
+
+// ── GUI solver caveats (pre-release fix 1a) ──────────────────────────────────
+
+/// A degree-3 Y-junction deck still solves on the GUI's Hallén path, but the
+/// result carries a warning recommending the CLI's `--solver mpie` (the GUI has
+/// no MPIE path), so the GUI never presents the junction number as trustworthy.
+#[test]
+fn solve_warns_on_high_degree_junction() {
+    const Y: &str = "\
+CM Y-junction
+CE
+GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
+GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
+GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+EN
+";
+    let r = solve_deck_str(Y).expect("Y-junction still solves (unreliably)");
+    assert!(
+        r.warnings.iter().any(|w| w.contains("mpie")),
+        "expected an mpie recommendation, got {:?}",
+        r.warnings
+    );
+}
+
+/// A plain free-space dipole is fully supported — no solver caveats.
+#[test]
+fn solve_clean_dipole_has_no_warnings() {
+    let r = solve_deck_str(DIPOLE_DECK).expect("dipole solves");
+    assert!(
+        r.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        r.warnings
+    );
 }
