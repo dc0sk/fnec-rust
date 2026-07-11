@@ -430,6 +430,11 @@ pub fn sweep_deck_str(
     job.freqs_mhz().iter().map(|&f| job.solve_at(f)).collect()
 }
 
+/// Upper bound on the number of frequency points a single sweep may request,
+/// so a mistyped step (e.g. `0.0001` over a 1000 MHz span) can't queue millions
+/// of matrix solves and freeze the GUI.
+pub const MAX_SWEEP_POINTS: usize = 100_000;
+
 /// A prepared frequency sweep: geometry, excitation, ground and junctions built
 /// once, so each frequency can be solved independently via [`SweepJob::solve_at`].
 ///
@@ -459,6 +464,15 @@ impl SweepJob {
         if start_mhz >= end_mhz {
             return Err(format!(
                 "start_mhz ({start_mhz}) must be less than end_mhz ({end_mhz})"
+            ));
+        }
+        // Guard against a runaway sweep (e.g. a slipped decimal in the step) that
+        // would queue millions of full matrix solves and freeze/OOM the GUI.
+        let point_count = ((end_mhz - start_mhz) / step_mhz).floor() + 1.0;
+        if point_count > MAX_SWEEP_POINTS as f64 {
+            return Err(format!(
+                "sweep would compute {point_count:.0} points (max {MAX_SWEEP_POINTS}); \
+                 widen the step or narrow the range"
             ));
         }
 

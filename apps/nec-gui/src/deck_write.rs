@@ -302,6 +302,27 @@ mod tests {
     }
 
     #[test]
+    fn near_field_ne_nh_round_trip() {
+        // No corpus deck exercises NE/NH, so the corpus oracle can't cover
+        // write_near; round-trip both card kinds directly.
+        let deck = parse(
+            "GW 1 11 0 0 -2.5 0 0 2.5 0.001\n\
+             GE 0\n\
+             NE 0 5 1 5 -1 0 -1 0.5 0 0.5\n\
+             NH 1 3 3 3 0.1 0.2 0.3 0.4 0.5 0.6\n\
+             EN\n",
+        )
+        .unwrap()
+        .deck;
+        let reparsed = parse(&write_deck(&deck)).unwrap().deck;
+        assert_eq!(deck.cards, reparsed.cards);
+        // And both mnemonics survive as themselves (NE ≠ NH).
+        let written = write_deck(&deck);
+        assert!(written.contains("\nNE "));
+        assert!(written.contains("\nNH "));
+    }
+
+    #[test]
     fn rp_encodes_normalize_and_avg_power() {
         let deck = parse("RP 0 37 1 1001 0 0 5 0\nEN\n").unwrap().deck;
         let s = write_card(&deck.cards[0]);
