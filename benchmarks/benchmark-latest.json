@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-07-11T04:23:21Z",
-  "git_sha": "9ac9f84",
+  "generated_at": "2026-07-11T04:28:16Z",
+  "git_sha": "c24b2a5",
   "runner_nproc": 4,
   "runs": [
     {
@@ -44,13 +44,13 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 45
+      "elapsed_ms": 34
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -122,23 +122,23 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
       "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
       "exec_mode": "cpu-multi",
       "elapsed_ms": 3
     },
@@ -152,13 +152,13 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
@@ -245,9 +245,9 @@
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 17,
+      "avg_ms": 13,
       "min_ms": 3,
-      "max_ms": 45
+      "max_ms": 34
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -280,15 +280,6 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-multi",
       "n_runs": 3,
       "avg_ms": 3,
       "min_ms": 3,
@@ -297,11 +288,20 @@
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
-      "exec_mode": "gpu",
+      "exec_mode": "cpu-multi",
       "n_runs": 3,
       "avg_ms": 3,
       "min_ms": 3,
       "max_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "gpu",
+      "n_runs": 3,
+      "avg_ms": 3,
+      "min_ms": 3,
+      "max_ms": 4
     },
     {
       "deck": "dipole-ground-51seg",
