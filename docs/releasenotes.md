@@ -2,10 +2,76 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-07-10
+last_updated: 2026-07-13
 ---
 
 # Release Notes
+
+## 0.12.0 — GPU 3-D antenna workbench (GUI redesign) + pre-release correctness fixes
+
+This release redesigns `nec-gui` from four text tabs into a **GPU-accelerated 3-D
+antenna workbench**, and lands a batch of correctness fixes surfaced by a
+whole-project pre-release review. **Nothing on the CLI / solver path changes
+behaviour except the documented bug fixes below**; the default Hallén solver and
+the validated corpus are untouched.
+
+### The new GUI (`cargo run -p nec-gui`)
+
+An xnec2c-style single window with a resizable split: controls and results on the
+left, an always-visible **3-D viewport** on the right.
+
+- **3-D viewport** — renders the wire geometry (wgpu), paints each wire by current
+  magnitude, and overlays a translucent 3-D radiation-pattern lobe. Left-drag
+  orbits, the wheel zooms, middle/right-drag pans, and **Reset view** re-frames.
+  Checkboxes toggle the axis triad and the z=0 ground grid.
+- **Sweep tab** — **Run Sweep** streams results into a live **SWR / |Z|** chart that
+  fills in as each frequency solves; a metric pick-list switches the plotted
+  quantity and a frequency slider scrubs a cursor across the swept range.
+- **Edit tab — the visual deck editor** — load a deck to edit its `GW` wires and its
+  `EX`/`GN`/`LD`/`FR` control cards in tables (pick-lists for ground/load/step
+  types). **+ Ground / + Load / + Source** insert cards a deck lacks; per-row **Del**
+  removes them. Every valid edit **previews live** in the 3-D view. **Undo/Redo**
+  (`Ctrl+Z` / `Ctrl+Shift+Z`) covers the whole edit history. **Apply + Solve**
+  solves the edited in-memory deck; **Save deck** / **Save as…** write it out.
+- **Native file dialogs** for the deck and vars paths, and **session persistence** —
+  reopening the app restores your deck/vars paths, sweep range, chart metric,
+  camera pose, and view options from `~/.config/fnec-gui/session.toml`.
+
+A full walkthrough is in [`docs/gui-guide.md`](gui-guide.md).
+
+> **GUI solver scope.** The GUI runs the **Hallén** solver. For geometries it does
+> not model accurately — junctions where ≥3 wires meet, closed loops, and
+> near-ground currents over finite ground — the Solve tab shows a ⚠ caveat and
+> recommends solving with the command line, which has the mixed-potential second
+> solver: `fnec --solver mpie [--ground-solver sommerfeld] deck.nec`.
+
+### Correctness fixes
+
+A pre-release review found several **latent** bugs (the corpus only exercises 1 V
+sources and resistive loads, so no test caught them):
+
+- **LD5 wire conductivity** was `dl/(2πaσ)` — dimensionally Ω·m and ~10⁴–10⁵× too
+  small with no reactance. It is now the exact round-wire skin-effect internal
+  impedance, matching DC resistance at low frequency and surface impedance at high
+  frequency.
+- **`--solver mpie`** always solved at 1 V, so a deck with an `EX` voltage ≠ 1 V had
+  its reported impedance multiplied by that voltage. Impedance is now
+  voltage-independent, as it must be.
+- **MPIE** now warns when a deck mixes wire radii (its reduced kernel uses one
+  radius) and no longer double-counts the Sommerfeld surface wave when both
+  `--solver mpie` and `--ground-solver sommerfeld` are given.
+- The **`AXIAL_RATIO`** column reported `|Eθ|/|Eφ|`, which is not an axial ratio;
+  it is now the polarization-ellipse axial ratio (signed minor/major, in [-1, 1]).
+
+None of these are breaking changes — no migration is required. If you have decks
+using `LD 5` (wire loss), `EX` voltages other than 1 V, `--solver mpie` with mixed
+radii or Sommerfeld ground, or read the axial-ratio column, the **numbers change to
+the correct values**.
+
+### Upgrading
+
+Drop-in. `cargo build --release` as before; the CLI is unchanged apart from the
+fixes above. The GUI adds the `rfd` and `iced` (canvas) dependencies.
 
 ## 0.11.0 — MPIE second solver + Sommerfeld surface-wave ground
 

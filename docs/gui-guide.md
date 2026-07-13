@@ -1,5 +1,9 @@
-<!-- SPDX-License-Identifier: GPL-3.0-only -->
-<!-- Copyright (C) 2026 Simon Keimer (DC0SK) -->
+---
+project: fnec-rust
+doc: docs/gui-guide.md
+status: living
+last_updated: 2026-07-13
+---
 
 # fnec-gui user guide
 
