@@ -1,6 +1,6 @@
 # fnec-rust
 
-![version](https://img.shields.io/badge/version-0.11.0-blue)
+![version](https://img.shields.io/badge/version-0.12.0-blue)
 ![license](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
 fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practical compatibility with 4nec2, while keeping the codebase modular, testable, and portable.
@@ -67,7 +67,7 @@ TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
 1 26 1.000000 0.000000 0.013013 -0.002436 74.242874 13.899516
 ```
 
-See [docs/cli-guide.md](docs/cli-guide.md) for full option reference and [docs/card-support-matrix.md](docs/card-support-matrix.md) for the NEC card support matrix.
+See [docs/cli-guide.md](docs/cli-guide.md) for full option reference and [docs/card-support-matrix.md](docs/card-support-matrix.md) for the NEC card support matrix. For the 3-D GUI workbench (`cargo run -p nec-gui`), see [docs/gui-guide.md](docs/gui-guide.md).
 
 ## Support fnec-rust
 

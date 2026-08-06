@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-07-13
 ---
 
 # Changelog
@@ -10,6 +10,64 @@ last_updated: 2026-07-08
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+
+## [0.12.0] — 2026-07-13 — GPU 3-D antenna workbench (GUI redesign) + pre-release correctness fixes
+
+The headline is a full redesign of `nec-gui` into a **GPU-accelerated 3-D antenna
+workbench** on iced 0.13 (10 phased increments, GUI-CHK-001..010), plus a
+pre-release review pass that fixed several latent solver-math and GUI-honesty
+bugs. The CLI, the default Hallén solver, and the validated corpus are unchanged.
+
+### Added
+
+- **3-D antenna workbench GUI (`nec-gui`).** A resizable single-window workbench:
+  a persistent **wgpu 3-D viewport** (wire geometry, current-magnitude coloring,
+  translucent radiation-pattern lobe; orbit / zoom / pan / reset; axes & ground-grid
+  toggles) beside task tabs. (#315–#321, #336)
+- **Streaming frequency sweep with a live chart.** The sweep streams point-by-point
+  into an **SWR / |Z|-vs-frequency canvas plot** with a draggable frequency cursor
+  and readout. (#332, #333, #334)
+- **Visual deck editor.** Edit `GW` wires and `EX`/`GN`/`LD`/`FR` control cards in
+  tables (pick-lists for enumerated fields), **add/remove** cards, **undo/redo**
+  (Ctrl+Z / Ctrl+Shift+Z), live 3-D preview on every valid edit, **Apply + Solve**,
+  and **Save / Save as…**. Backed by a new NEC deck **writer** (`deck_write`,
+  round-trip-tested against the corpus). (#323, #324, #326, #328, #329, #331)
+- **Native file dialogs** (Browse / Save as, via `rfd`) and **session persistence**
+  (deck/vars paths, sweep range, chart metric, camera pose, view options restored on
+  restart). (#337, #338)
+- **RP `XNDA` A-digit average power gain** (#314) and **spherical `NE`/`NH`
+  near-field grids** (#313).
+- **`--solver mpie` composition** with JSON output, frequency sweep, and
+  ground-pattern paths; the Hallén guard now recommends `--solver mpie` for
+  degree-3 junctions and closed loops. (#311, #312)
+
+### Fixed
+
+- **LD type-5 wire conductivity** used a dimensionally wrong formula (Ω·m, ~10⁴–10⁵×
+  too small, no reactance). Replaced with the exact round-wire skin-effect internal
+  impedance (DC ↔ surface-impedance limits). (#340)
+- **MPIE ignored the `EX` source voltage** — feedpoint impedance was scaled by V for
+  any deck with a source voltage ≠ 1 V. Now voltage-independent. (#341)
+- **MPIE** warns on mixed wire radii (single-radius kernel) and no longer
+  double-counts the Sommerfeld surface wave under `--ground-solver sommerfeld`. (#342)
+- **`AXIAL_RATIO`** reported `|Eθ|/|Eφ|` (not an axial ratio); now the Stokes-parameter
+  polarization axial ratio. (#343)
+- **GUI no longer solves silently-wrong geometries.** Junction/loop/deferred-ground
+  and unsupported-load caveats are surfaced on the Solve tab (the GUI runs Hallén;
+  it recommends the CLI `--solver mpie`). (#344)
+- **GUI robustness:** a runaway sweep is capped instead of freezing the app (#345);
+  the MPIE rejects empty/zero-length geometry instead of panicking (#346); the
+  viewport pane no longer overflows the window (#322); magnitude bars render as
+  widgets, not tofu block characters (#319).
+
+### Known limitations
+
+- The GUI runs the **Hallén** solver only; junctions, closed loops, and near-ground
+  currents over finite ground are flagged with a ⚠ and should be solved with the CLI
+  (`fnec --solver mpie`).
+- GUI rendering (the wgpu viewport + canvas plot) is exercised by the visual gate
+  (`cargo run -p nec-gui`); all non-rendering logic is headless-tested
+  (workspace coverage 82%).
 
 ## [0.11.0] — 2026-07-10 — MPIE second solver + Sommerfeld surface-wave ground
 
