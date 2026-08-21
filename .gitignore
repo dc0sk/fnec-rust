@@ -11,8 +11,10 @@ pr_body.txt
 # Local benchmark host aliases/secrets
 .benchmark-hosts.env
 
-# External reference PDFs (added locally for study; not committed)
-docs/external/
+# External reference material: PDFs stay local (large binaries), but tracked
+# reference notes (markdown) under docs/external/ ARE committed.
+docs/external/*
+!docs/external/*.md
 
 # Python bytecode (study scripts)
 __pycache__/
