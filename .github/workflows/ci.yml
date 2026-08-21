@@ -1,0 +1,95 @@
+name: CI
+
+# Core quality gates. These mirror the local .githooks/ but run on every push
+# and pull request so they cannot be bypassed with --no-verify or a missing
+# core.hooksPath. Each job runs a single gate command directly (no pipes, no
+# `|| true`) so a non-zero exit fails the job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: these jobs only read the repository.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # Advisories are covered by the cargo-audit job; here we enforce the
+      # license / bans / sources policy in deny.toml (no redundant advisory run).
+      - run: cargo deny check bans licenses sources
+
+  docs:
+    name: docs contract
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the version-bump gate can diff base against head.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate docs frontmatter
+        run: bash scripts/validate-docs-frontmatter.sh
+      - name: Require changelog + release notes + SBOM on a version bump
+        if: github.event_name == 'pull_request'
+        run: >-
+          bash scripts/check-version-bump-docs.sh
+          "${{ github.event.pull_request.base.sha }}"
+          "${{ github.event.pull_request.head.sha }}"
