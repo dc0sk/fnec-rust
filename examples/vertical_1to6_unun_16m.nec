@@ -1,0 +1,48 @@
+CM ============================================================
+CM  Vertical antenna fed through a 1:6 unun
+CM ------------------------------------------------------------
+CM  Radiator  : single vertical wire, 16 m (GW tag 1)
+CM  Feed      : base of the radiator, against the counterpoise
+CM  Counterpoise : 4 x 8 m horizontal radials (GW tags 2-5)
+CM              - this is the "ground" terminal of the unun.
+CM              - modelled in free space, so the radial screen
+CM                IS the RF reference (no earth image). Feedpoint
+CM                impedance is well represented; for the true
+CM                elevation pattern over soil, raise the whole
+CM                antenna and add e.g.  GN 2 0 0 0 13.0 0.005.
+CM ------------------------------------------------------------
+CM  The 1:6 unun is EXTERNAL hardware and is NOT in the EM model.
+CM  It is a 1:6 IMPEDANCE transformer (turns ratio sqrt(6)~2.449).
+CM  It divides the antenna feedpoint impedance by 6 to present it
+CM  to the 50-ohm coax:
+CM        Z_coax = Z_ant / 6
+CM  Equivalently a perfect match (SWR 1) needs an antenna feed
+CM  impedance near 6 x 50 = 300 ohm with low reactance. This is a
+CM  NON-resonant multiband radiator: the unun tames the swing so
+CM  an ATU can finish the match. Resonances (low X) for this 16 m
+CM  wire fall near ~5.5, ~13.5 and ~23.5 MHz.
+CM ------------------------------------------------------------
+CM  SOLVER: the base is a multi-wire junction, so solve with the
+CM  mixed-potential solver, not the Hallen default:
+CM        fnec --solver mpie examples/vertical_1to6_unun_16m.nec
+CM ------------------------------------------------------------
+CM  Tweaks:
+CM   * radiator length  -> z2 of GW 1 (up to 16.0 m)
+CM   * radial length    -> the x/y end of GW 2-5 (longer = better
+CM                          counterpoise; ideally >= 0.25 lambda)
+CM   * sweep range/step -> the FR card below
+CM ============================================================
+CE
+CM --- radiator: 16 m vertical, base at the origin ---
+GW 1 31 0.0 0.0 0.0   0.0 0.0 16.0   0.0016
+CM --- counterpoise: four 8 m radials from the base ---
+GW 2 16 0.0 0.0 0.0   8.0 0.0 0.0    0.0016
+GW 3 16 0.0 0.0 0.0  -8.0 0.0 0.0    0.0016
+GW 4 16 0.0 0.0 0.0   0.0 8.0 0.0    0.0016
+GW 5 16 0.0 0.0 0.0   0.0 -8.0 0.0   0.0016
+GE
+CM --- 1 V drive at the base of the radiator (tag 1, seg 1) ---
+EX 0 1 1 0 1.0 0.0
+CM --- HF sweep 3.5 -> 29.5 MHz in 1 MHz steps (27 points) ---
+FR 0 27 0 0 3.5 1.0
+EN
