@@ -853,10 +853,8 @@ pub fn solve_hallen_paths(
     }
 
     // Free-end I = 0 constraints (the open-chain terminals only).
-    let mut crow = n;
-    for &seg in free_end_segs {
+    for (crow, &seg) in (n..).zip(free_end_segs.iter()) {
         m[crow][seg] = Complex64::new(1.0, 0.0);
-        crow += 1;
     }
 
     // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
@@ -1059,10 +1057,8 @@ pub fn solve_hallen_planewave_paths(
     }
 
     // Free-end I = 0 constraints (the open-chain terminals only).
-    let mut crow = n;
-    for &seg in free_end_segs {
+    for (crow, &seg) in (n..).zip(free_end_segs.iter()) {
         m[crow][seg] = Complex64::new(1.0, 0.0);
-        crow += 1;
     }
 
     // Regularized normal equations (mirrors solve_hallen_planewave).
