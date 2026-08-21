@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/README.md
 status: living
-last_updated: 2026-07-13
+last_updated: 2026-08-21
 ---
 
 # Documentation Overview
@@ -39,3 +39,9 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 - `docs/gui-guide.md` — user guide for the `nec-gui` 3-D antenna workbench
 - `docs/cli-guide.md` — user guide for the `fnec` command-line interface
 - `docs/external/` — **external references** captured for inspiration/cross-validation (not dependencies): [pymininec.md](external/pymininec.md) plus source PDFs (MININEC/UTD reports)
+
+The curated list above covers the primary living docs. Beyond them, `docs/` also
+holds **per-checklist design records** (`docs/ph*-chk-*.md`, `docs/gui-*-plan.md`)
+and the **traceability layer** under `docs/project/`; these are indexed by ID
+through `docs/project/` rather than re-listed here, and all `docs/**/*.md` carry
+validated frontmatter (`scripts/validate-docs-frontmatter.sh`).

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-shopt -s nullglob
+shopt -s nullglob globstar
 
 status=0
-files=(docs/*.md)
+# All markdown under docs/, including nested dirs (docs/project, docs/dev,
+# docs/external, ...). `**` with globstar also matches the top-level docs/*.md.
+files=(docs/**/*.md)
 
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "No docs markdown files found under docs/."
