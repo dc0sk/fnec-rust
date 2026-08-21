@@ -3,3 +3,11 @@ set -euo pipefail
 
 cargo test --workspace
 cargo audit
+# License / bans / sources policy (advisories are already covered by cargo audit
+# above). Skip gracefully if cargo-deny isn't installed locally — CI enforces it
+# regardless via .github/workflows/ci.yml.
+if command -v cargo-deny >/dev/null 2>&1; then
+    cargo deny check bans licenses sources
+else
+    echo "pre-push: cargo-deny not installed — skipping deny check (CI enforces it)"
+fi

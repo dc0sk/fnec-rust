@@ -2,4 +2,6 @@
 set -euo pipefail
 
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets
+# Warnings-as-errors, matching the CI clippy gate so a warning can't slip past
+# a commit here and only surface in CI.
+cargo clippy --workspace --all-targets -- -D warnings
