@@ -4,6 +4,12 @@ name: CI
 # and pull request so they cannot be bypassed with --no-verify or a missing
 # core.hooksPath. Each job runs a single gate command directly (no pipes, no
 # `|| true`) so a non-zero exit fails the job.
+#
+# The Rust toolchain is PINNED (dtolnay/rust-toolchain@1.97.1) rather than
+# @stable: a `-D warnings` clippy gate on a rolling stable is not reproducible
+# — a new Rust release can turn CI red with no code change (e.g. 1.98.0 added
+# clippy::needless_late_init). Bump the pin deliberately in its own PR and fix
+# any new lints there.
 
 on:
   push:
@@ -28,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt
       - run: cargo fmt --all --check
@@ -38,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -49,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
@@ -58,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
@@ -69,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
