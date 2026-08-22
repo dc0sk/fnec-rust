@@ -7,10 +7,22 @@ last_updated: 2026-08-22
 
 # Leeson stepped-diameter correction — feasibility & design (BL-IMPR-014)
 
-**Outcome (2026-08-22): researched, not implemented.** The exact Leeson algorithm
-is book-locked and there is no ground-truth oracle in this repo to validate a
-stepped-diameter correction against, so shipping a numerical "correction" now
-would violate the project's validation standards (see
+> **RESOLVED — IMPLEMENTED 2026-08-22.** The book was obtained. The algorithm is
+> transcribed directly from Leeson, *Physical Design of Yagi Antennas*, ch. 8
+> § 8.4 (Eqs 8-44…8-59, Tables 8-2/8-3) and implemented in
+> `crates/nec_solver/src/taper.rs` (`leeson_equivalent_element`) plus the
+> `fnec taper` CLI subcommand. It is **validated against the book's own worked
+> example** (Table 8-3: a 100-unit half-element of 0.8/0.4-diameter sections →
+> equivalent cylinder ℓ′ = 95.70, d′ = 0.594) to the digit, and the book's § 8.5
+> shows the method tracking MININEC across the full taper range. The two blockers
+> below (book-locked algorithm, no oracle) are both cleared: the book *is* the
+> algorithm, and its worked example *is* the oracle. Everything below is the
+> original feasibility analysis, retained as context.
+
+**Original outcome (2026-08-22, superseded): researched, not implemented.** The
+exact Leeson algorithm is book-locked and there is no ground-truth oracle in this
+repo to validate a stepped-diameter correction against, so shipping a numerical
+"correction" now would violate the project's validation standards (see
 [[fnec-validation-strategy]] / `docs/evidence-tiers` discipline). This document
 records what the correction is, the empirical evidence that fnec needs it, the
 public options and their sourcing status, the validation blocker, and a

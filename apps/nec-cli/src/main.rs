@@ -67,6 +67,12 @@ fn main() -> ExitCode {
     }
     // ------------------------------------------------------------------------
 
+    // --- taper subcommand (Leeson step-tapered-radius correction) -----------
+    if args.get(1).map(String::as_str) == Some("taper") {
+        return run_taper_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
+
     let ParsedArgs {
         solver_mode,
         ground_solver,
@@ -682,6 +688,79 @@ fn run_worker_subcommand() -> ExitCode {
     let stdout = std::io::stdout();
     nec_worker::run_worker_stdio(stdin, stdout);
     ExitCode::SUCCESS
+}
+
+/// Entry point for `fnec taper --sections "<dia>,<len> …"` — the Leeson
+/// step-tapered-radius correction. Prints the equivalent uniform element.
+fn run_taper_subcommand(args: &[String]) -> ExitCode {
+    const TAPER_USAGE: &str = "Usage: fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n\
+         Sections run from the element centre outward (diameter,length pairs,\n\
+         one consistent unit). Prints the Leeson equivalent uniform element.";
+
+    let mut sections_arg: Option<String> = None;
+    let mut i = 2usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--sections" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+                    eprintln!("error: missing value after --sections");
+                    return ExitCode::from(2);
+                }
+                sections_arg = Some(args[i].clone());
+            }
+            other => {
+                eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+                eprintln!("error: unknown taper option: {other}");
+                return ExitCode::from(2);
+            }
+        }
+        i += 1;
+    }
+
+    let Some(spec) = sections_arg else {
+        eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+        eprintln!("error: --sections is required");
+        return ExitCode::from(2);
+    };
+
+    let mut sections = Vec::new();
+    for tok in spec.split_whitespace() {
+        let parts: Vec<&str> = tok.split(',').collect();
+        if parts.len() != 2 {
+            eprintln!("error: bad section '{tok}' (expected diameter,length)");
+            return ExitCode::from(2);
+        }
+        let (Ok(d), Ok(l)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) else {
+            eprintln!("error: non-numeric section '{tok}'");
+            return ExitCode::from(2);
+        };
+        sections.push(nec_solver::TaperSection {
+            radius: d / 2.0,
+            length: l,
+        });
+    }
+
+    match nec_solver::leeson_equivalent_element(&sections) {
+        Ok(e) => {
+            let phys: f64 = sections.iter().map(|s| s.length).sum();
+            println!("TAPER_EQUIVALENT_ELEMENT");
+            println!("SECTIONS {}", sections.len());
+            println!("PHYS_HALF_LENGTH {phys:.6}");
+            println!("EQUIV_HALF_LENGTH {:.6}", e.half_length);
+            println!("EQUIV_FULL_LENGTH {:.6}", 2.0 * e.half_length);
+            println!("EQUIV_RADIUS {:.6}", e.radius);
+            println!("EQUIV_DIAMETER {:.6}", 2.0 * e.radius);
+            println!("KA {:.3}", e.k_a);
+            println!("Z0 {:.3}", e.z0);
+            ExitCode::SUCCESS
+        }
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 /// Entry point for `fnec sweep --resonance <file.nec.toml>`.

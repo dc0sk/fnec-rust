@@ -12,6 +12,7 @@ pub mod mpie;
 pub mod network;
 pub mod planewave;
 pub mod sommerfeld;
+pub mod taper;
 pub mod tl;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
@@ -51,4 +52,5 @@ pub use planewave::{
     build_planewave_hallen, build_planewave_hallen_paths, IncidentPlaneWave, PlaneWaveError,
     PlaneWaveHallen,
 };
+pub use taper::{leeson_equivalent_element, EquivalentElement, TaperSection};
 pub use tl::{build_tl_stamps, TlStamp, TlWarning};

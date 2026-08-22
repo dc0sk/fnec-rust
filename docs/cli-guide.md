@@ -17,6 +17,7 @@ Diagnostics are written to stderr.
 ```
 fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
+fnec taper --sections "<dia>,<len> ..."
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -120,6 +121,40 @@ on stderr); **1** if the root is not bracketed or a solver error occurs; **2**
 for usage errors.
 
 See `examples/resonance-search.nec.toml` for a complete worked example.
+
+### `fnec taper --sections "<dia>,<len> …"`
+
+The **Leeson step-tapered-radius correction** (D. B. Leeson, W6QHS, *Physical
+Design of Yagi Antennas*, ch. 8). NEC-2-class cores — fnec included — mis-model an
+element built from several tubing diameters (`--solver mpie` collapses it to the
+first radius; `--solver hallen` breaks at the radius-change junctions). This
+subcommand replaces a step-tapered element with the **equivalent uniform-diameter
+element** (a corrected length and diameter) that has the same self-impedance near
+resonance; model that uniform element in your deck instead.
+
+Give the half-element sections from the **centre outward** as `diameter,length`
+pairs in one consistent unit (the deck's units — metres):
+
+```sh
+# Book example (inches): 0.8"/0.4" dia sections, 50" each per half-element.
+fnec taper --sections "0.8,50 0.4,50"
+```
+
+```
+TAPER_EQUIVALENT_ELEMENT
+SECTIONS 2
+PHYS_HALF_LENGTH 100.000000
+EQUIV_HALF_LENGTH 95.699193      # ℓ′ — half-length of the substitute cylinder
+EQUIV_FULL_LENGTH 191.398386     # 2ℓ′ — full length for a GW card
+EQUIV_RADIUS 0.296764            # a′ — radius for a GW card
+EQUIV_DIAMETER 0.593528
+KA 667.342                       # average characteristic impedance (diagnostic)
+Z0 607.789
+```
+
+Build the antenna's `GW` as a **uniform** wire of full length `EQUIV_FULL_LENGTH`
+and radius `EQUIV_RADIUS`. Scope: linear, essentially unloaded elements within
+~±15 % of self-resonance (a no-op for uniform-diameter antennas).
 
 ## Solver modes
 
