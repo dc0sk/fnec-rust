@@ -101,3 +101,20 @@ jobs:
           bash scripts/check-version-bump-docs.sh
           "${{ github.event.pull_request.base.sha }}"
           "${{ github.event.pull_request.head.sha }}"
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # Line-coverage floor. Measured ~84% at review-260821 (default features;
+      # SSH/GPU-adapter tests skip), so 80% leaves headroom while still catching a
+      # real regression. Ratchet upward as coverage improves.
+      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 80
