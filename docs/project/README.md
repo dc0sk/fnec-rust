@@ -2,13 +2,21 @@
 project: fnec-rust
 doc: docs/project/README.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-08-22
 ---
 
 # Project traceability layer
 
 This directory is the **consolidated traceability layer** for fnec-rust. It ties
 the whole delivery chain together in one place:
+
+> **Machine-enforced core.** The product requirements (FR/NFR) are a
+> machine-readable register in [`requirements.toml`](requirements.toml), bound to
+> tests by `// VERIFIES: <ID>` comments and checked by
+> `apps/nec-cli/tests/traceability.rs` (a GAP or dangling citation fails the CI
+> test gate). [`traceability-matrix-generated.md`](traceability-matrix-generated.md)
+> is regenerated from that data by `scripts/gen-traceability-matrix.py`. The
+> documents below remain the human narrative.
 
 ```
 requirements / changes

@@ -2,10 +2,18 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-07-13
+last_updated: 2026-08-22
 ---
 
 # Traceability matrix
+
+> **Machine-enforced traceability now lives in [`requirements.toml`](requirements.toml).**
+> The product requirements (FR/NFR) are a machine-readable register bound to
+> tests via `// VERIFIES: <ID>` comments; `apps/nec-cli/tests/traceability.rs`
+> fails the build (in the CI test gate) on any GAP or dangling citation, and
+> [`traceability-matrix-generated.md`](traceability-matrix-generated.md) is
+> regenerated from that data by `scripts/gen-traceability-matrix.py`. This
+> hand-written matrix remains the **narrative** requirement→design→phase view.
 
 The end-to-end matrix tying **requirement → design → implementation → tests →
 result** for every delivery unit. Two views:

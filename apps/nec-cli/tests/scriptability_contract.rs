@@ -132,6 +132,7 @@ fn report_headers_are_machine_parseable_on_stdout() {
 }
 
 #[test]
+// VERIFIES: NFR-005 (script-friendly stdout/stderr separation)
 fn warnings_stay_on_stderr_not_stdout() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nXX 1 2 3\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";

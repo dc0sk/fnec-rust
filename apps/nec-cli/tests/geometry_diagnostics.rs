@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+// VERIFIES: FR-009 (early geometry diagnostics with actionable messages)
 fn crossing_wires_fail_fast_with_actionable_error() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

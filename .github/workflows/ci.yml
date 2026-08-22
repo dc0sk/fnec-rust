@@ -93,6 +93,8 @@ jobs:
           fetch-depth: 0
       - name: Validate docs frontmatter
         run: bash scripts/validate-docs-frontmatter.sh
+      - name: Traceability matrix is generated and fresh
+        run: python3 scripts/gen-traceability-matrix.py --check
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-

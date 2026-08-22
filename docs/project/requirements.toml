@@ -1,0 +1,144 @@
+# Machine-readable requirements register — the single source of truth for the
+# product-level requirements (join key: `id`).
+#
+# This file is DATA, not prose. It is consumed by:
+#   * apps/nec-cli/tests/traceability.rs — the GAP/DANGLING checker that runs
+#     inside `cargo test` (and therefore the CI test gate). It fails the build on
+#     a requirement with verification="test" that no test cites, and on any
+#     `// VERIFIES: <ID>` in the code that cites an id not registered here.
+#   * scripts/gen-traceability-matrix.sh — regenerates the human-readable matrix
+#     docs/project/traceability-matrix-generated.md from this file + the code
+#     citations (do not hand-edit the generated file).
+#
+# Fields per [[requirement]]:
+#   id            stable identifier (join key); referenced from code as `// VERIFIES: <id>`
+#   title         one-line statement
+#   status        implemented | partial | planned
+#   criticality   high | medium | low
+#   verification  test   — must be cited by at least one `// VERIFIES:` in a test
+#                 review — verified by inspection/architecture (no code binding required);
+#                          give a `rationale`
+#
+# Seeded with the FR/NFR product requirements (docs/requirements.md). Expand by
+# adding entries and their `// VERIFIES:` citations; the checker enforces both
+# directions for everything listed here.
+
+[[requirement]]
+id = "FR-001"
+title = "Core solver implemented in Rust as reusable crates"
+status = "implemented"
+criticality = "high"
+verification = "review"
+rationale = "Architectural fact — the crates/nec_* workspace layout; not a runtime behaviour."
+
+[[requirement]]
+id = "FR-002"
+title = "Provide CLI and GUI frontends (TUI optional)"
+status = "implemented"
+criticality = "high"
+verification = "review"
+rationale = "Architectural — apps/nec-cli and apps/nec-gui both ship; GUI is display-dependent."
+
+[[requirement]]
+id = "FR-003"
+title = "Parse and execute real-world NEC deck files"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "FR-004"
+title = "Markdown-based project import/export in addition to NEC decks"
+status = "implemented"
+criticality = "medium"
+verification = "review"
+rationale = "nec_project crate provides the round-trip; broader workflow is partial (see roadmap)."
+
+[[requirement]]
+id = "FR-005"
+title = "4nec2-like text reports for core analysis results"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "FR-006"
+title = "Plugin/scripting extension mechanism, designed in phases"
+status = "implemented"
+criticality = "low"
+verification = "review"
+rationale = "Phased extension points EP-1..4 ship in nec_model/nec_report (exercised by doctests); mechanism-level, verified by inspection."
+
+[[requirement]]
+id = "FR-007"
+title = "Deterministic batch and sweep workflows for scripted studies"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "FR-008"
+title = "Stable automation-oriented core APIs (structured output without text scraping)"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "FR-009"
+title = "Geometry diagnostics that catch invalid/fragile models early with actionable messages"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "FR-010"
+title = "Automation helpers for resonance targeting and convergence studies"
+status = "implemented"
+criticality = "medium"
+verification = "review"
+rationale = "Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial."
+
+[[requirement]]
+id = "NFR-001"
+title = "Primary runtime target Linux (Wayland), then macOS, then Windows"
+status = "implemented"
+criticality = "medium"
+verification = "review"
+rationale = "Platform/deployment target — verified by build targets and CI runner, not a unit test."
+
+[[requirement]]
+id = "NFR-002"
+title = "CPU execution multithreaded and deterministic by default"
+status = "implemented"
+criticality = "high"
+verification = "review"
+rationale = "Determinism is asserted across many solver tests; parallelism is a rayon config fact."
+
+[[requirement]]
+id = "NFR-003"
+title = "GPU acceleration optional at runtime with reliable CPU fallback"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "NFR-004"
+title = "Numerical compatibility measured against a reference with explicit per-metric tolerances"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "NFR-005"
+title = "CLI execution stable and script-friendly (predictable stdin/stdout/stderr)"
+status = "implemented"
+criticality = "high"
+verification = "test"
+
+[[requirement]]
+id = "NFR-006"
+title = "Usability competitive with incumbent tools for supported workflows"
+status = "implemented"
+criticality = "medium"
+verification = "review"
+rationale = "Tracked via usability-benchmark docs; not reducible to a single automated assertion."

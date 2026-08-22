@@ -172,6 +172,7 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
 // its GPU-candidate points to CPU fallback and says so honestly — it never
 // reports CPU work as GPU emulation.
 #[test]
+// VERIFIES: NFR-003 (GPU optional with reliable CPU fallback)
 fn hybrid_exec_mode_routes_gpu_candidate_lane_to_cpu_fallback() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
