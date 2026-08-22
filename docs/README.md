@@ -39,6 +39,7 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 - `docs/gui-guide.md` — user guide for the `nec-gui` 3-D antenna workbench
 - `docs/cli-guide.md` — user guide for the `fnec` command-line interface
 - `docs/leeson-correction-feasibility.md` — feasibility/design study for the Leeson stepped-diameter correction (BL-IMPR-014)
+- `docs/sommerfeld-level2-scope.md` — scoping the real remaining Sommerfeld-Norton Level-2 / DCIM gap (BL-IMPR-015)
 - `docs/external/` — **external references** captured for inspiration/cross-validation (not dependencies): [pymininec.md](external/pymininec.md) plus source PDFs (MININEC/UTD reports)
 
 The curated list above covers the primary living docs. Beyond them, `docs/` also
