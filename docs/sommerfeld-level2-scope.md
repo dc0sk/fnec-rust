@@ -75,7 +75,7 @@ blocker). This is a phased numerical implementation, not a research dead-end.
 3. Treat it as several PRs (GPOF fit → image extraction → Z-fill integration →
    pattern), not one — comparable in size to the original PH9-CHK-006/007 arc.
 
-## DCIM — Phase 1 result (2026-08-22)
+## DCIM — Phase 1 & 2 results (2026-08-22)
 
 Following the project's prototype-first method, `studies/sommerfeld-ground/dcim_probe.py`
 implements one-level DCIM and validates it against fnec's **exact** reflected
@@ -92,23 +92,40 @@ kernels with ~5–6 **complex images** `G ≈ Σ aᵢ e^{−jk0 rᵢ}/rᵢ`,
 | **G_Φ** (scalar; carries the surface wave) | ~0.02 % | ~0.1–0.2 % | 1–7 % |
 | **G_A** (vector) | ~5–9 % | ~20 % | 40–70 % |
 
-`G_Φ` is **production-close** (fnec's nec2c GN2 gate is ~5–8 %). `G_A`'s far zone
-is the known one-level-DCIM weakness (over-fitting just adds spurious poles); it
-needs **two-level DCIM** (Aksun) — a documented refinement, not a research gamble.
+`G_Φ` is pointwise-good; `G_A`'s far zone is the one-level-DCIM lateral-wave tail.
+
+### Phase 2 — end-to-end validation (2026-08-22)
+
+Pointwise kernel error turned out to be the **wrong metric**: the MoM Z-matrix only
+uses the kernel for ρ ≤ the wire half-length (~0.5 λ), and the feedpoint impedance
+is insensitive to the far-zone (ρ ≈ 2 λ) lateral-wave tail. `dcim_mom_validate.py`
+drops the DCIM kernel into the **validated EFIE-MoM** (`efie_mpie_ground.py`,
+unchanged) and compares feedpoint Z, DCIM vs the exact kernel vs nec2c GN2:
+
+| height | exact-kernel MoM | **DCIM MoM** | nec2c GN2 | Δ(DCIM, exact) |
+|:-------|:-----------------|:-------------|:----------|:---------------|
+| 0.05 λ | 64.00 + j49.18 | **64.98 + j43.71** | 67.26 + j52.61 | **6.9 %** |
+| 0.025 λ | 83.46 + j66.26 | **86.52 + j59.77** | 87.81 + j68.64 | **6.7 %** |
+
+**~7 % end-to-end at both heights — inside fnec's ~5–8 % gate** (DCIM R is within
+1.5–3.4 % of nec2c). Two things were decisive: **two-level DCIM** (near + far image
+sets, `dcim_fit_2level`) and a **GPOF pole filter** (`|z| ≤ 1`) — dropping the
+exponentially-growing, non-physical poles that otherwise blow the two-level fit up
+(186 − j6185 Ω without it). The residual is the reactance (X ~13–17 % vs nec2c),
+which explicit Zenneck-pole extraction should tighten further.
 
 ### Refined phased plan
 
-1. **Phase 1 (done):** one-level DCIM prototype validating the method + constants
-   against the exact kernel. `G_Φ` ready; `G_A` far-zone identified.
-2. **Phase 2:** two-level DCIM for `G_A` (near + far image sets) and explicit
-   **surface-wave (Zenneck) pole extraction** for < 0.1 λ accuracy; gate the
-   prototype's ΔZ/current against nec2c GN2 (the studies already have that oracle).
-3. **Phase 3:** Rust port — a `dcim` module (GPOF + complex images) slotted into
-   `assemble_z_matrix_with_ground` via a complex-distance Green's kernel
-   (`exp(−jk r)/r`, complex `r`), replacing the ρ-grid quadrature; validate the
-   feedpoint Z, current distribution, then elevation pattern vs nec2c GN2, and
-   lift the Hallén `--ground-solver sommerfeld` path from feedpoint-Z to full
-   currents.
+1. **Phase 1 (done):** DCIM fit machinery + constants validated pointwise.
+2. **Phase 2 (done):** two-level + pole-filtered DCIM validated **end-to-end** in
+   the EFIE-MoM — feedpoint Z within ~7 % of the exact kernel at 0.05 λ / 0.025 λ.
+3. **Phase 2b:** tighten the reactance (explicit surface-wave Zenneck-pole
+   extraction) and add the current-distribution/pattern comparison vs nec2c GN2.
+4. **Phase 3:** Rust port — a `dcim` module (GPOF + pole filter + complex images)
+   slotted into `assemble_z_matrix_with_ground` via a complex-distance Green's
+   kernel (`exp(−jk r)/r`, complex `r`), replacing the ρ-grid quadrature; gate
+   feedpoint Z → currents → pattern vs nec2c GN2, and lift the Hallén
+   `--ground-solver sommerfeld` path from feedpoint-Z to full currents.
 
 ## References
 
