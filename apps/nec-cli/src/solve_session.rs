@@ -1197,6 +1197,7 @@ pub(super) fn solve_frequency_point(
     sin_fallback_rel_max: f64,
     freq_hz: f64,
     ground_solver: GroundSolver,
+    laplace_loads: &[nec_solver::LaplaceLoad],
 ) -> Result<FrequencySolveResult, String> {
     // Incident plane waves and current sources are solved on the Hallén path
     // only (crate::planewave / solve_hallen_current_source).
@@ -1211,6 +1212,12 @@ pub(super) fn solve_frequency_point(
         // space or a Sommerfeld half-space; loads / transmission lines / networks
         // are not stamped into its triangle-basis system, so reject them rather
         // than silently ignoring their effect.
+        if !laplace_loads.is_empty() {
+            return Err(
+                "Laplace loads (--loads-config) are not supported with --solver mpie; use --solver hallen"
+                    .to_string(),
+            );
+        }
         for card in &deck.cards {
             let unsupported = match card {
                 Card::Ld(_) => "LD (loads)",
@@ -1282,8 +1289,13 @@ pub(super) fn solve_frequency_point(
         SolverMode::Mpie => assemble_z_matrix_with_ground(segs, freq_hz, ground),
     };
 
-    let (load_vec, load_warnings) = build_loads(deck, segs, freq_hz);
+    let (mut load_vec, load_warnings) = build_loads(deck, segs, freq_hz);
     for warning in &load_warnings {
+        eprintln!("warning: {warning}");
+    }
+    let laplace_warnings =
+        nec_solver::add_laplace_loads(&mut load_vec, laplace_loads, segs, freq_hz);
+    for warning in &laplace_warnings {
         eprintln!("warning: {warning}");
     }
     z_mat.add_to_diagonal(&load_vec);
