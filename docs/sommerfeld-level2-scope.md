@@ -75,6 +75,41 @@ blocker). This is a phased numerical implementation, not a research dead-end.
 3. Treat it as several PRs (GPOF fit → image extraction → Z-fill integration →
    pattern), not one — comparable in size to the original PH9-CHK-006/007 arc.
 
+## DCIM — Phase 1 result (2026-08-22)
+
+Following the project's prototype-first method, `studies/sommerfeld-ground/dcim_probe.py`
+implements one-level DCIM and validates it against fnec's **exact** reflected
+potential kernels (a Python port of `sommerfeld::reflected_potential_kernels`).
+The machinery is **validated as correct**: sampling the spectral reflection
+coefficient along the deformed contour `kz0 = k0(1 − jτ)`, a GPOF (matrix-pencil)
+fit `g(kz0) ≈ Σ aᵢ e^{j kz0 bᵢ}`, and the Sommerfeld identity
+`∫ (λ/kz0) J0(λρ) e^{−jkz0 D} dλ = j e^{−jk0 r}/r` together reproduce the exact
+kernels with ~5–6 **complex images** `G ≈ Σ aᵢ e^{−jk0 rᵢ}/rᵢ`,
+`rᵢ = √(ρ² + (d−bᵢ)²)`. Accuracy vs the exact quadrature (14.2 MHz, εr 13, σ 0.005):
+
+| kernel | ρ ≤ 0.05 λ | ρ = 0.2 λ | ρ ≥ 0.5 λ |
+|:-------|:-----------|:----------|:----------|
+| **G_Φ** (scalar; carries the surface wave) | ~0.02 % | ~0.1–0.2 % | 1–7 % |
+| **G_A** (vector) | ~5–9 % | ~20 % | 40–70 % |
+
+`G_Φ` is **production-close** (fnec's nec2c GN2 gate is ~5–8 %). `G_A`'s far zone
+is the known one-level-DCIM weakness (over-fitting just adds spurious poles); it
+needs **two-level DCIM** (Aksun) — a documented refinement, not a research gamble.
+
+### Refined phased plan
+
+1. **Phase 1 (done):** one-level DCIM prototype validating the method + constants
+   against the exact kernel. `G_Φ` ready; `G_A` far-zone identified.
+2. **Phase 2:** two-level DCIM for `G_A` (near + far image sets) and explicit
+   **surface-wave (Zenneck) pole extraction** for < 0.1 λ accuracy; gate the
+   prototype's ΔZ/current against nec2c GN2 (the studies already have that oracle).
+3. **Phase 3:** Rust port — a `dcim` module (GPOF + complex images) slotted into
+   `assemble_z_matrix_with_ground` via a complex-distance Green's kernel
+   (`exp(−jk r)/r`, complex `r`), replacing the ρ-grid quadrature; validate the
+   feedpoint Z, current distribution, then elevation pattern vs nec2c GN2, and
+   lift the Hallén `--ground-solver sommerfeld` path from feedpoint-Z to full
+   currents.
+
 ## References
 
 - `docs/ph9-chk-006-sommerfeld-ground.md` — physics derivation + DCIM design.
