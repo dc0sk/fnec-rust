@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/README.md
 status: living
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 ---
 
 # Documentation Overview
@@ -38,6 +38,7 @@ This directory captures project decisions and operating guidance for `fnec-rust`
 - `docs/gui-redesign-plan.md` — phased action plan for the GPU-accelerated 3D GUI workbench (iced + wgpu)
 - `docs/gui-guide.md` — user guide for the `nec-gui` 3-D antenna workbench
 - `docs/cli-guide.md` — user guide for the `fnec` command-line interface
+- `docs/leeson-correction-feasibility.md` — feasibility/design study for the Leeson stepped-diameter correction (BL-IMPR-014)
 - `docs/external/` — **external references** captured for inspiration/cross-validation (not dependencies): [pymininec.md](external/pymininec.md) plus source PDFs (MININEC/UTD reports)
 
 The curated list above covers the primary living docs. Beyond them, `docs/` also
