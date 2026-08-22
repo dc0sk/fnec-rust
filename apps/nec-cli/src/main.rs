@@ -5,6 +5,7 @@ mod bench;
 mod cli_args;
 mod exec_profile;
 mod geometry_validation;
+mod laplace_config;
 mod resonance_search;
 mod solve_session;
 mod sweep_config;
@@ -76,6 +77,7 @@ fn main() -> ExitCode {
         output_format,
         sweep_config_path,
         vars_path,
+        loads_config_path,
         sin_fallback_rel_max_cli,
         hosts_path,
         path,
@@ -87,6 +89,18 @@ fn main() -> ExitCode {
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
+    };
+
+    // Optional fnec-specific Laplace-domain loads (--loads-config <file.toml>).
+    let laplace_loads = match loads_config_path {
+        Some(ref p) => match laplace_config::load_laplace_loads(p) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::from(2);
+            }
+        },
+        None => Vec::new(),
     };
 
     // Enable GPU benchmarking if --bench flag is set
@@ -319,6 +333,7 @@ fn main() -> ExitCode {
             sin_fallback_rel_max,
             freq_hz,
             ground_solver,
+            &laplace_loads,
         )
     };
 
@@ -763,6 +778,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
             freq_hz,
             GroundSolver::Rcm,
+            &[], // Laplace loads apply to the normal solve path, not `sweep --resonance`.
         )?;
 
         let summary = solve_result.sweep_summary.ok_or_else(|| {

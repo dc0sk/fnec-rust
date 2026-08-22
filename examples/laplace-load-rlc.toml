@@ -1,0 +1,20 @@
+# Example fnec --loads-config file (BL-IMPR-016).
+# A Laplace-domain load is a series impedance Z(s) = N(s)/D(s), s = jω, with
+# coefficients in ascending order (a0 + a1*s + a2*s^2 + ...).
+#
+#   fnec --solver hallen --loads-config examples/laplace-load-rlc.toml your.nec
+
+# Series R + L (Z = 150 + jωL, L = 2 µH) on tag 1, segment 20:
+[[laplace_load]]
+tag = 1
+seg_first = 20
+numerator   = [150.0, 2.0e-6]
+denominator = [1.0]
+
+# Series RLC (Z = R + jωL - j/(ωC)) on tag 1, segment 26:
+#   R = 25 Ω, L = 1 µH, C = 47 pF  ->  N = [1, R*C, L*C], D = [0, C]
+[[laplace_load]]
+tag = 1
+seg_first = 26
+numerator   = [1.0, 1.175e-9, 4.7e-17]   # [1, R*C, L*C]
+denominator = [0.0, 4.7e-11]             # [0, C]

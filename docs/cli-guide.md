@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 ---
 
 # CLI Guide — fnec (v0.12.0)
@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 ```
 
@@ -44,6 +44,32 @@ Compatibility profile note:
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list); overrides the `FR` card frequency list for a batch solve. See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
+| `--loads-config` | `<file.toml>` | — | Load fnec-specific extended loads (Laplace-domain `Z(s) = N(s)/D(s)`) from a TOML file and stamp them on the solve alongside any `LD` cards. Hallén/pulse paths only — rejected with `--solver mpie`. See **Laplace-domain loads** below. |
+
+### Laplace-domain loads (`--loads-config`)
+
+NEC-2 has no card for an arbitrary rational load, so fnec reads them from a TOML
+file. A Laplace load is a **series** impedance `Z(s) = N(s) / D(s)` with `s = jω`,
+where `numerator`/`denominator` are the polynomial coefficients in ascending
+order (`a0 + a1·s + a2·s² + …`). This generalises the built-in `LD` loads and lets
+you model arbitrary matching networks, traps with parasitic resistance, or
+measured/curve-fitted loads.
+
+```toml
+# A series R + L load (Z = 150 + jωL, L = 2 µH) on tag 1, segment 20.
+[[laplace_load]]
+tag = 1            # 0 = all tags
+seg_first = 20     # 0 = all segments of the tag
+# seg_last = 20    # omit or 0 = single segment
+numerator   = [150.0, 2.0e-6]   # a0 + a1·s  ->  R + L·s
+denominator = [1.0]
+```
+
+Equivalences (so you can cross-check against `LD`): a **series RLC**
+(`R + jωL − j/(ωC)`) is `numerator = [1, R·C, L·C]`, `denominator = [0, C]`; a
+flat resistor is `numerator = [R]`, `denominator = [1]`. Multiple `[[laplace_load]]`
+entries are allowed. A denominator that vanishes at a swept frequency is skipped
+with a warning rather than producing a non-finite matrix.
 
 ## Subcommands
 

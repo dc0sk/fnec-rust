@@ -224,11 +224,168 @@ fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
     seg.tag_index >= ld.seg_first && seg.tag_index <= last
 }
 
+/// A Laplace-domain (rational) series load: `Z(s) = N(s) / D(s)` with `s = jω`,
+/// where `numerator = [a0, a1, a2, …]` are the coefficients of
+/// `a0 + a1·s + a2·s² + …` and `denominator` likewise.
+///
+/// This generalises the lumped LD 0–4 loads — e.g. a series RLC (`R + jωL −
+/// j/(ωC)`) is `N = [1, R·C, L·C]`, `D = [0, C]` — and lets a user model
+/// arbitrary matching networks, traps with parasitic resistance, or measured /
+/// curve-fitted loads in one entry. It is a fnec-specific extension (there is no
+/// NEC-2 card for it); supplied through the CLI `--loads-config` TOML file and
+/// stamped on the MoM diagonal exactly like the built-in loads.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaplaceLoad {
+    /// Wire tag (0 = all tags).
+    pub tag: u32,
+    /// First segment within the tag (0 = all segments).
+    pub seg_first: u32,
+    /// Last segment within the tag (0 = same as `seg_first`).
+    pub seg_last: u32,
+    /// Numerator coefficients `[a0, a1, …]` of `a0 + a1·s + …`.
+    pub numerator: Vec<f64>,
+    /// Denominator coefficients `[b0, b1, …]`.
+    pub denominator: Vec<f64>,
+}
+
+/// Evaluate a real-coefficient polynomial `c[0] + c[1]·s + c[2]·s² + …` at
+/// `s = jω`.
+fn eval_poly_at_jomega(coeffs: &[f64], omega: f64) -> Complex64 {
+    let s = Complex64::new(0.0, omega);
+    let mut acc = Complex64::new(0.0, 0.0);
+    let mut power = Complex64::new(1.0, 0.0); // s^0
+    for &c in coeffs {
+        acc += power * c;
+        power *= s;
+    }
+    acc
+}
+
+/// Series impedance of a Laplace load, `Z(jω) = N(jω) / D(jω)`.
+pub fn laplace_impedance(numerator: &[f64], denominator: &[f64], omega: f64) -> Complex64 {
+    eval_poly_at_jomega(numerator, omega) / eval_poly_at_jomega(denominator, omega)
+}
+
+fn laplace_segment_matches(ll: &LaplaceLoad, seg: &Segment) -> bool {
+    if ll.tag != 0 && seg.tag != ll.tag {
+        return false;
+    }
+    if ll.seg_first == 0 {
+        return true;
+    }
+    let last = if ll.seg_last == 0 {
+        ll.seg_first
+    } else {
+        ll.seg_last
+    };
+    seg.tag_index >= ll.seg_first && seg.tag_index <= last
+}
+
+/// Add Laplace-load series impedances to a per-segment load vector (as built by
+/// [`build_loads`]), in place. Degenerate coefficients (empty vectors, a
+/// denominator that vanishes at this frequency) are skipped with a warning
+/// rather than producing a non-finite matrix entry.
+pub fn add_laplace_loads(
+    load_vec: &mut [Complex64],
+    laplace: &[LaplaceLoad],
+    segs: &[Segment],
+    freq_hz: f64,
+) -> Vec<LoadWarning> {
+    let mut warnings = Vec::new();
+    let omega = TWO_PI * freq_hz;
+    for ll in laplace {
+        if ll.numerator.is_empty() || ll.denominator.is_empty() {
+            warnings.push(LoadWarning {
+                message: format!(
+                    "Laplace load on tag {} has an empty numerator or denominator; ignored",
+                    ll.tag
+                ),
+            });
+            continue;
+        }
+        let z = laplace_impedance(&ll.numerator, &ll.denominator, omega);
+        if !z.re.is_finite() || !z.im.is_finite() {
+            warnings.push(LoadWarning {
+                message: format!(
+                    "Laplace load on tag {} is non-finite at {:.6} MHz (denominator zero?); ignored",
+                    ll.tag,
+                    freq_hz / 1e6
+                ),
+            });
+            continue;
+        }
+        for (i, seg) in segs.iter().enumerate() {
+            if laplace_segment_matches(ll, seg) {
+                load_vec[i] += z;
+            }
+        }
+    }
+    warnings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use nec_model::card::{Card, LdCard};
     use nec_model::deck::NecDeck;
+
+    #[test]
+    fn laplace_impedance_reproduces_series_rl() {
+        // Z(s) = R + L·s  ->  N = [R, L], D = [1]
+        let (r, l) = (100.0_f64, 1.0e-6_f64);
+        let omega = TWO_PI * 14.2e6;
+        let z = laplace_impedance(&[r, l], &[1.0], omega);
+        assert!((z.re - r).abs() < 1e-9);
+        assert!((z.im - omega * l).abs() < 1e-6);
+    }
+
+    #[test]
+    fn laplace_impedance_reproduces_series_rlc() {
+        // Series RLC Z = R + jωL − j/(ωC), as a rational N=[1, R·C, L·C], D=[0, C].
+        let (r, l, c) = (50.0_f64, 2.0e-6_f64, 5.0e-12_f64);
+        let omega = TWO_PI * 7.0e6;
+        let z = laplace_impedance(&[1.0, r * c, l * c], &[0.0, c], omega);
+        let expected = Complex64::new(r, omega * l - 1.0 / (omega * c));
+        assert!((z - expected).norm() < 1e-6, "z={z} expected={expected}");
+    }
+
+    #[test]
+    fn add_laplace_loads_stamps_matching_segments_only() {
+        let segs = vec![
+            seg(1, 1, 1.0, 1e-3),
+            seg(1, 2, 1.0, 1e-3),
+            seg(2, 1, 1.0, 1e-3),
+        ];
+        let mut lv = vec![Complex64::new(0.0, 0.0); 3];
+        let ll = LaplaceLoad {
+            tag: 1,
+            seg_first: 2,
+            seg_last: 2,
+            numerator: vec![100.0],
+            denominator: vec![1.0],
+        };
+        let w = add_laplace_loads(&mut lv, std::slice::from_ref(&ll), &segs, 14.2e6);
+        assert!(w.is_empty());
+        assert_eq!(lv[0], Complex64::new(0.0, 0.0));
+        assert!((lv[1].re - 100.0).abs() < 1e-9);
+        assert_eq!(lv[2], Complex64::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn add_laplace_loads_warns_on_zero_denominator() {
+        let segs = vec![seg(1, 1, 1.0, 1e-3)];
+        let mut lv = vec![Complex64::new(0.0, 0.0); 1];
+        let ll = LaplaceLoad {
+            tag: 0,
+            seg_first: 0,
+            seg_last: 0,
+            numerator: vec![1.0],
+            denominator: vec![0.0],
+        };
+        let w = add_laplace_loads(&mut lv, std::slice::from_ref(&ll), &segs, 14.2e6);
+        assert_eq!(w.len(), 1);
+        assert_eq!(lv[0], Complex64::new(0.0, 0.0));
+    }
 
     fn seg(tag: u32, tag_index: u32, length: f64, radius: f64) -> Segment {
         let half = length / 2.0;
