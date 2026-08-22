@@ -27,6 +27,8 @@ struct CurrentSample {
 }
 
 #[test]
+// VERIFIES: FR-003 (parse + execute real-world NEC decks)
+// VERIFIES: NFR-004 (numerical compatibility vs reference within tolerances)
 fn corpus_validation_cases_with_references() {
     // Test file is inside apps/nec-cli; walk up to workspace root.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

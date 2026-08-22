@@ -119,6 +119,7 @@ fn report_contract_v1_headers_and_rows() {
 }
 
 #[test]
+// VERIFIES: FR-005 (4nec2-like text reports)
 fn report_contract_includes_radiation_pattern_when_rp_present() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-rp-51seg.nec");

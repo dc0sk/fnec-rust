@@ -141,6 +141,7 @@ fn sweep_explicit_list_produces_block_per_point() {
 // Test 3 — range-based sweep produces correct point count
 // ---------------------------------------------------------------------------
 #[test]
+// VERIFIES: FR-007 (deterministic batch/sweep workflows)
 fn sweep_range_produces_correct_point_count() {
     // 14 to 18 MHz in 1 MHz steps → 5 points: 14, 15, 16, 17, 18
     let sweep_toml = "[frequency]\nstart_mhz = 14.0\nend_mhz = 18.0\nstep_mhz = 1.0\n";

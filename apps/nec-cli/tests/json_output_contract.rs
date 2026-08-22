@@ -67,6 +67,7 @@ fn json_output_contains_required_fields() {
 }
 
 #[test]
+// VERIFIES: FR-008 (stable structured automation output)
 fn json_output_is_stable_across_two_runs() {
     let deck = corpus_deck("dipole-freesp-51seg.nec");
     let out1 = run_fnec_json(&deck);
