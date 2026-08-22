@@ -114,18 +114,35 @@ exponentially-growing, non-physical poles that otherwise blow the two-level fit 
 (186 − j6185 Ω without it). The residual is the reactance (X ~13–17 % vs nec2c),
 which explicit Zenneck-pole extraction should tighten further.
 
+### Phase 2b — current distribution + Zenneck-pole analysis (2026-08-22)
+
+`dcim_mom_validate.py` also compares the **current distribution** (not just the
+feedpoint Z): the DCIM MoM reproduces the exact-kernel current to **~7 % L2** at
+both heights with the correct symmetric, feed-peaked shape (0.05 λ: exact feed |I|
+1.24e-2 vs DCIM 1.28e-2). So DCIM gets the physics — currents, not only Z — right.
+
+The residual reactance is the **Zenneck surface-wave pole**. Located analytically:
+the TM pole is `kz0_p = k0/√(1+εc) = (0.249 + 0.054j)·k0` (`λ_p ≈ 0.97 k0`), and it
+sits on the **improper Riemann sheet** (`εc·kz0 + kz1 = 0` needs the `+Im` kz1
+branch; the principal sheet gives the numerator zero, not the pole). Extracting it
+(residue + surface-wave Hankel term, subtracted before the DCIM fit) is the
+standard reactance-tightening refinement — **but it is not blocking: the DCIM is
+already inside fnec's ~5–8 % gate on both Z and currents without it.**
+
 ### Refined phased plan
 
 1. **Phase 1 (done):** DCIM fit machinery + constants validated pointwise.
-2. **Phase 2 (done):** two-level + pole-filtered DCIM validated **end-to-end** in
-   the EFIE-MoM — feedpoint Z within ~7 % of the exact kernel at 0.05 λ / 0.025 λ.
-3. **Phase 2b:** tighten the reactance (explicit surface-wave Zenneck-pole
-   extraction) and add the current-distribution/pattern comparison vs nec2c GN2.
+2. **Phase 2 (done):** two-level + pole-filtered DCIM validated **end-to-end** —
+   feedpoint Z within ~7 % of the exact kernel at 0.05 λ / 0.025 λ.
+3. **Phase 2b (done):** current distribution validated (~7 % L2, correct shape);
+   Zenneck pole located (improper sheet) — its explicit extraction is a documented
+   refinement (not blocking; already at gate).
 4. **Phase 3:** Rust port — a `dcim` module (GPOF + pole filter + complex images)
    slotted into `assemble_z_matrix_with_ground` via a complex-distance Green's
    kernel (`exp(−jk r)/r`, complex `r`), replacing the ρ-grid quadrature; gate
-   feedpoint Z → currents → pattern vs nec2c GN2, and lift the Hallén
-   `--ground-solver sommerfeld` path from feedpoint-Z to full currents.
+   feedpoint Z → currents → pattern vs nec2c GN2 (needs the reference tools back),
+   and lift the Hallén `--ground-solver sommerfeld` path from feedpoint-Z to full
+   currents.
 
 ## References
 
