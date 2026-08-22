@@ -101,3 +101,21 @@ jobs:
           bash scripts/check-version-bump-docs.sh
           "${{ github.event.pull_request.base.sha }}"
           "${{ github.event.pull_request.head.sha }}"
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # Line-coverage floor. On this headless runner (no GPU adapter) the wgpu
+      # dispatch paths stay uncovered, so line coverage is ~78% here vs ~84% on a
+      # box with a software GPU. The floor is set against the reproducible CI
+      # number with headroom; ratchet upward as coverage improves.
+      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 75
