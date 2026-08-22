@@ -66,7 +66,8 @@ def ground_z(height, ga_fn, gp_fn, n_grid=240):
             Z[m, n] += PRE_A * za + PRE_P * zp
     V = np.zeros(em.NB, complex)
     V[em.FEED] = 1.0
-    return 1.0 / np.linalg.solve(Z, V)[em.FEED]
+    I = np.linalg.solve(Z, V)
+    return 1.0 / I[em.FEED], I
 
 
 def main():
@@ -79,13 +80,28 @@ def main():
     print("GN2 (εr=13, σ=0.005, 14.2 MHz). DCIM images: "
           f"G_A={len(A_TE)}  G_Φ={len(A_PH)}\n")
     print(f"{'height':>10} {'exact-kernel MoM':>20} {'DCIM MoM':>20} {'nec2c GN2':>16}")
+    ie_all, id_all = {}, {}
     for hl, ref in ((0.05, "67.26+j52.61"), (0.025, "87.81+j68.64")):
         h = hl * em.LAM
-        ze = ground_z(h, ga_exact, gp_exact)
-        zd = ground_z(h, ga_dcim, gp_dcim)
+        ze, ie = ground_z(h, ga_exact, gp_exact)
+        zd, idc = ground_z(h, ga_dcim, gp_dcim)
+        ie_all[hl], id_all[hl] = ie, idc
         drel = abs(zd - ze) / abs(ze)
         print(f"{hl:>9}λ  {ze.real:8.2f}{ze.imag:+8.2f}j   {zd.real:8.2f}{zd.imag:+8.2f}j"
               f"   {ref:>14}   |Δ(DCIM,exact)|={drel:.1%}")
+
+    # Phase-2b: DCIM must reproduce the CURRENT DISTRIBUTION, not just Z.
+    print("\nCurrent distribution — DCIM vs exact kernel (|I| relative L2 error,")
+    print("and the profile at a few basis points; feed at index", em.FEED, "):")
+    for hl in (0.05, 0.025):
+        ie, idc = ie_all[hl], id_all[hl]
+        l2 = np.linalg.norm(idc - ie) / np.linalg.norm(ie)
+        idx = [0, em.NB // 4, em.FEED, 3 * em.NB // 4, em.NB - 1]
+        prof_e = "  ".join(f"{abs(ie[i]):.2e}" for i in idx)
+        prof_d = "  ".join(f"{abs(idc[i]):.2e}" for i in idx)
+        print(f"  {hl}λ  |I| L2 err={l2:.1%}")
+        print(f"      exact |I|: {prof_e}")
+        print(f"      DCIM  |I|: {prof_d}")
 
 
 if __name__ == "__main__":
