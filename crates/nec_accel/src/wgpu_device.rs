@@ -17,6 +17,23 @@ pub struct AdapterInfo {
     pub device_type: String,
 }
 
+/// Wait for submitted GPU work and the buffer map to complete. Returns `false`
+/// if the device was lost, the poll failed, or the map failed — callers then
+/// degrade to the CPU path instead of panicking, so a mid-run GPU fault does not
+/// abort the process. (G9, review-260821.)
+fn await_map<E>(device: &wgpu::Device, rx: &std::sync::mpsc::Receiver<Result<(), E>>) -> bool {
+    if device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .is_err()
+    {
+        return false;
+    }
+    matches!(rx.recv(), Ok(Ok(())))
+}
+
 /// Returns every compute-capable adapter visible to wgpu on this system.
 ///
 /// The list may be empty on headless CI hosts without a software rasterizer;
@@ -418,13 +435,7 @@ pub async fn run_rp_farfield_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .unwrap();
-    if rx.recv().unwrap().is_err() {
+    if !await_map(&device, &rx) {
         return RpPipelineResult::NoAdapterAvailable;
     }
     let raw = slice.get_mapped_range();
@@ -700,13 +711,7 @@ pub async fn run_rp_farfield_batch_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .unwrap();
-    if rx.recv().unwrap().is_err() {
+    if !await_map(&device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();
@@ -1026,13 +1031,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .unwrap();
-    if rx.recv().unwrap().is_err() {
+    if !await_map(&device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();
@@ -1645,13 +1644,7 @@ pub async fn solve_hallen_gpu_resident(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .unwrap();
-    if rx.recv().unwrap().is_err() {
+    if !await_map(&device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();
