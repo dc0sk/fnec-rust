@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-07-10
+last_updated: 2026-08-23
 ---
 
 # Roadmap
@@ -293,10 +293,10 @@ This phase is gated on Phase 6 (worker pool + capability cache) being complete, 
 **Key deliverables**:
 - [ ] GPU-resident dense solve: keep the filled Z-matrix on the device and run the LU/triangular solve in WGSL, eliminating the fill→copy-back→CPU-solve round trip on the supported corpus.
 - [ ] Retire or realize the `gpu_kernels` CPU-emulation scaffold so no path reports CPU time as GPU time.
-- [ ] Real-hardware benchmark evidence (not software rasterizer) published to the Phase 6 dashboard for at least one discrete GPU, with the crossover problem size where GPU beats CPU documented.
+- [ ] Real-hardware benchmark evidence (not software rasterizer) published to the Phase 6 dashboard for at least one discrete GPU, with the crossover problem size where GPU beats CPU documented. **Partial (2026-08-23):** real-hardware evidence exists in `benchmarks/real-gpu-crossover.json` and is refreshed, but on an **integrated** adapter (RADV RENOIR), so the "discrete" requirement is still unmet. Crossovers documented: Z-fill kernel beats CPU from N≈32–64; the **dense solve never does** (see `docs/ph7-chk-003-gpu-resident-solve.md` § Performance).
 - [ ] Native multi-vendor expansion: a recorded ROCm or SYCL backend validation (or an explicit, dated "not yet" with rationale) beyond the wgpu Vulkan path.
 - [ ] Distributed GPU execution: `--exec gpu` dispatched through the SSH worker pool so GPU-capable nodes solve on their GPU.
-- [ ] Honest GPU microbenchmark: an in-process benchmark that isolates kernel dispatch cost from per-process wgpu device-init, complementing the across-process G5 wall-clock gate.
+- [x] Honest GPU microbenchmark: an in-process benchmark that isolates kernel dispatch cost from per-process wgpu device-init, complementing the across-process G5 wall-clock gate. **Done:** `microbench_zmatrix_dispatch` reports device-init separately from dispatch, and `examples/gpu_crossover.rs` uses it; since #372 the device is built once per process, so the production wall-clock no longer carries a ~23 ms init per call (RP far-field 42 000 µs → ~1 000 µs).
 
 ### Phase 7 implementation checklist
 

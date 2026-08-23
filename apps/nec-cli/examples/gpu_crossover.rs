@@ -10,9 +10,15 @@
 //!     `microbench_zmatrix_dispatch` from PH7-CHK-002) vs the CPU
 //!     `assemble_z_matrix`, across segment counts. CPU cost grows ~O(N²); the
 //!     GPU dispatch is roughly flat, so they cross.
-//!   * **RP far-field** — production wall-clock (`run_rp_farfield_batch_wgpu`,
-//!     which re-acquires the device, so it *includes* the one-time device-init)
+//!   * **RP far-field** — production wall-clock (`run_rp_farfield_batch_wgpu`)
 //!     vs the CPU `compute_radiation_pattern`, across observation-point counts.
+//!     Since #372 the device is built once per process, so this no longer carries
+//!     a ~23 ms device-init on every call.
+//!   * **Dense solve** — `solve_hallen_gpu_resident` (PH7-CHK-003) vs the CPU
+//!     `assemble_z_matrix` + `solve_hallen`, across segment counts. This is the
+//!     section that explains end-to-end `--exec gpu` timing: the two kernels above
+//!     are enormously faster than the CPU, so if the whole run is not, the solve is
+//!     where it goes.
 //!
 //! Run on a host with a real wgpu adapter:
 //!
@@ -138,6 +144,75 @@ fn main() {
     }
 
     // ---- JSON artifact ----------------------------------------------------
+    // ---- GPU-resident dense solve vs CPU solve ----------------------------
+    // The Z-fill and RP kernels above win by two orders of magnitude, yet
+    // `--exec gpu` end-to-end is slower than `--exec cpu` on this hardware. The
+    // solve is the only other production GPU path, so measure it directly rather
+    // than inferring it.
+    eprintln!("\n== Dense solve: CPU assemble+solve vs GPU-resident solve ==");
+    eprintln!(
+        "{:>6}  {:>12}  {:>12}  {:>8}",
+        "N", "cpu_us", "gpu_us", "speedup"
+    );
+    let solve_sizes = [32usize, 64, 128, 256, 512];
+    let mut solve_rows: Vec<(usize, u64, Option<u64>)> = Vec::new();
+    let mut solve_crossover: Option<usize> = None;
+    for &n in &solve_sizes {
+        let deck_str = format!(
+            "GW 1 {n} 0 0 -5.0 0 0 5.0 0.001\nGE 0\nEX 0 1 {mid} 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+            mid = n / 2 + 1
+        );
+        let deck = nec_parser::parse(&deck_str).expect("parse").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        let rhs = nec_solver::build_hallen_rhs(&deck, &segs, FREQ_HZ).expect("rhs");
+        let endpoints = nec_solver::wire_endpoints_from_segs(&segs);
+        let junctions: Vec<(usize, usize, f64)> = Vec::new();
+
+        let cpu_us = best_us(3, || {
+            let z = assemble_z_matrix(&segs, FREQ_HZ);
+            let _ = nec_solver::solve_hallen(&z, &rhs.rhs, &rhs.cos_vec, &endpoints, &junctions);
+        });
+
+        let z_inputs: Vec<ZSegmentInput> = segs
+            .iter()
+            .map(|s| ZSegmentInput {
+                midpoint: s.midpoint,
+                direction: s.direction,
+                length: s.length,
+                radius: s.radius,
+            })
+            .collect();
+        let mut gpu_us: Option<u64> = None;
+        for _ in 0..3 {
+            let t = Instant::now();
+            let got = pollster::block_on(nec_accel::solve_hallen_gpu_resident(
+                &z_inputs,
+                &rhs.rhs,
+                &rhs.cos_vec,
+                &endpoints,
+                &junctions,
+                FREQ_HZ,
+            ));
+            let us = t.elapsed().as_micros() as u64;
+            // `None` means the accuracy gate rejected it or the system is out of
+            // class; report that rather than timing a path that did not run.
+            if got.is_some() {
+                gpu_us = Some(gpu_us.map_or(us, |b: u64| b.min(us)));
+            }
+        }
+        match gpu_us {
+            Some(g) => {
+                let speedup = cpu_us as f64 / g as f64;
+                if speedup > 1.0 && solve_crossover.is_none() {
+                    solve_crossover = Some(n);
+                }
+                eprintln!("{n:>6}  {cpu_us:>12}  {g:>12}  {speedup:>7.2}x");
+            }
+            None => eprintln!("{n:>6}  {cpu_us:>12}  {:>12}  {:>8}", "declined", "-"),
+        }
+        solve_rows.push((n, cpu_us, gpu_us));
+    }
+
     let z_json: Vec<String> = z_rows
         .iter()
         .map(|(n, c, g, d)| {
@@ -150,8 +225,17 @@ fn main() {
         .iter()
         .map(|(p, c, g)| format!(r#"{{"n_points":{p},"cpu_us":{c},"gpu_wall_us":{g}}}"#))
         .collect();
+    let solve_json: Vec<String> = solve_rows
+        .iter()
+        .map(|(n, c, g)| {
+            let g = g
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".to_string());
+            format!(r#"{{"n_segments":{n},"cpu_us":{c},"gpu_us":{g}}}"#)
+        })
+        .collect();
     println!(
-        r#"{{"schema_version":"1","kind":"gpu_crossover","adapter":{{"name":{name:?},"backend":{backend:?},"device_type":{dtype:?}}},"freq_hz":{FREQ_HZ},"zmatrix_fill_kernel_only":[{z}],"zmatrix_fill_crossover_n":{xover},"rp_farfield_wallclock":[{rp}]}}"#,
+        r#"{{"schema_version":"2","kind":"gpu_crossover","adapter":{{"name":{name:?},"backend":{backend:?},"device_type":{dtype:?}}},"freq_hz":{FREQ_HZ},"zmatrix_fill_kernel_only":[{z}],"zmatrix_fill_crossover_n":{xover},"rp_farfield_wallclock":[{rp}],"dense_solve":[{sv}],"dense_solve_crossover_n":{sx}}}"#,
         name = adapter.name,
         backend = adapter.backend,
         dtype = adapter.device_type,
@@ -160,6 +244,10 @@ fn main() {
             .map(|n| n.to_string())
             .unwrap_or_else(|| "null".to_string()),
         rp = rp_json.join(","),
+        sv = solve_json.join(","),
+        sx = solve_crossover
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "null".to_string()),
     );
 
     if let Some(n) = z_crossover {
