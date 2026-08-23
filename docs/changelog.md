@@ -11,6 +11,25 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GUI now applies the same pre-solve validation as the CLI** (review-260719
+  FIND-006/007, step 2 of 3). It went straight from `build_geometry` to
+  `solve_hallen`, so a deck the CLI refuses outright — wires crossing mid-span, a
+  source on a degenerate segment, a wire reaching into an active ground — solved
+  silently in the GUI and displayed a wrong impedance. All three GUI solve paths
+  (impedance, sweep, currents/pattern) now reject it, so the pattern views cannot
+  draw a plausible-looking result for geometry the impedance view refuses. The
+  warning set is widened to the CLI's: low-antenna-over-finite-ground, feedpoint on
+  a junction, unrecognised `GE I1`, and the parser's own warnings, which the GUI
+  used to discard. Both frontends read their message text from
+  `nec_solver::validate`, so they can no longer drift apart.
+
+  Still GUI-side gaps, unchanged here: the sweep, pattern and currents views render
+  no warnings (only the impedance panel does), and the GUI remains Hallén-only —
+  the topology warning names the CLI's `--solver mpie` rather than offering a
+  solver choice.
+
 ### Added
 
 - **`nec_solver::validate` — a shared pre-solve validation module** (review-260719
