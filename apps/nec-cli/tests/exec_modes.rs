@@ -18,12 +18,23 @@ fn test_tmp_dir() -> PathBuf {
     dir
 }
 
+/// Distinguishes two aliases created in the same nanosecond by this process.
+///
+/// The timestamp alone is not a unique key: several matrix tests loop over the
+/// *same* alias-name list and run in parallel, so two threads can land on one path.
+/// The loser's `symlink`/`hard_link` then fail with `EEXIST`, and the `fs::copy`
+/// fallback fails with `ETXTBSY` because the winner is already executing that exact
+/// file — an intermittent failure that took down a release-branch coverage run.
+static ALIAS_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn make_dropin_alias_path(alias_name: &str) -> PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    test_tmp_dir().join(format!("fnec-dropin-alias-{alias_name}-{now}"))
+    // Timestamp for uniqueness across processes, counter for uniqueness within one.
+    let seq = ALIAS_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    test_tmp_dir().join(format!("fnec-dropin-alias-{alias_name}-{now}-{seq}"))
 }
 
 fn create_dropin_alias(alias_name: &str) -> PathBuf {
@@ -1245,4 +1256,44 @@ fn nec2mp_alias_matrix_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_
             "stderr must not contain report output on explicit-exec missing-deck errors for alias '{alias_name}', got:\n{stderr}"
         );
     }
+}
+
+/// Two aliases with the same name must never share a path.
+///
+/// Regression for the `ETXTBSY` race above: the alias path used to be keyed on
+/// `(name, nanoseconds)` only, so parallel matrix tests looping over one shared
+/// alias-name list could collide. A tight loop reproduces the same-nanosecond case
+/// far more reliably than the tests that hit it in the wild.
+#[test]
+fn dropin_alias_paths_are_unique_within_a_process() {
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..10_000 {
+        let p = make_dropin_alias_path("nec2dxs1K5");
+        assert!(
+            seen.insert(p.clone()),
+            "duplicate alias path: {}",
+            p.display()
+        );
+    }
+}
+
+/// The same name used concurrently from several threads must also stay distinct —
+/// that is the shape the matrix tests actually take.
+#[test]
+fn dropin_alias_paths_are_unique_across_threads() {
+    let seen = std::sync::Mutex::new(std::collections::HashSet::new());
+    std::thread::scope(|s| {
+        for _ in 0..8 {
+            s.spawn(|| {
+                for _ in 0..500 {
+                    let p = make_dropin_alias_path("nec2dxs1K5");
+                    assert!(
+                        seen.lock().expect("seen lock").insert(p.clone()),
+                        "duplicate alias path across threads: {}",
+                        p.display()
+                    );
+                }
+            });
+        }
+    });
 }
