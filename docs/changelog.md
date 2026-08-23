@@ -7,28 +7,51 @@ last_updated: 2026-08-23
 
 # Changelog
 
-All notable documentation process changes are recorded here.
+All notable changes to this project are recorded here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
+project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Sections
+from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
 
-### Docs
+## [0.14.0] — 2026-08-23 — Frontend validation parity + GPU and MPIE correctness
 
-- **Corpus reference provenance corrected** (review-260719 FIND-015, though not in
-  the way it was reported). `reference_engine_version` records *which engine
-  produced the stored reference values*; the workspace being at 0.13.0 does not
-  make 0.13.0 the right value, and bumping it would have claimed a regeneration
-  that never happened. The real problems were that 48 cases accumulated across many
-  releases all carry one provenance string, and that the documented example in
-  `docs/nec-requirements.md` showed two keys (`schema_version`, `last_updated`) the
-  file does not have. The field is now marked as the initial baseline, a
-  `provenance_note` records that later cases are not separately stamped, and the
-  example matches the real file. Per-case provenance remains unrecorded — the
-  substantive gap, and larger than the review item.
-- **The 2026-07-19 review is fully dispositioned.** Every finding is now closed
-  with evidence, including the four that did not become code changes, each with the
-  reasoning recorded rather than silently dropped.
+Every finding of the 2026-07-19 project review is closed in this release. The
+headline is correctness rather than features: three separate paths were returning
+answers that were quietly wrong — `--solver mpie` on one legal way of writing a
+deck, `--exec gpu` on larger decks, and the GUI and Python bindings on geometry the
+CLI refuses outright.
 
-### Performance
+**Breaking:** `nec_model::card::NeCard` is renamed, and the Python bindings now
+raise on decks they used to solve. Both are covered by the migration guide in
+`docs/releasenotes.md`.
+
+### Added
+
+- **`nec_solver::validate` — a shared pre-solve validation module** (review-260719
+  FIND-004/006/007/008, step 1 of 3). The hard geometry rejections (wires crossing
+  mid-span, a source on a degenerate segment, a wire reaching an active ground) and
+  the geometry/ground warnings lived inside the CLI binary, where the GUI and the
+  Python bindings could not reach them — so a deck the CLI refused outright solved
+  silently and wrongly on the other two frontends. They are now pure functions of
+  `(&NecDeck, &[Segment], &GroundModel, freq_hz)` that *return* diagnostics
+  (`nec_model::ValidationDiagnostic`) instead of printing them, with `diagnose()`
+  as the one-call entry point for a frontend. The CLI delegates to them and its
+  message text is unchanged, byte for byte, as its contract tests require. Wiring
+  the GUI and the Python bindings follows in separate changes.
+
+### Changed
+
+- **`nec_model::card::NeCard` is renamed `NearFieldCard`** (review-260719
+  FIND-012). `Card` has both `Ne(NeCard)` and `Nh(NeCard)`: NEC-2 gives the two
+  cards an identical field layout, so one struct is right — but naming and
+  documenting it as the *electric* field card meant an `NH` card was carried in a
+  type whose docs said it meant something else. The struct now describes the
+  observation grid, which is what it holds, and the requested quantity stays where
+  it belongs: the `Card::Ne` / `Card::Nh` variant. A breaking change to
+  `nec_model`'s public API; every in-repo consumer (parser, GUI deck writer, the
+  Python bindings) is updated and compiles.
 
 - **A distributed sweep now uses every worker at once** (review-260719 FIND-009).
   `WorkerPool::dispatch` blocks until one worker answers, and `--hosts` drove it
@@ -43,10 +66,29 @@ All notable documentation process changes are recorded here.
   indexed by task, so report order does not depend on which worker finished first —
   only the `worker=` diagnostic label varies, which was never a stable contract.
 
-### Tests
+- **The wgpu device is built once per process, not once per kernel call**
+  (review-260719 FIND-005). Every GPU entry point independently called
+  `Instance::new` + `request_adapter` + `request_device`, so a frequency sweep paid
+  full device initialisation **twice per frequency point** — 20 initialisations for
+  a 10-point sweep, measured. A 10-point sweep of a 301-segment dipole under
+  `--exec gpu` goes from **5.30 s to 4.17 s** (21 %), with `--exec cpu` unchanged at
+  1.70 s over the same runs. The solved impedances are byte-identical to the
+  pre-change build.
+
+  Two call sites deliberately keep building their own: the two
+  `force_fallback_adapter: true` probes, which select the software adapter on
+  purpose, and `microbench_zmatrix_dispatch`, which **times** device acquisition as
+  one of its reported metrics — handing it a cached device would corrupt the
+  measurement it exists to produce. A device lost mid-run drops the cached context
+  so the next solve rebuilds, rather than pinning the rest of the process to the
+  CPU fallback.
+
+  Note this does not make `--exec gpu` faster than `--exec cpu` on this hardware
+  (4.17 s vs 1.70 s); it removes one specific overhead. The accuracy gate above
+  costs part of it back.
 
 - **The defensive guards flagged as untested now have tests** (review-260719
-  FIND-014/016), 25 cases across four modules. `nec_solver::network` had **no tests
+  FIND-014/016), 26 cases across four modules. `nec_solver::network` had **no tests
   at all** — its seven `NT` rejection paths (short card, non-integer identifiers,
   non-numeric admittances, either endpoint missing, both endpoints on one segment,
   singular admittance matrix) are now covered, along with the supported path
@@ -62,19 +104,28 @@ All notable documentation process changes are recorded here.
   threads would drop out of scheduling entirely, and an erroring GPU probe must
   never promote a node to GPU-capable.
 
-### Changed
-
-- **`nec_model::card::NeCard` is renamed `NearFieldCard`** (review-260719
-  FIND-012). `Card` has both `Ne(NeCard)` and `Nh(NeCard)`: NEC-2 gives the two
-  cards an identical field layout, so one struct is right — but naming and
-  documenting it as the *electric* field card meant an `NH` card was carried in a
-  type whose docs said it meant something else. The struct now describes the
-  observation grid, which is what it holds, and the requested quantity stays where
-  it belongs: the `Card::Ne` / `Card::Nh` variant. A breaking change to
-  `nec_model`'s public API; every in-repo consumer (parser, GUI deck writer, the
-  Python bindings) is updated and compiles.
+- **A test-infrastructure race that could fail any CI run.** `exec_modes`' drop-in
+  alias paths were keyed on `(alias_name, nanoseconds)`, but six matrix tests loop
+  over the *same* alias-name list in parallel — two threads could take one name in
+  the same nanosecond, and the loser's `fs::copy` then failed with `ETXTBSY`
+  because the winner was already executing that file. It took down this release
+  branch's first coverage run. The key now carries a process-wide counter. (#379)
 
 ### Fixed
+
+- **`--solver mpie`: feedpoint impedance no longer depends on `GW` direction.**
+  The MPIE's nodal basis takes its reference current direction from the incidence
+  order of the fed node's two arms. When the driven segment's `GW` card is written
+  *outward* from the shared node — an apex-fed inverted-V entered as two `GW`
+  cards that both start at the apex — that direction opposes the segment's own
+  tangent, and the CLI's rebuilt `V/I` came out negated: a physically impossible
+  **negative resistance** (−40.6 − j8.0 Ω) for the same antenna the end-to-start
+  form solved correctly at +40.7 + j8.1 Ω (nec2c 43.5 + j12.4). The solve is now
+  re-referenced to the `EX` source polarity. The library's own `MpieSolution::z_in`
+  was always correct — only the CLI rebuild lost the sign — so no validated
+  library result changes. The negative-resistance tripwire is now also armed on
+  the MPIE path (previously `hallen`-only), so a defect of this shape cannot pass
+  silently again.
 
 - **`--exec gpu` no longer reports a diverged solve as a result.** The GPU-resident
   Hallén solve is f32, and its normal-equations form squares the condition number,
@@ -98,48 +149,16 @@ All notable documentation process changes are recorded here.
   5.3 s before either change. `--exec cpu` remains faster (~1.7 s) on this
   hardware.
 
-### Performance
-
-- **The wgpu device is built once per process, not once per kernel call**
-  (review-260719 FIND-005). Every GPU entry point independently called
-  `Instance::new` + `request_adapter` + `request_device`, so a frequency sweep paid
-  full device initialisation **twice per frequency point** — 20 initialisations for
-  a 10-point sweep, measured. A 10-point sweep of a 301-segment dipole under
-  `--exec gpu` goes from **5.30 s to 4.17 s** (21 %), with `--exec cpu` unchanged at
-  1.70 s over the same runs. The solved impedances are byte-identical to the
-  pre-change build.
-
-  Two call sites deliberately keep building their own: the two
-  `force_fallback_adapter: true` probes, which select the software adapter on
-  purpose, and `microbench_zmatrix_dispatch`, which **times** device acquisition as
-  one of its reported metrics — handing it a cached device would corrupt the
-  measurement it exists to produce. A device lost mid-run drops the cached context
-  so the next solve rebuilds, rather than pinning the rest of the process to the
-  CPU fallback.
-
-  Note this does not make `--exec gpu` faster than `--exec cpu` on this hardware
-  (4.17 s vs 1.70 s); it removes one specific overhead. The accuracy gate above
-  costs part of it back.
-
-
-### Fixed
-
-- **The Python bindings now validate too, and are finally covered by CI**
-  (review-260719 FIND-004, step 3 of 3). `fnec_py.solve_deck_str` /
-  `sweep_deck_str` went from `build_geometry` straight to `solve_hallen`, so a deck
-  the CLI refuses outright returned a plausible-looking impedance; those decks now
-  raise `RuntimeError` with the same message the CLI prints. Non-fatal caveats — an
-  unreliable topology, a very low antenna over finite ground, parser warnings, and
-  the load/TL builder warnings the bindings used to discard — are raised as Python
-  `UserWarning`s, so they show by default and can be filtered or escalated with the
-  standard `warnings` module. A sweep emits each distinct caveat once rather than
-  once per frequency point.
-
-  `bindings/fnec_py` is excluded from the cargo workspace, so **every `--workspace`
-  CI job skipped it** — it could be broken by any `nec_solver` API change with
-  nothing noticing until someone built a wheel by hand. A new `python bindings` job
-  runs fmt, clippy `-D warnings`, a maturin build and the pytest suite. Python is
-  pinned to 3.13, the newest CPython pyo3 0.23 supports.
+- **`--ground-solver sommerfeld` diagnostics now tell the truth about what ran.**
+  The low-height finite-ground warning ("…does not model the Sommerfeld surface
+  wave") was unconditional on height and ignored `--ground-solver`, so it fired
+  even when the Sommerfeld correction *had* been applied — denying the very
+  surface wave the reported `Z` included. It is now suppressed once the correction
+  actually applies. Conversely, the correction covers straight wires only and used
+  to decline bent or mixed geometry **in silence**, leaving the user believing they
+  had the surface wave when they had the reflection-coefficient result; a declined
+  request now warns and points at `--solver mpie`. A request that was never made
+  is not a decline, and a declined request keeps the low-height warning.
 
 - **The GUI now applies the same pre-solve validation as the CLI** (review-260719
   FIND-006/007, step 2 of 3). It went straight from `build_geometry` to
@@ -158,34 +177,22 @@ All notable documentation process changes are recorded here.
   the topology warning names the CLI's `--solver mpie` rather than offering a
   solver choice.
 
-### Added
+- **The Python bindings now validate too, and are finally covered by CI**
+  (review-260719 FIND-004, step 3 of 3). `fnec_py.solve_deck_str` /
+  `sweep_deck_str` went from `build_geometry` straight to `solve_hallen`, so a deck
+  the CLI refuses outright returned a plausible-looking impedance; those decks now
+  raise `RuntimeError` with the same message the CLI prints. Non-fatal caveats — an
+  unreliable topology, a very low antenna over finite ground, parser warnings, and
+  the load/TL builder warnings the bindings used to discard — are raised as Python
+  `UserWarning`s, so they show by default and can be filtered or escalated with the
+  standard `warnings` module. A sweep emits each distinct caveat once rather than
+  once per frequency point.
 
-- **`nec_solver::validate` — a shared pre-solve validation module** (review-260719
-  FIND-004/006/007/008, step 1 of 3). The hard geometry rejections (wires crossing
-  mid-span, a source on a degenerate segment, a wire reaching an active ground) and
-  the geometry/ground warnings lived inside the CLI binary, where the GUI and the
-  Python bindings could not reach them — so a deck the CLI refused outright solved
-  silently and wrongly on the other two frontends. They are now pure functions of
-  `(&NecDeck, &[Segment], &GroundModel, freq_hz)` that *return* diagnostics
-  (`nec_model::ValidationDiagnostic`) instead of printing them, with `diagnose()`
-  as the one-call entry point for a frontend. The CLI delegates to them and its
-  message text is unchanged, byte for byte, as its contract tests require. Wiring
-  the GUI and the Python bindings follows in separate changes.
-
-### Changed
-
-- **`--ground-solver sommerfeld` diagnostics now tell the truth about what ran.**
-  The low-height finite-ground warning ("…does not model the Sommerfeld surface
-  wave") was unconditional on height and ignored `--ground-solver`, so it fired
-  even when the Sommerfeld correction *had* been applied — denying the very
-  surface wave the reported `Z` included. It is now suppressed once the correction
-  actually applies. Conversely, the correction covers straight wires only and used
-  to decline bent or mixed geometry **in silence**, leaving the user believing they
-  had the surface wave when they had the reflection-coefficient result; a declined
-  request now warns and points at `--solver mpie`. A request that was never made
-  is not a decline, and a declined request keeps the low-height warning.
-
-### Docs
+  `bindings/fnec_py` is excluded from the cargo workspace, so **every `--workspace`
+  CI job skipped it** — it could be broken by any `nec_solver` API change with
+  nothing noticing until someone built a wheel by hand. A new `python bindings` job
+  runs fmt, clippy `-D warnings`, a maturin build and the pytest suite. Python is
+  pinned to 3.13, the newest CPython pyo3 0.23 supports.
 
 - **`docs/cli-guide.md` parity sweep** (review-260719 FIND-001/002/003). The guide
   had drifted roughly ten minor versions behind the code. The synopsis and options
@@ -205,21 +212,21 @@ All notable documentation process changes are recorded here.
   (`docs/dev/reviews/review-260719.md`) with a remediation-status block, so it
   reads as a dated snapshot rather than an open worklist.
 
-### Fixes
-
-- **`--solver mpie`: feedpoint impedance no longer depends on `GW` direction.**
-  The MPIE's nodal basis takes its reference current direction from the incidence
-  order of the fed node's two arms. When the driven segment's `GW` card is written
-  *outward* from the shared node — an apex-fed inverted-V entered as two `GW`
-  cards that both start at the apex — that direction opposes the segment's own
-  tangent, and the CLI's rebuilt `V/I` came out negated: a physically impossible
-  **negative resistance** (−40.6 − j8.0 Ω) for the same antenna the end-to-start
-  form solved correctly at +40.7 + j8.1 Ω (nec2c 43.5 + j12.4). The solve is now
-  re-referenced to the `EX` source polarity. The library's own `MpieSolution::z_in`
-  was always correct — only the CLI rebuild lost the sign — so no validated
-  library result changes. The negative-resistance tripwire is now also armed on
-  the MPIE path (previously `hallen`-only), so a defect of this shape cannot pass
-  silently again.
+- **Corpus reference provenance corrected** (review-260719 FIND-015, though not in
+  the way it was reported). `reference_engine_version` records *which engine
+  produced the stored reference values*; the workspace being at 0.13.0 does not
+  make 0.13.0 the right value, and bumping it would have claimed a regeneration
+  that never happened. The real problems were that 48 cases accumulated across many
+  releases all carry one provenance string, and that the documented example in
+  `docs/nec-requirements.md` showed two keys (`schema_version`, `last_updated`) the
+  file does not have. The field is now marked as the initial baseline, a
+  `provenance_note` records that later cases are not separately stamped, and the
+  example matches the real file. Per-case provenance remains unrecorded — the
+  substantive gap, and larger than the review item.
+- **The 2026-07-19 review is fully dispositioned.** Every finding is now closed
+  with evidence, including the four that did not become code changes, each with the
+  reasoning recorded rather than silently dropped. The review itself is committed at
+  `docs/dev/reviews/review-260719.md`.
 
 ## [0.13.0] — 2026-08-23 — Laplace loads + Leeson taper + project-quality hardening
 
