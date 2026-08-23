@@ -7,6 +7,140 @@ last_updated: 2026-08-23
 
 # Release Notes
 
+## 0.14.0 — Frontend validation parity + GPU and MPIE correctness
+
+Every finding of the 2026-07-19 project review is closed in this release. The
+headline is **correctness, not features**: three separate paths were returning
+answers that were quietly wrong, and none of them warned.
+
+The default `--exec cpu` Hallén path, the CLI report contract, and the validated
+corpus are unchanged.
+
+### Three paths that were silently wrong
+
+**`--solver mpie` depended on how you wrote the deck.** An apex-fed inverted-V
+entered as two `GW` cards that both start at the apex reported **−40.6 − j8.0 Ω** —
+a negative resistance, physically impossible for a passive antenna — where the same
+antenna written as a continuous tip → apex → tip chain solved correctly at
++40.7 + j8.1 Ω (nec2c: 43.5 + j12.4). The MPIE's nodal basis takes its reference
+current direction from the incidence order of the fed node's arms, and the CLI
+rebuilt `V/I` without carrying that reference. The library's own
+`MpieSolution::z_in` was always right, so no validated library result changes.
+
+**`--exec gpu` returned diverged solves on larger decks.** The GPU-resident solve
+is f32 and its normal-equations form squares the condition number, so it degrades
+with segment count — but nothing checked the answer. On a 301-segment λ/2 dipole
+one frequency point came back at 101 Ω against the CPU's 75 Ω and another at
+−1.98 Ω; a 151-segment deck was off by 7 %. The solve now reports its own relative
+residual and the host falls back to the f64 CPU solve when it has not converged.
+
+**The GUI and the Python bindings solved decks the CLI refuses.** Wires crossing
+mid-span, a source on a degenerate segment, a wire reaching into an active ground —
+all rejected by the CLI, all silently solved elsewhere, because the checks lived
+inside the CLI binary where no other frontend could reach them.
+
+### What to do about it
+
+If you have results from **0.13.0 or earlier**, they are worth re-checking when
+they came from any of:
+
+- `--solver mpie` on a deck whose driven wire is written *outward* from a junction
+- `--exec gpu` on a deck over roughly 100 segments
+- the GUI or `fnec_py` on geometry you have not separately validated
+
+A negative resistance in an old report is the clearest tell. `--exec cpu` on the
+Hallén path was never affected.
+
+### Also in this release
+
+- **Distributed sweeps use every worker at once.** `--hosts` dispatched one
+  frequency point at a time, leaving N−1 workers idle. Measured on 8 tasks over 4
+  workers: **9.25 s → 2.47 s**.
+- **The wgpu device is built once per process** instead of twice per frequency
+  point (20 initialisations for a 10-point sweep). A 10-point 301-segment sweep
+  under `--exec gpu` drops from 5.30 s to 4.17 s; the accuracy gate above costs
+  part of that back, landing at ~4.9 s. Note `--exec cpu` remains faster (~1.7 s)
+  on integrated-GPU hardware — this release removes specific overheads, it does not
+  make the GPU path the faster choice.
+- **`--ground-solver sommerfeld` diagnostics tell the truth about what ran** — the
+  low-height warning no longer denies a correction that was applied, and a request
+  declined for bent geometry now says so instead of silently returning the
+  reflection-coefficient result.
+- **`docs/cli-guide.md` had drifted about ten minor versions** and is resynced;
+  `--ground-solver`, `--output-format` and `--hosts` were entirely undocumented.
+- **26 new tests** for previously unexercised rejection paths, including
+  `nec_solver::network`, which had none at all.
+- **The Python bindings are under CI for the first time.** `bindings/fnec_py` is
+  excluded from the cargo workspace, so every `--workspace` job had been skipping
+  it; its committed lockfile still pinned the crates at 0.4.0 against a workspace
+  at 0.13.0.
+
+## Migration guide
+
+### `nec_model::card::NeCard` is renamed `NearFieldCard` (breaking, Rust API)
+
+`Card` carries both `Ne(NeCard)` and `Nh(NeCard)` — NEC-2 gives the two cards an
+identical field layout — but the struct was named and documented as the *electric*
+field card, so every `NH` card was held in a type whose docs said otherwise. The
+struct now describes the observation grid; which field is requested stays in the
+`Card::Ne` / `Card::Nh` variant.
+
+```rust
+// before
+use nec_model::card::NeCard;
+let grid = NeCard { coord_type: 0, nx: 5, /* … */ };
+
+// after — identical fields, new name
+use nec_model::card::NearFieldCard;
+let grid = NearFieldCard { coord_type: 0, nx: 5, /* … */ };
+```
+
+A mechanical rename: no field, variant or behaviour changed. If you only match on
+`Card::Ne(..)` / `Card::Nh(..)` without naming the struct, nothing changes.
+
+### `fnec_py` rejects invalid decks instead of returning a number (breaking, Python API)
+
+`fnec_py` 0.4.0 → **0.5.0**. `solve_deck_str` / `sweep_deck_str` used to solve any
+deck that parsed. They now apply the same validation the CLI does, so a deck
+outside the solver's supported class raises `RuntimeError` instead of returning a
+plausible-looking impedance.
+
+```python
+# 0.4.0: returned a dict, with a wrong impedance in it
+# 0.5.0: raises RuntimeError("unsupported intersecting-wire geometry between …")
+result = fnec_py.solve_deck_str(deck_with_crossing_wires)
+```
+
+If your code must survive a bad deck, catch it:
+
+```python
+try:
+    result = fnec_py.solve_deck_str(deck)
+except RuntimeError as e:
+    ...  # the message is the same one the CLI prints
+```
+
+Non-fatal caveats — an unreliable topology, a very low antenna over finite ground,
+parser warnings — are now raised as Python `UserWarning`s rather than discarded.
+They are visible by default and filter like any other warning:
+
+```python
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")     # or "error" to treat them as failures
+    result = fnec_py.solve_deck_str(deck)
+```
+
+The returned dict keys are unchanged.
+
+### Nothing else requires action
+
+`--exec gpu` now falls back to the CPU solve where it previously returned a wrong
+answer, so results change only where they were wrong. The `worker=` label in
+distributed diagnostics may name a different worker per point now that the sweep
+runs concurrently; report ordering is unchanged.
+
+
 ## 0.13.0 — Laplace loads + Leeson taper + project-quality hardening
 
 This release adds two CLI features that came out of a cross-validation review
