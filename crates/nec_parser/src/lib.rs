@@ -14,7 +14,7 @@ pub mod template;
 
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
-    NeCard, NtCard, PtCard, RpCard, TlCard,
+    NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -252,7 +252,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         Ok(0.0)
                     }
                 };
-                let card = NeCard {
+                let card = NearFieldCard {
                     coord_type: parse_u32(lineno, m, 1, fields[0])?,
                     nx: parse_u32(lineno, m, 2, fields[1])?,
                     ny: parse_u32(lineno, m, 3, fields[2])?,

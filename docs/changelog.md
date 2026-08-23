@@ -11,6 +11,18 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`nec_model::card::NeCard` is renamed `NearFieldCard`** (review-260719
+  FIND-012). `Card` has both `Ne(NeCard)` and `Nh(NeCard)`: NEC-2 gives the two
+  cards an identical field layout, so one struct is right — but naming and
+  documenting it as the *electric* field card meant an `NH` card was carried in a
+  type whose docs said it meant something else. The struct now describes the
+  observation grid, which is what it holds, and the requested quantity stays where
+  it belongs: the `Card::Ne` / `Card::Nh` variant. A breaking change to
+  `nec_model`'s public API; every in-repo consumer (parser, GUI deck writer, the
+  Python bindings) is updated and compiles.
+
 ### Fixed
 
 - **`--exec gpu` no longer reports a diverged solve as a result.** The GPU-resident

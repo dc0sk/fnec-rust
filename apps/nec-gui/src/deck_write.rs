@@ -17,7 +17,7 @@
 //! shortest decimal string that round-trips to the same bits — so coordinates
 //! and radii survive parse→write→parse unchanged.
 
-use nec_model::card::{Card, NeCard};
+use nec_model::card::{Card, NearFieldCard};
 use nec_model::deck::NecDeck;
 
 /// Serialize a whole deck to NEC card text (one card per line, `\n`-terminated).
@@ -158,7 +158,7 @@ pub fn write_card(card: &Card) -> String {
 }
 
 /// NE/NH share an identical 10-field layout.
-fn write_near(mnemonic: &str, c: &NeCard) -> String {
+fn write_near(mnemonic: &str, c: &NearFieldCard) -> String {
     join(&[
         mnemonic.to_string(),
         u(c.coord_type),

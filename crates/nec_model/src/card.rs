@@ -410,21 +410,25 @@ pub enum Card {
     Ex(ExCard),
     Fr(FrCard),
     Rp(RpCard),
-    Ne(NeCard),
-    Nh(NeCard),
+    Ne(NearFieldCard),
+    Nh(NearFieldCard),
     En(EnCard),
 }
 
-/// NE — Near electric-field request card.
+/// The observation grid shared by the `NE` and `NH` near-field request cards.
 ///
-/// Requests the electric field on a grid of observation points. Fields follow
-/// canonical NEC-2: `NE I1 NX NY NZ X0 Y0 Z0 DX DY DZ`, where `I1` is the
-/// coordinate type (0 = rectangular, 1 = spherical), `NX/NY/NZ` are the point
-/// counts along each axis, `X0/Y0/Z0` the first point, and `DX/DY/DZ` the
-/// increments. For spherical (`I1=1`) the axes are reinterpreted as
+/// NEC-2 gives both cards the same field layout — `NE`/`NH I1 NX NY NZ X0 Y0 Z0
+/// DX DY DZ` — and they differ only in *which* field is requested: `NE` the
+/// electric field, `NH` the magnetic one. The requested quantity is carried by
+/// the [`Card`] variant ([`Card::Ne`] / [`Card::Nh`]), not by this struct, which
+/// describes the grid alone.
+///
+/// `I1` is the coordinate type (0 = rectangular, 1 = spherical), `NX/NY/NZ` are
+/// the point counts along each axis, `X0/Y0/Z0` the first point, and `DX/DY/DZ`
+/// the increments. For spherical (`I1=1`) the axes are reinterpreted as
 /// `NX→R (m), NY→φ (deg), NZ→θ (deg)`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NeCard {
+pub struct NearFieldCard {
     /// Coordinate type (I1): 0 = rectangular, 1 = spherical.
     pub coord_type: u32,
     pub nx: u32,
