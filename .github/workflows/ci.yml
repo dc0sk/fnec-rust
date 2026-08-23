@@ -83,6 +83,41 @@ jobs:
       # license / bans / sources policy in deny.toml (no redundant advisory run).
       - run: cargo deny check bans licenses sources
 
+  bindings:
+    name: python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy, rustfmt
+      # Pinned to the newest CPython pyo3 0.23 supports. A newer interpreter makes
+      # the build fail outright (PYO3_USE_ABI3_FORWARD_COMPATIBILITY is a local
+      # escape hatch, not something to gate on), so the pin moves when pyo3 does.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: bindings/fnec_py
+      # `bindings/fnec_py` is deliberately excluded from the cargo workspace (it is
+      # a cdylib with its own lockfile), so every --workspace job above skips it.
+      # Without this job it can be broken by any nec_solver API change and nothing
+      # notices until someone builds a wheel by hand.
+      - name: rustfmt
+        working-directory: bindings/fnec_py
+        run: cargo fmt --check
+      - name: clippy -D warnings
+        working-directory: bindings/fnec_py
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Install maturin and pytest
+        run: pip install "maturin>=1.5,<2" pytest
+      - name: Build and install the extension module
+        working-directory: bindings/fnec_py
+        run: maturin build --out dist && pip install --no-index --find-links dist fnec_py
+      - name: pytest
+        run: pytest bindings/fnec_py/tests -q
+
   docs:
     name: docs contract
     runs-on: ubuntu-latest

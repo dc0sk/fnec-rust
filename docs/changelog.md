@@ -13,6 +13,23 @@ All notable documentation process changes are recorded here.
 
 ### Fixed
 
+- **The Python bindings now validate too, and are finally covered by CI**
+  (review-260719 FIND-004, step 3 of 3). `fnec_py.solve_deck_str` /
+  `sweep_deck_str` went from `build_geometry` straight to `solve_hallen`, so a deck
+  the CLI refuses outright returned a plausible-looking impedance; those decks now
+  raise `RuntimeError` with the same message the CLI prints. Non-fatal caveats — an
+  unreliable topology, a very low antenna over finite ground, parser warnings, and
+  the load/TL builder warnings the bindings used to discard — are raised as Python
+  `UserWarning`s, so they show by default and can be filtered or escalated with the
+  standard `warnings` module. A sweep emits each distinct caveat once rather than
+  once per frequency point.
+
+  `bindings/fnec_py` is excluded from the cargo workspace, so **every `--workspace`
+  CI job skipped it** — it could be broken by any `nec_solver` API change with
+  nothing noticing until someone built a wheel by hand. A new `python bindings` job
+  runs fmt, clippy `-D warnings`, a maturin build and the pytest suite. Python is
+  pinned to 3.13, the newest CPython pyo3 0.23 supports.
+
 - **The GUI now applies the same pre-solve validation as the CLI** (review-260719
   FIND-006/007, step 2 of 3). It went straight from `build_geometry` to
   `solve_hallen`, so a deck the CLI refuses outright — wires crossing mid-span, a
