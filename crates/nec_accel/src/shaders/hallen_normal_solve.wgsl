@@ -66,6 +66,7 @@ const REFINE_STEPS: u32 = 3u;
 // exceeds this, so these are never indexed out of range.
 const MAX_S: u32 = 1024u;
 var<workgroup> dscale: array<f32, 1024>;
+var<workgroup> red: array<vec2<f32>, 64>;
 var<workgroup> piv: array<u32, 1024>;
 
 // vector slots in `vec_` (stride = R = N + nc)
@@ -319,6 +320,48 @@ fn cs_hallen_solve(@builtin(local_invocation_id) lid: vec3<u32>) {
         storageBarrier();
         workgroupBarrier();
     }
+
+    // ---- final residual, for the host accuracy gate ------------------------
+    // The f32 normal-equations solve degrades as S grows (A = MᴴM squares the
+    // condition number), and a wrong answer is otherwise indistinguishable from a
+    // right one on the host. Report ||y - Mx||^2 and ||y||^2 so the host can reject
+    // a solve that did not converge instead of returning it silently.
+    var ri = tid;
+    loop {
+        if ri >= r_tot { break; }
+        var acc = y_full(ri);
+        for (var c: u32 = 0u; c < s; c++) {
+            acc -= cmul(m_full(ri, c), vget(SLOT_X, c));
+        }
+        vset(SLOT_T, ri, acc);
+        ri += WG;
+    }
+    storageBarrier();
+    workgroupBarrier();
+
+    var part_t = 0.0;
+    var part_y = 0.0;
+    var qi = tid;
+    loop {
+        if qi >= r_tot { break; }
+        let tv = vget(SLOT_T, qi);
+        let yv = y_full(qi);
+        part_t += tv.x * tv.x + tv.y * tv.y;
+        part_y += yv.x * yv.x + yv.y * yv.y;
+        qi += WG;
+    }
+    red[tid] = vec2<f32>(part_t, part_y);
+    workgroupBarrier();
+    if tid == 0u {
+        var sum = vec2<f32>(0.0, 0.0);
+        for (var i: u32 = 0u; i < WG; i++) {
+            sum += red[i];
+        }
+        // SLOT_T[0] carries the two scalars: .x = ||y - Mx||^2, .y = ||y||^2.
+        vset(SLOT_T, 0u, sum);
+    }
+    storageBarrier();
+    workgroupBarrier();
 
     // ---- copy solution to the readback slot -------------------------------
     var oi = tid;

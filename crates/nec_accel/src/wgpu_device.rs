@@ -40,6 +40,29 @@ fn await_map<E>(device: &wgpu::Device, rx: &std::sync::mpsc::Receiver<Result<(),
     matches!(rx.recv(), Ok(Ok(())))
 }
 
+/// Relative-residual ceiling for the GPU-resident f32 solve, above which the
+/// answer is discarded and the caller falls back to the f64 CPU solve.
+///
+/// Derived from measurement, not picked. `||y - Mx|| / ||y||` against the f64 CPU
+/// solve on a λ/2 dipole, three frequency points each:
+///
+/// | segments | rel residual   | impedance error |
+/// |---------:|---------------:|----------------:|
+/// |       51 | 2e-6 .. 1e-5   | none            |
+/// |      101 | 3e-6 .. 7e-5   | ≤ 0.5 %         |
+/// |      151 | 4e-6 .. 3e-5   | ≤ 0.1 %         |
+/// |      151 | 8.9e-4         | **7 %**         |
+/// |      201 | 5e-6 .. 4e-5   | ≤ 0.4 %         |
+/// |      301 | 7e-5           | 0.7 %           |
+/// |      301 | 2.8e-3         | **34 %**        |
+/// |      301 | 4.3e-1         | **negative R**  |
+///
+/// Every good solve sits at or below 7e-5; the smallest bad one is 8.9e-4, an
+/// order of magnitude clear. `1e-4` splits them, and corresponds to well under the
+/// 2 Ω the GPU path is contracted to. Erring high only costs a CPU fallback, so a
+/// different GPU landing slightly noisier fails safe.
+const GPU_SOLVE_MAX_REL_RESIDUAL: f64 = 1.0e-4;
+
 /// One `Instance` + `Adapter` + `Device` + `Queue`, shared by every solve-path
 /// kernel for the life of the process.
 ///
@@ -1556,10 +1579,12 @@ pub async fn solve_hallen_gpu_resident(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
-    // Read back SLOT_OUT (slot 4) — the full S-element solution (currents = x[..n],
-    // per-wire homogeneous constants = x[n..]).
-    let out_slot_byte_offset = (2 * 4 * rows * std::mem::size_of::<f32>()) as u64;
-    let readback_size = (2 * s * std::mem::size_of::<f32>()) as u64;
+    // Read back slots 3 and 4 in one copy: SLOT_T[0] carries the residual scalars
+    // the accuracy gate needs (.x = ||y - Mx||^2, .y = ||y||^2), and SLOT_OUT is the
+    // full S-element solution (currents = x[..n], per-wire homogeneous constants =
+    // x[n..]).
+    let out_slot_byte_offset = (2 * 3 * rows * std::mem::size_of::<f32>()) as u64;
+    let readback_size = (2 * 2 * rows * std::mem::size_of::<f32>()) as u64;
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("hallen-readback"),
         size: readback_size,
@@ -1731,11 +1756,35 @@ pub async fn solve_hallen_gpu_resident(
     }
     let raw = slice.get_mapped_range();
     let floats: &[f32] = bytemuck::cast_slice(&raw);
+    // Slot 3 first, then slot 4.
+    let res_sq = floats[0] as f64;
+    let rhs_sq = floats[1] as f64;
+    let out = &floats[2 * rows..];
     let solution: Vec<num_complex::Complex64> = (0..s)
-        .map(|i| num_complex::Complex64::new(floats[2 * i] as f64, floats[2 * i + 1] as f64))
+        .map(|i| num_complex::Complex64::new(out[2 * i] as f64, out[2 * i + 1] as f64))
         .collect();
     drop(raw);
     readback_buf.unmap();
+
+    // ---- accuracy gate -----------------------------------------------------
+    // The f32 normal-equations solve loses accuracy as S grows — A = MᴴM squares
+    // cond(M) — and a diverged solve is otherwise indistinguishable from a good one
+    // once it reaches the report. See GPU_SOLVE_MAX_REL_RESIDUAL for the measured
+    // split between the two. Reject the bad ones so the caller takes the f64 CPU
+    // path instead of reporting a wrong number.
+    let rel = if rhs_sq > 0.0 {
+        (res_sq / rhs_sq).sqrt()
+    } else {
+        0.0
+    };
+    if !rel.is_finite() || rel > GPU_SOLVE_MAX_REL_RESIDUAL {
+        eprintln!(
+            "warning: solve_hallen_gpu_resident: f32 solve did not converge \
+             (relative residual {rel:.3e} > {GPU_SOLVE_MAX_REL_RESIDUAL:.0e}) — \
+             falling back to the f64 CPU solve"
+        );
+        return None;
+    }
 
     Some(solution)
 }
