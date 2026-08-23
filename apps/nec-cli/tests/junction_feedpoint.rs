@@ -180,3 +180,84 @@ fn closed_loop_is_guarded() {
          stderr:\n{stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The negative-resistance warning must not blame a cause the deck cannot have
+// ---------------------------------------------------------------------------
+
+/// A single straight wire, badly under-segmented (3 segments over ~1.9 λ), which
+/// the Hallén solve returns a negative resistance for. There is no junction
+/// anywhere in it.
+const STRAIGHT_NEGATIVE_R: &str = "\
+CM one straight wire, no junction
+CE
+GW 1 3 0 0 -20.0 0 0 20.0 0.01
+GE 0
+EX 0 1 2 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+/// An apex-fed inverted-V, which genuinely does have a junction.
+const BENT_NEGATIVE_R: &str = "\
+CM apex-fed inverted-V over finite ground
+CE
+GW 1 20 -3.732135 0 1.055607 0 0 4.787742 0.001
+GW 2 20 0 0 4.787742 3.732135 0 1.055607 0.001
+GE 1
+GN 2 0 0 0 13.0 0.005
+EX 0 1 20 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+fn stderr_for(deck: &str, name: &str) -> String {
+    let path = std::env::temp_dir().join(format!("fnec-negr-{name}.nec"));
+    std::fs::write(&path, deck).expect("write deck");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["--solver", "hallen"])
+        .arg(&path)
+        .output()
+        .expect("run fnec");
+    let _ = std::fs::remove_file(&path);
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+/// Regression: the warning offered "commonly a junctioned-geometry limitation
+/// (see PH9-CHK-002)" unconditionally, so a deck containing a single straight wire
+/// was sent after a cause it does not contain.
+#[test]
+fn negative_resistance_does_not_blame_junctions_on_a_junctionless_deck() {
+    let stderr = stderr_for(STRAIGHT_NEGATIVE_R, "straight");
+    assert!(
+        stderr.contains("negative resistance"),
+        "fixture must actually produce a negative resistance:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("no wire junction"),
+        "a junctionless deck must say so:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("commonly a junctioned-geometry limitation"),
+        "must not blame junctions on a deck with none:\n{stderr}"
+    );
+}
+
+/// The other side of the same contract: where a junction really is present, the
+/// junction explanation is still the useful one and must be kept.
+#[test]
+fn negative_resistance_still_blames_junctions_where_there_is_one() {
+    let stderr = stderr_for(BENT_NEGATIVE_R, "bent");
+    assert!(
+        stderr.contains("negative resistance"),
+        "fixture must actually produce a negative resistance:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("commonly a junctioned-geometry limitation"),
+        "a bent deck must keep the junction explanation:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("no wire junction"),
+        "must not claim there is no junction when there is:\n{stderr}"
+    );
+}

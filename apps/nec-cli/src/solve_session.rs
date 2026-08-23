@@ -765,15 +765,35 @@ fn apply_pt_current_filter(
 /// negative-`R` case, so any negative `Re(Z)` there is a solver or feed-referencing
 /// defect, not a modelling limitation. Still skipped for `pulse`/`continuity`/
 /// `sinusoidal`, whose current-source corpus has documented negative-`R` values.
-fn warn_if_negative_resistance(rows: &[FeedpointRow], solver_mode: SolverMode) {
+/// The explanation to offer for a negative feedpoint resistance.
+///
+/// Split out from the emission so the choice is testable without a deck that
+/// actually produces one: the failure mode this guards against is offering a cause
+/// the geometry cannot have.
+fn negative_resistance_cause(solver_mode: SolverMode, has_junction: bool) -> &'static str {
+    if matches!(solver_mode, SolverMode::Mpie) {
+        // The MPIE models junctions correctly, so a junction is never the reason.
+        "please report it as a solver defect"
+    } else if has_junction {
+        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
+    } else {
+        // Saying "junctioned-geometry limitation" here would send the reader after
+        // a cause the deck does not contain.
+        "this geometry has no wire junction, so the usual junctioned-geometry cause \
+         (PH9-CHK-002) does not apply and the reason is not identified — cross-check \
+         with `--solver mpie`, and please report it if it persists"
+    }
+}
+
+fn warn_if_negative_resistance(rows: &[FeedpointRow], segs: &[Segment], solver_mode: SolverMode) {
     if !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
         return;
     }
-    let cause = if matches!(solver_mode, SolverMode::Mpie) {
-        "please report it as a solver defect"
-    } else {
-        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
-    };
+    if rows.iter().all(|r| r.z_in.re >= 0.0) {
+        return; // nothing to explain; skip the junction scan entirely
+    }
+    let cause =
+        negative_resistance_cause(solver_mode, nec_solver::validate::has_wire_junction(segs));
     for r in rows {
         if r.z_in.re < 0.0 {
             eprintln!(
@@ -1550,7 +1570,7 @@ pub(super) fn solve_frequency_point(
         warn_if_low_finite_ground(segs, ground, freq_hz, sommerfeld_outcome);
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
-    warn_if_negative_resistance(&rows, solver_mode);
+    warn_if_negative_resistance(&rows, segs, solver_mode);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()
