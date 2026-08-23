@@ -616,4 +616,98 @@ pulse_rhs = "auto"
         assert!(project.run_by_index(0).is_some());
         assert!(project.run_by_index(1).is_none());
     }
+
+    // ── Markdown manifest rejection paths (review-260719 FIND-014) ───────────
+    //
+    // `from_markdown` has six guards, none of which were exercised. Each is
+    // reached by one mutation of a document that otherwise parses, so a failure
+    // here means the guard fired — not that the fixture was broken.
+
+    /// A manifest that round-trips, produced by the writer rather than hand-typed
+    /// so it cannot drift away from what `to_markdown` actually emits.
+    fn good_markdown() -> String {
+        minimal_project()
+            .to_markdown()
+            .expect("the minimal project serialises")
+    }
+
+    fn parse_err(doc: &str) -> String {
+        match ProjectFile::from_markdown(doc) {
+            Err(ProjectError::MarkdownParseError(m)) => m,
+            Err(other) => panic!("expected a MarkdownParseError, got {other:?}"),
+            Ok(_) => panic!("expected a parse error, but the document parsed"),
+        }
+    }
+
+    /// The control: the unmutated document parses, so every rejection below is
+    /// caused by its mutation.
+    #[test]
+    fn the_markdown_rejection_fixture_itself_parses() {
+        let p = ProjectFile::from_markdown(&good_markdown()).expect("control parses");
+        assert_eq!(p.name, "test-dipole");
+        assert_eq!(p.version, 1);
+    }
+
+    #[test]
+    fn markdown_without_an_opening_delimiter_is_rejected() {
+        let doc = good_markdown().replacen("---\n", "", 1);
+        assert!(
+            parse_err(&doc).contains("opening delimiter"),
+            "{}",
+            parse_err(&doc)
+        );
+        // A document too short to hold frontmatter at all takes the same path.
+        assert!(parse_err("---\n").contains("opening delimiter"));
+    }
+
+    #[test]
+    fn markdown_without_a_closing_delimiter_is_rejected() {
+        // Drop the second `---` only.
+        let good = good_markdown();
+        let (head, tail) = good.split_at(4); // past the opening "---\n"
+        let doc = format!("{head}{}", tail.replacen("---\n", "", 1));
+        assert!(parse_err(&doc).contains("closing delimiter"), "{doc}");
+    }
+
+    #[test]
+    fn a_frontmatter_line_without_a_colon_is_rejected() {
+        let doc = good_markdown().replacen("format:", "format", 1);
+        assert!(parse_err(&doc).contains("invalid frontmatter line"));
+    }
+
+    #[test]
+    fn a_non_integer_frontmatter_version_is_rejected() {
+        let doc = good_markdown().replacen("version: 1", "version: one", 1);
+        assert!(parse_err(&doc).contains("version must be an integer"));
+    }
+
+    #[test]
+    fn a_wrong_frontmatter_format_is_rejected() {
+        let doc = good_markdown().replacen("fnec-project-markdown", "some-other-format", 1);
+        assert!(parse_err(&doc).contains("format must be fnec-project-markdown"));
+    }
+
+    #[test]
+    fn a_missing_frontmatter_version_is_rejected() {
+        let doc = good_markdown().replacen("version: 1\n", "", 1);
+        let m = parse_err(&doc);
+        assert!(m.contains("version is required"), "{m}");
+    }
+
+    #[test]
+    fn a_missing_or_empty_toml_payload_is_rejected() {
+        // Retag the fence so the payload is never entered.
+        let doc = good_markdown().replacen("```toml project", "```toml", 1);
+        assert!(parse_err(&doc).contains("missing fenced TOML project block"));
+    }
+
+    /// The frontmatter version and the payload version are two sources for one
+    /// fact; a document that disagrees with itself must not be accepted with
+    /// either value silently winning.
+    #[test]
+    fn a_frontmatter_version_disagreeing_with_the_payload_is_rejected() {
+        let doc = good_markdown().replacen("version: 1\n", "version: 2\n", 1);
+        let m = parse_err(&doc);
+        assert!(m.contains("does not match project payload version"), "{m}");
+    }
 }

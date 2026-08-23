@@ -30,6 +30,36 @@ pub struct SshWorkerHandle {
     binary_path: Option<String>,
 }
 
+/// Fallback thread count when the remote `nproc` probe gives no usable answer.
+///
+/// A conservative non-zero guess: reporting 0 would drop the node out of
+/// scheduling entirely on a probe hiccup, and guessing high would over-assign it.
+const DEFAULT_REMOTE_CPU_THREADS: usize = 4;
+
+/// Thread count from the remote `nproc` output.
+///
+/// `None`, unparseable output, or a zero/absent count all fall back to
+/// [`DEFAULT_REMOTE_CPU_THREADS`] — the probe failing must not make a node look
+/// like it has no CPUs, which would take it out of scheduling entirely.
+///
+/// Split out from the SSH call so the parsing can be tested without a remote
+/// host: the syscall is not where this goes wrong, the parsing is.
+fn parse_cpu_threads(stdout: Option<&str>) -> usize {
+    stdout
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_REMOTE_CPU_THREADS)
+}
+
+/// Whether the remote GPU probe reported an adapter.
+///
+/// The remote command prints exactly `has_gpu` or `no_gpu`; anything else (an SSH
+/// failure, a shell error) is treated as no GPU, so an unreachable probe never
+/// promotes a node to GPU-capable.
+fn parse_gpu_available(stdout: &str) -> bool {
+    stdout.contains("has_gpu")
+}
+
 impl SshWorkerHandle {
     /// Connect to a remote worker via SSH.
     ///
@@ -232,14 +262,12 @@ impl SshWorkerHandle {
             .arg("nproc 2>/dev/null || echo 1")
             .output();
 
-        let cpu_threads = cpu_output
-            .ok()
-            .and_then(|o| {
-                String::from_utf8(o.stdout)
-                    .ok()
-                    .and_then(|s| s.trim().parse::<usize>().ok())
-            })
-            .unwrap_or(4);
+        let cpu_threads = parse_cpu_threads(
+            cpu_output
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .as_deref(),
+        );
 
         let gpu_stdout = Command::new("ssh")
             .arg("-o")
@@ -256,7 +284,7 @@ impl SshWorkerHandle {
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_else(|_| "no_gpu".to_string());
 
-        let gpu_available = gpu_stdout.contains("has_gpu");
+        let gpu_available = parse_gpu_available(&gpu_stdout);
 
         Capability {
             cpu_threads,
@@ -354,5 +382,53 @@ hostname = "invalid-host-that-will-never-resolve.example"
         let (handles, cache) = connect_all(&cfg);
         assert!(handles.is_empty());
         assert!(cache.is_empty());
+    }
+
+    // ── Capability-probe parsing (review-260719 FIND-016) ───────────────────
+    //
+    // `probe_capability` itself needs a reachable host, so it stays untested. What
+    // can actually be wrong is the parsing of what comes back, and that is now
+    // separable from the SSH call — including the failure defaults, which decide
+    // whether a node stays in scheduling at all.
+
+    #[test]
+    fn cpu_thread_count_is_parsed_from_nproc_output() {
+        assert_eq!(parse_cpu_threads(Some("16\n")), 16);
+        assert_eq!(parse_cpu_threads(Some("  8  ")), 8);
+        assert_eq!(parse_cpu_threads(Some("1")), 1);
+    }
+
+    #[test]
+    fn an_unusable_nproc_answer_falls_back_rather_than_reporting_none() {
+        // A node reported as having 0 threads would be dropped from scheduling
+        // entirely, so every unusable answer must land on the default instead.
+        for answer in [None, Some(""), Some("   "), Some("not-a-number"), Some("0")] {
+            assert_eq!(
+                parse_cpu_threads(answer),
+                DEFAULT_REMOTE_CPU_THREADS,
+                "unusable nproc answer {answer:?} must fall back"
+            );
+        }
+        // The remote command is `nproc 2>/dev/null || echo 1`, so a failing nproc
+        // legitimately yields 1 — that is a real answer, not a fallback.
+        assert_eq!(parse_cpu_threads(Some("1\n")), 1);
+    }
+
+    #[test]
+    fn gpu_availability_is_read_from_the_probe_marker() {
+        assert!(parse_gpu_available("has_gpu\n"));
+        // Anything else means no GPU — an unreachable or erroring probe must never
+        // promote a node to GPU-capable.
+        for answer in [
+            "no_gpu\n",
+            "",
+            "bash: lspci: command not found\n",
+            "HAS_GPU",
+        ] {
+            assert!(
+                !parse_gpu_available(answer),
+                "{answer:?} must not read as a GPU"
+            );
+        }
     }
 }
