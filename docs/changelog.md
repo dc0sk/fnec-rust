@@ -11,6 +11,26 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Docs
+
+- **`docs/cli-guide.md` parity sweep** (review-260719 FIND-001/002/003). The guide
+  had drifted roughly ten minor versions behind the code. The synopsis and options
+  table now match the binary's own `USAGE` — `--ground-solver`, `--output-format`
+  and `--hosts` were entirely undocumented — `--ex3-i4-mode` is documented as the
+  obsolete no-op it is rather than as a behavioural switch, and the card
+  quick-reference is resynced with the authoritative `docs/card-support-matrix.md`
+  (EX 1–5, PT, NT, TL, GN, NE/NH). Also corrected: the `hallen` section still said
+  non-collinear geometry was rejected, the `mpie` section still scoped near-ground
+  currents to a straight horizontal wire, the TL section still called lossy lines
+  deferred, and the Notes still called GPU acceleration unwired. Two claims were
+  written from *measured* behaviour rather than existing prose — `--hosts` has no
+  local fallback (missing file or unreachable worker exits 1), and
+  `--ground-solver sommerfeld` corrects any straight wire, not only a horizontal
+  one, while declining bent geometry silently.
+- The 2026-07-19 multi-agent project review is now committed
+  (`docs/dev/reviews/review-260719.md`) with a remediation-status block, so it
+  reads as a dated snapshot rather than an open worklist.
+
 ### Fixes
 
 - **`--solver mpie`: feedpoint impedance no longer depends on `GW` direction.**

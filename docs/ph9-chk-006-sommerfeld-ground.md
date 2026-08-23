@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-006-sommerfeld-ground.md
 status: living
-last_updated: 2026-07-09
+last_updated: 2026-08-23
 ---
 
 # PH9-CHK-006: accurate near-ground impedance
@@ -195,10 +195,11 @@ alongside the existing real-image `elem`.
    (`crates/nec_solver/tests/sommerfeld_ground.rs`).
 2. **Wiring** — a new opt-in ground solver `--ground-solver <rcm|sommerfeld>` (default
    `rcm` = the unchanged scalar-Γ behaviour). When `sommerfeld` is selected over
-   finite ground and the geometry is a **straight horizontal wire**,
-   `horizontal_ground_z_correction` adds the surface-wave reaction ΔZ
-   (`ΔZ_Sommerfeld − ΔZ_scalarΓ`, over fnec's solved currents) to the reported
-   feedpoint `Z`. Non-horizontal/bent/mixed geometry is silently declined (keeps RCM).
+   finite ground and the geometry is a **straight wire** — horizontal, vertical or
+   tilted (the general reflected dyadic, see the boundary table above) — the
+   surface-wave reaction ΔZ (`ΔZ_Sommerfeld − ΔZ_scalarΓ`, over fnec's solved
+   currents) is added to the reported feedpoint `Z`. Bent/mixed geometry is
+   silently declined (keeps RCM).
 
 **Measured end-to-end** (horizontal λ/2 dipole 0.025 λ over εr=13/σ=0.005; ΔR vs
 fnec free space 67.2 Ω): `--ground-solver rcm` → 26.8 Ω (**ΔR −40**, the wrong-signed
