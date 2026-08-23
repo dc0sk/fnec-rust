@@ -10,11 +10,11 @@ use std::path::Path;
 use nec_model::card::Card;
 use nec_model::deck::NecDeck;
 use nec_parser::parse;
+use nec_solver::validate;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
-    build_tl_stamps, classify_unsupported_topology, compute_radiation_pattern,
-    detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
-    FarFieldPoint, GroundModel, Segment, UnsupportedTopology,
+    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck,
+    solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -270,45 +270,36 @@ pub fn pattern_grid_str(deck_text: &str) -> Result<crate::mesh::PatternSolve, St
 }
 
 /// Run a Hallen solve on `deck_text` (a raw NEC deck string).
-/// Solver caveats the GUI (Hallén-only) should surface for a deck: topologies the
-/// Hallén basis mis-solves (junctions/loops — the CLI's `--solver mpie` handles
-/// them), a deferred/unsupported ground model (treated as free space), and any
-/// loads / transmission lines the builder could not apply.
-fn collect_solve_warnings(
-    deck: &nec_model::deck::NecDeck,
+/// Reject a deck the solver cannot honestly take, and collect the caveats for one
+/// it can.
+///
+/// The GUI used to do neither: it went straight from `build_geometry` to
+/// `solve_hallen`, so a deck the CLI refuses outright — wires crossing mid-span, a
+/// source on a degenerate segment, a wire reaching into an active ground — solved
+/// silently here and returned a wrong number (review-260719 FIND-006/007). Both
+/// halves now come from `nec_solver::validate`, so the GUI and the CLI cannot drift
+/// apart on what is accepted or on what a diagnostic says.
+///
+/// `Err` is a hard rejection; `Ok` carries the warnings to render.
+fn validate_deck(
+    deck: &NecDeck,
     segs: &[Segment],
     ground: &GroundModel,
     freq_hz: f64,
-) -> Vec<String> {
-    let mut warnings = Vec::new();
-    match classify_unsupported_topology(segs) {
-        Some(UnsupportedTopology::ClosedLoop) => warnings.push(
-            "Geometry contains a closed loop; the Hallén solver does not model the loop \
-             closure, so the impedance, currents, and pattern are unreliable. Solve this \
-             geometry with the CLI: `fnec --solver mpie`."
-                .to_string(),
-        ),
-        Some(UnsupportedTopology::HighDegreeJunction) => warnings.push(
-            "Geometry has a junction where three or more wires meet; the Hallén solver does \
-             not model the current split there, so results are unreliable. Solve this geometry \
-             with the CLI: `fnec --solver mpie`."
-                .to_string(),
-        ),
-        None => {}
-    }
-    if let GroundModel::Deferred { .. } = ground {
-        warnings.push(
-            "The deck's ground model is not supported by this solver and is treated as free \
-             space — results omit ground effects. Use the CLI with `--ground-solver sommerfeld` \
-             for near-ground impedance."
-                .to_string(),
-        );
+    parse_warnings: &[nec_parser::ParseError],
+) -> Result<Vec<String>, String> {
+    let mut warnings: Vec<String> = parse_warnings.iter().map(ToString::to_string).collect();
+    for d in validate::diagnose(deck, segs, ground, freq_hz) {
+        match d.level {
+            nec_model::DiagnosticLevel::Error => return Err(d.message),
+            nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
+        }
     }
     let (_lv, load_warnings) = build_loads(deck, segs, freq_hz);
     warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
     let (_ts, tl_warnings) = build_tl_stamps(deck, segs, freq_hz);
     warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
-    warnings
+    Ok(warnings)
 }
 
 pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
@@ -333,6 +324,9 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
             }
         })
         .ok_or_else(|| "deck has no FR card".to_string())?;
+
+    // --- validation (before any solve) -----------------------------------
+    let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings)?;
 
     // --- impedance matrix ------------------------------------------------
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
@@ -368,7 +362,7 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
         freq_mhz: freq_hz / 1_000_000.0,
         z_re: z.re,
         z_im: z.im,
-        warnings: collect_solve_warnings(deck, &segs, &ground, freq_hz),
+        warnings,
     })
 }
 
@@ -481,6 +475,11 @@ impl SweepJob {
         let segs = build_geometry(&deck).map_err(|e| e.to_string())?;
         let v_vec = build_excitation(&deck, &segs).map_err(|e| e.to_string())?;
         let ground = ground_model_from_deck(&deck);
+        // Reject geometry the solver cannot honestly take, before queueing a whole
+        // sweep of solves on it.
+        if let Some(e) = validate::geometry_error(&deck, &segs, &ground) {
+            return Err(e);
+        }
         let wire_endpoints = wire_endpoints_from_segs(&segs);
         let junction_tuples: Vec<(usize, usize, f64)> =
             detect_wire_junctions(&segs, &wire_endpoints, 1e-6)
@@ -684,6 +683,11 @@ fn solve_for_currents(
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
     let _v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
+    // The currents/pattern views share this path; they must refuse the same decks
+    // the impedance view does rather than draw a plausible-looking wrong pattern.
+    if let Some(e) = validate::geometry_error(deck, &segs, &ground) {
+        return Err(e);
+    }
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     let freq_hz = deck
@@ -776,5 +780,87 @@ mod tests {
         let p = tmp("sub.toml", "N = 51\n");
         let out = apply_vars("GW 1 $N 0 0 0", Some(p.to_str().unwrap())).unwrap();
         assert!(out.contains("51"), "substituted: {out}");
+    }
+
+    // --- pre-solve validation parity with the CLI (review-260719 FIND-006/007) ---
+
+    /// Two wires crossing at mid-span, neither meeting the other at an endpoint.
+    /// The CLI has always refused this; the GUI used to solve it and show a number.
+    const CROSSING_WIRES: &str = "GW 1 11 -5 0 0 5 0 0 0.001\nGW 2 11 0 -5 0 0 5 0 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    /// A vertical wire whose base sits on an active (PEC) ground plane.
+    const BURIED_OVER_PEC: &str =
+        "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    /// A clean lambda/2 dipole — the negative control for all of the above.
+    const GOOD_DIPOLE: &str =
+        "GW 1 21 -5.278 0 0 5.278 0 0 0.001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    #[test]
+    fn gui_refuses_the_geometry_the_cli_refuses() {
+        let err = solve_deck_str(CROSSING_WIRES).expect_err("crossing wires must be refused");
+        assert!(err.contains("intersecting-wire"), "unexpected: {err}");
+        let err = solve_deck_str(BURIED_OVER_PEC)
+            .expect_err("a wire on the ground plane must be refused");
+        assert!(err.contains("buried-wire"), "unexpected: {err}");
+        // Negative control: a clean deck still solves, with nothing to report.
+        let ok = solve_deck_str(GOOD_DIPOLE).expect("a clean dipole must still solve");
+        assert!(ok.z_re > 50.0 && ok.z_re < 100.0, "unexpected Z: {ok:?}");
+        assert!(
+            ok.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            ok.warnings
+        );
+    }
+
+    /// The sweep and the currents/pattern views are separate entry points, and each
+    /// used to skip validation independently. A deck refused by the impedance view
+    /// must be refused by all of them, or the GUI draws a plausible-looking wrong
+    /// pattern for geometry it should not have solved.
+    #[test]
+    fn every_gui_solve_path_applies_the_same_rejection() {
+        let sweep = match SweepJob::prepare(CROSSING_WIRES, 14.0, 14.4, 0.1) {
+            Err(e) => e,
+            Ok(_) => panic!("the sweep path must refuse it too"),
+        };
+        assert!(sweep.contains("intersecting-wire"), "unexpected: {sweep}");
+        let currents = match solve_for_currents(CROSSING_WIRES) {
+            Err(e) => e,
+            Ok(_) => panic!("the currents path must refuse it too"),
+        };
+        assert!(
+            currents.contains("intersecting-wire"),
+            "unexpected: {currents}"
+        );
+        // Negative control: the clean deck is accepted on both.
+        assert!(SweepJob::prepare(GOOD_DIPOLE, 14.0, 14.4, 0.1).is_ok());
+        assert!(solve_for_currents(GOOD_DIPOLE).is_ok());
+    }
+
+    /// The GUI omitted the CLI's low-finite-ground warning, so a user got an
+    /// unreliable near-ground number with nothing said about it.
+    #[test]
+    fn gui_surfaces_the_warnings_the_cli_surfaces() {
+        // 0.05 lambda over GN 2 — inside the band where the reflection-coefficient
+        // ground model is only approximate.
+        let low = solve_deck_str(
+            "GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        )
+        .expect("a low dipole over finite ground still solves");
+        assert!(
+            low.warnings
+                .iter()
+                .any(|w| w.contains("above finite ground")),
+            "missing the low-ground warning: {:?}",
+            low.warnings
+        );
+        // A degree-3 junction must still be flagged, and still name the MPIE.
+        let tee = solve_deck_str(
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        )
+        .expect("a T junction solves, unreliably");
+        assert!(
+            tee.warnings.iter().any(|w| w.contains("--solver mpie")),
+            "missing the topology warning: {:?}",
+            tee.warnings
+        );
     }
 }
