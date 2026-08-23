@@ -72,7 +72,7 @@ use nec_solver::{
     build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
     build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
     build_planewave_hallen_paths, build_tl_stamps, classify_unsupported_topology,
-    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment,
+    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment, feed_reference_sign,
     geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
     radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
     solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
@@ -823,19 +823,27 @@ fn apply_pt_current_filter(
 /// the result is unphysical — in practice a junctioned-geometry limitation (a
 /// bend, stepped-radius, or start-to-start split that the collinear fix does not
 /// cover; see PH9-CHK-002). This catches cases the pre-solve junction-*fed* warning
-/// misses, e.g. a bent antenna fed away from the bend. Scoped to `Hallen`: the
-/// pulse current-source path has documented negative-`R` corpus values.
+/// misses, e.g. a bent antenna fed away from the bend.
+///
+/// Also armed on the MPIE path as a standing tripwire: the MPIE has no documented
+/// negative-`R` case, so any negative `Re(Z)` there is a solver or feed-referencing
+/// defect, not a modelling limitation. Still skipped for `pulse`/`continuity`/
+/// `sinusoidal`, whose current-source corpus has documented negative-`R` values.
 fn warn_if_negative_resistance(rows: &[FeedpointRow], solver_mode: SolverMode) {
-    if !matches!(solver_mode, SolverMode::Hallen) {
+    if !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
         return;
     }
+    let cause = if matches!(solver_mode, SolverMode::Mpie) {
+        "please report it as a solver defect"
+    } else {
+        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
+    };
     for r in rows {
         if r.z_in.re < 0.0 {
             eprintln!(
                 "warning: feedpoint tag {} segment {} has negative resistance \
                  (Re Z = {:.3} Ω), which is physically impossible for a passive antenna; \
-                 the result is unreliable — commonly a junctioned-geometry limitation \
-                 (see PH9-CHK-002)",
+                 the result is unreliable — {cause}",
                 r.tag, r.seg, r.z_in.re
             );
         }
@@ -1152,7 +1160,17 @@ fn solve_mpie_session(
     // currents by the deck's actual `EX` voltage so the reported currents are
     // physical and the feedpoint V/I (in `build_feedpoint_rows`) is independent of
     // the source voltage — MoM is linear, so I(V) = V·I(1 V).
-    let source_v = Complex64::new(ex.voltage_real, ex.voltage_imag);
+    //
+    // The unit source is applied along the *basis's* reference direction, which is
+    // set by the incidence order of the fed node's two arms. `EX` instead applies
+    // it along the driven segment's own `p0 → p1` tangent, and for a
+    // start-to-start junction feed (both `GW` cards written outward from the
+    // shared node, e.g. an apex-fed inverted-V) those oppose. Re-reference the
+    // solve to the deck's source polarity, or every reported current — and hence
+    // the feedpoint `V/I` — comes out negated (an unphysical negative resistance
+    // for a deck that is only written differently, not built differently).
+    let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
+    let source_v = Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign;
     let mut currents = segment_currents(&geom, &sol.basis_currents);
     for c in &mut currents {
         *c *= source_v;

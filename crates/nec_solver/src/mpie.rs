@@ -832,6 +832,31 @@ pub fn feed_node_for_segment(geom: &MpieGeometry, seg_idx: usize) -> Option<usiz
     }
 }
 
+/// The sign relating the fed basis's **reference current direction** at
+/// `feed_node` to segment `seg_idx`'s own `p0 → p1` tangent (`+1.0` when they
+/// agree, `-1.0` when they oppose); `None` if `feed_node` is not feedable or
+/// `seg_idx` is not one of its two arms.
+///
+/// The nodal triangle basis picks its reference direction from the incidence
+/// order of the two arms, which for a *start-to-start* junction (both wires
+/// written outward from the shared node, e.g. an apex-fed inverted-V entered as
+/// two `GW` cards both starting at the apex) is opposite to the driven
+/// segment's own tangent. A caller that re-references the solve to a source
+/// applied along that segment — as `EX` does — must scale the solved currents by
+/// this sign, or the whole current vector (and hence `V/I`) comes out negated.
+pub fn feed_reference_sign(geom: &MpieGeometry, feed_node: usize, seg_idx: usize) -> Option<f64> {
+    let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
+    let feed_basis = node_feed.get(feed_node).copied().flatten()?;
+    bases[feed_basis]
+        .iter()
+        .find(|l| l.seg == seg_idx)
+        .map(|l| {
+            let v = if l.v_is_p1 { 1.0 } else { -1.0 };
+            let t = if l.toward { 1.0 } else { -1.0 };
+            v * t
+        })
+}
+
 /// Recover the per-segment midpoint currents (signed along each segment's
 /// `p0 → p1` tangent) from a solved basis-current vector, for the far-field sum.
 ///
