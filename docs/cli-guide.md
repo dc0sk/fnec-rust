@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--allow-noncollinear-hallen] [--ex3-i4-mode <legacy|divide-by-i4>] [--bench] [--bench-format <human|csv|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
 ```
@@ -36,16 +36,19 @@ Compatibility profile note:
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
+| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of any **straight** wire — horizontal, vertical or tilted; bent or mixed geometry is declined and silently keeps the `rcm` result. Currents and patterns are unaffected either way — for those, use `--solver mpie` |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; GPU-candidate lane points currently fall back to CPU with explicit diagnostics until GPU kernels are wired. `gpu` currently falls back to CPU kernels with explicit diagnostics |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; the GPU-candidate lane's per-frequency routing seam is not yet wired (PH7-CHK-004), so those points run on CPU with an explicit diagnostic. `gpu` runs real wgpu kernels for the RP far-field and — on free-space Hallén decks of ≥ 128 segments — the Z-matrix fill and GPU-resident dense solve, falling back to CPU with a diagnostic when no wgpu adapter is present. See **GPU far-field acceleration** below |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
-| `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | `legacy` | EX type 3 runtime semantics: `legacy` keeps type 3 == type 0 behavior; `divide-by-i4` enables experimental source normalization using I4 as divisor when I4>0 |
+| `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | — | **Obsolete no-op.** Accepted for backward compatibility and silently ignored; `EX` type 3 now solves as a left-hand elliptic incident plane wave regardless (PH8-CHK-002). Neither value changes any result |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by the GPU benchmark timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
+| `--output-format` | `text` \| `json` | `text` | Report format on stdout. `json` writes one JSON record per solved frequency point instead of the text report; diagnostics stay on stderr either way. Schema: `docs/json-output-schema.md` |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list); overrides the `FR` card frequency list for a batch solve. See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
 | `--loads-config` | `<file.toml>` | — | Load fnec-specific extended loads (Laplace-domain `Z(s) = N(s)/D(s)`) from a TOML file and stamp them on the solve alongside any `LD` cards. Hallén/pulse paths only — rejected with `--solver mpie`. See **Laplace-domain loads** below. |
+| `--hosts` | `<hosts.toml>` | — | Distribute the frequency points of a sweep across SSH worker nodes listed in a TOML file (`[[worker]]` entries with `hostname` / `ssh_user` / optional `binary_path`). There is no local fallback: a missing file, no `[[worker]]` entries, or no reachable worker exits **1** with a diagnostic. See `docs/worker-deployment.md` |
 
 ### Laplace-domain loads (`--loads-config`)
 
@@ -163,12 +166,20 @@ and radius `EQUIV_RADIUS`. Scope: linear, essentially unloaded elements within
 Augmented Hallén integral equation with 8-point Gauss-Legendre quadrature and
 analytic singularity subtraction.  Produces physically accurate feedpoint
 impedance for thin-wire antennas when all wires are collinear with the driven
-segment axis. Non-collinear topologies currently return an explicit unsupported
-topology error instead of a misleading impedance.
+segment axis.
 
-The `--allow-noncollinear-hallen` flag is accepted for compatibility but is
-currently silently ignored — passing it has no effect on solver behaviour.
-The hard-fail guardrail remains active in Phase 1 regardless.
+Bent and junctioned geometry also solves: the augmented system enforces current
+continuity at wire junctions per connected conductor path, so an inverted-V, a
+top-hat-loaded vertical, or an end-to-end split solves rather than erroring. Two
+classes remain outside the Hallén formulation and are **warned about, not
+blocked** — degree-3 (T/Y) junctions, where the Kirchhoff current split is not
+modelled, and closed loops. Both solve correctly on `--solver mpie`, which the
+warning names. A negative feedpoint resistance is reported as an explicit
+warning, since a passive antenna cannot have one (PH9-CHK-005).
+
+The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
+experimental non-collinear path before that path became the default, and is now
+accepted for backward compatibility and silently ignored.
 
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
@@ -217,8 +228,10 @@ classes the Hallen path cannot:
   impedance (e.g. a Y-junction reports R ≈ 8 Ω where the MPIE gives ≈ 64 Ω).
 - **closed loops** — a cyclic chain with no endpoint condition.
 - **near-ground currents (Sommerfeld)** — with `GN`/finite ground, the reflected
-  potential kernels put the surface wave into the current solution (a **straight
-  horizontal wire** for now; other orientations over ground report an error).
+  potential kernels put the surface wave into the current solution itself, for
+  **any wire above ground**: horizontal, vertical, or tilted straight wires, and
+  bent geometry via the per-segment-pair reflected reaction. Only a wire that
+  reaches or crosses the `z = 0` plane is rejected.
 
 Because it keeps the scalar potential, the MPIE's absolute reactance matches
 nec2c without the Hallen ~32 Ω offset (a λ/2 dipole gives ≈ 74 + j42 Ω vs
@@ -376,13 +389,35 @@ fnec --solver sinusoidal --sin-fallback-rel-max 5e-3 dipole.nec
 
 Overrides the default `1e-2` relative residual threshold. If the sinusoidal solve exceeds the budget the solver falls back to Hallén and reports `SOLVER_MODE sinusoidal->hallen(residual)`.
 
-### EX type 3 with I4-divisor semantics
+### Sommerfeld surface-wave ground
 
 ```bash
-fnec --ex3-i4-mode divide-by-i4 dipole.nec
+fnec --ground-solver sommerfeld low-dipole-gn2.nec
 ```
 
-Enables experimental source normalisation using I4 as the divisor when `I4>0`. Default `legacy` mode treats type 3 the same as type 0.
+Replaces the default normal-incidence reflection-coefficient ground with the
+exact Sommerfeld–Norton surface wave in the feedpoint impedance of a straight
+wire (PH9-CHK-006) — the regime below ~0.1 λ where the reflection-coefficient
+model misses the surface wave, including the low-height sign flip. A horizontal
+λ/2 dipole at 0.05 λ over `GN 2` average ground moves from 32.9 + j9.3 Ω (`rcm`)
+to 63.1 + j15.8 Ω, against nec2c's 67.3 + j52.6 Ω.
+
+The correction is a feedpoint-impedance delta only: currents and patterns are
+unchanged, and bent or mixed geometry is declined and silently keeps the `rcm`
+result. For correct near-ground **currents and patterns** on arbitrary geometry
+use `--solver mpie`, which assembles the reflected kernels into its Z-matrix.
+
+### Distributed sweep across SSH workers
+
+```bash
+fnec --hosts hosts.toml frequency-sweep.nec
+```
+
+Spreads the sweep's frequency points across the `[[worker]]` nodes in
+`hosts.toml`, gathering the results in frequency order. Distributed execution is
+all-or-nothing — a missing file, an empty worker list, or no reachable worker
+exits **1** rather than quietly solving locally. Field reference and deployment
+steps: `docs/worker-deployment.md`.
 
 ### Frequency sweep via external config file
 
@@ -477,13 +512,17 @@ reference for corpus tolerance gates. The legacy `--gpu-fr` flag — which only
 ran a CPU computation labelled as GPU — was removed in favour of this real GPU
 path (PH7-CHK-001).
 
-### Compatibility flag placeholder
+### Obsolete compatibility flags
 
 ```bash
-fnec --allow-noncollinear-hallen dipole.nec
+fnec --allow-noncollinear-hallen --ex3-i4-mode divide-by-i4 dipole.nec
 ```
 
-Accepted for compatibility but silently ignored in Phase 1 — the hard-fail guardrail remains active regardless.
+Both flags are accepted and silently ignored. `--allow-noncollinear-hallen` was
+the opt-in for the experimental non-collinear Hallén path, which is now the
+default; `--ex3-i4-mode` selected experimental `EX` type 3 semantics, which now
+solve as a left-hand elliptic plane wave regardless. Neither changes any result;
+they exist so older scripts keep running.
 
 ### Minimal deck for a 14.2 MHz half-wave dipole
 
@@ -642,22 +681,28 @@ Quick reference:
 | Card | Support | Notes |
 |------|---------|-------|
 | GW | Full | Wire segment geometry definition |
-| GE | Full | Geometry end; GE I1=1 infers PEC ground when no GN card is present |
-| GN | Full | Ground model (type 0 = reflection coeff, type 1 = PEC image method) |
-| GM | Full | Geometry move: in-place or appended transformed copies |
-| GR | Full | Geometry repeat (arc repetition) |
-| EX type 0 | Full | Voltage source excitation |
-| EX type 1 | Partial | Implemented for `--solver pulse` as a driven-segment current source. Other solver paths still use staged portability fallback and emit the pending-semantics warning |
-| EX type 2 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that incident-plane-wave semantics are pending |
-| EX type 3 | Partial | Accepted; default `legacy` mode treats it like EX type 0 (with non-default I4 warning). Optional `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor runtime semantics |
-| EX type 4 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that segment-current semantics are pending |
-| EX type 5 | Partial | Accepted with staged portability behavior; currently treated like EX type 0 and emits a warning that qdsrc semantics are pending |
+| GE | Full | Geometry end; `GE I1=1` infers PEC ground when no `GN` card is present |
+| GM | Full | Geometry move: rotate/translate in place, or append transformed copies |
+| GR | Full | Geometry repeat (successive z-axis rotation copies) |
+| GN type −1 | Full | Explicit free space (same as omitting `GN`) |
+| GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
+| GN type 1 | Full | Perfect-conductor (PEC) image method |
+| GN type 2 | Partial | Aliases the GN 0 path by default; the true Sommerfeld surface wave comes from `--ground-solver sommerfeld` (feedpoint Z of a straight wire) or `--solver mpie` (currents and patterns, any geometry above ground) |
+| EX type 0 | Full | Applied-field voltage-gap source, on every solver path |
+| EX type 1 | Partial | Incident plane wave, linear polarization — solves on `--solver hallen` (receiving antenna → induced currents, no feedpoint), including degree-2 junctioned geometry. Degree-3+, closed loops and `--solver pulse` fail fast |
+| EX type 2 | Partial | Incident plane wave, right-hand elliptic; solves on `--solver hallen` via the complex polarization vector |
+| EX type 3 | Partial | Incident plane wave, left-hand elliptic (type 2 with opposite handedness). The legacy `--ex3-i4-mode` flag is an obsolete no-op |
+| EX type 4 | Partial | Current source — solves on `--solver hallen`, forcing the specified current and reporting `Z = V/i0`; degree-2 junctions included, degree-3+ and loops fail fast |
+| EX type 5 | Partial | Voltage source (current-slope discontinuity) — solves as a voltage source, same result as type 0. NEC's separate current-slope numerics are a documented non-goal |
 | FR | Full | Linear frequency sweep over all steps |
-| RP | Full | Radiation pattern calculation and report table rendering |
-| LD type 0, 1, 2, 3, 4, 5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads |
-| TL | Partial | Lossless subset only (`type=0`); supported `NSEG` range: 0, 1, and >1 — all treated as single-section stamp (no subdivision). `segment=0` center mapping warns. Other variants warn and are ignored |
-| PT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
-| NT | Partial | Parsed for staged portability; currently emits a deferred-support warning and is ignored at runtime |
+| RP | Full | Radiation pattern; `XNDA` X-digit adds `NORMALIZED_PATTERN`, A-digit adds `AVERAGE_POWER_GAIN`. The N/D digits (labeling / dB-vs-ratio toggles) are deferred |
+| NE / NH | Partial | Near electric / magnetic field, rectangular (`I1=0`) and spherical (`I1=1`) grids; emits `NEAR_FIELD` / `NEAR_H_FIELD` |
+| LD type 0–5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads. Arbitrary rational `Z(s)` loads come from `--loads-config` |
+| TL type 0 | Partial | Lossless; `NSEG` 0, 1 and >1 all stamp a single 2-port section (no subdivision). `segment=0` maps to the tag centre with a warning |
+| TL other | Partial | Lossy line: stamps `Z0·coth/csch(γℓ)` with `F3` = matched-line loss in dB; reduces exactly to the lossless form at 0 dB |
+| PT | Partial | Print control applied at runtime: `I1 ≤ −1` suppresses current output, `I1 = 0` prints all, `I1 ≥ 1` restricts to tag `I2` / segments `I3..I4`. Last `PT` wins |
+| NT | Partial | Two-port network stamped into the Z matrix (admittance → Z parameters). Malformed / singular / missing-endpoint cards warn and are skipped |
+| CM / CE | Full | Comment cards; preserved in parse, ignored at runtime |
 | EN | Full | Terminates parse |
 | Other | Warning | Unknown cards print a warning and are skipped |
 
@@ -678,7 +723,7 @@ Example: `LD 4 1 26 26 50.0 -j100.0` applies a 50 − j100 Ω load to tag 1, seg
 
 ### Transmission line (TL) card support
 
-The TL card connects two segments with a transmission line; the current solver subset executes only lossless single-section forms, while lossy/complex models remain deferred.
+The TL card connects two segments with a transmission line. Both the lossless (`type = 0`) and the lossy (`type ≠ 0`) forms are stamped into the Z matrix as a single 2-port section.
 
 **NEC field mapping** (TL I1 I2 I3 I4 I5 I6 F1 F2 F3):
 - I1–I4: Segment locations (tag1, seg1, tag2, seg2)
@@ -688,16 +733,14 @@ The TL card connects two segments with a transmission line; the current solver s
 - F2: Transmission-line length (m)
 - F3: Angle (°) for lossy models or velocity factor (ratio) for lossless (default 1.0)
 
-**Solver integration**: Initial TL solver support is active for lossless cards with `type=0`. The supported `NSEG` range is `0`, `1`, and any value `> 1`; all are treated as a single-section stamp (no per-segment subdivision). `NSEG=0` is normalised to `NSEG=1` before stamping. The solver stamps a 2-port impedance model into the matrix; endpoint `segment=0` is mapped to the tag center segment with an explicit warning. Unsupported TL variants still warn and are ignored.
+**Solver integration**: the supported `NSEG` range is `0`, `1`, and any value `> 1`; all are treated as a single-section stamp (no per-segment subdivision), and `NSEG=0` is normalised to `NSEG=1` before stamping. Endpoint `segment=0` is mapped to the tag centre segment with an explicit warning. The lossy form (`type ≠ 0`, PH8-CHK-005) stamps `Z0·coth(γℓ)` / `Z0·csch(γℓ)` with `F3` read as matched-line loss in dB and velocity factor 1; at 0 dB it reduces exactly to the lossless stamp. Malformed cards (missing endpoint, coincident endpoints, `Z0 ≤ 0`, length `≤ 0`) warn and are skipped.
 
 ## Notes
 
-- Multi-source decks (multiple EX cards) are supported; one output line per source.
-- The Hallén solver rejects non-collinear and junctioned wire topologies with an explicit error. `--allow-noncollinear-hallen` is accepted for compatibility but is silently ignored in Phase 1; passing it does not change solver behaviour.
-- EX type 0 is implemented across supported solver paths. EX type 1 is also implemented for `--solver pulse`; Hallen and other non-pulse modes still keep EX type 1 on the staged portability path.
-- GPU acceleration (`nec_accel`) is scaffolded but not yet wired into the solve path.
-- `--exec hybrid` now runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
-- Hybrid GPU-candidate lane points are first routed through the `nec_accel` dispatch interface and currently print an explicit warning because they still run on CPU fallback until GPU kernels are wired.
+- Multi-source decks (multiple `EX` cards) are supported; one output line per source.
+- The Hallén solver handles collinear, bent, and degree-2 junctioned geometry. Degree-3 (T/Y) junctions and closed loops are *warned about*, not blocked — the warning names `--solver mpie`, which solves both correctly. `--allow-noncollinear-hallen` and `--ex3-i4-mode` are obsolete no-ops kept for backward compatibility.
+- `EX` type 0 is implemented on every solver path. Types 1–5 solve on `--solver hallen`; the plane-wave types (1, 2, 3) produce induced currents for a receiving antenna rather than a feedpoint impedance. See the card table above for the per-type geometry limits.
+- `--exec hybrid` runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
+- The per-frequency GPU *routing seam* (`nec_accel::dispatch_frequency_point`) is not yet wired (PH7-CHK-004), so GPU-candidate lane points print an explicit warning and run on CPU. This is separate from the real wgpu kernels, which `--exec gpu` does use — see **GPU far-field acceleration** above.
 - For integration testing only, setting `FNEC_ACCEL_STUB_GPU=1` enables an accelerator stub dispatch path; hybrid and gpu modes then report stub dispatch usage while still solving via CPU emulation.
-- `--exec gpu` is accepted in real application runs and executes the CPU solve path today, reporting either explicit fallback diagnostics or accelerator-stub dispatch diagnostics depending on dispatch outcome.
-- When `--exec` is omitted in native profile, startup emits an informational probe line to stderr showing assessed availability and the selected execution mode.
+- When `--exec` is omitted in the native profile, startup emits an informational probe line to stderr showing assessed availability and the selected execution mode.
