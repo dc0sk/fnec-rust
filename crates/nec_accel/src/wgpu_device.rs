@@ -29,9 +29,146 @@ fn await_map<E>(device: &wgpu::Device, rx: &std::sync::mpsc::Receiver<Result<(),
         })
         .is_err()
     {
+        // A failed poll means this device is gone. Drop the shared context so the
+        // next solve builds a fresh one instead of being pinned to the CPU
+        // fallback for the rest of the process. `device` may belong to one of the
+        // uncached callers, in which case this discards a healthy context — that
+        // costs one rebuild and is cheaper than the alternative.
+        invalidate_gpu_context();
         return false;
     }
     matches!(rx.recv(), Ok(Ok(())))
+}
+
+/// One `Instance` + `Adapter` + `Device` + `Queue`, shared by every solve-path
+/// kernel for the life of the process.
+///
+/// Each kernel entry point used to build its own from scratch, so a frequency
+/// sweep paid full adapter enumeration and device creation **twice per frequency
+/// point** — 20 device initialisations for a 10-point sweep, which on an
+/// integrated GPU cost more than the solve itself (`--exec gpu` ran ~3x slower
+/// than `--exec cpu` on a 301-segment 10-point sweep purely from this).
+struct GpuContext {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+/// What an acquisition attempt produced. The two failure variants are kept
+/// separate so each caller can keep emitting its own distinct diagnostic.
+enum GpuAcquire {
+    Ready(std::sync::Arc<GpuContext>),
+    NoAdapter,
+    DeviceFailed,
+}
+
+/// Cache state. `Unavailable` is remembered too — on a host with no adapter,
+/// retrying the probe on every call is the same waste this cache exists to
+/// remove.
+enum GpuCache {
+    Untried,
+    Ready(std::sync::Arc<GpuContext>),
+    NoAdapter,
+    DeviceFailed,
+}
+
+static GPU_CACHE: std::sync::Mutex<GpuCache> = std::sync::Mutex::new(GpuCache::Untried);
+
+/// How many times a device has actually been created. The whole point of the
+/// cache is that this stays at 1 no matter how many kernels run, so it is exposed
+/// rather than inferred — a cache with no way to observe a miss cannot be tested.
+static GPU_BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Number of wgpu devices this process has created for the shared context.
+///
+/// Stays at `0` on a host with no adapter and at `1` once any kernel has run,
+/// rising only if a device was lost and rebuilt.
+pub fn gpu_context_build_count() -> usize {
+    GPU_BUILDS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Drop the cached context so the next caller builds a fresh one.
+///
+/// Called when a kernel sees the device fail mid-run. Without this a transient
+/// device loss (a driver reset, say) would pin every later solve to the CPU
+/// fallback for the rest of the process, which is worse than what the
+/// build-every-time code did.
+fn invalidate_gpu_context() {
+    if let Ok(mut c) = GPU_CACHE.lock() {
+        *c = GpuCache::Untried;
+    }
+}
+
+/// The shared compute context, building it on first use.
+///
+/// Not used by [`microbench_zmatrix_dispatch`], which **times** device
+/// acquisition as one of its reported metrics — handing it a cached device would
+/// corrupt the measurement it exists to produce. Nor by the two
+/// `force_fallback_adapter: true` probes, which deliberately select the software
+/// adapter rather than the best one.
+async fn shared_gpu_context() -> GpuAcquire {
+    // Fast path: decided already.
+    match GPU_CACHE.lock() {
+        Ok(c) => match &*c {
+            GpuCache::Ready(ctx) => return GpuAcquire::Ready(ctx.clone()),
+            GpuCache::NoAdapter => return GpuAcquire::NoAdapter,
+            GpuCache::DeviceFailed => return GpuAcquire::DeviceFailed,
+            GpuCache::Untried => {}
+        },
+        // A poisoned lock must not take the GPU path down with it: fall back.
+        Err(_) => return GpuAcquire::DeviceFailed,
+    }
+
+    // Build outside the lock — `request_adapter`/`request_device` are awaits, and
+    // a std guard must not be held across one. A race just builds twice and drops
+    // the loser.
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = match instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+    {
+        Ok(a) => a,
+        Err(_) => {
+            if let Ok(mut c) = GPU_CACHE.lock() {
+                *c = GpuCache::NoAdapter;
+            }
+            return GpuAcquire::NoAdapter;
+        }
+    };
+    let (device, queue) = match adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("fnec-shared"),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(dq) => dq,
+        Err(_) => {
+            if let Ok(mut c) = GPU_CACHE.lock() {
+                *c = GpuCache::DeviceFailed;
+            }
+            return GpuAcquire::DeviceFailed;
+        }
+    };
+
+    GPU_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let ctx = std::sync::Arc::new(GpuContext { device, queue });
+    match GPU_CACHE.lock() {
+        Ok(mut c) => {
+            // Another thread may have published first; prefer the published one so
+            // every caller shares a single device.
+            if let GpuCache::Ready(existing) = &*c {
+                return GpuAcquire::Ready(existing.clone());
+            }
+            *c = GpuCache::Ready(ctx.clone());
+            GpuAcquire::Ready(ctx)
+        }
+        Err(_) => GpuAcquire::Ready(ctx),
+    }
 }
 
 /// Returns every compute-capable adapter visible to wgpu on this system.
@@ -480,32 +617,12 @@ pub async fn run_rp_farfield_batch_wgpu(
         return Some(Vec::new());
     }
 
-    // ---- device setup -------------------------------------------------------
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-    {
-        Ok(a) => a,
-        Err(_) => return None,
+    // ---- device setup (shared, built once per process) ----------------------
+    let ctx = match shared_gpu_context().await {
+        GpuAcquire::Ready(c) => c,
+        GpuAcquire::NoAdapter | GpuAcquire::DeviceFailed => return None,
     };
-
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("fnec-rp-batch"),
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => return None,
-    };
+    let (device, queue) = (&ctx.device, &ctx.queue);
 
     let n_segs = segments.len() as u32;
     let n_points = points.len() as u32;
@@ -711,7 +828,7 @@ pub async fn run_rp_farfield_batch_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(&device, &rx) {
+    if !await_map(device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();
@@ -844,39 +961,21 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     let n = segments.len();
     let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
 
-    // ---- adapter + device --------------------------------------------------
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-    {
-        Ok(a) => a,
-        Err(_) => {
+    // ---- adapter + device (shared, built once per process) -----------------
+    let ctx = match shared_gpu_context().await {
+        GpuAcquire::Ready(c) => c,
+        GpuAcquire::NoAdapter => {
             eprintln!(
                 "warning: fill_zmatrix_wgpu: no wgpu adapter available — falling back to CPU"
             );
             return None;
         }
-    };
-
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("fnec-zmatrix"),
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => {
+        GpuAcquire::DeviceFailed => {
             eprintln!("warning: fill_zmatrix_wgpu: device request failed — falling back to CPU");
             return None;
         }
     };
+    let (device, queue) = (&ctx.device, &ctx.queue);
 
     // ---- pack segment data (f64 → f32) ------------------------------------
     let seg_data: Vec<GpuSegmentZ> = segments
@@ -1031,7 +1130,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(&device, &rx) {
+    if !await_map(device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();
@@ -1366,40 +1465,23 @@ pub async fn solve_hallen_gpu_resident(
 
     let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
 
-    // ---- adapter + device --------------------------------------------------
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-    {
-        Ok(a) => a,
-        Err(_) => {
+    // ---- adapter + device (shared, built once per process) -----------------
+    let ctx = match shared_gpu_context().await {
+        GpuAcquire::Ready(c) => c,
+        GpuAcquire::NoAdapter => {
             eprintln!(
                 "warning: solve_hallen_gpu_resident: no wgpu adapter available — falling back to CPU"
             );
             return None;
         }
-    };
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("fnec-hallen-solve"),
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => {
+        GpuAcquire::DeviceFailed => {
             eprintln!(
                 "warning: solve_hallen_gpu_resident: device request failed — falling back to CPU"
             );
             return None;
         }
     };
+    let (device, queue) = (&ctx.device, &ctx.queue);
 
     // ---- segment data for the fill kernel ---------------------------------
     let seg_data: Vec<GpuSegmentZ> = segments
@@ -1644,7 +1726,7 @@ pub async fn solve_hallen_gpu_resident(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(&device, &rx) {
+    if !await_map(device, &rx) {
         return None;
     }
     let raw = slice.get_mapped_range();

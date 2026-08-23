@@ -56,8 +56,8 @@ pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
 pub use wgpu_device::{
-    fill_zmatrix_wgpu, microbench_zmatrix_dispatch, solve_hallen_gpu_resident, GpuMicrobench,
-    ZElem, ZSegmentInput,
+    fill_zmatrix_wgpu, gpu_context_build_count, microbench_zmatrix_dispatch,
+    solve_hallen_gpu_resident, GpuMicrobench, ZElem, ZSegmentInput,
 };
 
 pub use gpu_kernels::{
@@ -152,6 +152,51 @@ mod wgpu_tests {
             ),
             "unexpected result: {:?}",
             result
+        );
+    }
+
+    /// The shared context must be built **once**, however many kernels run.
+    ///
+    /// Regression for the O(N) device-init cost: every kernel entry point used to
+    /// call `Instance::new` + `request_adapter` + `request_device` for itself, so a
+    /// 10-point sweep paid 20 full device initialisations and `--exec gpu` ran ~3x
+    /// slower than `--exec cpu` purely from that.
+    ///
+    /// On a host with no adapter every call returns `None` and nothing is ever
+    /// built, which is a legitimate skip — but it is reported as one rather than
+    /// counted as a pass, so this cannot go green by finding no GPU at all.
+    #[test]
+    fn the_shared_gpu_context_is_built_at_most_once() {
+        use super::wgpu_device::{fill_zmatrix_wgpu, gpu_context_build_count, ZSegmentInput};
+
+        let segs: Vec<ZSegmentInput> = (0..8)
+            .map(|i| ZSegmentInput {
+                midpoint: [0.0, 0.0, i as f64 * 0.5],
+                direction: [0.0, 0.0, 1.0],
+                length: 0.5,
+                radius: 0.001,
+            })
+            .collect();
+
+        let mut solved = 0usize;
+        for _ in 0..4 {
+            if pollster::block_on(fill_zmatrix_wgpu(&segs, 14.2e6)).is_some() {
+                solved += 1;
+            }
+        }
+
+        let builds = gpu_context_build_count();
+        if solved == 0 {
+            assert_eq!(
+                builds, 0,
+                "no kernel ran, so nothing should have been built (got {builds})"
+            );
+            eprintln!("SKIP: no wgpu adapter on this host — caching not exercised");
+            return;
+        }
+        assert!(
+            builds <= 1,
+            "{solved} kernel runs built {builds} devices; the shared context must be built once"
         );
     }
 

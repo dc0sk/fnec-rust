@@ -11,6 +11,43 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Performance
+
+- **The wgpu device is built once per process, not once per kernel call**
+  (review-260719 FIND-005). Every GPU entry point independently called
+  `Instance::new` + `request_adapter` + `request_device`, so a frequency sweep paid
+  full device initialisation **twice per frequency point** — 20 initialisations for
+  a 10-point sweep, measured. A 10-point sweep of a 301-segment dipole under
+  `--exec gpu` goes from **5.30 s to 4.17 s** (21 %), with `--exec cpu` unchanged at
+  1.70 s over the same runs. The solved impedances are byte-identical to the
+  pre-change build.
+
+  Two call sites deliberately keep building their own: the two
+  `force_fallback_adapter: true` probes, which select the software adapter on
+  purpose, and `microbench_zmatrix_dispatch`, which **times** device acquisition as
+  one of its reported metrics — handing it a cached device would corrupt the
+  measurement it exists to produce. A device lost mid-run drops the cached context
+  so the next solve rebuilds, rather than pinning the rest of the process to the
+  CPU fallback.
+
+  Note this does not make `--exec gpu` faster than `--exec cpu` on this hardware
+  (4.17 s vs 1.70 s); it removes one specific overhead. See the known limitation
+  below on GPU accuracy.
+
+### Known limitations
+
+- **`--exec gpu` loses accuracy as the segment count grows, silently.** Measured on
+  a λ/2 dipole against the `--exec cpu` f64 reference: 101 segments agree to
+  ~0.01 Ω, 151 segments differ by up to 7 %, and 301 segments diverge outright —
+  one frequency point reports **−1.98 Ω**, a negative resistance for a passive
+  antenna, and another reports 163 Ω against the reference 83 Ω. The error is
+  frequency- and size-dependent, consistent with the f32 LU in the GPU-resident
+  solve. Nothing warns. The existing claim that the GPU-resident path "matches the
+  f64 CPU solve to ~0.01 Ω" holds for the 51-segment reference dipole it was
+  measured on and does not generalise. Pre-existing, not introduced by the device
+  caching above — verified byte-identical against the unmodified build. Use
+  `--exec cpu` for decks beyond ~100 segments until this is fixed.
+
 ### Fixed
 
 - **The Python bindings now validate too, and are finally covered by CI**
