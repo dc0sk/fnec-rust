@@ -2,8 +2,8 @@
   "corpus_version": "1.0",
   "generated_date": "2026-04-25",
   "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
-  "reference_engine_version": "fnec 0.2.0 (initial baseline)",
-  "provenance_note": "The version above is when this baseline file was established. Cases have been added and regenerated under later releases (through 0.13.0) without a per-case stamp, so it does not describe every entry. Per-case provenance is not recorded; treat these values as the fnec-vs-fnec regression baseline, with the external nec2c/oracle deltas in each case carrying the cross-engine evidence.",
+  "reference_engine_version": "per case — see each case's last_produced_in",
+  "provenance_note": "Each case carries last_produced_on (ISO date) and last_produced_in (the workspace version at that commit), derived from git history by scripts/derive-corpus-provenance.py and re-checked in CI. They record when that case's stored values LAST CHANGED, which is what tells you whether they still describe the current solver. A single file-wide version was previously claimed here and was wrong for 37 of the 48 cases. Caveat: the version is the one under development at that commit, not necessarily a released build.",
   "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
   "cases": {
     "dipole-freesp-51seg": {
@@ -47,7 +47,9 @@
           "phase_deg": -86.2964
         }
       ],
-      "status": "Reference captured from Python study; xnec2c validation TBD"
+      "status": "Reference captured from Python study; xnec2c validation TBD",
+      "last_produced_on": "2026-04-29",
+      "last_produced_in": "0.2.0"
     },
     "dipole-ex3-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
@@ -67,7 +69,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex3-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
@@ -91,7 +95,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex1-freesp-51seg": {
       "deck_file": "dipole-ex1-freesp-51seg.nec",
@@ -111,7 +117,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-002: EX type 1 = incident plane wave; solves via the plane-wave path. Validated outside the impedance-centric corpus framework (see description)."
+      "status": "PH8-CHK-002: EX type 1 = incident plane wave; solves via the plane-wave path. Validated outside the impedance-centric corpus framework (see description).",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex1-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex1-pulse-current-freesp-51seg.nec",
@@ -141,7 +149,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "PH8-CHK-002: EX type 1 = incident plane wave; --solver pulse fails fast (plane wave requires --solver hallen).",
-      "expected_hallen_error_contains": "requires --solver hallen"
+      "expected_hallen_error_contains": "requires --solver hallen",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex2-freesp-51seg": {
       "deck_file": "dipole-ex2-freesp-51seg.nec",
@@ -161,7 +171,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-002: EX type 2 (right-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only)."
+      "status": "PH8-CHK-002: EX type 2 (right-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex4-freesp-51seg": {
       "deck_file": "dipole-ex4-freesp-51seg.nec",
@@ -184,7 +196,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole."
+      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex4-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex4-pulse-current-freesp-51seg.nec",
@@ -214,7 +228,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "PH8-CHK-001: EX type 4 = current source; --solver pulse fails fast (current source requires --solver hallen).",
-      "expected_hallen_error_contains": "requires --solver hallen"
+      "expected_hallen_error_contains": "requires --solver hallen",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex5-freesp-51seg": {
       "deck_file": "dipole-ex5-freesp-51seg.nec",
@@ -237,7 +253,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0."
+      "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0.",
+      "last_produced_on": "2026-07-03",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex5-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex5-pulse-current-freesp-51seg.nec",
@@ -266,7 +284,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-003: EX type 5 = voltage source; solves under --solver pulse."
+      "status": "PH8-CHK-003: EX type 5 = voltage source; solves under --solver pulse.",
+      "last_produced_on": "2026-07-03",
+      "last_produced_in": "0.7.0"
     },
     "dipole-pt-freesp-51seg": {
       "deck_file": "dipole-pt-freesp-51seg.nec",
@@ -291,7 +311,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for PT deck portability while PT runtime semantics remain deferred."
+      "status": "Regression lock for PT deck portability while PT runtime semantics remain deferred.",
+      "last_produced_on": "2026-07-05",
+      "last_produced_in": "0.9.0"
     },
     "dipole-nt-freesp-51seg": {
       "deck_file": "dipole-nt-freesp-51seg.nec",
@@ -318,7 +340,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped."
+      "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-nt-tl-equiv-freesp-51seg": {
       "deck_file": "dipole-nt-tl-equiv-freesp-51seg.nec",
@@ -344,7 +368,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance."
+      "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -371,7 +397,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning."
+      "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-nt-pt-freesp-51seg": {
       "deck_file": "dipole-nt-pt-freesp-51seg.nec",
@@ -398,7 +426,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card."
+      "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-pt-nt-repeated-freesp-51seg": {
       "deck_file": "dipole-pt-nt-repeated-freesp-51seg.nec",
@@ -425,7 +455,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning."
+      "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-nt-pt-repeated-freesp-51seg": {
       "deck_file": "dipole-nt-pt-repeated-freesp-51seg.nec",
@@ -452,7 +484,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card."
+      "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-pt-nt-interleaved-freesp-51seg": {
       "deck_file": "dipole-pt-nt-interleaved-freesp-51seg.nec",
@@ -479,7 +513,9 @@
       "status": "Phase-2 regression lock: interleaved PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
-      ]
+      ],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-nt-pt-interleaved-freesp-51seg": {
       "deck_file": "dipole-nt-pt-interleaved-freesp-51seg.nec",
@@ -506,7 +542,9 @@
       "status": "Phase-2 regression lock: interleaved NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
-      ]
+      ],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex3-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
@@ -526,7 +564,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex3-i4-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
@@ -550,7 +590,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex3-i4-two-divide-by-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-two-freesp-51seg.nec",
@@ -574,7 +616,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-ex3-i4-two-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-two-freesp-51seg.nec",
@@ -594,7 +638,9 @@
       },
       "status": "PH8-CHK-002: EX type 3 (left-elliptic) plane wave solves; skipped in the impedance-centric corpus framework (receive-only).",
       "expected_warning_substrings": [],
-      "forbidden_warning_substrings": []
+      "forbidden_warning_substrings": [],
+      "last_produced_on": "2026-07-02",
+      "last_produced_in": "0.7.0"
     },
     "dipole-freesp-rp-51seg": {
       "deck_file": "dipole-freesp-rp-51seg.nec",
@@ -738,7 +784,9 @@
         "ExternalGain_absolute_dB": 0.08,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1\u21920.08 on 2026-04-29 (actual max |dGain|=0.068)."
+      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068).",
+      "last_produced_on": "2026-04-29",
+      "last_produced_in": "0.2.0"
     },
     "dipole-ground-rp-51seg": {
       "deck_file": "dipole-ground-rp-51seg.nec",
@@ -835,7 +883,9 @@
         "Gain_absolute_dB": 0.05,
         "AxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference for PEC ground far-field (image method); captures null at theta\u224860\u00b0 from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs)"
+      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs)",
+      "last_produced_on": "2026-07-08",
+      "last_produced_in": "0.9.0"
     },
     "dipole-xaxis-rp-grid-51seg": {
       "deck_file": "dipole-xaxis-rp-grid-51seg.nec",
@@ -995,7 +1045,9 @@
         "ExternalGain_absolute_dB": 0.04,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1\u21920.04 on 2026-04-29 (actual max |dGain|=0.034)."
+      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034).",
+      "last_produced_on": "2026-04-29",
+      "last_produced_in": "0.2.0"
     },
     "dipole-freesp-gm-inplace-shifted": {
       "deck_file": "dipole-freesp-gm-inplace-shifted.nec",
@@ -1016,7 +1068,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches dipole-freesp-51seg exactly; added to lock GM in-place translation into corpus validation"
+      "status": "Regression reference matches dipole-freesp-51seg exactly; added to lock GM in-place translation into corpus validation",
+      "last_produced_on": "2026-04-25",
+      "last_produced_in": "0.2.0"
     },
     "dipole-ground-51seg": {
       "deck_file": "dipole-ground-51seg.nec",
@@ -1026,7 +1080,7 @@
       "wires": 1,
       "sources": 1,
       "ground": "perfect conductor (infinite)",
-      "reference_source": "fnec Hall\u00e9n solver with GN=1 PEC image-method ground (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
+      "reference_source": "fnec Hallén solver with GN=1 PEC image-method ground (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
         "real_ohm": 73.861164,
         "imag_ohm": 12.226487
@@ -1066,7 +1120,9 @@
           "phase_deg": 110.6499
         }
       ],
-      "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10\u21928 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks."
+      "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks.",
+      "last_produced_on": "2026-07-08",
+      "last_produced_in": "0.9.0"
     },
     "dipole-gn0-fresnel-51seg": {
       "deck_file": "dipole-gn0-fresnel-51seg.nec",
@@ -1092,7 +1148,9 @@
         "GN type 0 is not yet supported; treating this deck as free-space"
       ],
       "expected_warning_counts": {},
-      "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract."
+      "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract.",
+      "last_produced_on": "2026-07-08",
+      "last_produced_in": "0.9.0"
     },
     "dipole-gn2-deferred": {
       "deck_file": "dipole-gn2-deferred.nec",
@@ -1102,7 +1160,7 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 (scoped runtime path; simple finite-ground approximation)",
-      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
+      "reference_source": "fnec Hallén solver with GN2 scoped finite-ground path (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
         "real_ohm": 72.859147,
         "imag_ohm": 13.16435
@@ -1118,7 +1176,9 @@
         "GN type 2 is not yet supported; treating this deck as free-space"
       ],
       "expected_warning_counts": {},
-      "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract."
+      "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract.",
+      "last_produced_on": "2026-07-08",
+      "last_produced_in": "0.9.0"
     },
     "dipole-gn2-buried-unsupported": {
       "deck_file": "dipole-gn2-buried-unsupported.nec",
@@ -1136,7 +1196,9 @@
       ],
       "expected_warning_counts": {},
       "tolerance_gates": {},
-      "status": "PH2-CHK-002 unsupported-class guardrail contract: buried-wire active-ground requests fail fast with actionable diagnostics instead of silently solving."
+      "status": "PH2-CHK-002 unsupported-class guardrail contract: buried-wire active-ground requests fail fast with actionable diagnostics instead of silently solving.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.2.0"
     },
     "dipole-gn2-near-ground-51seg": {
       "deck_file": "dipole-gn2-near-ground-51seg.nec",
@@ -1146,7 +1208,7 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 near-ground class",
-      "reference_source": "fnec Hall\u00e9n solver with GN2 scoped finite-ground path on low above-ground geometry (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
+      "reference_source": "fnec Hallén solver with GN2 scoped finite-ground path on low above-ground geometry (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
         "real_ohm": 92.266147,
         "imag_ohm": 13.61731
@@ -1163,17 +1225,19 @@
         "unsupported buried-wire geometry for active ground model"
       ],
       "expected_warning_counts": {},
-      "status": "PH2-CHK-002 supported-class contract: low above-ground GN2 near-ground geometry remains solveable, regression-gated, and explicitly forbids both deferred-ground and buried-wire guardrail text."
+      "status": "PH2-CHK-002 supported-class contract: low above-ground GN2 near-ground geometry remains solveable, regression-gated, and explicitly forbids both deferred-ground and buried-wire guardrail text.",
+      "last_produced_on": "2026-07-08",
+      "last_produced_in": "0.9.0"
     },
     "dipole-gn-1-null": {
       "deck_file": "dipole-gn-1-null.nec",
-      "description": "Half-wave dipole, GN -1 (null ground \u2014 cancels previous GN per NEC spec \u00a73.3), 51 segments, 14.2 MHz. Must produce free-space results with NO deferred-ground warning.",
+      "description": "Half-wave dipole, GN -1 (null ground — cancels previous GN per NEC spec §3.3), 51 segments, 14.2 MHz. Must produce free-space results with NO deferred-ground warning.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
       "sources": 1,
-      "ground": "none (GN -1 null ground \u2192 free-space)",
-      "reference_source": "fnec Hall\u00e9n solver free-space (regression; GN -1 treated as free-space per NEC spec)",
+      "ground": "none (GN -1 null ground → free-space)",
+      "reference_source": "fnec Hallén solver free-space (regression; GN -1 treated as free-space per NEC spec)",
       "feedpoint_impedance": {
         "real_ohm": 74.23,
         "imag_ohm": 13.9
@@ -1189,7 +1253,9 @@
         "GN type -1 is not yet supported"
       ],
       "expected_warning_counts": {},
-      "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted."
+      "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted.",
+      "last_produced_on": "2026-04-28",
+      "last_produced_in": "0.2.0"
     },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
@@ -1199,7 +1265,7 @@
       "wires": 5,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hall\u00e9n solver (regression reference; multi-wire RHS/endpoints fixed 2026-04-25); updated to free-space (GN not parsed in Phase-1 parser)",
+      "reference_source": "fnec Hallén solver (regression reference; multi-wire RHS/endpoints fixed 2026-04-25); updated to free-space (GN not parsed in Phase-1 parser)",
       "feedpoint_impedance": {
         "real_ohm": 30.626169,
         "imag_ohm": 5.023033
@@ -1210,7 +1276,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference (-18.32) was captured with incorrect code that applied source excitation to passive parasitic elements. New result (30.63+j5.02) reflects correct passive-wire handling with rhs=0 for non-EX wires. Passive Yagi elements couple only through Z-matrix. External NEC2 validation pending."
+      "status": "Reference updated after Hallen RHS fix (2026). Old reference (-18.32) was captured with incorrect code that applied source excitation to passive parasitic elements. New result (30.63+j5.02) reflects correct passive-wire handling with rhs=0 for non-EX wires. Passive Yagi elements couple only through Z-matrix. External NEC2 validation pending.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.2.0"
     },
     "dipole-ld-loaded-51seg": {
       "deck_file": "dipole-ld-loaded-51seg.nec",
@@ -1238,7 +1306,9 @@
         "ExternalR_absolute_ohm": 6500.0,
         "ExternalX_absolute_ohm": 1500.0
       },
-      "status": "Phase-2 regression lock: LD cards parsed and applied. fnec now applies LD type 1+4 loads; impedance reflects loaded operation. External nec2c reference not yet aligned (pending further LD model validation)."
+      "status": "Phase-2 regression lock: LD cards parsed and applied. fnec now applies LD type 1+4 loads; impedance reflects loaded operation. External nec2c reference not yet aligned (pending further LD model validation).",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "dipole-ld-series-rl-51seg": {
       "deck_file": "dipole-ld-series-rl-51seg.nec",
@@ -1259,7 +1329,9 @@
         "R_absolute_ohm": 0.1,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 \u03a9, L=1 \u00b5H at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance."
+      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 Ω, L=1 µH at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "dipole-ld-series-rc-51seg": {
       "deck_file": "dipole-ld-series-rc-51seg.nec",
@@ -1280,7 +1352,9 @@
         "R_absolute_ohm": 50.0,
         "X_absolute_ohm": 500.0
       },
-      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 \u03a9, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C \u224811.2 k\u03a9)."
+      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 Ω, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C ≈11.2 kΩ).",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
@@ -1301,7 +1375,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 \u03a9, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending."
+      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1322,7 +1398,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position)."
+      "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position).",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "tl-two-dipoles-linked-nseg0": {
       "deck_file": "tl-two-dipoles-linked-nseg0.nec",
@@ -1343,7 +1421,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case."
+      "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "tl-two-dipoles-linked-seg0-even52": {
       "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
@@ -1364,7 +1444,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base."
+      "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.3.0"
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",
@@ -1392,7 +1474,9 @@
         "ExternalR_absolute_ohm": 5.0,
         "ExternalX_absolute_ohm": 35.0
       },
-      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm."
+      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.2.0"
     },
     "dipole-loaded-noncollinear-hallen": {
       "deck_file": "dipole-loaded.nec",
@@ -1424,7 +1508,9 @@
         "ExternalR_absolute_ohm": 5.0,
         "ExternalX_absolute_ohm": 35.0
       },
-      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case."
+      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case.",
+      "last_produced_on": "2026-04-30",
+      "last_produced_in": "0.2.0"
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",
@@ -1494,7 +1580,9 @@
         "ExternalR_absolute_ohm": 14.0,
         "ExternalX_absolute_ohm": 47.0
       },
-      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50\u219214/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92)."
+      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50→14/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92).",
+      "last_produced_on": "2026-04-29",
+      "last_produced_in": "0.2.0"
     },
     "multi-source": {
       "deck_file": "multi-source.nec",
@@ -1534,7 +1622,9 @@
         "ExternalR_absolute_ohm": 12.0,
         "ExternalX_absolute_ohm": 40.0
       },
-      "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50\u219212/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97)."
+      "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50→12/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97).",
+      "last_produced_on": "2026-04-29",
+      "last_produced_in": "0.2.0"
     },
     "multi-source-gr-180": {
       "deck_file": "multi-source-gr-180.nec",
@@ -1561,7 +1651,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation",
+      "last_produced_on": "2026-06-20",
+      "last_produced_in": "0.6.0"
     },
     "multi-source-gm-copy": {
       "deck_file": "multi-source-gm-copy.nec",
@@ -1588,11 +1680,13 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation",
+      "last_produced_on": "2026-06-20",
+      "last_produced_in": "0.6.0"
     },
     "dipole-sinusoidal-51seg": {
       "deck_file": "dipole-sinusoidal-51seg.nec",
-      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz \u2014 sinusoidal Galerkin basis validation",
+      "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz — sinusoidal Galerkin basis validation",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
@@ -1639,7 +1733,9 @@
           "phase_deg": -86.11
         }
       ],
-      "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X"
+      "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X",
+      "last_produced_on": "2026-05-05",
+      "last_produced_in": "0.5.0"
     }
   }
 }

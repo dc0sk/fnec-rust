@@ -17,6 +17,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Corpus reference values now carry per-case provenance, and the file-wide claim
+  they replace was wrong for 37 of 48 cases.** `reference_engine_version` asserted
+  one engine version for the whole corpus; the cases were in fact last produced by
+  builds ranging from 0.2.0 to 0.9.0, across ten dates. Each case now records
+  `last_produced_on` and `last_produced_in` — the date and workspace version of the
+  commit where its stored values *last changed* — derived from git history by
+  `scripts/derive-corpus-provenance.py`, which replays every commit that touched
+  the file and fingerprints each case's own subtree. A new CI step re-checks it, so
+  a case added without provenance, or one whose values change without a re-derive,
+  fails the build. Derived rather than asserted: it can be re-run and disagreed
+  with.
+
 - **The GUI shows deck caveats on every tab, not just the Solve panel.** The
   warnings `nec_solver::validate` produces describe the *deck* — its geometry, its
   ground model, its topology — but only `impedance_view` rendered them, so a user

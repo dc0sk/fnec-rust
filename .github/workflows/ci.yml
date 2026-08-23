@@ -130,6 +130,12 @@ jobs:
         run: bash scripts/validate-docs-frontmatter.sh
       - name: Traceability matrix is generated and fresh
         run: python3 scripts/gen-traceability-matrix.py --check
+      # Per-case corpus provenance is derived from git history, so it must be
+      # re-derived when a case is added or its stored values change. Without this
+      # a new case ships with no provenance at all, which is how the file came to
+      # claim one engine version for 48 cases produced across six.
+      - name: Corpus per-case provenance is derived and fresh
+        run: python3 scripts/derive-corpus-provenance.py --check
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-
