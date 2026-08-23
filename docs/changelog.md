@@ -11,6 +11,21 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Performance
+
+- **A distributed sweep now uses every worker at once** (review-260719 FIND-009).
+  `WorkerPool::dispatch` blocks until one worker answers, and `--hosts` drove it
+  one frequency point at a time, so N−1 workers sat idle: M points cost
+  `M × latency` instead of `M/N × latency`. The new `dispatch_batch` gives each
+  worker a thread pulling from a shared cursor, so a fast node takes more work than
+  a slow one without any scheduling policy. Measured on 8 tasks over 4 local
+  workers: **9.25 s → 2.47 s** (3.75×, against an ideal of 4×).
+
+  Failure handling is unchanged: a worker that errors is dropped from the pool and
+  the task it was holding is retried on a survivor rather than lost. Results are
+  indexed by task, so report order does not depend on which worker finished first —
+  only the `worker=` diagnostic label varies, which was never a stable contract.
+
 ### Tests
 
 - **The defensive guards flagged as untested now have tests** (review-260719

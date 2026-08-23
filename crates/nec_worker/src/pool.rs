@@ -51,6 +51,10 @@ impl WorkerHandle {
     }
 }
 
+/// One dispatch outcome: the worker's result plus the label of the worker that
+/// served it, or the reason it could not be served.
+pub type DispatchOutcome = Result<(TaskResult, String), String>;
+
 /// A round-robin pool of worker handles.
 ///
 /// Workers are created via [`WorkerPool::new_local`] (N local subprocesses)
@@ -135,7 +139,7 @@ impl WorkerPool {
     ///
     /// Returns the worker's label on success, or an error description on failure.
     /// If a worker fails, subsequent calls skip it (the pool removes failed workers).
-    pub fn dispatch(&mut self, task: &TaskMessage) -> Result<(TaskResult, String), String> {
+    pub fn dispatch(&mut self, task: &TaskMessage) -> DispatchOutcome {
         if self.workers.is_empty() {
             return Err("worker pool is empty — no workers available".to_string());
         }
@@ -164,6 +168,95 @@ impl WorkerPool {
         }
 
         Err("all workers in pool failed".to_string())
+    }
+
+    /// Dispatch a batch of tasks across all workers **concurrently**, returning
+    /// one result per task in the order given.
+    ///
+    /// [`dispatch`](Self::dispatch) blocks until one worker answers, so driving a
+    /// sweep through it leaves every other worker idle: M frequency points across
+    /// N workers cost `M × latency` instead of `M/N × latency`. Each worker here
+    /// gets a thread and pulls the next task itself, so a fast node takes more work
+    /// than a slow one without any scheduling policy.
+    ///
+    /// Failure handling matches `dispatch`: a worker that errors is removed from
+    /// the pool, and the task it was holding is retried on a survivor rather than
+    /// lost. Only when every worker is gone does a task come back as an error.
+    ///
+    /// Results are indexed by task, so output order does not depend on which
+    /// worker finished first. Which worker *served* a given task does — the label
+    /// in the returned tuple is a diagnostic, not a stable contract.
+    pub fn dispatch_batch(&mut self, tasks: &[TaskMessage]) -> Vec<DispatchOutcome> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Mutex;
+
+        let n = tasks.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        if self.workers.is_empty() {
+            return (0..n)
+                .map(|_| Err("worker pool is empty — no workers available".to_string()))
+                .collect();
+        }
+
+        let cursor = AtomicUsize::new(0);
+        let slots: Mutex<Vec<Option<DispatchOutcome>>> = Mutex::new((0..n).map(|_| None).collect());
+        // Tasks whose worker died mid-flight; retried on a survivor below.
+        let orphaned: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+        let survivors: Mutex<Vec<WorkerHandle>> = Mutex::new(Vec::new());
+
+        let workers = std::mem::take(&mut self.workers);
+        std::thread::scope(|scope| {
+            for mut worker in workers {
+                let (cursor, slots, orphaned, survivors) = (&cursor, &slots, &orphaned, &survivors);
+                scope.spawn(move || {
+                    loop {
+                        let i = cursor.fetch_add(1, Ordering::Relaxed);
+                        if i >= n {
+                            survivors.lock().expect("survivors lock").push(worker);
+                            return;
+                        }
+                        let label = worker.label();
+                        match worker.dispatch(&tasks[i]) {
+                            Ok(result) => {
+                                slots.lock().expect("slots lock")[i] = Some(Ok((result, label)));
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "warning: worker '{label}' failed, removing from pool: {e}"
+                                );
+                                // Drop this worker, but not the task it was holding.
+                                orphaned.lock().expect("orphaned lock").push(i);
+                                return;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        self.workers = survivors.into_inner().expect("survivors lock");
+        self.next_worker = 0;
+        let mut slots = slots.into_inner().expect("slots lock");
+
+        // Retry whatever the dead workers were holding, plus anything they never
+        // reached, on the survivors. Sequential: by this point the pool is smaller
+        // and this is the exceptional path.
+        let orphaned: Vec<usize> = orphaned.into_inner().expect("orphaned lock");
+        let mut retry: Vec<usize> = (0..n)
+            .filter(|i| slots[*i].is_none() || orphaned.contains(i))
+            .collect();
+        retry.sort_unstable();
+        retry.dedup();
+        for i in retry {
+            slots[i] = Some(self.dispatch(&tasks[i]));
+        }
+
+        slots
+            .into_iter()
+            .map(|s| s.unwrap_or_else(|| Err("task was never dispatched".to_string())))
+            .collect()
     }
 
     /// Shut down all workers gracefully.

@@ -9,6 +9,8 @@
 
 use base64::Engine;
 
+use nec_worker::WorkerPool;
+
 const DIPOLE_DECK: &str = include_str!("../../../corpus/dipole-freesp-51seg.nec");
 
 /// helper — encode a deck string to base64 (matches `nec_worker::encode_deck`)
@@ -371,4 +373,130 @@ fn test_ssh_worker_reconnect_after_disconnect() {
     assert_eq!(r2.task_id(), "t-rc-2");
 
     handle.shutdown().expect("shutdown");
+}
+
+// ---------------------------------------------------------------------------
+// Test — concurrent batch dispatch across a worker pool (review-260719 FIND-009)
+// ---------------------------------------------------------------------------
+//
+// `WorkerPool::dispatch` blocks until one worker answers, so driving a sweep
+// through it left every other worker idle: M frequency points over N workers cost
+// M × latency instead of M/N × latency. `dispatch_batch` gives each worker a
+// thread pulling from a shared cursor.
+//
+// The timing assertion is self-calibrating: the same tasks are run sequentially
+// in the same test, on the same machine, so it compares against a control rather
+// than against an absolute wall-clock budget that a slow CI runner would fail.
+
+/// A 201-segment dipole: enough work per task that the solve, not the process
+/// round trip, dominates — otherwise there is no latency to overlap and the
+/// comparison measures scheduling noise.
+const HEAVY_DECK: &str = "\
+CM concurrency fixture
+CE
+GW 1 201 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+EX 0 1 101 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+fn heavy_tasks(count: usize) -> Vec<nec_worker::TaskMessage> {
+    (0..count)
+        .map(|i| nec_worker::TaskMessage {
+            task_id: format!("batch-{i}"),
+            deck_hash: "batch".to_string(),
+            deck_b64: b64(HEAVY_DECK),
+            solver_config: nec_worker::WorkerSolverConfig {
+                basis: "hallen".to_string(),
+                ground_model: "none".to_string(),
+                exec: "cpu".to_string(),
+            },
+            // Spread the points so a mixed-up ordering would be visible.
+            frequency_hz: 14.0e6 + (i as f64) * 0.1e6,
+        })
+        .collect()
+}
+
+fn impedances(results: &[nec_worker::DispatchOutcome]) -> Vec<(f64, f64)> {
+    results
+        .iter()
+        .map(|r| match r {
+            Ok((nec_worker::TaskResult::Ok { impedance, .. }, _)) => {
+                (impedance.re_ohm, impedance.im_ohm)
+            }
+            other => panic!("task did not solve: {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn batch_dispatch_returns_results_in_task_order() {
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    let tasks = heavy_tasks(6);
+
+    let mut batch_pool = WorkerPool::new_local(3, fnec).expect("spawn 3 local workers");
+    let batch = batch_pool.dispatch_batch(&tasks);
+    batch_pool.shutdown_all();
+
+    let mut seq_pool = WorkerPool::new_local(1, fnec).expect("spawn 1 local worker");
+    let sequential: Vec<nec_worker::DispatchOutcome> =
+        tasks.iter().map(|t| seq_pool.dispatch(t)).collect();
+    seq_pool.shutdown_all();
+
+    assert_eq!(batch.len(), tasks.len());
+    // Which worker served a task is free to vary; which task each slot holds is not.
+    for (i, r) in batch.iter().enumerate() {
+        match r {
+            Ok((res, _)) => assert_eq!(
+                res.task_id(),
+                format!("batch-{i}"),
+                "slot {i} holds the wrong task"
+            ),
+            Err(e) => panic!("task {i} failed: {e}"),
+        }
+    }
+    assert_eq!(
+        impedances(&batch),
+        impedances(&sequential),
+        "concurrency must not change the answers"
+    );
+}
+
+#[test]
+fn batch_dispatch_uses_more_than_one_worker_at_a_time() {
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    const WORKERS: usize = 4;
+    let tasks = heavy_tasks(WORKERS * 2);
+
+    // Control: the same tasks through one worker, measured on this machine.
+    let mut seq_pool = WorkerPool::new_local(1, fnec).expect("spawn 1 local worker");
+    let t0 = std::time::Instant::now();
+    let sequential: Vec<nec_worker::DispatchOutcome> =
+        tasks.iter().map(|t| seq_pool.dispatch(t)).collect();
+    let seq_elapsed = t0.elapsed();
+    seq_pool.shutdown_all();
+    assert!(sequential.iter().all(Result::is_ok), "control run failed");
+
+    let mut pool = WorkerPool::new_local(WORKERS, fnec).expect("spawn local workers");
+    let t0 = std::time::Instant::now();
+    let batch = pool.dispatch_batch(&tasks);
+    let batch_elapsed = t0.elapsed();
+    pool.shutdown_all();
+    assert!(batch.iter().all(Result::is_ok), "batch run failed");
+
+    eprintln!(
+        "FIND-009: {} tasks — sequential {:?}, {WORKERS}-worker batch {:?}",
+        tasks.len(),
+        seq_elapsed,
+        batch_elapsed
+    );
+
+    // A generous bound: real overlap on 4 workers should approach 1/4, and any
+    // margin below 1.0 is impossible without concurrency. 0.7 leaves room for a
+    // CI runner with fewer cores than workers without becoming vacuous.
+    assert!(
+        batch_elapsed.as_secs_f64() < 0.7 * seq_elapsed.as_secs_f64(),
+        "batch dispatch shows no overlap: {batch_elapsed:?} vs sequential {seq_elapsed:?}"
+    );
 }
