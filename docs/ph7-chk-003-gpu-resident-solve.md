@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-003-gpu-resident-solve.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-08-23
 ---
 
 # PH7-CHK-003: GPU-resident dense Hallén solve
@@ -100,7 +100,7 @@ The solve runs in a single workgroup; `MᴴM`, the LU factors, and all working
 vectors live in device storage buffers. Systems with `S = N + W > 1024` fall back
 to the CPU (fixed-size workgroup scratch).
 
-## Test results (2026-06-27, real discrete GPU)
+## Test results (2026-06-27, real GPU — integrated, not discrete)
 
 - `crates/nec_accel/tests/gpu_resident_solve.rs` — 51-seg reference dipole:
   `Z_cpu = 73.903 + j11.768 Ω`, `Z_gpu = 73.891 + j11.767 Ω` → **ΔR = 0.012 Ω,
@@ -112,6 +112,68 @@ to the CPU (fixed-size workgroup scratch).
 - `cargo test --workspace` — 535 tests pass. `cargo clippy --workspace` clean.
 
 Both deltas are far inside the amended 2 Ω bar (and inside the 0.05 Ω corpus
-gate), so the f32 GPU-resident solve actually reaches f64-CPU quality on the
-reference family — while the f64 CPU solve remains the gating accuracy reference
+gate), so the f32 GPU-resident solve reaches f64-CPU quality **on the 51-segment
+reference family** — while the f64 CPU solve remains the gating accuracy reference
 by policy.
+
+> **Correction (2026-08-23).** This section was headed "real discrete GPU". The
+> adapter it ran on is `AMD Radeon Graphics (RADV RENOIR)`, reported by wgpu as
+> `IntegratedGpu`. The measurements are real-hardware — they are not from a
+> software rasterizer — but the roadmap's "at least one discrete GPU" item is
+> **not** satisfied by them, and remains open.
+>
+> The accuracy result also does not generalise past the size it was taken at. At
+> 151 segments the f32 solve is up to 7 % out and at 301 it diverges outright,
+> which is why #373 added a residual gate; see the section below.
+
+## Performance (2026-08-23) — measured, and the news is bad
+
+The feature was accepted on accuracy alone; nothing measured whether it was
+*faster*. Running the PH7-CHK-005 harness with a dense-solve section added
+(`cargo run --release -p nec-cli --example gpu_crossover`, artifact
+`benchmarks/real-gpu-crossover.json`):
+
+| N segments | CPU assemble+solve | GPU-resident solve | speedup |
+|-----------:|-------------------:|-------------------:|--------:|
+|         32 |             212 µs |           5 782 µs |  0.04 × |
+|         64 |           1 070 µs |          11 398 µs |  0.09 × |
+|        128 |           6 354 µs |          45 420 µs |  0.14 × |
+|        256 |         120 387 µs |         251 332 µs |  0.48 × |
+|        512 |       1 329 541 µs |       **declined** |       — |
+
+**The GPU-resident solve is slower than the CPU at every size measured, and there
+is no crossover.** It trends toward parity as N grows (0.04 → 0.48) but at 512 the
+#373 accuracy gate rejects it — relative residual 0.24 — so it stops producing a
+usable answer before it stops being slower. It is slower where it is accurate and
+inaccurate where it might have become faster.
+
+### Why, and why more GPU will not fix it
+
+The solve dispatches **one workgroup**:
+
+```rust
+cpass.dispatch_workgroups(1, 1, 1);   // wgpu_device.rs, the solve pass
+```
+
+with `@compute @workgroup_size(64)`. The entire LU therefore runs as 64 threads on
+a **single compute unit**. The other two kernels dispatch across the device — the
+Z-fill in the same function uses `((n*n)/64)` workgroups — which is why they win by
+two orders of magnitude while this loses.
+
+This is a structural ceiling, not a property of this adapter. A discrete GPU with
+sixty compute units would run this kernel on one of them, so re-measuring on
+bigger hardware would not change the conclusion. Making it competitive needs a
+blocked/panel-factorised LU spread across workgroups, which is a different
+implementation, not a tuning pass.
+
+### What this means end to end
+
+It explains the `--exec gpu` wall-clock. The Z-fill kernel is 100–290 × faster than
+the CPU and the RP far-field kernel 56–234 × faster, yet a 10-point sweep of a
+301-segment dipole runs ~4.9 s against `--exec cpu`'s ~1.7 s: the solve dominates,
+and the solve is the part that loses.
+
+**Recommendation:** keep the Z-fill and RP kernels, which earn their place
+decisively; treat the GPU-resident solve as not-recommended until the LU is
+re-implemented across workgroups. It is already opt-in (`--exec gpu`) and already
+falls back to the CPU when the residual gate fires.

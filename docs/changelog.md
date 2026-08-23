@@ -15,6 +15,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **GPU benchmark evidence refreshed, and the GPU-resident solve measured for the
+  first time.** The stored crossover artifact predated #372/#373. Re-run on current
+  code, the device caching shows up plainly: RP far-field production wall-clock
+  drops from ~42 000 µs to ~1 000 µs (the ~23 ms per-call device init is gone), and
+  the Z-fill kernel beats the CPU from N ≈ 32–64, by up to 290 ×.
+
+  The harness gained a dense-solve section, which had never been measured — the
+  feature was accepted on accuracy alone. **The GPU-resident solve is slower than
+  the CPU at every size tested (0.04 × at N=32 rising to 0.48 × at N=256) and has no
+  crossover**; at N=512 the #373 residual gate declines it outright. The cause is
+  structural: the LU dispatches a *single workgroup*, so it runs on one compute
+  unit while the other kernels spread across the device — more GPU hardware cannot
+  fix it. This is what makes `--exec gpu` slower end to end despite two kernels
+  that win by two orders of magnitude. Recorded in
+  `docs/ph7-chk-003-gpu-resident-solve.md` § Performance.
+
+  Two claims corrected while checking: that document's results were headed "real
+  discrete GPU" when the adapter is `IntegratedGpu`, and its accuracy conclusion
+  was stated without the size boundary it holds at.
+
 ### Fixed
 
 - **The GUI's warning marker rendered as an empty box.** `⚠` (U+26A0) has no glyph
