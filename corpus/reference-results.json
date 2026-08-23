@@ -2,7 +2,8 @@
   "corpus_version": "1.0",
   "generated_date": "2026-04-25",
   "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
-  "reference_engine_version": "fnec 0.2.0",
+  "reference_engine_version": "fnec 0.2.0 (initial baseline)",
+  "provenance_note": "The version above is when this baseline file was established. Cases have been added and regenerated under later releases (through 0.13.0) without a per-case stamp, so it does not describe every entry. Per-case provenance is not recorded; treat these values as the fnec-vs-fnec regression baseline, with the external nec2c/oracle deltas in each case carrying the cross-engine evidence.",
   "tolerance_matrix_doc": "docs/requirements.md (see Numerical compatibility tolerance matrix)",
   "cases": {
     "dipole-freesp-51seg": {

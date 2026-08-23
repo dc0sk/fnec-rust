@@ -11,6 +11,23 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Docs
+
+- **Corpus reference provenance corrected** (review-260719 FIND-015, though not in
+  the way it was reported). `reference_engine_version` records *which engine
+  produced the stored reference values*; the workspace being at 0.13.0 does not
+  make 0.13.0 the right value, and bumping it would have claimed a regeneration
+  that never happened. The real problems were that 48 cases accumulated across many
+  releases all carry one provenance string, and that the documented example in
+  `docs/nec-requirements.md` showed two keys (`schema_version`, `last_updated`) the
+  file does not have. The field is now marked as the initial baseline, a
+  `provenance_note` records that later cases are not separately stamped, and the
+  example matches the real file. Per-case provenance remains unrecorded — the
+  substantive gap, and larger than the review item.
+- **The 2026-07-19 review is fully dispositioned.** Every finding is now closed
+  with evidence, including the four that did not become code changes, each with the
+  reasoning recorded rather than silently dropped.
+
 ### Performance
 
 - **A distributed sweep now uses every worker at once** (review-260719 FIND-009).

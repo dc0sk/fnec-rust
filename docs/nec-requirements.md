@@ -245,12 +245,17 @@ cd ~/git/fnec-rust && cargo build --release
 
 Example entry in `corpus/reference-results.json`:
 
+The metadata keys below are the ones the file actually carries; nothing parses
+them, so they are documentation of provenance rather than a schema the loader
+enforces. `reference_engine_version` records when the baseline was **established**
+— cases added or regenerated under later releases are not separately stamped, so
+it does not describe every entry (see `provenance_note` in the file itself).
+
 ```json
 {
-  "schema_version": "1.0",
-  "last_updated": "2026-04-30",
-  "reference_engine": "fnec-rust Hallén solver",
-  "reference_engine_version": "fnec 0.2.0",
+  "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
+  "reference_engine_version": "fnec 0.2.0 (initial baseline)",
+  "provenance_note": "...",
   "cases": {
     "dipole-40m-freesp": {
       "deck_file": "dipole-40m-freesp.nec",
