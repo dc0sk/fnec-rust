@@ -2,9 +2,11 @@
 # Copyright (C) 2026 Simon Keimer (DC0SK)
 """Smoke tests for fnec_py Python bindings (PH4-CHK-004)."""
 
+import os
+import warnings
+
 import fnec_py
 import pytest
-import os
 
 # A minimal half-wave dipole at 14 MHz, 51 segments.
 DIPOLE_14MHZ = """\
@@ -92,3 +94,112 @@ def test_corpus_dipole_freesp():
     # Allow generous tolerance for different frequencies.
     assert 10.0 < result["z_re"] < 1000.0, f"implausible z_re: {result['z_re']}"
     assert result["z_abs"] > 0.0
+
+
+# --- pre-solve validation parity with the CLI (review-260719 FIND-004) -------
+
+# Two wires crossing at mid-span, neither meeting the other at an endpoint.
+CROSSING_WIRES = """\
+GW 1 11 -5 0 0 5 0 0 0.001
+GW 2 11 0 -5 0 0 5 0 0.001
+GE
+EX 0 1 6 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
+# A vertical wire whose base sits on an active (PEC) ground plane.
+BURIED_OVER_PEC = """\
+GW 1 21 0 0 0 0 0 10 0.001
+GE 1
+EX 0 1 11 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
+# A half-wave dipole 0.05 lambda over average ground — solvable, but only
+# approximately, so it must warn.
+LOW_OVER_GROUND = """\
+GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001
+GE 1
+GN 2 0 0 0 13 0.005
+EX 0 1 11 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
+# Three wires meeting at the origin: a topology the Hallen solver mis-solves.
+TEE_JUNCTION = """\
+GW 1 11 -5 0 0 0 0 0 0.001
+GW 2 11 0 0 0 5 0 0 0.001
+GW 3 11 0 0 0 0 0 5 0.001
+GE
+EX 0 1 6 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
+
+@pytest.mark.parametrize(
+    "deck,fragment",
+    [
+        (CROSSING_WIRES, "intersecting-wire"),
+        (BURIED_OVER_PEC, "buried-wire"),
+    ],
+)
+def test_geometry_the_cli_refuses_is_refused_here_too(deck, fragment):
+    """Geometry outside the solver's supported class must raise, not return a number.
+
+    These bindings used to go straight from build_geometry to solve_hallen, so a
+    deck the CLI rejects outright produced a plausible-looking impedance here.
+    """
+    with pytest.raises(RuntimeError, match=fragment):
+        fnec_py.solve_deck_str(deck)
+
+
+def test_a_clean_deck_solves_with_no_warnings():
+    """Negative control: the rejection above must not be rejecting everything."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    assert result["z_re"] > 0.0
+    assert caught == [], f"unexpected warnings: {[str(w.message) for w in caught]}"
+
+
+@pytest.mark.parametrize(
+    "deck,fragment",
+    [
+        (LOW_OVER_GROUND, "above finite ground"),
+        (TEE_JUNCTION, "--solver mpie"),
+    ],
+)
+def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):
+    """A deck that solves unreliably must say so, as a filterable UserWarning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(deck)
+    messages = [str(w.message) for w in caught]
+    assert any(w.category is UserWarning for w in caught), f"not UserWarnings: {caught}"
+    assert any(fragment in m for m in messages), f"missing {fragment!r} in {messages}"
+
+
+def test_sweep_does_not_repeat_the_same_caveat_per_frequency():
+    """A geometry caveat is about the geometry, not about one frequency point."""
+    deck = LOW_OVER_GROUND.replace(
+        "FR 0 1 0 0 14.2 0.0", "FR 0 5 0 0 14.2 0.0"
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        records = fnec_py.sweep_deck_str(deck)
+    assert len(records) == 5
+    messages = [str(w.message) for w in caught]
+    assert len(messages) == len(set(messages)), f"duplicate warnings: {messages}"
+    assert len(messages) < len(records), f"one warning per point, not deduped: {messages}"
+
+
+def test_a_warning_can_be_escalated_to_an_error():
+    """The caveats are real Python warnings, so `-W error` style filtering works."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(UserWarning, match="above finite ground"):
+            fnec_py.solve_deck_str(LOW_OVER_GROUND)

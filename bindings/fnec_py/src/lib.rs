@@ -10,10 +10,17 @@
 //! Both functions return dicts with keys:
 //!   `freq_mhz`, `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`
 //!
-//! Errors are raised as `RuntimeError` with a descriptive message.
+//! Errors are raised as `RuntimeError` with a descriptive message. Geometry the
+//! solver cannot honestly take — wires crossing mid-span, a source on a degenerate
+//! segment, a wire reaching into an active ground — is rejected the same way the
+//! CLI rejects it, rather than silently producing a number. Non-fatal caveats
+//! (parser warnings, an unreliable topology, a very low antenna over finite
+//! ground) are emitted as Python `UserWarning`s, so they are visible by default and
+//! can be filtered or escalated with the standard `warnings` module.
 
 use nec_model::card::Card;
 use nec_parser::parse;
+use nec_solver::validate;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
     build_tl_stamps, detect_wire_junctions, ground_model_from_deck, solve_hallen,
@@ -43,11 +50,17 @@ fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     freqs
 }
 
-/// Solve a NEC deck string at one frequency and return an impedance record.
+/// Solve a NEC deck string at one frequency.
+///
+/// Returns the impedance record and the non-fatal caveats the caller should raise
+/// as Python warnings. `Err` means the deck was rejected — either it could not be
+/// solved at all, or `nec_solver::validate` found geometry outside the supported
+/// class, which the CLI has always refused and these bindings used to solve
+/// silently (review-260719 FIND-004).
 fn solve_at_freq(
     deck: &nec_model::deck::NecDeck,
     freq_hz: f64,
-) -> Result<std::collections::HashMap<String, f64>, String> {
+) -> Result<(std::collections::HashMap<String, f64>, Vec<String>), String> {
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
@@ -56,10 +69,21 @@ fn solve_at_freq(
     let ground = ground_model_from_deck(deck);
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
+    // Same checks, in the same order, as the CLI and the GUI.
+    let mut warnings = Vec::new();
+    for d in validate::diagnose(deck, &segs, &ground, freq_hz) {
+        match d.level {
+            nec_model::DiagnosticLevel::Error => return Err(d.message),
+            nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
+        }
+    }
+
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    let (load_vec, _) = build_loads(deck, &segs, freq_hz);
+    let (load_vec, load_warnings) = build_loads(deck, &segs, freq_hz);
+    warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
     z_mat.add_to_diagonal(&load_vec);
-    let (tl_stamps, _) = build_tl_stamps(deck, &segs, freq_hz);
+    let (tl_stamps, tl_warnings) = build_tl_stamps(deck, &segs, freq_hz);
+    warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
     for (row, col, delta) in &tl_stamps {
         z_mat.add_to_entry(*row, *col, *delta);
     }
@@ -109,9 +133,29 @@ fn solve_at_freq(
         rec.insert("z_im".to_string(), z_in.im);
         rec.insert("z_abs".to_string(), z_abs);
         rec.insert("z_arg_deg".to_string(), z_arg_deg);
-        return Ok(rec);
+        return Ok((rec, warnings));
     }
     Err("deck has no EX card — cannot compute feedpoint impedance".to_string())
+}
+
+/// Raise each message as a Python `UserWarning`, so a caveat is visible by default
+/// and can be filtered or turned into an error with the standard `warnings` module.
+///
+/// Duplicates are dropped: a sweep would otherwise repeat the same geometry caveat
+/// once per frequency point.
+fn emit_warnings(py: Python<'_>, messages: &[String], seen: &mut Vec<String>) -> PyResult<()> {
+    let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+    for m in messages {
+        if seen.iter().any(|s| s == m) {
+            continue;
+        }
+        seen.push(m.clone());
+        let text = std::ffi::CString::new(m.as_str()).map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("warning contains a NUL byte")
+        })?;
+        PyErr::warn(py, &category, &text, 1)?;
+    }
+    Ok(())
 }
 
 /// Solve a NEC deck string at the first frequency defined by its FR card.
@@ -129,8 +173,13 @@ fn solve_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
         .first()
         .copied()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("deck has no FR card"))?;
-    let rec =
+    let (rec, mut warnings) =
         solve_at_freq(&result.deck, freq_hz).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+    let mut seen = Vec::new();
+    let parse_warnings: Vec<String> = result.warnings.iter().map(ToString::to_string).collect();
+    emit_warnings(py, &parse_warnings, &mut seen)?;
+    warnings.sort();
+    emit_warnings(py, &warnings, &mut seen)?;
 
     let d = PyDict::new(py);
     for (k, v) in &rec {
@@ -154,10 +203,16 @@ fn sweep_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
         return Ok(pyo3::types::PyList::empty(py).into());
     }
 
+    let mut seen = Vec::new();
+    let parse_warnings: Vec<String> = result.warnings.iter().map(ToString::to_string).collect();
+    emit_warnings(py, &parse_warnings, &mut seen)?;
+
     let mut records = Vec::with_capacity(freqs.len());
     for freq_hz in freqs {
-        let rec = solve_at_freq(&result.deck, freq_hz)
+        let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz)
             .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        warnings.sort();
+        emit_warnings(py, &warnings, &mut seen)?;
         let d = PyDict::new(py);
         for (k, v) in &rec {
             d.set_item(k, v)?;
