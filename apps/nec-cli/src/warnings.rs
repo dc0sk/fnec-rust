@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-use nec_model::card::Card;
 use nec_solver::{GroundModel, Segment};
 
 use super::exec_profile::ExecutionMode;
@@ -61,53 +60,14 @@ differently-sized wires will be approximate"
 }
 
 pub(super) fn warn_deferred_ground_model(ground: &GroundModel) {
-    let GroundModel::Deferred {
-        gn_type,
-        eps_r,
-        sigma,
-    } = ground
-    else {
-        return;
-    };
-    let params = match (eps_r, sigma) {
-        (Some(e), Some(s)) => format!(" [parsed: EPSE={e}, SIG={s} S/m]"),
-        (Some(e), None) => format!(" [parsed: EPSE={e}]"),
-        (None, Some(s)) => format!(" [parsed: SIG={s} S/m]"),
-        (None, None) => String::new(),
-    };
-    eprintln!(
-        "warning: GN type {gn_type} is not yet supported; treating this deck as free-space{params}"
-    );
+    if let Some(w) = nec_solver::validate::deferred_ground_warning(ground) {
+        eprintln!("warning: {w}");
+    }
 }
 
 pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
-    let Some(flag) = deck.cards.iter().find_map(|c| {
-        if let Card::Ge(ge) = c {
-            Some(ge.ground_reflection_flag)
-        } else {
-            None
-        }
-    }) else {
-        return;
-    };
-
-    // GE I1=0: no ground (default, no action needed).
-    // GE I1=1: PEC image method — handled via ground_model_from_deck.
-    match flag {
-        0 | 1 => {}
-        -1 => {
-            eprintln!(
-                "warning: GE I1=-1 requests below-ground wire handling \
-                 (no image method); treating as free-space"
-            );
-        }
-        _ => {
-            eprintln!(
-                "warning: GE I1={flag} is not a recognised ground-reflection flag \
-                 (valid values: 0=free-space, 1=PEC image, -1=below-ground); \
-                 treating as free-space"
-            );
-        }
+    if let Some(w) = nec_solver::validate::ge_ground_reflection_warning(deck) {
+        eprintln!("warning: {w}");
     }
 }
 

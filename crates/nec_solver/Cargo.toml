@@ -22,6 +22,10 @@ nec_accel   = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
+# Parse real decks in the `validate` tests, so the checks are exercised on the
+# same NecDeck/Segment pair a frontend actually holds. nec_parser depends only on
+# nec_model, so this adds no cycle.
+nec_parser = { workspace = true }
 
 [lints]
 workspace = true

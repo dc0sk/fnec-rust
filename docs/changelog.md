@@ -11,6 +11,20 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- **`nec_solver::validate` — a shared pre-solve validation module** (review-260719
+  FIND-004/006/007/008, step 1 of 3). The hard geometry rejections (wires crossing
+  mid-span, a source on a degenerate segment, a wire reaching an active ground) and
+  the geometry/ground warnings lived inside the CLI binary, where the GUI and the
+  Python bindings could not reach them — so a deck the CLI refused outright solved
+  silently and wrongly on the other two frontends. They are now pure functions of
+  `(&NecDeck, &[Segment], &GroundModel, freq_hz)` that *return* diagnostics
+  (`nec_model::ValidationDiagnostic`) instead of printing them, with `diagnose()`
+  as the one-call entry point for a frontend. The CLI delegates to them and its
+  message text is unchanged, byte for byte, as its contract tests require. Wiring
+  the GUI and the Python bindings follows in separate changes.
+
 ### Changed
 
 - **`--ground-solver sommerfeld` diagnostics now tell the truth about what ran.**
