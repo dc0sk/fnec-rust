@@ -2,10 +2,78 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-07-13
+last_updated: 2026-08-23
 ---
 
 # Release Notes
+
+## 0.13.0 — Laplace loads + Leeson taper + project-quality hardening
+
+This release adds two CLI features that came out of a cross-validation review
+against [pymininec](https://github.com/schlatterbeck/pymininec), and a large
+project-quality pass. **The default Hallén solver, the CLI report contract, and
+the validated corpus are unchanged** — the new features are additive.
+
+### `--loads-config` — Laplace-domain loads
+
+NEC-2 has no card for an arbitrary rational load, so fnec reads them from a small
+TOML file. A Laplace load is a **series** impedance `Z(s) = N(s)/D(s)` with `s = jω`,
+where `numerator`/`denominator` are ascending-order polynomial coefficients:
+
+```toml
+# Series R + L (Z = 150 + jωL, L = 2 µH) on tag 1, segment 20:
+[[laplace_load]]
+tag = 1
+seg_first = 20
+numerator   = [150.0, 2.0e-6]
+denominator = [1.0]
+```
+
+This generalises the built-in LD 0–5 loads (a series RLC is `N = [1, R·C, L·C]`,
+`D = [0, C]`) and lets you model arbitrary matching networks, traps with parasitic
+resistance, or measured/curve-fitted loads. Stamped on the MoM diagonal alongside
+any `LD` cards; reproduces the equivalent `LD` network to numerical tolerance.
+Hallén/pulse paths only — rejected with `--solver mpie`, and not wired into the
+`sweep --resonance` subcommand. See `docs/cli-guide.md` and
+`examples/laplace-load-rlc.toml`.
+
+### `fnec taper` — Leeson step-tapered-radius correction
+
+NEC-2-class cores — fnec included — mis-model an element built from several tubing
+diameters (`--solver mpie` collapses it to the first radius; `--solver hallen`
+breaks at the radius-change junctions). `fnec taper` implements D. B. Leeson's
+correction (*Physical Design of Yagi Antennas*, ch. 8): it replaces a
+step-tapered element with the **equivalent uniform-diameter element** (a corrected
+length and diameter) that has the same self-impedance near resonance — model that
+uniform element in your deck.
+
+```sh
+$ fnec taper --sections "0.8,50 0.4,50"
+EQUIV_FULL_LENGTH 191.398386
+EQUIV_RADIUS 0.296764
+...
+```
+
+Validated to the digit against the book's worked example. Scope: linear,
+essentially unloaded elements within ~±15 % of self-resonance; a no-op for
+uniform-diameter antennas.
+
+### Fixes and internals
+
+- **GPU readback** now degrades to CPU on a mid-run device failure instead of
+  panicking.
+- **Project quality:** the repo now runs core **CI** on every PR (fmt, clippy
+  `-D warnings`, tests, `cargo audit`, `cargo deny`, docs contract, coverage
+  floor); requirements traceability is **machine-enforced** (a `requirements.toml`
+  register bound to tests, GAP/dangling-checked in the test gate); and the
+  Sommerfeld–Norton "Level 2" DCIM path has a validated Python prototype
+  (`studies/sommerfeld-ground/`) ahead of a future Rust port.
+
+### Upgrading
+
+Drop-in. `cargo build --release` as before; existing decks and the CLI report
+format are unchanged. The two new features are opt-in (`--loads-config` and the
+`fnec taper` subcommand). No new runtime dependencies.
 
 ## 0.12.0 — GPU 3-D antenna workbench (GUI redesign) + pre-release correctness fixes
 
