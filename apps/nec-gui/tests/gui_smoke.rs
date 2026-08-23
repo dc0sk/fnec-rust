@@ -1502,3 +1502,54 @@ fn viewport_toggles_without_geometry_are_safe() {
     }
     assert!(state.viewport.scene.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Deck-level caveats reach the state that every tab renders from
+// ---------------------------------------------------------------------------
+
+/// The caveats used to live only in `SolveResult`, so they appeared only on the
+/// Solve panel — a user who ran nothing but sweeps or patterns saw none of them.
+/// They now sit in `AppState`, above the tab content.
+#[test]
+fn deck_warnings_land_in_state_for_every_tab_to_render() {
+    let mut state = AppState::default();
+    assert!(state.deck_warnings.is_empty(), "starts clean");
+
+    state.apply(&Message::DeckWarnings(vec![
+        "geometry contains a closed loop …".to_string(),
+        "antenna is 0.050 λ above finite ground …".to_string(),
+    ]));
+    assert_eq!(state.deck_warnings.len(), 2);
+
+    // The strip is deck-level, so switching tabs must not clear it — that is the
+    // whole point of moving it out of the Solve panel.
+    for tab in [
+        ActiveTab::Sweep,
+        ActiveTab::Pattern,
+        ActiveTab::Currents,
+        ActiveTab::Solve,
+    ] {
+        let label = format!("{tab:?}");
+        state.apply(&Message::TabSelected(tab));
+        assert_eq!(
+            state.deck_warnings.len(),
+            2,
+            "caveats must survive a switch to {label}"
+        );
+    }
+}
+
+/// Caveats describe one deck. Showing the previous deck's caveats against a new
+/// one would be worse than showing none.
+#[test]
+fn changing_the_deck_path_clears_stale_caveats() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckWarnings(vec!["stale caveat".to_string()]));
+    assert_eq!(state.deck_warnings.len(), 1);
+    state.apply(&Message::DeckPathChanged("other.nec".into()));
+    assert!(
+        state.deck_warnings.is_empty(),
+        "caveats for the previous deck must not persist: {:?}",
+        state.deck_warnings
+    );
+}

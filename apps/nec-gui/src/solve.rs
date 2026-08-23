@@ -302,6 +302,40 @@ fn validate_deck(
     Ok(warnings)
 }
 
+/// Deck-level diagnostics, independent of which tab the user is on.
+///
+/// The caveats `validate_deck` produces are about the *deck* — its geometry, its
+/// ground model, its topology — not about whether you asked for an impedance, a
+/// sweep or a pattern. Only the impedance panel rendered them, so a user who ran
+/// only sweeps or only patterns saw none of it (review-260719, GUI follow-up).
+///
+/// Best-effort by design: a deck that cannot be parsed or built returns an empty
+/// list, because the action the user actually ran reports that failure itself and
+/// repeating it in a caveats strip would be noise.
+pub fn deck_warnings(deck_text: &str) -> Vec<String> {
+    let Ok(parsed) = parse(deck_text) else {
+        return Vec::new();
+    };
+    let deck = &parsed.deck;
+    let Ok(segs) = build_geometry(deck) else {
+        return Vec::new();
+    };
+    let ground = ground_model_from_deck(deck);
+    let freq_hz = deck
+        .cards
+        .iter()
+        .find_map(|c| {
+            if let Card::Fr(fr) = c {
+                Some(fr.frequency_mhz * 1_000_000.0)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0.0);
+    // A hard rejection is surfaced by the action itself; keep only the caveats.
+    validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings).unwrap_or_default()
+}
+
 pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
@@ -861,6 +895,53 @@ mod tests {
             tee.warnings.iter().any(|w| w.contains("--solver mpie")),
             "missing the topology warning: {:?}",
             tee.warnings
+        );
+    }
+
+    // --- deck-level caveats, shown on every tab (GUI follow-up to #369) -------
+
+    #[test]
+    fn deck_warnings_reports_the_same_caveats_the_solve_panel_shows() {
+        // 0.05 lambda over GN 2 — solvable, but only approximately.
+        let low = "GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let from_panel = solve_deck_str(low).expect("solves").warnings;
+        let from_deck = deck_warnings(low);
+        assert!(
+            !from_deck.is_empty(),
+            "a low antenna over finite ground must produce caveats"
+        );
+        assert_eq!(
+            from_deck, from_panel,
+            "the strip and the Solve panel must not disagree about the same deck"
+        );
+    }
+
+    #[test]
+    fn a_clean_deck_has_no_caveats_so_the_strip_stays_hidden() {
+        let clean = "GW 1 21 -5.278 0 0 5.278 0 0 0.001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        assert!(deck_warnings(clean).is_empty());
+    }
+
+    /// A deck that cannot be parsed or built reports nothing here: the action the
+    /// user ran surfaces that failure itself, and repeating it would be noise.
+    /// This must not panic — it runs on every solve.
+    #[test]
+    fn an_unusable_deck_yields_no_caveats_rather_than_panicking() {
+        assert!(deck_warnings("NOT A DECK\n").is_empty());
+        assert!(deck_warnings("").is_empty());
+        // Parses, but the geometry cannot be built (no GW cards).
+        assert!(deck_warnings("GE\nEN\n").is_empty());
+    }
+
+    /// The topology caveat is what a Sweep- or Pattern-only user most needs and
+    /// never saw: it says the numbers on screen are unreliable.
+    #[test]
+    fn deck_warnings_carries_the_unreliable_topology_caveat() {
+        let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let w = deck_warnings(tee);
+        assert!(
+            w.iter().any(|m| m.contains("--solver mpie")),
+            "expected the topology caveat: {w:?}"
         );
     }
 }

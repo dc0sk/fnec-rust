@@ -85,6 +85,9 @@ pub struct AppState {
     pub active_tab: ActiveTab,
     /// Single-frequency solver phase.
     pub phase: SolvePhase,
+    /// Deck-level caveats, shown on every tab rather than only the Solve panel:
+    /// they describe the deck, not the action that was run.
+    pub deck_warnings: Vec<String>,
     // ── Sweep tab state ────────────────────────────────────────────────────
     /// Sweep start frequency (MHz), as text so the input field can hold it.
     pub sweep_start: String,
@@ -229,6 +232,7 @@ impl Default for AppState {
             vars_path: String::new(),
             active_tab: ActiveTab::default(),
             phase: SolvePhase::default(),
+            deck_warnings: Vec::new(),
             sweep_start: "14.0".into(),
             sweep_end: "18.0".into(),
             sweep_step: "0.5".into(),
@@ -271,6 +275,8 @@ pub enum Message {
     Solve,
     /// Background single-frequency solve task completed.
     SolveComplete(Result<SolveResult, String>),
+    /// Deck-level caveats recomputed for the current deck; rendered on every tab.
+    DeckWarnings(Vec<String>),
     // ── Sweep tab ────────────────────────────────────────────────────────
     /// User edited the sweep start frequency.
     SweepStartChanged(String),
@@ -380,6 +386,8 @@ impl AppState {
         match msg {
             Message::DeckPathChanged(p) => {
                 self.deck_path = p.clone();
+                // Stale caveats describing the previous deck would be worse than none.
+                self.deck_warnings.clear();
                 if matches!(self.phase, SolvePhase::Failed(_)) {
                     self.phase = SolvePhase::Idle;
                 }
@@ -392,6 +400,9 @@ impl AppState {
             }
             Message::Solve => {
                 self.phase = SolvePhase::Solving;
+            }
+            Message::DeckWarnings(w) => {
+                self.deck_warnings = w.clone();
             }
             Message::SolveComplete(Ok(r)) => {
                 self.phase = SolvePhase::Done(r.clone());

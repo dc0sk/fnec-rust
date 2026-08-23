@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GUI shows deck caveats on every tab, not just the Solve panel.** The
+  warnings `nec_solver::validate` produces describe the *deck* — its geometry, its
+  ground model, its topology — but only `impedance_view` rendered them, so a user
+  who ran nothing but sweeps or patterns saw none of it and had no way to know the
+  numbers on screen were flagged as unreliable. A deck-caveats strip now sits above
+  the tab content, populated by `solve::deck_warnings` whenever any action reads
+  the deck, and cleared when the deck path changes so stale caveats never describe
+  the wrong file. The strip and the Solve panel read from the same source, so they
+  cannot disagree.
+
 - **The negative-resistance warning no longer blames a cause the deck cannot
   have.** It offered "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
   unconditionally, so a deck containing a *single straight wire* — no junction

@@ -26,9 +26,9 @@ use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow}
 use nec_gui::plot::PlotMetric;
 use nec_gui::session::Session;
 use nec_gui::solve::{
-    current_distribution_deck_path, load_currents_path, load_geometry_path, load_model_doc_path,
-    pattern_grid_path, pattern_slice_deck_path, read_deck_text, solve_deck_path, solve_deck_str,
-    SolveResult, SweepJob, SweepPoint,
+    current_distribution_deck_path, deck_warnings, load_currents_path, load_geometry_path,
+    load_model_doc_path, pattern_grid_path, pattern_slice_deck_path, read_deck_text,
+    solve_deck_path, solve_deck_str, SolveResult, SweepJob, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -121,6 +121,10 @@ impl FnecGui {
         let spawn_edit_load = matches!(message, Message::EditDeckLoad);
         let spawn_save = matches!(message, Message::SaveDeck);
         let spawn_apply_solve = matches!(message, Message::EditApplySolve);
+        // Any action that reads the deck refreshes its caveats, so they are current
+        // on whichever tab the user is looking at — not only the Solve panel.
+        let refresh_warnings =
+            spawn_solve || spawn_sweep || spawn_pattern || spawn_currents || spawn_apply_solve;
         // Settings changes worth persisting to the session file.
         let persist = matches!(
             message,
@@ -145,7 +149,7 @@ impl FnecGui {
             let _ = Session::from_state(&self.state).save();
         }
 
-        if spawn_solve {
+        let primary = if spawn_solve {
             let path = PathBuf::from(self.state.deck_path.clone());
             let vars: Option<String> = if self.state.vars_path.is_empty() {
                 None
@@ -350,6 +354,26 @@ impl FnecGui {
             Task::none()
         } else {
             Task::none()
+        };
+
+        if refresh_warnings {
+            let path = PathBuf::from(self.state.deck_path.clone());
+            let vars: Option<String> = if self.state.vars_path.is_empty() {
+                None
+            } else {
+                Some(self.state.vars_path.clone())
+            };
+            let warn = Task::perform(
+                async move {
+                    read_deck_text(&path, vars.as_deref())
+                        .map(|t| deck_warnings(&t))
+                        .unwrap_or_default()
+                },
+                Message::DeckWarnings,
+            );
+            Task::batch([primary, warn])
+        } else {
+            primary
         }
     }
 
@@ -425,8 +449,19 @@ impl FnecGui {
             ActiveTab::Viewport => self.solve_view(),
         };
 
+        // Deck-level caveats sit above the tab content rather than inside one
+        // panel: they describe the deck, so they are just as true on the Sweep,
+        // Pattern and Currents tabs, which used to show nothing at all.
+        let mut caveats = column![].spacing(2);
+        if !self.state.deck_warnings.is_empty() {
+            caveats = caveats.push(text("─── Deck caveats ───"));
+            for w in &self.state.deck_warnings {
+                caveats = caveats.push(text(format!("⚠ {w}")).width(Length::Fill));
+            }
+        }
+
         scrollable(
-            column![tab_bar, path_row, vars_row, tab_content]
+            column![tab_bar, path_row, vars_row, caveats, tab_content]
                 .spacing(12)
                 .padding(12),
         )
