@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec-requirements.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-08-23
 ---
 
 # NEC Requirements for Complete COMP-001 Tolerance Verification
@@ -245,17 +245,22 @@ cd ~/git/fnec-rust && cargo build --release
 
 Example entry in `corpus/reference-results.json`:
 
-The metadata keys below are the ones the file actually carries; nothing parses
-them, so they are documentation of provenance rather than a schema the loader
-enforces. `reference_engine_version` records when the baseline was **established**
-— cases added or regenerated under later releases are not separately stamped, so
-it does not describe every entry (see `provenance_note` in the file itself).
+Provenance is recorded **per case**, not once for the file. Each case carries
+`last_produced_on` and `last_produced_in` — the date and the workspace version of
+the commit where that case's stored values last changed — derived from git history
+by `scripts/derive-corpus-provenance.py` and re-checked in CI, so they can be
+re-derived rather than trusted.
+
+A single file-wide `reference_engine_version` was claimed here previously and was
+wrong for 37 of the 48 cases, which were last produced by builds from 0.2.0 through
+0.9.0. Nothing parses these keys; they are provenance for the reader, not a schema
+the loader enforces.
 
 ```json
 {
   "reference_engine": "fnec Hallen solver (regression) / Python MoM (dipole-freesp)",
-  "reference_engine_version": "fnec 0.2.0 (initial baseline)",
-  "provenance_note": "...",
+  "reference_engine_version": "per case — see each case's last_produced_in",
+  "provenance_note": "…",
   "cases": {
     "dipole-40m-freesp": {
       "deck_file": "dipole-40m-freesp.nec",
