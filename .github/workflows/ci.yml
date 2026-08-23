@@ -136,6 +136,11 @@ jobs:
       # claim one engine version for 48 cases produced across six.
       - name: Corpus per-case provenance is derived and fresh
         run: python3 scripts/derive-corpus-provenance.py --check
+      # Findings ledger row shape: a deferred finding must name an owner, a fixed
+      # one must cite the change that fixed it. Without this the states decay into
+      # rows that only look resolved.
+      - name: Findings ledger rows are well-formed
+        run: python3 scripts/check-findings-ledger.py
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-
