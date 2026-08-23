@@ -14,6 +14,7 @@ pub mod planewave;
 pub mod sommerfeld;
 pub mod taper;
 pub mod tl;
+pub mod validate;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{

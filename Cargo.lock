@@ -2421,6 +2421,7 @@ version = "0.13.0"
 dependencies = [
  "nec_accel",
  "nec_model",
+ "nec_parser",
  "num-complex",
  "proptest",
 ]

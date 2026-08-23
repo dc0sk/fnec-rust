@@ -4,7 +4,6 @@
 mod bench;
 mod cli_args;
 mod exec_profile;
-mod geometry_validation;
 mod laplace_config;
 mod resonance_search;
 mod solve_session;
@@ -19,12 +18,12 @@ use exec_profile::{
     steer_execution_mode_by_profile, warn_compatibility_profile, CompatibilityProfile,
     ExecutionMode,
 };
-use geometry_validation::{
-    buried_wire_geometry_error, segment_intersection_error, source_risk_geometry_error,
-};
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
 use nec_parser::parse;
+use nec_solver::validate::{
+    buried_wire_geometry_error, segment_intersection_error, source_risk_geometry_error,
+};
 use nec_solver::{
     build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
     wire_endpoints_from_segs, FarFieldPoint,

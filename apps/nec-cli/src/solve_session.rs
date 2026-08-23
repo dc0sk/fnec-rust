@@ -71,14 +71,14 @@ use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
     build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
-    build_planewave_hallen_paths, build_tl_stamps, classify_unsupported_topology,
-    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment, feed_reference_sign,
-    geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
-    radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
+    build_planewave_hallen_paths, build_tl_stamps, compute_radiation_pattern,
+    detect_wire_junctions, feed_node_for_segment, feed_reference_sign, geometry_from_segments,
+    integrate_radiated_power, merge_collinear_wire_endpoints, radiation_efficiency,
+    scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
     solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
     solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
     solve_mpie, solve_mpie_ground, solve_with_continuity_basis_per_wire, FarFieldPoint,
-    GroundModel, Segment, UnsupportedTopology, ZMatrix,
+    GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -517,47 +517,8 @@ pub(super) fn pulse_current_source_voltage(
 /// junction-fed impedance is deferred to PH9-CHK-002; this makes the limitation
 /// visible instead of silently returning a wrong number.
 fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
-    // PH9-CHK-002 general junction: when the whole deck decomposes into supported
-    // degree-2 conductor paths, every junction feed (bends, start-to-start splits,
-    // inverted-V apex) is now solved correctly on a continuous basis, so there is
-    // nothing to warn about. Only decks with an out-of-scope junction (degree-3
-    // T/Y, or a closed loop) reach the per-junction check below.
-    if build_conductor_paths(segs).is_some() {
-        return;
-    }
-    // Use the merged (collinear-conductor) grouping so a junction that PH9-CHK-002
-    // now solves correctly — a straight conductor split across GW cards — is not
-    // flagged. Only genuine, unmerged junctions (bends, T/Y, start-to-start) remain.
-    let merged = merge_collinear_wire_endpoints(segs);
-    let junctions = detect_wire_junctions(segs, &merged, 1e-6);
-    if junctions.is_empty() {
-        return;
-    }
-    let mut junction_segs = std::collections::HashSet::new();
-    for j in &junctions {
-        junction_segs.insert(j.seg_a);
-        junction_segs.insert(j.seg_b);
-    }
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        if ex.kind().is_plane_wave() {
-            continue; // receiving antenna, no feedpoint
-        }
-        if let Some((idx, _)) = segs
-            .iter()
-            .enumerate()
-            .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
-        {
-            if junction_segs.contains(&idx) {
-                eprintln!(
-                    "warning: feedpoint at tag {} segment {} is on a wire junction; \
-                     the feed current splits across the joined wires, so the reported \
-                     impedance (V/I on one segment) is not accurate and may be unphysical \
-                     (junction-fed impedance is deferred — see PH9-CHK-002)",
-                    ex.tag, ex.segment
-                );
-            }
-        }
+    for w in nec_solver::validate::feedpoint_at_junction_warnings(deck, segs) {
+        eprintln!("warning: {w}");
     }
 }
 
@@ -580,34 +541,14 @@ fn warn_if_low_finite_ground(
     freq_hz: f64,
     sommerfeld: SommerfeldOutcome,
 ) {
-    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) || freq_hz <= 0.0 {
-        return;
-    }
-    // The warning says the reported impedance misses the surface wave. When
-    // `--ground-solver sommerfeld` actually applied its correction that is false,
-    // so stay silent — the reported Z *does* model it. A *declined* request keeps
-    // the warning (the result really is the scalar-Γ one) and gets its own
-    // diagnostic from `warn_if_sommerfeld_declined`.
-    if sommerfeld == SommerfeldOutcome::Applied {
-        return;
-    }
-    let lambda = C0 / freq_hz;
-    let min_z = segs
-        .iter()
-        .flat_map(|s| [s.start[2], s.end[2]])
-        .fold(f64::INFINITY, f64::min);
-    if !min_z.is_finite() || min_z < 0.0 {
-        return; // buried / below ground is handled by the geometry fail-fast path
-    }
-    if min_z < 0.1 * lambda {
-        eprintln!(
-            "warning: antenna is {:.3} λ ({:.3} m) above finite ground (below ~0.1 λ); the \
-             near-ground feedpoint impedance uses a reflection-coefficient approximation and \
-             does not model the Sommerfeld surface wave, so it is only approximate here \
-             (finite-ground impedance is accurate to ~10% for heights ≥ ~0.2 λ — see PH9-CHK-006)",
-            min_z / lambda,
-            min_z
-        );
+    // A request that actually applied DID model the surface wave, so the warning's
+    // sentence would be false; a declined one keeps it and gets its own diagnostic
+    // from `warn_if_sommerfeld_declined`.
+    let modelled = sommerfeld == SommerfeldOutcome::Applied;
+    if let Some(w) =
+        nec_solver::validate::low_finite_ground_warning(segs, ground, freq_hz, modelled)
+    {
+        eprintln!("warning: {w}");
     }
 }
 
@@ -622,27 +563,9 @@ fn warn_if_low_finite_ground(
 /// number — the loop case in particular is missed by [`warn_if_feedpoint_at_junction`]
 /// because the feed need not sit on the junction.
 fn warn_if_unsupported_topology(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
-    let kind = match classify_unsupported_topology(segs) {
-        Some(UnsupportedTopology::ClosedLoop) => {
-            "a closed loop (a conductor with no free end); the Hallén solve does not model \
-             the periodic loop closure"
-        }
-        Some(UnsupportedTopology::HighDegreeJunction) => {
-            "a junction where three or more wires meet (a T/Y junction); the Hallén solve does \
-             not model the Kirchhoff current split there"
-        }
-        None => return,
-    };
-    // The MPIE second solver handles both topologies; point the user to it when
-    // the deck is MPIE-compatible, otherwise say support is deferred.
-    let remedy = if mpie_compatible_deck(deck) {
-        "so the reported impedance, currents, and pattern are unreliable — re-run with \
-         `--solver mpie`, which solves this geometry correctly (PH9-CHK-007)"
-    } else {
-        "so the reported impedance, currents, and pattern for this geometry are unreliable \
-         (support for this combination is deferred — see PH9-CHK-002)"
-    };
-    eprintln!("warning: geometry contains {kind}, {remedy}");
+    if let Some(w) = nec_solver::validate::unsupported_topology_warning(deck, segs) {
+        eprintln!("warning: {w}");
+    }
 }
 
 /// Expand an `NE`/`NH` observation grid into Cartesian points (PH9-CHK-004).
@@ -1233,28 +1156,6 @@ fn solve_mpie_session(
         *c *= source_v;
     }
     Ok(currents)
-}
-
-/// Whether a deck can be solved on the MPIE path: it is driven by at least one
-/// voltage source (`EX` type 0) and has no loads / transmission lines / networks
-/// and no plane-wave or current-source excitation (all unsupported by the MPIE).
-fn mpie_compatible_deck(deck: &nec_model::deck::NecDeck) -> bool {
-    let mut has_voltage_source = false;
-    for card in &deck.cards {
-        match card {
-            Card::Ld(_) | Card::Tl(_) | Card::Nt(_) => return false,
-            Card::Ex(ex) => {
-                if ex.kind().is_plane_wave()
-                    || ex.kind() == nec_model::card::ExcitationKind::CurrentSource
-                {
-                    return false;
-                }
-                has_voltage_source = true;
-            }
-            _ => {}
-        }
-    }
-    has_voltage_source
 }
 
 #[allow(clippy::too_many_arguments)]
