@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-07-13
+last_updated: 2026-08-23
 ---
 
 # Changelog
@@ -10,6 +10,47 @@ last_updated: 2026-07-13
 All notable documentation process changes are recorded here.
 
 ## [Unreleased]
+
+## [0.13.0] — 2026-08-23 — Laplace loads + Leeson taper + project-quality hardening
+
+Two new user-facing features from the pymininec cross-validation review, plus a
+substantial project-quality pass (CI, traceability, coverage). The default Hallén
+solver and the validated corpus are unchanged.
+
+### Features
+
+- **Laplace-domain loads** (`--loads-config <file.toml>`): an arbitrary rational
+  series load `Z(s) = N(s)/D(s)` (`s = jω`), generalising the LD 0–5 lumped loads
+  and covering matching networks, traps with parasitic R, and curve-fitted loads.
+  Hallén/pulse paths; reproduces the equivalent `LD` network to numerical
+  tolerance. Rejected on `--solver mpie`. (#357)
+- **Leeson step-tapered-radius correction** (`fnec taper --sections "<dia>,<len> …"`):
+  replaces a stepped-diameter (telescoping-tubing) element with its equivalent
+  uniform-diameter element, per D. B. Leeson, *Physical Design of Yagi Antennas*
+  ch. 8. Validated to the digit against the book's worked example. (#360)
+
+### Fixes
+
+- **GPU readback** now degrades to the CPU path on a device-lost / dropped-map
+  failure after dispatch instead of panicking. (#355)
+
+### Project quality
+
+- **Core CI** — fmt / clippy `-D warnings` / test / `cargo audit` / `cargo deny` /
+  docs contract on every PR (previously local git hooks only), a **coverage floor**,
+  SHA-pinned actions, and least-privilege workflow permissions. (#350, #352, #356)
+- **Machine-enforced requirements traceability** — a machine-readable
+  `docs/project/requirements.toml` register bound to tests by `// VERIFIES: <ID>`
+  comments, with a GAP/dangling checker in the test gate and a generated matrix. (#354)
+- **Docs** — pymininec reference, frontmatter-validator scope fix + stale
+  cli-guide version, the 2026-08-21 gap review, and the Sommerfeld–Norton "Level 2"
+  DCIM scoping + a validated Python prototype (studies). (#351, #353, #358–#363)
+
+### Known limitations
+
+- Unchanged from 0.12.0. `fnec taper` is for linear, essentially unloaded elements
+  within ~±15 % of self-resonance; Laplace loads and the taper subcommand are CLI
+  features (not wired into the GUI).
 
 ## [0.12.0] — 2026-07-13 — GPU 3-D antenna workbench (GUI redesign) + pre-release correctness fixes
 
