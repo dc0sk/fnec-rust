@@ -112,7 +112,7 @@ approximation with no surface wave.
 | angle- & polarization-dependent Fresnel (nec2c GN0 RCM) | deferred — **low value** (fnec ≈ RCM already) |
 | Sommerfeld/Norton surface wave (nec2c GN2 exact) — straight horizontal wire | **implemented + wired** as an opt-in solver: `fnec --ground-solver sommerfeld` (default `rcm`); reproduces nec2c GN2 incl. the low-height sign flip (~13 %) |
 | Sommerfeld surface wave — straight vertical / tilted / sloping wire | **implemented** (Level 1, general reflected dyadic); adds the surface-wave gap correctly, though absolute GN2 match is looser off-horizontal (bounded by fnec's scalar-Γ baseline) |
-| Sommerfeld surface wave — bent / mixed geometry, and currents/patterns | deferred; `--ground-solver sommerfeld` declines bent geometry (keeps RCM). Correct currents/patterns near ground = Level 2 (kernel in the Z-matrix via DCIM) |
+| Sommerfeld surface wave — bent / mixed geometry, and currents/patterns | deferred; `--ground-solver sommerfeld` declines bent geometry with a warning (keeps RCM). Correct currents/patterns near ground = Level 2 (kernel in the Z-matrix via DCIM) |
 | buried wire | deferred → fail-fast (unchanged) |
 
 The finite-ground reflection still multiplies the (now correctly-signed) image by a
@@ -199,7 +199,9 @@ alongside the existing real-image `elem`.
    tilted (the general reflected dyadic, see the boundary table above) — the
    surface-wave reaction ΔZ (`ΔZ_Sommerfeld − ΔZ_scalarΓ`, over fnec's solved
    currents) is added to the reported feedpoint `Z`. Bent/mixed geometry is
-   silently declined (keeps RCM).
+   declined with an explicit warning (keeps RCM), and the low-height warning is
+   suppressed once the correction applies — it would otherwise deny the very
+   surface wave the reported `Z` now includes.
 
 **Measured end-to-end** (horizontal λ/2 dipole 0.025 λ over εr=13/σ=0.005; ΔR vs
 fnec free space 67.2 Ω): `--ground-solver rcm` → 26.8 Ω (**ΔR −40**, the wrong-signed
