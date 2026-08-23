@@ -452,11 +452,16 @@ impl FnecGui {
         // Deck-level caveats sit above the tab content rather than inside one
         // panel: they describe the deck, so they are just as true on the Sweep,
         // Pattern and Currents tabs, which used to show nothing at all.
+        //
+        // The marker is the plain word, not a "⚠": iced's default font has no glyph
+        // for U+26A0 and renders it as a tofu box — confirmed on screen, not
+        // assumed. Box-drawing (─) and Ω do render, so the rule is to stay inside
+        // what the shipped font actually covers rather than trusting symbol support.
         let mut caveats = column![].spacing(2);
         if !self.state.deck_warnings.is_empty() {
             caveats = caveats.push(text("─── Deck caveats ───"));
             for w in &self.state.deck_warnings {
-                caveats = caveats.push(text(format!("⚠ {w}")).width(Length::Fill));
+                caveats = caveats.push(text(format!("warning: {w}")).width(Length::Fill));
             }
         }
 
@@ -925,9 +930,10 @@ fn impedance_view(r: &SolveResult) -> Element<'_, Message> {
     ]
     .spacing(4);
     // Surface solver caveats (unreliable topology, deferred ground, unsupported
-    // loads) so the GUI never presents a wrong number as trustworthy.
+    // loads) so the GUI never presents a wrong number as trustworthy. Plain word,
+    // not "⚠": the default font has no U+26A0 glyph and drew a tofu box here.
     for w in &r.warnings {
-        col = col.push(text(format!("⚠ {w}")).width(Length::Fill));
+        col = col.push(text(format!("warning: {w}")).width(Length::Fill));
     }
     col.into()
 }
@@ -1095,7 +1101,8 @@ impl FnecGui {
             ""
         };
         let status: Element<Message> = match &self.state.editor.error {
-            Some(e) => text(format!("⚠ {e}")).width(Length::Fill).into(),
+            // Same missing-glyph reason as the caveats strip: no U+26A0 in the font.
+            Some(e) => text(format!("error: {e}")).width(Length::Fill).into(),
             None => text(format!(
                 "Preview OK — {} wire(s){dirty}",
                 self.state.editor.doc.wire_count()
