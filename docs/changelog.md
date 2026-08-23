@@ -17,6 +17,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A path inventory for cross-cutting concerns**
+  (`docs/project/path-inventory.md`), enumerating every production execution path
+  each concern must reach and what proves it does. Writing it immediately found
+  **three gaps that "all three frontends" language had hidden**: the distributed
+  `--hosts` path skips pre-solve validation at both ends (FND-013), the
+  negative-resistance tripwire is CLI-only (FND-014), and the remote worker
+  discards the load/TL builder warnings while `NT` cards are never stamped off the
+  CLI path at all (FND-015). `scripts/check-path-inventory.py` fails CI if a cited
+  test has been renamed away or a gap row links to no finding, so the inventory
+  cannot decay into a coverage claim backed by nothing.
+
 - **A findings ledger** (`docs/project/findings-ledger.md`). Discoveries used to
   scatter — one in a review document, one in a changelog entry, one in a design
   doc, one only in a spoken "still open: X, Y, Z". Nothing was lost, but that was

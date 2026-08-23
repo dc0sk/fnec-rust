@@ -24,6 +24,12 @@ the whole delivery chain together in one place:
 > `scripts/check-findings-ledger.py` enforces that a deferred finding names an
 > owner and a fixed one cites its change; it runs in CI.
 
+> **Path inventory.** [`path-inventory.md`](path-inventory.md) enumerates, for each
+> cross-cutting concern, every production execution path and what proves the
+> concern reaches it — gaps included, each linked to its finding.
+> `scripts/check-path-inventory.py` fails CI if a cited test has gone or a gap row
+> links to nothing.
+
 ```
 requirements / changes
         │

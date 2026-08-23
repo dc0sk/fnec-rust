@@ -141,6 +141,11 @@ jobs:
       # rows that only look resolved.
       - name: Findings ledger rows are well-formed
         run: python3 scripts/check-findings-ledger.py
+      # Path inventory references must resolve: a cited test that has been renamed
+      # away, or a gap row linking to no finding, turns the inventory into a
+      # coverage claim backed by nothing.
+      - name: Path inventory references resolve
+        run: python3 scripts/check-path-inventory.py
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-
