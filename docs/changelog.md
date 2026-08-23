@@ -11,6 +11,30 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--exec gpu` no longer reports a diverged solve as a result.** The GPU-resident
+  Hallén solve is f32, and its normal-equations form squares the condition number,
+  so it loses accuracy as the segment count grows. Nothing checked the answer: on a
+  301-segment λ/2 dipole one frequency point came back at 101 Ω against the CPU's
+  75 Ω, another at **−1.98 Ω** — a negative resistance for a passive antenna — and
+  a 151-segment deck was off by 7 %. The 2 Ω tolerance the shader header claims
+  "the host validates" existed only in a 51-segment parity test, never in the
+  production path.
+
+  The shader now returns its own relative residual `‖y − Mx‖ / ‖y‖` and the host
+  rejects a non-converged solve, falling back to the f64 CPU solve with a warning.
+  The threshold (`1e-4`) is derived from measurement rather than picked: across
+  51–301 segments every accurate solve sits at or below 7e-5 while the smallest
+  inaccurate one is 8.9e-4, an order of magnitude clear. After the gate, `--exec
+  gpu` matches `--exec cpu` within 0.6 Ω at every size tested, and the negative
+  resistances are gone.
+
+  The residual pass and the added CPU fallbacks cost some of the device-caching
+  win back: the 10-point 301-segment sweep runs ~4.9 s against 4.2 s ungated and
+  5.3 s before either change. `--exec cpu` remains faster (~1.7 s) on this
+  hardware.
+
 ### Performance
 
 - **The wgpu device is built once per process, not once per kernel call**
@@ -31,22 +55,9 @@ All notable documentation process changes are recorded here.
   CPU fallback.
 
   Note this does not make `--exec gpu` faster than `--exec cpu` on this hardware
-  (4.17 s vs 1.70 s); it removes one specific overhead. See the known limitation
-  below on GPU accuracy.
+  (4.17 s vs 1.70 s); it removes one specific overhead. The accuracy gate above
+  costs part of it back.
 
-### Known limitations
-
-- **`--exec gpu` loses accuracy as the segment count grows, silently.** Measured on
-  a λ/2 dipole against the `--exec cpu` f64 reference: 101 segments agree to
-  ~0.01 Ω, 151 segments differ by up to 7 %, and 301 segments diverge outright —
-  one frequency point reports **−1.98 Ω**, a negative resistance for a passive
-  antenna, and another reports 163 Ω against the reference 83 Ω. The error is
-  frequency- and size-dependent, consistent with the f32 LU in the GPU-resident
-  solve. Nothing warns. The existing claim that the GPU-resident path "matches the
-  f64 CPU solve to ~0.01 Ω" holds for the 51-segment reference dipole it was
-  measured on and does not generalise. Pre-existing, not introduced by the device
-  caching above — verified byte-identical against the unmodified build. Use
-  `--exec cpu` for decks beyond ~100 segments until this is fixed.
 
 ### Fixed
 
