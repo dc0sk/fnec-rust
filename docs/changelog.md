@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GUI's warning marker rendered as an empty box.** `⚠` (U+26A0) has no glyph
+  in iced's default font, so every caveat in the Solve panel had been drawn with a
+  tofu box in front of it — since well before the caveats strip existed. Found by
+  actually looking at a screenshot; the tests could not see it. All three sites now
+  use plain `warning:` / `error:` text, matching what the CLI prints. Box-drawing
+  (`─`) and `Ω` do render, so the rule is to stay inside what the shipped font
+  covers rather than assuming symbol support.
+
 - **Corpus reference values now carry per-case provenance, and the file-wide claim
   they replace was wrong for 37 of 48 cases.** `reference_engine_version` asserted
   one engine version for the whole corpus; the cases were in fact last produced by
