@@ -15,6 +15,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The negative-resistance warning no longer blames a cause the deck cannot
+  have.** It offered "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
+  unconditionally, so a deck containing a *single straight wire* — no junction
+  anywhere in it — sent the reader after a cause that is not present. A badly
+  under-segmented 40 m wire (3 segments over ~1.9 λ) reproduces it at −162.5 Ω.
+  The explanation is now chosen from `nec_solver::validate::has_wire_junction`,
+  which uses the same merged-conductor grouping the junction warning does, so the
+  two cannot disagree; a junctionless deck is told the usual cause does not apply
+  and pointed at a cross-check instead. Where a junction really is present the
+  junction explanation is unchanged.
+
 ## [0.14.0] — 2026-08-23 — Frontend validation parity + GPU and MPIE correctness
 
 Every finding of the 2026-07-19 project review is closed in this release. The

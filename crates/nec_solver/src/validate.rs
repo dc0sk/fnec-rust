@@ -390,6 +390,22 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
+/// Whether the geometry contains a genuine wire junction — a bend, a T/Y, or a
+/// start-to-start split.
+///
+/// Uses the same merged (collinear-conductor) grouping as
+/// [`feedpoint_at_junction_warnings`], so the two cannot disagree: a straight
+/// conductor merely split across several `GW` cards is *not* a junction, because
+/// the solver does not treat it as one.
+///
+/// Exists so a diagnostic can check whether a junction-based explanation applies
+/// before offering one. Blaming "a junctioned-geometry limitation" on a single
+/// straight wire sends the reader after a cause that is not present.
+pub fn has_wire_junction(segs: &[Segment]) -> bool {
+    let merged = merge_collinear_wire_endpoints(segs);
+    !detect_wire_junctions(segs, &merged, 1e-6).is_empty()
+}
+
 /// PH9-CHK-006: an antenna **very low over finite ground** has only an approximate
 /// feedpoint impedance.
 ///
@@ -605,6 +621,33 @@ mod tests {
             "GW 1 21 -5.278 0 5.0 5.278 0 5.0 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert_eq!(low_finite_ground_warning(&high, &gn2, 14.2e6, false), None);
+    }
+
+    /// The predicate a diagnostic uses before offering a junction-based
+    /// explanation. A straight wire has no junction however it is written.
+    #[test]
+    fn has_wire_junction_distinguishes_a_bend_from_a_straight_wire() {
+        let (_d, straight) = deck_and_segs(CLEAN_DIPOLE);
+        assert!(
+            !has_wire_junction(&straight),
+            "a single straight wire has no junction"
+        );
+
+        // A straight conductor split across two GW cards is still straight — the
+        // solver merges it, so a diagnostic must not call it a junction either.
+        let (_d, split) = deck_and_segs(
+            "GW 1 11 -5.278 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5.278 0 0 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(
+            !has_wire_junction(&split),
+            "a collinear split is merged, so it is not a junction"
+        );
+
+        // A real bend is.
+        let (_d, bent) = deck_and_segs(
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(has_wire_junction(&bent), "a bend is a junction");
     }
 
     #[test]
