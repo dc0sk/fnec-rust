@@ -302,3 +302,82 @@ EN
         "MPIE models the surface wave; the RCM low-ground warning must not fire:\n{stderr}"
     );
 }
+
+// VERIFIES: NFR-004 (numerical compatibility vs reference within tolerances)
+/// The same antenna written two legal ways must report the same feedpoint
+/// impedance. An apex-fed inverted-V can be entered either as a continuous chain
+/// (`GW` 1 runs tip → apex, `GW` 2 runs apex → tip) or "start-to-start" (both
+/// `GW` cards run apex → tip). The MPIE's nodal basis takes its reference current
+/// direction from the incidence order of the fed node's arms, which opposes the
+/// driven segment's own tangent in the second form.
+///
+/// Regression: the CLI rebuilt `V/I` from the per-segment currents without
+/// re-referencing them to the `EX` source polarity, so the start-to-start form
+/// reported a *negative* resistance (−40.6 − j8.0 Ω) for an antenna the chain form
+/// solved correctly at +40.7 + j8.1 Ω (nec2c 43.5 + j12.4).
+#[test]
+fn mpie_feedpoint_z_is_independent_of_gw_direction() {
+    // λ/4 arms at ±45° in the xz-plane, tips at 0.05 λ, apex above them.
+    // (λ = 21.1121 m at 14.2 MHz; arm = 5.2780 m; horizontal/vertical leg 3.7321 m.)
+    let chain = write_deck(
+        "invv_chain",
+        "\
+CM apex-fed inverted-V, continuous chain (tip -> apex -> tip)
+CE
+GW 1 20 -3.732135 0.0 1.055607 0.0 0.0 4.787742 0.001
+GW 2 20 0.0 0.0 4.787742 3.732135 0.0 1.055607 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 20 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let s2s = write_deck(
+        "invv_s2s",
+        "\
+CM apex-fed inverted-V, both wires written outward from the apex
+CE
+GW 1 20 0.0 0.0 4.787742 -3.732135 0.0 1.055607 0.001
+GW 2 20 0.0 0.0 4.787742 3.732135 0.0 1.055607 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 1 0 1.0 0.0
+XQ
+EN
+",
+    );
+
+    let out_chain = run_fnec(&["--solver", "mpie", chain.to_str().unwrap()]);
+    let out_s2s = run_fnec(&["--solver", "mpie", s2s.to_str().unwrap()]);
+    assert!(
+        out_chain.status.success(),
+        "chain form failed: {out_chain:?}"
+    );
+    assert!(
+        out_s2s.status.success(),
+        "start-to-start form failed: {out_s2s:?}"
+    );
+
+    let (r_chain, x_chain) = feedpoint_z(&String::from_utf8_lossy(&out_chain.stdout));
+    let (r_s2s, x_s2s) = feedpoint_z(&String::from_utf8_lossy(&out_s2s.stdout));
+
+    // Both must be passive and near nec2c's 43.5 + j12.4 Ω.
+    assert!(
+        (30.0..55.0).contains(&r_chain) && (30.0..55.0).contains(&r_s2s),
+        "unphysical R: chain={r_chain}, start-to-start={r_s2s}"
+    );
+    // The two forms feed adjacent nodes (a half-segment apart), so agree to ~1%.
+    assert!(
+        (r_chain - r_s2s).abs() / r_chain < 0.02 && (x_chain - x_s2s).abs() < 1.0,
+        "GW direction changed the answer: chain={r_chain}+j{x_chain}, \
+         start-to-start={r_s2s}+j{x_s2s}"
+    );
+
+    // And the negative-resistance tripwire must stay silent on a passive antenna.
+    let stderr = String::from_utf8_lossy(&out_s2s.stderr);
+    assert!(
+        !stderr.contains("negative resistance"),
+        "unexpected negative-resistance warning:\n{stderr}"
+    );
+}

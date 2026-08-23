@@ -11,6 +11,22 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Fixes
+
+- **`--solver mpie`: feedpoint impedance no longer depends on `GW` direction.**
+  The MPIE's nodal basis takes its reference current direction from the incidence
+  order of the fed node's two arms. When the driven segment's `GW` card is written
+  *outward* from the shared node — an apex-fed inverted-V entered as two `GW`
+  cards that both start at the apex — that direction opposes the segment's own
+  tangent, and the CLI's rebuilt `V/I` came out negated: a physically impossible
+  **negative resistance** (−40.6 − j8.0 Ω) for the same antenna the end-to-start
+  form solved correctly at +40.7 + j8.1 Ω (nec2c 43.5 + j12.4). The solve is now
+  re-referenced to the `EX` source polarity. The library's own `MpieSolution::z_in`
+  was always correct — only the CLI rebuild lost the sign — so no validated
+  library result changes. The negative-resistance tripwire is now also armed on
+  the MPIE path (previously `hallen`-only), so a defect of this shape cannot pass
+  silently again.
+
 ## [0.13.0] — 2026-08-23 — Laplace loads + Leeson taper + project-quality hardening
 
 Two new user-facing features from the pymininec cross-validation review, plus a

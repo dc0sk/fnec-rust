@@ -22,7 +22,8 @@
 //     junction node contributes exactly N−1 = 2 bases, so the Y has
 //     3·(nseg−1) + 2 bases total.
 
-use nec_solver::{solve_mpie, MpieGeometry};
+use nec_solver::{feed_reference_sign, segment_currents, solve_mpie, MpieGeometry};
+use num_complex::Complex64;
 
 const C0: f64 = 299_792_458.0;
 const FREQ: f64 = 14.2e6;
@@ -164,5 +165,102 @@ fn inverted_v_bend_solves_and_converges() {
         "R not converging: {} then {}",
         z1.re,
         z2.re
+    );
+}
+
+/// Gate B5 (feed referencing): the nodal basis picks its reference current
+/// direction from the incidence order of the fed node's two arms, so for a
+/// *start-to-start* junction (both wires written outward from the shared node)
+/// that direction opposes the driven segment's own `p0 → p1` tangent.
+/// [`feed_reference_sign`] reports that, and a caller re-referencing the solve to
+/// a source applied along the segment (as `EX` does) must apply it — otherwise
+/// every segment current, and hence `V/I`, comes out negated.
+///
+/// Regression: `fnec --solver mpie` reported a *negative* resistance
+/// (−40.6 − j8.0 Ω instead of +40.6 + j8.0 Ω) for an apex-fed inverted-V whose two
+/// `GW` cards both start at the apex — the same antenna as the end-to-start form,
+/// only written differently.
+#[test]
+fn feed_reference_sign_flips_for_a_start_to_start_junction() {
+    let lam = C0 / FREQ;
+    let arm = lam / 4.0;
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let tips = [[arm * s, 0.0, -arm * s], [-arm * s, 0.0, -arm * s]];
+    let nseg = 20;
+
+    // Nodes: apex first, then arm 1 outward, then arm 2 outward (shared apex).
+    let mut nodes = vec![[0.0, 0.0, 0.0]];
+    let mut out_segments = Vec::new();
+    for tip in tips {
+        let mut prev = 0usize;
+        for i in 1..=nseg {
+            let t = i as f64 / nseg as f64;
+            nodes.push([tip[0] * t, tip[1] * t, tip[2] * t]);
+            let idx = nodes.len() - 1;
+            out_segments.push([prev, idx]);
+            prev = idx;
+        }
+    }
+    // Start-to-start: both arms' first segments leave the apex (apex at `p0`).
+    let s2s = MpieGeometry {
+        nodes: nodes.clone(),
+        segments: out_segments.clone(),
+        radius: 0.001,
+    };
+    // End-to-start: arm 1 is traversed inward, so its last segment arrives at the
+    // apex (apex at `p1`) — the same wires, written as a continuous chain.
+    let chain = MpieGeometry {
+        nodes,
+        segments: out_segments
+            .iter()
+            .enumerate()
+            .map(|(i, &[a, b])| if i < nseg { [b, a] } else { [a, b] })
+            .collect(),
+        radius: 0.001,
+    };
+
+    // Arm 1's apex segment: index 0 in both, but reversed in `chain`.
+    assert_eq!(
+        feed_reference_sign(&s2s, 0, 0),
+        Some(-1.0),
+        "start-to-start apex feed must report an opposing reference direction"
+    );
+    assert_eq!(
+        feed_reference_sign(&chain, 0, 0),
+        Some(1.0),
+        "end-to-start apex feed must report an agreeing reference direction"
+    );
+
+    // The solver's own `z_in` is reference-independent: both forms agree.
+    let z_s2s = solve_mpie(&s2s, FREQ, 0).unwrap();
+    let z_chain = solve_mpie(&chain, FREQ, 0).unwrap();
+    assert!(
+        (z_s2s.z_in - z_chain.z_in).norm() < 1e-9,
+        "z_in must not depend on how the deck is written: {} vs {}",
+        z_s2s.z_in,
+        z_chain.z_in
+    );
+
+    // But `V/I` rebuilt from the per-segment currents (what the CLI reports) only
+    // matches `z_in` once the reference sign is applied.
+    let sign = feed_reference_sign(&s2s, 0, 0).unwrap();
+    let i_seg = segment_currents(&s2s, &z_s2s.basis_currents)[0];
+    let z_unsigned = Complex64::new(1.0, 0.0) / i_seg;
+    assert!(
+        z_unsigned.re < 0.0,
+        "the unsigned rebuild is expected to be the negated (unphysical) value, got {z_unsigned}"
+    );
+    // The rebuild uses the segment's *midpoint* current (the mean of the two
+    // nodal bases touching it), so it agrees with `z_in` to the discretization
+    // offset rather than exactly — but it must land on the physical side.
+    let z_signed = Complex64::new(sign, 0.0) / i_seg;
+    assert!(
+        z_signed.re > 0.0,
+        "signed rebuild must be passive: {z_signed}"
+    );
+    assert!(
+        (z_signed - z_s2s.z_in).norm() / z_s2s.z_in.norm() < 0.01,
+        "signed rebuild {z_signed} must track z_in {}",
+        z_s2s.z_in
     );
 }
