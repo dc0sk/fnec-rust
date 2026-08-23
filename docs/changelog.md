@@ -11,6 +11,25 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Tests
+
+- **The defensive guards flagged as untested now have tests** (review-260719
+  FIND-014/016), 25 cases across four modules. `nec_solver::network` had **no tests
+  at all** — its seven `NT` rejection paths (short card, non-integer identifiers,
+  non-numeric admittances, either endpoint missing, both endpoints on one segment,
+  singular admittance matrix) are now covered, along with the supported path
+  checked against `[Z] = [Y]⁻¹`. `nec_solver::tl` gains its five rejection paths,
+  and `nec_project::from_markdown` its six. Each rejection mutates one field of a
+  fixture that is separately asserted to be *accepted*, so a failure means the
+  guard fired rather than the fixture being broken.
+
+  For FIND-016, `probe_capability` still needs a reachable host and stays untested,
+  but the part that can actually be wrong — parsing what comes back — is split out
+  of the SSH call into `parse_cpu_threads` / `parse_gpu_available` and tested,
+  failure defaults included. Those defaults matter: a node parsed as having zero
+  threads would drop out of scheduling entirely, and an erroring GPU probe must
+  never promote a node to GPU-capable.
+
 ### Changed
 
 - **`nec_model::card::NeCard` is renamed `NearFieldCard`** (review-260719

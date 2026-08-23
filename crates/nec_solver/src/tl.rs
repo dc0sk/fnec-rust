@@ -428,4 +428,135 @@ mod tests {
             "interpreting segment 0 as center segment"
         ));
     }
+
+    // --- rejection paths (review-260719 FIND-014) ---------------------------
+    //
+    // Each of these guards skips the card rather than stamping something wrong
+    // into the impedance matrix, and each was previously unexercised.
+
+    /// A well-formed lossless card, which the cases below mutate one field at a
+    /// time so exactly one guard fires per test.
+    fn good_tl() -> TlCard {
+        TlCard {
+            tag1: 1,
+            segment1: 2,
+            tag2: 2,
+            segment2: 2,
+            num_segments: 1,
+            tl_type: 0,
+            z0: 50.0,
+            length: 1.0,
+            f3: 1.0,
+        }
+    }
+
+    fn stamps_and_warnings(tl: TlCard) -> (usize, Vec<TlWarning>) {
+        let segs = segs_two_wire_geometry();
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Tl(tl));
+        let (stamps, warnings) = build_tl_stamps(&deck, &segs, 14.2e6);
+        (stamps.len(), warnings)
+    }
+
+    /// The control: the unmutated card stamps and stays quiet, so a rejection
+    /// below is caused by the mutation and not by the fixture.
+    #[test]
+    fn the_rejection_fixture_itself_is_accepted() {
+        let (n, warnings) = stamps_and_warnings(good_tl());
+        assert_eq!(n, 4, "control card should stamp four entries");
+        assert!(warnings.is_empty(), "control card warned: {warnings:?}");
+    }
+
+    #[test]
+    fn an_endpoint_missing_from_the_geometry_is_rejected() {
+        for (tl, want) in [
+            (
+                TlCard {
+                    tag1: 9,
+                    ..good_tl()
+                },
+                "TL endpoint (9, 2) not found",
+            ),
+            (
+                TlCard {
+                    tag2: 9,
+                    ..good_tl()
+                },
+                "TL endpoint (9, 2) not found",
+            ),
+        ] {
+            let (n, warnings) = stamps_and_warnings(tl);
+            assert_eq!(n, 0, "a rejected TL must stamp nothing");
+            assert!(warn_contains(&warnings, want), "{warnings:?}");
+        }
+    }
+
+    #[test]
+    fn both_endpoints_on_one_segment_is_rejected() {
+        let tl = TlCard {
+            tag2: 1,
+            ..good_tl()
+        };
+        let (n, warnings) = stamps_and_warnings(tl);
+        assert_eq!(n, 0);
+        assert!(
+            warn_contains(&warnings, "resolve to the same segment"),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_positive_characteristic_impedance_is_rejected() {
+        for z0 in [0.0, -50.0] {
+            let (n, warnings) = stamps_and_warnings(TlCard { z0, ..good_tl() });
+            assert_eq!(n, 0, "z0={z0} must stamp nothing");
+            assert!(
+                warn_contains(&warnings, "must be > 0; TL card ignored"),
+                "z0={z0}: {warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_positive_length_is_rejected() {
+        for length in [0.0, -1.0] {
+            let (n, warnings) = stamps_and_warnings(TlCard {
+                length,
+                ..good_tl()
+            });
+            assert_eq!(n, 0, "length={length} must stamp nothing");
+            assert!(
+                warn_contains(&warnings, "must be > 0; TL card ignored"),
+                "length={length}: {warnings:?}"
+            );
+        }
+    }
+
+    /// A lossy line whose `sinh(γℓ)` is ~0 has no finite Z-parameters; stamping it
+    /// anyway would put infinities into the impedance matrix. `γℓ ≈ jπ` is such a
+    /// point: pick the length that puts βℓ at exactly π with zero loss.
+    #[test]
+    fn a_lossy_line_at_a_singular_sinh_point_is_rejected() {
+        let lambda = 299_792_458.0 / 14.2e6;
+        let tl = TlCard {
+            tl_type: 1,
+            length: lambda / 2.0, // βℓ = π
+            f3: 0.0,              // αℓ = 0, so γℓ = jπ exactly and sinh(γℓ) = 0
+            ..good_tl()
+        };
+        let (n, warnings) = stamps_and_warnings(tl);
+        assert_eq!(n, 0, "a singular lossy line must stamp nothing");
+        assert!(warn_contains(&warnings, "singular sinh"), "{warnings:?}");
+
+        // Negative control: the same line with real loss is no longer singular.
+        let ok = TlCard {
+            tl_type: 1,
+            length: lambda / 2.0,
+            f3: 1.0,
+            ..good_tl()
+        };
+        let (n, warnings) = stamps_and_warnings(ok);
+        assert_eq!(n, 4, "a lossy line off the singular point must stamp");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
 }

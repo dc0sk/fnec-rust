@@ -140,3 +140,160 @@ pub fn build_nt_stamps(deck: &NecDeck, segs: &[Segment]) -> (Vec<NtStamp>, Vec<N
 
     (stamps, warnings)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nec_model::card::{GwCard, NtCard};
+
+    /// Two parallel three-segment wires — enough for a two-port network to span.
+    fn two_wire_segments() -> Vec<Segment> {
+        let mut deck = NecDeck::new();
+        for (tag, x) in [(1u32, 0.0), (2u32, 1.0)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments: 3,
+                start: [x, 0.0, -1.0],
+                end: [x, 0.0, 1.0],
+                radius: 0.001,
+            }));
+        }
+        crate::geometry::build_geometry(&deck).expect("geometry builds")
+    }
+
+    fn deck_with_nt(fields: &[&str]) -> NecDeck {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Nt(NtCard {
+            raw_fields: fields.iter().map(|s| (*s).to_string()).collect(),
+        }));
+        deck
+    }
+
+    fn only_warning(deck: &NecDeck, segs: &[Segment]) -> String {
+        let (stamps, warnings) = build_nt_stamps(deck, segs);
+        assert!(stamps.is_empty(), "a rejected NT card must stamp nothing");
+        assert_eq!(
+            warnings.len(),
+            1,
+            "expected exactly one warning: {warnings:?}"
+        );
+        warnings[0].message.clone()
+    }
+
+    /// The supported path: a well-formed reciprocal NT stamps all four
+    /// Z-parameter entries and says nothing.
+    #[test]
+    fn a_well_formed_nt_stamps_four_entries_without_warning() {
+        let segs = two_wire_segments();
+        let deck = deck_with_nt(&[
+            "1", "2", "2", "2", // tag1 seg1 tag2 seg2
+            "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0", // Y11 Y12 Y22
+        ]);
+        let (stamps, warnings) = build_nt_stamps(&deck, &segs);
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert_eq!(stamps.len(), 4, "expected Z11, Z22, Z12, Z21: {stamps:?}");
+
+        // [Z] = [Y]^-1 for a reciprocal two-port, so the off-diagonals match and
+        // the stamp is symmetric in position.
+        let det = Complex64::new(0.02, 0.0) * Complex64::new(0.02, 0.0)
+            - Complex64::new(-0.01, 0.0) * Complex64::new(-0.01, 0.0);
+        let z12_expected = -Complex64::new(-0.01, 0.0) / det;
+        let z12 = stamps
+            .iter()
+            .find(|(r, c, _)| r != c)
+            .map(|(_, _, z)| *z)
+            .expect("an off-diagonal stamp");
+        assert!(
+            (z12 - z12_expected).norm() < 1e-9,
+            "off-diagonal stamp {z12} != [Y]^-1 value {z12_expected}"
+        );
+    }
+
+    /// Every rejection path warns and skips, rather than stamping something wrong.
+    /// These are the defensive guards the review flagged as untested; each is
+    /// reached by exactly one malformation.
+    #[test]
+    fn a_short_nt_card_is_rejected() {
+        let segs = two_wire_segments();
+        let deck = deck_with_nt(&["1", "2", "2", "2", "0.02"]);
+        let m = only_warning(&deck, &segs);
+        assert!(
+            m.contains("has 5 fields") && m.contains("expected 10"),
+            "{m}"
+        );
+    }
+
+    #[test]
+    fn non_integer_segment_identifiers_are_rejected() {
+        let segs = two_wire_segments();
+        let deck = deck_with_nt(&[
+            "one", "2", "2", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
+        ]);
+        let m = only_warning(&deck, &segs);
+        assert!(m.contains("non-integer segment identifiers"), "{m}");
+    }
+
+    #[test]
+    fn non_numeric_admittance_parameters_are_rejected() {
+        let segs = two_wire_segments();
+        let deck = deck_with_nt(&[
+            "1",
+            "2",
+            "2",
+            "2",
+            "0.02",
+            "0.0",
+            "not-a-number",
+            "0.0",
+            "0.02",
+            "0.0",
+        ]);
+        let m = only_warning(&deck, &segs);
+        assert!(m.contains("non-numeric admittance parameters"), "{m}");
+    }
+
+    #[test]
+    fn an_endpoint_missing_from_the_geometry_is_rejected() {
+        let segs = two_wire_segments();
+        // Tag 9 does not exist; the first endpoint is checked before the second.
+        let first = deck_with_nt(&[
+            "9", "2", "2", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
+        ]);
+        assert!(only_warning(&first, &segs).contains("NT endpoint (9, 2) not found"));
+        let second = deck_with_nt(&[
+            "1", "2", "9", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
+        ]);
+        assert!(only_warning(&second, &segs).contains("NT endpoint (9, 2) not found"));
+    }
+
+    #[test]
+    fn both_endpoints_on_one_segment_is_rejected() {
+        let segs = two_wire_segments();
+        let deck = deck_with_nt(&[
+            "1", "2", "1", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
+        ]);
+        let m = only_warning(&deck, &segs);
+        assert!(m.contains("resolve to the same segment"), "{m}");
+    }
+
+    /// A singular [Y] has no [Z]; inverting it anyway would stamp infinities into
+    /// the impedance matrix and take the whole solve with it.
+    #[test]
+    fn a_singular_admittance_matrix_is_rejected() {
+        let segs = two_wire_segments();
+        // Y11*Y22 - Y12*Y21 = 0.01*0.01 - 0.01*0.01 = 0.
+        let deck = deck_with_nt(&[
+            "1", "2", "2", "2", "0.01", "0.0", "0.01", "0.0", "0.01", "0.0",
+        ]);
+        let m = only_warning(&deck, &segs);
+        assert!(m.contains("singular admittance matrix"), "{m}");
+    }
+
+    /// A deck with no NT card at all is not an error and produces nothing.
+    #[test]
+    fn a_deck_without_nt_cards_produces_nothing() {
+        let segs = two_wire_segments();
+        let (stamps, warnings) = build_nt_stamps(&NecDeck::new(), &segs);
+        assert!(stamps.is_empty() && warnings.is_empty());
+    }
+}
