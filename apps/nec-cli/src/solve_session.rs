@@ -574,8 +574,21 @@ fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segmen
 /// yet model the surface wave, so it warns rather than silently reporting an
 /// unreliable low-antenna impedance. Threshold: the lowest conductor point below
 /// 0.1 λ over `SimpleFiniteGround`.
-fn warn_if_low_finite_ground(segs: &[Segment], ground: &GroundModel, freq_hz: f64) {
+fn warn_if_low_finite_ground(
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+    sommerfeld: SommerfeldOutcome,
+) {
     if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) || freq_hz <= 0.0 {
+        return;
+    }
+    // The warning says the reported impedance misses the surface wave. When
+    // `--ground-solver sommerfeld` actually applied its correction that is false,
+    // so stay silent — the reported Z *does* model it. A *declined* request keeps
+    // the warning (the result really is the scalar-Γ one) and gets its own
+    // diagnostic from `warn_if_sommerfeld_declined`.
+    if sommerfeld == SommerfeldOutcome::Applied {
         return;
     }
     let lambda = C0 / freq_hz;
@@ -850,6 +863,37 @@ fn warn_if_negative_resistance(rows: &[FeedpointRow], solver_mode: SolverMode) {
     }
 }
 
+/// Whether the opt-in Sommerfeld surface-wave correction (PH9-CHK-006) actually
+/// reached the reported feedpoint impedance. The distinction matters for honest
+/// diagnostics: `--ground-solver sommerfeld` is silently declined for geometry the
+/// correction does not cover, and a user who asked for the surface wave and did
+/// not get it must be told.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SommerfeldOutcome {
+    /// Not selected, or not applicable to this solver / ground model.
+    NotRequested,
+    /// Selected and applied — the reported `Z` includes the surface wave.
+    Applied,
+    /// Selected over finite ground but declined by the geometry (bent or mixed
+    /// wire directions); the reported `Z` is the unchanged scalar-Γ (`rcm`) value.
+    Declined,
+}
+
+/// PH9-CHK-006: `--ground-solver sommerfeld` covers straight wires only, and used
+/// to decline everything else in silence — leaving the user believing they had the
+/// surface wave when they had the reflection-coefficient result. Say so.
+fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
+    if outcome == SommerfeldOutcome::Declined {
+        eprintln!(
+            "warning: --ground-solver sommerfeld covers straight wires (horizontal, vertical \
+             or tilted) and declined this bent or mixed geometry; the reported feedpoint \
+             impedance is the unchanged reflection-coefficient (rcm) result. For the surface \
+             wave on bent geometry use --solver mpie, which assembles the reflected kernels \
+             into its Z-matrix (PH9-CHK-006 / PH9-CHK-007)"
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
@@ -862,7 +906,7 @@ pub(super) fn build_feedpoint_rows(
     freq_hz: f64,
     ground: &GroundModel,
     ground_solver: GroundSolver,
-) -> Vec<FeedpointRow> {
+) -> (Vec<FeedpointRow>, SommerfeldOutcome) {
     let mut rows = Vec::new();
 
     // PH9-CHK-006: precompute the Sommerfeld surface-wave ΔZ correction inputs once
@@ -877,6 +921,12 @@ pub(super) fn build_feedpoint_rows(
             Some((*eps_r, *sigma))
         }
         _ => None,
+    };
+    let mut sommerfeld_outcome = if sommerfeld_ground.is_some() {
+        // Downgraded to `Applied` only if a correction actually comes back.
+        SommerfeldOutcome::Declined
+    } else {
+        SommerfeldOutcome::NotRequested
     };
     let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
@@ -939,6 +989,7 @@ pub(super) fn build_feedpoint_rows(
                 sigma,
             ) {
                 z_in += dz;
+                sommerfeld_outcome = SommerfeldOutcome::Applied;
             }
         }
 
@@ -951,7 +1002,13 @@ pub(super) fn build_feedpoint_rows(
         });
     }
 
-    rows
+    // A deck with no feedpoint at all (e.g. a plane-wave-only receive run) never
+    // asked the correction anything — that is not a decline.
+    if rows.is_empty() && sommerfeld_outcome == SommerfeldOutcome::Declined {
+        sommerfeld_outcome = SommerfeldOutcome::NotRequested;
+    }
+
+    (rows, sommerfeld_outcome)
 }
 
 pub(super) fn build_source_rows(deck: &nec_model::deck::NecDeck) -> Vec<SourceRow> {
@@ -1564,7 +1621,7 @@ pub(super) fn solve_frequency_point(
         }
     };
 
-    let rows = build_feedpoint_rows(
+    let (rows, sommerfeld_outcome) = build_feedpoint_rows(
         deck,
         segs,
         v_vec,
@@ -1589,7 +1646,8 @@ pub(super) fn solve_frequency_point(
     if !matches!(solver_mode, SolverMode::Mpie) {
         warn_if_unsupported_topology(deck, segs);
         warn_if_feedpoint_at_junction(deck, segs);
-        warn_if_low_finite_ground(segs, ground, freq_hz);
+        warn_if_low_finite_ground(segs, ground, freq_hz, sommerfeld_outcome);
+        warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
     warn_if_negative_resistance(&rows, solver_mode);
 

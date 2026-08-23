@@ -11,6 +11,19 @@ All notable documentation process changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`--ground-solver sommerfeld` diagnostics now tell the truth about what ran.**
+  The low-height finite-ground warning ("…does not model the Sommerfeld surface
+  wave") was unconditional on height and ignored `--ground-solver`, so it fired
+  even when the Sommerfeld correction *had* been applied — denying the very
+  surface wave the reported `Z` included. It is now suppressed once the correction
+  actually applies. Conversely, the correction covers straight wires only and used
+  to decline bent or mixed geometry **in silence**, leaving the user believing they
+  had the surface wave when they had the reflection-coefficient result; a declined
+  request now warns and points at `--solver mpie`. A request that was never made
+  is not a decline, and a declined request keeps the low-height warning.
+
 ### Docs
 
 - **`docs/cli-guide.md` parity sweep** (review-260719 FIND-001/002/003). The guide

@@ -36,7 +36,7 @@ Compatibility profile note:
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
-| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of any **straight** wire — horizontal, vertical or tilted; bent or mixed geometry is declined and silently keeps the `rcm` result. Currents and patterns are unaffected either way — for those, use `--solver mpie` |
+| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of any **straight** wire — horizontal, vertical or tilted; bent or mixed geometry is declined with a warning and keeps the `rcm` result. Currents and patterns are unaffected either way — for those, use `--solver mpie` |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; the GPU-candidate lane's per-frequency routing seam is not yet wired (PH7-CHK-004), so those points run on CPU with an explicit diagnostic. `gpu` runs real wgpu kernels for the RP far-field and — on free-space Hallén decks of ≥ 128 segments — the Z-matrix fill and GPU-resident dense solve, falling back to CPU with a diagnostic when no wgpu adapter is present. See **GPU far-field acceleration** below |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
@@ -403,8 +403,10 @@ model misses the surface wave, including the low-height sign flip. A horizontal
 to 63.1 + j15.8 Ω, against nec2c's 67.3 + j52.6 Ω.
 
 The correction is a feedpoint-impedance delta only: currents and patterns are
-unchanged, and bent or mixed geometry is declined and silently keeps the `rcm`
-result. For correct near-ground **currents and patterns** on arbitrary geometry
+unchanged, and bent or mixed geometry is declined — with an explicit warning —
+and keeps the `rcm` result. The low-height warning is suppressed once the
+correction actually applies, since the reported `Z` then *does* model the surface
+wave. For correct near-ground **currents and patterns** on arbitrary geometry
 use `--solver mpie`, which assembles the reflected kernels into its Z-matrix.
 
 ### Distributed sweep across SSH workers
