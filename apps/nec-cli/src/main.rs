@@ -503,18 +503,29 @@ fn run_distributed_solve(
     let mut solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)> =
         Vec::with_capacity(n);
 
-    for (fidx, &freq_hz) in freqs_hz.iter().enumerate() {
-        let task_id = format!("{deck_hash}-{fidx}");
-        let task = TaskMessage {
-            task_id,
+    // Dispatch the whole sweep at once so every worker is busy: one task at a
+    // time would leave N-1 workers idle and cost M x latency instead of
+    // M/N x latency (review-260719 FIND-009).
+    let tasks: Vec<TaskMessage> = freqs_hz
+        .iter()
+        .enumerate()
+        .map(|(fidx, &freq_hz)| TaskMessage {
+            task_id: format!("{deck_hash}-{fidx}"),
             deck_hash: deck_hash.clone(),
             deck_b64: deck_b64.clone(),
             solver_config: solver_config.clone(),
             frequency_hz: freq_hz,
-        };
+        })
+        .collect();
 
-        let start = Instant::now();
-        let result = match pool.dispatch(&task) {
+    let batch_start = Instant::now();
+    let outcomes = pool.dispatch_batch(&tasks);
+    // The batch overlaps, so a per-task wall time is not separable from it; charge
+    // each point the mean rather than inventing a number per point.
+    let elapsed_ms = (batch_start.elapsed().as_millis() / (tasks.len().max(1) as u128)).max(1);
+
+    for ((fidx, &freq_hz), outcome) in freqs_hz.iter().enumerate().zip(outcomes) {
+        let result = match outcome {
             Ok((
                 TaskResult::Ok {
                     impedance,
@@ -577,7 +588,6 @@ fn run_distributed_solve(
             )),
             Err(e) => Err(e),
         };
-        let elapsed_ms = start.elapsed().as_millis();
         solved.push((fidx, result, elapsed_ms));
     }
 
