@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/README.md
 status: living
-last_updated: 2026-08-22
+last_updated: 2026-08-23
 ---
 
 # Project traceability layer
@@ -17,6 +17,12 @@ the whole delivery chain together in one place:
 > test gate). [`traceability-matrix-generated.md`](traceability-matrix-generated.md)
 > is regenerated from that data by `scripts/gen-traceability-matrix.py`. The
 > documents below remain the human narrative.
+
+> **Findings ledger.** [`findings-ledger.md`](findings-ledger.md) is the
+> newest-first record of every discovery and the terminal state it reached
+> (`fixed` / `deferred` / `rejected`), or `open` if it has not reached one yet.
+> `scripts/check-findings-ledger.py` enforces that a deferred finding names an
+> owner and a fixed one cites its change; it runs in CI.
 
 ```
 requirements / changes

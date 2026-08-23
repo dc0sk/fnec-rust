@@ -15,6 +15,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **A findings ledger** (`docs/project/findings-ledger.md`). Discoveries used to
+  scatter — one in a review document, one in a changelog entry, one in a design
+  doc, one only in a spoken "still open: X, Y, Z". Nothing was lost, but that was
+  down to the recital rather than to any structure. Every finding now gets an ID
+  and a state, newest-first, and only `open` is non-terminal: `fixed` must cite the
+  change, `deferred` must name an owner, `rejected` must give a rationale.
+  `scripts/check-findings-ledger.py` enforces that shape in CI, so a deferred row
+  with no owner fails the build instead of sitting there looking resolved. Seeded
+  with 12 findings — 7 open, including the ones that previously existed only in
+  conversation.
+
 ### Changed
 
 - **GPU benchmark evidence refreshed, and the GPU-resident solve measured for the
