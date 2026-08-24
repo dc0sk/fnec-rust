@@ -608,32 +608,25 @@ impl SweepJob {
     /// the distributed path makes, from the same shared producer, so the two
     /// cannot drift.
     pub fn geometry_caveats(&self) -> Vec<String> {
-        let worst_mhz = self
-            .freqs_mhz
-            .iter()
-            .copied()
-            .filter(|f| *f > 0.0)
-            .fold(f64::INFINITY, f64::min);
-        if !worst_mhz.is_finite() {
-            return Vec::new();
-        }
-        let mut out = nec_solver::validate::hallen_geometry_caveats(
-            &self.deck,
+        // Only the frequency-dependent caveat. The deck-caveat strip above the tab
+        // already renders the topology and junction ones from `diagnose`, and they
+        // do not vary with frequency — including them here printed the same
+        // sentence twice on one screen for a junction-fed deck, which is the normal
+        // case for a sweep that earns caveats at all.
+        nec_solver::validate::swept_low_ground_caveat(
             &self.segs,
             &self.ground,
-            worst_mhz * 1_000_000.0,
+            &self
+                .freqs_mhz
+                .iter()
+                .map(|f| f * 1_000_000.0)
+                .collect::<Vec<_>>(),
             // The GUI is Hallén-only and exposes no `--ground-solver`, so the
             // surface wave is never modelled here.
             false,
-        );
-        if self.freqs_mhz.len() > 1 {
-            for w in out.iter_mut() {
-                if w.contains("above finite ground") {
-                    *w = format!("{w} (worst case, at {worst_mhz:.6} MHz)");
-                }
-            }
-        }
-        out
+        )
+        .into_iter()
+        .collect()
     }
 
     /// The one caveat a swept negative resistance deserves, or `None`.
@@ -944,6 +937,35 @@ mod tests {
             caveats.iter().any(|w| w.contains("worst case, at 14.2")),
             "must name the frequency the quoted height belongs to: {caveats:?}"
         );
+    }
+
+    #[test]
+    fn the_sweep_panel_does_not_repeat_what_the_deck_strip_already_shows() {
+        // A junction-fed deck is the normal case for a sweep that earns caveats at
+        // all, and the topology and junction caveats do not vary with frequency —
+        // so the strip above the tab already shows them. Emitting them again in the
+        // sweep panel printed the same sentence twice on one screen.
+        // A degree-3 T over GN 2 — a bend is merged into one conductor path and
+        // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
+        // an empty strip and prove nothing.
+        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2).expect("prepare");
+        let strip = deck_warnings(LOW_TEE);
+        let panel = job.geometry_caveats();
+        assert!(
+            !strip.is_empty(),
+            "fixture must earn strip caveats or this proves nothing"
+        );
+        assert!(
+            strip.iter().any(|w| w.contains("junction")),
+            "strip must carry the frequency-independent caveats: {strip:?}"
+        );
+        for w in &panel {
+            assert!(
+                !strip.contains(w),
+                "sweep panel repeats a caveat the strip already shows: {w}"
+            );
+        }
     }
 
     #[test]

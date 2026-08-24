@@ -71,11 +71,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the caveat's range, and nothing said so. `SweepJob::solve_at` emitted no
   geometry caveat at all.
 
-  `SweepJob::geometry_caveats` uses the same `validate::hallen_geometry_caveats`
-  producer as the CLI and the distributed path, at the same worst-case frequency,
-  so the three cannot drift. They are sent when the job is *prepared* rather than
-  when it finishes — a user watching a long streaming sweep should not be told at
-  the end that the antenna was too low for the whole range.
+`validate::swept_low_ground_caveat` now owns both the worst-case frequency choice
+  and the annotation that says which points it applies to, so the CLI's distributed
+  path and the GUI sweep describe the same range identically. They had already
+  drifted: one named the affected count and the other did not, so a 14–60 MHz sweep
+  read as wholly affected in one frontend and partly in the other. Both had also
+  found the caveat by substring match, which breaks the moment its wording changes.
+
+  Caveats are sent when the job is *prepared* rather than when it finishes — a user
+  watching a long streaming sweep should not be told at the end that the antenna was
+  too low for the whole range.
+
+  The sweep panel carries **only** the frequency-dependent caveat. The deck-caveat
+  strip above the tab already renders the topology and junction ones, which do not
+  vary with frequency, so emitting the full set there printed the same sentence
+  twice on one screen for a junction-fed deck — the normal case for a sweep that
+  earns caveats at all.
 
   The test fixture is clean at its `FR` frequency and low across its swept range,
   so the two answers genuinely differ; without that the test would pass against

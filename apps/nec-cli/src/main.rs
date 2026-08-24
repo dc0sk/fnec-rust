@@ -526,45 +526,10 @@ fn distributed_pre_solve_caveats(
     if !matches!(solver_mode, SolverMode::Hallen) {
         return Vec::new();
     }
-    // The low-ground check is the only frequency-dependent one, and a sweep has
-    // many frequencies. It trips below 0.1 λ, so the LOWEST frequency is the worst
-    // case: if it does not trip there it trips nowhere. Reporting at that
-    // frequency beats both alternatives — one line per swept point would repeat a
-    // fixed geometric fact up to thousands of times, and taking `freqs_hz[0]`
-    // would miss a descending sweep entirely.
-    let worst = freqs_hz
-        .iter()
-        .copied()
-        .filter(|f| *f > 0.0)
-        .fold(f64::INFINITY, f64::min);
-    if !worst.is_finite() {
-        return Vec::new();
-    }
-    let mut out = nec_solver::validate::hallen_geometry_caveats(deck, segs, ground, worst, false);
-
-    // The caveat's text quotes a height in wavelengths, which is the worst case's,
-    // so say which frequency it belongs to whenever a sweep has more than one —
-    // not only when the count is partial. A reader given "0.030 λ" for a 14–50 MHz
-    // sweep would otherwise take it as true of every point.
-    let usable: Vec<f64> = freqs_hz.iter().copied().filter(|f| *f > 0.0).collect();
-    if usable.len() > 1 {
-        let tripped = usable
-            .iter()
-            .filter(|f| {
-                nec_solver::validate::low_finite_ground_warning(segs, ground, **f, false).is_some()
-            })
-            .count();
-        for w in out.iter_mut() {
-            if w.contains("above finite ground") {
-                *w = format!(
-                    "{w} (worst case, at {:.6} MHz; {tripped} of {} swept frequencies are affected)",
-                    worst / 1e6,
-                    usable.len()
-                );
-            }
-        }
-    }
-    out
+    // The worst-case frequency choice and its annotation live in the producer, so
+    // this path and the GUI sweep cannot describe the same range differently —
+    // which they did, until one of them grew an affected-count the other lacked.
+    nec_solver::validate::hallen_geometry_caveats_swept(deck, segs, ground, freqs_hz, false)
 }
 
 /// The negative-resistance caveat for one distributed result, if it earns one.

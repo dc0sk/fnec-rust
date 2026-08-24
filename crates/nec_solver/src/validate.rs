@@ -596,15 +596,82 @@ pub fn hallen_geometry_caveats(
     freq_hz: f64,
     surface_wave_modelled: bool,
 ) -> Vec<String> {
+    let mut out = frequency_independent_caveats(deck, segs);
+    if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
+        out.push(w);
+    }
+    out
+}
+
+/// The same set for a whole frequency sweep.
+///
+/// Only one of these caveats depends on frequency, and it is the reason this
+/// function exists: evaluating a sweep at a single frequency reports the wrong
+/// answer for every other point. The low-ground check trips below 0.1 λ, so the
+/// **lowest** swept frequency is the worst case — if it does not trip there it
+/// trips nowhere.
+pub fn hallen_geometry_caveats_swept(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freqs_hz: &[f64],
+    surface_wave_modelled: bool,
+) -> Vec<String> {
+    let mut out = frequency_independent_caveats(deck, segs);
+    if let Some(w) = swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled) {
+        out.push(w);
+    }
+    out
+}
+
+/// The caveats that hold for the deck regardless of frequency.
+fn frequency_independent_caveats(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(w) = unsupported_topology_warning(deck, segs) {
         out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
-    if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
-        out.push(w);
-    }
     out
+}
+
+/// The low-over-ground caveat for a swept range, annotated with what it applies to.
+///
+/// Separate from the full set because a frontend that already shows the
+/// frequency-independent caveats elsewhere — the GUI's deck-caveat strip does —
+/// wants only this one, and showing the same sentence twice on one screen is its
+/// own defect.
+///
+/// The annotation is built here rather than by each caller. Two callers grew their
+/// own version of it and had already diverged: one named the affected count and the
+/// other did not, so the same sweep read as wholly affected in one frontend and
+/// partly in the other. Both also matched the caveat by substring to find it, which
+/// breaks the moment its wording changes.
+pub fn swept_low_ground_caveat(
+    segs: &[Segment],
+    ground: &GroundModel,
+    freqs_hz: &[f64],
+    surface_wave_modelled: bool,
+) -> Option<String> {
+    let usable: Vec<f64> = freqs_hz.iter().copied().filter(|f| *f > 0.0).collect();
+    let worst = usable.iter().copied().fold(f64::INFINITY, f64::min);
+    if !worst.is_finite() {
+        return None;
+    }
+    let base = low_finite_ground_warning(segs, ground, worst, surface_wave_modelled)?;
+    if usable.len() <= 1 {
+        return Some(base);
+    }
+    // The caveat quotes a height in wavelengths, which belongs to the worst case
+    // alone. Without saying so, a reader takes "0.030 λ" as true of every point.
+    let affected = usable
+        .iter()
+        .filter(|f| low_finite_ground_warning(segs, ground, **f, surface_wave_modelled).is_some())
+        .count();
+    Some(format!(
+        "{base} (worst case, at {:.6} MHz; {affected} of {} swept frequencies are affected)",
+        worst / 1e6,
+        usable.len()
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -814,6 +881,43 @@ mod tests {
     // An inverted-V fed away from the apex: two wires meeting at a bend, which is
     // a genuine junction. Solves to Re Z = -5.973 Ω on the Hallén path.
     const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    #[test]
+    fn a_swept_low_ground_caveat_names_the_frequency_and_the_affected_count() {
+        // Antenna 0.634 m up over GN 2: 0.030 lambda at 14.2 MHz, 0.127 lambda at
+        // 60 MHz. A sweep across that straddles the 0.1 lambda threshold, so the
+        // quoted height is true of some points and not others — and saying which
+        // is the whole job of this annotation.
+        let (_deck, segs) = deck_and_segs(
+            "GW 1 21 -5.282 0 0.634 5.282 0 0.634 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let gn2 = GroundModel::SimpleFiniteGround {
+            eps_r: 13.0,
+            sigma: 0.005,
+        };
+        let freqs = [14.2e6, 30.0e6, 60.0e6];
+        let w = swept_low_ground_caveat(&segs, &gn2, &freqs, false).expect("caveat");
+        assert!(w.contains("worst case, at 14.2"), "{w}");
+        assert!(w.contains("2 of 3 swept frequencies"), "{w}");
+
+        // A single-frequency "sweep" earns the bare caveat: there is no other point
+        // for the reader to mistake it for.
+        let single = swept_low_ground_caveat(&segs, &gn2, &[14.2e6], false).expect("caveat");
+        assert!(!single.contains("worst case"), "{single}");
+
+        // Descending order must not change the answer.
+        let descending = [60.0e6, 30.0e6, 14.2e6];
+        assert_eq!(
+            swept_low_ground_caveat(&segs, &gn2, &descending, false),
+            Some(w)
+        );
+
+        // Entirely above the threshold: silence.
+        assert_eq!(
+            swept_low_ground_caveat(&segs, &gn2, &[60.0e6, 80.0e6], false),
+            None
+        );
+    }
 
     #[test]
     fn a_non_negative_resistance_produces_no_warning() {
