@@ -63,6 +63,27 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A GUI sweep now warns about the range it actually runs** (FND-042). The
+  caveat panel evaluates the low-over-ground check at the deck's `FR` card
+  frequency — right for a single solve, wrong for a sweep, whose range the user
+  types into the UI. A deck with `FR` at 60 MHz and its antenna 0.634 m up is a
+  comfortable 0.127 λ there; swept down to 14.2 MHz it sits at 0.030 λ, deep into
+  the caveat's range, and nothing said so. `SweepJob::solve_at` emitted no
+  geometry caveat at all.
+
+  `SweepJob::geometry_caveats` uses the same `validate::hallen_geometry_caveats`
+  producer as the CLI and the distributed path, at the same worst-case frequency,
+  so the three cannot drift. They are sent when the job is *prepared* rather than
+  when it finishes — a user watching a long streaming sweep should not be told at
+  the end that the antenna was too low for the whole range.
+
+  The test fixture is clean at its `FR` frequency and low across its swept range,
+  so the two answers genuinely differ; without that the test would pass against
+  the old behaviour. Its mirror asserts a sweep that stays high says nothing.
+
+  Found in the review of #399 — the same miss class that PR fixed for `--hosts`,
+  still live in the GUI.
+
 - **A distributed run now carries the same pre-solve caveats as a local one**
   (FND-020). `--hosts` emitted the deferred-ground and unsupported-topology
   caveats but not `low_finite_ground_warning` or `feedpoint_at_junction_warnings`,

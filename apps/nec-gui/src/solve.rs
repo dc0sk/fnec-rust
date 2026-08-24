@@ -595,6 +595,47 @@ impl SweepJob {
         })
     }
 
+    /// The deck's geometry and ground caveats, evaluated for the frequency range
+    /// this sweep will actually run (FND-042).
+    ///
+    /// The caveat panel gets these from `deck_warnings`, which reads the deck's
+    /// `FR` card — the right frequency for a single solve and the wrong one for a
+    /// sweep, whose range the user types into the UI. A deck whose `FR` says
+    /// 30 MHz, swept from 5 MHz, dipped far below 0.1 λ with nothing said.
+    ///
+    /// The low-ground check trips below 0.1 λ, so the **lowest** swept frequency
+    /// is the worst case: if it does not trip there it trips nowhere. Same choice
+    /// the distributed path makes, from the same shared producer, so the two
+    /// cannot drift.
+    pub fn geometry_caveats(&self) -> Vec<String> {
+        let worst_mhz = self
+            .freqs_mhz
+            .iter()
+            .copied()
+            .filter(|f| *f > 0.0)
+            .fold(f64::INFINITY, f64::min);
+        if !worst_mhz.is_finite() {
+            return Vec::new();
+        }
+        let mut out = nec_solver::validate::hallen_geometry_caveats(
+            &self.deck,
+            &self.segs,
+            &self.ground,
+            worst_mhz * 1_000_000.0,
+            // The GUI is Hallén-only and exposes no `--ground-solver`, so the
+            // surface wave is never modelled here.
+            false,
+        );
+        if self.freqs_mhz.len() > 1 {
+            for w in out.iter_mut() {
+                if w.contains("above finite ground") {
+                    *w = format!("{w} (worst case, at {worst_mhz:.6} MHz)");
+                }
+            }
+        }
+        out
+    }
+
     /// The one caveat a swept negative resistance deserves, or `None`.
     ///
     /// Deliberately **not** a `warnings` field on [`SweepPoint`]. The cause is a
@@ -874,6 +915,48 @@ mod tests {
             "{caveat}"
         );
         assert!(caveat.contains("PH9-CHK-002"), "{caveat}");
+    }
+
+    // Antenna 0.634 m up over `GN 2`, with the deck's `FR` at 60 MHz — where
+    // 0.634 m is 0.127 lambda, comfortably above the 0.1 lambda threshold. Sweeping
+    // down to 14.2 MHz takes it to 0.030 lambda, deep into the caveat's range.
+    const LOW_ONLY_WHEN_SWEPT: &str = "CM low over ground only at the bottom of the sweep\nCE\nGW 1 21 -5.282 0 0.634 5.282 0 0.634 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 60.0 0\nEN\n";
+
+    #[test]
+    fn a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards() {
+        // FND-042. `deck_warnings` reads the deck's `FR` card — right for a single
+        // solve, wrong for a sweep, whose range the user types into the UI. This
+        // deck is above the threshold at its `FR` frequency and far below it at the
+        // bottom of the swept range, so the two answers genuinely differ.
+        let at_fr = deck_warnings(LOW_ONLY_WHEN_SWEPT);
+        assert!(
+            !at_fr.iter().any(|w| w.contains("above finite ground")),
+            "fixture must be clean at its FR frequency or this proves nothing: {at_fr:?}"
+        );
+
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 14.2, 60.0, 5.0).expect("prepare");
+        let caveats = job.geometry_caveats();
+        assert!(
+            caveats.iter().any(|w| w.contains("above finite ground")),
+            "the swept range goes far below 0.1 lambda: {caveats:?}"
+        );
+        assert!(
+            caveats.iter().any(|w| w.contains("worst case, at 14.2")),
+            "must name the frequency the quoted height belongs to: {caveats:?}"
+        );
+    }
+
+    #[test]
+    fn a_sweep_that_stays_high_earns_no_low_ground_caveat() {
+        // Positive control's mirror: the same deck swept only where it is high
+        // must stay quiet, or the test above would pass for a check that always
+        // fires.
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 60.0, 80.0, 5.0).expect("prepare");
+        let caveats = job.geometry_caveats();
+        assert!(
+            !caveats.iter().any(|w| w.contains("above finite ground")),
+            "0.127 lambda and up is not low: {caveats:?}"
+        );
     }
 
     #[test]

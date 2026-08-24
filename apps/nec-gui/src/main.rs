@@ -179,6 +179,13 @@ impl FnecGui {
                                 use iced::futures::SinkExt;
                                 match SweepJob::prepare(&deck_text, start, end, step) {
                                     Ok(job) => {
+                                        // Up front, not at the end: a user watching
+                                        // a long sweep should not learn only when it
+                                        // finishes that the antenna was too low for
+                                        // the whole range (FND-042).
+                                        let _ = output
+                                            .send(Message::SweepCaveats(job.geometry_caveats()))
+                                            .await;
                                         // Kept alongside the stream so the caveat can
                                         // be computed once at the end: the job holds
                                         // the geometry, and the UI thread does not.
@@ -200,8 +207,10 @@ impl FnecGui {
                                                     // so the caveat stands alone
                                                     // there (FND-033).
                                                     let _ = output
-                                                        .send(Message::SweepCaveat(
-                                                            job.negative_resistance_caveat(&seen),
+                                                        .send(Message::SweepCaveats(
+                                                            job.negative_resistance_caveat(&seen)
+                                                                .into_iter()
+                                                                .collect(),
                                                         ))
                                                         .await;
                                                     let _ = output
@@ -212,8 +221,10 @@ impl FnecGui {
                                             }
                                         }
                                         let _ = output
-                                            .send(Message::SweepCaveat(
-                                                job.negative_resistance_caveat(&seen),
+                                            .send(Message::SweepCaveats(
+                                                job.negative_resistance_caveat(&seen)
+                                                    .into_iter()
+                                                    .collect(),
                                             ))
                                             .await;
                                         let _ = output.send(Message::SweepStreamDone).await;
@@ -621,11 +632,15 @@ impl FnecGui {
             _ => text("").into(),
         };
 
-        // One line for the whole sweep, not one per point (FND-014).
-        let caveat: Element<Message> = match &self.state.sweep_caveat {
-            Some(w) => text(format!("warning: {w}")).size(12).into(),
-            None => text("").into(),
-        };
+        // One line per distinct caveat, never one per swept point (FND-014/042).
+        let caveat: Element<Message> = column(
+            self.state
+                .sweep_caveats
+                .iter()
+                .map(|w| text(format!("warning: {w}")).size(12).into()),
+        )
+        .spacing(2)
+        .into();
 
         column![freq_inputs, run_btn, status, caveat, result_section]
             .spacing(8)

@@ -1386,18 +1386,19 @@ fn a_new_sweep_clears_the_previous_sweeps_caveat() {
         z_re: -6.0,
         z_im: -1100.0,
     }));
-    state.apply(&Message::SweepCaveat(Some(
+    state.apply(&Message::SweepCaveats(vec![
         "3 of 3 sweep points report negative feedpoint resistance".into(),
-    )));
+    ]));
     state.apply(&Message::SweepStreamDone);
-    assert!(state.sweep_caveat.is_some(), "fixture assumption");
+    assert!(!state.sweep_caveats.is_empty(), "fixture assumption");
 
     // A second run on a different deck must start clean, before any point arrives.
     state.apply(&Message::DeckPathChanged("clean.nec".into()));
     state.apply(&Message::RunSweep);
-    assert_eq!(
-        state.sweep_caveat, None,
-        "a caveat from the previous deck must not survive into a new sweep"
+    assert!(
+        state.sweep_caveats.is_empty(),
+        "a caveat from the previous deck must not survive into a new sweep: {:?}",
+        state.sweep_caveats
     );
 }
 
@@ -1418,13 +1419,13 @@ fn a_sweep_that_fails_partway_still_carries_the_caveat_for_what_it_showed() {
         z_re: -6.0,
         z_im: -1100.0,
     }));
-    state.apply(&Message::SweepCaveat(Some(
+    state.apply(&Message::SweepCaveats(vec![
         "1 of 1 sweep points report negative feedpoint resistance".into(),
-    )));
+    ]));
     state.apply(&Message::SweepComplete(Err("worker died".into())));
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
     assert!(
-        state.sweep_caveat.is_some(),
+        !state.sweep_caveats.is_empty(),
         "the points already shown still earn their caveat"
     );
 }
