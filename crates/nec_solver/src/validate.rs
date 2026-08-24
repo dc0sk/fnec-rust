@@ -75,11 +75,17 @@ pub fn segment_intersection_error(segs: &[Segment]) -> Option<String> {
     None
 }
 
-pub fn source_risk_geometry_error(cards: &[Card], segs: &[Segment]) -> Option<String> {
+pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
     const MIN_SOURCE_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
 
-    for card in cards {
-        if let Card::Ex(ex) = card {
+    // Only a DRIVEN source sits on a segment and carries this risk (FND-035).
+    // This used to iterate every `EX` card with no type filter, so a plane wave —
+    // whose tag/segment fields carry NTHETA and NPHI, not a driven segment —
+    // could collide with a short fat segment's `(tag, index)` and produce a hard
+    // rejection of a valid receive deck, on every frontend, complaining about a
+    // source that is not there.
+    for (ex, _role) in crate::excitation::feedpoints(deck) {
+        {
             let Some(seg) = segs
                 .iter()
                 .find(|s| s.tag == ex.tag && s.tag_index == ex.segment)
@@ -373,11 +379,11 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
         junction_segs.insert(j.seg_b);
     }
     let mut out = Vec::new();
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        if ex.kind().is_plane_wave() {
-            continue; // receiving antenna, no feedpoint
-        }
+    // Every driven feedpoint, delta gap or current source — a current source on a
+    // junction has its feed current split across the joined wires just as a
+    // voltage source does. Through the seam so an unrecognised `EX` type is not
+    // silently treated as a feedpoint, which the plane-wave-only skip allowed.
+    for (ex, _role) in crate::excitation::feedpoints(deck) {
         if let Some((idx, _)) = segs
             .iter()
             .enumerate()
@@ -574,7 +580,7 @@ pub fn low_finite_ground_warning(
 /// run — the string is the message to show the user.
 pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
     segment_intersection_error(segs)
-        .or_else(|| source_risk_geometry_error(&deck.cards, segs))
+        .or_else(|| source_risk_geometry_error(deck, segs))
         .or_else(|| buried_wire_geometry_error(segs, ground))
 }
 
@@ -675,10 +681,67 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 201 -2.639 0 0 2.639 0 0 0.02\nGE\nEX 0 1 101 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let err = source_risk_geometry_error(&deck.cards, &segs).expect("tiny source segment");
+        let err = source_risk_geometry_error(&deck, &segs).expect("tiny source segment");
         assert!(err.contains("source-risk"), "{err}");
         // The same wire without the EX card on it is fine — the check is about the source.
-        assert_eq!(source_risk_geometry_error(&[], &segs), None);
+        let (bare, bare_segs) =
+            deck_and_segs("GW 1 201 -2.639 0 0 2.639 0 0 0.02\nGE\nFR 0 1 0 0 14.2 0.0\nEN\n");
+        assert_eq!(source_risk_geometry_error(&bare, &bare_segs), None);
+    }
+
+    #[test]
+    fn a_plane_wave_does_not_trigger_a_source_risk_rejection() {
+        // FND-035. A plane wave's tag/segment fields carry NTHETA and NPHI, not a
+        // driven segment — so when they happened to collide with a short fat
+        // segment's `(tag, index)`, a receive deck with **no driven source at all**
+        // was hard-rejected on every frontend, told "EX on tiny segment" about a
+        // source that is not there.
+        //
+        // Wire 1 is 3 segments over 0.02 m at radius 0.01 (L/r = 0.667, well under
+        // the 2.0 floor) and the plane wave names tag 1 segment 2.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 3 0 0 0 0 0 0.02 0.01\nGW 2 21 1 0 -5.282 1 0 5.282 0.001\nGE 0\nEX 1 1 2 0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(
+            source_risk_geometry_error(&deck, &segs),
+            None,
+            "a receive deck has no source to be at risk"
+        );
+        // Positive control on the same geometry: put a real source there and the
+        // rejection must come back, or this test proves only that the check is off.
+        let (driven, driven_segs) = deck_and_segs(
+            "GW 1 3 0 0 0 0 0 0.02 0.01\nGW 2 21 1 0 -5.282 1 0 5.282 0.001\nGE 0\nEX 0 1 2 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(
+            source_risk_geometry_error(&driven, &driven_segs).is_some(),
+            "a driven source on that same segment must still be refused"
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_excitation_is_not_treated_as_a_junction_feedpoint() {
+        // The plane-wave-only skip let an unknown `EX` type count as a feedpoint,
+        // so a deck could be warned about a junction feed it does not have.
+        //
+        // A degree-3 T, because a degree-2 bend is merged into one conductor path
+        // and deliberately no longer warns (PH9-CHK-002) — a bend fixture here
+        // would pass for the wrong reason.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 9 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(
+            feedpoint_at_junction_warnings(&deck, &segs).is_empty(),
+            "an unrecognised EX type is not a feedpoint"
+        );
+        // Positive control on the same geometry: a real feed there must still warn,
+        // or this proves only that the check stopped firing.
+        let (driven, driven_segs) = deck_and_segs(
+            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(
+            !feedpoint_at_junction_warnings(&driven, &driven_segs).is_empty(),
+            "a real feed on the junction must still warn"
+        );
     }
 
     #[test]

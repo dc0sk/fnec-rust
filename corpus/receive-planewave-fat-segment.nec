@@ -1,0 +1,17 @@
+CM Receive-only deck: an incident plane wave, no driven source anywhere.
+CM
+CM Wire 1 is short and fat (3 segments over 0.02 m at radius 0.01, L/r = 0.667),
+CM well under the source-risk floor of 2.0 — but nothing is fed there. The plane
+CM wave's NTHETA/NPHI happen to be 1 and 2, which collide with wire 1 segment 2.
+CM
+CM Before FND-035 the source-risk check read every EX card without a type filter,
+CM so it matched those grid dimensions against that segment and hard-rejected the
+CM deck on every frontend: "EX on tiny segment tag 1 seg 2", about a source that
+CM does not exist. Fixture for the fix; the deck must simply solve.
+CE
+GW 1 3 0 0 0 0 0 0.02 0.01
+GW 2 21 1 0 -5.282 1 0 5.282 0.001
+GE 0
+EX 1 1 2 0 0.0 0.0
+FR 0 1 0 0 14.2 0
+EN

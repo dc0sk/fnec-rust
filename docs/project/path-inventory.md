@@ -154,8 +154,8 @@ this.
 | 6 | GUI | yes | `a_plane_wave_is_not_read_as_the_feedpoint` |
 | 7 | Python bindings | yes | `test_a_plane_wave_is_not_read_as_the_feedpoint` |
 | 8 | CLI distributed diagnostic | yes | `the_caveat_names_the_same_feedpoint_the_worker_reported` |
-| 9 | `validate::source_risk_geometry_error` | **NO** | gap — [FND-035](findings-ledger.md); no filter, so a plane wave can trigger a spurious hard rejection |
-| 10 | `validate::feedpoint_at_junction_warnings` | **NO** | gap — [FND-035](findings-ledger.md); plane-wave skip only, so an unknown type counts as a feedpoint |
+| 9 | `validate::source_risk_geometry_error` | yes | `a_plane_wave_does_not_trigger_a_source_risk_rejection`; end-to-end `a_receive_only_deck_is_not_refused_for_a_source_it_does_not_have` |
+| 10 | `validate::feedpoint_at_junction_warnings` | yes | `an_unrecognised_excitation_is_not_treated_as_a_junction_feedpoint` |
 | 11 | MPIE session feedpoint | **NO** | gap — [FND-037](findings-ledger.md); `!is_plane_wave()` only, shielded by gates in another function |
 
 Rows 1–3 keep their own loops rather than calling the reporting seam, and that is
