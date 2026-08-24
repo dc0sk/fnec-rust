@@ -7,11 +7,17 @@ CM
 CM Before FND-035 the source-risk check read every EX card without a type filter,
 CM so it matched those grid dimensions against that segment and hard-rejected the
 CM deck on every frontend: "EX on tiny segment tag 1 seg 2", about a source that
-CM does not exist. Fixture for the fix; the deck must simply solve.
+CM does not exist.
+CM
+CM Incidence is broadside (theta=90) so the wave actually COUPLES to the dipole.
+CM At theta=0 the E field is cross-polarized to both wires: every current is
+CM exactly zero and the response is the -999.99 dB sentinel, so the deck would
+CM "solve" only in the sense of completing, and a regression that silently zeroed
+CM the plane-wave path would pass unnoticed.
 CE
 GW 1 3 0 0 0 0 0 0.02 0.01
 GW 2 21 1 0 -5.282 1 0 5.282 0.001
 GE 0
-EX 1 1 2 0 0.0 0.0
+EX 1 1 2 0 90.0 0.0
 FR 0 1 0 0 14.2 0
 EN

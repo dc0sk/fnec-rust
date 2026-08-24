@@ -147,6 +147,24 @@ fn a_receive_only_deck_is_not_refused_for_a_source_it_does_not_have() {
         Some(0),
         "receive deck must solve:\n{stderr}"
     );
+
+    // Exit 0 alone is a weak gate: a deck cross-polarized to every wire also
+    // completes, with all currents exactly zero and the -999.99 dB sentinel for a
+    // response. That would pass while the plane-wave path did nothing at all. The
+    // fixture is broadside so the wave genuinely couples; assert the result is
+    // real, not merely present.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let response = stdout
+        .lines()
+        .skip_while(|l| !l.starts_with("THETA PHI RESPONSE_DB"))
+        .nth(1)
+        .and_then(|l| l.split_whitespace().nth(2))
+        .and_then(|v| v.parse::<f64>().ok())
+        .expect("a receive-pattern response row");
+    assert!(
+        response > -999.0,
+        "receive response is the null sentinel — the wave coupled to nothing: {response}"
+    );
 }
 
 // ---------------------------------------------------------------------------

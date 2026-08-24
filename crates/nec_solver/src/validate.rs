@@ -85,29 +85,27 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
     // rejection of a valid receive deck, on every frontend, complaining about a
     // source that is not there.
     for (ex, _role) in crate::excitation::feedpoints(deck) {
-        {
-            let Some(seg) = segs
-                .iter()
-                .find(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            else {
-                continue;
-            };
+        let Some(seg) = segs
+            .iter()
+            .find(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+        else {
+            continue;
+        };
 
-            if seg.radius <= 0.0 {
-                continue;
-            }
+        if seg.radius <= 0.0 {
+            continue;
+        }
 
-            let length_to_radius = seg.length / seg.radius;
-            if length_to_radius < MIN_SOURCE_LENGTH_TO_RADIUS_RATIO {
-                return Some(format!(
-                    "unsupported source-risk geometry: EX on tiny segment tag {} seg {} (length={:.6e} m, radius={:.6e} m, L/r={:.3}). Increase segment length or reduce wire radius; tiny-loop/source-risk classes are deferred",
-                    ex.tag,
-                    ex.segment,
-                    seg.length,
-                    seg.radius,
-                    length_to_radius,
-                ));
-            }
+        let length_to_radius = seg.length / seg.radius;
+        if length_to_radius < MIN_SOURCE_LENGTH_TO_RADIUS_RATIO {
+            return Some(format!(
+                "unsupported source-risk geometry: EX on tiny segment tag {} seg {} (length={:.6e} m, radius={:.6e} m, L/r={:.3}). Increase segment length or reduce wire radius; tiny-loop/source-risk classes are deferred",
+                ex.tag,
+                ex.segment,
+                seg.length,
+                seg.radius,
+                length_to_radius,
+            ));
         }
     }
 

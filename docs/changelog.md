@@ -81,6 +81,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   included in both, because a current source on a junction has its feed current
   split across the joined wires exactly as a voltage source does.
 
+  `source_risk_geometry_error` now takes `&NecDeck` rather than `&[Card]` — a
+  breaking change to `nec_solver`'s public signature. The crates are
+  workspace-versioned and not published independently, so nothing outside this
+  repository can be affected today; noted because that stops being true the day
+  they are.
+
+  An `EX` type fnec does not recognise is no longer refused *here*. It is still
+  refused, by `build_excitation`, with a message that names the type instead of
+  blaming a segment whose meaning for an unknown type is itself unknown — and
+  that is what the GUI and the Python bindings already reported, since both call
+  `build_excitation` before `geometry_error`. So this also makes the three
+  frontends agree on a deck they previously described differently.
+
   Each negative control ships with a **positive control on the same geometry**:
   put a real source on that segment, or a real feed on that junction, and the
   check must still fire. Without them a check that had simply stopped working
