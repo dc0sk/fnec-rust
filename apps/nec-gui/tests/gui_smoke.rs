@@ -1359,6 +1359,70 @@ fn streaming_sweep_empty_stream_is_a_failure() {
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
 }
 
+// ── Sweep caveat lifetime (FND-014) ──────────────────────────────────────────
+
+/// The caveat is rendered in every phase, so it must not outlive the sweep that
+/// earned it. It did: `RunSweep` set the phase and left `sweep_caveat` alone, so
+/// loading a clean deck after a junctioned one kept the old deck's
+/// "N of M points report negative feedpoint resistance" line on screen beside
+/// unrelated results — or beside an error, if the new run failed at `prepare`.
+///
+/// Nothing exercised this message *sequence* before: the unit tests covered the
+/// caveat's content and the smoke tests covered the phase machine, and the gap
+/// was between them.
+#[test]
+fn a_new_sweep_clears_the_previous_sweeps_caveat() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("bent.nec".into()));
+    state.apply(&Message::RunSweep);
+    state.apply(&Message::SweepPointComputed(SweepPoint {
+        freq_mhz: 14.0,
+        z_re: -6.0,
+        z_im: -1100.0,
+    }));
+    state.apply(&Message::SweepCaveat(Some(
+        "3 of 3 sweep points report negative feedpoint resistance".into(),
+    )));
+    state.apply(&Message::SweepStreamDone);
+    assert!(state.sweep_caveat.is_some(), "fixture assumption");
+
+    // A second run on a different deck must start clean, before any point arrives.
+    state.apply(&Message::DeckPathChanged("clean.nec".into()));
+    state.apply(&Message::RunSweep);
+    assert_eq!(
+        state.sweep_caveat, None,
+        "a caveat from the previous deck must not survive into a new sweep"
+    );
+}
+
+/// A sweep that fails partway still owes a caveat for everything it computed.
+/// That is why the caveat is its own message rather than a payload on
+/// `SweepStreamDone`, which this path never sends.
+///
+/// This pins the reducer. The *send* on that path is inside the stream closure in
+/// `FnecGui::update` and is not pinned by anything — deleting it fails no test
+/// (FND-034).
+#[test]
+fn a_sweep_that_fails_partway_still_carries_the_caveat_for_what_it_showed() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("bent.nec".into()));
+    state.apply(&Message::RunSweep);
+    state.apply(&Message::SweepPointComputed(SweepPoint {
+        freq_mhz: 14.0,
+        z_re: -6.0,
+        z_im: -1100.0,
+    }));
+    state.apply(&Message::SweepCaveat(Some(
+        "1 of 1 sweep points report negative feedpoint resistance".into(),
+    )));
+    state.apply(&Message::SweepComplete(Err("worker died".into())));
+    assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
+    assert!(
+        state.sweep_caveat.is_some(),
+        "the points already shown still earn their caveat"
+    );
+}
+
 // ── Viewport view options (GUI-CHK-010) ──────────────────────────────────────
 
 #[test]

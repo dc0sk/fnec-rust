@@ -384,7 +384,16 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     .map_err(|e| e.to_string())?;
 
     // --- feedpoint impedance --------------------------------------------
-    let z = feedpoint_impedance(deck, &segs, &v_vec, &sol.currents, freq_hz)?;
+    let (z, tag, seg) = feedpoint_impedance(deck, &segs, &v_vec, &sol.currents, freq_hz)?;
+
+    // FND-014: physically impossible results were reported here without a caveat.
+    // `warnings` is already rendered by `impedance_view`, so this needs no new
+    // display path — only the check that was missing.
+    let mut warnings = warnings;
+    if let Some(w) = nec_solver::validate::negative_resistance_warning(z.re, tag, seg, deck, &segs)
+    {
+        warnings.push(w);
+    }
 
     Ok(SolveResult {
         freq_mhz: freq_hz / 1_000_000.0,
@@ -394,14 +403,15 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     })
 }
 
-/// Compute feedpoint impedance Z = V/I for the first EX card.
+/// Compute feedpoint impedance Z = V/I for the first EX card, with the tag and
+/// segment it resolved to — a caveat about the result has to name where it is.
 fn feedpoint_impedance(
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
     v_vec: &[Complex64],
     i_vec: &[Complex64],
     _freq_hz: f64,
-) -> Result<Complex64, String> {
+) -> Result<(Complex64, usize, usize), String> {
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
         let Some((idx, seg)) = segs
@@ -418,7 +428,7 @@ fn feedpoint_impedance(
         } else {
             v_source
         };
-        return Ok(z_in);
+        return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
     Err("deck has no EX card — cannot determine feedpoint".to_string())
 }
@@ -556,12 +566,37 @@ impl SweepJob {
         )
         .map_err(|e| e.to_string())?;
 
-        let z = feedpoint_impedance(&self.deck, &self.segs, &self.v_vec, &sol.currents, freq_hz)?;
+        let (z, _tag, _seg) =
+            feedpoint_impedance(&self.deck, &self.segs, &self.v_vec, &sol.currents, freq_hz)?;
         Ok(SweepPoint {
             freq_mhz,
             z_re: z.re,
             z_im: z.im,
         })
+    }
+
+    /// The one caveat a swept negative resistance deserves, or `None`.
+    ///
+    /// Deliberately **not** a `warnings` field on [`SweepPoint`]. The cause is a
+    /// property of the geometry, which is fixed for the whole sweep — so a
+    /// per-point string would repeat one diagnosis up to `MAX_SWEEP_POINTS` times,
+    /// restating a `z_re` and a `freq_mhz` the point already carries. A junctioned
+    /// deck sweeps negative nearly everywhere, so this is the normal case, not the
+    /// pathological one. One aggregate line instead, counting the points.
+    pub fn negative_resistance_caveat(&self, points: &[SweepPoint]) -> Option<String> {
+        let n = points
+            .iter()
+            .filter(|p| nec_solver::validate::is_negative_resistance(p.z_re))
+            .count();
+        if n == 0 {
+            return None;
+        }
+        let cause = nec_solver::validate::negative_resistance_cause(&self.deck, &self.segs);
+        Some(format!(
+            "{n} of {} sweep points report negative feedpoint resistance, which is \
+             physically impossible for a passive antenna; those results are unreliable — {cause}",
+            points.len()
+        ))
     }
 }
 
@@ -749,6 +784,92 @@ fn solve_for_currents(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // An inverted-V fed away from the apex — a genuine junction. Solves to a
+    // negative feedpoint resistance on the Hallén path, which is physically
+    // impossible for a passive antenna. Before FND-014 the GUI reported that
+    // number with no caveat at all.
+    const BENT_NEGATIVE_R: &str = "CM inverted-V fed away from the apex\nCE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    #[test]
+    fn a_negative_resistance_solve_carries_a_caveat() {
+        let r = solve_deck_str(BENT_NEGATIVE_R).expect("solve");
+        assert!(
+            r.z_re < 0.0,
+            "fixture must produce Re Z < 0, got {}",
+            r.z_re
+        );
+        assert!(
+            r.warnings.iter().any(|w| w.contains("negative resistance")),
+            "physically impossible result reported without a caveat: {:?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn a_clean_solve_carries_no_negative_resistance_caveat() {
+        let r = solve_deck_str(CLEAN_DIPOLE).expect("solve");
+        assert!(r.z_re > 0.0);
+        assert!(
+            !r.warnings.iter().any(|w| w.contains("negative resistance")),
+            "clean dipole must not be warned about: {:?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn the_sweep_caveat_is_one_line_for_the_whole_sweep() {
+        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2).expect("prepare");
+        let pts: Vec<SweepPoint> = job
+            .freqs_mhz()
+            .iter()
+            .map(|&f| job.solve_at(f).expect("solve"))
+            .collect();
+        assert!(pts.len() >= 4);
+        assert!(pts.iter().all(|p| p.z_re < 0.0), "fixture assumption");
+        let caveat = job.negative_resistance_caveat(&pts).expect("caveat");
+        // One string, naming how many points, not one string per point.
+        assert!(
+            caveat.contains(&format!("{} of {}", pts.len(), pts.len())),
+            "{caveat}"
+        );
+        assert!(caveat.contains("PH9-CHK-002"), "{caveat}");
+    }
+
+    #[test]
+    fn the_sweep_caveat_counts_only_the_negative_points() {
+        // An all-negative fixture cannot tell a real count from `points.len()`:
+        // both read "N of N". This mixes signs so the numerator has to be earned.
+        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2).expect("prepare");
+        let mut pts: Vec<SweepPoint> = job
+            .freqs_mhz()
+            .iter()
+            .map(|&f| job.solve_at(f).expect("solve"))
+            .collect();
+        assert!(pts.len() >= 4, "need room to flip some");
+        let total = pts.len();
+        // Flip all but two to a physically sound resistance.
+        for p in pts.iter_mut().skip(2) {
+            p.z_re = 50.0;
+        }
+        let caveat = job.negative_resistance_caveat(&pts).expect("caveat");
+        assert!(
+            caveat.contains(&format!("2 of {total}")),
+            "must count the negative points, not the whole sweep: {caveat}"
+        );
+    }
+
+    #[test]
+    fn a_clean_sweep_earns_no_caveat() {
+        let job = SweepJob::prepare(CLEAN_DIPOLE, 14.0, 14.4, 0.1).expect("prepare");
+        let pts: Vec<SweepPoint> = job
+            .freqs_mhz()
+            .iter()
+            .map(|&f| job.solve_at(f).expect("solve"))
+            .collect();
+        assert_eq!(job.negative_resistance_caveat(&pts), None);
+    }
 
     fn tmp(name: &str, body: &str) -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!("fnec_gui_vars_{name}"));

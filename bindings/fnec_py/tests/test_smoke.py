@@ -251,3 +251,44 @@ def test_a_deck_without_nt_is_unaffected():
     assert abs(plain["z_re"] - want["real_ohm"]) < 0.05, (
         f"plain dipole moved: got {plain['z_re']}, reference {want['real_ohm']}"
     )
+
+
+def test_a_negative_resistance_deck_raises_a_warning():
+    """A physically impossible result must not be returned silently (FND-014).
+
+    `warn_if_negative_resistance` was private to the CLI with a single call site,
+    so this deck solved to a negative feedpoint resistance here with no caveat at
+    all — the same number the CLI has flagged since PH9-CHK-005.
+    """
+    import warnings as pywarnings
+
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "inverted-v-negative-r-freesp.nec")) as f:
+        deck = f.read()
+
+    with pywarnings.catch_warnings(record=True) as caught:
+        pywarnings.simplefilter("always")
+        got = fnec_py.solve_deck_str(deck)
+
+    assert got["z_re"] < 0.0, f"fixture must produce Re Z < 0, got {got['z_re']}"
+    texts = [str(w.message) for w in caught]
+    assert any("negative resistance" in t for t in texts), (
+        f"impossible result returned without a caveat: {texts}"
+    )
+
+
+def test_a_clean_deck_raises_no_negative_resistance_warning():
+    """Negative control: the tripwire must not fire on a sound deck."""
+    import warnings as pywarnings
+
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "dipole-freesp-51seg.nec")) as f:
+        deck = f.read()
+
+    with pywarnings.catch_warnings(record=True) as caught:
+        pywarnings.simplefilter("always")
+        got = fnec_py.solve_deck_str(deck)
+
+    assert got["z_re"] > 0.0
+    texts = [str(w.message) for w in caught]
+    assert not any("negative resistance" in t for t in texts), texts

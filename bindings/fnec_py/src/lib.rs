@@ -119,6 +119,20 @@ fn solve_at_freq(
         } else {
             v_source
         };
+        // FND-014: a negative Re(Z) is physically impossible for a passive antenna.
+        // The CLI has warned about this since PH9-CHK-005; here it was silent, so a
+        // junctioned deck returned an unreliable impedance as if it were sound.
+        // Appended after the feedpoint is resolved because the message names the
+        // tag and segment.
+        if let Some(w) = nec_solver::validate::negative_resistance_warning(
+            z_in.re,
+            seg.tag as usize,
+            seg.tag_index as usize,
+            deck,
+            &segs,
+        ) {
+            warnings.push(w);
+        }
         let z_abs = z_in.norm();
         let z_arg_deg = z_in.im.atan2(z_in.re).to_degrees();
         let freq_mhz = freq_hz / 1e6;

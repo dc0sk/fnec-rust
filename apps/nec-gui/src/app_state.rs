@@ -105,6 +105,13 @@ pub struct AppState {
     pub sweep_metric: crate::plot::PlotMetric,
     /// Frequency cursor as a fraction `0..=1` of the swept range (GUI-CHK-009).
     pub sweep_cursor: f32,
+    /// The one caveat the completed sweep earns (FND-014), or `None`.
+    ///
+    /// One string for the whole sweep rather than one per point: the cause is a
+    /// property of the geometry, which does not change across frequencies, so a
+    /// per-point field would repeat a single diagnosis up to `MAX_SWEEP_POINTS`
+    /// times while restating values the point already carries.
+    pub sweep_caveat: Option<String>,
     // ── Pattern tab state ──────────────────────────────────────────────────
     /// Azimuth angle (φ, degrees) for the elevation-plane pattern slice.
     pub pattern_phi_deg: String,
@@ -241,6 +248,7 @@ impl Default for AppState {
             sweep_phase: SweepPhase::default(),
             sweep_metric: crate::plot::PlotMetric::Swr,
             sweep_cursor: 0.5,
+            sweep_caveat: None,
             pattern_phi_deg: "0.0".into(),
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
@@ -292,6 +300,19 @@ pub enum Message {
     SweepPointComputed(SweepPoint),
     /// The streaming sweep finished (finalize the accumulated points).
     SweepStreamDone,
+    /// The one aggregate caveat the swept points earn (FND-014), computed by the
+    /// task that held the geometry — `None` when they are clean.
+    ///
+    /// Its own message rather than a payload on `SweepStreamDone`, because a sweep
+    /// that fails partway never sends that: it emits `SweepComplete(Err)` and
+    /// returns, so the caveat for everything it *did* compute would be skipped.
+    ///
+    /// Note the `Failed` phase currently hides the chart and table, so on that
+    /// path the caveat outlives the points it counts and stands next to the error
+    /// alone (FND-033). It is still true of what was computed, and reporting a
+    /// run's non-physical results only when the run happens to finish cleanly is
+    /// the worse failure.
+    SweepCaveat(Option<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -415,6 +436,12 @@ impl AppState {
             Message::SweepStepChanged(s) => self.sweep_step = s.clone(),
             Message::RunSweep => {
                 self.sweep_phase = SweepPhase::Running;
+                // Without this, a caveat from the *previous* deck outlives its
+                // sweep: `sweep_view` renders it in every phase, so switching to a
+                // clean deck — or starting a run that then fails — leaves the old
+                // deck's "N of M points report negative resistance" line on screen
+                // next to unrelated results.
+                self.sweep_caveat = None;
             }
             Message::SweepComplete(Ok(pts)) => {
                 self.sweep_phase = SweepPhase::Done(pts.clone());
@@ -428,6 +455,9 @@ impl AppState {
                     SweepPhase::Streaming(pts) => pts.push(pt.clone()),
                     _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
                 }
+            }
+            Message::SweepCaveat(caveat) => {
+                self.sweep_caveat = caveat.clone();
             }
             Message::SweepStreamDone => {
                 // Finalize whatever streamed in (empty stream → a failure note).

@@ -1,0 +1,14 @@
+CM Inverted-V fed away from the apex — a junctioned geometry the Hallen basis
+CM cannot represent, so it reports a NEGATIVE feedpoint resistance (Re Z < 0),
+CM which is physically impossible for a passive antenna.
+CM
+CM Kept as a fixture for the FND-014 negative-resistance tripwire: every frontend
+CM must warn on this deck. It is deliberately NOT a parity case — the number is
+CM known-wrong, and that is the point.
+CE
+GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001
+GW 2 21 0.0 0 3.0 5.0 0 0.0 0.001
+GE 0
+EX 0 1 5 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
