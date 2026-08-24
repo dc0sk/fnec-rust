@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 ---
 
 # Roadmap
@@ -419,7 +419,7 @@ product decisions.
 | GAP-012 | AutoEZ-class automation acceptance | **HIGH** | Phase 3 end | Automation | Acceptance checklist covers variable sweeps, resonance targeting, convergence studies, and matching-network helpers with at least one documented end-to-end workflow per class. |
 | GAP-013 | NEC-5-informed validation matrix | **HIGH** | Phase 2 end | Validation | Validation-manual-informed case matrix is maintained with owner, corpus mapping, and tolerance-gated status for each in-scope class. |
 | GAP-014 | External optimizer-loop compatibility | **MEDIUM** | Phase 3 end | Automation+CLI | Deterministic objective-evaluation CLI/API contract is documented and at least one xnec2c-optimize-style loop is reproduced end-to-end with stable machine-readable outputs. |
-| GAP-015 | Markdown project import/export delivery track | **MEDIUM** | Phase 6+ | Project+Core APIs | `nec_project` supports deterministic Markdown project import and export (in addition to TOML), with documented schema, round-trip stability tests, and explicit CLI/API entry points. | ✓ Done (2026-05-?): `from_markdown`/`to_markdown` in `nec_project/src/lib.rs` with 6 integration tests in `project_roundtrip.rs`. |
+| GAP-015 | Markdown project import/export delivery track | **MEDIUM** | Phase 6+ | Project+Core APIs | `nec_project` supports deterministic Markdown project import and export (in addition to TOML), with documented schema, round-trip stability tests, and explicit CLI/API entry points. | **⚠ Partial (status corrected 2026-08-24, FND-006).** Delivered: `from_markdown`/`to_markdown` in `nec_project/src/lib.rs` with 6 integration tests in `project_roundtrip.rs`, plus 9 rejection-path tests (#375). **Not delivered: the "explicit CLI/API entry points" this criterion names.** No frontend imports `nec_project` — `apps/nec-cli/Cargo.toml:21` declares it as a dependency that is never used. The library half is done; the item was marked Done citing only that half. |
 
 ## Competitive parity work items
 

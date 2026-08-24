@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/findings-ledger.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 ---
 
 # Findings ledger
@@ -42,6 +42,7 @@ An `open` row is not a failure — it is the point. What the process forbids is 
 
 | ID | Found | State | Finding | Evidence / owner |
 |:---|:------|:------|:--------|:-----------------|
+| FND-016 | 2026-08-24 | open | `apps/nec-cli/Cargo.toml:21` declares `nec_project` as a dependency that no CLI source file imports — the binary links and the SBOM carries a crate it never uses. Either wire it (which is what FND-006 asks for) or drop the declaration. | found while correcting FND-006; `cargo` would catch it under the `unused_crate_dependencies` lint |
 | FND-015 | 2026-08-23 | open | The remote worker discards the `LD`/`TL` builder warnings (`_load_warnings`, `_tl_warnings`), and `build_nt_stamps` is never called off the CLI path at all — so a malformed card is silently skipped on a distributed solve, and `NT` cards are ignored outright in the GUI and worker. | found by the C5 path inventory; `docs/project/path-inventory.md` |
 | FND-014 | 2026-08-23 | open | The negative-resistance tripwire is CLI-only. The GUI, the Python bindings and the remote worker can all report a physically impossible `Re(Z) < 0` with nothing said. The check is post-solve, so adopting `validate::diagnose` in #369/#370 did not carry it. | found by the C2 path inventory; `docs/project/path-inventory.md` |
 | FND-013 | 2026-08-23 | open | The distributed path skips pre-solve validation at **both** ends: `--hosts` returns from `main()` before the validation block, and `nec_worker::solve_task` goes from `build_geometry` straight to the solve. A deck the CLI refuses locally is dispatched to every worker and solved. Demonstrated: the local run names the geometry error, the `--hosts` run never mentions it. | found by the C1 path inventory; the fifth and sixth paths were not enumerated when #368–#370 wired "all three frontends" |
@@ -51,7 +52,7 @@ An `open` row is not a failure — it is the point. What the process forbids is 
 | FND-009 | 2026-08-23 | open | The GPU-resident dense solve never beats the CPU at any tested size (0.04×–0.48×) and is declined by the accuracy gate at N=512. Cause is structural: the LU dispatches one workgroup, so it runs on a single compute unit and more GPU hardware cannot help. Recommendation to treat it as not-recommended is recorded but not acted on. | measured in #384; `docs/ph7-chk-003-gpu-resident-solve.md` § Performance |
 | FND-008 | 2026-08-23 | open | Real-hardware GPU benchmark evidence exists only for an **integrated** adapter (RADV RENOIR). The roadmap asks for at least one **discrete** GPU; that is still unmet, and the PH7-CHK-003 results were previously headed "real discrete GPU". | heading corrected in #384; roadmap item marked partial |
 | FND-007 | 2026-08-23 | open | The GUI is Hallén-only: no solver picker. Decks needing `--solver mpie` are warned about and told to use the CLI instead of being solvable in place. | owner: unassigned; surfaced by #369, #381 |
-| FND-006 | 2026-08-23 | open | Roadmap `GAP-015` is marked Done citing only `nec_project`'s library functions and their round-trip tests, but its own acceptance criterion names "explicit CLI/API entry points", which do not exist. The library half is delivered; the frontend half the criterion asks for is not. | dispositioned in #377; `docs/dev/reviews/review-260719.md` § Dispositions |
+| FND-006 | 2026-08-23 | open | Roadmap `GAP-015` is marked Done citing only `nec_project`'s library functions and their round-trip tests, but its own acceptance criterion names "explicit CLI/API entry points", which do not exist. The library half is delivered; the frontend half the criterion asks for is not. | roadmap row corrected from Done to Partial on 2026-08-24; dispositioned in #377, `docs/dev/reviews/review-260719.md` § Dispositions. Stays open: the CLI/API entry points the criterion names still do not exist |
 | FND-005 | 2026-08-23 | deferred | Corpus per-case provenance records the workspace version *under development* at the commit, which is not necessarily a released build, and does not distinguish a case being added from its values being regenerated. | owner: developer; acceptable limit stated in `corpus/reference-results.json` `provenance_note` and enforced fresh by CI |
 | FND-004 | 2026-08-23 | deferred | DCIM Phase 3 (Rust port of the validated Python prototype) cannot proceed: nec2c / xnec2c / EZNEC / 4nec2 are unavailable on this machine, so new geometries cannot be gated against an external oracle. | owner: developer (restoring tooling); `docs/sommerfeld-level2-scope.md` |
 | FND-003 | 2026-08-23 | rejected | Three extension traits (`DeckPostProcessor`, `ResultFilter`, `ReportSection`) have no production consumers. | Deliberate plugin-API surface per `docs/plugin-api-design.md`. Kept, but labelled "future-facing API, unused today" rather than "consumed" — the review's own refutation was wrong, since `render_text_report_with_sections` has no production caller either. #377 |
