@@ -15,43 +15,6 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
-### Fixed
-
-- **A distributed solve no longer skips pre-solve validation** (FND-013). `--hosts`
-  returned from `main()` *before* the validation block, and the worker went from
-  `build_geometry` straight to the solve, so a deck the CLI refuses locally was
-  dispatched to every worker and solved — the worker returned 49.53 − j173.05 Ω for
-  wires crossing mid-span. The check is now one shared block **above** the
-  `--hosts` branch, which also puts it ahead of `WorkerPool` construction: the pool
-  spawns an SSH process per host the moment it is built, so a check placed inside
-  the distributed function would contact every host before noticing the deck was
-  never solvable. The worker validates independently too — it is a separately
-  installed binary, possibly a different version, so a controller cannot speak for
-  it — reporting `UnsupportedConfig` rather than a geometry error, which would have
-  crossed the wire mislabelled as `parse_error`. The distributed path also now
-  emits the unsupported-topology caveat it never saw.
-
-### Fixed
-
-- **The CLI test suite no longer leaks temp decks.** Six integration-test files
-  wrote uniquely-named decks to the system temp directory and never removed them,
-  while the other eighteen cleaned up. Repeated `cargo test --workspace` runs left
-  **437** stray `fnec-*` files in `/tmp`. They now use a shared `common::TempDeck`
-  guard that deletes on drop — so it also cleans up after a *panicking* test, which
-  the trailing `fs::remove_file(&path)` convention does not. A full workspace run
-  now leaves 6 fixed-name GUI fixtures that overwrite rather than accumulate,
-  down from ~437 unique files (FND-017).
-
-### Docs
-
-- **Roadmap `GAP-015` corrected from Done to Partial** (FND-006). Its acceptance
-  criterion asks for Markdown project import/export *"with documented schema,
-  round-trip stability tests, and explicit CLI/API entry points"*, and it was marked
-  Done citing only the library functions and their tests. No frontend imports
-  `nec_project` — `apps/nec-cli/Cargo.toml` declares it as a dependency that is
-  never used, which is now logged separately as FND-016. The library half is
-  delivered; the half the criterion names is not, and the row now says so.
-
 ### Added
 
 - **A path inventory for cross-cutting concerns**
@@ -100,6 +63,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A distributed solve no longer skips pre-solve validation** (FND-013). `--hosts`
+  returned from `main()` *before* the validation block, and the worker went from
+  `build_geometry` straight to the solve, so a deck the CLI refuses locally was
+  dispatched to every worker and solved — the worker returned 49.53 − j173.05 Ω for
+  wires crossing mid-span. The check is now one shared block **above** the
+  `--hosts` branch, which also puts it ahead of `WorkerPool` construction: the pool
+  spawns an SSH process per host the moment it is built, so a check placed inside
+  the distributed function would contact every host before noticing the deck was
+  never solvable. The worker validates independently too — it is a separately
+  installed binary, possibly a different version, so a controller cannot speak for
+  it — reporting `UnsupportedConfig` rather than a geometry error, which would have
+  crossed the wire mislabelled as `parse_error`. The distributed path also now
+  emits the unsupported-topology caveat it never saw.
+
+- **The CLI test suite no longer leaks temp decks.** Six integration-test files
+  wrote uniquely-named decks to the system temp directory and never removed them,
+  while the other eighteen cleaned up. Repeated `cargo test --workspace` runs left
+  **437** stray `fnec-*` files in `/tmp`. They now use a shared `common::TempDeck`
+  guard that deletes on drop — so it also cleans up after a *panicking* test, which
+  the trailing `fs::remove_file(&path)` convention does not. A full workspace run
+  now leaves 6 fixed-name GUI fixtures that overwrite rather than accumulate,
+  down from ~437 unique files (FND-017).
+
 - **The GUI's warning marker rendered as an empty box.** `⚠` (U+26A0) has no glyph
   in iced's default font, so every caveat in the Solve panel had been drawn with a
   tofu box in front of it — since well before the caveats strip existed. Found by
@@ -140,6 +126,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   two cannot disagree; a junctionless deck is told the usual cause does not apply
   and pointed at a cross-check instead. Where a junction really is present the
   junction explanation is unchanged.
+
+### Docs
+
+- **Roadmap `GAP-015` corrected from Done to Partial** (FND-006). Its acceptance
+  criterion asks for Markdown project import/export *"with documented schema,
+  round-trip stability tests, and explicit CLI/API entry points"*, and it was marked
+  Done citing only the library functions and their tests. No frontend imports
+  `nec_project` — `apps/nec-cli/Cargo.toml` declares it as a dependency that is
+  never used, which is now logged separately as FND-016. The library half is
+  delivered; the half the criterion names is not, and the row now says so.
 
 ## [0.14.0] — 2026-08-23 — Frontend validation parity + GPU and MPIE correctness
 

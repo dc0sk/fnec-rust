@@ -146,6 +146,11 @@ jobs:
       # coverage claim backed by nothing.
       - name: Path inventory references resolve
         run: python3 scripts/check-path-inventory.py
+      # Entries are added one PR at a time and each brings its own heading, so a
+      # release section drifts into `### Fixed` three times over. Caught only on
+      # release day twice; now caught on the PR that causes it.
+      - name: Changelog headings are not duplicated
+        run: python3 scripts/check-changelog-headings.py
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-

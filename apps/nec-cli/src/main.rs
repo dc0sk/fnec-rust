@@ -265,6 +265,15 @@ fn main() -> ExitCode {
     // `build_excitation` deliberately stays below the branch: hoisting it would
     // move EX-reference errors from the worker to the controller, a separate
     // behaviour change.
+    //
+    // The hoist does reorder the LOCAL path, and that is deliberate rather than
+    // incidental. `buried_wire_geometry_error` and the deferred-ground warning now
+    // run BEFORE `build_excitation` instead of after, so a deck with both a buried
+    // wire and a bad `EX` reference reports the buried wire (it used to report the
+    // `EX`), and a deferred `GN` type now warns even when the run then fails on the
+    // `EX`. Same exit code either way. This is the order `validate::diagnose`
+    // already uses, which the GUI and the Python bindings adopted in #369/#370, so
+    // the three frontends now agree on it.
     let segs = match build_geometry(deck) {
         Ok(s) => s,
         Err(e) => {

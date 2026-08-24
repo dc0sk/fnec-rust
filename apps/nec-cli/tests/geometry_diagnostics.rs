@@ -130,6 +130,11 @@ fn tiny_source_segment_fails_fast_with_actionable_error() {
 /// `run_distributed_solve` could not satisfy that — `WorkerPool` spawns an SSH
 /// process per host the moment it is constructed, so the pool error would come
 /// first. Hoisting the check above the `--hosts` branch is what makes this pass.
+/// RFC 5737 TEST-NET-3: reserved for documentation and never globally routed, so
+/// a passing run never dials it and a failing one is bounded by the pool's 5 s
+/// SSH connect timeout.
+const UNREACHABLE_HOST: &str = "203.0.113.1";
+
 #[test]
 fn distributed_run_refuses_geometry_before_contacting_any_host() {
     let deck = common::TempDeck::new(
@@ -140,7 +145,7 @@ fn distributed_run_refuses_geometry_before_contacting_any_host() {
     // would be about the worker pool instead of the geometry.
     let hosts = common::TempDeck::new(
         "fnec-dist-hosts.toml",
-        "[[worker]]\nhostname = \"203.0.113.1\"\n",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
     );
 
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -155,8 +160,14 @@ fn distributed_run_refuses_geometry_before_contacting_any_host() {
         stderr.contains("unsupported intersecting-wire geometry"),
         "distributed run must refuse the same geometry the local run does:\n{stderr}"
     );
+    // Assert on the host ADDRESS, not on the words "worker"/"SSH". `ssh` prints
+    // lowercase `ssh:` and the pool gives its children an inherited stderr, so a
+    // regression that moved the check back inside `run_distributed_solve` — after
+    // the pool is built — produced output containing neither word and passed the
+    // weaker assertion while having contacted the host. Verified: that exact
+    // regression now fails here, and took 5 s doing it.
     assert!(
-        !stderr.contains("worker") && !stderr.contains("SSH"),
+        !stderr.contains(UNREACHABLE_HOST),
         "must fail on the geometry BEFORE contacting any host:\n{stderr}"
     );
     assert_eq!(
