@@ -63,6 +63,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The path-inventory checker was satisfied by its own comment.** It validated
+  only backticked names of 15+ characters, so the invented symbol `solve_task` —
+  a function that never existed — sat in the inventory and the findings ledger
+  through two reviews without the gate noticing. Tightening it to any snake_case
+  identifier exposed two further ways it confirmed whatever it was given: it
+  substring-matched, so a truncated name resolved to the real one it prefixes, and
+  it searched `docs/` and `scripts/`, so a name resolved either to its own mention
+  in the file under check or to the examples in the checker's own explanatory text.
+  Now whole-word, source-tree-only, and sabotage-verified against both (FND-022).
+
 - **A distributed solve no longer skips pre-solve validation** (FND-013). `--hosts`
   returned from `main()` *before* the validation block, and the worker went from
   `build_geometry` straight to the solve, so a deck the CLI refuses locally was

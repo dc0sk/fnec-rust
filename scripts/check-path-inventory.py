@@ -23,8 +23,16 @@ LEDGER = Path("docs/project/findings-ledger.md")
 
 # `path/to/file.rs` or `path/to/file.py` mentioned in a table row.
 FILE_RE = re.compile(r"`((?:apps|crates|bindings|scripts)/[\w./-]+\.(?:rs|py))`")
-# A bare test-function name in backticks, e.g. `every_gui_solve_path_...`.
-TESTNAME_RE = re.compile(r"`([a-z][a-z0-9_]{15,})`")
+# A Rust symbol in backticks: snake_case with at least one underscore, e.g.
+# `every_gui_solve_path_...` or `solve_deck_at_frequency_with_exec`.
+#
+# This used to require 15+ characters, which let a 10-character INVENTED symbol
+# (`solve_task`, a function that never existed) sit in this file and the findings
+# ledger through two reviews. Length is not what makes a name checkable — having an
+# underscore is, because that is what distinguishes an identifier from prose.
+SYMBOL_RE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
+# Words that look like identifiers but are prose or file suffixes, not symbols.
+SYMBOL_ALLOWLIST = {"nec_solver", "nec_worker", "nec_model", "nec_parser", "fnec_py"}
 FND_RE = re.compile(r"FND-\d+")
 
 
@@ -63,17 +71,32 @@ def main() -> int:
                         f"{INVENTORY}:{lineno}: cites {fid}, which is not in {LEDGER}"
                     )
 
-        # A named test must exist somewhere in the tree.
-        for name in TESTNAME_RE.findall(line):
-            if "/" in name or name.endswith(".rs") or name.endswith(".py"):
+        # Every referenced symbol must exist somewhere in the tree. A name that
+        # resolves nowhere is either a typo or invented, and both read as evidence.
+        for name in SYMBOL_RE.findall(line):
+            if name in SYMBOL_ALLOWLIST or "/" in name:
                 continue
             checked_tests += 1
-            found = subprocess.run(
-                ["git", "grep", "-q", "--", name], capture_output=True
-            ).returncode == 0
+            # Three things this needs, each learned by watching it pass when it
+            # should not have:
+            #   -w          whole-word, or a truncated name resolves to the real
+            #               one it is a prefix of.
+            #   :!docs/     or a name resolves to its own mention in the very file
+            #               being checked.
+            #   :!scripts/  or it resolves to the EXAMPLES IN THIS COMMENT — the
+            #               first draft of this check was satisfied by its own
+            #               explanatory text.
+            # A symbol must be found in the shipped source tree, nowhere else.
+            found = (
+                subprocess.run(
+                    ["git", "grep", "-qw", name, "--", ":!docs/", ":!scripts/"],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
             if not found:
                 problems.append(
-                    f"{INVENTORY}:{lineno}: cites test `{name}`, which is nowhere in the tree"
+                    f"{INVENTORY}:{lineno}: cites `{name}`, which is nowhere in the tree"
                 )
 
     if rows == 0:
@@ -85,7 +108,7 @@ def main() -> int:
         return 1
     print(
         f"path inventory OK — {rows} path(s), "
-        f"{checked_files} file reference(s) and {checked_tests} test name(s) resolve"
+        f"{checked_files} file reference(s) and {checked_tests} symbol(s) resolve"
     )
     return 0
 
