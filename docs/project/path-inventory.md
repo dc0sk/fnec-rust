@@ -133,7 +133,7 @@ Malformed `LD`, `TL` and `NT` cards are skipped; the user must learn they were.
 | 1 | CLI | yes | printed in `solve_session.rs` |
 | 2 | GUI | yes | collected in `validate_deck` (#369) |
 | 3 | Python bindings | yes | raised as `UserWarning` (#370) |
-| 4 | Remote worker | **NO** | gap — [FND-026](findings-ledger.md); the worker builds the stamps but its result type has no warnings channel |
+| 4 | Remote worker | yes | `a_skipped_card_warning_survives_the_wire_to_a_real_worker` (subprocess boundary); `a_malformed_card_the_worker_skips_is_reported_not_swallowed`; wire compatibility both ways. The controller's `eprintln` itself is review-verified, not test-pinned |
 | 5 | `NT` stamping — GUI, Python, worker | yes | all six assembly sites go through `build_deck_stamps`; `test_nt_deck_matches_the_corpus_reference` |
 
 ## C6 — Which `EX` card is the feedpoint
