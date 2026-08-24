@@ -135,7 +135,7 @@ in it. There is no second way to reach that kernel.
 | 1 | CLI low-antenna-over-finite-ground | yes | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` |
 | 2 | CLI declined Sommerfeld request | yes | `declined_sommerfeld_geometry_is_reported_not_silent` |
 | 3 | GUI / Python **single solve** low-ground | yes | carried by `validate::diagnose` |
-| 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. the send is pinned by `the_geometry_caveats_arrive_before_the_first_point` |
+| 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. The send is pinned by `the_geometry_caveats_arrive_before_the_first_point` |
 | 5 | CLI distributed low-ground | yes | `the_low_ground_check_uses_the_worst_case_frequency_not_the_first` |
 | 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made |
 

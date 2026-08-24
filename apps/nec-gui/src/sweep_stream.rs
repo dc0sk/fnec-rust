@@ -5,7 +5,7 @@
 //!
 //! This body lived inline in `FnecGui::update`, where nothing could reach it:
 //! deleting any of its `send` calls left the whole suite green, so the caveats
-//! #398 and #400 added were carried by review alone (FND-034). It captures no
+//! #395 and #400 added were carried by review alone (FND-034). It captures no
 //! `self` — only the deck text, the sweep bounds and the output sink — so lifting
 //! it out costs nothing and makes every message it emits assertable.
 
@@ -31,7 +31,9 @@ pub async fn run_sweep_stream(
     start_mhz: f64,
     end_mhz: f64,
     step_mhz: f64,
-    output: &mut (impl Sink<Message, Error = impl std::fmt::Debug> + Unpin),
+    // Every send result is discarded, so no bound on the error type is needed;
+    // requiring one would document a constraint this function does not have.
+    output: &mut (impl Sink<Message> + Unpin),
 ) {
     let job = match SweepJob::prepare(&deck_text, start_mhz, end_mhz, step_mhz) {
         Ok(job) => job,
@@ -55,6 +57,10 @@ pub async fn run_sweep_stream(
                 let _ = output.send(Message::SweepPointComputed(pt)).await;
             }
             Err(e) => {
+                // The `Failed` phase currently hides the points themselves, so
+                // this caveat stands alone next to the error (FND-033). Whoever
+                // fixes that — by keeping the streamed points on `Failed` — will
+                // be editing this seam.
                 let _ = output
                     .send(Message::SweepCaveats(
                         job.negative_resistance_caveat(&seen).into_iter().collect(),
@@ -153,6 +159,33 @@ mod tests {
     }
 
     #[test]
+    fn the_final_caveat_carries_the_negative_resistance_aggregate() {
+        // Every other fixture here produces an EMPTY aggregate — the clean deck
+        // trivially, the failing deck because it dies on point zero — so none of
+        // them observes what the aggregate sends actually contain. Presence and
+        // position were pinned; content and wiring were not, and replacing both
+        // aggregate sends with the *geometry* producer passed the entire suite.
+        //
+        // An inverted-V fed away from its apex sweeps negative at every point.
+        const BENT_NEGATIVE_R: &str = "CM inverted-V fed away from the apex\nCE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let msgs = run(BENT_NEGATIVE_R, 13.8, 14.6, 0.2);
+        assert!(
+            matches!(msgs.last(), Some(Message::SweepStreamDone)),
+            "{msgs:?}"
+        );
+        let sent = caveats(&msgs);
+        assert_eq!(sent.len(), 2, "{msgs:?}");
+        assert!(
+            sent[1]
+                .iter()
+                .any(|w| w.contains("negative feedpoint resistance")),
+            "the final caveat must be the negative-resistance aggregate, not the \
+             geometry set: {:?}",
+            sent[1]
+        );
+    }
+
+    #[test]
     fn a_deck_that_cannot_be_prepared_reports_the_failure_and_nothing_else() {
         // `prepare` rejects the geometry the CLI rejects, so this is the path a
         // crossing-wires deck takes.
@@ -182,6 +215,14 @@ mod tests {
             "the failure path must send its aggregate as well as the geometry \
              caveats: {msgs:?}"
         );
+        // Residual, recorded rather than papered over: this pins the failure-path
+        // aggregate's *presence*, not its content. The deck dies on point zero, so
+        // `seen` is empty and the aggregate is legitimately empty — replacing it
+        // with `Vec::new()` still passes. Constructing a non-empty one would need a
+        // frequency-dependent failure inside `solve_at`, and no such mode exists:
+        // its errors come from the excitation, a singular matrix, or a missing
+        // feedpoint, none of which appear partway through a sweep. The completion
+        // path's aggregate IS content-pinned, by the test below.
         assert!(
             !msgs.iter().any(|m| matches!(m, Message::SweepStreamDone)),
             "a failed sweep must not report completion: {msgs:?}"

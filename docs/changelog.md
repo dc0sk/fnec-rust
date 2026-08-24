@@ -63,10 +63,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
-- **The GUI's sweep stream is testable, and its messages are now pinned**
+- **The GUI's sweep stream is testable, and its message sequence is pinned**
   (FND-034). The body lived inline in `FnecGui::update`, where nothing could reach
   it: deleting any of its three `send` calls left the whole suite green, so the
-  caveats added in the two previous releases were carried by review alone.
+  caveats added in the two previous changes were carried by review alone.
 
   It captures no `self` — only the deck text, the sweep bounds and the output sink
   — so `nec_gui::sweep_stream::run_sweep_stream` takes the sink as a `Sink` and
@@ -79,6 +79,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   That second distinction matters: `any()` was satisfied by the pre-loop send even
   with the failure-path aggregate deleted, so that sabotage survived until the
   assertion counted instead.
+
+  One residual is recorded rather than glossed. The failure-path aggregate is
+  pinned for presence and position, not content: the only deck that reaches that
+  branch fails on its first point, so its aggregate is legitimately empty, and
+  `solve_at` has no frequency-dependent failure mode to build a better fixture
+  from. The completion path's aggregate *is* content-pinned — which closes the
+  regression that matters, since sending the wrong producer with the right count
+  and order previously passed the entire suite.
 
 - **A GUI sweep now warns about the range it actually runs** (FND-042). The
   caveat panel evaluates the low-over-ground check at the deck's `FR` card
