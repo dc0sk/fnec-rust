@@ -81,9 +81,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   count is added when only some points are affected. One line per swept point would
   have repeated a fixed geometric fact up to thousands of times.
 
-  The gate asserts **parity with the local path** rather than a list of expected
-  strings — a checklist would pass while the local path grew a fifth caveat the
-  distributed one never learned about, which is how this gap opened.
+  Both paths now call one producer, `validate::hallen_geometry_caveats`, so a
+  caveat added there reaches both by construction. Demonstrated rather than
+  asserted: a probe caveat added to the producer alone appears on the local *and*
+  distributed routes of the real binary, with no call site touched.
+
+  The caveats are gated on the Hallén solver, as the local path already gated
+  them: the MPIE models junctions, loops and the surface wave correctly, and
+  `--hosts --solver mpie` is reachable while FND-018 is open — so without the gate
+  the topology caveat told such a user to re-run with the solver they were already
+  using.
 
 - **A distributed run no longer swallows the caveats only it can see** (FND-026).
   The worker built its `LD`/`TL`/`NT` stamp warnings and dropped them: a

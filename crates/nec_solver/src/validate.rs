@@ -568,6 +568,46 @@ pub fn low_finite_ground_warning(
 }
 
 // ---------------------------------------------------------------------------
+// Hallén-path caveats, shared by every frontend that runs one
+// ---------------------------------------------------------------------------
+
+/// Every caveat a Hallén solve of this deck earns from its *geometry and ground*,
+/// in the order the CLI has always printed them.
+///
+/// The single producer of this set (FND-020). Before it existed, the CLI listed
+/// the three calls in one place and the distributed path listed two of them in
+/// another, so a deck at 0.03 λ over `GN 2` — or one fed on a junction — came back
+/// through `--hosts` as bare numbers.
+///
+/// **Add a new deck-derived Hallén caveat here, not at a call site.** That is what
+/// makes the set reach every frontend by construction rather than by whoever
+/// remembers. Caveats that depend on options a particular frontend owns — a
+/// declined `--ground-solver sommerfeld` request, an execution-mode fallback —
+/// deliberately stay with that frontend, because no other frontend can even make
+/// the request.
+///
+/// Caller-gated on the solver, not gated here: the MPIE models junctions, loops
+/// and the surface wave correctly, so none of these apply to it. Passing that in
+/// would mean this crate knowing about a CLI-private `SolverMode`.
+pub fn hallen_geometry_caveats(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+    surface_wave_modelled: bool,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(w) = unsupported_topology_warning(deck, segs) {
+        out.push(w);
+    }
+    out.extend(feedpoint_at_junction_warnings(deck, segs));
+    if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
+        out.push(w);
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Aggregate
 // ---------------------------------------------------------------------------
 

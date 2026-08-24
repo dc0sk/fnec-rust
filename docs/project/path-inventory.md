@@ -36,7 +36,7 @@ a degenerate segment, a wire reaching an active ground) and collects the caveats
 | 3 | GUI, sweep | `nec-gui` `SweepJob::prepare` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 4 | GUI, currents + pattern | `nec-gui` `solve_for_currents` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 5 | Python bindings | `fnec_py.solve_deck_str` / `sweep_deck_str` | yes | `bindings/fnec_py/tests/test_smoke.py` |
-| 6 | CLI, distributed | `nec-cli/src/main.rs`, above the `--hosts` branch | yes | `distributed_run_refuses_geometry_before_contacting_any_host`; `the_distributed_path_emits_the_same_pre_solve_caveats_as_the_local_one` |
+| 6 | CLI, distributed | `nec-cli/src/main.rs`, above the `--hosts` branch | yes | `distributed_run_refuses_geometry_before_contacting_any_host`; `the_distributed_caveats_come_from_the_shared_producer`; `a_non_hallen_distributed_run_gets_no_hallen_caveats` |
 | 7 | Remote worker | `nec_worker/src/solve.rs` `solve_deck_at_frequency_with_exec` | errors yes, caveats via the controller † | `worker_refuses_geometry_the_cli_refuses` |
 
 † This concern has two halves — reject the unsupported class, **and** collect the
@@ -50,9 +50,16 @@ binary — so anything the controller can derive for itself belongs to the
 controller, and only what the worker's own solve *did* travels on the wire (the
 stamp warnings of FND-026). Row 7 is therefore covered, but not by the worker.
 
-The row-6 evidence asserts **parity with the local path** rather than a list of
-expected strings: a checklist would pass while the local path grew a fifth caveat
-the distributed one never learned about, which is exactly how this gap opened.
+Both paths call one producer, `validate::hallen_geometry_caveats`, so a caveat
+added there reaches both by construction — demonstrated by adding a probe caveat to
+the producer and watching it appear on the local *and* distributed routes of the
+real binary, with no call site touched.
+
+That is a stronger claim than the one this row made first. The original gate
+compared the distributed output against a hand-copied list of the same three calls,
+which would have stayed green if a *fourth* caveat were added — the very failure it
+claimed to prevent. Caveats that depend on options one frontend owns (a declined
+`--ground-solver sommerfeld`) deliberately stay with that frontend.
 
 Paths 6 and 7 are the same request seen from two ends, and **neither** validated
 until #390 (FND-013): `--hosts` returned from `main()` before the validation block,
@@ -127,8 +134,14 @@ in it. There is no second way to reach that kernel.
 |:--|:-----|:--------|:---------|
 | 1 | CLI low-antenna-over-finite-ground | yes | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` |
 | 2 | CLI declined Sommerfeld request | yes | `declined_sommerfeld_geometry_is_reported_not_silent` |
-| 3 | GUI / Python low-ground | yes | carried by `validate::diagnose` |
-| 4 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made |
+| 3 | GUI / Python **single solve** low-ground | yes | carried by `validate::diagnose` |
+| 4 | GUI **sweep** low-ground | **NO** | gap — [FND-042](findings-ledger.md); evaluated at the `FR` card's frequency, not the swept range |
+| 5 | CLI distributed low-ground | yes | `the_low_ground_check_uses_the_worst_case_frequency_not_the_first` |
+| 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made |
+
+Row 3's "yes" was unqualified until #399 split it. The check is frequency-dependent,
+and a *sweep* is a different frequency from the deck's `FR` card — so covering the
+single solve says nothing about the sweep, which is row 4.
 
 ## C5 — Load / TL / NT builder warnings
 
