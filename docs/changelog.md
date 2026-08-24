@@ -63,6 +63,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A distributed run now carries the same pre-solve caveats as a local one**
+  (FND-020). `--hosts` emitted the deferred-ground and unsupported-topology
+  caveats but not `low_finite_ground_warning` or `feedpoint_at_junction_warnings`,
+  so a dipole at 0.03 λ over `GN 2`, or one fed on a junction, came back through
+  `--hosts` as bare numbers where every other path qualifies them.
+
+  Done controller-side, not on the wire. These are pure functions of the deck, its
+  geometry, the ground model and the frequency — all of which the controller holds
+  before it dispatches anything — and a caveat computed worker-side goes silent
+  against an older worker. Only what the worker's own solve actually *did* needs
+  to travel, which is the FND-026 stamp warnings and nothing else.
+
+  The low-ground check is the only frequency-dependent one, and a sweep has many
+  frequencies. It trips below 0.1 λ, so the **lowest** frequency is the worst case;
+  reporting there catches any sweep that dips below the threshold anywhere, and a
+  count is added when only some points are affected. One line per swept point would
+  have repeated a fixed geometric fact up to thousands of times.
+
+  The gate asserts **parity with the local path** rather than a list of expected
+  strings — a checklist would pass while the local path grew a fifth caveat the
+  distributed one never learned about, which is how this gap opened.
+
 - **A distributed run no longer swallows the caveats only it can see** (FND-026).
   The worker built its `LD`/`TL`/`NT` stamp warnings and dropped them: a
   malformed card that every other frontend reports was silently ignored under

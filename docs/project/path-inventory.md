@@ -36,17 +36,23 @@ a degenerate segment, a wire reaching an active ground) and collects the caveats
 | 3 | GUI, sweep | `nec-gui` `SweepJob::prepare` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 4 | GUI, currents + pattern | `nec-gui` `solve_for_currents` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 5 | Python bindings | `fnec_py.solve_deck_str` / `sweep_deck_str` | yes | `bindings/fnec_py/tests/test_smoke.py` |
-| 6 | CLI, distributed | `nec-cli/src/main.rs`, above the `--hosts` branch | errors yes, caveats partial † | `distributed_run_refuses_geometry_before_contacting_any_host` |
-| 7 | Remote worker | `nec_worker/src/solve.rs` `solve_deck_at_frequency_with_exec` | errors yes, caveats partial † | `worker_refuses_geometry_the_cli_refuses` |
+| 6 | CLI, distributed | `nec-cli/src/main.rs`, above the `--hosts` branch | yes | `distributed_run_refuses_geometry_before_contacting_any_host`; `the_distributed_path_emits_the_same_pre_solve_caveats_as_the_local_one` |
+| 7 | Remote worker | `nec_worker/src/solve.rs` `solve_deck_at_frequency_with_exec` | errors yes, caveats via the controller † | `worker_refuses_geometry_the_cli_refuses` |
 
 † This concern has two halves — reject the unsupported class, **and** collect the
-caveats — and the distributed path has only the first. It emits the deferred-ground
-and unsupported-topology caveats but not `low_finite_ground_warning` or
-`feedpoint_at_junction_warnings`, so a dipole at 0.03 λ over `GN 2` run through
-`--hosts` returns numbers with no low-ground caveat where every other path warns.
-Recording that rather than letting a bare "yes" hide it — an unqualified yes on a
-two-part concern is how FND-013 stayed invisible in the first place.
-[FND-020](findings-ledger.md).
+caveats. The worker does the first; the second is done for it by the controller,
+which holds the deck, the geometry, the ground model and the frequencies before it
+dispatches anything (`distributed_pre_solve_caveats`, FND-020).
+
+That split is deliberate rather than incidental. A caveat computed worker-side
+goes silent against an older worker, because a worker is a separately installed
+binary — so anything the controller can derive for itself belongs to the
+controller, and only what the worker's own solve *did* travels on the wire (the
+stamp warnings of FND-026). Row 7 is therefore covered, but not by the worker.
+
+The row-6 evidence asserts **parity with the local path** rather than a list of
+expected strings: a checklist would pass while the local path grew a fifth caveat
+the distributed one never learned about, which is exactly how this gap opened.
 
 Paths 6 and 7 are the same request seen from two ends, and **neither** validated
 until #390 (FND-013): `--hosts` returned from `main()` before the validation block,
