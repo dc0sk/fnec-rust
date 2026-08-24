@@ -5,7 +5,7 @@
 //! wherever a frontend assembles a Hallén solve.
 //!
 //! `LD` loads, `TL` lines and `NT` networks each add deltas to the matrix, and
-//! every frontend used to repeat that assembly for itself — seven sites, plus one
+//! every frontend used to repeat that assembly for itself — six sites, plus one
 //! that rebuilt the stamps purely to harvest their warnings. They drifted, as
 //! duplicated assembly does: only the CLI ever applied `NT`, so the same deck
 //! solved to a different impedance depending on which frontend you asked

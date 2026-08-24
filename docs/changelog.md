@@ -107,6 +107,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   strong-model review of the FND-023 fix, which declined to accept "the
   user-passed-load-discard class is fixed" while this one stood.
 
+- **`--hosts` with `--ground-solver sommerfeld` silently ignored the flag**
+  (FND-027). Same shape, second instance: `run_distributed_solve` does not take
+  it and the worker derives its ground model from the deck alone, so a
+  distributed run returned the uncorrected reflection-coefficient impedance with
+  no warning. On `corpus/dipole-gn2-near-ground-51seg.nec` that is
+  92.266 + j13.617 Ω against 95.524 + j12.166 Ω with the PH9-CHK-006 correction —
+  a 3.26 Ω change for a flag the user passed explicitly. Also rejected now. The
+  review found this by asking which *other* flags the distributed path drops the
+  same way, rather than accepting the first instance as the whole defect; the
+  remaining flags were swept and are either rejected loudly by the worker,
+  applied before the branch, or performance-only.
+
 - **The path-inventory checker was satisfied by its own comment.** It validated
   only backticked names of 15+ characters, so the invented symbol `solve_task` —
   a function that never existed — sat in the inventory and the findings ledger
