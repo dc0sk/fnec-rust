@@ -169,6 +169,25 @@ pub fn solve_deck_at_frequency_with_exec(
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let ground = ground_model_from_deck(&deck);
 
+    // 2b. Refuse geometry outside the solver's supported class, exactly as the CLI
+    // does locally (FND-013).
+    //
+    // This is not a redundant second check behind the controller's: the worker is a
+    // SEPARATELY INSTALLED binary, reached over SSH at whatever `binary_path` the
+    // hosts file names, so it may be a different fnec version with a different
+    // supported class. A controller can never speak for it. `run_worker_stdio` is
+    // also public API fed by arbitrary stdin, so this is the only end that is
+    // authoritative about what this build will solve.
+    //
+    // Reported as `UnsupportedConfig` rather than `GeometryError`: the latter falls
+    // into `process_task`'s catch-all and would cross the wire labelled
+    // `parse_error`, which is simply untrue and would send a user looking at their
+    // deck's syntax. Adding a new `ErrorCode` variant instead would break older
+    // controllers, which fail the whole result line on an unknown variant.
+    if let Some(err) = nec_solver::validate::geometry_error(&deck, &segs, &ground) {
+        return Err(SolveError::UnsupportedConfig(err));
+    }
+
     // 3. Build Hallén RHS
     let hallen_rhs = build_hallen_rhs(&deck, &segs, freq_hz).map_err(|e| {
         use nec_solver::ExcitationError;
@@ -286,4 +305,57 @@ fn cpu_currents(
     )
     .map_err(|e| SolveError::SingularMatrix(e.to_string()))?;
     Ok(solution.currents)
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    /// Two wires crossing mid-span — geometry the CLI refuses locally.
+    const CROSSING: &str = "\
+GW 1 11 -5 0 0 5 0 0 0.001
+GW 2 11 0 -5 0 0 5 0 0.001
+GE 0
+EX 0 1 6 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+";
+    /// The same wires meeting at an endpoint instead — legal, and must still solve.
+    const ENDPOINT_JUNCTION: &str = "\
+GW 1 11 -5 0 0 0 0 0 0.001
+GW 2 11 0 0 0 0 5 0 0.001
+GE 0
+EX 0 1 6 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+    /// The worker is a separately installed binary reached over SSH, so it cannot
+    /// rely on its controller having validated anything (FND-013).
+    #[test]
+    fn worker_refuses_geometry_the_cli_refuses() {
+        let err = solve_deck_at_frequency_with_exec(CROSSING, 14.2e6, "hallen", "cpu")
+            .expect_err("crossing wires must be refused");
+        match err {
+            SolveError::UnsupportedConfig(m) => {
+                assert!(m.contains("intersecting-wire"), "unexpected message: {m}");
+            }
+            // Not GeometryError: that falls into `process_task`'s catch-all and
+            // would cross the wire labelled `parse_error`.
+            other => panic!("expected UnsupportedConfig, got {other:?}"),
+        }
+    }
+
+    /// Negative control: the guard must reject the unsupported class, not everything.
+    #[test]
+    fn worker_still_solves_legal_geometry() {
+        let r = solve_deck_at_frequency_with_exec(ENDPOINT_JUNCTION, 14.2e6, "hallen", "cpu")
+            .expect("an endpoint junction is legal and must still solve");
+        assert!(
+            r.impedance_re.is_finite() && r.impedance_im.is_finite(),
+            "expected a finite impedance, got {} + j{}",
+            r.impedance_re,
+            r.impedance_im
+        );
+    }
 }

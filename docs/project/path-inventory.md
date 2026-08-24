@@ -36,24 +36,25 @@ a degenerate segment, a wire reaching an active ground) and collects the caveats
 | 3 | GUI, sweep | `nec-gui` `SweepJob::prepare` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 4 | GUI, currents + pattern | `nec-gui` `solve_for_currents` | yes | `every_gui_solve_path_applies_the_same_rejection` |
 | 5 | Python bindings | `fnec_py.solve_deck_str` / `sweep_deck_str` | yes | `bindings/fnec_py/tests/test_smoke.py` |
-| 6 | CLI, distributed | `nec-cli/src/main.rs` `run_distributed_solve` | **NO** | gap — [FND-013](findings-ledger.md) |
-| 7 | Remote worker | `nec_worker/src/solve.rs` `solve_task` | **NO** | gap — [FND-013](findings-ledger.md) |
+| 6 | CLI, distributed | `nec-cli/src/main.rs`, above the `--hosts` branch | yes | `distributed_run_refuses_geometry_before_contacting_any_host` |
+| 7 | Remote worker | `nec_worker/src/solve.rs` `solve_deck_at_frequency_with_exec` | yes | `worker_refuses_geometry_the_cli_refuses` |
 
-Paths 6 and 7 are the same request seen from two ends, and **neither** validates:
-`--hosts` returns from `main()` before the validation block, and the worker goes
-from `build_geometry` straight to the solve. A deck the CLI refuses locally is
-dispatched to every worker and solved.
+Paths 6 and 7 are the same request seen from two ends, and **neither** validated
+until #390 (FND-013): `--hosts` returned from `main()` before the validation block,
+and the worker went from `build_geometry` straight to the solve, so a deck the CLI
+refuses locally was dispatched to every worker and solved.
 
-Demonstrated rather than read off the source — the local path names the geometry
-error, the distributed path never mentions it:
+The fix is one shared block **above** the `--hosts` branch rather than a copy
+inside `run_distributed_solve`. Placement is load-bearing, not stylistic:
+`WorkerPool` spawns an SSH process per host the moment it is constructed, so a
+check inside the distributed function would connect to every host before noticing
+the deck was never solvable.
 
-```
-$ fnec crossing.nec
-error: unsupported intersecting-wire geometry between tag 1 seg 6 and tag 2 seg 6…
-
-$ fnec --hosts hosts.toml crossing.nec
-error: worker pool is empty — no workers available      # geometry never checked
-```
+Path 7 is not redundant with path 6. The worker is a **separately installed
+binary**, reached at whatever `binary_path` the hosts file names, so it may be a
+different fnec version with a different supported class — a controller can never
+speak for it. `run_worker_stdio` is also public API fed by arbitrary stdin. Path 7
+is the authoritative end; path 6 is fail-fast UX.
 
 ## C2 — Negative-resistance tripwire
 

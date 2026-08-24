@@ -17,6 +17,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A distributed solve no longer skips pre-solve validation** (FND-013). `--hosts`
+  returned from `main()` *before* the validation block, and the worker went from
+  `build_geometry` straight to the solve, so a deck the CLI refuses locally was
+  dispatched to every worker and solved — the worker returned 49.53 − j173.05 Ω for
+  wires crossing mid-span. The check is now one shared block **above** the
+  `--hosts` branch, which also puts it ahead of `WorkerPool` construction: the pool
+  spawns an SSH process per host the moment it is built, so a check placed inside
+  the distributed function would contact every host before noticing the deck was
+  never solvable. The worker validates independently too — it is a separately
+  installed binary, possibly a different version, so a controller cannot speak for
+  it — reporting `UnsupportedConfig` rather than a geometry error, which would have
+  crossed the wire mislabelled as `parse_error`. The distributed path also now
+  emits the unsupported-topology caveat it never saw.
+
+### Fixed
+
 - **The CLI test suite no longer leaks temp decks.** Six integration-test files
   wrote uniquely-named decks to the system temp directory and never removed them,
   while the other eighteen cleaned up. Repeated `cargo test --workspace` runs left

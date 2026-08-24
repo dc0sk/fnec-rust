@@ -21,9 +21,6 @@ use exec_profile::{
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
 use nec_parser::parse;
-use nec_solver::validate::{
-    buried_wire_geometry_error, segment_intersection_error, source_risk_geometry_error,
-};
 use nec_solver::{
     build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
     wire_endpoints_from_segs, FarFieldPoint,
@@ -255,10 +252,43 @@ fn main() -> ExitCode {
 
     warn_execution_mode_fallback(execution_mode);
 
+    // --- geometry + pre-solve validation, shared by BOTH solve paths --------
+    //
+    // This block sits ABOVE the `--hosts` branch deliberately. It used to sit
+    // below it, so a distributed run skipped validation entirely and dispatched a
+    // deck the local run refuses to every worker (FND-013). Putting the check
+    // here rather than duplicating it inside `run_distributed_solve` also keeps
+    // it ahead of `WorkerPool` construction, which spawns an SSH process per host
+    // the moment it is built — validating after that would connect to every host
+    // before noticing the deck was never solvable.
+    //
+    // `build_excitation` deliberately stays below the branch: hoisting it would
+    // move EX-reference errors from the worker to the controller, a separate
+    // behaviour change.
+    let segs = match build_geometry(deck) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let ground = ground_model_from_deck(deck);
+    if let Some(err) = nec_solver::validate::geometry_error(deck, &segs, &ground) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
+    warn_deferred_ground_model(&ground);
+
     // ------------------------------------------------------------------
     // Distributed solve via --hosts
     // ------------------------------------------------------------------
     if let Some(ref hosts_path) = hosts_path {
+        // The topology caveat is what tells a user a junctioned or looped deck
+        // solves to garbage on the Hallén path. The distributed run is Hallén-only,
+        // so it needs it at least as much as the local one.
+        if let Some(w) = nec_solver::validate::unsupported_topology_warning(deck, &segs) {
+            eprintln!("warning: {w}");
+        }
         return run_distributed_solve(
             &input,
             &freqs_hz,
@@ -273,21 +303,6 @@ fn main() -> ExitCode {
     }
     // ------------------------------------------------------------------
 
-    let segs = match build_geometry(deck) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if let Some(err) = segment_intersection_error(&segs) {
-        eprintln!("error: {err}");
-        return ExitCode::FAILURE;
-    }
-    if let Some(err) = source_risk_geometry_error(&deck.cards, &segs) {
-        eprintln!("error: {err}");
-        return ExitCode::FAILURE;
-    }
     // Per-wire basis solve requires every wire to have >= 2 segments.
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
@@ -300,12 +315,6 @@ fn main() -> ExitCode {
         }
     };
 
-    let ground = ground_model_from_deck(deck);
-    if let Some(err) = buried_wire_geometry_error(&segs, &ground) {
-        eprintln!("error: {err}");
-        return ExitCode::FAILURE;
-    }
-    warn_deferred_ground_model(&ground);
     warn_mpie_mixed_radius(solver_mode, &segs);
 
     let pattern_points: Vec<FarFieldPoint> = deck
