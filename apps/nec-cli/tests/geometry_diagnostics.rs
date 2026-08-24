@@ -118,6 +118,55 @@ fn tiny_source_segment_fails_fast_with_actionable_error() {
     );
 }
 
+/// FND-035: a receive-only deck was hard-rejected for a source it does not have.
+///
+/// The source-risk check read every `EX` card with no type filter, so a plane
+/// wave's NTHETA/NPHI — which live in the fields a driven source uses for tag and
+/// segment — could match a short fat segment and refuse the deck outright. On
+/// every frontend, since the check reaches `geometry_error` and so `diagnose`.
+///
+/// End-to-end rather than a unit test because this changes which decks are
+/// *refused*, and the production entry point is where that has to be true.
+#[test]
+fn a_receive_only_deck_is_not_refused_for_a_source_it_does_not_have() {
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/receive-planewave-fat-segment.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("source-risk"),
+        "a deck with no driven source cannot have a source at risk:\n{stderr}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "receive deck must solve:\n{stderr}"
+    );
+
+    // Exit 0 alone is a weak gate: a deck cross-polarized to every wire also
+    // completes, with all currents exactly zero and the -999.99 dB sentinel for a
+    // response. That would pass while the plane-wave path did nothing at all. The
+    // fixture is broadside so the wave genuinely couples; assert the result is
+    // real, not merely present.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let response = stdout
+        .lines()
+        .skip_while(|l| !l.starts_with("THETA PHI RESPONSE_DB"))
+        .nth(1)
+        .and_then(|l| l.split_whitespace().nth(2))
+        .and_then(|v| v.parse::<f64>().ok())
+        .expect("a receive-pattern response row");
+    assert!(
+        response > -999.0,
+        "receive response is the null sentinel — the wave coupled to nothing: {response}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The distributed path must refuse what the local path refuses (FND-013)
 // ---------------------------------------------------------------------------

@@ -63,6 +63,44 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A receive-only deck was refused for a source it does not have** (FND-035).
+  `validate::source_risk_geometry_error` read every `EX` card with no type
+  filter, so a plane wave's NTHETA and NPHI — which live in the fields a driven
+  source uses for tag and segment — could match a short fat segment and reject
+  the deck outright. On **every** frontend, since the check reaches
+  `geometry_error` and so `diagnose`.
+
+  Demonstrated on a deck with no driven source anywhere: `exit 1`,
+  `unsupported source-risk geometry: EX on tiny segment tag 1 seg 2`. There is no
+  source on that segment. It now solves.
+
+  `feedpoint_at_junction_warnings` had the same shape with a plane-wave-only
+  skip, so an unrecognised `EX` type counted as a feedpoint and could earn a deck
+  a junction-feed caveat it had not earned. Both now go through
+  `nec_solver::feedpoints`, which is the FND-031 seam — a current source stays
+  included in both, because a current source on a junction has its feed current
+  split across the joined wires exactly as a voltage source does.
+
+  `source_risk_geometry_error` now takes `&NecDeck` rather than `&[Card]` — a
+  breaking change to `nec_solver`'s public signature. The crates are
+  workspace-versioned and not published independently, so nothing outside this
+  repository can be affected today; noted because that stops being true the day
+  they are.
+
+  An `EX` type fnec does not recognise is no longer refused *here*. It is still
+  refused, by `build_excitation`, with a message that names the type instead of
+  blaming a segment whose meaning for an unknown type is itself unknown — and
+  that is what the GUI and the Python bindings already reported, since both call
+  `build_excitation` before `geometry_error`. So this also makes the three
+  frontends agree on a deck they previously described differently.
+
+  Each negative control ships with a **positive control on the same geometry**:
+  put a real source on that segment, or a real feed on that junction, and the
+  check must still fire. Without them a check that had simply stopped working
+  would pass. New fixture `corpus/receive-planewave-fat-segment.nec`, gated
+  end-to-end at the CLI rather than only in a unit test, because this changes
+  which decks are *refused*.
+
 - **One answer to "which `EX` card is the feedpoint"** (FND-031). Eight sites
   decided this for themselves, with four different filters, and two of the
   differences were bugs.
