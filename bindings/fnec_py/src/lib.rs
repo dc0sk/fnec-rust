@@ -103,14 +103,15 @@ fn solve_at_freq(
     let i_vec = &sol.currents;
 
     // Find the first EX card and compute feedpoint impedance.
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
+    // Through the shared seam (FND-031). This loop took the first `EX` of any
+    // type, so a plane wave's NTHETA/NPHI could be reported as a feedpoint.
+    if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
         let Some((idx, seg)) = segs
             .iter()
             .enumerate()
             .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
         else {
-            continue;
+            return Err("deck has no EX card — cannot compute feedpoint impedance".to_string());
         };
         let current: Complex64 = i_vec[idx];
         let v_source: Complex64 = v_vec[idx] * seg.length;

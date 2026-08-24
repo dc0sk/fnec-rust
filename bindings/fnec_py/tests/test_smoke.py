@@ -292,3 +292,23 @@ def test_a_clean_deck_raises_no_negative_resistance_warning():
     assert got["z_re"] > 0.0
     texts = [str(w.message) for w in caught]
     assert not any("negative resistance" in t for t in texts), texts
+
+
+def test_a_plane_wave_is_not_read_as_the_feedpoint():
+    """FND-031: the bindings took the first `EX` card of any type.
+
+    A plane wave has no feedpoint — its tag/segment fields carry NTHETA and NPHI —
+    so this deck used to report segment 3, a grid dimension, as the antenna
+    feedpoint where the CLI reported segment 26.
+
+    Asserts on resolution, not on the impedance: a deck carrying a plane wave is a
+    receive deck, and its driven-feedpoint value is degenerate.
+    """
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    path = os.path.join(root, "corpus", "dipole-planewave-then-source-51seg.nec")
+    with open(path) as f:
+        got = fnec_py.solve_deck_str(f.read())
+
+    assert (got["tag"], got["seg"]) == (1, 26), (
+        f"resolved the wrong EX: tag={got['tag']} seg={got['seg']}"
+    )

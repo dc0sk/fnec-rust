@@ -71,6 +71,28 @@ pub enum ExcitationKind {
     Unknown(u32),
 }
 
+/// What an `EX` card means when the question is "which segment is the feedpoint".
+///
+/// See [`ExcitationKind::feedpoint_role`] for why this is a classification rather
+/// than a predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedpointRole {
+    /// Types 0 and 5 — a driven voltage source fnec models as an applied-field
+    /// delta gap. `Z = V / I` at the named segment.
+    DeltaGap,
+    /// Type 4 — an applied current source. Still a feedpoint, but priced from the
+    /// solved port voltage, which only the CLI's Hallén path can do.
+    CurrentSource,
+    /// Types 1-3 — an incident plane wave. **Never** a feedpoint: its tag and
+    /// segment fields carry NTHETA and NPHI, not a driven segment, so a caller
+    /// that reads them as one reports grid dimensions as an antenna location.
+    PlaneWave,
+    /// Any I1 outside the canonical 0-5 range. Never reaches a reporting caller:
+    /// `build_excitation` and `build_hallen_rhs` reject it before a current exists
+    /// to report.
+    Unknown,
+}
+
 impl ExcitationKind {
     /// Classify a raw EX I1 value per canonical NEC2 numbering.
     pub fn from_type(excitation_type: u32) -> Self {
@@ -82,6 +104,39 @@ impl ExcitationKind {
             4 => ExcitationKind::CurrentSource,
             5 => ExcitationKind::VoltageSourceCurrentSlope,
             other => ExcitationKind::Unknown(other),
+        }
+    }
+
+    /// What this excitation is, for the purpose of deciding whether it names a
+    /// feedpoint — the one question seven call sites used to answer for
+    /// themselves, in five different ways (FND-031).
+    ///
+    /// The divergence was not cosmetic. The worker skipped every non-type-0 card,
+    /// so a type-5 deck it had just *driven* as a delta gap through
+    /// `build_hallen_rhs` was then refused at extraction with "no EX type-0 card
+    /// found" — a deck three other frontends solve to the digit. The GUI and the
+    /// Python bindings filtered nothing at all, so a plane wave's NTHETA/NPHI
+    /// could be reported as a feedpoint tag and segment.
+    ///
+    /// Deliberately a *classification* rather than a predicate: no single boolean
+    /// serves every caller. A current source (type 4) is not a delta gap, but it
+    /// *is* a feedpoint the CLI prices as `Z = V_port / i0` — corpus-pinned at
+    /// 74.23 + j13.9 Ω under PH8-CHK-001 — so a caller keyed on
+    /// [`Self::is_voltage_source`] would silently delete that row.
+    ///
+    /// The match is exhaustive with no wildcard arm on purpose: a new
+    /// `ExcitationKind` must force this decision rather than defaulting into
+    /// whatever the last arm happened to be.
+    pub fn feedpoint_role(self) -> FeedpointRole {
+        match self {
+            ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope => {
+                FeedpointRole::DeltaGap
+            }
+            ExcitationKind::CurrentSource => FeedpointRole::CurrentSource,
+            ExcitationKind::PlaneWaveLinear
+            | ExcitationKind::PlaneWaveRightElliptic
+            | ExcitationKind::PlaneWaveLeftElliptic => FeedpointRole::PlaneWave,
+            ExcitationKind::Unknown(_) => FeedpointRole::Unknown,
         }
     }
 

@@ -412,14 +412,18 @@ fn feedpoint_impedance(
     i_vec: &[Complex64],
     _freq_hz: f64,
 ) -> Result<(Complex64, usize, usize), String> {
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
+    // Through the shared seam (FND-031). This loop took the first `EX` of any
+    // type, so a deck with a plane wave ahead of its voltage source reported the
+    // plane wave's NTHETA/NPHI as a feedpoint tag and segment. The GUI is
+    // Hallén-only and has no port-voltage machinery, so it wants the first
+    // delta-gap source specifically.
+    if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
         let Some((idx, seg)) = segs
             .iter()
             .enumerate()
             .find(|(_, seg)| seg.tag == ex.tag && seg.tag_index == ex.segment)
         else {
-            continue;
+            return Err("deck has no EX card — cannot determine feedpoint".to_string());
         };
         let current = i_vec[idx];
         let v_source = v_vec[idx] * seg.length;
@@ -804,6 +808,22 @@ mod tests {
             r.warnings.iter().any(|w| w.contains("negative resistance")),
             "physically impossible result reported without a caveat: {:?}",
             r.warnings
+        );
+    }
+
+    /// FND-031: this loop took the first `EX` card of any type, so a plane wave
+    /// standing ahead of the driven source had its NTHETA/NPHI read as a feedpoint
+    /// tag and segment. Asserts on resolution, not on the impedance — a deck with
+    /// a plane wave is a receive deck and its driven-feedpoint value is degenerate.
+    #[test]
+    fn a_plane_wave_is_not_read_as_the_feedpoint() {
+        let deck_src = include_str!("../../../corpus/dipole-planewave-then-source-51seg.nec");
+        let parsed = nec_parser::parse(deck_src).expect("parse");
+        let ex = nec_solver::first_delta_gap_feedpoint(&parsed.deck).expect("a driven source");
+        assert_eq!(
+            (ex.tag, ex.segment),
+            (1, 26),
+            "must resolve the voltage source, not the plane wave's NTHETA/NPHI"
         );
     }
 

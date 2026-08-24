@@ -887,13 +887,12 @@ pub(super) fn build_feedpoint_rows(
     let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
     let lengths: Vec<f64> = segs.iter().map(|s| s.length).collect();
 
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        // Incident plane waves have no feedpoint (receiving antenna); their
-        // tag/segment fields carry NTHETA/NPHI, not a driven segment.
-        if ex.kind().is_plane_wave() {
-            continue;
-        }
+    // Through the shared seam (FND-031), which excludes plane waves — their
+    // tag/segment fields carry NTHETA/NPHI, not a driven segment — while keeping
+    // current sources, which ARE feedpoints here: the CLI prices one from the
+    // solved port voltage, corpus-pinned at 74.23 + j13.9 Ω under PH8-CHK-001.
+    // A seam that filtered on "voltage source" would have deleted that row.
+    for (ex, role) in nec_solver::feedpoints(deck) {
         let Some((idx, seg)) = segs
             .iter()
             .enumerate()
@@ -903,7 +902,7 @@ pub(super) fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if ex.kind() == nec_model::card::ExcitationKind::CurrentSource {
+        let v_source = if role == nec_model::card::FeedpointRole::CurrentSource {
             // Hallén current source: the solved port voltage V (feedpoint Z=V/i0).
             // The dormant pulse path is retained as a fallback but is unreachable
             // now that current sources require --solver hallen.

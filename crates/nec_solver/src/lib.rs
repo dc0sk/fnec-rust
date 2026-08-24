@@ -20,8 +20,8 @@ pub mod validate;
 pub use basis::{ContinuityTransform, SinusoidalTransform};
 pub use excitation::{
     build_current_source_shape, build_current_source_shape_paths, build_excitation,
-    build_hallen_rhs, build_hallen_rhs_paths, scale_excitation_for_pulse_rhs, ExcitationError,
-    HallenRhs,
+    build_hallen_rhs, build_hallen_rhs_paths, feedpoints, first_delta_gap_feedpoint,
+    scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, near_e_field,
