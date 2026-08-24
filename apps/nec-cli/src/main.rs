@@ -322,10 +322,11 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
-        // The topology caveat is what tells a user a junctioned or looped deck
-        // solves to garbage on the Hallén path. The distributed run is Hallén-only,
-        // so it needs it at least as much as the local one.
-        if let Some(w) = nec_solver::validate::unsupported_topology_warning(deck, &segs) {
+        // Every pre-solve caveat the local run emits. This used to be the topology
+        // one alone, so a distributed run of a low-over-ground or junction-fed deck
+        // returned numbers with none of the qualifications the same deck earns
+        // locally (FND-020).
+        for w in distributed_pre_solve_caveats(deck, &segs, &ground, &freqs_hz, solver_mode) {
             eprintln!("warning: {w}");
         }
         return run_distributed_solve(
@@ -490,6 +491,80 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Every pre-solve caveat a distributed run owes its user.
+///
+/// Produced by `validate::hallen_geometry_caveats`, the same function the local
+/// path calls, so a caveat added there arrives here by construction rather than
+/// by whoever remembers both call sites. That is the point: this gap existed
+/// because the two paths listed the calls separately (FND-020).
+///
+/// Controller-side rather than on the wire, for the FND-014 reason: these are
+/// pure functions of the deck, its geometry, the ground model and the frequency,
+/// all of which the controller holds before it dispatches anything, and a caveat
+/// computed worker-side goes silent against an older worker. Only what the
+/// worker's own matrix fill actually did has to travel (FND-026).
+///
+/// Gated on the solver like its sibling `distributed_negative_resistance_warnings`,
+/// and for the same reason: `--hosts --solver mpie` is reachable today (FND-018),
+/// and the topology caveat says "re-run with `--solver mpie`" — advice that reads
+/// as nonsense to someone already running it. The local path gates these three the
+/// same way, so gating is also what "parity with the local path" means.
+///
+/// `surface_wave_modelled` is `false`: the worker derives its ground from the deck
+/// and has no way to apply the Sommerfeld correction, which is the fact FND-027
+/// records. That holds whether or not the `--ground-solver sommerfeld` rejection
+/// stays in place, so the caveat cannot become a lie if someone removes it.
+fn distributed_pre_solve_caveats(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+    ground: &nec_solver::GroundModel,
+    freqs_hz: &[f64],
+    solver_mode: SolverMode,
+) -> Vec<String> {
+    if !matches!(solver_mode, SolverMode::Hallen) {
+        return Vec::new();
+    }
+    // The low-ground check is the only frequency-dependent one, and a sweep has
+    // many frequencies. It trips below 0.1 λ, so the LOWEST frequency is the worst
+    // case: if it does not trip there it trips nowhere. Reporting at that
+    // frequency beats both alternatives — one line per swept point would repeat a
+    // fixed geometric fact up to thousands of times, and taking `freqs_hz[0]`
+    // would miss a descending sweep entirely.
+    let worst = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| *f > 0.0)
+        .fold(f64::INFINITY, f64::min);
+    if !worst.is_finite() {
+        return Vec::new();
+    }
+    let mut out = nec_solver::validate::hallen_geometry_caveats(deck, segs, ground, worst, false);
+
+    // The caveat's text quotes a height in wavelengths, which is the worst case's,
+    // so say which frequency it belongs to whenever a sweep has more than one —
+    // not only when the count is partial. A reader given "0.030 λ" for a 14–50 MHz
+    // sweep would otherwise take it as true of every point.
+    let usable: Vec<f64> = freqs_hz.iter().copied().filter(|f| *f > 0.0).collect();
+    if usable.len() > 1 {
+        let tripped = usable
+            .iter()
+            .filter(|f| {
+                nec_solver::validate::low_finite_ground_warning(segs, ground, **f, false).is_some()
+            })
+            .count();
+        for w in out.iter_mut() {
+            if w.contains("above finite ground") {
+                *w = format!(
+                    "{w} (worst case, at {:.6} MHz; {tripped} of {} swept frequencies are affected)",
+                    worst / 1e6,
+                    usable.len()
+                );
+            }
+        }
+    }
+    out
 }
 
 /// The negative-resistance caveat for one distributed result, if it earns one.
@@ -1031,8 +1106,8 @@ mod tests {
     use super::solve_session::{negative_resistance_warnings, SolverMode};
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
-        distributed_negative_resistance_warnings, steer_execution_mode_by_profile,
-        CompatibilityProfile, ExecutionMode,
+        distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
+        steer_execution_mode_by_profile, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use num_complex::Complex64;
@@ -1095,6 +1170,133 @@ mod tests {
                 "{mode:?} must stay silent"
             );
         }
+    }
+
+    // A dipole 0.03 λ over GN 2 — low enough to trip the near-ground caveat — whose
+    // two wires meet at a T, so the feed also sits on a junction. It earns three
+    // separate pre-solve caveats, which is what makes it useful: a deck earning one
+    // cannot tell a complete set from a lucky one.
+    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    #[test]
+    fn the_distributed_caveats_come_from_the_shared_producer() {
+        // Asserts the distributed path's set IS the shared producer's, rather than
+        // re-listing the three calls in the test body. That earlier oracle was
+        // circular in the way that mattered: a fourth caveat added to
+        // `hallen_geometry_caveats` would have left both sides unchanged and the
+        // test green while parity broke. Comparing against the producer makes the
+        // fourth caveat arrive on both sides by construction.
+        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let ground = nec_solver::ground_model_from_deck(&deck);
+
+        let produced =
+            nec_solver::validate::hallen_geometry_caveats(&deck, &segs, &ground, 14.2e6, false);
+        assert!(
+            produced.len() >= 3,
+            "fixture must earn several caveats or this proves little: {produced:?}"
+        );
+
+        let distributed =
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Hallen);
+        assert_eq!(
+            distributed, produced,
+            "a single-frequency distributed run must emit exactly the shared set"
+        );
+    }
+
+    #[test]
+    fn a_non_hallen_distributed_run_gets_no_hallen_caveats() {
+        // The local path skips all three under MPIE, which models junctions, loops
+        // and the surface wave correctly. `--hosts --solver mpie` is reachable
+        // (FND-018), and the topology caveat says "re-run with `--solver mpie`" —
+        // nonsense to someone already running it. Parity with the local path means
+        // gating the same way, not emitting unconditionally.
+        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let ground = nec_solver::ground_model_from_deck(&deck);
+        assert!(
+            !distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Hallen)
+                .is_empty(),
+            "fixture must earn caveats on the Hallén path"
+        );
+        assert!(
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Mpie)
+                .is_empty(),
+            "the MPIE solves all three correctly; the caveats do not apply"
+        );
+    }
+
+    #[test]
+    fn a_clean_deck_earns_no_distributed_caveats() {
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let ground = nec_solver::ground_model_from_deck(&deck);
+        assert!(distributed_pre_solve_caveats(
+            &deck,
+            &segs,
+            &ground,
+            &[14.2e6],
+            SolverMode::Hallen
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_partly_low_sweep_says_how_many_points_it_affects() {
+        // Raising the frequency shrinks lambda, so a fixed height stops being
+        // "low". A sweep straddling the 0.1 lambda threshold must not imply the
+        // caveat applies to every point.
+        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let ground = nec_solver::ground_model_from_deck(&deck);
+        let freqs = [14.2e6, 30.0e6, 60.0e6];
+        let tripping = freqs
+            .iter()
+            .filter(|f| {
+                nec_solver::validate::low_finite_ground_warning(&segs, &ground, **f, false)
+                    .is_some()
+            })
+            .count();
+        assert!(
+            tripping > 0 && tripping < freqs.len(),
+            "fixture must straddle the threshold, got {tripping}/{}",
+            freqs.len()
+        );
+        let out = distributed_pre_solve_caveats(&deck, &segs, &ground, &freqs, SolverMode::Hallen);
+        assert!(
+            out.iter()
+                .any(|w| w.contains(&format!("{tripping} of {} swept frequencies", freqs.len()))),
+            "must say how many points are affected: {out:?}"
+        );
+    }
+
+    #[test]
+    fn the_low_ground_check_uses_the_worst_case_frequency_not_the_first() {
+        // The caveat trips below 0.1 lambda, so the LOWEST frequency is the worst
+        // case. A sweep whose lowest point is not its first would be missed
+        // entirely by anything that just looked at `freqs_hz[0]` — and an
+        // ascending fixture cannot tell the two apart, which my first attempt at
+        // this test did not.
+        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let ground = nec_solver::ground_model_from_deck(&deck);
+
+        let descending = [60.0e6, 30.0e6, 14.2e6];
+        assert_eq!(
+            nec_solver::validate::low_finite_ground_warning(&segs, &ground, 60.0e6, false),
+            None,
+            "fixture must NOT trip at its first frequency"
+        );
+        assert!(
+            nec_solver::validate::low_finite_ground_warning(&segs, &ground, 14.2e6, false)
+                .is_some(),
+            "fixture must trip at its lowest frequency"
+        );
+
+        let out =
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &descending, SolverMode::Hallen);
+        assert!(
+            out.iter().any(|w| w.contains("above finite ground")),
+            "the low-ground caveat must survive a descending sweep: {out:?}"
+        );
     }
 
     #[test]

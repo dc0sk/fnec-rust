@@ -508,65 +508,6 @@ pub(super) fn pulse_current_source_voltage(
     -(impressed_field * seg_length * (C0 / freq_hz))
 }
 
-#[allow(clippy::too_many_arguments)]
-/// PH9-CHK-005: emit a warning when a voltage/current source drives a segment
-/// that sits at a wire junction. fnec's `V/I` on the single driven segment is not
-/// the true feedpoint impedance there — the feed current splits across the joined
-/// wires — so the reported `Z` can be unphysical (negative resistance). Accurate
-/// junction-fed impedance is deferred to PH9-CHK-002; this makes the limitation
-/// visible instead of silently returning a wrong number.
-fn warn_if_feedpoint_at_junction(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
-    for w in nec_solver::validate::feedpoint_at_junction_warnings(deck, segs) {
-        eprintln!("warning: {w}");
-    }
-}
-
-/// PH9-CHK-006 guardrail: warn when an antenna sits **very low over finite ground**,
-/// where the feedpoint impedance is only approximate.
-///
-/// fnec models finite ground (GN0/GN2) with a reflection-coefficient image — after
-/// the PH9-CHK-006 sign fix this matches nec2c's reflection-coefficient method (GN0)
-/// and, for heights ≥ ~0.2 λ, the exact Sommerfeld solution (GN2) to ~10 %. Below
-/// ~0.1 λ the two diverge sharply: the Sommerfeld **surface wave** dominates and the
-/// reflection-coefficient approximation (which fnec and nec2c GN0 share) becomes
-/// unreliable — e.g. for a horizontal λ/2 dipole at 0.025 λ the reflection-coefficient
-/// ΔR is −24 Ω while the Sommerfeld truth is **+9 Ω** (a sign error). fnec does not
-/// yet model the surface wave, so it warns rather than silently reporting an
-/// unreliable low-antenna impedance. Threshold: the lowest conductor point below
-/// 0.1 λ over `SimpleFiniteGround`.
-fn warn_if_low_finite_ground(
-    segs: &[Segment],
-    ground: &GroundModel,
-    freq_hz: f64,
-    sommerfeld: SommerfeldOutcome,
-) {
-    // A request that actually applied DID model the surface wave, so the warning's
-    // sentence would be false; a declined one keeps it and gets its own diagnostic
-    // from `warn_if_sommerfeld_declined`.
-    let modelled = sommerfeld == SommerfeldOutcome::Applied;
-    if let Some(w) =
-        nec_solver::validate::low_finite_ground_warning(segs, ground, freq_hz, modelled)
-    {
-        eprintln!("warning: {w}");
-    }
-}
-
-/// PH9-CHK-002 / PH9-CHK-005 guardrail: warn when the geometry contains a junction
-/// topology the conductor-path Hallén solve does not yet handle — a **closed loop**
-/// or a **degree-3+ (T/Y) junction**. For these classes fnec falls back to the
-/// per-wire basis, which enforces neither the loop's periodic closure nor the
-/// Kirchhoff current split at a branching node, so the reported impedance, currents,
-/// and pattern are unreliable for the *whole* geometry (not only a junction-fed
-/// segment). A 1λ square loop, for instance, reports ≈20 − j1210 Ω versus the true
-/// ≈111 − j146 Ω. This surfaces the limitation instead of silently returning a wrong
-/// number — the loop case in particular is missed by [`warn_if_feedpoint_at_junction`]
-/// because the feed need not sit on the junction.
-fn warn_if_unsupported_topology(deck: &nec_model::deck::NecDeck, segs: &[Segment]) {
-    if let Some(w) = nec_solver::validate::unsupported_topology_warning(deck, segs) {
-        eprintln!("warning: {w}");
-    }
-}
-
 /// Expand an `NE`/`NH` observation grid into Cartesian points (PH9-CHK-004).
 ///
 /// `coord_type = 0` is a rectangular `NX×NY×NZ` grid over `(x0,y0,z0)` with steps
@@ -1568,9 +1509,20 @@ pub(super) fn solve_frequency_point(
     // near-ground impedance. The MPIE solves all three correctly (junctions/loops,
     // and the Sommerfeld surface wave in the Z-matrix), so skip them there.
     if !matches!(solver_mode, SolverMode::Mpie) {
-        warn_if_unsupported_topology(deck, segs);
-        warn_if_feedpoint_at_junction(deck, segs);
-        warn_if_low_finite_ground(segs, ground, freq_hz, sommerfeld_outcome);
+        // Through the shared producer (FND-020), so a caveat added there reaches
+        // the distributed path too instead of only this one. A request that
+        // actually applied DID model the surface wave, which changes what the
+        // low-ground caveat may claim.
+        for w in nec_solver::validate::hallen_geometry_caveats(
+            deck,
+            segs,
+            ground,
+            freq_hz,
+            matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
+        ) {
+            eprintln!("warning: {w}");
+        }
+        // Stays here: only this frontend can make the request that gets declined.
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
     warn_if_negative_resistance(&rows, deck, segs, solver_mode);
