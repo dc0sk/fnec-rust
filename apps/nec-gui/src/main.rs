@@ -192,6 +192,16 @@ impl FnecGui {
                                                         .await;
                                                 }
                                                 Err(e) => {
+                                                    // The points that did stream are
+                                                    // on screen and earn the caveat as
+                                                    // much as a complete sweep's
+                                                    // would; this path used to skip it
+                                                    // entirely.
+                                                    let _ = output
+                                                        .send(Message::SweepCaveat(
+                                                            job.negative_resistance_caveat(&seen),
+                                                        ))
+                                                        .await;
                                                     let _ = output
                                                         .send(Message::SweepComplete(Err(e)))
                                                         .await;
@@ -199,8 +209,12 @@ impl FnecGui {
                                                 }
                                             }
                                         }
-                                        let caveat = job.negative_resistance_caveat(&seen);
-                                        let _ = output.send(Message::SweepStreamDone(caveat)).await;
+                                        let _ = output
+                                            .send(Message::SweepCaveat(
+                                                job.negative_resistance_caveat(&seen),
+                                            ))
+                                            .await;
+                                        let _ = output.send(Message::SweepStreamDone).await;
                                     }
                                     Err(e) => {
                                         let _ = output.send(Message::SweepComplete(Err(e))).await;

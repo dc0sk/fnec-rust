@@ -433,14 +433,46 @@ pub fn negative_resistance_warning(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Option<String> {
-    if z_re >= 0.0 {
+    if !is_negative_resistance(z_re) {
         return None;
     }
-    let cause = negative_resistance_cause(deck, segs);
-    Some(format!(
+    Some(negative_resistance_message(
+        z_re,
+        tag,
+        seg,
+        negative_resistance_cause(deck, segs),
+    ))
+}
+
+/// The canonical sentence, with the cause supplied by the caller.
+///
+/// Public so the one caller that supplies its own cause — the CLI's MPIE arm,
+/// whose explanation is a claim about that binary's solver arsenal rather than
+/// about the deck — composes the *same* sentence rather than hand-copying it.
+/// Before this existed the wording lived in two places, and nothing would have
+/// caught them drifting apart.
+///
+/// `z_re` is expected to be negative; callers gate on [`is_negative_resistance`]
+/// so that all of them agree on what "negative" means for a non-finite value.
+pub fn negative_resistance_message(z_re: f64, tag: usize, seg: usize, cause: &str) -> String {
+    format!(
         "feedpoint tag {tag} segment {seg} has negative resistance (Re Z = {z_re:.3} Ω), \
          which is physically impossible for a passive antenna; the result is unreliable — {cause}"
-    ))
+    )
+}
+
+/// The single predicate for "this resistance earns the negative-resistance
+/// caveat", so a sweep counter, a solver-mode arm and the shared seam cannot
+/// disagree about one value.
+///
+/// **`NaN` is deliberately excluded.** A `NaN` impedance is a non-converged solve,
+/// not a negative resistance, and the sentence above would read "has negative
+/// resistance (Re Z = NaN Ω)" — self-contradictory, and pointing at a
+/// junctioned-geometry cause that is not the real one. Reporting non-convergence
+/// is a separate diagnostic (FND-030); this one stays silent rather than lying,
+/// which is also the behaviour the CLI had before the check was shared.
+pub fn is_negative_resistance(z_re: f64) -> bool {
+    z_re < 0.0
 }
 
 /// The explanation [`negative_resistance_warning`] offers, on its own.

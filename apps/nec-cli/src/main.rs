@@ -498,23 +498,39 @@ fn main() -> ExitCode {
 /// the one frontend whose end-to-end gate needs SSH, and a check nothing can
 /// exercise is how FND-014 survived in the first place.
 ///
-/// The feedpoint tag/segment come from the deck's first `EX`, the same way the
-/// worker resolves them, because the wire protocol does not carry them back — the
-/// controller already fabricates `tag: 0, seg: 0` for `SweepPointSummary`, and a
-/// caveat that named segment 0 would point at nothing.
+/// The feedpoint tag/segment come from the deck's first **type-0** `EX`, matching
+/// how the worker resolves the feedpoint it reported (`nec_worker::solve`), because
+/// the wire protocol does not carry them back — the controller already fabricates
+/// `tag: 0, seg: 0` for `SweepPointSummary`, and a caveat naming segment 0 would
+/// point at nothing.
+///
+/// The type filter is not cosmetic. A plane-wave `EX` carries NTHETA/NPHI in the
+/// fields a voltage source uses for tag and segment, so taking the first `EX` of
+/// any type would name a "tag" and "segment" that are grid dimensions. The CLI's
+/// local path skips them for the same reason.
+///
+/// Only `Hallen` reaches here in practice — the worker rejects any other basis —
+/// but that invariant lives in another crate, so this matches on the mode rather
+/// than assuming it. If a worker ever gains the MPIE, this must not go on
+/// recommending `--solver mpie` to someone already running it.
 fn distributed_negative_resistance_warnings(
     z_re: f64,
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
+    solver_mode: SolverMode,
 ) -> Vec<String> {
-    if z_re >= 0.0 {
+    if !matches!(solver_mode, SolverMode::Hallen)
+        || !nec_solver::validate::is_negative_resistance(z_re)
+    {
         return Vec::new();
     }
     let (tag, seg) = deck
         .cards
         .iter()
         .find_map(|c| match c {
-            nec_model::card::Card::Ex(ex) => Some((ex.tag as usize, ex.segment as usize)),
+            nec_model::card::Card::Ex(ex) if ex.kind().is_voltage_source() => {
+                Some((ex.tag as usize, ex.segment as usize))
+            }
             _ => None,
         })
         .unwrap_or((0, 0));
@@ -650,7 +666,12 @@ fn run_distributed_solve(
                 // warning and the controller would stay silent — exactly the
                 // silence this fixes. Here it covers every worker ever built, and
                 // the controller already has the impedance and the deck.
-                for w in distributed_negative_resistance_warnings(impedance.re_ohm, deck, segs) {
+                for w in distributed_negative_resistance_warnings(
+                    impedance.re_ohm,
+                    deck,
+                    segs,
+                    solver_mode,
+                ) {
                     eprintln!("warning: {w}");
                 }
                 let sweep_summary = Some(SweepPointSummary {
@@ -1000,11 +1021,14 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::exec_profile::StartupExecutionProbe;
+    use super::solve_session::{negative_resistance_warnings, SolverMode};
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, steer_execution_mode_by_profile,
         CompatibilityProfile, ExecutionMode,
     };
+    use nec_report::FeedpointRow;
+    use num_complex::Complex64;
 
     // The distributed path is the one frontend whose end-to-end gate needs SSH.
     // Testing the mapping directly is what makes FND-014's fix verifiable here at
@@ -1017,10 +1041,59 @@ mod tests {
 
     const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
+    fn row(z_re: f64) -> FeedpointRow {
+        FeedpointRow {
+            tag: 1,
+            seg: 5,
+            v_source: Complex64::new(1.0, 0.0),
+            current: Complex64::new(1.0, 0.0),
+            z_in: Complex64::new(z_re, -1122.0),
+        }
+    }
+
+    #[test]
+    fn the_mpie_arm_blames_the_solver_rather_than_the_geometry() {
+        // The MPIE models junctions correctly, so a junction is never the reason —
+        // and this deck HAS one, which is what makes the assertion meaningful.
+        // Nothing covered this arm before: deleting it failed no test, and the
+        // shared-predicate sabotage cannot reach it.
+        let (deck, segs) = deck_and_segs(BENT);
+        let w = negative_resistance_warnings(&[row(-5.973)], &deck, &segs, SolverMode::Mpie);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("report it as a solver defect"), "{}", w[0]);
+        assert!(
+            !w[0].contains("PH9-CHK-002"),
+            "must not offer the junction cause on the solver that handles junctions: {}",
+            w[0]
+        );
+        // Same sentence as the Hallén arm, composed rather than hand-copied.
+        assert!(
+            w[0].contains("has negative resistance (Re Z = -5.973 Ω)"),
+            "{}",
+            w[0]
+        );
+    }
+
+    #[test]
+    fn the_current_source_bases_stay_silent() {
+        // Their corpus has documented negative-R values, so a warning would be noise.
+        let (deck, segs) = deck_and_segs(BENT);
+        for mode in [
+            SolverMode::Pulse,
+            SolverMode::Continuity,
+            SolverMode::Sinusoidal,
+        ] {
+            assert!(
+                negative_resistance_warnings(&[row(-5.973)], &deck, &segs, mode).is_empty(),
+                "{mode:?} must stay silent"
+            );
+        }
+    }
+
     #[test]
     fn a_negative_distributed_result_earns_a_caveat_naming_the_real_feedpoint() {
         let (deck, segs) = deck_and_segs(BENT);
-        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs);
+        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("negative resistance"), "{}", w[0]);
         assert!(w[0].contains("PH9-CHK-002"), "{}", w[0]);
@@ -1037,7 +1110,40 @@ mod tests {
     #[test]
     fn a_positive_distributed_result_earns_nothing() {
         let (deck, segs) = deck_and_segs(BENT);
-        assert!(distributed_negative_resistance_warnings(74.24, &deck, &segs).is_empty());
+        assert!(
+            distributed_negative_resistance_warnings(74.24, &deck, &segs, SolverMode::Hallen)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_plane_wave_ex_is_not_mistaken_for_the_feedpoint() {
+        // A plane-wave EX carries NTHETA/NPHI in the fields a voltage source uses
+        // for tag and segment. Taking the first EX of any type would name a "tag"
+        // and "segment" that are grid dimensions — the CLI's local path skips them
+        // for exactly this reason.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 1 7 9 0 0.0 0.0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("tag 1 segment 5"),
+            "must name the voltage source, not the plane wave's NTHETA/NPHI: {}",
+            w[0]
+        );
+    }
+
+    #[test]
+    fn a_non_hallen_distributed_run_gets_no_hallen_diagnosis() {
+        // Only Hallén reaches the worker today, but that invariant lives in another
+        // crate. If a worker ever gains the MPIE, this must not go on telling
+        // someone already running it to cross-check with `--solver mpie`.
+        let (deck, segs) = deck_and_segs(BENT);
+        assert!(
+            distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Mpie)
+                .is_empty()
+        );
     }
 
     #[test]

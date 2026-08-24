@@ -584,7 +584,10 @@ impl SweepJob {
     /// deck sweeps negative nearly everywhere, so this is the normal case, not the
     /// pathological one. One aggregate line instead, counting the points.
     pub fn negative_resistance_caveat(&self, points: &[SweepPoint]) -> Option<String> {
-        let n = points.iter().filter(|p| p.z_re < 0.0).count();
+        let n = points
+            .iter()
+            .filter(|p| nec_solver::validate::is_negative_resistance(p.z_re))
+            .count();
         if n == 0 {
             return None;
         }
@@ -832,6 +835,29 @@ mod tests {
             "{caveat}"
         );
         assert!(caveat.contains("PH9-CHK-002"), "{caveat}");
+    }
+
+    #[test]
+    fn the_sweep_caveat_counts_only_the_negative_points() {
+        // An all-negative fixture cannot tell a real count from `points.len()`:
+        // both read "N of N". This mixes signs so the numerator has to be earned.
+        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2).expect("prepare");
+        let mut pts: Vec<SweepPoint> = job
+            .freqs_mhz()
+            .iter()
+            .map(|&f| job.solve_at(f).expect("solve"))
+            .collect();
+        assert!(pts.len() >= 4, "need room to flip some");
+        let total = pts.len();
+        // Flip all but two to a physically sound resistance.
+        for p in pts.iter_mut().skip(2) {
+            p.z_re = 50.0;
+        }
+        let caveat = job.negative_resistance_caveat(&pts).expect("caveat");
+        assert!(
+            caveat.contains(&format!("2 of {total}")),
+            "must count the negative points, not the whole sweep: {caveat}"
+        );
     }
 
     #[test]

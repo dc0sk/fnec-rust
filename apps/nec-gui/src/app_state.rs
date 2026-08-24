@@ -299,10 +299,15 @@ pub enum Message {
     /// One sweep point arrived from the streaming sweep.
     SweepPointComputed(SweepPoint),
     /// The streaming sweep finished (finalize the accumulated points).
-    /// The streaming sweep finished. Carries the one aggregate caveat the whole
-    /// sweep earns (FND-014), computed by the worker task that held the geometry —
-    /// `None` when the sweep is clean.
-    SweepStreamDone(Option<String>),
+    SweepStreamDone,
+    /// The one aggregate caveat the swept points earn (FND-014), computed by the
+    /// task that held the geometry — `None` when they are clean.
+    ///
+    /// Its own message rather than a payload on `SweepStreamDone`, because a sweep
+    /// that fails partway never sends that: it emits `SweepComplete(Err)` and
+    /// returns, leaving whatever points already streamed on screen. Those points
+    /// deserve the caveat as much as a complete sweep's do.
+    SweepCaveat(Option<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -426,6 +431,12 @@ impl AppState {
             Message::SweepStepChanged(s) => self.sweep_step = s.clone(),
             Message::RunSweep => {
                 self.sweep_phase = SweepPhase::Running;
+                // Without this, a caveat from the *previous* deck outlives its
+                // sweep: `sweep_view` renders it in every phase, so switching to a
+                // clean deck — or starting a run that then fails — leaves the old
+                // deck's "N of M points report negative resistance" line on screen
+                // next to unrelated results.
+                self.sweep_caveat = None;
             }
             Message::SweepComplete(Ok(pts)) => {
                 self.sweep_phase = SweepPhase::Done(pts.clone());
@@ -440,7 +451,10 @@ impl AppState {
                     _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
                 }
             }
-            Message::SweepStreamDone(caveat) => {
+            Message::SweepCaveat(caveat) => {
+                self.sweep_caveat = caveat.clone();
+            }
+            Message::SweepStreamDone => {
                 // Finalize whatever streamed in (empty stream → a failure note).
                 if let SweepPhase::Streaming(pts) = &self.sweep_phase {
                     self.sweep_phase = if pts.is_empty() {
@@ -449,7 +463,6 @@ impl AppState {
                         SweepPhase::Done(pts.clone())
                     };
                 }
-                self.sweep_caveat = caveat.clone();
             }
             Message::SweepSortBy(col) => {
                 if self.sweep_sort_col == *col {

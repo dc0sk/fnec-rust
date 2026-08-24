@@ -783,7 +783,7 @@ fn warn_if_negative_resistance(
 
 /// Split from the emission so the mode routing is testable without a deck that
 /// actually produces a negative resistance.
-fn negative_resistance_warnings(
+pub(super) fn negative_resistance_warnings(
     rows: &[FeedpointRow],
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -800,13 +800,17 @@ fn negative_resistance_warnings(
             .collect(),
         SolverMode::Mpie => rows
             .iter()
-            .filter(|r| r.z_in.re < 0.0)
+            .filter(|r| nec_solver::validate::is_negative_resistance(r.z_in.re))
             .map(|r| {
-                format!(
-                    "feedpoint tag {} segment {} has negative resistance (Re Z = {:.3} Ω), \
-                     which is physically impossible for a passive antenna; the result is \
-                     unreliable — please report it as a solver defect",
-                    r.tag, r.seg, r.z_in.re
+                // The MPIE models junctions correctly, so a junction is never the
+                // reason — this cause is a claim about the solver, not the deck.
+                // The sentence around it is composed by the shared builder so the
+                // two arms cannot drift apart.
+                nec_solver::validate::negative_resistance_message(
+                    r.z_in.re,
+                    r.tag,
+                    r.seg,
+                    "please report it as a solver defect",
                 )
             })
             .collect(),

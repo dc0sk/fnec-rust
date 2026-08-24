@@ -71,8 +71,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   apex reports **-5.973 - j1122.555 Ω**: the CLI has flagged it since PH9-CHK-005,
   the other three said nothing.
 
-  `nec_solver::validate::negative_resistance_warning` is now the shared seam. It is
-  the one *post*-solve check in that module and is documented as the exception —
+  `nec_solver::validate::negative_resistance_warning` is now the shared seam,
+  reached by every frontend — the worker's share of it runs controller-side, for
+  the reason below. It is the one *post*-solve check in that module and is documented as the exception —
   deliberately **not** part of `diagnose`, which the GUI calls on every keystroke
   with no matrix in hand and which must stay solve-free.
 
@@ -89,6 +90,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
   New fixture `corpus/inverted-v-negative-r-freesp.nec` — deliberately *not* a
   parity case; its number is known-wrong, and that is the point.
+
+  `NaN` is deliberately **not** caught here: the sentence would read "has negative
+  resistance (Re Z = NaN Ω)" and blame a junctioned geometry that is not the cause.
+  A `NaN` impedance is a non-converged solve and wants its own diagnostic
+  (FND-030). One predicate, `is_negative_resistance`, now decides this for the
+  shared seam, the CLI's MPIE arm and the sweep counter alike, so they cannot
+  disagree about a single value.
 
 - **A negative-resistance deck could be sent to a solver that rejects it**
   (FND-029). The diagnosis offered `--solver mpie` as a cross-check without asking
