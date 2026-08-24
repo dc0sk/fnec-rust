@@ -33,6 +33,15 @@ struct CacheEntry {
 /// when the capacity limit is reached.  This ensures bounded memory usage
 /// during long frequency sweeps without complex LRU bookkeeping.
 ///
+/// ## Not yet wired
+///
+/// **Nothing in the shipped binaries constructs one of these.**
+/// `run_distributed_solve` does not, nor does the pool or the SSH worker, so the
+/// usage pattern below describes an intended integration rather than a live one.
+/// Say so plainly here: a doc that reads as if it were wired is how
+/// `WorkerSolverConfig::ground_model` came to be defended as "not wholly dead
+/// because it feeds the result-cache key" (FND-019) — of a cache nobody calls.
+///
 /// ## Usage pattern
 ///
 /// 1. Before dispatching a task, call [`ResultCache::get`] with the key from
@@ -267,8 +276,14 @@ mod tests {
 
     /// The cache stores whole `TaskResult` values, so warnings ride along with no
     /// extra work — but "no extra work" is the kind of claim that is true until
-    /// someone stores a projection instead. A warm run that reports fewer caveats
-    /// than a cold one would be a silent divergence of exactly the FND-026 shape.
+    /// someone stores a projection instead.
+    ///
+    /// Scope, honestly: this pins the **container contract** — that a
+    /// `CacheEntry` holds a whole `TaskResult` and not a projection of it. It is
+    /// *not* a warm-vs-cold divergence gate, because there is no warm path: the
+    /// cache is not wired into dispatch (see the module doc). A future
+    /// integration that rebuilt a result from cached impedance fields and skipped
+    /// the warning-bearing arm would lose caveats with this test still green.
     #[test]
     fn warnings_survive_a_cache_hit() {
         let mut cache = ResultCache::new();

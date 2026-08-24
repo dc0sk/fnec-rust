@@ -120,6 +120,59 @@ fn test_worker_single_task_round_trip() {
     worker.shutdown().expect("shutdown should succeed");
 }
 
+/// FND-026 across a real process boundary.
+///
+/// The protocol round-trip test serialises and deserialises inside one build,
+/// which cannot catch a worker binary that never fills the field. This spawns
+/// `fnec worker --stdio` as an actual subprocess and asserts the caveat comes
+/// back over the pipe — the only test that exercises the deployed shape.
+///
+/// A malformed `NT` (8 fields where 10 are required) is skipped by the matrix
+/// fill. The deck still solves; the user has to be told the card was ignored,
+/// and before this the worker was the one frontend that said nothing.
+#[test]
+fn a_skipped_card_warning_survives_the_wire_to_a_real_worker() {
+    const MALFORMED_NT: &str = "CM malformed NT: 8 fields, expected 10\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 10 1 40 0.0 -0.002 0.0 0.004\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker --stdio");
+
+    let task = nec_worker::TaskMessage {
+        task_id: "nt-warn".to_string(),
+        deck_hash: "ignored".to_string(),
+        deck_b64: b64(MALFORMED_NT),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
+        },
+        frequency_hz: 14.2e6,
+    };
+
+    let result = worker.dispatch(&task).expect("dispatch should succeed");
+    let nec_worker::TaskResult::Ok { warnings, .. } = &result else {
+        panic!("deck should still solve, got {result:?}")
+    };
+    assert!(
+        warnings.iter().any(|w| w.contains("NT card has 8 fields")),
+        "the skipped card must cross the wire: {warnings:?}"
+    );
+
+    // Negative control: a clean deck must not acquire a caveat in transit.
+    let clean = nec_worker::TaskMessage {
+        task_id: "clean".to_string(),
+        deck_b64: b64(DIPOLE_DECK),
+        ..task
+    };
+    let result = worker.dispatch(&clean).expect("dispatch should succeed");
+    let nec_worker::TaskResult::Ok { warnings, .. } = &result else {
+        panic!("clean deck should solve")
+    };
+    assert!(warnings.is_empty(), "{warnings:?}");
+
+    worker.shutdown().expect("shutdown should succeed");
+}
+
 // ---------------------------------------------------------------------------
 // Test 4 — two-worker dispatch, results match local solve
 // ---------------------------------------------------------------------------

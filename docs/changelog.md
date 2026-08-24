@@ -80,7 +80,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
   A repeated caveat prints once per frequency point, matching the local CLI,
   which also re-prints stamp warnings per frequency: each distributed task
-  re-parses the deck independently.
+  re-parses the deck independently. Verified rather than assumed — a three-point
+  local sweep of a malformed-`NT` deck prints the caveat three times.
+
+  Gated across a real process boundary, not only through serde: the round-trip
+  test serialises inside one build and so cannot catch a worker binary that never
+  fills the field, while `a_skipped_card_warning_survives_the_wire_to_a_real_worker`
+  dispatches to `fnec worker --stdio` as an actual subprocess.
 
   **Deployed workers still need upgrading.** An older one sends no warnings and
   the controller prints none — the field cannot conjure a caveat the worker never
