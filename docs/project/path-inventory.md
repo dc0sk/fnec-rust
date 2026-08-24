@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/path-inventory.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 ---
 
 # Path inventory for cross-cutting concerns
@@ -69,6 +69,9 @@ unphysical and the user must be told.
 | 5 | Python bindings | **NO** | gap — [FND-014](findings-ledger.md) |
 | 6 | Remote worker | **NO** | gap — [FND-014](findings-ledger.md) |
 
+C2 demonstrated: a 3-segment 40 m wire reports `Re(Z) = -162.547 Ω`; the CLI warns, `fnec_py` raises nothing. The same build does raise a `UserWarning` for a low-ground deck, so the channel works — this check simply is not on it.
+
+
 The check is *post*-solve, so it is not part of `validate::diagnose`, which is what
 the GUI and the bindings adopted in #369/#370. That is why wiring the pre-solve seam
 did not carry this one with it.
@@ -105,7 +108,7 @@ Malformed `LD`, `TL` and `NT` cards are skipped; the user must learn they were.
 | 2 | GUI | yes | collected in `validate_deck` (#369) |
 | 3 | Python bindings | yes | raised as `UserWarning` (#370) |
 | 4 | Remote worker | **NO** | gap — [FND-015](findings-ledger.md) |
-| 5 | GUI / worker `NT` stamps | **NO** | `build_nt_stamps` is not called at all off the CLI path — [FND-015](findings-ledger.md) |
+| 5 | `NT` stamping — GUI, Python, worker | **NO** | `build_nt_stamps` is called only from the CLI, so the same deck gives a 3.6 Ω different impedance off it — [FND-015](findings-ledger.md) |
 
 ---
 
