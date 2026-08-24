@@ -107,3 +107,101 @@ pub fn build_deck_stamps(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> Deck
         warnings,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nec_model::card::{Card, GwCard, LdCard, NtCard};
+
+    const FREQ_HZ: f64 = 14.2e6;
+
+    // `is_identity` decides whether a deck may be re-filled and solved on the
+    // GPU, where every host-side stamp would be discarded. It is also the one
+    // piece of this seam that CI can never exercise end to end: the runners have
+    // no GPU adapter, so the device call falls back to CPU and a broken gate
+    // returns the right answer anyway. These are the standing tripwire that a
+    // one-time hardware check of FND-023 cannot be.
+    fn dipole() -> NecDeck {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 21,
+            start: [0.0, 0.0, -5.282],
+            end: [0.0, 0.0, 5.282],
+            radius: 0.001,
+        }));
+        deck
+    }
+
+    fn stamps_for(deck: &NecDeck) -> DeckStamps {
+        let segs = crate::build_geometry(deck).expect("geometry");
+        build_deck_stamps(deck, &segs, FREQ_HZ)
+    }
+
+    #[test]
+    fn a_deck_with_no_stamping_cards_is_identity() {
+        assert!(stamps_for(&dipole()).is_identity());
+    }
+
+    #[test]
+    fn an_nt_card_makes_the_deck_non_identity() {
+        // The exact case FND-023 shipped: the CLI's GPU gate listed `Ld` and
+        // `Tl` and omitted `Nt`, so an NT deck was re-solved on the device and
+        // the stamp silently dropped. A card-type question could miss this; a
+        // question about values cannot.
+        let mut deck = dipole();
+        deck.cards.push(Card::Nt(NtCard {
+            raw_fields: [
+                "1", "6", "1", "16", // tag1 seg1 tag2 seg2
+                "0.0", "-0.002", // Y11
+                "0.0", "0.004", // Y12
+                "0.0", "-0.002", // Y22
+            ]
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
+        }));
+        let stamps = stamps_for(&deck);
+        assert!(!stamps.entries.is_empty(), "NT should stamp off-diagonals");
+        assert!(!stamps.is_identity());
+    }
+
+    #[test]
+    fn a_series_rlc_load_makes_the_deck_non_identity() {
+        let mut deck = dipole();
+        deck.cards.push(Card::Ld(LdCard {
+            load_type: 0,
+            tag: 1,
+            seg_first: 11,
+            seg_last: 11,
+            f1: 50.0,
+            f2: 0.0,
+            f3: 0.0,
+        }));
+        assert!(!stamps_for(&deck).is_identity());
+    }
+
+    #[test]
+    fn a_load_card_that_stamps_nothing_stays_identity() {
+        // `is_identity` asks whether `apply` would change the matrix, not
+        // whether a card is present. An `LD 4` with R = X = 0 parses, matches a
+        // segment, and adds exactly zero — so the device path is safe for it.
+        // An epsilon comparison here would err in the dangerous direction
+        // (a small real stamp sent to the GPU to be discarded) rather than the
+        // safe one.
+        let mut deck = dipole();
+        deck.cards.push(Card::Ld(LdCard {
+            load_type: 4,
+            tag: 1,
+            seg_first: 11,
+            seg_last: 11,
+            f1: 0.0,
+            f2: 0.0,
+            f3: 0.0,
+        }));
+        assert!(
+            stamps_for(&deck).is_identity(),
+            "a zero-valued load must not force the CPU path"
+        );
+    }
+}

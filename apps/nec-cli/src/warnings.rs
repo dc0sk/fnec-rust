@@ -72,7 +72,7 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 }
 
 // NT card support is implemented (PH8-CHK-004): NT cards are stamped in the solve
-// path via `nec_solver::build_nt_stamps`, which warns on malformed/unsupported
+// path via `nec_solver::build_deck_stamps`, which warns on malformed/unsupported
 // cards. The former blanket "deferred support" warning was removed.
 
 // PT cards are applied to the current output in solve_session (PH9-CHK-004);

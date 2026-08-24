@@ -292,6 +292,20 @@ fn main() -> ExitCode {
     // Distributed solve via --hosts
     // ------------------------------------------------------------------
     if let Some(ref hosts_path) = hosts_path {
+        // `run_distributed_solve` takes no Laplace-loads parameter and the worker
+        // protocol carries no field for them, so `--hosts --loads-config` used to
+        // drop the loads for the whole run and return the *unloaded* impedance —
+        // the same silent-wrong-answer signature as FND-023, one layer up. Reject
+        // the combination rather than solving a deck the user did not describe.
+        // This sits ahead of `WorkerPool` construction for the FND-013 reason: the
+        // pool spawns an SSH process per host the moment it is built.
+        if !laplace_loads.is_empty() {
+            eprintln!(
+                "error: Laplace loads (--loads-config) are not supported with --hosts; \
+                 the worker protocol carries no field for them. Run without --hosts."
+            );
+            return ExitCode::FAILURE;
+        }
         // The topology caveat is what tells a user a junctioned or looped deck
         // solves to garbage on the Hallén path. The distributed run is Hallén-only,
         // so it needs it at least as much as the local one.

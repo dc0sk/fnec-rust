@@ -236,8 +236,18 @@ def test_nt_deck_matches_the_corpus_reference():
 
 
 def test_a_deck_without_nt_is_unaffected():
-    """Negative control: the seam must not perturb a deck that has no NT card."""
+    """Negative control: the seam must not perturb a deck that has no NT card.
+
+    Read from the corpus rather than hardcoded, so this tracks the same source of
+    truth as its sibling above instead of drifting from it.
+    """
+    import json
+
     root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
     with open(os.path.join(root, "corpus", "dipole-freesp-51seg.nec")) as f:
         plain = fnec_py.solve_deck_str(f.read())
-    assert abs(plain["z_re"] - 74.2429) < 0.05, f"plain dipole moved: {plain['z_re']}"
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["dipole-freesp-51seg"]["feedpoint_impedance"]
+    assert abs(plain["z_re"] - want["real_ohm"]) < 0.05, (
+        f"plain dipole moved: got {plain['z_re']}, reference {want['real_ohm']}"
+    )
