@@ -2,6 +2,8 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod common;
+
 #[test]
 // VERIFIES: FR-009 (early geometry diagnostics with actionable messages)
 fn crossing_wires_fail_fast_with_actionable_error() {
@@ -113,5 +115,64 @@ fn tiny_source_segment_fails_fast_with_actionable_error() {
     assert!(
         stderr.contains("error: unsupported source-risk geometry: EX on tiny segment"),
         "expected source-risk geometry error in stderr, got:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The distributed path must refuse what the local path refuses (FND-013)
+// ---------------------------------------------------------------------------
+
+/// `--hosts` used to return from `main()` before the validation block, so a deck
+/// the CLI refuses locally was dispatched to every worker and solved.
+///
+/// The assertion that matters is the *second* one: the run must fail on the
+/// geometry, **before** touching the host list. Validation placed inside
+/// `run_distributed_solve` could not satisfy that — `WorkerPool` spawns an SSH
+/// process per host the moment it is constructed, so the pool error would come
+/// first. Hoisting the check above the `--hosts` branch is what makes this pass.
+/// RFC 5737 TEST-NET-3: reserved for documentation and never globally routed, so
+/// a passing run never dials it and a failing one is bounded by the pool's 5 s
+/// SSH connect timeout.
+const UNREACHABLE_HOST: &str = "203.0.113.1";
+
+#[test]
+fn distributed_run_refuses_geometry_before_contacting_any_host() {
+    let deck = common::TempDeck::new(
+        "fnec-dist-crossing.nec",
+        "CM two wires crossing mid-span\nCE\nGW 1 11 -5 0 0 5 0 0 0.001\nGW 2 11 0 -5 0 0 5 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+    );
+    // A host that cannot be reached: if validation did not run first, the failure
+    // would be about the worker pool instead of the geometry.
+    let hosts = common::TempDeck::new(
+        "fnec-dist-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg(&deck)
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported intersecting-wire geometry"),
+        "distributed run must refuse the same geometry the local run does:\n{stderr}"
+    );
+    // Assert on the host ADDRESS, not on the words "worker"/"SSH". `ssh` prints
+    // lowercase `ssh:` and the pool gives its children an inherited stderr, so a
+    // regression that moved the check back inside `run_distributed_solve` — after
+    // the pool is built — produced output containing neither word and passed the
+    // weaker assertion while having contacted the host. Verified: that exact
+    // regression now fails here, and took 5 s doing it.
+    assert!(
+        !stderr.contains(UNREACHABLE_HOST),
+        "must fail on the geometry BEFORE contacting any host:\n{stderr}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "must exit 1, as the local path does"
     );
 }

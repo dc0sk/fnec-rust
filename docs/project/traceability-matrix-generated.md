@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix-generated.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 ---
 
 # Traceability matrix (generated — do not hand-edit)
@@ -23,7 +23,7 @@ the citations, then regenerate — never edit this file by hand.
 | FR-006 | Plugin/scripting extension mechanism, designed in phases | implemented | low | review | review — Phased extension points EP-1..4 ship in nec_model/nec_report (exercised by doctests); mechanism-level, verified by inspection. |
 | FR-007 | Deterministic batch and sweep workflows for scripted studies | implemented | high | test | `apps/nec-cli/tests/sweep_contract.rs:144` |
 | FR-008 | Stable automation-oriented core APIs (structured output without text scraping) | implemented | high | test | `apps/nec-cli/tests/json_output_contract.rs:70` |
-| FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:6` |
+| FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:8` |
 | FR-010 | Automation helpers for resonance targeting and convergence studies | implemented | medium | review | review — Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial. |
 | NFR-001 | Primary runtime target Linux (Wayland), then macOS, then Windows | implemented | medium | review | review — Platform/deployment target — verified by build targets and CI runner, not a unit test. |
 | NFR-002 | CPU execution multithreaded and deterministic by default | implemented | high | review | review — Determinism is asserted across many solver tests; parallelism is a rayon config fact. |
