@@ -81,15 +81,19 @@ pub enum FeedpointRole {
     /// delta gap. `Z = V / I` at the named segment.
     DeltaGap,
     /// Type 4 — an applied current source. Still a feedpoint, but priced from the
-    /// solved port voltage, which only the CLI's Hallén path can do.
+    /// solved port voltage rather than as `V / I`, so a caller without that
+    /// machinery must decline it rather than treat it as a delta gap.
     CurrentSource,
     /// Types 1-3 — an incident plane wave. **Never** a feedpoint: its tag and
     /// segment fields carry NTHETA and NPHI, not a driven segment, so a caller
     /// that reads them as one reports grid dimensions as an antenna location.
     PlaneWave,
-    /// Any I1 outside the canonical 0-5 range. Never reaches a reporting caller:
-    /// `build_excitation` and `build_hallen_rhs` reject it before a current exists
-    /// to report.
+    /// Any I1 outside the canonical 0-5 range.
+    ///
+    /// Callers that report a solved result do not currently see one, because the
+    /// solver's excitation builders reject such a deck before any current exists
+    /// — but that is a fact about those callers, not a guarantee this crate can
+    /// make or enforce. A *pre*-solve caller would see it, and must decide.
     Unknown,
 }
 

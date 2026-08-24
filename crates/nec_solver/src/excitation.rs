@@ -584,6 +584,35 @@ mod tests {
     }
 
     #[test]
+    fn the_first_delta_gap_is_the_first_one_in_deck_order() {
+        // Without two delta-gap cards in one deck, "first" is untested: a seam
+        // returning the LAST delta gap passes every other test here. Demonstrated
+        // in review, so this is the test that catches it.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 10 0 1.0 0.0\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(
+            first_delta_gap_feedpoint(&deck).map(|e| e.segment),
+            Some(10),
+            "must be the first delta gap in deck order, not the last"
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_excitation_type_is_not_a_feedpoint() {
+        // The seam documents that unknown types are excluded, and nothing tested
+        // it: yielding `Unknown` as a `DeltaGap` passed the whole seam block, all
+        // the worker tests and all the CLI bin tests. Harmless only because
+        // `build_excitation` rejects such a deck first — an invariant that lives
+        // in another module and could move.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 9 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(feedpoints(&deck).count(), 0);
+        assert!(first_delta_gap_feedpoint(&deck).is_none());
+    }
+
+    #[test]
     fn feedpoints_are_yielded_in_deck_order() {
         let deck = deck_of(
             "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 10 0 1.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",

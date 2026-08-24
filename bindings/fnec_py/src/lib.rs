@@ -111,7 +111,13 @@ fn solve_at_freq(
             .enumerate()
             .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
         else {
-            return Err("deck has no EX card — cannot compute feedpoint impedance".to_string());
+            // Unreachable today: `build_hallen_rhs` rejects an EX naming an absent
+            // segment before this runs. Kept defensive, but saying what would
+            // actually be true — the deck HAS an EX; its segment is missing.
+            return Err(format!(
+                "EX on tag {} segment {} names a segment the geometry does not contain",
+                ex.tag, ex.segment
+            ));
         };
         let current: Complex64 = i_vec[idx];
         let v_source: Complex64 = v_vec[idx] * seg.length;

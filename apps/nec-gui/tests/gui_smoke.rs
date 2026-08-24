@@ -59,6 +59,8 @@ fn solve_complete_ok_transitions_to_done() {
         z_re: 73.1,
         z_im: -1.5,
         warnings: Vec::new(),
+        feed_tag: 1,
+        feed_seg: 26,
     };
     state.apply(&Message::SolveComplete(Ok(result.clone())));
     assert_eq!(state.phase, SolvePhase::Done(result));
@@ -129,6 +131,8 @@ fn status_text_done_contains_impedance() {
         z_re: 73.1,
         z_im: -1.5,
         warnings: Vec::new(),
+        feed_tag: 1,
+        feed_seg: 26,
     })));
     let s = state.status_text();
     assert!(s.contains("14.2") || s.contains("MHz"), "freq missing: {s}");
@@ -1162,6 +1166,8 @@ fn editor_apply_solve_enters_solving_then_done() {
         z_re: 73.0,
         z_im: 5.0,
         warnings: Vec::new(),
+        feed_tag: 1,
+        feed_seg: 26,
     })));
     assert!(matches!(state.phase, SolvePhase::Done(_)));
 }

@@ -58,13 +58,11 @@ mod tests {
     #[test]
     fn a_plane_wave_deck_has_no_feedpoint() {
         let err = solve_deck_at_frequency(DIPOLE_EX1, 14.2e6, "hallen").unwrap_err();
-        assert!(
-            matches!(
-                err,
-                SolveError::NoFeedpoint | SolveError::UnsupportedConfig(_)
-            ),
-            "{err:?}"
-        );
+        // Pinned to the exact variant. Accepting `UnsupportedConfig` too would let
+        // FND-035's spurious source-risk rejection — raised by the same
+        // `geometry_error` this function calls earlier — keep this test green
+        // while the deck failed for an entirely different and wrong reason.
+        assert!(matches!(err, SolveError::NoFeedpoint), "{err:?}");
     }
 
     #[test]

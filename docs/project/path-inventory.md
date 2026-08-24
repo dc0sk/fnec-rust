@@ -155,8 +155,8 @@ this.
 | 7 | Python bindings | yes | `test_a_plane_wave_is_not_read_as_the_feedpoint` |
 | 8 | CLI distributed diagnostic | yes | `the_caveat_names_the_same_feedpoint_the_worker_reported` |
 | 9 | `validate::source_risk_geometry_error` | **NO** | gap — [FND-035](findings-ledger.md); no filter, so a plane wave can trigger a spurious hard rejection |
-| 10 | `validate::feedpoint_at_junction_warnings` | **NO** | gap — [FND-031](findings-ledger.md); plane-wave skip only, so an unknown type counts as a feedpoint |
-| 11 | MPIE session feedpoint | **NO** | gap — [FND-031](findings-ledger.md); `!is_plane_wave()` only, shielded by gates in another function |
+| 10 | `validate::feedpoint_at_junction_warnings` | **NO** | gap — [FND-035](findings-ledger.md); plane-wave skip only, so an unknown type counts as a feedpoint |
+| 11 | MPIE session feedpoint | **NO** | gap — [FND-037](findings-ledger.md); `!is_plane_wave()` only, shielded by gates in another function |
 
 Rows 1–3 keep their own loops rather than calling the reporting seam, and that is
 the principled half of the split: building an RHS needs an `UnsupportedType` error

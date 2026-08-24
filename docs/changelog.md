@@ -64,7 +64,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 ### Fixed
 
 - **One answer to "which `EX` card is the feedpoint"** (FND-031). Eight sites
-  decided this for themselves, with five different filters, and two of the
+  decided this for themselves, with four different filters, and two of the
   differences were bugs.
 
   The worker skipped every `EX` that was not type 0 — while `build_hallen_rhs`,
@@ -99,11 +99,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   *resolution* rather than a value: a deck carrying a plane wave routes to the
   receive path, so its driven-feedpoint impedance is degenerate by design.
 
+  One behaviour change comes with it, in the right direction but not yet with the
+  right words: a current-source-only (`EX 4`) deck now **errors** in the GUI and
+  `fnec_py`, where the old unfiltered loop solved a zero RHS and reported `V/I`
+  from it as an impedance. Neither frontend can price a current source — that
+  needs the solved port voltage — but the message they raise names the wrong
+  problem, so FND-038 tracks giving them the named rejection the worker got here.
+
   Three sites are **not** covered and are recorded rather than quietly left:
   `validate::source_risk_geometry_error` (FND-035 — no filter, so a plane wave can
   spuriously *reject* a valid receive deck on every frontend),
-  `feedpoint_at_junction_warnings`, and the MPIE session's own lookup. They change
-  which decks are refused, which wants its own negative controls.
+  `feedpoint_at_junction_warnings` (FND-035), and the MPIE session's own lookup
+  (FND-037, which admits current sources and unrecognised types as delta gaps).
+  They change which decks are refused, which wants its own negative controls.
 
 - **Every frontend now warns when a result is physically impossible** (FND-014).
   A passive antenna cannot have a negative input resistance, so `Re(Z) < 0` on the
