@@ -12,6 +12,58 @@ mod tests {
     use super::*;
 
     const DIPOLE: &str = include_str!("../../../corpus/dipole-freesp-51seg.nec");
+    const DIPOLE_EX5: &str = include_str!("../../../corpus/dipole-ex5-freesp-51seg.nec");
+    const DIPOLE_EX4: &str = include_str!("../../../corpus/dipole-ex4-freesp-51seg.nec");
+    const DIPOLE_EX1: &str = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
+
+    /// FND-031: the worker drove a type-5 card as a delta gap through
+    /// `build_hallen_rhs`, solved it, and then refused to read the answer —
+    /// "no EX type-0 card found in deck" for a deck the CLI and `fnec_py` both
+    /// solve to 74.243 + j13.900 Ω. The distributed path rejected a deck the
+    /// other three frontends handle.
+    #[test]
+    fn a_type_5_voltage_source_is_a_feedpoint_here_as_it_is_everywhere_else() {
+        let r = solve_deck_at_frequency(DIPOLE_EX5, 14.2e6, "hallen")
+            .expect("EX 5 is a voltage source fnec models as a delta gap");
+        // The corpus reference for this deck, which the CLI already matches.
+        assert!(
+            (r.impedance_re - 74.23).abs() < 0.1,
+            "R = {} Ω",
+            r.impedance_re
+        );
+        assert!(
+            (r.impedance_im - 13.9).abs() < 0.1,
+            "X = {} Ω",
+            r.impedance_im
+        );
+    }
+
+    /// A current source *is* a feedpoint, but pricing it needs the solved port
+    /// voltage, which only the CLI's Hallén path computes. Saying that beats the
+    /// old "no feedpoint", which was false.
+    #[test]
+    fn a_current_source_deck_is_refused_by_name_not_called_feedpointless() {
+        let err = solve_deck_at_frequency(DIPOLE_EX4, 14.2e6, "hallen").unwrap_err();
+        match err {
+            SolveError::UnsupportedConfig(m) => {
+                assert!(m.contains("current source"), "{m}");
+                assert!(m.contains("--hosts"), "{m}");
+            }
+            other => panic!("expected UnsupportedConfig, got {other:?}"),
+        }
+    }
+
+    /// A plane wave has no feedpoint at all: its tag/segment fields carry
+    /// NTHETA/NPHI. It must not be read as one.
+    #[test]
+    fn a_plane_wave_deck_has_no_feedpoint() {
+        let err = solve_deck_at_frequency(DIPOLE_EX1, 14.2e6, "hallen").unwrap_err();
+        // Pinned to the exact variant. Accepting `UnsupportedConfig` too would let
+        // FND-035's spurious source-risk rejection — raised by the same
+        // `geometry_error` this function calls earlier — keep this test green
+        // while the deck failed for an entirely different and wrong reason.
+        assert!(matches!(err, SolveError::NoFeedpoint), "{err:?}");
+    }
 
     #[test]
     fn solve_dipole_at_resonance() {
@@ -65,7 +117,10 @@ mod tests {
     #[test]
     fn solve_error_display() {
         let err = SolveError::NoFeedpoint;
-        assert_eq!(err.to_string(), "no EX type-0 card found in deck");
+        assert_eq!(
+            err.to_string(),
+            "no driven feedpoint (EX voltage source) found in deck"
+        );
 
         let err = SolveError::SingularMatrix("det=0".into());
         assert_eq!(err.to_string(), "singular matrix: det=0");
@@ -80,7 +135,6 @@ mod tests {
     }
 }
 
-use nec_model::card::Card;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, detect_wire_junctions,
     ground_model_from_deck, solve_hallen, wire_endpoints_from_segs, GroundModel,
@@ -118,7 +172,9 @@ impl std::fmt::Display for SolveError {
             SolveError::GeometryError(m) => write!(f, "geometry error: {m}"),
             SolveError::SingularMatrix(m) => write!(f, "singular matrix: {m}"),
             SolveError::UnsupportedConfig(m) => write!(f, "unsupported config: {m}"),
-            SolveError::NoFeedpoint => write!(f, "no EX type-0 card found in deck"),
+            SolveError::NoFeedpoint => {
+                write!(f, "no driven feedpoint (EX voltage source) found in deck")
+            }
         }
     }
 }
@@ -256,17 +312,37 @@ pub fn solve_deck_at_frequency_with_exec(
         )
     };
 
-    // 7. Extract feedpoint from first type-0 EX card
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        if ex.excitation_type != 0 {
-            continue;
+    // 7. Extract the feedpoint, through the shared seam.
+    //
+    // This loop used to filter `excitation_type != 0` by hand, which contradicted
+    // the physics it had just run: `build_hallen_rhs` drives a type-5 card as a
+    // delta gap, so the worker solved such a deck and then refused to read the
+    // answer, reporting "no EX type-0 card found" for a deck the CLI, the GUI and
+    // the Python bindings all solve to the digit (FND-031).
+    //
+    // A current source is excluded here on purpose rather than by omission: it is
+    // a real feedpoint, but pricing it needs the solved port voltage, which only
+    // the CLI's Hallén path computes. Saying so beats returning "no feedpoint".
+    if let Some((ex, _)) = nec_solver::feedpoints(&deck)
+        .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
+    {
+        if nec_solver::first_delta_gap_feedpoint(&deck).is_none() {
+            return Err(SolveError::UnsupportedConfig(format!(
+                "EX type {} (current source) on tag {} segment {}: the distributed \
+                 path cannot price a current-source feedpoint; run without --hosts",
+                ex.excitation_type, ex.tag, ex.segment
+            )));
         }
+    }
+    if let Some(ex) = nec_solver::first_delta_gap_feedpoint(&deck) {
+        // A feedpoint naming a segment the geometry does not contain is a bad
+        // deck, not "no feedpoint" — but the distinction is the caller's, and
+        // `NoFeedpoint` is what this returned before.
         let Some(idx) = segs
             .iter()
             .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
         else {
-            continue;
+            return Err(SolveError::NoFeedpoint);
         };
         let current = currents[idx];
         let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);

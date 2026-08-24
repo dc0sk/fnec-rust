@@ -117,6 +117,14 @@ pub struct SolveResult {
     /// unsupported loads) — the GUI runs the Hallén solver, so junctions/loops
     /// and finite-ground currents need the CLI's `--solver mpie`.
     pub warnings: Vec<String>,
+    /// Wire tag the impedance was measured at.
+    pub feed_tag: usize,
+    /// Segment index within that tag.
+    ///
+    /// Reported so the panel can say *where* the impedance came from, and so a
+    /// test can check that the GUI resolved the right `EX` card rather than
+    /// asking the seam directly and proving nothing about the GUI (FND-031).
+    pub feed_seg: usize,
 }
 
 /// One row in the sweep result table.
@@ -400,6 +408,8 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
         z_re: z.re,
         z_im: z.im,
         warnings,
+        feed_tag: tag,
+        feed_seg: seg,
     })
 }
 
@@ -412,14 +422,24 @@ fn feedpoint_impedance(
     i_vec: &[Complex64],
     _freq_hz: f64,
 ) -> Result<(Complex64, usize, usize), String> {
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
+    // Through the shared seam (FND-031). This loop took the first `EX` of any
+    // type, so a deck with a plane wave ahead of its voltage source reported the
+    // plane wave's NTHETA/NPHI as a feedpoint tag and segment. The GUI is
+    // Hallén-only and has no port-voltage machinery, so it wants the first
+    // delta-gap source specifically.
+    if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
         let Some((idx, seg)) = segs
             .iter()
             .enumerate()
             .find(|(_, seg)| seg.tag == ex.tag && seg.tag_index == ex.segment)
         else {
-            continue;
+            // Unreachable today: `build_excitation` rejects an EX naming an absent
+            // segment before this runs. Kept defensive, but saying what would
+            // actually be true here — the deck HAS an EX; its segment is missing.
+            return Err(format!(
+                "EX on tag {} segment {} names a segment the geometry does not contain",
+                ex.tag, ex.segment
+            ));
         };
         let current = i_vec[idx];
         let v_source = v_vec[idx] * seg.length;
@@ -804,6 +824,25 @@ mod tests {
             r.warnings.iter().any(|w| w.contains("negative resistance")),
             "physically impossible result reported without a caveat: {:?}",
             r.warnings
+        );
+    }
+
+    /// FND-031: this loop took the first `EX` card of any type, so a plane wave
+    /// standing ahead of the driven source had its NTHETA/NPHI read as a feedpoint
+    /// tag and segment.
+    ///
+    /// Goes through `solve_deck_str`, the GUI's own entry point. An earlier
+    /// version called `first_delta_gap_feedpoint` directly, which tested the seam
+    /// and not the adoption: reverting the GUI to its old unfiltered loop passed
+    /// it, because no call edge to the GUI existed at all.
+    #[test]
+    fn a_plane_wave_is_not_read_as_the_feedpoint() {
+        let deck_src = include_str!("../../../corpus/dipole-planewave-then-source-51seg.nec");
+        let r = solve_deck_str(deck_src).expect("solve");
+        assert_eq!(
+            (r.feed_tag, r.feed_seg),
+            (1, 26),
+            "must resolve the voltage source, not the plane wave's NTHETA/NPHI"
         );
     }
 

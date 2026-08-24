@@ -36,12 +36,30 @@ SYMBOL_ALLOWLIST = {"nec_solver", "nec_worker", "nec_model", "nec_parser", "fnec
 FND_RE = re.compile(r"FND-\d+")
 
 
+def read_ledger_states() -> dict[str, str]:
+    """Map every `FND-NNN` in the ledger to its state.
+
+    Only the ledger's own table rows count, so a finding *mentioned* in another
+    row's prose does not silently become an owner.
+    """
+    if not LEDGER.exists():
+        return {}
+    states: dict[str, str] = {}
+    for line in LEDGER.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        # "| FND-001 | date | state | ... |" -> ['', 'FND-001', date, state, ...]
+        if len(cells) >= 4 and FND_RE.fullmatch(cells[1] or ""):
+            states[cells[1]] = cells[3]
+    return states
+
+
 def main() -> int:
     if not INVENTORY.exists():
         print(f"{INVENTORY} is missing", file=sys.stderr)
         return 1
     text = INVENTORY.read_text(encoding="utf-8")
-    ledger_ids = set(FND_RE.findall(LEDGER.read_text(encoding="utf-8"))) if LEDGER.exists() else set()
+    ledger_state = read_ledger_states()
+    ledger_ids = set(ledger_state)
 
     problems: list[str] = []
     rows = 0
@@ -69,6 +87,18 @@ def main() -> int:
                 if fid not in ledger_ids:
                     problems.append(
                         f"{INVENTORY}:{lineno}: cites {fid}, which is not in {LEDGER}"
+                    )
+                # An OPEN gap owned by a CLOSED finding is exactly the decay this
+                # file exists to stop: the row still says "NO", the ledger says
+                # the work is done, and nobody owns the difference. This check
+                # was added after #396 closed FND-031 and left two gap rows
+                # pointing at it — the checker passed, because it only asked
+                # whether the link resolved.
+                elif ledger_state[fid] not in ("open", "deferred"):
+                    problems.append(
+                        f"{INVENTORY}:{lineno}: cites {fid}, which is "
+                        f"'{ledger_state[fid]}' — a gap needs an owner that is "
+                        f"still open or deferred"
                     )
 
         # Every referenced symbol must exist somewhere in the tree. A name that

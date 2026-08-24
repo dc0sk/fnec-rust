@@ -136,6 +136,43 @@ Malformed `LD`, `TL` and `NT` cards are skipped; the user must learn they were.
 | 4 | Remote worker | **NO** | gap — [FND-026](findings-ledger.md); the worker builds the stamps but its result type has no warnings channel |
 | 5 | `NT` stamping — GUI, Python, worker | yes | all six assembly sites go through `build_deck_stamps`; `test_nt_deck_matches_the_corpus_reference` |
 
+## C6 — Which `EX` card is the feedpoint
+
+A deck's `EX` cards are not interchangeable. A plane wave has **no** feedpoint —
+its tag and segment fields carry NTHETA and NPHI — while types 0 and 5 are delta
+gaps and type 4 is a current source that is a feedpoint but is priced differently.
+Every site that reports an impedance, or names where one came from, has to answer
+this.
+
+| # | Path | Covered | Evidence |
+|:--|:-----|:--------|:---------|
+| 1 | `build_hallen_rhs` (delta-gap RHS) | yes | `match … feedpoint_role()`, no wildcard; `unknown_ex_type_is_error` |
+| 2 | `build_hallen_rhs_paths` (second loop) | yes | same match; same error channel |
+| 3 | `apply_ex` (EFIE voltage vector) | yes | same match |
+| 4 | Remote worker | yes | `a_type_5_voltage_source_is_a_feedpoint_here_as_it_is_everywhere_else` |
+| 5 | CLI feedpoint rows | yes | `feedpoints`, keyed on the role; `dipole-ex4-freesp-51seg` corpus gate |
+| 6 | GUI | yes | `a_plane_wave_is_not_read_as_the_feedpoint` |
+| 7 | Python bindings | yes | `test_a_plane_wave_is_not_read_as_the_feedpoint` |
+| 8 | CLI distributed diagnostic | yes | `the_caveat_names_the_same_feedpoint_the_worker_reported` |
+| 9 | `validate::source_risk_geometry_error` | **NO** | gap — [FND-035](findings-ledger.md); no filter, so a plane wave can trigger a spurious hard rejection |
+| 10 | `validate::feedpoint_at_junction_warnings` | **NO** | gap — [FND-035](findings-ledger.md); plane-wave skip only, so an unknown type counts as a feedpoint |
+| 11 | MPIE session feedpoint | **NO** | gap — [FND-037](findings-ledger.md); `!is_plane_wave()` only, shielded by gates in another function |
+
+Rows 1–3 keep their own loops rather than calling the reporting seam, and that is
+the principled half of the split: building an RHS needs an `UnsupportedType` error
+channel that naming a feedpoint does not. What they no longer keep is their own
+*policy* — all three `match` on `ExcitationKind::feedpoint_role()` with no wildcard
+arm, so a new excitation type breaks the build in three places rather than
+defaulting into whichever branch was last.
+
+The reporting seam needs no error channel for `Unknown`: every reporting site sits
+strictly downstream of `build_excitation`/`build_hallen_rhs`, which reject an
+unknown type before any current exists to report.
+
+Rows 8 and 4 are the same call by construction now. That parity used to be a
+comment asking two files to be kept in step, and they diverged twice inside a
+single review.
+
 ---
 
 ## Maintaining this

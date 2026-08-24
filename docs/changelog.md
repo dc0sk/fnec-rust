@@ -63,6 +63,56 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **One answer to "which `EX` card is the feedpoint"** (FND-031). Eight sites
+  decided this for themselves, with four different filters, and two of the
+  differences were bugs.
+
+  The worker skipped every `EX` that was not type 0 — while `build_hallen_rhs`,
+  which the worker calls, *drives* a type-5 card as a delta gap. So it assembled
+  the physics for a type-5 source, solved it, and then refused to read the answer,
+  reporting "no EX type-0 card found in deck". A deck the CLI and the Python
+  bindings both solve to **74.242874 + j13.899516 Ω** was rejected outright by
+  `--hosts`. And the GUI and the bindings filtered nothing at all, so a plane wave
+  standing ahead of the driven source had its NTHETA/NPHI read as a feedpoint tag
+  and segment — grid dimensions reported as an antenna location.
+
+  `ExcitationKind::feedpoint_role()` now classifies the card and
+  `nec_solver::feedpoints` / `first_delta_gap_feedpoint` answer the deck-level
+  question. It is a **classification, not a predicate**, because no single boolean
+  serves every caller: a type-4 current source is not a delta gap but *is* a
+  feedpoint, priced from the solved port voltage and corpus-pinned at
+  74.23 + j13.9 Ω under PH8-CHK-001 — a seam filtering on "voltage source" would
+  have silently deleted that row. (That was the design first proposed here, and
+  review caught it before any code was written.)
+
+  The three RHS builders keep their own loops and their `UnsupportedType` error
+  channel — building an RHS is a different question from naming a feedpoint — but
+  no longer their own *policy*: all three `match` on the role with **no wildcard
+  arm**, so a new excitation type breaks the build in three places instead of
+  falling into whichever branch happened to be last.
+
+  The distributed diagnostic added in #395 and the worker's extraction are now the
+  same call. That parity was a comment asking two files to be kept in step, and
+  they diverged twice inside a single review.
+
+  New fixture `corpus/dipole-planewave-then-source-51seg.nec`, which pins
+  *resolution* rather than a value: a deck carrying a plane wave routes to the
+  receive path, so its driven-feedpoint impedance is degenerate by design.
+
+  One behaviour change comes with it, in the right direction but not yet with the
+  right words: a current-source-only (`EX 4`) deck now **errors** in the GUI and
+  `fnec_py`, where the old unfiltered loop solved a zero RHS and reported `V/I`
+  from it as an impedance. Neither frontend can price a current source — that
+  needs the solved port voltage — but the message they raise names the wrong
+  problem, so FND-038 tracks giving them the named rejection the worker got here.
+
+  Three sites are **not** covered and are recorded rather than quietly left:
+  `validate::source_risk_geometry_error` (FND-035 — no filter, so a plane wave can
+  spuriously *reject* a valid receive deck on every frontend),
+  `feedpoint_at_junction_warnings` (FND-035), and the MPIE session's own lookup
+  (FND-037, which admits current sources and unrecognised types as delta gaps).
+  They change which decks are refused, which wants its own negative controls.
+
 - **Every frontend now warns when a result is physically impossible** (FND-014).
   A passive antenna cannot have a negative input resistance, so `Re(Z) < 0` on the
   Hallén path means the reported impedance is unreliable. The check was private to

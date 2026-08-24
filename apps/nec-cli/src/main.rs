@@ -498,16 +498,15 @@ fn main() -> ExitCode {
 /// the one frontend whose end-to-end gate needs SSH, and a check nothing can
 /// exercise is how FND-014 survived in the first place.
 ///
-/// The feedpoint tag/segment come from the deck's first **type-0** `EX`, matching
-/// how the worker resolves the feedpoint it reported (`nec_worker::solve`), because
-/// the wire protocol does not carry them back — the controller already fabricates
+/// The feedpoint tag/segment come from `nec_solver::first_delta_gap_feedpoint` —
+/// the same call the worker uses to decide which segment it reported — because the
+/// wire protocol does not carry them back. The controller already fabricates
 /// `tag: 0, seg: 0` for `SweepPointSummary`, and a caveat naming segment 0 would
 /// point at nothing.
 ///
-/// The type filter is not cosmetic. A plane-wave `EX` carries NTHETA/NPHI in the
-/// fields a voltage source uses for tag and segment, so taking the first `EX` of
-/// any type would name a "tag" and "segment" that are grid dimensions. The CLI's
-/// local path skips them for the same reason.
+/// Sharing the call is the point. This used to hand-roll the filter and a comment
+/// asked the two files to be kept in step; they diverged twice inside one review
+/// (FND-031).
 ///
 /// Only `Hallen` reaches here in practice — the worker rejects any other basis —
 /// but that invariant lives in another crate, so this matches on the mode rather
@@ -524,19 +523,11 @@ fn distributed_negative_resistance_warnings(
     {
         return Vec::new();
     }
-    let (tag, seg) = deck
-        .cards
-        .iter()
-        .find_map(|c| match c {
-            // Type 0 exactly, not `is_voltage_source()` — that also admits type 5,
-            // which the worker skips, so a deck with an `EX 5` before its `EX 0`
-            // would have the caveat naming a different segment than the one the
-            // reported impedance came from.
-            nec_model::card::Card::Ex(ex) if ex.excitation_type == 0 => {
-                Some((ex.tag as usize, ex.segment as usize))
-            }
-            _ => None,
-        })
+    // The same call the worker makes to decide which segment it reported, so the
+    // caveat cannot name a different one. This was a hand-maintained mirror of the
+    // worker's filter until the FND-031 seam landed; now it is the same function.
+    let (tag, seg) = nec_solver::first_delta_gap_feedpoint(deck)
+        .map(|ex| (ex.tag as usize, ex.segment as usize))
         .unwrap_or((0, 0));
     nec_solver::validate::negative_resistance_warning(z_re, tag, seg, deck, segs)
         .into_iter()
@@ -1121,22 +1112,28 @@ mod tests {
     }
 
     #[test]
-    fn an_ex_type_the_worker_skips_is_not_mistaken_for_the_feedpoint() {
-        // `EX 5` is a voltage source the Hallén RHS drives as a delta gap, so a
-        // deck carrying one solves — but the worker resolves the feedpoint it
-        // reports from the first **type-0** EX only. Filtering on
-        // `is_voltage_source()` would admit type 5 and name a different segment
-        // than the impedance came from.
+    fn the_caveat_names_the_same_feedpoint_the_worker_reported() {
+        // This deck has an `EX 5` before its `EX 0`. Before FND-031 the answer
+        // depended on which file you asked: the worker skipped type 5 entirely
+        // (and rejected a type-5-only deck outright), while the CLI's local path
+        // took it. Both now call `first_delta_gap_feedpoint`, so the caveat names
+        // the segment the reported impedance actually came from — the first
+        // delta-gap source in deck order, here the `EX 5` on tag 2 segment 3.
         let (deck, segs) = deck_and_segs(
             "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 5 2 3 0 1.0 0.0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
         assert_eq!(w.len(), 1, "{w:?}");
+        let expected = nec_solver::first_delta_gap_feedpoint(&deck).expect("a delta-gap feedpoint");
         assert!(
-            w[0].contains("tag 1 segment 5"),
-            "must name the segment the worker reported, not the EX 5: {}",
+            w[0].contains(&format!(
+                "tag {} segment {}",
+                expected.tag, expected.segment
+            )),
+            "must name the shared seam's answer: {}",
             w[0]
         );
+        assert!(w[0].contains("tag 2 segment 3"), "{}", w[0]);
     }
 
     #[test]

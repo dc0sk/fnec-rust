@@ -1,0 +1,19 @@
+CM A plane-wave EX standing BEFORE the driven voltage source, with NTHETA/NPHI
+CM that collide with a real (tag, segment) on the wire.
+CM
+CM A plane wave has no feedpoint: its tag/segment fields carry NTHETA and NPHI.
+CM Frontends that took "the first EX card" therefore reported segment 3 — a grid
+CM dimension — as the antenna feedpoint, where the CLI reported segment 26.
+CM
+CM Fixture for the FND-031 feedpoint seam. The feedpoint is tag 1 segment 26.
+CM
+CM This deck pins RESOLUTION, not a value. Carrying a plane wave routes the CLI
+CM to its receive path, so the reported impedance here is degenerate by design;
+CM assert on the tag and segment, not on Z.
+CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE 0
+EX 1 1 3 0 0.0 0.0
+EX 0 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN

@@ -11,7 +11,7 @@
 use num_complex::Complex64;
 use std::collections::BTreeMap;
 
-use nec_model::card::{Card, ExCard, ExcitationKind};
+use nec_model::card::{Card, ExCard, FeedpointRole};
 use nec_model::deck::NecDeck;
 
 use crate::geometry::{merge_collinear_wire_endpoints, ConductorPath, Segment};
@@ -19,6 +19,44 @@ use crate::geometry::{merge_collinear_wire_endpoints, ConductorPath, Segment};
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
+
+/// Every `EX` card that names a feedpoint, in deck order, with what kind it is.
+///
+/// The single answer to "which `EX` is the feedpoint" (FND-031). Seven call sites
+/// used to decide this for themselves with five different filters, and the
+/// differences were load-bearing: the worker refused a type-5 deck it had already
+/// solved, while the GUI and the Python bindings would report a plane wave's
+/// NTHETA/NPHI as a feedpoint tag and segment.
+///
+/// Plane waves and unrecognised types are excluded — a plane wave has no
+/// feedpoint at all, and an unknown type never reaches a reporting caller because
+/// [`build_excitation`] rejects it first. What *is* included is deliberately both
+/// classes of driven source, because callers differ on which they can price: the
+/// CLI reports a current-source feedpoint as `Z = V_port / i0`, and a caller that
+/// filtered on "voltage source" alone would silently delete a corpus-pinned row.
+/// Callers match on the role rather than re-deriving it.
+pub fn feedpoints(deck: &NecDeck) -> impl Iterator<Item = (&ExCard, FeedpointRole)> + '_ {
+    deck.cards.iter().filter_map(|card| {
+        let Card::Ex(ex) = card else { return None };
+        match ex.kind().feedpoint_role() {
+            role @ (FeedpointRole::DeltaGap | FeedpointRole::CurrentSource) => Some((ex, role)),
+            FeedpointRole::PlaneWave | FeedpointRole::Unknown => None,
+        }
+    })
+}
+
+/// The first delta-gap feedpoint, for callers that report a single impedance and
+/// cannot price a current source.
+///
+/// The worker, the GUI, the Python bindings and the CLI's distributed diagnostic
+/// all want exactly this. Sharing it is what makes the diagnostic's tag/segment
+/// agree with the impedance's *by construction* rather than by a comment asking
+/// two files to be kept in step.
+pub fn first_delta_gap_feedpoint(deck: &NecDeck) -> Option<&ExCard> {
+    feedpoints(deck)
+        .find(|(_, role)| *role == FeedpointRole::DeltaGap)
+        .map(|(ex, _)| ex)
+}
 
 /// Right-hand side data for Hallén's integral equation.
 #[derive(Debug)]
@@ -124,22 +162,26 @@ pub fn build_hallen_rhs(
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        // Plane-wave (types 1/2/3) and current-source (type 4) excitations are
-        // not delta-gap sources; they are handled by their dedicated paths
-        // (crate::planewave, solve_hallen_current_source) and contribute nothing
-        // to the delta-gap Hallén RHS.
-        if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
-            continue;
-        }
-        // Voltage-source types: applied-field (0) and current-slope (5). fnec
-        // models both with the applied-field (delta-gap) method.
-        if !ex.kind().is_voltage_source() {
-            return Err(ExcitationError::UnsupportedType {
-                ex_type: ex.excitation_type,
-                tag: ex.tag,
-                segment: ex.segment,
-                i4: ex.i4,
-            });
+        // One classification, expressed once (FND-031). Plane waves and current
+        // sources are not delta-gap sources — they have dedicated paths
+        // (`crate::planewave`, `solve_hallen_current_source`) and contribute
+        // nothing here — while an unrecognised type is a hard error, which is why
+        // this loop cannot use the reporting seam: building an RHS needs an error
+        // channel that naming a feedpoint does not.
+        //
+        // No wildcard arm: a new `ExcitationKind` must be decided here rather than
+        // falling into whichever branch happened to be last.
+        match ex.kind().feedpoint_role() {
+            FeedpointRole::DeltaGap => {}
+            FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => continue,
+            FeedpointRole::Unknown => {
+                return Err(ExcitationError::UnsupportedType {
+                    ex_type: ex.excitation_type,
+                    tag: ex.tag,
+                    segment: ex.segment,
+                    i4: ex.i4,
+                })
+            }
         }
         if first_ex.is_none() {
             first_ex = Some(ex);
@@ -166,13 +208,15 @@ pub fn build_hallen_rhs(
     let scale = 2.0 * std::f64::consts::PI / ETA0;
     let driven_tag = segs[feed_idx].tag;
 
-    // Build a map from wire tag → (feed_seg_idx, v_source) for every type-0 EX card.
-    // This handles multi-source decks where multiple wires each have an excitation.
+    // Build a map from wire tag → (feed_seg_idx, v_source) for every delta-gap EX
+    // card. This handles multi-source decks where several wires each have one.
+    // (The comment said "type-0"; the predicate has always admitted type 5 too,
+    // which is correct — fnec drives both as delta gaps.)
     let mut source_by_tag: BTreeMap<u32, (usize, Complex64)> =
         BTreeMap::from([(driven_tag, (feed_idx, v_source))]);
     for card in &deck.cards {
         let Card::Ex(ex2) = card else { continue };
-        if !ex2.kind().is_voltage_source() || ex2.tag == driven_tag {
+        if ex2.kind().feedpoint_role() != FeedpointRole::DeltaGap || ex2.tag == driven_tag {
             continue;
         }
         if let Some(idx) = segs
@@ -293,16 +337,19 @@ pub fn build_hallen_rhs_paths(
     let mut any_source = false;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
-        if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
-            continue;
-        }
-        if !ex.kind().is_voltage_source() {
-            return Err(ExcitationError::UnsupportedType {
-                ex_type: ex.excitation_type,
-                tag: ex.tag,
-                segment: ex.segment,
-                i4: ex.i4,
-            });
+        // Same classification as above; see the comment there for why this loop
+        // keeps its own error channel rather than adopting the reporting seam.
+        match ex.kind().feedpoint_role() {
+            FeedpointRole::DeltaGap => {}
+            FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => continue,
+            FeedpointRole::Unknown => {
+                return Err(ExcitationError::UnsupportedType {
+                    ex_type: ex.excitation_type,
+                    tag: ex.tag,
+                    segment: ex.segment,
+                    i4: ex.i4,
+                })
+            }
         }
         let fi = segs
             .iter()
@@ -448,20 +495,20 @@ pub fn build_current_source_shape_paths(
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
-    // Plane-wave and current-source excitations are not delta-gap voltage
-    // sources; they contribute nothing to the EFIE voltage vector (handled by
-    // their dedicated paths).
-    if ex.kind().is_plane_wave() || ex.kind() == ExcitationKind::CurrentSource {
-        return Ok(());
-    }
-    // Voltage-source types (applied-field 0, current-slope 5) impress V/Δl.
-    if !ex.kind().is_voltage_source() {
-        return Err(ExcitationError::UnsupportedType {
-            ex_type: ex.excitation_type,
-            tag: ex.tag,
-            segment: ex.segment,
-            i4: ex.i4,
-        });
+    // Same classification as `build_hallen_rhs` (FND-031): only a delta-gap
+    // source impresses V/Δl on the EFIE voltage vector; plane waves and current
+    // sources have dedicated paths; an unrecognised type is an error.
+    match ex.kind().feedpoint_role() {
+        FeedpointRole::DeltaGap => {}
+        FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => return Ok(()),
+        FeedpointRole::Unknown => {
+            return Err(ExcitationError::UnsupportedType {
+                ex_type: ex.excitation_type,
+                tag: ex.tag,
+                segment: ex.segment,
+                i4: ex.i4,
+            })
+        }
     }
 
     // Find the segment by tag + tag_index.
@@ -487,6 +534,104 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
 
 #[cfg(test)]
 mod tests {
+
+    // -----------------------------------------------------------------------
+    // The feedpoint seam (FND-031)
+    // -----------------------------------------------------------------------
+
+    fn deck_of(src: &str) -> NecDeck {
+        nec_parser::parse(src).expect("parse").deck
+    }
+
+    #[test]
+    fn a_plane_wave_is_never_a_feedpoint() {
+        // Its tag/segment fields carry NTHETA/NPHI. Reading them as a feedpoint
+        // reports grid dimensions as an antenna location — which the GUI and the
+        // Python bindings both did.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 3 0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let ex = first_delta_gap_feedpoint(&deck).expect("the voltage source");
+        assert_eq!((ex.tag, ex.segment), (1, 26));
+        assert_eq!(feedpoints(&deck).count(), 1, "only the driven source");
+    }
+
+    #[test]
+    fn a_type_5_source_is_a_feedpoint() {
+        // The worker skipped type 5 while `build_hallen_rhs` drove it as a delta
+        // gap, so it solved such a deck and then refused to read the answer.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let ex = first_delta_gap_feedpoint(&deck).expect("type 5 is a delta gap");
+        assert_eq!((ex.tag, ex.segment), (1, 26));
+    }
+
+    #[test]
+    fn a_current_source_is_a_feedpoint_but_not_a_delta_gap() {
+        // The distinction the seam exists to carry: a filter on "voltage source"
+        // would delete the CLI's corpus-pinned current-source row (PH8-CHK-001),
+        // and a filter on "any EX" would hand it to callers that cannot price it.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(feedpoints(&deck).count(), 1);
+        assert_eq!(
+            feedpoints(&deck).next().map(|(_, r)| r),
+            Some(FeedpointRole::CurrentSource)
+        );
+        assert!(first_delta_gap_feedpoint(&deck).is_none());
+    }
+
+    #[test]
+    fn the_first_delta_gap_is_the_first_one_in_deck_order() {
+        // Without two delta-gap cards in one deck, "first" is untested: a seam
+        // returning the LAST delta gap passes every other test here. Demonstrated
+        // in review, so this is the test that catches it.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 10 0 1.0 0.0\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(
+            first_delta_gap_feedpoint(&deck).map(|e| e.segment),
+            Some(10),
+            "must be the first delta gap in deck order, not the last"
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_excitation_type_is_not_a_feedpoint() {
+        // The seam documents that unknown types are excluded, and nothing tested
+        // it: yielding `Unknown` as a `DeltaGap` passed the whole seam block, all
+        // the worker tests and all the CLI bin tests. Harmless only because
+        // `build_excitation` rejects such a deck first — an invariant that lives
+        // in another module and could move.
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 9 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(feedpoints(&deck).count(), 0);
+        assert!(first_delta_gap_feedpoint(&deck).is_none());
+    }
+
+    #[test]
+    fn feedpoints_are_yielded_in_deck_order() {
+        let deck = deck_of(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 10 0 1.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let got: Vec<_> = feedpoints(&deck).map(|(ex, r)| (ex.segment, r)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (10, FeedpointRole::CurrentSource),
+                (26, FeedpointRole::DeltaGap)
+            ]
+        );
+        // "First delta gap" is not "first feedpoint".
+        assert_eq!(
+            first_delta_gap_feedpoint(&deck).map(|e| e.segment),
+            Some(26)
+        );
+    }
+
     use super::*;
     use nec_model::card::{Card, ExCard, GwCard};
     use nec_model::deck::NecDeck;
