@@ -12,6 +12,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -25,10 +27,8 @@ fn run_fnec(args: &[&str]) -> std::process::Output {
 }
 
 /// Write a deck to a unique temp path and return it.
-fn write_deck(name: &str, body: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("fnec_mpie_{name}.nec"));
-    std::fs::write(&path, body).unwrap();
-    path
+fn write_deck(name: &str, body: &str) -> common::TempDeck {
+    common::TempDeck::new(&format!("fnec_mpie_{name}.nec"), body)
 }
 
 /// Parse `Z_RE Z_IM` from the FEEDPOINTS data line of a report.

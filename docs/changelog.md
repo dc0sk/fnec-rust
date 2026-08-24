@@ -15,6 +15,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The CLI test suite no longer leaks temp decks.** Six integration-test files
+  wrote uniquely-named decks to the system temp directory and never removed them,
+  while the other eighteen cleaned up. Repeated `cargo test --workspace` runs left
+  **437** stray `fnec-*` files in `/tmp`. They now use a shared `common::TempDeck`
+  guard that deletes on drop — so it also cleans up after a *panicking* test, which
+  the trailing `fs::remove_file(&path)` convention does not. A full workspace run
+  now leaves 6 fixed-name GUI fixtures that overwrite rather than accumulate,
+  down from ~437 unique files (FND-017).
+
 ### Docs
 
 - **Roadmap `GAP-015` corrected from Done to Partial** (FND-006). Its acceptance
