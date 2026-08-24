@@ -595,6 +595,40 @@ impl SweepJob {
         })
     }
 
+    /// The deck's geometry and ground caveats, evaluated for the frequency range
+    /// this sweep will actually run (FND-042).
+    ///
+    /// The caveat panel gets these from `deck_warnings`, which reads the deck's
+    /// `FR` card — the right frequency for a single solve and the wrong one for a
+    /// sweep, whose range the user types into the UI. A deck whose `FR` says
+    /// 30 MHz, swept from 5 MHz, dipped far below 0.1 λ with nothing said.
+    ///
+    /// The low-ground check trips below 0.1 λ, so the **lowest** swept frequency
+    /// is the worst case: if it does not trip there it trips nowhere. Same choice
+    /// the distributed path makes, from the same shared producer, so the two
+    /// cannot drift.
+    pub fn geometry_caveats(&self) -> Vec<String> {
+        // Only the frequency-dependent caveat. The deck-caveat strip above the tab
+        // already renders the topology and junction ones from `diagnose`, and they
+        // do not vary with frequency — including them here printed the same
+        // sentence twice on one screen for a junction-fed deck, which is the normal
+        // case for a sweep that earns caveats at all.
+        nec_solver::validate::swept_low_ground_caveat(
+            &self.segs,
+            &self.ground,
+            &self
+                .freqs_mhz
+                .iter()
+                .map(|f| f * 1_000_000.0)
+                .collect::<Vec<_>>(),
+            // The GUI is Hallén-only and exposes no `--ground-solver`, so the
+            // surface wave is never modelled here.
+            false,
+        )
+        .into_iter()
+        .collect()
+    }
+
     /// The one caveat a swept negative resistance deserves, or `None`.
     ///
     /// Deliberately **not** a `warnings` field on [`SweepPoint`]. The cause is a
@@ -874,6 +908,77 @@ mod tests {
             "{caveat}"
         );
         assert!(caveat.contains("PH9-CHK-002"), "{caveat}");
+    }
+
+    // Antenna 0.634 m up over `GN 2`, with the deck's `FR` at 60 MHz — where
+    // 0.634 m is 0.127 lambda, comfortably above the 0.1 lambda threshold. Sweeping
+    // down to 14.2 MHz takes it to 0.030 lambda, deep into the caveat's range.
+    const LOW_ONLY_WHEN_SWEPT: &str = "CM low over ground only at the bottom of the sweep\nCE\nGW 1 21 -5.282 0 0.634 5.282 0 0.634 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 60.0 0\nEN\n";
+
+    #[test]
+    fn a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards() {
+        // FND-042. `deck_warnings` reads the deck's `FR` card — right for a single
+        // solve, wrong for a sweep, whose range the user types into the UI. This
+        // deck is above the threshold at its `FR` frequency and far below it at the
+        // bottom of the swept range, so the two answers genuinely differ.
+        let at_fr = deck_warnings(LOW_ONLY_WHEN_SWEPT);
+        assert!(
+            !at_fr.iter().any(|w| w.contains("above finite ground")),
+            "fixture must be clean at its FR frequency or this proves nothing: {at_fr:?}"
+        );
+
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 14.2, 60.0, 5.0).expect("prepare");
+        let caveats = job.geometry_caveats();
+        assert!(
+            caveats.iter().any(|w| w.contains("above finite ground")),
+            "the swept range goes far below 0.1 lambda: {caveats:?}"
+        );
+        assert!(
+            caveats.iter().any(|w| w.contains("worst case, at 14.2")),
+            "must name the frequency the quoted height belongs to: {caveats:?}"
+        );
+    }
+
+    #[test]
+    fn the_sweep_panel_does_not_repeat_what_the_deck_strip_already_shows() {
+        // A junction-fed deck is the normal case for a sweep that earns caveats at
+        // all, and the topology and junction caveats do not vary with frequency —
+        // so the strip above the tab already shows them. Emitting them again in the
+        // sweep panel printed the same sentence twice on one screen.
+        // A degree-3 T over GN 2 — a bend is merged into one conductor path and
+        // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
+        // an empty strip and prove nothing.
+        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2).expect("prepare");
+        let strip = deck_warnings(LOW_TEE);
+        let panel = job.geometry_caveats();
+        assert!(
+            !strip.is_empty(),
+            "fixture must earn strip caveats or this proves nothing"
+        );
+        assert!(
+            strip.iter().any(|w| w.contains("junction")),
+            "strip must carry the frequency-independent caveats: {strip:?}"
+        );
+        for w in &panel {
+            assert!(
+                !strip.contains(w),
+                "sweep panel repeats a caveat the strip already shows: {w}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sweep_that_stays_high_earns_no_low_ground_caveat() {
+        // Positive control's mirror: the same deck swept only where it is high
+        // must stay quiet, or the test above would pass for a check that always
+        // fires.
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 60.0, 80.0, 5.0).expect("prepare");
+        let caveats = job.geometry_caveats();
+        assert!(
+            !caveats.iter().any(|w| w.contains("above finite ground")),
+            "0.127 lambda and up is not low: {caveats:?}"
+        );
     }
 
     #[test]

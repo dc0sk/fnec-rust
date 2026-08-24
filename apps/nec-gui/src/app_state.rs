@@ -105,13 +105,15 @@ pub struct AppState {
     pub sweep_metric: crate::plot::PlotMetric,
     /// Frequency cursor as a fraction `0..=1` of the swept range (GUI-CHK-009).
     pub sweep_cursor: f32,
-    /// The one caveat the completed sweep earns (FND-014), or `None`.
+    /// Everything the sweep earns as a caveat, accumulated: the deck's geometry
+    /// and ground caveats when the run starts (FND-042), then the
+    /// negative-resistance aggregate when it ends (FND-014).
     ///
-    /// One string for the whole sweep rather than one per point: the cause is a
-    /// property of the geometry, which does not change across frequencies, so a
-    /// per-point field would repeat a single diagnosis up to `MAX_SWEEP_POINTS`
+    /// One entry per distinct caveat, never one per swept point: every cause here
+    /// is a property of the geometry, which does not change across frequencies, so
+    /// per-point strings would repeat a single diagnosis up to `MAX_SWEEP_POINTS`
     /// times while restating values the point already carries.
-    pub sweep_caveat: Option<String>,
+    pub sweep_caveats: Vec<String>,
     // ── Pattern tab state ──────────────────────────────────────────────────
     /// Azimuth angle (φ, degrees) for the elevation-plane pattern slice.
     pub pattern_phi_deg: String,
@@ -248,7 +250,7 @@ impl Default for AppState {
             sweep_phase: SweepPhase::default(),
             sweep_metric: crate::plot::PlotMetric::Swr,
             sweep_cursor: 0.5,
-            sweep_caveat: None,
+            sweep_caveats: Vec::new(),
             pattern_phi_deg: "0.0".into(),
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
@@ -300,19 +302,23 @@ pub enum Message {
     SweepPointComputed(SweepPoint),
     /// The streaming sweep finished (finalize the accumulated points).
     SweepStreamDone,
-    /// The one aggregate caveat the swept points earn (FND-014), computed by the
-    /// task that held the geometry — `None` when they are clean.
+    /// Caveats from the sweep task, **appended** to whatever it has already sent.
+    ///
+    /// Sent twice per run: the deck's geometry and ground caveats as soon as the
+    /// job is prepared (FND-042), so a user watching a long streaming sweep is not
+    /// told at the end that the antenna was too low all along; then the
+    /// negative-resistance aggregate when the run finishes or fails (FND-014).
     ///
     /// Its own message rather than a payload on `SweepStreamDone`, because a sweep
     /// that fails partway never sends that: it emits `SweepComplete(Err)` and
     /// returns, so the caveat for everything it *did* compute would be skipped.
     ///
     /// Note the `Failed` phase currently hides the chart and table, so on that
-    /// path the caveat outlives the points it counts and stands next to the error
-    /// alone (FND-033). It is still true of what was computed, and reporting a
-    /// run's non-physical results only when the run happens to finish cleanly is
-    /// the worse failure.
-    SweepCaveat(Option<String>),
+    /// path the caveats outlive the points they describe and stand next to the
+    /// error alone (FND-033). They are still true of what was computed, and
+    /// reporting a run's non-physical results only when the run happens to finish
+    /// cleanly is the worse failure.
+    SweepCaveats(Vec<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -441,7 +447,7 @@ impl AppState {
                 // clean deck — or starting a run that then fails — leaves the old
                 // deck's "N of M points report negative resistance" line on screen
                 // next to unrelated results.
-                self.sweep_caveat = None;
+                self.sweep_caveats.clear();
             }
             Message::SweepComplete(Ok(pts)) => {
                 self.sweep_phase = SweepPhase::Done(pts.clone());
@@ -456,8 +462,8 @@ impl AppState {
                     _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
                 }
             }
-            Message::SweepCaveat(caveat) => {
-                self.sweep_caveat = caveat.clone();
+            Message::SweepCaveats(caveats) => {
+                self.sweep_caveats.extend(caveats.iter().cloned());
             }
             Message::SweepStreamDone => {
                 // Finalize whatever streamed in (empty stream → a failure note).
