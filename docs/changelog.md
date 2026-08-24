@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 ---
 
 # Changelog
@@ -14,6 +14,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+### Docs
+
+- **Roadmap `GAP-015` corrected from Done to Partial** (FND-006). Its acceptance
+  criterion asks for Markdown project import/export *"with documented schema,
+  round-trip stability tests, and explicit CLI/API entry points"*, and it was marked
+  Done citing only the library functions and their tests. No frontend imports
+  `nec_project` — `apps/nec-cli/Cargo.toml` declares it as a dependency that is
+  never used, which is now logged separately as FND-016. The library half is
+  delivered; the half the criterion names is not, and the row now says so.
 
 ### Added
 
