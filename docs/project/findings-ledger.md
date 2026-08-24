@@ -42,6 +42,7 @@ An `open` row is not a failure — it is the point. What the process forbids is 
 
 | ID | Found | State | Finding | Evidence / owner |
 |:---|:------|:------|:--------|:-----------------|
+| FND-028 | 2026-08-24 | fixed | Eight local branches, 4–7 months stale (2026-04-25 … 2026-07-13), had survived every iteration close. `git branch -d` refuses all of them because the repo squash-merges, so ancestry says "unmerged" for work that shipped — which is exactly how a backlog like this accumulates unnoticed. Triaged one by one against `origin/main` content rather than ancestry: seven landed under a different commit (`docs/autopilot-operating-contract.md`, `docs/nec5-frontier.md`, the PH9-CHK-002 deferral note, the v0.12.0 tag, and #47/#55/#110 for the rest), and the eighth's only unlanded file, `apps/nec-cli/tests/hallen_fr_gpu_stub.rs`, was superseded by `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` — its `compute_hallen_fr_*_stub` entry points no longer exist, though `GpuSegment` and `HallenFrGpuKernel` do. | #394 — deleted; tips recorded below so the deletion is reversible |
 | FND-027 | 2026-08-24 | fixed | `fnec --hosts h.toml --ground-solver sommerfeld <GN2 deck>` silently ignored the flag: it is parsed in `main.rs` and consumed only by the local path, `run_distributed_solve` does not take it, and the worker derives its ground model from the deck alone — so the run returned the uncorrected reflection-coefficient impedance with no warning anywhere. Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: 92.266 + j13.617 Ω without the PH9-CHK-006 correction against 95.524 + j12.166 Ω with it, a 3.26 Ω answer change for a flag the user passed explicitly. **The second member of FND-025's class** — the reviewer's point being that fixing one instance of "a flag the distributed path drops" leaves the class open. Swept for others: `--pulse-rhs` and `--sin-fallback-rel-max` only matter for bases the worker rejects loudly, `--vars`/`--sweep-config` are applied before the branch, and `--exec hybrid` degrades silently but is a performance preference, not a wrong answer. | #393 — rejected beside the FND-025 check, ahead of `WorkerPool` construction; `distributed_run_refuses_sommerfeld_before_contacting_any_host`, sabotage-verified (removing the check fails it in 10.07 s, having dialled the host) |
 | FND-026 | 2026-08-24 | open | The worker builds its stamps through the seam but drops `stamps.warnings` on the floor — `TaskResult::Ok` has no warnings channel, so a malformed `LD`/`TL`/`NT` in a distributed run is silent where every other frontend reports it. This is the residue of FND-015 that #393 did not close, and it shares a fix with FND-014: `#[serde(default)] warnings: Vec<String>` on `TaskResult::Ok`, which is wire-compatible in both directions. | found by fable's diff review of #393; `docs/project/path-inventory.md` C5 row 4 |
 | FND-025 | 2026-08-24 | fixed | `fnec --hosts h.toml --loads-config foo.toml deck.nec` silently discarded the Laplace loads for the whole run, CPU included: they are parsed in `main.rs` but `run_distributed_solve` takes no Laplace parameter and the worker protocol carries no field for them, so the controller returned the *unloaded* impedance for a deck the user had explicitly loaded. FND-023's exact signature one layer up. | #393 — rejected before `WorkerPool` construction, next to the FND-013 geometry check; `distributed_run_refuses_laplace_loads_before_contacting_any_host`, sabotage-verified (removing the check fails it in 10.05 s, i.e. having dialled the host) |
@@ -69,3 +70,20 @@ An `open` row is not a failure — it is the point. What the process forbids is 
 | FND-003 | 2026-08-23 | rejected | Three extension traits (`DeckPostProcessor`, `ResultFilter`, `ReportSection`) have no production consumers. | Deliberate plugin-API surface per `docs/plugin-api-design.md`. Kept, but labelled "future-facing API, unused today" rather than "consumed" — the review's own refutation was wrong, since `render_text_report_with_sections` has no production caller either. #377 |
 | FND-002 | 2026-08-23 | fixed | `⚠` (U+26A0) has no glyph in iced's default font and rendered as a tofu box in every GUI caveat — pre-existing, and propagated to the new caveats strip. Only a visual check could see it; the tests assert on the text, which was always correct. | #383 |
 | FND-001 | 2026-08-23 | fixed | `exec_modes` drop-in alias paths were keyed on `(name, nanoseconds)`, but six matrix tests loop over one shared alias-name list in parallel — two threads collide and `fs::copy` fails with `ETXTBSY`. Took down a release-branch coverage run. | #379 |
+
+## Recovered branch tips (FND-028)
+
+Deleting a local branch does not delete its commits. These eight tips were
+recorded before deletion so any of them can be restored with
+`git checkout -b <name> <sha>` for as long as the objects survive gc:
+
+| Tip | Last commit | Branch |
+|:----|:------------|:-------|
+| `a5141ca` | 2026-04-28 | `docs/autopilot-operating-contract-export` |
+| `54800ff` | 2026-04-26 | `feat/corpus-validation-expansion` |
+| `662081e` | 2026-04-26 | `feat/gpu-kernel-acceleration` |
+| `b6055cc` | 2026-04-25 | `feat/loaded-element-experimental-path` |
+| `1245f75` | 2026-05-04 | `feat/ph6-chk-002-nec5-frontier` |
+| `feed0c4` | 2026-07-08 | `feat/ph9-degree3-junction` |
+| `d663690` | 2026-04-25 | `pr-54` |
+| `870dc0e` | 2026-07-13 | `release/v0.12.0` |
