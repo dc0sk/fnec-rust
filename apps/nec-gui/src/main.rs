@@ -28,7 +28,7 @@ use nec_gui::session::Session;
 use nec_gui::solve::{
     current_distribution_deck_path, deck_warnings, load_currents_path, load_geometry_path,
     load_model_doc_path, pattern_grid_path, pattern_slice_deck_path, read_deck_text,
-    solve_deck_path, solve_deck_str, SolveResult, SweepJob, SweepPoint,
+    solve_deck_path, solve_deck_str, SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
 
@@ -176,63 +176,17 @@ impl FnecGui {
                     match read_deck_text(&path, vars.as_deref()) {
                         Ok(deck_text) => Task::run(
                             iced::stream::channel(64, move |mut output| async move {
-                                use iced::futures::SinkExt;
-                                match SweepJob::prepare(&deck_text, start, end, step) {
-                                    Ok(job) => {
-                                        // Up front, not at the end: a user watching
-                                        // a long sweep should not learn only when it
-                                        // finishes that the antenna was too low for
-                                        // the whole range (FND-042).
-                                        let _ = output
-                                            .send(Message::SweepCaveats(job.geometry_caveats()))
-                                            .await;
-                                        // Kept alongside the stream so the caveat can
-                                        // be computed once at the end: the job holds
-                                        // the geometry, and the UI thread does not.
-                                        let mut seen = Vec::new();
-                                        for &f in job.freqs_mhz() {
-                                            match job.solve_at(f) {
-                                                Ok(pt) => {
-                                                    seen.push(pt.clone());
-                                                    let _ = output
-                                                        .send(Message::SweepPointComputed(pt))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    // Report what was computed
-                                                    // before the failure; this path
-                                                    // used to skip the caveat
-                                                    // entirely. The `Failed` phase
-                                                    // hides the points themselves,
-                                                    // so the caveat stands alone
-                                                    // there (FND-033).
-                                                    let _ = output
-                                                        .send(Message::SweepCaveats(
-                                                            job.negative_resistance_caveat(&seen)
-                                                                .into_iter()
-                                                                .collect(),
-                                                        ))
-                                                        .await;
-                                                    let _ = output
-                                                        .send(Message::SweepComplete(Err(e)))
-                                                        .await;
-                                                    return;
-                                                }
-                                            }
-                                        }
-                                        let _ = output
-                                            .send(Message::SweepCaveats(
-                                                job.negative_resistance_caveat(&seen)
-                                                    .into_iter()
-                                                    .collect(),
-                                            ))
-                                            .await;
-                                        let _ = output.send(Message::SweepStreamDone).await;
-                                    }
-                                    Err(e) => {
-                                        let _ = output.send(Message::SweepComplete(Err(e))).await;
-                                    }
-                                }
+                                // The body lives in `sweep_stream` so its messages
+                                // can be asserted: inline here, deleting any of its
+                                // sends left the whole suite green (FND-034).
+                                nec_gui::sweep_stream::run_sweep_stream(
+                                    deck_text,
+                                    start,
+                                    end,
+                                    step,
+                                    &mut output,
+                                )
+                                .await;
                             }),
                             |m| m,
                         ),

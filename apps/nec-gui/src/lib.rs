@@ -12,3 +12,4 @@ pub mod model_doc;
 pub mod plot;
 pub mod session;
 pub mod solve;
+pub mod sweep_stream;

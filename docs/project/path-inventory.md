@@ -135,7 +135,7 @@ in it. There is no second way to reach that kernel.
 | 1 | CLI low-antenna-over-finite-ground | yes | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` |
 | 2 | CLI declined Sommerfeld request | yes | `declined_sommerfeld_geometry_is_reported_not_silent` |
 | 3 | GUI / Python **single solve** low-ground | yes | carried by `validate::diagnose` |
-| 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. The `SweepCaveats` *send* is review-verified, not test-pinned — [FND-034](findings-ledger.md) |
+| 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. the send is pinned by `the_geometry_caveats_arrive_before_the_first_point` |
 | 5 | CLI distributed low-ground | yes | `the_low_ground_check_uses_the_worst_case_frequency_not_the_first` |
 | 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made |
 
@@ -143,12 +143,12 @@ Row 3's "yes" was unqualified until #399 split it. The check is frequency-depend
 and a *sweep* is a different frequency from the deck's `FR` card — so covering the
 single solve says nothing about the sweep, which is row 4.
 
-Row 4's caveat is computed by `SweepJob::geometry_caveats` from the same
-`validate::hallen_geometry_caveats` producer the CLI and the distributed path use,
-at the same worst-case frequency. What is *not* pinned is the message send that
-carries it to the panel: that lives in a closure inline in `FnecGui::update`, and
-deleting it leaves every test green (FND-034). Saying so beats a bare "yes" that
-would imply the whole path is gated.
+Row 4's caveat is computed from the same `validate::swept_low_ground_caveat` the
+distributed path uses, so the two describe a range identically. The message send
+that carries it to the panel used to be unpinned — inline in `FnecGui::update`,
+where deleting it left every test green — and is now covered by
+`nec_gui::sweep_stream`, whose tests assert the order of the whole sequence rather
+than the presence of each message.
 
 ## C5 — Load / TL / NT builder warnings
 
