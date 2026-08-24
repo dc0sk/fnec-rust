@@ -63,6 +63,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Known limitation recorded, not yet fixed: `--exec gpu` silently discards
+  host-side matrix stamps** (FND-023). The GPU-resident path re-fills and solves on
+  the device, dropping every host stamp, and its guard declines only on `LD` and
+  `TL` cards — omitting `NT`, and taking no Laplace-loads parameter at all.
+  Measured on hardware: an `NT` deck gives 70.633 + j14.009 Ω on `--exec cpu` and
+  74.234 + j13.898 Ω on `--exec gpu`; `--exec gpu --loads-config …` returns the
+  *unloaded* 74.234 + j13.898 Ω where CPU gives 442.655 − j971.944 Ω, discarding a
+  load the user explicitly passed. **Use `--exec cpu` for any deck with an `NT`
+  card or a `--loads-config` file until this lands.**
+
 - **The path-inventory checker was satisfied by its own comment.** It validated
   only backticked names of 15+ characters, so the invented symbol `solve_task` —
   a function that never existed — sat in the inventory and the findings ledger
