@@ -12,9 +12,9 @@ use nec_model::deck::NecDeck;
 use nec_parser::parse;
 use nec_solver::validate;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
-    build_tl_stamps, compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck,
-    solve_hallen, wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
+    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs,
+    compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck, solve_hallen,
+    wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -295,10 +295,10 @@ fn validate_deck(
             nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
         }
     }
-    let (_lv, load_warnings) = build_loads(deck, segs, freq_hz);
-    warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
-    let (_ts, tl_warnings) = build_tl_stamps(deck, segs, freq_hz);
-    warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
+    // Warnings only — no matrix here. The same seam the solve paths use, so the
+    // caveats shown and the stamps applied cannot describe different card sets;
+    // this used to rebuild loads and TL by hand and miss NT entirely.
+    warnings.extend(nec_solver::build_deck_stamps(deck, segs, freq_hz).warnings);
     Ok(warnings)
 }
 
@@ -365,13 +365,7 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     // --- impedance matrix ------------------------------------------------
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
 
-    let (load_vec, _load_warnings) = build_loads(deck, &segs, freq_hz);
-    z_mat.add_to_diagonal(&load_vec);
-
-    let (tl_stamps, _tl_warnings) = build_tl_stamps(deck, &segs, freq_hz);
-    for (row, col, delta) in &tl_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
+    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
 
     // --- Hallen solve ----------------------------------------------------
     let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
@@ -549,12 +543,7 @@ impl SweepJob {
         let freq_hz = freq_mhz * 1_000_000.0;
 
         let mut z_mat = assemble_z_matrix_with_ground(&self.segs, freq_hz, &self.ground);
-        let (load_vec, _) = build_loads(&self.deck, &self.segs, freq_hz);
-        z_mat.add_to_diagonal(&load_vec);
-        let (tl_stamps, _) = build_tl_stamps(&self.deck, &self.segs, freq_hz);
-        for (row, col, delta) in &tl_stamps {
-            z_mat.add_to_entry(*row, *col, *delta);
-        }
+        nec_solver::build_deck_stamps(&self.deck, &self.segs, freq_hz).apply(&mut z_mat);
 
         let hallen_rhs =
             build_hallen_rhs(&self.deck, &self.segs, freq_hz).map_err(|e| e.to_string())?;
@@ -737,12 +726,7 @@ fn solve_for_currents(
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    let (load_vec, _) = build_loads(deck, &segs, freq_hz);
-    z_mat.add_to_diagonal(&load_vec);
-    let (tl_stamps, _) = build_tl_stamps(deck, &segs, freq_hz);
-    for (row, col, delta) in &tl_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
+    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
 
     let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);

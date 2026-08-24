@@ -117,8 +117,8 @@ Malformed `LD`, `TL` and `NT` cards are skipped; the user must learn they were.
 | 1 | CLI | yes | printed in `solve_session.rs` |
 | 2 | GUI | yes | collected in `validate_deck` (#369) |
 | 3 | Python bindings | yes | raised as `UserWarning` (#370) |
-| 4 | Remote worker | **NO** | gap — [FND-015](findings-ledger.md) |
-| 5 | `NT` stamping — GUI, Python, worker | **NO** | `build_nt_stamps` is called only from the CLI, so the same deck gives a 3.6 Ω different impedance off it — [FND-015](findings-ledger.md) |
+| 4 | Remote worker | **NO** | gap — [FND-026](findings-ledger.md); the worker builds the stamps but its result type has no warnings channel |
+| 5 | `NT` stamping — GUI, Python, worker | yes | all six assembly sites go through `build_deck_stamps`; `test_nt_deck_matches_the_corpus_reference` |
 
 ---
 

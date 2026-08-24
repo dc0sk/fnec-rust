@@ -12,6 +12,7 @@ pub mod mpie;
 pub mod network;
 pub mod planewave;
 pub mod sommerfeld;
+pub mod stamps;
 pub mod taper;
 pub mod tl;
 pub mod validate;
@@ -54,5 +55,6 @@ pub use planewave::{
     build_planewave_hallen, build_planewave_hallen_paths, IncidentPlaneWave, PlaneWaveError,
     PlaneWaveHallen,
 };
+pub use stamps::{build_deck_stamps, DeckStamps};
 pub use taper::{leeson_equivalent_element, EquivalentElement, TaperSection};
 pub use tl::{build_tl_stamps, TlStamp, TlWarning};

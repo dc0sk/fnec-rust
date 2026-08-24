@@ -292,6 +292,36 @@ fn main() -> ExitCode {
     // Distributed solve via --hosts
     // ------------------------------------------------------------------
     if let Some(ref hosts_path) = hosts_path {
+        // Two flags change the answer locally and are dropped on the floor by the
+        // distributed path: `run_distributed_solve` takes neither, and the worker
+        // protocol carries no field for either. Left alone, both return a
+        // plausible number for a deck the user did not describe — FND-023's
+        // silent-wrong-answer signature one layer up (FND-025, FND-027). Reject
+        // rather than solve the wrong problem.
+        //
+        // This sits ahead of `WorkerPool` construction for the FND-013 reason: the
+        // pool spawns an SSH process per host the moment it is built, so a check
+        // placed inside `run_distributed_solve` would dial every host before
+        // noticing the run was never going to honour the flag.
+        if !laplace_loads.is_empty() {
+            eprintln!(
+                "error: Laplace loads (--loads-config) are not supported with --hosts; \
+                 the worker protocol carries no field for them. Run without --hosts."
+            );
+            return ExitCode::FAILURE;
+        }
+        if matches!(ground_solver, GroundSolver::Sommerfeld) {
+            // The worker derives its ground model from the deck alone, so the
+            // surface-wave correction never reaches it. Measured on
+            // `corpus/dipole-gn2-near-ground-51seg.nec`: 95.524 + j12.166 Ω
+            // locally with the correction against 92.266 + j13.617 Ω without it.
+            eprintln!(
+                "error: --ground-solver sommerfeld is not supported with --hosts; \
+                 the worker derives its ground model from the deck and never applies \
+                 the surface-wave correction. Run without --hosts."
+            );
+            return ExitCode::FAILURE;
+        }
         // The topology caveat is what tells a user a junctioned or looped deck
         // solves to garbage on the Hallén path. The distributed run is Hallén-only,
         // so it needs it at least as much as the local one.

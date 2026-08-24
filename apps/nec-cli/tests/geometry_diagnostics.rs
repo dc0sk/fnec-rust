@@ -176,3 +176,88 @@ fn distributed_run_refuses_geometry_before_contacting_any_host() {
         "must exit 1, as the local path does"
     );
 }
+
+/// `--hosts` with `--loads-config` used to drop the loads for the whole run:
+/// `run_distributed_solve` takes no Laplace parameter and the worker protocol
+/// carries no field for them, so the controller returned the *unloaded*
+/// impedance for a deck the user had explicitly loaded — FND-023's signature one
+/// layer up. Found by fable's diff review of #393.
+///
+/// Same placement requirement as the geometry check above: rejecting the
+/// combination must happen before `WorkerPool` is constructed, so the assertion
+/// is again on the host address rather than on the word "worker".
+#[test]
+fn distributed_run_refuses_laplace_loads_before_contacting_any_host() {
+    let deck = common::TempDeck::new(
+        "fnec-dist-laplace.nec",
+        "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+    );
+    let hosts = common::TempDeck::new(
+        "fnec-dist-laplace-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg("--loads-config")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/laplace-load-rlc.toml"
+        ))
+        .arg(&deck)
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Laplace loads (--loads-config) are not supported with --hosts"),
+        "must reject the combination rather than silently dropping the loads:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains(UNREACHABLE_HOST),
+        "must fail BEFORE contacting any host:\n{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(1), "must exit 1");
+}
+
+/// The sibling of the test above, and the reason the class matters more than the
+/// instance: `--ground-solver sommerfeld` was dropped by `--hosts` exactly as the
+/// Laplace loads were. The worker derives its ground model from the deck alone,
+/// so the PH9-CHK-006 surface-wave correction never reached it and the run
+/// returned the uncorrected reflection-coefficient impedance — measured locally
+/// on this deck as 92.266 + j13.617 Ω against 95.524 + j12.166 Ω with the
+/// correction, a 3.26 Ω answer change for a flag the user passed explicitly.
+///
+/// Found by the strong-model review of the FND-025 fix, which pointed out that
+/// FND-025 was one member of a class and asked which others were live.
+#[test]
+fn distributed_run_refuses_sommerfeld_before_contacting_any_host() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-somm-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg("--ground-solver")
+        .arg("sommerfeld")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-gn2-near-ground-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--ground-solver sommerfeld is not supported with --hosts"),
+        "must reject the combination rather than silently ignoring the flag:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains(UNREACHABLE_HOST),
+        "must fail BEFORE contacting any host:\n{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(1), "must exit 1");
+}

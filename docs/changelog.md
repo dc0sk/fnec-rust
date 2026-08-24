@@ -63,15 +63,61 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
-- **Known limitation recorded, not yet fixed: `--exec gpu` silently discards
-  host-side matrix stamps** (FND-023). The GPU-resident path re-fills and solves on
-  the device, dropping every host stamp, and its guard declines only on `LD` and
-  `TL` cards — omitting `NT`, and taking no Laplace-loads parameter at all.
-  Measured on hardware: an `NT` deck gives 70.633 + j14.009 Ω on `--exec cpu` and
-  74.234 + j13.898 Ω on `--exec gpu`; `--exec gpu --loads-config …` returns the
-  *unloaded* 74.234 + j13.898 Ω where CPU gives 442.655 − j971.944 Ω, discarding a
-  load the user explicitly passed. **Use `--exec cpu` for any deck with an `NT`
-  card or a `--loads-config` file until this lands.**
+- **All frontends now apply the same deck stamps** (FND-015, FND-023).
+  `build_nt_stamps` was called only from the CLI, so an `NT` deck solved to
+  70.633 + j14.009 Ω there and 74.243 + j13.900 Ω — the plain-dipole answer —
+  through the GUI, the Python bindings and the remote worker. `LD`, `TL` and `NT`
+  now come from one seam, `nec_solver::build_deck_stamps`, used by all six
+  assembly sites and by the GUI's warnings-only path, so the caveats shown and the
+  stamps applied can no longer describe different card sets.
+
+  The same change fixes `--exec gpu` discarding stamps (FND-023). The GPU-resident
+  path re-fills and solves on the device, so every host-side stamp is dropped when
+  it succeeds — and both gates guarding it asked *which card types are present*
+  from separately maintained lists, the CLI's omitting `NT`. They now ask
+  `DeckStamps::is_identity()` — whether the deck actually stamps anything — and the
+  CLI additionally declines the device path when `--loads-config` supplied Laplace
+  loads, which the gate cannot see. Verified on hardware: an `NT` deck gave
+  74.234 + j13.898 Ω under `--exec gpu` against 70.633 + j14.009 Ω on the CPU, and
+  `--exec gpu --loads-config …` returned the *unloaded* 74.234 + j13.898 Ω where
+  CPU gives 442.655 − j971.944 Ω — a load the user explicitly passed, discarded.
+  Both now match `--exec cpu` exactly, while a deck that stamps nothing still
+  reaches the device: a plain dipole gives 74.234166 Ω under `--exec gpu` against
+  74.242874 Ω on the CPU, the f32 signature that shows the gate is declining
+  rather than the adapter being absent — and that 74.234166 is exactly what the
+  `NT` deck used to return.
+
+  Two smaller behaviour changes come with it. A deck whose `LD` or `TL` cards
+  stamp *nothing* — a malformed `TL`, an unsupported `LD` type, an `LD 4` with
+  R = X = 0 — is no longer forced onto the CPU by the mere presence of the card,
+  so under `--exec gpu` it now takes the device path and its f32 arithmetic
+  (within the divergence rejection added in #373). And an unsupported-`LD`
+  warning was pushed once per matching segment, so an `LD 9` spanning 21 segments
+  printed 21 identical lines; the seam deduplicates, and it prints once.
+
+  **Deployed remote workers are not updated by this.** A worker is a separately
+  installed binary; an older one keeps ignoring `NT`, so a mixed pool will disagree
+  with a local solve until every worker is upgraded.
+
+- **`--hosts` with `--loads-config` silently dropped the loads** (FND-025).
+  `run_distributed_solve` takes no Laplace parameter and the worker protocol
+  carries no field for them, so a distributed run of a loaded deck returned the
+  *unloaded* impedance — FND-023's signature one layer up, and on the CPU path
+  too. The combination is now rejected before any host is contacted. Found by the
+  strong-model review of the FND-023 fix, which declined to accept "the
+  user-passed-load-discard class is fixed" while this one stood.
+
+- **`--hosts` with `--ground-solver sommerfeld` silently ignored the flag**
+  (FND-027). Same shape, second instance: `run_distributed_solve` does not take
+  it and the worker derives its ground model from the deck alone, so a
+  distributed run returned the uncorrected reflection-coefficient impedance with
+  no warning. On `corpus/dipole-gn2-near-ground-51seg.nec` that is
+  92.266 + j13.617 Ω against 95.524 + j12.166 Ω with the PH9-CHK-006 correction —
+  a 3.26 Ω change for a flag the user passed explicitly. Also rejected now. The
+  review found this by asking which *other* flags the distributed path drops the
+  same way, rather than accepting the first instance as the whole defect; the
+  remaining flags were swept and are either rejected loudly by the worker,
+  applied before the branch, or performance-only.
 
 - **The path-inventory checker was satisfied by its own comment.** It validated
   only backticked names of 15+ characters, so the invented symbol `solve_task` —

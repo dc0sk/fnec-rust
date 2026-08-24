@@ -70,11 +70,10 @@ use nec_report::{
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
-    build_hallen_rhs_paths, build_loads, build_nt_stamps, build_planewave_hallen,
-    build_planewave_hallen_paths, build_tl_stamps, compute_radiation_pattern,
-    detect_wire_junctions, feed_node_for_segment, feed_reference_sign, geometry_from_segments,
-    integrate_radiated_power, merge_collinear_wire_endpoints, radiation_efficiency,
-    scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
+    build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
+    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment, feed_reference_sign,
+    geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
+    radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
     solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
     solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
     solve_mpie, solve_mpie_ground, solve_with_continuity_basis_per_wire, FarFieldPoint,
@@ -1054,8 +1053,6 @@ fn maybe_gpu_resident_hallen(
     execution_mode: ExecutionMode,
     freq_hz: f64,
 ) -> Option<nec_solver::HallenSolution> {
-    use nec_model::card::Card;
-
     const MIN_GPU_RESIDENT_SEGS: usize = 16;
     if execution_mode != ExecutionMode::Gpu || segs.len() < MIN_GPU_RESIDENT_SEGS {
         return None;
@@ -1066,13 +1063,15 @@ fn maybe_gpu_resident_hallen(
     ) {
         return None;
     }
-    // LD/TL cards stamp the host matrix in ways the GPU free-space fill does not
-    // reproduce — keep those on the CPU path.
-    if deck
-        .cards
-        .iter()
-        .any(|c| matches!(c, Card::Ld(_) | Card::Tl(_)))
-    {
+    // The device re-fills and solves from raw segment inputs, so anything stamped
+    // into the host matrix is discarded. Decline any deck that stamps something.
+    //
+    // Asked of the values, not of which card types are present. The type-list this
+    // replaces omitted `Card::Nt`, so an NT deck took this path and came back with
+    // the un-stamped answer (FND-023: 74.234 + j13.898 where the CPU gives
+    // 70.633 + j14.009). Laplace loads were not covered at all — this function has
+    // no access to them, so the caller must decline separately.
+    if !nec_solver::build_deck_stamps(deck, segs, freq_hz).is_identity() {
         return None;
     }
 
@@ -1285,36 +1284,20 @@ pub(super) fn solve_frequency_point(
         SolverMode::Mpie => assemble_z_matrix_with_ground(segs, freq_hz, ground),
     };
 
-    let (mut load_vec, load_warnings) = build_loads(deck, segs, freq_hz);
-    for warning in &load_warnings {
+    // LD loads, TL lines and NT networks, built once through the shared seam so
+    // every frontend applies the same set (FND-015). Laplace loads are composed
+    // into the same diagonal: they are a CLI-only input (`--loads-config`), so they
+    // are not part of the deck's own stamps.
+    let mut stamps = nec_solver::build_deck_stamps(deck, segs, freq_hz);
+    let laplace_warnings =
+        nec_solver::add_laplace_loads(&mut stamps.diagonal, laplace_loads, segs, freq_hz);
+    for warning in &stamps.warnings {
         eprintln!("warning: {warning}");
     }
-    let laplace_warnings =
-        nec_solver::add_laplace_loads(&mut load_vec, laplace_loads, segs, freq_hz);
     for warning in &laplace_warnings {
         eprintln!("warning: {warning}");
     }
-    z_mat.add_to_diagonal(&load_vec);
-    let (tl_stamps, tl_warnings) = build_tl_stamps(deck, segs, freq_hz);
-    for warning in &tl_warnings {
-        eprintln!("warning: {warning}");
-    }
-    for (row, col, delta) in &tl_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
-    // NT two-port networks: admittance-parameter stamp (PH8-CHK-004). Valid cards
-    // stamp the Z matrix; malformed/unsupported cards warn and are skipped.
-    // Warnings are deduplicated so repeated identical cards warn once.
-    let (nt_stamps, nt_warnings) = build_nt_stamps(deck, segs);
-    let mut seen_nt_warnings = std::collections::HashSet::new();
-    for warning in &nt_warnings {
-        if seen_nt_warnings.insert(warning.message.clone()) {
-            eprintln!("warning: {warning}");
-        }
-    }
-    for (row, col, delta) in &nt_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
+    stamps.apply(&mut z_mat);
     let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
         collect_pulse_current_source_constraints(deck, segs)?
     } else {
@@ -1412,16 +1395,24 @@ pub(super) fn solve_frequency_point(
             // Only valid when the host applies no matrix modifications the GPU
             // path does not reproduce: free-space/deferred ground, no load or TL
             // stamps, and enough segments to amortize device setup.
-            let sol = maybe_gpu_resident_hallen(
-                deck,
-                segs,
-                &hallen_rhs,
-                &merged_endpoints,
-                &junction_tuples,
-                ground,
-                execution_mode,
-                freq_hz,
-            )
+            // Laplace loads are a CLI-only input, so `maybe_gpu_resident_hallen`
+            // cannot see them — and the device solve would discard them silently
+            // (FND-023: `--exec gpu --loads-config` returned the *unloaded*
+            // 74.234 + j13.898 where the CPU gives 442.655 - j971.944). Decline here.
+            let sol = if laplace_loads.is_empty() {
+                maybe_gpu_resident_hallen(
+                    deck,
+                    segs,
+                    &hallen_rhs,
+                    &merged_endpoints,
+                    &junction_tuples,
+                    ground,
+                    execution_mode,
+                    freq_hz,
+                )
+            } else {
+                None
+            }
             .map(Ok)
             .unwrap_or_else(|| {
                 solve_hallen(

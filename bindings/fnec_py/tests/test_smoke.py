@@ -203,3 +203,51 @@ def test_a_warning_can_be_escalated_to_an_error():
         warnings.simplefilter("error")
         with pytest.raises(UserWarning, match="above finite ground"):
             fnec_py.solve_deck_str(LOW_OVER_GROUND)
+
+
+# --- cross-frontend parity for NT decks (FND-015) ---------------------------
+
+def test_nt_deck_matches_the_corpus_reference():
+    """An `NT` card must change the answer here exactly as it does in the CLI.
+
+    `build_nt_stamps` used to be called only from the CLI, so this deck solved to
+    the *plain-dipole* 74.243 + j13.900 here while the CLI gave 70.633 + j14.009 —
+    the same deck, two frontends, 3.6 ohm apart. The reference value below is the
+    CLI-produced corpus entry, so this assertion is red against the old behaviour.
+    """
+    import json
+
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    deck_path = os.path.join(root, "corpus", "dipole-nt-tl-equiv-freesp-51seg.nec")
+    with open(deck_path) as f:
+        deck = f.read()
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["dipole-nt-tl-equiv-freesp-51seg"][
+            "feedpoint_impedance"
+        ]
+
+    got = fnec_py.solve_deck_str(deck)
+    assert abs(got["z_re"] - want["real_ohm"]) < 0.05, (
+        f"NT stamp missing or wrong: got {got['z_re']}, reference {want['real_ohm']}"
+    )
+    assert abs(got["z_im"] - want["imag_ohm"]) < 0.05, (
+        f"NT stamp missing or wrong: got {got['z_im']}, reference {want['imag_ohm']}"
+    )
+
+
+def test_a_deck_without_nt_is_unaffected():
+    """Negative control: the seam must not perturb a deck that has no NT card.
+
+    Read from the corpus rather than hardcoded, so this tracks the same source of
+    truth as its sibling above instead of drifting from it.
+    """
+    import json
+
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "dipole-freesp-51seg.nec")) as f:
+        plain = fnec_py.solve_deck_str(f.read())
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["dipole-freesp-51seg"]["feedpoint_impedance"]
+    assert abs(plain["z_re"] - want["real_ohm"]) < 0.05, (
+        f"plain dipole moved: got {plain['z_re']}, reference {want['real_ohm']}"
+    )

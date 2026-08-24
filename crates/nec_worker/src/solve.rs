@@ -82,9 +82,8 @@ mod tests {
 
 use nec_model::card::Card;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, build_loads, build_tl_stamps,
-    detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
-    GroundModel,
+    assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, detect_wire_junctions,
+    ground_model_from_deck, solve_hallen, wire_endpoints_from_segs, GroundModel,
 };
 use num_complex::Complex64;
 
@@ -200,13 +199,9 @@ pub fn solve_deck_at_frequency_with_exec(
     })?;
 
     // 4. Assemble Z-matrix and apply loads / TL stamps
-    let (load_vec, _load_warnings) = build_loads(&deck, &segs, freq_hz);
-    let (tl_stamps, _tl_warnings) = build_tl_stamps(&deck, &segs, freq_hz);
+    let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    z_mat.add_to_diagonal(&load_vec);
-    for (row, col, delta) in &tl_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
+    stamps.apply(&mut z_mat);
 
     // 5. Wire-junction constraints
     let junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
@@ -223,8 +218,11 @@ pub fn solve_deck_at_frequency_with_exec(
             ground,
             GroundModel::FreeSpace | GroundModel::Deferred { .. }
         )
-        && load_vec.iter().all(|z| *z == Complex64::new(0.0, 0.0))
-        && tl_stamps.is_empty();
+        // The device re-solves from raw segment inputs, discarding host-side
+        // stamps. This gate was already value-based rather than a card-type list,
+        // which is why it never had the CLI's NT hole (FND-023) — it now asks the
+        // same question through the shared seam.
+        && stamps.is_identity();
 
     let (currents, exec_used) = if gpu_eligible {
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
