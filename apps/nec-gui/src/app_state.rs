@@ -305,8 +305,13 @@ pub enum Message {
     ///
     /// Its own message rather than a payload on `SweepStreamDone`, because a sweep
     /// that fails partway never sends that: it emits `SweepComplete(Err)` and
-    /// returns, leaving whatever points already streamed on screen. Those points
-    /// deserve the caveat as much as a complete sweep's do.
+    /// returns, so the caveat for everything it *did* compute would be skipped.
+    ///
+    /// Note the `Failed` phase currently hides the chart and table, so on that
+    /// path the caveat outlives the points it counts and stands next to the error
+    /// alone (FND-033). It is still true of what was computed, and reporting a
+    /// run's non-physical results only when the run happens to finish cleanly is
+    /// the worse failure.
     SweepCaveat(Option<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),

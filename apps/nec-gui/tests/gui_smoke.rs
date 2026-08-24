@@ -1395,9 +1395,13 @@ fn a_new_sweep_clears_the_previous_sweeps_caveat() {
     );
 }
 
-/// A sweep that fails partway still leaves its streamed points on screen, so it
-/// still owes them the caveat. That is why the caveat is its own message rather
-/// than a payload on `SweepStreamDone`, which this path never sends.
+/// A sweep that fails partway still owes a caveat for everything it computed.
+/// That is why the caveat is its own message rather than a payload on
+/// `SweepStreamDone`, which this path never sends.
+///
+/// This pins the reducer. The *send* on that path is inside the stream closure in
+/// `FnecGui::update` and is not pinned by anything — deleting it fails no test
+/// (FND-034).
 #[test]
 fn a_sweep_that_fails_partway_still_carries_the_caveat_for_what_it_showed() {
     let mut state = AppState::default();

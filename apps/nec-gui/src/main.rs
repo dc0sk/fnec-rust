@@ -192,11 +192,13 @@ impl FnecGui {
                                                         .await;
                                                 }
                                                 Err(e) => {
-                                                    // The points that did stream are
-                                                    // on screen and earn the caveat as
-                                                    // much as a complete sweep's
-                                                    // would; this path used to skip it
-                                                    // entirely.
+                                                    // Report what was computed
+                                                    // before the failure; this path
+                                                    // used to skip the caveat
+                                                    // entirely. The `Failed` phase
+                                                    // hides the points themselves,
+                                                    // so the caveat stands alone
+                                                    // there (FND-033).
                                                     let _ = output
                                                         .send(Message::SweepCaveat(
                                                             job.negative_resistance_caveat(&seen),

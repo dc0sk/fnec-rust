@@ -91,6 +91,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   New fixture `corpus/inverted-v-negative-r-freesp.nec` — deliberately *not* a
   parity case; its number is known-wrong, and that is the point.
 
+  A known trade, recorded rather than discovered later: `fnec_py`'s sweep now
+  raises one `UserWarning` per negative point, because the message embeds `Re Z`
+  and its dedup keys on exact text (FND-032). The GUI aggregates for this reason;
+  the bindings do not yet.
+
   `NaN` is deliberately **not** caught here: the sentence would read "has negative
   resistance (Re Z = NaN Ω)" and blame a junctioned geometry that is not the cause.
   A `NaN` impedance is a non-converged solve and wants its own diagnostic

@@ -528,7 +528,11 @@ fn distributed_negative_resistance_warnings(
         .cards
         .iter()
         .find_map(|c| match c {
-            nec_model::card::Card::Ex(ex) if ex.kind().is_voltage_source() => {
+            // Type 0 exactly, not `is_voltage_source()` — that also admits type 5,
+            // which the worker skips, so a deck with an `EX 5` before its `EX 0`
+            // would have the caveat naming a different segment than the one the
+            // reported impedance came from.
+            nec_model::card::Card::Ex(ex) if ex.excitation_type == 0 => {
                 Some((ex.tag as usize, ex.segment as usize))
             }
             _ => None,
@@ -1113,6 +1117,25 @@ mod tests {
         assert!(
             distributed_negative_resistance_warnings(74.24, &deck, &segs, SolverMode::Hallen)
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn an_ex_type_the_worker_skips_is_not_mistaken_for_the_feedpoint() {
+        // `EX 5` is a voltage source the Hallén RHS drives as a delta gap, so a
+        // deck carrying one solves — but the worker resolves the feedpoint it
+        // reports from the first **type-0** EX only. Filtering on
+        // `is_voltage_source()` would admit type 5 and name a different segment
+        // than the impedance came from.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 5 2 3 0 1.0 0.0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("tag 1 segment 5"),
+            "must name the segment the worker reported, not the EX 5: {}",
+            w[0]
         );
     }
 
