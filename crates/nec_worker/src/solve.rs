@@ -16,6 +16,30 @@ mod tests {
     const DIPOLE_EX4: &str = include_str!("../../../corpus/dipole-ex4-freesp-51seg.nec");
     const DIPOLE_EX1: &str = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
 
+    /// FND-026: the worker built these warnings and threw them away, so a
+    /// distributed run was the one frontend that silently ignored a malformed
+    /// card. Unlike the result-shape checks the controller does for itself, these
+    /// have to travel on the wire — the controller never parses the deck's stamps,
+    /// so if the worker drops them nobody ever learns the card was skipped.
+    #[test]
+    fn a_malformed_card_the_worker_skips_is_reported_not_swallowed() {
+        let deck = "CM malformed NT: 8 fields, expected 10\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 10 1 40 0.0 -0.002 0.0 0.004\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let r = solve_deck_at_frequency(deck, 14.2e6, "hallen").expect("deck still solves");
+        assert!(
+            r.warnings
+                .iter()
+                .any(|w| w.contains("NT card has 8 fields")),
+            "the skipped card must be reported: {:?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn a_clean_deck_reports_no_warnings() {
+        let r = solve_deck_at_frequency(DIPOLE, 14.2e6, "hallen").expect("solve");
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    }
+
     /// FND-031: the worker drove a type-5 card as a delta gap through
     /// `build_hallen_rhs`, solved it, and then refused to read the answer —
     /// "no EX type-0 card found in deck" for a deck the CLI and `fnec_py` both
@@ -150,6 +174,10 @@ pub struct FeedpointResult {
     pub current_phase_deg: f64,
     /// Execution path actually taken: `"cpu"` | `"gpu"` (PH7-CHK-004).
     pub exec_used: String,
+    /// Caveats raised while filling the matrix — a malformed `LD`, `TL` or `NT`
+    /// card that was skipped. The worker is the only place these exist, so
+    /// dropping them here is the same as never producing them (FND-026).
+    pub warnings: Vec<String>,
 }
 
 /// Minimum segment count before a worker attempts the GPU-resident solve.
@@ -352,6 +380,7 @@ pub fn solve_deck_at_frequency_with_exec(
             v_source
         };
         return Ok(FeedpointResult {
+            warnings: stamps.warnings.clone(),
             impedance_re: z_in.re,
             impedance_im: z_in.im,
             current_mag: current.norm(),

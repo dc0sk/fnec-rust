@@ -63,6 +63,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A distributed run no longer swallows the caveats only it can see** (FND-026).
+  The worker built its `LD`/`TL`/`NT` stamp warnings and dropped them: a
+  malformed card that every other frontend reports was silently ignored under
+  `--hosts`. Unlike the result-shape checks the controller performs for itself,
+  these have to travel on the wire — the controller never parses the deck's
+  stamps, so a worker that discards them ends the story.
+
+  `TaskResult::Ok` gains `#[serde(default)] warnings: Vec<String>`, the same
+  treatment `exec_used` already had. Compatibility is gated in **both**
+  directions, because a worker is a separately installed binary and a
+  mixed-version pool is the normal case: a new controller reading an old
+  worker's line (no field) and an old controller reading a new worker's (unknown
+  field). The second test also stops anyone adding `deny_unknown_fields` later —
+  it protects the next field as much as this one.
+
+  A repeated caveat prints once per frequency point, matching the local CLI,
+  which also re-prints stamp warnings per frequency: each distributed task
+  re-parses the deck independently.
+
+  **Deployed workers still need upgrading.** An older one sends no warnings and
+  the controller prints none — the field cannot conjure a caveat the worker never
+  transmitted.
+
 - **A receive-only deck was refused for a source it does not have** (FND-035).
   `validate::source_risk_geometry_error` read every `EX` card with no type
   filter, so a plane wave's NTHETA and NPHI — which live in the fields a driven

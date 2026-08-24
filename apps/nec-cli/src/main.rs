@@ -626,10 +626,22 @@ fn run_distributed_solve(
                     vswr_50,
                     feedpoint_current_mag,
                     feedpoint_current_phase_deg,
+                    warnings,
                     ..
                 },
                 label,
             )) => {
+                // Caveats the worker raised while filling the matrix — a skipped
+                // `LD`, `TL` or `NT` card. The controller never parses the deck's
+                // stamps, so these exist nowhere else (FND-026). An older worker
+                // sends none, and this prints none.
+                //
+                // One line per frequency for a repeated caveat, matching the local
+                // CLI, which also re-prints stamp warnings per frequency: each
+                // distributed task re-parses the deck independently.
+                for w in &warnings {
+                    eprintln!("warning: worker '{label}': {w}");
+                }
                 let freq_mhz = freq_hz / 1e6;
                 let report = format!(
                     "FEEDPOINTS\nFREQ {freq_mhz}\nZ {re} {im}\nVSWR 50 {vswr}\nFEEDPOINT CURRENT {mag} {phase}\n",

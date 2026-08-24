@@ -31,6 +31,7 @@ fn ok_result(task_id: &str, freq_hz: f64, re: f64, im: f64) -> nec_worker::TaskR
         feedpoint_current_mag: 0.01,
         feedpoint_current_phase_deg: 0.0,
         exec_used: "cpu".to_string(),
+        warnings: Vec::new(),
     }
 }
 

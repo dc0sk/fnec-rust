@@ -23,11 +23,57 @@ mod tests {
             feedpoint_current_mag: 0.5,
             feedpoint_current_phase_deg: 10.0,
             exec_used: "cpu".into(),
+            warnings: vec!["NT card has 8 fields; expected 10".into()],
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: TaskResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back.task_id(), "t-42");
         assert!(back.is_ok());
+        let TaskResult::Ok { warnings, .. } = back else {
+            panic!("expected Ok")
+        };
+        assert_eq!(warnings, vec!["NT card has 8 fields; expected 10"]);
+    }
+
+    /// A worker is a separately installed binary, so a mixed-version pool is the
+    /// normal case rather than the exception. The `warnings` field has to be
+    /// compatible in **both** directions, and each direction is a different risk.
+    ///
+    /// New controller ← old worker: the field is simply absent from the wire.
+    #[test]
+    fn a_result_without_warnings_still_deserialises() {
+        let legacy = r#"{"status":"ok","task_id":"t-1","frequency_hz":14200000.0,
+            "impedance":{"re_ohm":74.24,"im_ohm":13.9},"vswr_50":1.5,
+            "feedpoint_current_mag":0.5,"feedpoint_current_phase_deg":10.0}"#;
+        let back: TaskResult = serde_json::from_str(legacy).expect("legacy line must parse");
+        let TaskResult::Ok {
+            warnings,
+            exec_used,
+            ..
+        } = back
+        else {
+            panic!("expected Ok")
+        };
+        assert!(warnings.is_empty(), "an old worker reports no warnings");
+        assert_eq!(exec_used, "cpu", "and still defaults its exec path");
+    }
+
+    /// Old controller ← new worker: an unknown field must be ignored rather than
+    /// rejected. There is no `deny_unknown_fields` on this enum, and this test is
+    /// what stops someone adding one — it protects the *next* field as much as
+    /// this one.
+    #[test]
+    fn a_result_carrying_an_unknown_field_still_deserialises() {
+        let future = r#"{"status":"ok","task_id":"t-2","frequency_hz":14200000.0,
+            "impedance":{"re_ohm":74.24,"im_ohm":13.9},"vswr_50":1.5,
+            "feedpoint_current_mag":0.5,"feedpoint_current_phase_deg":10.0,
+            "warnings":["skipped a card"],"some_field_from_the_future":42}"#;
+        let back: TaskResult =
+            serde_json::from_str(future).expect("an unknown field must not be fatal");
+        let TaskResult::Ok { warnings, .. } = back else {
+            panic!("expected Ok")
+        };
+        assert_eq!(warnings, vec!["skipped a card"]);
     }
 
     #[test]
@@ -187,6 +233,22 @@ pub enum TaskResult {
         /// (PH7-CHK-004). Defaults to `"cpu"` for wire back-compat.
         #[serde(default = "default_exec")]
         exec_used: String,
+        /// Caveats only the worker can know — a malformed `LD`, `TL` or `NT` card
+        /// it skipped while filling the matrix (FND-026).
+        ///
+        /// These have to travel on the wire, unlike the result-shape checks the
+        /// controller does for itself: the controller never parses the deck's
+        /// stamps, so if the worker drops them nobody ever learns the card was
+        /// ignored. Before this field the worker built them and threw them away,
+        /// making a distributed run the one frontend that silently skipped a bad
+        /// card.
+        ///
+        /// `#[serde(default)]` for wire compatibility in both directions: a new
+        /// controller reading an old worker gets an empty list, and an old
+        /// controller reading a new worker ignores the field. Same treatment
+        /// `exec_used` already has, and there is no `deny_unknown_fields` here.
+        #[serde(default)]
+        warnings: Vec<String>,
     },
     Error {
         task_id: String,
