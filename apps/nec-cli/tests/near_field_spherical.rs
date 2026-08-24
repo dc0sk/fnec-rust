@@ -9,13 +9,14 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn run_fnec(deck: &str, name: &str) -> String {
-    let path = std::env::temp_dir().join(format!("fnec_nesph_{name}.nec"));
-    std::fs::write(&path, deck).unwrap();
+    let path = common::TempDeck::new(&format!("fnec_nesph_{name}.nec"), deck);
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg(&path)
         .current_dir(workspace_root())

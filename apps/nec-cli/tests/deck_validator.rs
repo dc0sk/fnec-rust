@@ -3,19 +3,18 @@
 //
 // Integration tests for EP-4 DeckValidator CLI integration (PH4-CHK-005).
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn write_temp_deck(prefix: &str, body: &str) -> PathBuf {
+mod common;
+
+fn write_temp_deck(prefix: &str, body: &str) -> common::TempDeck {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{prefix}-{now}.nec"));
-    fs::write(&path, body).expect("failed to write temporary deck");
-    path
+    common::TempDeck::new(&format!("fnec-{prefix}-{now}.nec"), body)
 }
 
 const DECK_NO_EX: &str = "\

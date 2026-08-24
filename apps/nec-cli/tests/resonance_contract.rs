@@ -16,19 +16,18 @@
 // Test 3 — missing --resonance flag:
 //   Runs `fnec sweep` with no flags; expects exit code 2 and usage hint.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn temp_nec_toml(prefix: &str, body: &str) -> PathBuf {
+mod common;
+
+fn temp_nec_toml(prefix: &str, body: &str) -> common::TempDeck {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-res-{prefix}-{ts}.nec.toml"));
-    fs::write(&path, body).expect("failed to write temporary .nec.toml");
-    path
+    common::TempDeck::new(&format!("fnec-res-{prefix}-{ts}.nec.toml"), body)
 }
 
 /// Extract the value of a named field from the structured output block.
