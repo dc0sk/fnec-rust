@@ -75,16 +75,32 @@ unphysical and the user must be told.
 | 1 | CLI, `--solver hallen` | yes | `apps/nec-cli/tests/junction_feedpoint.rs` |
 | 2 | CLI, `--solver mpie` | yes | armed as a standing tripwire in #365 |
 | 3 | CLI, pulse / continuity / sinusoidal | n/a | deliberately skipped: the current-source corpus has documented negative-`R` values |
-| 4 | GUI | **NO** | gap — [FND-014](findings-ledger.md) |
-| 5 | Python bindings | **NO** | gap — [FND-014](findings-ledger.md) |
-| 6 | Remote worker | **NO** | gap — [FND-014](findings-ledger.md) |
+| 4 | GUI, single solve | yes | `a_negative_resistance_solve_carries_a_caveat` |
+| 5 | GUI, sweep | yes | `the_sweep_caveat_is_one_line_for_the_whole_sweep` |
+| 6 | Python bindings | yes | `test_a_negative_resistance_deck_raises_a_warning` |
+| 7 | Remote worker (`--hosts`) | yes | `a_negative_distributed_result_earns_a_caveat_naming_the_real_feedpoint` |
 
-C2 demonstrated: a 3-segment 40 m wire reports `Re(Z) = -162.547 Ω`; the CLI warns, `fnec_py` raises nothing. The same build does raise a `UserWarning` for a low-ground deck, so the channel works — this check simply is not on it.
+C2 demonstrated before the fix: a 3-segment 40 m wire reports `Re(Z) = -162.547 Ω`;
+the CLI warned, `fnec_py` raised nothing. The same build did raise a `UserWarning`
+for a low-ground deck, so the channel worked — the check simply was not on it.
 
+The check is *post*-solve, so it is deliberately **not** part of `validate::diagnose`,
+which the GUI and the bindings adopted in #369/#370 and which is contracted to run
+without a matrix. That is why wiring the pre-solve seam did not carry this one with
+it, and why closing the gap needed its own seam,
+`validate::negative_resistance_warning`, called after each solve.
 
-The check is *post*-solve, so it is not part of `validate::diagnose`, which is what
-the GUI and the bindings adopted in #369/#370. That is why wiring the pre-solve seam
-did not carry this one with it.
+Row 7 is covered **controller-side**, not in the worker. A worker is a separately
+installed binary, so a check that lived only there would go silent against an older
+worker — reproducing the finding under version skew. The controller already has the
+impedance and the deck, so it covers every worker ever built.
+
+Rows 4 and 5 are one check with two presentations. The single solve appends to the
+`SolveResult.warnings` the panel already renders; the sweep gets **one aggregate
+line** naming how many points went negative, because the cause is a property of the
+geometry and does not vary across frequency — a per-point warnings field would
+repeat one diagnosis up to `MAX_SWEEP_POINTS` times while restating values the point
+already carries.
 
 ## C3 — GPU-resident solve accuracy gate
 

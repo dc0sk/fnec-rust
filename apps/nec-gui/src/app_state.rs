@@ -105,6 +105,13 @@ pub struct AppState {
     pub sweep_metric: crate::plot::PlotMetric,
     /// Frequency cursor as a fraction `0..=1` of the swept range (GUI-CHK-009).
     pub sweep_cursor: f32,
+    /// The one caveat the completed sweep earns (FND-014), or `None`.
+    ///
+    /// One string for the whole sweep rather than one per point: the cause is a
+    /// property of the geometry, which does not change across frequencies, so a
+    /// per-point field would repeat a single diagnosis up to `MAX_SWEEP_POINTS`
+    /// times while restating values the point already carries.
+    pub sweep_caveat: Option<String>,
     // ── Pattern tab state ──────────────────────────────────────────────────
     /// Azimuth angle (φ, degrees) for the elevation-plane pattern slice.
     pub pattern_phi_deg: String,
@@ -241,6 +248,7 @@ impl Default for AppState {
             sweep_phase: SweepPhase::default(),
             sweep_metric: crate::plot::PlotMetric::Swr,
             sweep_cursor: 0.5,
+            sweep_caveat: None,
             pattern_phi_deg: "0.0".into(),
             pattern_phase: PatternPhase::default(),
             currents_phase: CurrentsPhase::default(),
@@ -291,7 +299,10 @@ pub enum Message {
     /// One sweep point arrived from the streaming sweep.
     SweepPointComputed(SweepPoint),
     /// The streaming sweep finished (finalize the accumulated points).
-    SweepStreamDone,
+    /// The streaming sweep finished. Carries the one aggregate caveat the whole
+    /// sweep earns (FND-014), computed by the worker task that held the geometry —
+    /// `None` when the sweep is clean.
+    SweepStreamDone(Option<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -429,7 +440,7 @@ impl AppState {
                     _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
                 }
             }
-            Message::SweepStreamDone => {
+            Message::SweepStreamDone(caveat) => {
                 // Finalize whatever streamed in (empty stream → a failure note).
                 if let SweepPhase::Streaming(pts) = &self.sweep_phase {
                     self.sweep_phase = if pts.is_empty() {
@@ -438,6 +449,7 @@ impl AppState {
                         SweepPhase::Done(pts.clone())
                     };
                 }
+                self.sweep_caveat = caveat.clone();
             }
             Message::SweepSortBy(col) => {
                 if self.sweep_sort_col == *col {

@@ -179,9 +179,14 @@ impl FnecGui {
                                 use iced::futures::SinkExt;
                                 match SweepJob::prepare(&deck_text, start, end, step) {
                                     Ok(job) => {
+                                        // Kept alongside the stream so the caveat can
+                                        // be computed once at the end: the job holds
+                                        // the geometry, and the UI thread does not.
+                                        let mut seen = Vec::new();
                                         for &f in job.freqs_mhz() {
                                             match job.solve_at(f) {
                                                 Ok(pt) => {
+                                                    seen.push(pt.clone());
                                                     let _ = output
                                                         .send(Message::SweepPointComputed(pt))
                                                         .await;
@@ -194,7 +199,8 @@ impl FnecGui {
                                                 }
                                             }
                                         }
-                                        let _ = output.send(Message::SweepStreamDone).await;
+                                        let caveat = job.negative_resistance_caveat(&seen);
+                                        let _ = output.send(Message::SweepStreamDone(caveat)).await;
                                     }
                                     Err(e) => {
                                         let _ = output.send(Message::SweepComplete(Err(e))).await;
@@ -599,7 +605,13 @@ impl FnecGui {
             _ => text("").into(),
         };
 
-        column![freq_inputs, run_btn, status, result_section]
+        // One line for the whole sweep, not one per point (FND-014).
+        let caveat: Element<Message> = match &self.state.sweep_caveat {
+            Some(w) => text(format!("warning: {w}")).size(12).into(),
+            None => text("").into(),
+        };
+
+        column![freq_inputs, run_btn, status, caveat, result_section]
             .spacing(8)
             .into()
     }

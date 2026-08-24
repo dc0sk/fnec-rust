@@ -753,55 +753,64 @@ fn apply_pt_current_filter(
         .collect()
 }
 
-/// PH9-CHK-005: a passive antenna cannot have a negative input resistance. On the
-/// Hallén path a negative `Re(Z)` is therefore a reliable post-solve signal that
-/// the result is unphysical — in practice a junctioned-geometry limitation (a
-/// bend, stepped-radius, or start-to-start split that the collinear fix does not
-/// cover; see PH9-CHK-002). This catches cases the pre-solve junction-*fed* warning
-/// misses, e.g. a bent antenna fed away from the bend.
+/// PH9-CHK-005: a passive antenna cannot have a negative input resistance, so a
+/// negative `Re(Z)` means the reported result is unreliable.
 ///
-/// Also armed on the MPIE path as a standing tripwire: the MPIE has no documented
-/// negative-`R` case, so any negative `Re(Z)` there is a solver or feed-referencing
-/// defect, not a modelling limitation. Still skipped for `pulse`/`continuity`/
-/// `sinusoidal`, whose current-source corpus has documented negative-`R` values.
-/// The explanation to offer for a negative feedpoint resistance.
+/// The Hallén-basis diagnosis moved to [`nec_solver::validate::negative_resistance_warning`]
+/// in FND-014 — it was private here and reachable from one call site, so the GUI,
+/// the Python bindings and the worker reported a physically impossible impedance
+/// with no caveat at all.
 ///
-/// Split out from the emission so the choice is testable without a deck that
-/// actually produces one: the failure mode this guards against is offering a cause
-/// the geometry cannot have.
-fn negative_resistance_cause(solver_mode: SolverMode, has_junction: bool) -> &'static str {
-    if matches!(solver_mode, SolverMode::Mpie) {
-        // The MPIE models junctions correctly, so a junction is never the reason.
-        "please report it as a solver defect"
-    } else if has_junction {
-        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
-    } else {
-        // Saying "junctioned-geometry limitation" here would send the reader after
-        // a cause the deck does not contain.
-        "this geometry has no wire junction, so the usual junctioned-geometry cause \
-         (PH9-CHK-002) does not apply and the reason is not identified — cross-check \
-         with `--solver mpie`, and please report it if it persists"
+/// The MPIE arm deliberately stayed behind. Its message is a claim about *this
+/// binary's* solver arsenal — that the MPIE has no documented negative-`R` case,
+/// so one is a defect rather than a modelling limitation — not a property of the
+/// deck, and `SolverMode` is CLI-private precisely because the other frontends are
+/// Hallén-only. If the GUI ever gains an MPIE picker, the compiler will require
+/// that decision to be made explicitly rather than a `false` silently travelling.
+///
+/// Still skipped for `pulse`/`continuity`/`sinusoidal`, whose current-source corpus
+/// has documented negative-`R` values.
+fn warn_if_negative_resistance(
+    rows: &[FeedpointRow],
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    solver_mode: SolverMode,
+) {
+    for w in negative_resistance_warnings(rows, deck, segs, solver_mode) {
+        eprintln!("warning: {w}");
     }
 }
 
-fn warn_if_negative_resistance(rows: &[FeedpointRow], segs: &[Segment], solver_mode: SolverMode) {
-    if !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
-        return;
-    }
-    if rows.iter().all(|r| r.z_in.re >= 0.0) {
-        return; // nothing to explain; skip the junction scan entirely
-    }
-    let cause =
-        negative_resistance_cause(solver_mode, nec_solver::validate::has_wire_junction(segs));
-    for r in rows {
-        if r.z_in.re < 0.0 {
-            eprintln!(
-                "warning: feedpoint tag {} segment {} has negative resistance \
-                 (Re Z = {:.3} Ω), which is physically impossible for a passive antenna; \
-                 the result is unreliable — {cause}",
-                r.tag, r.seg, r.z_in.re
-            );
-        }
+/// Split from the emission so the mode routing is testable without a deck that
+/// actually produces a negative resistance.
+fn negative_resistance_warnings(
+    rows: &[FeedpointRow],
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    solver_mode: SolverMode,
+) -> Vec<String> {
+    match solver_mode {
+        SolverMode::Hallen => rows
+            .iter()
+            .filter_map(|r| {
+                nec_solver::validate::negative_resistance_warning(
+                    r.z_in.re, r.tag, r.seg, deck, segs,
+                )
+            })
+            .collect(),
+        SolverMode::Mpie => rows
+            .iter()
+            .filter(|r| r.z_in.re < 0.0)
+            .map(|r| {
+                format!(
+                    "feedpoint tag {} segment {} has negative resistance (Re Z = {:.3} Ω), \
+                     which is physically impossible for a passive antenna; the result is \
+                     unreliable — please report it as a solver defect",
+                    r.tag, r.seg, r.z_in.re
+                )
+            })
+            .collect(),
+        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => Vec::new(),
     }
 }
 
@@ -1561,7 +1570,7 @@ pub(super) fn solve_frequency_point(
         warn_if_low_finite_ground(segs, ground, freq_hz, sommerfeld_outcome);
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
-    warn_if_negative_resistance(&rows, segs, solver_mode);
+    warn_if_negative_resistance(&rows, deck, segs, solver_mode);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()

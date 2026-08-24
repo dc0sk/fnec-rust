@@ -63,6 +63,42 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Every frontend now warns when a result is physically impossible** (FND-014).
+  A passive antenna cannot have a negative input resistance, so `Re(Z) < 0` on the
+  Hallén path means the reported impedance is unreliable. The check was private to
+  the CLI with a single call site, so the GUI, the Python bindings and a `--hosts`
+  run returned that number with no caveat at all. An inverted-V fed away from its
+  apex reports **-5.973 - j1122.555 Ω**: the CLI has flagged it since PH9-CHK-005,
+  the other three said nothing.
+
+  `nec_solver::validate::negative_resistance_warning` is now the shared seam. It is
+  the one *post*-solve check in that module and is documented as the exception —
+  deliberately **not** part of `diagnose`, which the GUI calls on every keystroke
+  with no matrix in hand and which must stay solve-free.
+
+  Three details worth stating, because each was a decision rather than an
+  oversight. The distributed path is covered **controller-side**, not in the
+  worker: a worker is a separately installed binary, so a warning that lived only
+  there would go silent against an older one — reproducing the finding under
+  version skew. The MPIE arm stayed in the CLI, because its message is a claim
+  about that binary's solver arsenal rather than about the deck. And the GUI sweep
+  gets **one aggregate line** naming how many points went negative, not a
+  per-point warnings field: the cause is a property of the geometry and does not
+  vary with frequency, so per-point strings would repeat one diagnosis up to
+  `MAX_SWEEP_POINTS` times while restating values the point already carries.
+
+  New fixture `corpus/inverted-v-negative-r-freesp.nec` — deliberately *not* a
+  parity case; its number is known-wrong, and that is the point.
+
+- **A negative-resistance deck could be sent to a solver that rejects it**
+  (FND-029). The diagnosis offered `--solver mpie` as a cross-check without asking
+  whether the MPIE can take the deck. `validate::mpie_compatible_deck` exists for
+  exactly this and `unsupported_topology_warning` already obeyed it, but the
+  CLI-private copy did not — so a junctionless deck carrying an `LD` card was
+  pointed at a solver that refuses `LD` outright. Latent while the check reached
+  one frontend; promoting it to a shared seam would have spread it to three more.
+  Found in design review, before the code was written.
+
 - **All frontends now apply the same deck stamps** (FND-015, FND-023).
   `build_nt_stamps` was called only from the CLI, so an `NT` deck solved to
   70.633 + j14.009 Ω there and 74.243 + j13.900 Ω — the plain-dipole answer —

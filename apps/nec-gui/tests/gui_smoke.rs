@@ -1336,7 +1336,7 @@ fn streaming_sweep_accumulates_points_then_finalizes() {
     }));
     assert!(state.sweep_status_text().contains('2'));
 
-    state.apply(&Message::SweepStreamDone);
+    state.apply(&Message::SweepStreamDone(None));
     assert!(matches!(state.sweep_phase, SweepPhase::Done(ref p) if p.len() == 2));
     assert!(state.can_sweep(), "Run re-enables once the sweep is done");
 }
@@ -1355,7 +1355,7 @@ fn streaming_sweep_empty_stream_is_a_failure() {
     if let SweepPhase::Streaming(pts) = &mut state.sweep_phase {
         pts.clear();
     }
-    state.apply(&Message::SweepStreamDone);
+    state.apply(&Message::SweepStreamDone(None));
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
 }
 

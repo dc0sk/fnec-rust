@@ -330,6 +330,8 @@ fn main() -> ExitCode {
         }
         return run_distributed_solve(
             &input,
+            deck,
+            &segs,
             &freqs_hz,
             hosts_path,
             output_format,
@@ -490,6 +492,37 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// The negative-resistance caveat for one distributed result, if it earns one.
+///
+/// Split out so it can be unit-tested without a worker: the distributed path is
+/// the one frontend whose end-to-end gate needs SSH, and a check nothing can
+/// exercise is how FND-014 survived in the first place.
+///
+/// The feedpoint tag/segment come from the deck's first `EX`, the same way the
+/// worker resolves them, because the wire protocol does not carry them back — the
+/// controller already fabricates `tag: 0, seg: 0` for `SweepPointSummary`, and a
+/// caveat that named segment 0 would point at nothing.
+fn distributed_negative_resistance_warnings(
+    z_re: f64,
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> Vec<String> {
+    if z_re >= 0.0 {
+        return Vec::new();
+    }
+    let (tag, seg) = deck
+        .cards
+        .iter()
+        .find_map(|c| match c {
+            nec_model::card::Card::Ex(ex) => Some((ex.tag as usize, ex.segment as usize)),
+            _ => None,
+        })
+        .unwrap_or((0, 0));
+    nec_solver::validate::negative_resistance_warning(z_re, tag, seg, deck, segs)
+        .into_iter()
+        .collect()
+}
+
 /// Distributed solve via `--hosts`.
 ///
 /// Loads the hosts config, creates a worker pool, base64-encodes the deck, and
@@ -498,6 +531,8 @@ fn main() -> ExitCode {
 #[allow(clippy::too_many_arguments)]
 fn run_distributed_solve(
     input: &str,
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
     freqs_hz: &[f64],
     hosts_path: &std::path::Path,
     output_format: OutputFormat,
@@ -609,6 +644,15 @@ fn run_distributed_solve(
                     diag_spread: 0.0,
                     sin_rel_res: 0.0,
                 };
+                // FND-014, controller-side on purpose. Putting this in the worker
+                // would reproduce the gap under version skew: a worker is a
+                // separately installed binary, so an older one would send no
+                // warning and the controller would stay silent — exactly the
+                // silence this fixes. Here it covers every worker ever built, and
+                // the controller already has the impedance and the deck.
+                for w in distributed_negative_resistance_warnings(impedance.re_ohm, deck, segs) {
+                    eprintln!("warning: {w}");
+                }
                 let sweep_summary = Some(SweepPointSummary {
                     freq_mhz,
                     tag: 0,
@@ -957,9 +1001,44 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 mod tests {
     use super::exec_profile::StartupExecutionProbe;
     use super::{
-        auto_select_execution_mode, detect_compatibility_profile, steer_execution_mode_by_profile,
+        auto_select_execution_mode, detect_compatibility_profile,
+        distributed_negative_resistance_warnings, steer_execution_mode_by_profile,
         CompatibilityProfile, ExecutionMode,
     };
+
+    // The distributed path is the one frontend whose end-to-end gate needs SSH.
+    // Testing the mapping directly is what makes FND-014's fix verifiable here at
+    // all — an unexercisable check is how the gap survived.
+    fn deck_and_segs(src: &str) -> (nec_model::deck::NecDeck, Vec<nec_solver::Segment>) {
+        let deck = nec_parser::parse(src).expect("parse").deck;
+        let segs = nec_solver::build_geometry(&deck).expect("geometry");
+        (deck, segs)
+    }
+
+    const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    #[test]
+    fn a_negative_distributed_result_earns_a_caveat_naming_the_real_feedpoint() {
+        let (deck, segs) = deck_and_segs(BENT);
+        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("negative resistance"), "{}", w[0]);
+        assert!(w[0].contains("PH9-CHK-002"), "{}", w[0]);
+        // The wire protocol does not return tag/seg, and the controller fabricates
+        // 0/0 for the sweep summary. A caveat pointing at segment 0 would name
+        // nothing, so it resolves the real feedpoint from the deck's EX card.
+        assert!(
+            w[0].contains("tag 1 segment 5"),
+            "must name the real feedpoint, not the fabricated 0/0: {}",
+            w[0]
+        );
+    }
+
+    #[test]
+    fn a_positive_distributed_result_earns_nothing() {
+        let (deck, segs) = deck_and_segs(BENT);
+        assert!(distributed_negative_resistance_warnings(74.24, &deck, &segs).is_empty());
+    }
 
     #[test]
     fn detects_fournec2_dropin_profile_by_kernel_name() {

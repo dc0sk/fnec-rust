@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! Frontend-agnostic pre-solve validation and diagnostics.
+//! Frontend-agnostic validation and diagnostics.
+//!
+//! Almost everything here is **pre-solve**: a pure function of
+//! `(&NecDeck, &[Segment], &GroundModel, freq_hz)` that answers whether a deck may
+//! be solved and what caveats its result will carry. The one exception is
+//! [`negative_resistance_warning`], which reads a solved impedance; it lives here
+//! because the reasoning it needs already does, and it is documented as the
+//! exception rather than quietly widening the module's contract.
 //!
 //! These checks used to live inside the CLI binary, where the GUI and the Python
 //! bindings could not reach them — so a deck that the CLI refused outright (wires
@@ -390,6 +397,78 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
+// ---------------------------------------------------------------------------
+// Post-solve result check
+// ---------------------------------------------------------------------------
+
+/// PH9-CHK-005: a passive antenna cannot have a negative input resistance, so a
+/// negative `Re(Z)` on the Hallén path means the reported result is unreliable.
+///
+/// The one **post-solve** check in this module. It is here rather than in the CLI
+/// because the reasoning it needs — is there a genuine junction, and can this deck
+/// even be handed to the MPIE — already lives here, and because a frontend that
+/// cannot run it reports a physically impossible impedance with no caveat at all
+/// (FND-014: the GUI, the Python bindings and the worker all did).
+///
+/// Deliberately **not** part of [`diagnose`], which is contracted to be solve-free:
+/// the GUI calls `diagnose` on every keystroke without a matrix, and adding a check
+/// that needs an impedance would either break that or make it lie.
+///
+/// Returns `None` for a non-negative resistance without touching the geometry, so
+/// the junction scan costs nothing on the overwhelmingly common path.
+///
+/// The MPIE is only offered as a cross-check when the deck can actually be solved
+/// that way ([`mpie_compatible_deck`]) — the same rule
+/// [`unsupported_topology_warning`] follows. Recommending `--solver mpie` for a
+/// deck carrying an `LD` card sends the reader to a solver that rejects it.
+///
+/// The caller supplies the solver context: this is the **Hallén-basis** diagnosis,
+/// and the only one any non-CLI frontend needs, since all three are Hallén-only.
+/// The CLI keeps its own MPIE arm, whose message is a claim about that binary's
+/// solver arsenal rather than about the deck.
+pub fn negative_resistance_warning(
+    z_re: f64,
+    tag: usize,
+    seg: usize,
+    deck: &NecDeck,
+    segs: &[Segment],
+) -> Option<String> {
+    if z_re >= 0.0 {
+        return None;
+    }
+    let cause = negative_resistance_cause(deck, segs);
+    Some(format!(
+        "feedpoint tag {tag} segment {seg} has negative resistance (Re Z = {z_re:.3} Ω), \
+         which is physically impossible for a passive antenna; the result is unreliable — {cause}"
+    ))
+}
+
+/// The explanation [`negative_resistance_warning`] offers, on its own.
+///
+/// Public because a caller that reports *many* negative points — a frequency sweep
+/// over a junctioned deck goes negative at nearly every point — needs the cause
+/// once rather than the whole per-point sentence repeated. The cause depends only
+/// on the geometry and the deck, both fixed across a sweep.
+///
+/// Exposing it beats letting such a caller split the message on its punctuation:
+/// two of the three causes contain an em-dash themselves, so that surgery silently
+/// returns a fragment.
+pub fn negative_resistance_cause(deck: &NecDeck, segs: &[Segment]) -> &'static str {
+    if has_wire_junction(segs) {
+        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
+    } else if mpie_compatible_deck(deck) {
+        // Saying "junctioned-geometry limitation" here would send the reader after
+        // a cause the deck does not contain.
+        "this geometry has no wire junction, so the usual junctioned-geometry cause \
+         (PH9-CHK-002) does not apply and the reason is not identified — cross-check \
+         with `--solver mpie`, and please report it if it persists"
+    } else {
+        "this geometry has no wire junction, so the usual junctioned-geometry cause \
+         (PH9-CHK-002) does not apply and the reason is not identified — the MPIE \
+         cross-check is unavailable for this deck, so please report it"
+    }
+}
+
 /// Whether the geometry contains a genuine wire junction — a bend, a T/Y, or a
 /// start-to-start split.
 ///
@@ -474,9 +553,14 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
 /// surface but may otherwise ignore.
 ///
 /// Solver-specific caveats (experimental basis modes, mixed radii on the MPIE,
-/// execution-mode fallback, negative resistance, a declined Sommerfeld request) are
-/// *not* here — they depend on options only the CLI exposes, and it emits them
-/// itself.
+/// execution-mode fallback, a declined Sommerfeld request) are *not* here — they
+/// depend on options only the CLI exposes, and it emits them itself.
+///
+/// [`negative_resistance_warning`] is not here either, for a different and stricter
+/// reason: it needs a solved impedance, and this function is contracted to be
+/// **solve-free**. The GUI calls it on every keystroke with no matrix in hand
+/// (#369), so a check that required one would either break that path or report on
+/// a result that does not exist yet. Callers run it after the solve instead.
 pub fn diagnose(
     deck: &NecDeck,
     segs: &[Segment],
@@ -586,6 +670,68 @@ mod tests {
             buried_wire_geometry_error(&segs, &GroundModel::FreeSpace),
             None
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // negative_resistance_warning
+    // -----------------------------------------------------------------------
+
+    const STRAIGHT: &str =
+        "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    // An inverted-V fed away from the apex: two wires meeting at a bend, which is
+    // a genuine junction. Solves to Re Z = -5.973 Ω on the Hallén path.
+    const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    #[test]
+    fn a_non_negative_resistance_produces_no_warning() {
+        let (deck, segs) = deck_and_segs(STRAIGHT);
+        assert_eq!(
+            negative_resistance_warning(74.24, 1, 11, &deck, &segs),
+            None
+        );
+        // Exactly zero is not negative. A passive antenna can present a very small
+        // resistance; only a sign change is the impossible-result signal.
+        assert_eq!(negative_resistance_warning(0.0, 1, 11, &deck, &segs), None);
+    }
+
+    #[test]
+    fn a_junctioned_geometry_is_told_the_junction_cause() {
+        let (deck, segs) = deck_and_segs(BENT);
+        let w = negative_resistance_warning(-5.973, 1, 5, &deck, &segs).expect("warning");
+        assert!(w.contains("negative resistance"), "{w}");
+        assert!(w.contains("Re Z = -5.973"), "{w}");
+        assert!(w.contains("PH9-CHK-002"), "{w}");
+        assert!(
+            !w.contains("no wire junction"),
+            "must not deny the junction this deck has: {w}"
+        );
+    }
+
+    #[test]
+    fn a_junctionless_geometry_is_not_blamed_on_a_junction_it_lacks() {
+        let (deck, segs) = deck_and_segs(STRAIGHT);
+        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs).expect("warning");
+        assert!(w.contains("no wire junction"), "{w}");
+        // This deck the MPIE can take, so the cross-check is worth offering.
+        assert!(w.contains("--solver mpie"), "{w}");
+    }
+
+    #[test]
+    fn a_loaded_junctionless_deck_is_not_sent_to_a_solver_that_rejects_it() {
+        // The mirror of `an_unsupported_topology_with_a_load_is_told_support_is_deferred_not_to_use_mpie`.
+        // The MPIE rejects `LD`, so recommending it as a cross-check here would send
+        // the reader to a solver that refuses the deck — the exact failure
+        // `mpie_compatible_deck` exists to prevent.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 0 1 11 11 50.0 0.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs).expect("warning");
+        assert!(w.contains("no wire junction"), "{w}");
+        assert!(
+            !w.contains("--solver mpie"),
+            "must not recommend a solver that rejects this deck: {w}"
+        );
+        assert!(w.contains("cross-check is unavailable"), "{w}");
     }
 
     #[test]
