@@ -63,6 +63,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **All frontends now apply the same deck stamps** (FND-015, FND-023).
+  `build_nt_stamps` was called only from the CLI, so an `NT` deck solved to
+  70.633 + j14.009 Ω there and 74.243 + j13.900 Ω — the plain-dipole answer —
+  through the GUI, the Python bindings and the remote worker. `LD`, `TL` and `NT`
+  now come from one seam, `nec_solver::build_deck_stamps`, used by all seven
+  assembly sites and by the GUI's warnings-only path, so the caveats shown and the
+  stamps applied can no longer describe different card sets.
+
+  The same change fixes `--exec gpu` discarding stamps (FND-023). Both GPU-resident
+  gates asked *which card types are present* from separately maintained lists; the
+  CLI's omitted `NT`. They now ask `DeckStamps::is_identity()` — whether the deck
+  actually stamps anything — and the CLI additionally declines the device path when
+  `--loads-config` supplied Laplace loads, which the gate cannot see. Verified on
+  hardware: an `NT` deck and a `--loads-config` run now match `--exec cpu` exactly,
+  where they previously returned the unstamped answer.
+
+  **Deployed remote workers are not updated by this.** A worker is a separately
+  installed binary; an older one keeps ignoring `NT`, so a mixed pool will disagree
+  with a local solve until every worker is upgraded.
+
 - **Known limitation recorded, not yet fixed: `--exec gpu` silently discards
   host-side matrix stamps** (FND-023). The GPU-resident path re-fills and solves on
   the device, dropping every host stamp, and its guard declines only on `LD` and

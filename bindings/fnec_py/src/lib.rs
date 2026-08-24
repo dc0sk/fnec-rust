@@ -22,9 +22,8 @@ use nec_model::card::Card;
 use nec_parser::parse;
 use nec_solver::validate;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs, build_loads,
-    build_tl_stamps, detect_wire_junctions, ground_model_from_deck, solve_hallen,
-    wire_endpoints_from_segs,
+    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs,
+    detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
 };
 use num_complex::Complex64;
 use pyo3::prelude::*;
@@ -79,14 +78,12 @@ fn solve_at_freq(
     }
 
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    let (load_vec, load_warnings) = build_loads(deck, &segs, freq_hz);
-    warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
-    z_mat.add_to_diagonal(&load_vec);
-    let (tl_stamps, tl_warnings) = build_tl_stamps(deck, &segs, freq_hz);
-    warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
-    for (row, col, delta) in &tl_stamps {
-        z_mat.add_to_entry(*row, *col, *delta);
-    }
+    // The shared seam: LD loads, TL lines and NT networks. NT was previously
+    // absent here, so the same deck solved to a different impedance than the CLI
+    // (FND-015).
+    let stamps = nec_solver::build_deck_stamps(deck, &segs, freq_hz);
+    warnings.extend(stamps.warnings.iter().cloned());
+    stamps.apply(&mut z_mat);
 
     let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
