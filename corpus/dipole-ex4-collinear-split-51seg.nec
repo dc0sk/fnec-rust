@@ -1,0 +1,21 @@
+CM The 51-segment EX 4 dipole written as two collinear GW cards, current-source
+CM fed at the join.
+CM
+CM Physically identical to dipole-ex4-freesp-51seg.nec, so it must solve to the
+CM same impedance and must deliver the 1 A the EX card asks for.
+CM
+CM It did neither. `solve_hallen_current_source` pins I = 0 at the first and last
+CM segment of every entry in the endpoint list, and the current-source path handed
+CM it the raw per-GW list — so the join carried a spurious zero. With the source
+CM sitting on it the solver was asked for I = 1 and I = 0 at the same segment and
+CM least squares split the difference: 36.953 + j7.013 ohm at I = 0.5, exit 0, no
+CM warning (FND-048).
+CM
+CM Neither existing EX 4 fixture is split, so nothing caught it.
+CE
+GW 1 26 0 0 -5.282 0 0 0 0.001
+GW 2 25 0 0 0 0 0 5.282 0.001
+GE 0
+EX 4 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN

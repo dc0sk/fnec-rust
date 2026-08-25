@@ -56,6 +56,68 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
 const V_SRC: &str = "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 const I_SRC: &str = "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 4 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
+fn first_feedpoint_current(stdout: &str) -> (f64, f64) {
+    for line in stdout.lines() {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.len() != 8 || cols[0] == "TAG" {
+            continue;
+        }
+        if cols[0].parse::<usize>().is_err() || cols[1].parse::<usize>().is_err() {
+            continue;
+        }
+        return (
+            cols[4].parse::<f64>().expect("I_RE"),
+            cols[5].parse::<f64>().expect("I_IM"),
+        );
+    }
+    panic!("no feedpoint rows in stdout:\n{stdout}");
+}
+
+// The same half-wave dipole written as two COLLINEAR cards, current-source fed at
+// the join. Distinct from the start-to-start pair above: that one is a degree-2
+// junction and routes to the conductor-path solver, while a collinear split is a
+// trivial path and lands on the per-wire solver — which is where FND-048 lived.
+const COLLINEAR_I_SRC: &str = "GW 1 26 0 0 -5.282 0 0 0 0.001\nGW 2 25 0 0 0 0 0 5.282 0.001\nGE 0\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+const COLLINEAR_V_SRC: &str = "GW 1 26 0 0 -5.282 0 0 0 0.001\nGW 2 25 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+/// FND-048: a current source on a collinear-split wire delivered half its current.
+///
+/// `solve_hallen_current_source` pins `I = 0` at the first and last segment of
+/// every entry in the endpoint list it is given, and this path handed it the raw
+/// per-`GW` list — so the join carried a spurious zero. With the source sitting on
+/// it, the solver was asked for `I = 1` and `I = 0` at the same segment and least
+/// squares split the difference: **36.953 + j7.013 Ω at I = 0.5 A**, exit 0, no
+/// warning, against 74.228 + j13.897 for the identical single-wire geometry.
+///
+/// The current assertion is the sharper of the two. An impedance can be wrong for
+/// many reasons; a current source that does not deliver its own stated current has
+/// violated the boundary condition the user wrote down.
+#[test]
+fn a_collinear_split_current_source_delivers_the_current_it_was_given() {
+    let (out_i, ok_i) = run(COLLINEAR_I_SRC, "collinear-i");
+    assert!(ok_i, "collinear-split current source must solve:\n{out_i}");
+
+    let (i_re, i_im) = first_feedpoint_current(&out_i);
+    let i_mag = (i_re * i_re + i_im * i_im).sqrt();
+    assert!(
+        (i_mag - 1.0).abs() < 1e-6,
+        "EX 4 asked for 1 A; the solve delivered {i_mag} A"
+    );
+
+    // And the impedance must agree with the voltage-source solve of the same
+    // geometry, which has always merged collinear joins.
+    let (out_v, ok_v) = run(COLLINEAR_V_SRC, "collinear-v");
+    assert!(ok_v, "voltage-source reference must solve");
+    let (zi_re, zi_im) = first_feedpoint_impedance(&out_i);
+    let (zv_re, zv_im) = first_feedpoint_impedance(&out_v);
+    let rel = ((zi_re - zv_re).hypot(zi_im - zv_im)) / zv_re.hypot(zv_im);
+    assert!(
+        rel < 5e-3,
+        "current-source Z {zi_re}+j{zi_im} disagrees with voltage-source \
+         {zv_re}+j{zv_im} on the same geometry (rel {rel:.3e})"
+    );
+}
+
 #[test]
 fn junctioned_current_source_solves_and_matches_voltage_source() {
     let (out_i, ok_i) = run(I_SRC, "csjunc-i");
