@@ -49,6 +49,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Job-level `permissions:` replaces the entire map rather than adding to it,
+      # so without this the token has contents + metadata and nothing else. The
+      # check-runs gate below reads an API that happens to answer unauthenticated
+      # while this repository is public — i.e. it would pass for a reason that
+      # disappears the day it goes private, on the one step no run has exercised.
+      checks: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -100,10 +106,17 @@ jobs:
           REQUESTED: ${{ inputs.version }}
 
       - name: Refuse to re-tag
+        env:
+          # Through env, not `${{ }}` into the shell line. The value reaches here
+          # from Cargo.toml via tomllib, so an arbitrary TOML string could carry
+          # shell metacharacters. Writing it requires a commit on main — already
+          # privileged — but this is the repository's one privileged workflow, and
+          # steps 1 and 5 already take the safer form.
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify "refs/tags/v${{ steps.resolve.outputs.version }}" >/dev/null; then
-            echo "::error::v${{ steps.resolve.outputs.version }} already exists. This workflow never moves or deletes a tag."
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION already exists. This workflow never moves or deletes a tag."
             exit 1
           fi
 
@@ -111,10 +124,11 @@ jobs:
       # would leave a red job standing next to a published bad tag, which is
       # worse than no automation: the workflow may not delete it.
       - name: Verify the commit deserves the tag
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.resolve.outputs.sha }}'
-          VERSION='${{ steps.resolve.outputs.version }}'
 
           git worktree add -q /tmp/mint "$SHA"
 
@@ -122,9 +136,9 @@ jobs:
           # `if: github.event_name == 'pull_request'` and is NOT a required
           # status check, so a PR can merge with it red — "it reached main"
           # does not imply it passed.
-          grep -qE "^## \[$VERSION\]" /tmp/mint/docs/changelog.md \
+          grep -qE "^## \[${VERSION//./\\.}\]" /tmp/mint/docs/changelog.md \
             || { echo "::error::no [$VERSION] section in docs/changelog.md"; exit 1; }
-          grep -qE "^## $VERSION" /tmp/mint/docs/releasenotes.md \
+          grep -qE "^## ${VERSION//./\\.}( |$)" /tmp/mint/docs/releasenotes.md \
             || { echo "::error::no $VERSION section in docs/releasenotes.md"; exit 1; }
 
           # The defect that made this a button rather than a trigger. The script
@@ -136,10 +150,17 @@ jobs:
       - name: Require CI green at that commit
         env:
           GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.resolve.outputs.sha }}'
-          CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+          # `mint` is this job's id (the job has no `name:`), and the filter
+          # excludes it so a previous failed attempt at the same SHA cannot wedge a
+          # retry. Renaming the job — or giving it a display name — makes the gate
+          # see its own null-conclusion run and the workflow can then never pass.
+          #
+          # --paginate because the default page is 30: past that, a failure on page
+          # two would be unseen, and this gate must not fail open.
+          CONCLUSION=$(gh api --paginate "repos/${{ github.repository }}/commits/$SHA/check-runs" \
             --jq '[.check_runs[] | select(.name != "mint")] | if length == 0 then "none" else (if any(.conclusion != "success") then "failed" else "success" end) end')
           echo "check-runs at $SHA: $CONCLUSION"
           if [ "$CONCLUSION" != "success" ]; then
@@ -152,11 +173,17 @@ jobs:
           set -euo pipefail
           # Via a file, never interpolated into a shell line: the content comes
           # from the changelog and must not be able to become shell.
+          #
+          # The whole section body, not just its heading — roughly 29 kB for a
+          # release like 0.15.0. Large for a tag message, deliberately: `git tag -n`
+          # shows only the first line, the rest is there for `git show`, and the
+          # alternative is a one-line summary that loses every breaking-change
+          # notice the section carries.
           python3 - <<'PY'
           import os, re, pathlib
           version = os.environ["VERSION"]
           text = pathlib.Path("/tmp/mint/docs/changelog.md").read_text(encoding="utf-8")
-          m = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[)",
+          m = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
                         text, re.MULTILINE | re.DOTALL)
           heading = re.search(rf"^## \[{re.escape(version)}\]([^\n]*)", text, re.MULTILINE)
           title = (heading.group(1) if heading else "").strip(" —-")
@@ -173,15 +200,23 @@ jobs:
           VERSION: ${{ steps.resolve.outputs.version }}
 
       - name: Mint and push the annotated tag
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.resolve.outputs.sha }}'
-          VERSION='${{ steps.resolve.outputs.version }}'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           # Tag the resolved SHA explicitly. Tagging HEAD or origin/main would
           # reintroduce a race; a SHA is immutable.
-          git tag -a "v$VERSION" "$SHA" -F /tmp/tagmsg
+          # --cleanup=verbatim, and it is not optional. git's default for -F is
+          # `strip`, which deletes every line beginning with `#` as commentary —
+          # and a Keep-a-Changelog body is structured by exactly those: `### Added`,
+          # `### Fixed`, `### Removed`. Without this the four categorised lists
+          # merge into one undifferentiated stream in which a breaking change and a
+          # bugfix are indistinguishable. Verified in a scratch repo: the headings
+          # vanish silently, message accepted, tag created.
+          git tag -a "v$VERSION" "$SHA" -F /tmp/tagmsg --cleanup=verbatim
           git push origin "refs/tags/v$VERSION"
           echo "minted v$VERSION at $SHA"
 
