@@ -14,6 +14,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # A pushed tag is the one moment a bad tag can be caught before anyone acts
+    # on it. The docs job's checker otherwise fires only when something *else*
+    # pushes, so a release that is merged and then never tagged stays green
+    # until the next release PR opens — which may be months away, or never.
+    tags: ['v*']
   pull_request:
 
 # Least privilege: these jobs only read the repository.
@@ -156,6 +161,14 @@ jobs:
       # announced fnec_py 0.5.0 and published a wheel calling itself 0.4.0.
       - name: fnec_py wheel version matches its crate version
         run: python3 scripts/check-binding-version.py
+      # Five releases were cut without tags (FND-043), and v0.15.0 was first
+      # tagged at a commit whose tree said fnec_py 0.4.0 (FND-044) — caught by
+      # hand, minutes before publishing. `fetch-depth: 0` above is what makes the
+      # tags visible here; without it the checker exits 2 and says so.
+      - name: Release tags exist and name the version their tree declares
+        run: |
+          python3 scripts/test-check-release-tags.py
+          python3 scripts/check-release-tags.py
       - name: Require changelog + release notes + SBOM on a version bump
         if: github.event_name == 'pull_request'
         run: >-

@@ -17,6 +17,33 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A release-tag integrity check** (FND-043). Five versions — 0.4.0, 0.5.0,
+  0.6.0, 0.8.0 and 0.9.0 — were released without tags, so they have changelog
+  sections and no ref to check out, compare against or link. And v0.15.0 was
+  first tagged at a commit whose tree still said `fnec_py` 0.4.0, caught by hand
+  minutes before publishing by building the wheel and reading its filename.
+
+  `scripts/check-release-tags.py` asserts both directions: every released version
+  has a tag, and every tag names the version its own tree declares. The newest
+  section is exempt only while it matches the workspace version at `HEAD` — a
+  release PR must not fail its own gate, but a stray section is not excused.
+
+  It runs in the docs job and on `push: tags: 'v*'`, which is the one moment a
+  bad tag can be caught before anyone acts on it. A push-triggered check
+  otherwise fires only when something *else* pushes, so a release merged and
+  never tagged would stay green until the next release PR — possibly months away.
+
+  The five are grandfathered as a frozen set rather than a `BEFORE` cutoff,
+  because the gaps interleave with present tags and a cutoff would stop guarding
+  v0.3.0 and v0.7.0 against deletion — not hypothetical, since v0.15.0 was
+  deleted and re-pushed during its own release. v0.14.0's wheel-label defect is
+  exempted separately and by name: that tag is published and immutable, and
+  re-pointing it to satisfy a checker would be worse than the defect it records.
+
+  Ships with `scripts/test-check-release-tags.py`, the first committed self-test
+  among these checkers — the gates that let both findings through were passing
+  honestly while looking in the wrong place.
+
 ### Changed
 
 ### Fixed
