@@ -17,6 +17,35 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A release-tag minting workflow** (FND-046) — a button, not a trigger.
+
+  The obvious design is "push to main, version has no tag, mint it". It was
+  proposed, and this repository's own history refutes it: at `2f51d63`, the
+  v0.15.0 release-PR merge that push-minting would have tagged, `pyproject.toml`
+  says 0.4.0 against a 0.6.0 crate — the FND-044 wheel-label defect, live. The
+  real tag sits two commits later at `1354fda`, after the defect was found by
+  hand-building the wheel. Auto-minting would have created the tag that then had
+  to be deleted, and a "never move a tag" rule would have set the automation
+  against the person fixing it.
+
+  The pause between *merged* and *tagged* is where the only recent release defect
+  was caught. `workflow_dispatch` keeps it and removes the other half of the risk:
+  a human decides that a release is ready, and the machine verifies the commit and
+  refuses to tag one that does not deserve it. Demonstrated against real history —
+  the pre-mint check exits 1 at `2f51d63` and 0 at `1354fda`.
+
+  Verification runs **before** the tag is pushed, never after: a red job standing
+  beside a published bad tag is worse than no automation, because the workflow may
+  not delete it. `contents: write` is scoped to the one job, which installs no
+  toolchain and builds nothing — a job whose token can rewrite release history
+  should not also run build scripts from the dependency tree.
+
+  Dropping the unattended repair mode reopened the deleted-tag blind spot, so
+  `check-release-tags.py`'s in-flight exemption now **expires with age** and CI
+  gained a weekly schedule. A push-triggered check cannot notice that nothing
+  happened, and "a release was merged and never tagged" is exactly nothing
+  happening.
+
 - **A release-tag integrity check** (FND-043). Five versions — 0.4.0, 0.5.0,
   0.6.0, 0.8.0 and 0.9.0 — were released without tags, so they have changelog
   sections and no ref to check out, compare against or link. And v0.15.0 was

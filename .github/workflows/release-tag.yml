@@ -1,0 +1,197 @@
+name: Mint release tag
+
+# Places the annotated tag for a release, at the commit that actually declares
+# that version — and only after verifying that commit deserves it.
+#
+# WHY THIS IS A BUTTON AND NOT A TRIGGER
+#
+# The obvious design is "push to main, version has no tag, mint it". That was
+# proposed and rejected, on evidence from this repository: the v0.15.0 release PR
+# merged as 2f51d63, whose tree says workspace 0.15.0, bindings crate 0.6.0 and
+# `pyproject.toml` 0.4.0 — the FND-044 wheel-label defect, live. Auto-minting at
+# merge would have created v0.15.0 there, at the exact commit the maintainer then
+# had to delete; the real tag sits two commits later at 1354fda, after the defect
+# was found by hand-building the wheel. A rule of "never move a tag" would then
+# have made the automation defend the defect against the fix.
+#
+# The pause between "release merged" and "release tagged" is where the only
+# recent release defect was caught. This workflow keeps that pause and removes
+# the other half of the risk instead: a human decides *that* a release is ready,
+# and the machine decides *which commit* carries it, so the tag cannot land on a
+# commit the maintainer merely remembered.
+#
+# `contents: write` is scoped to the one job that needs it, following
+# benchmark-dashboard.yml — but deliberately NOT its toolchain idiom. This job
+# installs no toolchain and builds nothing: a job whose token can rewrite release
+# history must not also run build scripts and proc macros from the dependency
+# tree. Its entire third-party surface is one SHA-pinned checkout.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag (e.g. 0.16.0). Defaults to the workspace version on main.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# No cancel-in-progress. Cancelling a half-finished mint is how a tag ends up
+# pushed with its verification skipped, or not pushed at all with the run
+# reported as superseded rather than failed.
+concurrency:
+  group: mint-release-tag
+  cancel-in-progress: false
+
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Resolve the version and the commit to tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, subprocess, sys, tomllib
+
+          requested = os.environ.get("REQUESTED", "").strip()
+
+          def workspace_version(text):
+              d = tomllib.loads(text)
+              return d.get("workspace", {}).get("package", {}).get("version") \
+                  or d.get("package", {}).get("version")
+
+          head = workspace_version(open("Cargo.toml", encoding="utf-8").read())
+          version = requested or head
+          if version != head:
+              sys.exit(
+                  f"::error::requested {version} but main declares {head}. "
+                  f"Tag the version main is on, or bump main first."
+              )
+
+          # Tag main's tip, not the commit that introduced the version.
+          #
+          # The alternative — resolve the bump commit — was tried and is wrong
+          # here, checkably: for 0.15.0 it picks 2f51d63, the merge of the
+          # release PR, whose tree carries the FND-044 wheel-label defect. The
+          # real v0.15.0 sits at 1354fda, two commits later, because the defect
+          # was found and fixed before tagging. A release that needs a post-bump
+          # fix has a bump commit that is *permanently* the wrong tag target, so
+          # "always tag the bump" could never mint that release at all.
+          #
+          # Tagging the tip is also what a human does: pressing this button means
+          # "main is ready to be this release". What makes it safe is not the
+          # choice of commit but the verification below, which runs at whatever
+          # commit is about to be tagged.
+          sha = subprocess.run(["git", "rev-parse", "HEAD"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+          print(f"version={version}")
+          print(f"sha={sha}")
+          PY
+        env:
+          REQUESTED: ${{ inputs.version }}
+
+      - name: Refuse to re-tag
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/v${{ steps.resolve.outputs.version }}" >/dev/null; then
+            echo "::error::v${{ steps.resolve.outputs.version }} already exists. This workflow never moves or deletes a tag."
+            exit 1
+          fi
+
+      # Everything below runs BEFORE the tag is pushed. Verifying afterwards
+      # would leave a red job standing next to a published bad tag, which is
+      # worse than no automation: the workflow may not delete it.
+      - name: Verify the commit deserves the tag
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.resolve.outputs.sha }}'
+          VERSION='${{ steps.resolve.outputs.version }}'
+
+          git worktree add -q /tmp/mint "$SHA"
+
+          # A changelog section must exist. The docs gate that requires one is
+          # `if: github.event_name == 'pull_request'` and is NOT a required
+          # status check, so a PR can merge with it red — "it reached main"
+          # does not imply it passed.
+          grep -qE "^## \[$VERSION\]" /tmp/mint/docs/changelog.md \
+            || { echo "::error::no [$VERSION] section in docs/changelog.md"; exit 1; }
+          grep -qE "^## $VERSION" /tmp/mint/docs/releasenotes.md \
+            || { echo "::error::no $VERSION section in docs/releasenotes.md"; exit 1; }
+
+          # The defect that made this a button rather than a trigger. The script
+          # comes from THIS checkout and runs against the target tree: an older
+          # commit may not contain the checker at all — 2f51d63 does not — and
+          # `python3: can't open file` is a failure for the wrong reason.
+          ( cd /tmp/mint && python3 "$GITHUB_WORKSPACE/scripts/check-binding-version.py" )
+
+      - name: Require CI green at that commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.resolve.outputs.sha }}'
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name != "mint")] | if length == 0 then "none" else (if any(.conclusion != "success") then "failed" else "success" end) end')
+          echo "check-runs at $SHA: $CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::CI is not green at $SHA ($CONCLUSION) — refusing to tag it"
+            exit 1
+          fi
+
+      - name: Build the tag message
+        run: |
+          set -euo pipefail
+          # Via a file, never interpolated into a shell line: the content comes
+          # from the changelog and must not be able to become shell.
+          python3 - <<'PY'
+          import os, re, pathlib
+          version = os.environ["VERSION"]
+          text = pathlib.Path("/tmp/mint/docs/changelog.md").read_text(encoding="utf-8")
+          m = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[)",
+                        text, re.MULTILINE | re.DOTALL)
+          heading = re.search(rf"^## \[{re.escape(version)}\]([^\n]*)", text, re.MULTILINE)
+          title = (heading.group(1) if heading else "").strip(" —-")
+          body = (m.group(1).strip() if m else "")
+          pathlib.Path("/tmp/tagmsg").write_text(
+              f"v{version}{(' — ' + title) if title else ''}\n\n"
+              f"{body}\n\n"
+              f"Tagged by .github/workflows/release-tag.yml from the changelog "
+              f"section. Fuller prose lives in docs/releasenotes.md.\n",
+              encoding="utf-8",
+          )
+          PY
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+
+      - name: Mint and push the annotated tag
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.resolve.outputs.sha }}'
+          VERSION='${{ steps.resolve.outputs.version }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Tag the resolved SHA explicitly. Tagging HEAD or origin/main would
+          # reintroduce a race; a SHA is immutable.
+          git tag -a "v$VERSION" "$SHA" -F /tmp/tagmsg
+          git push origin "refs/tags/v$VERSION"
+          echo "minted v$VERSION at $SHA"
+
+      # A tag created with GITHUB_TOKEN does NOT trigger workflows, so ci.yml's
+      # `push: tags: ['v*']` will not fire for this tag. That trigger still earns
+      # its place — it covers hand-pushed and hand-moved tags, which are the only
+      # kind that have actually been defective here. This step is its stand-in.
+      - name: Verify the tag we just made
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet
+          python3 scripts/test-check-release-tags.py
+          python3 scripts/check-release-tags.py
