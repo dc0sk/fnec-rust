@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 ---
 
 # Changelog
@@ -41,6 +41,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   left to the caller because it genuinely differs — the distributed path says
   "run without `--hosts`". It absorbs the worker's inline copy in the same change,
   so the third frontend never grew a third wording.
+
+  Two more of the same shape, found in review. The Currents and Pattern tabs had
+  no such guard at all, so an `EX 4` deck rendered zero currents and a meaningless
+  pattern while the Solve tab declined by name — FND-038's original defect, alive
+  one tab over. And the remaining fallback still said "deck has no EX card" for a
+  **plane-wave receive deck**, which has one; both frontends now use the worker's
+  truthful "no driven feedpoint (EX voltage source) found in deck".
 
 ## [0.15.0] — 2026-08-25 — Every frontend tells the same truth
 

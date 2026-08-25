@@ -452,10 +452,16 @@ fn feedpoint_impedance(
     }
     // Not "no EX card" — a current-source-only deck plainly has one, and saying
     // otherwise sends the reader looking for a card that is right there
-    // (FND-038). The GUI is Hallén-only and has no port-voltage machinery.
+    // (FND-038). The GUI is Hallén-only and does not wire up the current-source
+    // solve, though `nec_solver` exports it (FND-045).
     Err(
         nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
-            .unwrap_or_else(|| "deck has no EX card — cannot determine feedpoint".to_string()),
+            .unwrap_or_else(|| {
+                // Not "no EX card" here either: a plane-wave receive deck has one,
+                // and #397 deliberately lets such decks solve. What it lacks is a
+                // *driven* feedpoint. Same wording the worker already used.
+                "no driven feedpoint (EX voltage source) found in deck".to_string()
+            }),
     )
 }
 
@@ -806,6 +812,12 @@ fn solve_for_currents(
     if let Some(e) = validate::geometry_error(deck, &segs, &ground) {
         return Err(e);
     }
+    // Including a current-source-only deck. Fixing the Solve tab's message while
+    // leaving this one to render zero currents and a meaningless pattern would be
+    // FND-038's original defect — Ok with garbage — surviving one tab over.
+    if let Some(e) = validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck") {
+        return Err(e);
+    }
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     let freq_hz = deck
@@ -897,6 +909,19 @@ mod tests {
             !err.contains("no EX card"),
             "must not blame a card the deck has: {err}"
         );
+    }
+
+    #[test]
+    fn the_currents_and_pattern_views_decline_a_current_source_deck_too() {
+        // The Solve tab declining by name while Currents and Pattern quietly draw
+        // zero currents would be the original FND-038 defect — Ok with garbage —
+        // alive one tab over. `every_gui_solve_path_applies_the_same_rejection`
+        // covers geometry; this covers the excitation.
+        const EX4: &str = "CM current-source feed\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let err = load_currents_str(EX4).expect_err("currents must refuse it too");
+        assert!(!err.contains("no EX card"), "{err}");
+        let err = pattern_grid_str(EX4).expect_err("the pattern view must refuse it too");
+        assert!(err.contains("current source"), "{err}");
     }
 
     #[test]

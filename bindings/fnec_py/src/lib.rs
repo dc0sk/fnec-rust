@@ -158,7 +158,9 @@ fn solve_at_freq(
     Err(
         nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
             .unwrap_or_else(|| {
-                "deck has no EX card — cannot compute feedpoint impedance".to_string()
+                // A plane-wave receive deck has an EX card too; what it lacks is a
+                // driven feedpoint. Matches the worker's wording.
+                "no driven feedpoint (EX voltage source) found in deck".to_string()
             }),
     )
 }
