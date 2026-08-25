@@ -450,7 +450,13 @@ fn feedpoint_impedance(
         };
         return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
-    Err("deck has no EX card — cannot determine feedpoint".to_string())
+    // Not "no EX card" — a current-source-only deck plainly has one, and saying
+    // otherwise sends the reader looking for a card that is right there
+    // (FND-038). The GUI is Hallén-only and has no port-voltage machinery.
+    Err(
+        nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
+            .unwrap_or_else(|| "deck has no EX card — cannot determine feedpoint".to_string()),
+    )
 }
 
 /// Run a Hallen sweep over a frequency range for the deck at `path`.
@@ -877,6 +883,19 @@ mod tests {
             (r.feed_tag, r.feed_seg),
             (1, 26),
             "must resolve the voltage source, not the plane wave's NTHETA/NPHI"
+        );
+    }
+
+    #[test]
+    fn a_current_source_deck_is_declined_by_name() {
+        // FND-038, at the entry point a user actually reaches. This deck errored
+        // with "deck has no EX card" — for a deck whose only card IS an EX.
+        const EX4: &str = "CM current-source feed\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let err = solve_deck_str(EX4).expect_err("the GUI cannot price a current source");
+        assert!(err.contains("current source"), "{err}");
+        assert!(
+            !err.contains("no EX card"),
+            "must not blame a card the deck has: {err}"
         );
     }
 

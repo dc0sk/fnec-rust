@@ -21,6 +21,27 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A current-source deck is now declined by name, not blamed on a missing card**
+  (FND-038). `fnec-gui` and `fnec_py` fell through their feedpoint loop to
+  "deck has no EX card" — false for a deck whose only excitation *is* an `EX`
+  card, and it sent the reader hunting for something that was right there. A
+  current source is a feedpoint; pricing one needs the solved port voltage, which
+  only the CLI's Hallén path computes.
+
+  The message now names the `EX` type, the tag and segment, the reason and the
+  remedy:
+
+  ```
+  EX type 4 (current source) on tag 1 segment 26: a current-source feedpoint is
+  priced from the solved port voltage, which this path does not compute; use the
+  fnec CLI for this deck
+  ```
+
+  `validate::unpriceable_feedpoint_error` is the shared producer, with the remedy
+  left to the caller because it genuinely differs — the distributed path says
+  "run without `--hosts`". It absorbs the worker's inline copy in the same change,
+  so the third frontend never grew a third wording.
+
 ## [0.15.0] — 2026-08-25 — Every frontend tells the same truth
 
 Nine changes closing sixteen findings, all of one shape: a check, a caveat or a

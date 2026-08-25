@@ -38,9 +38,9 @@ dimensions, not an antenna location.
 **A current-source-only (`EX 4`) deck now raises in `fnec_py`** where it returned
 an impedance computed from a zero right-hand side. Pricing a current-source
 feedpoint needs the solved port voltage, which only the CLI's Hallén path
-computes. The message you get says the deck has no `EX` card, which is not the
-real reason — that wording is wrong and is tracked as FND-038. Use `fnec` for
-current-source decks.
+computes. It tells you so by name — the `EX` type, the tag and segment, and what
+to do instead. (In 0.15.0 as first tagged, that message wrongly said the deck had
+no `EX` card; corrected in 0.15.1.)
 
 **`EX 5` decks now solve under `--hosts`.** The worker drove a type-5 card as a
 delta gap and then refused to read the answer it had computed, reporting "no EX
