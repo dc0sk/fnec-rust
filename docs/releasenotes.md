@@ -96,6 +96,15 @@ runs; it just under-reports.
 `fnec_py` goes 0.5.0 → **0.6.0**: it raises where it used to return, and returns
 different numbers for `NT` and plane-wave-first decks.
 
+**If you installed the v0.14.0 wheel, `pip show fnec_py` told you 0.4.0.** That
+was wrong. `bindings/fnec_py` declares its version in two files and maturin
+stamps the `pyproject.toml` one onto the wheel; the v0.14.0 bump touched only
+`Cargo.toml`, so the package carried 0.5.0's breaking behaviour under 0.4.0's
+name — the exact opposite of what a version is for. Nothing about the code you
+installed was wrong, only its label. Found while building this release's wheel
+and noticing it was still named `fnec_py-0.4.0`; both files now agree, and CI
+fails if they ever disagree again (FND-044).
+
 ### Unchanged
 
 The default `--exec cpu` Hallén path on a deck with none of the above, the CLI
