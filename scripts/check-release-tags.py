@@ -16,14 +16,17 @@ a workflow that mints one when a version bump merges. That is a policy decision
 for the maintainer (this project's convention is that releases are cut
 explicitly), so it is proposed separately (FND-046).
 
-**Where the detector cannot see.** It notices a deleted tag for every release
-except the newest — and the newest is the only one anyone has actually deleted:
-v0.15.0, during its own release. "Newest section, no tag" is observationally
-identical to "release in flight", which must pass, and to "the tag was deleted
-afterwards", which must not. Nothing distinguishes them from inside the
-repository, and tag deletion fires no workflow. Closing that needs the minting
-workflow, not a better checker. Prerelease versions are outside the gate
-entirely, in both the changelog pattern and the tag pattern.
+**The newest release, and how long it has been waiting.** "Newest section, no
+tag" means two different things: a release in flight, which must pass, and a tag
+that was deleted or never minted, which must not. Nothing tells them apart from
+inside the repository — except *age*. A release cut ten minutes ago is in flight;
+one whose version-bump commit landed a week ago and still has no tag is a
+finding. `MAX_UNTAGGED_AGE_DAYS` is where that line sits, and it is why this
+check is also run on a schedule: a push-triggered check cannot notice that
+nothing happened.
+
+Prerelease versions are outside the gate entirely, in both the changelog pattern
+and the tag pattern.
 
 Run from the repository root, with tags fetched.
 """
@@ -33,6 +36,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -61,6 +65,12 @@ UNTAGGED_RELEASES = frozenset({"0.4.0", "0.5.0", "0.6.0", "0.8.0", "0.9.0"})
 # checker would be worse than the defect it records. Separate from the set above
 # because it exempts a different sub-check for a different reason.
 BINDING_MISMATCH_TAGS = frozenset({"v0.14.0"})
+
+# How long the newest release may sit untagged before it stops looking like a
+# release in flight and starts looking like a tag nobody minted. Generous: the
+# v0.15.0 release took ~80 minutes from merge to tag, and a release paused
+# overnight is normal.
+MAX_UNTAGGED_AGE_DAYS = 7
 
 # Distinct from a finding: the environment simply has no tags to check.
 EXIT_NO_TAGS = 2
@@ -119,6 +129,22 @@ def wheel_version(pyproject_text: str) -> str | None:
     return version if isinstance(version, str) else None
 
 
+def days_since_version_landed(version: str) -> int | None:
+    """How long ago the changelog first carried a section for `version`.
+
+    Uses the changelog rather than `Cargo.toml`, because the section is what this
+    check reads and because a version can be bumped in one commit and released in
+    another. `None` when it cannot be dated — a shallow clone, or a section added
+    in the working tree and not yet committed.
+    """
+    stamp = git(
+        "log", "-1", "--format=%ct", "-S", f"## [{version}]", "--", str(CHANGELOG)
+    ).strip()
+    if not stamp.isdigit():
+        return None
+    return int((time.time() - int(stamp)) // 86400)
+
+
 def semver_key(v: str) -> tuple[int, ...]:
     return tuple(int(p) for p in v.split("."))
 
@@ -170,14 +196,31 @@ def main() -> int:
     in_flight = newest if newest == head_version else None
 
     for version in sorted(set(changelog_versions), key=semver_key):
-        if version in UNTAGGED_RELEASES or version == in_flight:
+        if version in UNTAGGED_RELEASES:
             continue
-        if f"v{version}" not in tags:
+        if f"v{version}" in tags:
+            continue  # tagged; the tag's own tree is checked in the next loop
+        if version == in_flight:
+            # In flight only for as long as a release plausibly takes. Past that
+            # the exemption is indistinguishable from a blind spot, which is
+            # exactly where a deleted tag would hide. Reached only when the tag
+            # is *absent* — an in-flight version that already has its tag is
+            # simply fine, and saying "no tag for N days" about a tagged release
+            # would be the checker inventing a finding.
+            age = days_since_version_landed(version)
+            if age is None or age <= MAX_UNTAGGED_AGE_DAYS:
+                continue
             problems.append(
-                f"{CHANGELOG} has a [{version}] section but no v{version} tag — "
-                f"a released version with no ref cannot be checked out, compared "
-                f"against, or linked"
+                f"{CHANGELOG}'s newest section [{version}] has had no tag for "
+                f"{age} days — too long to still be a release in flight. Either "
+                f"it was never minted, or the tag was deleted"
             )
+            continue
+        problems.append(
+            f"{CHANGELOG} has a [{version}] section but no v{version} tag — "
+            f"a released version with no ref cannot be checked out, compared "
+            f"against, or linked"
+        )
 
     for tag in sorted(tags, key=lambda t: semver_key(t[1:])):
         manifest = file_at_tag(tag, "Cargo.toml")

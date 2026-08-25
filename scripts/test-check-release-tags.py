@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
@@ -143,6 +144,35 @@ def e2e(name: str, versions: list[str], tags: dict[str, str], head: str, want: i
         failures.append(f"{name}: exit {got}, want {want}")
 
 
+def e2e_aged(name: str, versions: list[str], tags: dict[str, str], head: str,
+             changelog_age_days: int, want: int) -> None:
+    """Like `e2e`, but backdates the commit that introduces the newest section.
+
+    The checker dates a version by when the changelog first carried its heading,
+    so the fixture has to commit that heading with an old timestamp.
+    """
+    global ran
+    ran += 1
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "repo"
+        build_repo(root, versions, tags, head)
+        when = int(time.time()) - changelog_age_days * 86400
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(when))
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@e",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@e",
+            "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp,
+        }
+        # Rewrite the final commit with the backdated timestamp.
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "--amend",
+                        "--no-edit", "--date", stamp],
+                       check=True, env=env, capture_output=True)
+        got = run_checker(root)
+    if got != want:
+        failures.append(f"{name}: exit {got}, want {want}")
+
+
 # A healthy repo: every released version tagged, each tag naming its own tree.
 e2e("all tagged", ["1.0.0", "1.1.0"], {"v1.0.0": "1.0.0", "v1.1.0": "1.1.0"}, "1.1.0", 0)
 
@@ -170,6 +200,40 @@ e2e(
     {"v0.14.0": "0.9.0"},
     "0.14.0",
     1,
+)
+
+# The in-flight exemption must expire. "Newest section, no tag" is a release in
+# flight for a while and a deleted-or-never-minted tag after that; only age tells
+# them apart, and without this the exemption is a permanent blind spot at exactly
+# the tag anyone has ever actually deleted.
+e2e_aged(
+    "an in-flight release ages into a finding",
+    versions=["1.0.0", "1.1.0"],
+    tags={"v1.0.0": "1.0.0"},
+    head="1.1.0",
+    changelog_age_days=checker.MAX_UNTAGGED_AGE_DAYS + 3,
+    want=1,
+)
+e2e_aged(
+    "a release cut today is still in flight",
+    versions=["1.0.0", "1.1.0"],
+    tags={"v1.0.0": "1.0.0"},
+    head="1.1.0",
+    changelog_age_days=0,
+    want=0,
+)
+
+# The age branch must only apply when the tag is ABSENT. An in-flight version
+# that already has its tag is simply fine, and reporting "no tag for N days"
+# about a tagged release would be the checker inventing a finding — which it
+# would have done for v0.15.0 eight days after release.
+e2e_aged(
+    "an old but tagged newest release is fine",
+    versions=["1.0.0", "1.1.0"],
+    tags={"v1.0.0": "1.0.0", "v1.1.0": "1.1.0"},
+    head="1.1.0",
+    changelog_age_days=checker.MAX_UNTAGGED_AGE_DAYS + 30,
+    want=0,
 )
 
 # No release tags at all: an environment that cannot run this check, which must

@@ -27,6 +27,12 @@ on:
     # signal.
     tags: ['v*']
   pull_request:
+  # A push-triggered check cannot notice that *nothing* happened — and "a release
+  # was merged and never tagged" is exactly nothing happening. The release-tag
+  # checker's in-flight exemption expires with age, so a weekly run is what turns
+  # a forgotten or deleted tag into a red build instead of silence.
+  schedule:
+    - cron: '17 6 * * 1'
 
 # Least privilege: these jobs only read the repository.
 permissions:
