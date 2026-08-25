@@ -17,6 +17,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.15.0] — 2026-08-25 — Every frontend tells the same truth
+
+Nine changes closing sixteen findings, all of one shape: a check, a caveat or a
+stamp that existed on one frontend and not the others, so the same deck got
+different answers — or different silence — depending on how you asked. `fnec`,
+`fnec-gui`, `fnec_py` and `fnec worker --stdio` are four shipped artifacts, and
+this release is mostly about making that stop mattering.
+
+### Added
+
 - **A path inventory for cross-cutting concerns**
   (`docs/project/path-inventory.md`), enumerating every production execution path
   each concern must reach and what proves it does. Writing it immediately found
@@ -1447,3 +1461,17 @@ Hallén path is unchanged, so the validated corpus is untouched.
 - Added NEC2 reference-inspired pulse RHS wavelength normalization path:
   $$\\frac{1}{dl\\,\\lambda}$$
   and validation notes.
+
+<!-- Compare links.
+     Only the contiguous tagged range is linkable: v0.4.0, v0.5.0, v0.6.0,
+     v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
+     against and inventing one would be worse than the gap (FND-043). -->
+
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/dc0sk/fnec-rust/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/dc0sk/fnec-rust/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/dc0sk/fnec-rust/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/dc0sk/fnec-rust/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/dc0sk/fnec-rust/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/dc0sk/fnec-rust/releases/tag/v0.10.0
+[0.7.0]: https://github.com/dc0sk/fnec-rust/releases/tag/v0.7.0

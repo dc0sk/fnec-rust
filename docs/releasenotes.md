@@ -2,10 +2,104 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-25
 ---
 
 # Release Notes
+
+## 0.15.0 — Every frontend tells the same truth
+
+fnec ships **four** artifacts: `fnec`, `fnec-gui`, `fnec_py`, and
+`fnec worker --stdio`. Nine changes in this release close sixteen findings that
+all have one shape — a check, a caveat or a matrix stamp that existed on one of
+them and not the others, so the same deck got a different answer, or a different
+silence, depending on how you asked for it.
+
+Nothing here is a new capability you asked for. It is the removal of a class of
+surprise.
+
+### Answers that change
+
+Read this section before upgrading if you have recorded results.
+
+**An `NT` deck solved through `fnec-gui` or `fnec_py` now returns a different
+number, and the new one is right.** `NT` network stamps were applied only by the
+CLI. `corpus/dipole-nt-tl-equiv-freesp-51seg.nec` gave 70.633 + j14.009 Ω on
+`fnec` and 74.243 + j13.900 Ω — the plain-dipole answer, with the network simply
+missing — everywhere else. The same was true of `--exec gpu`, which re-solved on
+the device and discarded every host-side stamp: a `--loads-config` run returned
+the *unloaded* impedance, a 6× error on the deck we measured.
+
+**A deck whose first `EX` card is a plane wave now reports a different
+feedpoint** in `fnec-gui` and `fnec_py`. Both took "the first `EX` card"
+literally, and a plane wave's tag and segment fields carry NTHETA and NPHI — grid
+dimensions, not an antenna location.
+
+**A current-source-only (`EX 4`) deck now raises in `fnec_py`** where it returned
+an impedance computed from a zero right-hand side. Pricing a current-source
+feedpoint needs the solved port voltage, which only the CLI's Hallén path
+computes. The message you get says the deck has no `EX` card, which is not the
+real reason — that wording is wrong and is tracked as FND-038. Use `fnec` for
+current-source decks.
+
+**`EX 5` decks now solve under `--hosts`.** The worker drove a type-5 card as a
+delta gap and then refused to read the answer it had computed, reporting "no EX
+type-0 card found in deck" for a deck the CLI and the bindings both solve to
+74.243 + j13.900 Ω.
+
+**A receive-only deck is no longer refused.** A plane wave whose NTHETA/NPHI
+happened to collide with a short fat segment triggered a source-risk rejection —
+about a source the deck does not contain — on every frontend.
+
+### Flags that are now refused instead of ignored
+
+`--hosts` silently dropped two answer-changing options. Both are now rejected
+before any host is contacted:
+
+- `--loads-config` — the worker protocol carries no field for Laplace loads, so
+  the run returned the unloaded impedance.
+- `--ground-solver sommerfeld` — the worker derives its ground from the deck and
+  never applies the surface-wave correction. On
+  `corpus/dipole-gn2-near-ground-51seg.nec` that is 92.266 + j13.617 Ω against
+  95.524 + j12.166 Ω with the correction.
+
+If you were passing either with `--hosts`, you were not getting what you asked
+for. Run without `--hosts`, or drop the flag.
+
+### Caveats you will now see that you did not before
+
+- **A physically impossible result is flagged everywhere.** A passive antenna
+  cannot have a negative input resistance; the CLI has said so since PH9-CHK-005
+  and the other three said nothing.
+- **A distributed run carries the same pre-solve caveats as a local one** — the
+  low-over-ground and junction-fed warnings, not just the topology one.
+- **A distributed run reports the cards its worker skipped.** A malformed `LD`,
+  `TL` or `NT` was ignored in silence.
+- **A GUI sweep warns about the range it actually runs**, not the frequency on
+  the deck's `FR` card.
+
+A `fnec_py` sweep over a junctioned deck now raises one `UserWarning` per
+negative point, because the message carries the impedance. Filter with the
+standard `warnings` module if that is noisy for you; a quieter form is tracked as
+FND-032.
+
+### Upgrading a distributed pool
+
+**Workers must be upgraded together with the controller.** A worker is a
+separately installed binary. An older one sends no stamp warnings, so the
+controller prints none — the field cannot conjure a caveat that was never
+transmitted. The wire format is compatible in both directions, so a mixed pool
+runs; it just under-reports.
+
+### Versions
+
+`fnec_py` goes 0.5.0 → **0.6.0**: it raises where it used to return, and returns
+different numbers for `NT` and plane-wave-first decks.
+
+### Unchanged
+
+The default `--exec cpu` Hallén path on a deck with none of the above, the CLI
+report contract, and every validated corpus reference.
 
 ## 0.14.0 — Frontend validation parity + GPU and MPIE correctness
 
