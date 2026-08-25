@@ -22,7 +22,7 @@
 //! is outside the solver's supported class and the solve must not run;
 //! a `Warning` means the solve runs but its result carries a caveat.
 
-use nec_model::card::Card;
+use nec_model::card::{Card, FeedpointRole};
 use nec_model::deck::NecDeck;
 use nec_model::{DiagnosticLevel, ValidationDiagnostic};
 
@@ -603,6 +603,36 @@ pub fn hallen_geometry_caveats(
     out
 }
 
+/// Why a deck has no impedance a delta-gap frontend can report, if that is the
+/// case — named, rather than left to a fallthrough.
+///
+/// A current source **is** a feedpoint, but pricing one needs the solved port
+/// voltage, which only the CLI's Hallén path computes. A frontend without that
+/// machinery has to decline, and the useful question is *which* way it declines:
+/// the GUI and the Python bindings fell through their feedpoint loop to
+/// "deck has no EX card", which is false for a deck that plainly has one and
+/// sends the reader looking for a missing card (FND-038).
+///
+/// `remedy` is the caller's, because the honest advice differs: the distributed
+/// path says "run without `--hosts`", a GUI says "use the CLI". Everything else
+/// is the same sentence, which is why it lives here rather than a third time in
+/// each frontend.
+pub fn unpriceable_feedpoint_error(deck: &NecDeck, remedy: &str) -> Option<String> {
+    // Only when there is no delta gap at all: a deck carrying both is priced from
+    // the delta gap and needs no excuse.
+    if crate::excitation::first_delta_gap_feedpoint(deck).is_some() {
+        return None;
+    }
+    let (ex, _) = crate::excitation::feedpoints(deck)
+        .find(|(_, role)| *role == FeedpointRole::CurrentSource)?;
+    Some(format!(
+        "EX type {} (current source) on tag {} segment {}: a current-source \
+         feedpoint is priced from the solved port voltage, which this path does \
+         not compute; {remedy}",
+        ex.excitation_type, ex.tag, ex.segment
+    ))
+}
+
 /// The same set for a whole frequency sweep.
 ///
 /// Only one of these caveats depends on frequency, and it is the reason this
@@ -917,6 +947,43 @@ mod tests {
             swept_low_ground_caveat(&segs, &gn2, &[60.0e6, 80.0e6], false),
             None
         );
+    }
+
+    #[test]
+    fn a_current_source_only_deck_is_declined_by_name_not_called_cardless() {
+        // FND-038. The GUI and the bindings fell through their feedpoint loop to
+        // "deck has no EX card" — false for a deck that plainly has one, and it
+        // sends the reader looking for a missing card instead of the real reason.
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let msg = unpriceable_feedpoint_error(&deck, "use the fnec CLI").expect("a named reason");
+        assert!(msg.contains("current source"), "{msg}");
+        assert!(msg.contains("tag 1 segment 11"), "{msg}");
+        assert!(msg.contains("use the fnec CLI"), "{msg}");
+        assert!(
+            !msg.contains("no EX card"),
+            "must not blame a card the deck has: {msg}"
+        );
+    }
+
+    #[test]
+    fn a_deck_with_both_source_kinds_needs_no_excuse() {
+        // Priced from the delta gap, so there is nothing to decline. Without this
+        // the check could fire on any deck containing a current source at all.
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 5 0 1.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(unpriceable_feedpoint_error(&deck, "use the fnec CLI"), None);
+    }
+
+    #[test]
+    fn a_deck_with_no_feedpoint_at_all_gets_no_current_source_excuse() {
+        // A genuinely cardless deck must still fall through to the caller's own
+        // message, or this would replace one wrong reason with another.
+        let (deck, _segs) =
+            deck_and_segs("GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nFR 0 1 0 0 14.2 0.0\nEN\n");
+        assert_eq!(unpriceable_feedpoint_error(&deck, "use the fnec CLI"), None);
     }
 
     #[test]

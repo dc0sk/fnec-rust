@@ -351,16 +351,10 @@ pub fn solve_deck_at_frequency_with_exec(
     // A current source is excluded here on purpose rather than by omission: it is
     // a real feedpoint, but pricing it needs the solved port voltage, which only
     // the CLI's Hallén path computes. Saying so beats returning "no feedpoint".
-    if let Some((ex, _)) = nec_solver::feedpoints(&deck)
-        .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
+    if let Some(msg) =
+        nec_solver::validate::unpriceable_feedpoint_error(&deck, "run without --hosts")
     {
-        if nec_solver::first_delta_gap_feedpoint(&deck).is_none() {
-            return Err(SolveError::UnsupportedConfig(format!(
-                "EX type {} (current source) on tag {} segment {}: the distributed \
-                 path cannot price a current-source feedpoint; run without --hosts",
-                ex.excitation_type, ex.tag, ex.segment
-            )));
-        }
+        return Err(SolveError::UnsupportedConfig(msg));
     }
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(&deck) {
         // A feedpoint naming a segment the geometry does not contain is a bad

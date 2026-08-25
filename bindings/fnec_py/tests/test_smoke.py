@@ -312,3 +312,25 @@ def test_a_plane_wave_is_not_read_as_the_feedpoint():
     assert (got["tag"], got["seg"]) == (1, 26), (
         f"resolved the wrong EX: tag={got['tag']} seg={got['seg']}"
     )
+
+
+def test_a_current_source_deck_is_declined_by_name():
+    """FND-038: the message blamed a missing `EX` card on a deck that has one.
+
+    A current source *is* a feedpoint; pricing it needs the solved port voltage,
+    which only the CLI's Hallen path computes. Saying so is actionable — "deck
+    has no EX card" sends the reader looking for something that is right there.
+    """
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "dipole-ex4-freesp-51seg.nec")) as f:
+        deck = f.read()
+
+    try:
+        fnec_py.solve_deck_str(deck)
+    except Exception as e:  # noqa: BLE001 — the message is the assertion
+        msg = str(e)
+    else:
+        raise AssertionError("a current-source deck must not return an impedance")
+
+    assert "current source" in msg, msg
+    assert "no EX card" not in msg, msg

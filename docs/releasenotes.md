@@ -42,6 +42,10 @@ computes. The message you get says the deck has no `EX` card, which is not the
 real reason — that wording is wrong and is tracked as FND-038. Use `fnec` for
 current-source decks.
 
+(Fixed after tagging, in #404: the refusal now names the `EX` type, the tag and
+segment, and what to do instead. See the `Unreleased` section of the changelog —
+this paragraph describes v0.15.0 as tagged.)
+
 **`EX 5` decks now solve under `--hosts`.** The worker drove a type-5 card as a
 delta gap and then refused to read the answer it had computed, reporting "no EX
 type-0 card found in deck" for a deck the CLI and the bindings both solve to

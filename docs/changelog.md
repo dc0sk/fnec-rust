@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 ---
 
 # Changelog
@@ -20,6 +20,34 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 ### Changed
 
 ### Fixed
+
+- **A current-source deck is now declined by name, not blamed on a missing card**
+  (FND-038). `fnec-gui` and `fnec_py` fell through their feedpoint loop to
+  "deck has no EX card" — false for a deck whose only excitation *is* an `EX`
+  card, and it sent the reader hunting for something that was right there. A
+  current source is a feedpoint; pricing one needs the solved port voltage, which
+  only the CLI's Hallén path computes.
+
+  The message now names the `EX` type, the tag and segment, the reason and the
+  remedy:
+
+  ```
+  EX type 4 (current source) on tag 1 segment 26: a current-source feedpoint is
+  priced from the solved port voltage, which this path does not compute; use the
+  fnec CLI for this deck
+  ```
+
+  `validate::unpriceable_feedpoint_error` is the shared producer, with the remedy
+  left to the caller because it genuinely differs — the distributed path says
+  "run without `--hosts`". It absorbs the worker's inline copy in the same change,
+  so the third frontend never grew a third wording.
+
+  Two more of the same shape, found in review. The Currents and Pattern tabs had
+  no such guard at all, so an `EX 4` deck rendered zero currents and a meaningless
+  pattern while the Solve tab declined by name — FND-038's original defect, alive
+  one tab over. And the remaining fallback still said "deck has no EX card" for a
+  **plane-wave receive deck**, which has one; both frontends now use the worker's
+  truthful "no driven feedpoint (EX voltage source) found in deck".
 
 ## [0.15.0] — 2026-08-25 — Every frontend tells the same truth
 
