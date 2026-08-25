@@ -22,3 +22,9 @@ __pycache__/
 
 # local scratch / benchmark outputs
 tmp/
+
+# Claude Code's per-developer permission grants. `settings.local.json` is
+# personal by convention — it records which commands one machine may run
+# without prompting — so it is ignored rather than committed. A shared
+# `.claude/settings.json`, if one is ever wanted, stays trackable.
+.claude/settings.local.json
