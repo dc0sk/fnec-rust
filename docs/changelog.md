@@ -77,6 +77,16 @@ this release is mostly about making that stop mattering.
 
 ### Fixed
 
+- **The `fnec_py` wheel was labelled with the wrong version, and had been since
+  v0.14.0** (FND-044). `bindings/fnec_py` declares its version in both
+  `Cargo.toml` and `pyproject.toml`, and maturin stamps the *pyproject* one onto
+  the built wheel — which is what `pip install` delivers and `pip show` reports.
+  The v0.14.0 bump touched only `Cargo.toml`, so that release announced
+  "fnec_py 0.4.0 → 0.5.0" and published a package calling itself 0.4.0, carrying
+  0.5.0's breaking behaviour. The release checklist's own consistency command
+  greps `Cargo.toml` files and so could not see it. Both files now say 0.6.0, and
+  `scripts/check-binding-version.py` fails CI if they ever disagree.
+
 - **The GUI's sweep stream is testable, and its message sequence is pinned**
   (FND-034). The body lived inline in `FnecGui::update`, where nothing could reach
   it: deleting any of its three `send` calls left the whole suite green, so the
