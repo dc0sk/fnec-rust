@@ -14,10 +14,17 @@ name: CI
 on:
   push:
     branches: [main]
-    # A pushed tag is the one moment a bad tag can be caught before anyone acts
-    # on it. The docs job's checker otherwise fires only when something *else*
-    # pushes, so a release that is merged and then never tagged stays green
-    # until the next release PR opens — which may be months away, or never.
+    # A pushed tag is the earliest a bad tag can be caught. The docs job's checker
+    # otherwise fires only when something *else* pushes, so a release merged and
+    # then never tagged stays green until the next release PR opens — months
+    # away, or never.
+    #
+    # Two limits worth knowing. A push event runs the workflow *as of the pushed
+    # commit*, so re-pushing an old tag runs that era's CI, which may not have
+    # this checker at all — only tags pointing at post-#405 commits are caught at
+    # push time; the rest are swept by the next docs run. And this runs all eight
+    # jobs per tag, not just docs: a full CI run is the cost of the earlier
+    # signal.
     tags: ['v*']
   pull_request:
 

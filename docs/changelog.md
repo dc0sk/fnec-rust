@@ -42,7 +42,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
   Ships with `scripts/test-check-release-tags.py`, the first committed self-test
   among these checkers — the gates that let both findings through were passing
-  honestly while looking in the wrong place.
+  honestly while looking in the wrong place. It builds throwaway git repositories
+  to exercise the decisions themselves, after review showed three ways to hollow
+  the checker out with every pure-function case still green.
+
+  One limit is recorded rather than glossed: a *deleted* tag is invisible for the
+  newest release, because "newest section, no tag" cannot be distinguished from
+  "release in flight" from inside the repository — and the newest is the only tag
+  anyone has actually deleted. Closing that needs the minting workflow (FND-046),
+  not a better detector.
 
 ### Changed
 

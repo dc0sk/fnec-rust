@@ -14,9 +14,16 @@ Two failures this repo has actually shipped:
 This is a *detector*, not a preventer. Only automation prevents a forgotten tag —
 a workflow that mints one when a version bump merges. That is a policy decision
 for the maintainer (this project's convention is that releases are cut
-explicitly), so it is proposed separately. The detector keeps its value either
-way: it guards against a tag being *deleted*, and against that workflow being
-silently disabled.
+explicitly), so it is proposed separately (FND-046).
+
+**Where the detector cannot see.** It notices a deleted tag for every release
+except the newest — and the newest is the only one anyone has actually deleted:
+v0.15.0, during its own release. "Newest section, no tag" is observationally
+identical to "release in flight", which must pass, and to "the tag was deleted
+afterwards", which must not. Nothing distinguishes them from inside the
+repository, and tag deletion fires no workflow. Closing that needs the minting
+workflow, not a better checker. Prerelease versions are outside the gate
+entirely, in both the changelog pattern and the tag pattern.
 
 Run from the repository root, with tags fetched.
 """
@@ -147,7 +154,18 @@ def main() -> int:
     # release PR would otherwise fail its own gate. Exempt only when it really is
     # the version being released — "whatever section is newest" would also excuse
     # a typo'd 0.61.0 nobody meant to add.
-    head_version = declared_version(Path("Cargo.toml").read_text(encoding="utf-8"))
+    head_manifest = Path("Cargo.toml")
+    if not head_manifest.exists():
+        print("Cargo.toml is missing — run this from the repository root", file=sys.stderr)
+        return 1
+    head_version = declared_version(head_manifest.read_text(encoding="utf-8"))
+    if head_version is None:
+        # Otherwise the in-flight exemption silently never applies and the
+        # release in progress is reported as an untagged release, which sends
+        # the reader to the wrong problem.
+        print("Cargo.toml declares no version — cannot tell which release is in flight",
+              file=sys.stderr)
+        return 1
     newest = max(changelog_versions, key=semver_key)
     in_flight = newest if newest == head_version else None
 
@@ -197,10 +215,16 @@ def main() -> int:
             print(p, file=sys.stderr)
         return 1
 
-    checked = len(set(changelog_versions)) - len(UNTAGGED_RELEASES)
+    # Count what was actually examined rather than subtracting one set size from
+    # another: that arithmetic goes negative on a short changelog and overcounts
+    # by one during a release, which is precisely the kind of unfalsifiable
+    # figure this checker's own self-test was caught printing.
+    grandfathered = sum(1 for v in set(changelog_versions) if v in UNTAGGED_RELEASES)
+    checked = len(set(changelog_versions)) - grandfathered - (1 if in_flight else 0)
+    in_flight_note = f", {in_flight} in flight" if in_flight else ""
     print(
         f"release tags OK — {len(tags)} tag(s), {checked} released version(s) "
-        f"checked, {len(UNTAGGED_RELEASES)} grandfathered"
+        f"checked, {grandfathered} grandfathered{in_flight_note}"
     )
     return 0
 
