@@ -438,10 +438,28 @@ fn solve_current_source_hallen(
         );
     }
 
+    // Merged, not raw, endpoints — the defect this fixes (FND-048).
+    //
+    // `solve_hallen_current_source` pins `I = 0` at the first and last segment of
+    // every entry it is given. Handed the raw per-`GW` list, a dipole written as
+    // two collinear cards carries a spurious zero at the join — and when the
+    // source sits there the solver is asked for `I[src] = i0` and `I[src] = 0` at
+    // once, so least squares splits the difference. Measured: a 1 A source
+    // delivered 0.5 A, at 36.953 + j7.013 Ω against the single-wire deck's
+    // 74.228 + j13.897, exit 0, no warning.
+    //
+    // A collinear split is one conductor, not two wires with ends. The voltage
+    // path has merged before solving since PH9-CHK-002; this one never did.
+    //
+    // Only the endpoints change here. The routing above is deliberately left
+    // alone: it decides which *solver* runs, and moving a deck between solvers is
+    // a different change from telling one solver where the conductor really ends.
+    let merged_endpoints = merge_collinear_wire_endpoints(segs);
+
     let (shape, cos_vec, src_seg) =
         build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
             .map_err(|e| e.to_string())?;
-    let sol = solve_hallen_current_source(z_mat, &shape, &cos_vec, src_seg, i0, wire_endpoints)
+    let sol = solve_hallen_current_source(z_mat, &shape, &cos_vec, src_seg, i0, &merged_endpoints)
         .map_err(|e| e.to_string())?;
     Ok((sol.currents, sol.port_voltage))
 }

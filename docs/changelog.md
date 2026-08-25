@@ -85,6 +85,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A current source on a collinear-split wire delivered half its current**
+  (FND-048). `solve_hallen_current_source` pins `I = 0` at the first and last
+  segment of every entry in the endpoint list it is handed, and the
+  current-source path passed the raw per-`GW` list — so a dipole written as two
+  collinear cards carried a spurious zero at the join. With the source sitting on
+  it, the solver was asked for `I = 1 A` and `I = 0` at the same segment, and
+  least squares split the difference.
+
+  | deck | Z | delivered current |
+  |---|---|---|
+  | 51-segment `EX 4` dipole | 74.228 + j13.897 Ω | 1.0 A |
+  | identical geometry, two collinear `GW`s | **36.953 + j7.013 Ω** | **0.5 A** |
+  | same split, `EX 0` control | 74.307 + j13.893 Ω | — |
+
+  Exit 0, no warning. The voltage path has merged collinear joins since
+  PH9-CHK-002; this one never did. Neither existing `EX 4` fixture is split, so
+  nothing caught it.
+
+  The new gate asserts the **delivered current** before the impedance. An
+  impedance can be wrong for many reasons; a current source that does not deliver
+  its own stated current has violated the boundary condition the user wrote down.
+
+  Found while designing FND-045 — checking whether this glue was safe to share
+  with the GUI and the bindings, which is exactly the sharing that would have
+  turned one wrong frontend into four.
+
 - **A current-source deck is now declined by name, not blamed on a missing card**
   (FND-038). `fnec-gui` and `fnec_py` fell through their feedpoint loop to
   "deck has no EX card" — false for a deck whose only excitation *is* an `EX`
