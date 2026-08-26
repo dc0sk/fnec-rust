@@ -16,6 +16,43 @@ mod tests {
     const DIPOLE_EX4: &str = include_str!("../../../corpus/dipole-ex4-freesp-51seg.nec");
     const DIPOLE_EX1: &str = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
 
+    /// FND-021: an `EX` naming a segment the geometry does not contain is a
+    /// semantic error, not a syntax one. It crossed the wire as `parse_error`,
+    /// sending the reader to hunt for a typo in a deck that parsed cleanly.
+    #[test]
+    fn a_bad_ex_reference_is_not_reported_as_a_parse_error() {
+        let deck = "CM EX names a segment the wire does not have\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 99 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let err = solve_deck_at_frequency(deck, 14.2e6, "hallen").unwrap_err();
+        match &err {
+            SolveError::UnsupportedConfig(m) => {
+                assert!(m.contains("segment"), "{m}");
+            }
+            other => panic!("expected UnsupportedConfig, got {other:?}"),
+        }
+        assert!(
+            !err.to_string().starts_with("parse error"),
+            "the deck parsed; blaming its syntax misdirects: {err}"
+        );
+    }
+
+    /// The negative control: a deck that genuinely does not parse must still be a
+    /// parse error, or the fix above would have traded one mislabel for another.
+    ///
+    /// The obvious fixture does not work. Free text — "this is not a NEC deck" —
+    /// parses cleanly and fails later as `GeometryError("deck contains no GW
+    /// cards")`, which `solve_rejects_garbage_input` already pins. A real parse
+    /// failure needs a card the parser recognises carrying a field it cannot read.
+    #[test]
+    fn genuinely_unparseable_input_is_still_a_parse_error() {
+        let deck = "CE\nGW 1 abc 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEN\n";
+        let err = solve_deck_at_frequency(deck, 14.2e6, "hallen").unwrap_err();
+        assert!(
+            matches!(err, SolveError::ParseError(_)),
+            "expected ParseError, got {err:?}"
+        );
+        assert!(err.to_string().starts_with("parse error"), "{err}");
+    }
+
     /// FND-026: the worker built these warnings and threw them away, so a
     /// distributed run was the one frontend that silently ignored a malformed
     /// card. Unlike the result-shape checks the controller does for itself, these
@@ -278,7 +315,19 @@ pub fn solve_deck_at_frequency_with_exec(
             ExcitationError::UnsupportedType { ex_type, .. } => SolveError::UnsupportedConfig(
                 format!("EX type {ex_type} not supported in worker Hallén path"),
             ),
-            other => SolveError::ParseError(other.to_string()),
+            // Not ParseError: the deck parsed. `ExcitationError` has exactly two
+            // variants and `UnsupportedType` is matched above, so this arm is
+            // `SegmentNotFound` and nothing else — an `EX` naming a segment the
+            // geometry does not contain. Labelling that "parse error" sends the
+            // reader hunting for a syntax mistake that is not there (FND-021), the
+            // same mislabel class FND-013's fix avoided for geometry. It stays a
+            // catch-all so a future variant lands on the safer of the two codes.
+            //
+            // `UnsupportedConfig` rather than a new `ErrorCode` variant: the enum
+            // is serialised on the wire, so adding a variant breaks an older
+            // controller's deserialisation outright — unlike the additive
+            // `warnings` field of FND-026, which was compatible both ways.
+            other => SolveError::UnsupportedConfig(other.to_string()),
         }
     })?;
 
