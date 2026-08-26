@@ -124,7 +124,11 @@ fn solve_at_freq(
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
             .ok_or("a current-source solve without a current source")?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in = if i0.norm() > 1e-60 { v_port / i0 } else { v_port };
+        let z_in = if i0.norm() > 1e-60 {
+            v_port / i0
+        } else {
+            v_port
+        };
         let mut rec = std::collections::HashMap::new();
         rec.insert("freq_mhz".to_string(), freq_hz / 1e6);
         rec.insert("tag".to_string(), f64::from(ex.tag));
@@ -132,10 +136,7 @@ fn solve_at_freq(
         rec.insert("z_re".to_string(), z_in.re);
         rec.insert("z_im".to_string(), z_in.im);
         rec.insert("z_abs".to_string(), z_in.norm());
-        rec.insert(
-            "z_arg_deg".to_string(),
-            z_in.im.atan2(z_in.re).to_degrees(),
-        );
+        rec.insert("z_arg_deg".to_string(), z_in.im.atan2(z_in.re).to_degrees());
         if let Some(w) = nec_solver::validate::negative_resistance_warning(
             z_in.re,
             ex.tag as usize,
