@@ -46,6 +46,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   happened, and "a release was merged and never tagged" is exactly nothing
   happening.
 
+  Hardened before its first run, which is the only cheap moment. The tag message
+  is written with `--cleanup=verbatim`, because git's default for `-F` deletes
+  every line beginning with `#` — and a Keep-a-Changelog body is structured by
+  exactly those. Measured on the 0.15.0 section: four `###` headings in the file,
+  four preserved with the flag, **zero without it**, which would have merged four
+  categorised lists into one stream where a breaking change and a bugfix are
+  indistinguishable. The job also gains `checks: read` — job-level `permissions:`
+  replaces the map rather than extending it, so the check-runs gate was relying on
+  that endpoint answering unauthenticated, which is true only while the repository
+  is public. Plus `--paginate`, so a failing check past the first page of thirty
+  cannot pass unseen, and every resolved value now reaches the shell through
+  `env:` instead of `${{ }}` interpolation.
+
 - **A release-tag integrity check** (FND-043). Five versions — 0.4.0, 0.5.0,
   0.6.0, 0.8.0 and 0.9.0 — were released without tags, so they have changelog
   sections and no ref to check out, compare against or link. And v0.15.0 was
