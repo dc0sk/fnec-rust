@@ -69,15 +69,13 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
-    build_current_source_shape, build_current_source_shape_paths, build_hallen_rhs,
-    build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
+    build_hallen_rhs, build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
     compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment, feed_reference_sign,
     geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
     radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
-    solve_hallen_current_source, solve_hallen_current_source_paths, solve_hallen_paths,
-    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
-    solve_mpie, solve_mpie_ground, solve_with_continuity_basis_per_wire, FarFieldPoint,
-    GroundModel, Segment, ZMatrix,
+    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    solve_hallen_sinusoidal_basis, solve_mpie, solve_mpie_ground,
+    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -375,93 +373,6 @@ pub(super) fn deck_has_current_source(deck: &nec_model::deck::NecDeck) -> bool {
         Card::Ex(ex) => ex.kind() == nec_model::card::ExcitationKind::CurrentSource,
         _ => false,
     })
-}
-
-/// Solve a current-source-driven antenna (PH8-CHK-001, PH9-CHK-002, NEC2 EX type
-/// 4): force the specified current on the source segment and return the segment
-/// currents plus the port voltage `V` (feedpoint impedance `Z = V/i0`).
-///
-/// Straight, non-junctioned wires (one or more) solve on the per-wire path.
-/// **Junctioned degree-2 geometry** (bends, start-to-start / end-to-end splits,
-/// inverted-V) solves on continuous *conductor paths* (PH9-CHK-002): one homogeneous
-/// `cos(k·s)` constant per path plus the port voltage, `I = 0` at the free ends, and
-/// the forced `I[src] = i0`. Out-of-scope topologies (degree-3+ T/Y, closed loops)
-/// return `None` from `build_conductor_paths` and fail fast with a diagnostic.
-/// `z_mat` is the assembled Hallén matrix (including any load / TL stamps).
-fn solve_current_source_hallen(
-    deck: &nec_model::deck::NecDeck,
-    segs: &[Segment],
-    z_mat: &ZMatrix,
-    wire_endpoints: &[(usize, usize)],
-    freq_hz: f64,
-) -> Result<(Vec<Complex64>, Complex64), String> {
-    let cs = deck
-        .cards
-        .iter()
-        .find_map(|c| match c {
-            Card::Ex(ex) if ex.kind() == nec_model::card::ExcitationKind::CurrentSource => Some(ex),
-            _ => None,
-        })
-        .ok_or_else(|| "EX: no current-source card found".to_string())?;
-
-    let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
-
-    // Route junctioned degree-2 geometry through the conductor-path current-source
-    // solver. Reducible decks (single wires, collinear chains, parallel arrays) keep
-    // the validated per-wire path; only a non-trivial (bent / reversed) path diverts.
-    if let Some(paths) = build_conductor_paths(segs) {
-        if paths.iter().any(|p| !p.is_trivial()) {
-            let (shape, cos_vec, src_seg) =
-                build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
-                    .map_err(|e| e.to_string())?;
-            let mut path_of = vec![0usize; segs.len()];
-            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
-            for (pi, p) in paths.iter().enumerate() {
-                for &m in &p.segs {
-                    path_of[m] = pi;
-                }
-                free_ends.push(p.free_ends.0);
-                free_ends.push(p.free_ends.1);
-            }
-            let sol = solve_hallen_current_source_paths(
-                z_mat, &shape, &cos_vec, src_seg, i0, &path_of, &free_ends,
-            )
-            .map_err(|e| e.to_string())?;
-            return Ok((sol.currents, sol.port_voltage));
-        }
-    } else if !detect_wire_junctions(segs, wire_endpoints, 1e-6).is_empty() {
-        // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
-        return Err(
-            "EX: current source is supported on straight or degree-2 junctioned wires; \
-             degree-3+ (T/Y) junctions and closed loops are not yet supported"
-                .to_string(),
-        );
-    }
-
-    // Merged, not raw, endpoints — the defect this fixes (FND-048).
-    //
-    // `solve_hallen_current_source` pins `I = 0` at the first and last segment of
-    // every entry it is given. Handed the raw per-`GW` list, a dipole written as
-    // two collinear cards carries a spurious zero at the join — and when the
-    // source sits there the solver is asked for `I[src] = i0` and `I[src] = 0` at
-    // once, so least squares splits the difference. Measured: a 1 A source
-    // delivered 0.5 A, at 36.953 + j7.013 Ω against the single-wire deck's
-    // 74.228 + j13.897, exit 0, no warning.
-    //
-    // A collinear split is one conductor, not two wires with ends. The voltage
-    // path has merged before solving since PH9-CHK-002; this one never did.
-    //
-    // Only the endpoints change here. The routing above is deliberately left
-    // alone: it decides which *solver* runs, and moving a deck between solvers is
-    // a different change from telling one solver where the conductor really ends.
-    let merged_endpoints = merge_collinear_wire_endpoints(segs);
-
-    let (shape, cos_vec, src_seg) =
-        build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
-            .map_err(|e| e.to_string())?;
-    let sol = solve_hallen_current_source(z_mat, &shape, &cos_vec, src_seg, i0, &merged_endpoints)
-        .map_err(|e| e.to_string())?;
-    Ok((sol.currents, sol.port_voltage))
 }
 
 pub(super) fn collect_pulse_current_source_constraints(
@@ -1292,9 +1203,13 @@ pub(super) fn solve_frequency_point(
             (currents, 0.0, 0.0, "hallen-planewave")
         }
         SolverMode::Hallen if deck_has_current_source(deck) => {
-            let (currents, port_v) =
-                solve_current_source_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
-            current_source_port = Some(port_v);
+            // Through `nec_solver` now, so the GUI and the bindings solve the
+            // same decks by the same route rather than being told to use the CLI
+            // (FND-045).
+            let fp = nec_solver::solve_current_source_hallen(deck, segs, &z_mat, freq_hz)
+                .map_err(|e| e.to_string())?;
+            current_source_port = Some(fp.port_voltage);
+            let currents = fp.currents;
             (currents, 0.0, 0.0, "hallen-current-source")
         }
         SolverMode::Hallen

@@ -314,23 +314,33 @@ def test_a_plane_wave_is_not_read_as_the_feedpoint():
     )
 
 
-def test_a_current_source_deck_is_declined_by_name():
-    """FND-038: the message blamed a missing `EX` card on a deck that has one.
+def test_a_current_source_deck_solves_and_agrees_with_the_cli():
+    """FND-045: this used to raise "use the fnec CLI for this deck".
 
-    A current source *is* a feedpoint; pricing it needs the solved port voltage,
-    which only the CLI's Hallen path computes. Saying so is actionable — "deck
-    has no EX card" sends the reader looking for something that is right there.
+    The machinery was in `nec_solver` all along — `solve_hallen_current_source` —
+    and the bindings simply never called it. The assertion is the CLI's
+    corpus-pinned value, so the two frontends cannot drift apart.
     """
     root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
     with open(os.path.join(root, "corpus", "dipole-ex4-freesp-51seg.nec")) as f:
+        got = fnec_py.solve_deck_str(f.read())
+
+    assert abs(got["z_re"] - 74.23) < 0.05, got["z_re"]
+    assert abs(got["z_im"] - 13.9) < 0.05, got["z_im"]
+    # And it names the current source, not some other EX card.
+    assert (got["tag"], got["seg"]) == (1, 26), got
+
+
+def test_a_deck_with_two_kinds_of_source_is_refused():
+    """FND-036: refused rather than answered with a hundredfold error."""
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "dipole-mixed-sources-51seg.nec")) as f:
         deck = f.read()
 
     try:
         fnec_py.solve_deck_str(deck)
     except Exception as e:  # noqa: BLE001 — the message is the assertion
-        msg = str(e)
+        assert "both a voltage source" in str(e), str(e)
     else:
-        raise AssertionError("a current-source deck must not return an impedance")
+        raise AssertionError("a mixed-source deck must not solve")
 
-    assert "current source" in msg, msg
-    assert "no EX card" not in msg, msg
