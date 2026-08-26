@@ -17,6 +17,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **The GUI and the Python bindings solve current-source decks** (FND-045). They
+  used to decline an `EX 4` deck and say "use the fnec CLI" — but the machinery
+  was never missing, only unwired: `nec_solver` has exported
+  `solve_hallen_current_source` all along, and the routing around it lived in the
+  CLI. `corpus/dipole-ex4-freesp-51seg.nec` now gives **74.227929 + j13.896926**
+  in the GUI, identical to the CLI, and the tests assert the CLI's corpus value so
+  the frontends cannot drift.
+
+  It was **not** safe to share this until two defects were fixed first: a
+  collinear split delivered half the requested current (FND-048), and a deck
+  carrying both drive kinds was answered rather than refused (FND-036). Promoting
+  the glue before those would have turned one wrong frontend into four.
+
+  The branch is at the *solve* step, not the pricing step — a current-driven
+  deck's excitation vector is all zeros, so `V/I` has nothing to divide. All three
+  GUI paths go through one shared step, because solving on the Solve tab while the
+  sweep, currents and pattern views refused would be the same one-tab-over defect
+  this arc keeps turning up.
+
+  The remote worker still refuses them: a scope choice rather than a technical
+  one, recorded as FND-051 so the remaining difference is deliberate and visible.
+
 - **A release-tag minting workflow** (FND-046) — a button, not a trigger.
 
   The obvious design is "push to main, version has no tag, mint it". It was
