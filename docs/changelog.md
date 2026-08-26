@@ -98,6 +98,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A distributed run now says when it did not run where you asked** (FND-040).
+  `--exec gpu --hosts` against a host with no adapter produced a CPU solve in
+  silence. The worker had always reported which path it took; the controller
+  discarded it, and wrote `ssh` into the benchmark record — naming the transport
+  and hiding the execution path, so every distributed record read the same
+  whether the work ran on a GPU or a CPU. It now warns, and records
+  `ssh-{exec_used}`.
+
+  `exec_used` defaults to `cpu` for a worker too old to send it, so this cannot
+  invent a fallback that never happened; the worst case is an upgraded worker's
+  GPU run reported as CPU.
+
+- **A bad `EX` reference is no longer called a parse error** (FND-021). An `EX`
+  naming a segment the geometry does not contain crossed the wire labelled
+  `parse_error`, sending the reader to hunt for a syntax mistake in a deck that
+  parsed cleanly. It is now `unsupported_config` — deliberately not a new
+  `ErrorCode` variant, because that enum is serialised and adding one breaks an
+  older controller's deserialisation outright, unlike the additive `warnings`
+  field of FND-026.
+
 - **A current source on a collinear-split wire delivered half its current**
   (FND-048). `solve_hallen_current_source` pins `I = 0` at the first and last
   segment of every entry in the endpoint list it is handed, and the

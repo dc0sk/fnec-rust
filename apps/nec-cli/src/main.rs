@@ -532,6 +532,30 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(deck, segs, ground, freqs_hz, false)
 }
 
+/// Whether a worker ran this point somewhere other than the user asked.
+///
+/// The worker has always told us which path it took; the controller dropped it on
+/// the floor (FND-040). Someone who passed `--exec gpu` and got a CPU solve —
+/// because that host has no adapter — had no way to find out, while the local CLI
+/// says so plainly.
+///
+/// Split out because the alternative is a line inside the result loop that no test
+/// can reach: FND-034 was exactly that, three unreachable sends in a GUI closure,
+/// and the lesson was cheaper to apply here than to relearn.
+///
+/// `exec_used` defaults to `"cpu"` for a worker too old to send it, so this cannot
+/// invent a fallback that never happened — the worst case is an upgraded worker's
+/// GPU run being reported as CPU.
+fn exec_fallback_warning(requested: ExecutionMode, exec_used: &str, label: &str) -> Option<String> {
+    if !matches!(requested, ExecutionMode::Gpu) || exec_used == "gpu" {
+        return None;
+    }
+    Some(format!(
+        "worker '{label}' ran this point on {exec_used}, not the requested gpu — \
+         that host has no usable adapter"
+    ))
+}
+
 /// The negative-resistance caveat for one distributed result, if it earns one.
 ///
 /// Split out so it can be unit-tested without a worker: the distributed path is
@@ -667,6 +691,7 @@ fn run_distributed_solve(
                     feedpoint_current_mag,
                     feedpoint_current_phase_deg,
                     warnings,
+                    exec_used,
                     ..
                 },
                 label,
@@ -697,10 +722,23 @@ fn run_distributed_solve(
                     (impedance.re_ohm * impedance.re_ohm + impedance.im_ohm * impedance.im_ohm).sqrt(),
                     vswr_50,
                 );
+                // The worker already told us which path it took; the controller
+                // used to drop it on the floor (FND-040). A user who passed
+                // `--exec gpu` and got a CPU solve — because that worker has no
+                // adapter — had no way to find out, while the local CLI says so
+                // plainly. `exec_used` defaults to "cpu" for an old worker, so
+                // this cannot invent a fallback that did not happen: the worst
+                // case is an upgraded-worker run reported as CPU.
+                if let Some(w) = exec_fallback_warning(execution_mode, &exec_used, &label) {
+                    eprintln!("warning: {w}");
+                }
                 let bench = BenchRecord {
                     mode: "distributed".to_string(),
                     pulse_rhs: "unknown".to_string(),
-                    exec: "ssh".to_string(),
+                    // Was hardcoded "ssh", which named the transport and hid the
+                    // execution path — so every distributed benchmark record read
+                    // the same whether the work ran on a GPU or a CPU.
+                    exec: format!("ssh-{exec_used}"),
                     freq_mhz,
                     abs_res: 0.0,
                     rel_res: 0.0,
@@ -1072,7 +1110,8 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        steer_execution_mode_by_profile, CompatibilityProfile, ExecutionMode,
+        exec_fallback_warning, steer_execution_mode_by_profile, CompatibilityProfile,
+        ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use num_complex::Complex64;
@@ -1187,6 +1226,32 @@ mod tests {
             distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Mpie)
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
+        );
+    }
+
+    #[test]
+    fn a_worker_that_fell_back_to_cpu_says_so() {
+        // FND-040. `--exec gpu` against a host with no adapter produced a CPU
+        // solve and total silence, while the local CLI warns.
+        let w = exec_fallback_warning(ExecutionMode::Gpu, "cpu", "node-2").expect("a warning");
+        assert!(w.contains("node-2"), "{w}");
+        assert!(w.contains("not the requested gpu"), "{w}");
+
+        // Got what was asked for: nothing to say.
+        assert_eq!(
+            exec_fallback_warning(ExecutionMode::Gpu, "gpu", "node-2"),
+            None
+        );
+
+        // Never asked for gpu: a cpu run is not a fallback. Without this the
+        // warning would fire on every ordinary distributed run.
+        assert_eq!(
+            exec_fallback_warning(ExecutionMode::Cpu, "cpu", "node-2"),
+            None
+        );
+        assert_eq!(
+            exec_fallback_warning(ExecutionMode::Hybrid, "cpu", "node-2"),
+            None
         );
     }
 
