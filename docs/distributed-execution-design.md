@@ -178,8 +178,8 @@ Defined `error_code` values:
 | Code | Meaning |
 |:-----|:--------|
 | `singular_matrix` | Z-matrix factorisation failed (NaN/Inf or zero pivot) |
-| `parse_error` | Deck failed to parse on the worker |
-| `unsupported_config` | Solver config requests a feature not compiled in |
+| `parse_error` | Deck failed to parse on the worker — a card the parser recognises carrying a field it cannot read. Free text is *not* this: it parses cleanly and fails later as `geometry_error` |
+| `unsupported_config` | The deck parsed but the worker will not solve it: a solver config it does not offer, geometry outside the supported class (FND-013), an `EX` naming a segment the geometry lacks (FND-021), or a current-source feedpoint it cannot price |
 | `resource_exhausted` | Worker ran out of memory |
 | `internal` | Catch-all for unexpected panics |
 

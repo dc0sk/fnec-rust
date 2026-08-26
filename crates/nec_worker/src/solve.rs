@@ -315,11 +315,13 @@ pub fn solve_deck_at_frequency_with_exec(
             ExcitationError::UnsupportedType { ex_type, .. } => SolveError::UnsupportedConfig(
                 format!("EX type {ex_type} not supported in worker Hallén path"),
             ),
-            // Not ParseError: the deck parsed. `SegmentNotFound` and its
-            // siblings are semantic — an `EX` naming a segment the geometry does
-            // not contain — and labelling that "parse error" sends the reader to
-            // hunt for a syntax mistake that is not there (FND-021), the same
-            // mislabel class FND-013's fix avoided for geometry.
+            // Not ParseError: the deck parsed. `ExcitationError` has exactly two
+            // variants and `UnsupportedType` is matched above, so this arm is
+            // `SegmentNotFound` and nothing else — an `EX` naming a segment the
+            // geometry does not contain. Labelling that "parse error" sends the
+            // reader hunting for a syntax mistake that is not there (FND-021), the
+            // same mislabel class FND-013's fix avoided for geometry. It stays a
+            // catch-all so a future variant lands on the safer of the two codes.
             //
             // `UnsupportedConfig` rather than a new `ErrorCode` variant: the enum
             // is serialised on the wire, so adding a variant breaks an older

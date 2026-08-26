@@ -106,9 +106,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   whether the work ran on a GPU or a CPU. It now warns, and records
   `ssh-{exec_used}`.
 
-  `exec_used` defaults to `cpu` for a worker too old to send it, so this cannot
-  invent a fallback that never happened; the worst case is an upgraded worker's
-  GPU run reported as CPU.
+  It reports the **fact and not a cause**. An earlier draft added "that host has
+  no usable adapter", which the controller cannot know and which is often false —
+  the worker also declines the device for a deck under 16 segments, for anything
+  but free-space or deferred ground, and for any live `LD`/`TL`/`NT` stamp.
+  PH7-CHK-004's own acceptance evidence is that case: a loaded deck falling back
+  on a GPU-capable node. Asserting an adapter fault there would have printed a
+  wrong diagnosis on every worker of a healthy cluster, where the local CLI stays
+  silent.
+
+  Only on an explicit `--exec gpu`: without the flag the startup probe inspects
+  the *controller's* adapter and can select GPU by itself, which says nothing
+  about a remote host.
+
+  `exec_used` defaults to `cpu` for a worker too old to send it — accurate rather
+  than merely safe, since GPU execution and the field shipped together, so a
+  worker that omits it has no GPU path to report.
 
 - **A bad `EX` reference is no longer called a parse error** (FND-021). An `EX`
   naming a segment the geometry does not contain crossed the wire labelled

@@ -340,6 +340,7 @@ fn main() -> ExitCode {
             bench_format,
             solver_mode,
             execution_mode,
+            exec_flag_explicitly_set,
             &path,
         );
     }
@@ -532,27 +533,45 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(deck, segs, ground, freqs_hz, false)
 }
 
-/// Whether a worker ran this point somewhere other than the user asked.
+/// Whether a worker ran this point somewhere other than the user asked for.
 ///
 /// The worker has always told us which path it took; the controller dropped it on
-/// the floor (FND-040). Someone who passed `--exec gpu` and got a CPU solve —
-/// because that host has no adapter — had no way to find out, while the local CLI
-/// says so plainly.
+/// the floor (FND-040), so someone who passed `--exec gpu` and got a CPU solve had
+/// no way to find out.
+///
+/// **It reports the fact and not a cause, deliberately.** The first version added
+/// "that host has no usable adapter", which the controller cannot know and which
+/// is often false: the worker also declines the device for a deck under 16
+/// segments, for anything but free-space or deferred ground, and for any live
+/// `LD`/`TL`/`NT` stamp. PH7-CHK-004's own acceptance evidence is exactly that
+/// case — a loaded deck falling back on a GPU-capable node. Asserting an adapter
+/// fault there would print a wrong diagnosis, per point, on every worker of a
+/// perfectly healthy GPU cluster, where the local CLI stays silent: a new
+/// frontend disagreement of precisely the kind this finding was raised against.
+///
+/// Only on an explicit `--exec gpu`. Without the flag the startup probe inspects
+/// the *controller's* adapter and can select `Gpu` by itself — irrelevant to a
+/// remote host, and "the gpu you asked for" would then name a request nobody made.
 ///
 /// Split out because the alternative is a line inside the result loop that no test
 /// can reach: FND-034 was exactly that, three unreachable sends in a GUI closure,
-/// and the lesson was cheaper to apply here than to relearn.
+/// and applying the lesson cost less than relearning it.
 ///
-/// `exec_used` defaults to `"cpu"` for a worker too old to send it, so this cannot
-/// invent a fallback that never happened — the worst case is an upgraded worker's
-/// GPU run being reported as CPU.
-fn exec_fallback_warning(requested: ExecutionMode, exec_used: &str, label: &str) -> Option<String> {
-    if !matches!(requested, ExecutionMode::Gpu) || exec_used == "gpu" {
+/// `exec_used` defaults to `"cpu"` for a worker too old to send it — accurate
+/// rather than merely safe, since GPU execution and the field shipped together in
+/// PH7-CHK-004, so a worker that omits it has no GPU path to report.
+fn exec_fallback_warning(
+    requested: ExecutionMode,
+    exec_requested_explicitly: bool,
+    exec_used: &str,
+    label: &str,
+) -> Option<String> {
+    if !exec_requested_explicitly || !matches!(requested, ExecutionMode::Gpu) || exec_used == "gpu"
+    {
         return None;
     }
     Some(format!(
-        "worker '{label}' ran this point on {exec_used}, not the requested gpu — \
-         that host has no usable adapter"
+        "worker '{label}' ran this point on {exec_used}, not the gpu you asked for"
     ))
 }
 
@@ -615,6 +634,10 @@ fn run_distributed_solve(
     bench_format: BenchFormat,
     solver_mode: SolverMode,
     execution_mode: ExecutionMode,
+    // Whether `--exec` was actually passed. Without it the startup probe can
+    // select Gpu from the *controller's* adapter, which says nothing about a
+    // remote host — so a fallback there is not a broken promise.
+    exec_requested_explicitly: bool,
     path: &std::path::Path,
 ) -> ExitCode {
     let cfg = match HostsConfig::from_file(hosts_path) {
@@ -729,7 +752,12 @@ fn run_distributed_solve(
                 // plainly. `exec_used` defaults to "cpu" for an old worker, so
                 // this cannot invent a fallback that did not happen: the worst
                 // case is an upgraded-worker run reported as CPU.
-                if let Some(w) = exec_fallback_warning(execution_mode, &exec_used, &label) {
+                if let Some(w) = exec_fallback_warning(
+                    execution_mode,
+                    exec_requested_explicitly,
+                    &exec_used,
+                    &label,
+                ) {
                     eprintln!("warning: {w}");
                 }
                 let bench = BenchRecord {
@@ -1231,26 +1259,44 @@ mod tests {
 
     #[test]
     fn a_worker_that_fell_back_to_cpu_says_so() {
-        // FND-040. `--exec gpu` against a host with no adapter produced a CPU
+        // FND-040. `--exec gpu` against a host that did not use one produced a CPU
         // solve and total silence, while the local CLI warns.
-        let w = exec_fallback_warning(ExecutionMode::Gpu, "cpu", "node-2").expect("a warning");
+        let w = exec_fallback_warning(ExecutionMode::Gpu, true, "cpu", "node-2").expect("warning");
         assert!(w.contains("node-2"), "{w}");
-        assert!(w.contains("not the requested gpu"), "{w}");
+        assert!(w.contains("not the gpu you asked for"), "{w}");
+
+        // It must not assert WHY. The worker also declines the device for a small
+        // deck, for non-free-space ground, and for any live LD/TL/NT stamp — so
+        // "that host has no usable adapter", which the first version said, is
+        // false on a healthy GPU cluster running a loaded deck, and the local CLI
+        // is silent in exactly that case.
+        assert!(
+            !w.contains("adapter"),
+            "the controller cannot know the cause: {w}"
+        );
 
         // Got what was asked for: nothing to say.
         assert_eq!(
-            exec_fallback_warning(ExecutionMode::Gpu, "gpu", "node-2"),
+            exec_fallback_warning(ExecutionMode::Gpu, true, "gpu", "node-2"),
             None
         );
 
         // Never asked for gpu: a cpu run is not a fallback. Without this the
-        // warning would fire on every ordinary distributed run.
+        // warning fires on every ordinary distributed run.
         assert_eq!(
-            exec_fallback_warning(ExecutionMode::Cpu, "cpu", "node-2"),
+            exec_fallback_warning(ExecutionMode::Cpu, true, "cpu", "node-2"),
             None
         );
         assert_eq!(
-            exec_fallback_warning(ExecutionMode::Hybrid, "cpu", "node-2"),
+            exec_fallback_warning(ExecutionMode::Hybrid, true, "cpu", "node-2"),
+            None
+        );
+
+        // And `--exec` never passed: the startup probe can select Gpu from the
+        // CONTROLLER's adapter, which says nothing about a remote host. Warning
+        // there would name a request the user never made.
+        assert_eq!(
+            exec_fallback_warning(ExecutionMode::Gpu, false, "cpu", "node-2"),
             None
         );
     }
