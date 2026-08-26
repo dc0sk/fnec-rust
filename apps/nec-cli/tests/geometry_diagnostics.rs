@@ -118,6 +118,34 @@ fn tiny_source_segment_fails_fast_with_actionable_error() {
     );
 }
 
+/// FND-036, at the production entry point.
+///
+/// The unit test pins `validate::mixed_excitation_error`; this pins that the CLI
+/// actually calls it. Dropping the check from `pre_solve_error` leaves every unit
+/// test green while the CLI happily prints the wrong number again — measured, not
+/// assumed.
+#[test]
+fn a_deck_driven_by_two_kinds_of_source_is_refused() {
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-mixed-sources-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a deck whose feedpoint would be meaningless must not solve:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("both a voltage source") && stderr.contains("current source"),
+        "the refusal must name what is fighting:\n{stderr}"
+    );
+}
+
 /// FND-035: a receive-only deck was hard-rejected for a source it does not have.
 ///
 /// The source-risk check read every `EX` card with no type filter, so a plane

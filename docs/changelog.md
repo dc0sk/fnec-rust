@@ -98,6 +98,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A deck driven by two kinds of source is now refused instead of answered
+  wrongly** (FND-036). A dipole carrying both an `EX 0` and an `EX 4` reported
+  **0.678 + j0.086 Ω** for the voltage feedpoint, where the same deck without the
+  current source gives **74.243 + j13.900** — a hundredfold error at exit 0 with
+  no warning. The current-source path replaces the right-hand side, so the delta
+  gap was priced over currents its own drive never produced.
+
+  Superposition would be the physically correct answer and is real solver work.
+  Refusing is the honest interim: those numbers were never meaningful, so nothing
+  is lost by declining to print them. The message names both offending cards,
+  because "remove one" is unactionable if you cannot tell which two are fighting.
+
+  All four frontends refuse it, through a new `validate::pre_solve_error`
+  aggregate. That is deliberately not bolted into `geometry_error`: this is not a
+  geometry problem, and a reader asking "why was my deck refused" would never
+  think to look there.
+
 - **A distributed run now says when it did not run where you asked** (FND-040).
   `--exec gpu --hosts` against a host with no adapter produced a CPU solve in
   silence. The worker had always reported which path it took; the controller
