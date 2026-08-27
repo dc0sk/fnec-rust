@@ -31,11 +31,12 @@ pub async fn run_sweep_stream(
     start_mhz: f64,
     end_mhz: f64,
     step_mhz: f64,
+    solver: crate::solve::SolverKind,
     // Every send result is discarded, so no bound on the error type is needed;
     // requiring one would document a constraint this function does not have.
     output: &mut (impl Sink<Message> + Unpin),
 ) {
-    let job = match SweepJob::prepare(&deck_text, start_mhz, end_mhz, step_mhz) {
+    let job = match SweepJob::prepare(&deck_text, start_mhz, end_mhz, step_mhz, solver) {
         Ok(job) => job,
         Err(e) => {
             let _ = output.send(Message::SweepComplete(Err(e))).await;
@@ -91,7 +92,15 @@ mod tests {
         let (mut tx, rx) = mpsc::channel::<Message>(256);
         let deck = deck.to_string();
         iced::futures::executor::block_on(async move {
-            run_sweep_stream(deck, start, end, step, &mut tx).await;
+            run_sweep_stream(
+                deck,
+                start,
+                end,
+                step,
+                crate::solve::SolverKind::Hallen,
+                &mut tx,
+            )
+            .await;
             drop(tx);
             rx.collect::<Vec<_>>().await
         })

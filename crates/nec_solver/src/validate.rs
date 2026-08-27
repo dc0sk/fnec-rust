@@ -241,6 +241,71 @@ fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
+// Solver context
+// ---------------------------------------------------------------------------
+
+/// Which solver a frontend is about to run.
+///
+/// Two variants, not the CLI's five: the pulse, continuity and sinusoidal modes
+/// are experimental and known-inaccurate for thin-wire antennas, and a diagnostic
+/// that branched on them would be inventing advice for solvers no frontend should
+/// offer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolverKind {
+    /// Hallén's integral equation — the default everywhere.
+    Hallen,
+    /// The mixed-potential EFIE: degree-3 junctions, closed loops, near-ground
+    /// currents.
+    Mpie,
+}
+
+impl SolverKind {
+    /// The solvers a frontend may offer, in the order a picker should list them.
+    ///
+    /// Hallén first because it is the default and the right answer for most
+    /// decks; the MPIE is the opt-in for the topologies Hallén cannot reach.
+    pub const ALL: [SolverKind; 2] = [SolverKind::Hallen, SolverKind::Mpie];
+
+    /// A short human label, for a menu entry or a report line.
+    pub fn label(self) -> &'static str {
+        match self {
+            SolverKind::Hallen => "Hallén",
+            SolverKind::Mpie => "MPIE",
+        }
+    }
+}
+
+impl std::fmt::Display for SolverKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// What a frontend must tell the diagnostics about itself.
+///
+/// `mpie_remedy` exists because the advice "use the MPIE" is *reached* differently
+/// in each frontend, and a shared string cannot name a CLI flag to a GUI user who
+/// has a picker in front of them. The precedent is
+/// [`unpriceable_feedpoint_error`], which takes its remedy the same way.
+#[derive(Debug, Clone, Copy)]
+pub struct SolverContext<'a> {
+    pub kind: SolverKind,
+    /// How to reach the MPIE from here — "re-run with `--solver mpie`" for the
+    /// CLI, "switch the solver to MPIE" for a GUI with a picker.
+    pub mpie_remedy: &'a str,
+}
+
+impl SolverContext<'static> {
+    /// The Hallén path as a command-line tool describes it.
+    pub const fn cli_hallen() -> Self {
+        Self {
+            kind: SolverKind::Hallen,
+            mpie_remedy: "re-run with `--solver mpie`",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Deck capability
 // ---------------------------------------------------------------------------
 
@@ -348,7 +413,11 @@ pub fn ge_ground_reflection_warning(deck: &NecDeck) -> Option<String> {
 ///
 /// This catches the loop case that [`feedpoint_at_junction_warnings`] misses,
 /// because a loop's feed need not sit on the junction.
-pub fn unsupported_topology_warning(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
+pub fn unsupported_topology_warning(
+    deck: &NecDeck,
+    segs: &[Segment],
+    mpie_remedy: &str,
+) -> Option<String> {
     let kind = match classify_unsupported_topology(segs)? {
         UnsupportedTopology::ClosedLoop => {
             "a closed loop (a conductor with no free end); the Hallén solve does not model \
@@ -360,11 +429,14 @@ pub fn unsupported_topology_warning(deck: &NecDeck, segs: &[Segment]) -> Option<
         }
     };
     let remedy = if mpie_compatible_deck(deck) {
-        "so the reported impedance, currents, and pattern are unreliable — re-run with \
-         `--solver mpie`, which solves this geometry correctly (PH9-CHK-007)"
+        format!(
+            "so the reported impedance, currents, and pattern are unreliable — {mpie_remedy}, \
+             which solves this geometry correctly (PH9-CHK-007)"
+        )
     } else {
         "so the reported impedance, currents, and pattern for this geometry are unreliable \
          (support for this combination is deferred — see PH9-CHK-002)"
+            .to_string()
     };
     Some(format!("geometry contains {kind}, {remedy}"))
 }
@@ -451,6 +523,7 @@ pub fn negative_resistance_warning(
     seg: usize,
     deck: &NecDeck,
     segs: &[Segment],
+    ctx: SolverContext<'_>,
 ) -> Option<String> {
     if !is_negative_resistance(z_re) {
         return None;
@@ -459,7 +532,7 @@ pub fn negative_resistance_warning(
         z_re,
         tag,
         seg,
-        negative_resistance_cause(deck, segs),
+        &negative_resistance_cause(deck, segs, ctx),
     ))
 }
 
@@ -504,19 +577,34 @@ pub fn is_negative_resistance(z_re: f64) -> bool {
 /// Exposing it beats letting such a caller split the message on its punctuation:
 /// two of the three causes contain an em-dash themselves, so that surgery silently
 /// returns a fragment.
-pub fn negative_resistance_cause(deck: &NecDeck, segs: &[Segment]) -> &'static str {
+pub fn negative_resistance_cause(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ctx: SolverContext<'_>,
+) -> String {
+    // The MPIE models junctions correctly, so a junction is never the reason
+    // there — this cause is a claim about the solver, not about the deck. It was
+    // an arm in the CLI, which meant the GUI running an MPIE solve would have
+    // recommended the solver it was already running.
+    if ctx.kind == SolverKind::Mpie {
+        return "please report it as a solver defect".to_string();
+    }
+    let mpie_remedy = ctx.mpie_remedy;
     if has_wire_junction(segs) {
-        "commonly a junctioned-geometry limitation (see PH9-CHK-002)"
+        "commonly a junctioned-geometry limitation (see PH9-CHK-002)".to_string()
     } else if mpie_compatible_deck(deck) {
         // Saying "junctioned-geometry limitation" here would send the reader after
         // a cause the deck does not contain.
-        "this geometry has no wire junction, so the usual junctioned-geometry cause \
-         (PH9-CHK-002) does not apply and the reason is not identified — cross-check \
-         with `--solver mpie`, and please report it if it persists"
+        format!(
+            "this geometry has no wire junction, so the usual junctioned-geometry cause \
+             (PH9-CHK-002) does not apply and the reason is not identified — {mpie_remedy} \
+             to cross-check, and please report it if it persists"
+        )
     } else {
         "this geometry has no wire junction, so the usual junctioned-geometry cause \
          (PH9-CHK-002) does not apply and the reason is not identified — the MPIE \
          cross-check is unavailable for this deck, so please report it"
+            .to_string()
     }
 }
 
@@ -610,8 +698,9 @@ pub fn hallen_geometry_caveats(
     ground: &GroundModel,
     freq_hz: f64,
     surface_wave_modelled: bool,
+    mpie_remedy: &str,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs);
+    let mut out = frequency_independent_caveats(deck, segs, mpie_remedy);
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
         out.push(w);
     }
@@ -701,8 +790,9 @@ pub fn hallen_geometry_caveats_swept(
     ground: &GroundModel,
     freqs_hz: &[f64],
     surface_wave_modelled: bool,
+    mpie_remedy: &str,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs);
+    let mut out = frequency_independent_caveats(deck, segs, mpie_remedy);
     if let Some(w) = swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled) {
         out.push(w);
     }
@@ -710,9 +800,13 @@ pub fn hallen_geometry_caveats_swept(
 }
 
 /// The caveats that hold for the deck regardless of frequency.
-fn frequency_independent_caveats(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+fn frequency_independent_caveats(
+    deck: &NecDeck,
+    segs: &[Segment],
+    mpie_remedy: &str,
+) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(w) = unsupported_topology_warning(deck, segs) {
+    if let Some(w) = unsupported_topology_warning(deck, segs, mpie_remedy) {
         out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
@@ -809,24 +903,58 @@ pub fn diagnose(
     segs: &[Segment],
     ground: &GroundModel,
     freq_hz: f64,
+    ctx: SolverContext<'_>,
 ) -> Vec<ValidationDiagnostic> {
     let mut out = Vec::new();
     if let Some(e) = pre_solve_error(deck, segs, ground) {
         out.push(ValidationDiagnostic::error(e));
     }
+    // What the *chosen* solver cannot represent is an error, not a caveat: the
+    // MPIE has nowhere to stamp a load, so offering to solve anyway would answer
+    // with the card silently ignored.
+    if ctx.kind == SolverKind::Mpie {
+        if let Some(u) = crate::mpie_session::mpie_unsupported(deck) {
+            out.push(ValidationDiagnostic::error(u.to_string()));
+        }
+    }
+
+    // Solver-independent: these describe the deck and the ground model, not the
+    // basis that will be used on them.
     for w in [
         ge_ground_reflection_warning(deck),
         deferred_ground_warning(ground),
-        unsupported_topology_warning(deck, segs),
-        low_finite_ground_warning(segs, ground, freq_hz, false),
     ]
     .into_iter()
     .flatten()
     {
         out.push(ValidationDiagnostic::warning(w));
     }
-    for w in feedpoint_at_junction_warnings(deck, segs) {
-        out.push(ValidationDiagnostic::warning(w));
+
+    match ctx.kind {
+        // The Hallén basis cannot model a loop closure, a Kirchhoff split at a
+        // T/Y junction, or the surface wave near lossy ground.
+        SolverKind::Hallen => {
+            for w in [
+                unsupported_topology_warning(deck, segs, ctx.mpie_remedy),
+                low_finite_ground_warning(segs, ground, freq_hz, false),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                out.push(ValidationDiagnostic::warning(w));
+            }
+            for w in feedpoint_at_junction_warnings(deck, segs) {
+                out.push(ValidationDiagnostic::warning(w));
+            }
+        }
+        // The MPIE solves all three correctly, so repeating those caveats there
+        // would be false — and the topology one would recommend the solver
+        // already running. Its own limitation is the single-radius kernel.
+        SolverKind::Mpie => {
+            if let Some(w) = mpie_mixed_radius_caveat(segs) {
+                out.push(ValidationDiagnostic::warning(w));
+            }
+        }
     }
     out
 }
@@ -854,7 +982,13 @@ mod tests {
     #[test]
     fn a_clean_free_space_dipole_produces_no_diagnostics() {
         let (deck, segs) = deck_and_segs(CLEAN_DIPOLE);
-        let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6);
+        let diags = diagnose(
+            &deck,
+            &segs,
+            &GroundModel::FreeSpace,
+            14.2e6,
+            SolverContext::cli_hallen(),
+        );
         assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
         assert!(!has_error(&diags));
     }
@@ -867,7 +1001,13 @@ mod tests {
         );
         let err = segment_intersection_error(&segs).expect("crossing wires must be rejected");
         assert!(err.contains("intersecting-wire"), "{err}");
-        let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6);
+        let diags = diagnose(
+            &deck,
+            &segs,
+            &GroundModel::FreeSpace,
+            14.2e6,
+            SolverContext::cli_hallen(),
+        );
         assert!(has_error(&diags), "diagnose must surface it as an Error");
     }
 
@@ -1102,18 +1242,23 @@ mod tests {
     fn a_non_negative_resistance_produces_no_warning() {
         let (deck, segs) = deck_and_segs(STRAIGHT);
         assert_eq!(
-            negative_resistance_warning(74.24, 1, 11, &deck, &segs),
+            negative_resistance_warning(74.24, 1, 11, &deck, &segs, SolverContext::cli_hallen()),
             None
         );
         // Exactly zero is not negative. A passive antenna can present a very small
         // resistance; only a sign change is the impossible-result signal.
-        assert_eq!(negative_resistance_warning(0.0, 1, 11, &deck, &segs), None);
+        assert_eq!(
+            negative_resistance_warning(0.0, 1, 11, &deck, &segs, SolverContext::cli_hallen()),
+            None
+        );
     }
 
     #[test]
     fn a_junctioned_geometry_is_told_the_junction_cause() {
         let (deck, segs) = deck_and_segs(BENT);
-        let w = negative_resistance_warning(-5.973, 1, 5, &deck, &segs).expect("warning");
+        let w =
+            negative_resistance_warning(-5.973, 1, 5, &deck, &segs, SolverContext::cli_hallen())
+                .expect("warning");
         assert!(w.contains("negative resistance"), "{w}");
         assert!(w.contains("Re Z = -5.973"), "{w}");
         assert!(w.contains("PH9-CHK-002"), "{w}");
@@ -1126,7 +1271,8 @@ mod tests {
     #[test]
     fn a_junctionless_geometry_is_not_blamed_on_a_junction_it_lacks() {
         let (deck, segs) = deck_and_segs(STRAIGHT);
-        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs).expect("warning");
+        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs, SolverContext::cli_hallen())
+            .expect("warning");
         assert!(w.contains("no wire junction"), "{w}");
         // This deck the MPIE can take, so the cross-check is worth offering.
         assert!(w.contains("--solver mpie"), "{w}");
@@ -1141,7 +1287,8 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 0 1 11 11 50.0 0.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs).expect("warning");
+        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs, SolverContext::cli_hallen())
+            .expect("warning");
         assert!(w.contains("no wire junction"), "{w}");
         assert!(
             !w.contains("--solver mpie"),
@@ -1217,7 +1364,8 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let w = unsupported_topology_warning(&deck, &segs).expect("T junction must warn");
+        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+            .expect("T junction must warn");
         assert!(w.contains("three or more wires"), "{w}");
         assert!(
             w.contains("--solver mpie"),
@@ -1225,7 +1373,10 @@ mod tests {
         );
         // A straight dipole has no such topology.
         let (d2, s2) = deck_and_segs(CLEAN_DIPOLE);
-        assert_eq!(unsupported_topology_warning(&d2, &s2), None);
+        assert_eq!(
+            unsupported_topology_warning(&d2, &s2, "re-run with `--solver mpie`"),
+            None
+        );
     }
 
     #[test]
@@ -1236,7 +1387,8 @@ mod tests {
             "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert!(!mpie_compatible_deck(&deck));
-        let w = unsupported_topology_warning(&deck, &segs).expect("still an unsupported topology");
+        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+            .expect("still an unsupported topology");
         assert!(
             !w.contains("--solver mpie"),
             "must not recommend a solver that rejects the deck: {w}"

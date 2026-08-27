@@ -88,6 +88,12 @@ pub struct AppState {
     /// Deck-level caveats, shown on every tab rather than only the Solve panel:
     /// they describe the deck, not the action that was run.
     pub deck_warnings: Vec<String>,
+    /// Which solver every solve path uses (FND-007).
+    ///
+    /// One field, not one per tab: the Solve, Sweep, Currents and Pattern views
+    /// all read it, because a picker that changed only the tab in front of you
+    /// would be the FND-038 defect with a different subject.
+    pub solver: crate::solve::SolverKind,
     // ── Sweep tab state ────────────────────────────────────────────────────
     /// Sweep start frequency (MHz), as text so the input field can hold it.
     pub sweep_start: String,
@@ -242,6 +248,7 @@ impl Default for AppState {
             active_tab: ActiveTab::default(),
             phase: SolvePhase::default(),
             deck_warnings: Vec::new(),
+            solver: crate::solve::SolverKind::Hallen,
             sweep_start: "14.0".into(),
             sweep_end: "18.0".into(),
             sweep_step: "0.5".into(),
@@ -280,6 +287,9 @@ pub enum Message {
     VarsPathChanged(String),
     /// User switched tabs.
     TabSelected(ActiveTab),
+    /// User picked a solver (FND-007). Invalidates every solved view, because
+    /// the numbers on screen came from the other solver.
+    SolverSelected(crate::solve::SolverKind),
     // ── Single-frequency tab ──────────────────────────────────────────────
     /// User clicked the Solve button.
     Solve,
@@ -424,6 +434,20 @@ impl AppState {
             }
             Message::TabSelected(tab) => {
                 self.active_tab = tab.clone();
+            }
+            Message::SolverSelected(solver) => {
+                if self.solver != *solver {
+                    self.solver = *solver;
+                    // Every solved view on screen was produced by the *other*
+                    // solver. Leaving them up would show one solver's impedance
+                    // beside another's pattern with nothing saying so, which is
+                    // the frontend-disagreement class this whole arc is about.
+                    self.phase = SolvePhase::Idle;
+                    // The swept points live inside the phase, so resetting it
+                    // drops them with it.
+                    self.sweep_phase = SweepPhase::Idle;
+                    self.sweep_caveats.clear();
+                }
             }
             Message::Solve => {
                 self.phase = SolvePhase::Solving;

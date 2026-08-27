@@ -530,7 +530,14 @@ fn distributed_pre_solve_caveats(
     // The worst-case frequency choice and its annotation live in the producer, so
     // this path and the GUI sweep cannot describe the same range differently —
     // which they did, until one of them grew an affected-count the other lacked.
-    nec_solver::validate::hallen_geometry_caveats_swept(deck, segs, ground, freqs_hz, false)
+    nec_solver::validate::hallen_geometry_caveats_swept(
+        deck,
+        segs,
+        ground,
+        freqs_hz,
+        false,
+        crate::solve_session::CLI_MPIE_REMEDY,
+    )
 }
 
 /// Whether a worker ran this point somewhere other than the user asked for.
@@ -612,9 +619,16 @@ fn distributed_negative_resistance_warnings(
     let (tag, seg) = nec_solver::first_delta_gap_feedpoint(deck)
         .map(|ex| (ex.tag as usize, ex.segment as usize))
         .unwrap_or((0, 0));
-    nec_solver::validate::negative_resistance_warning(z_re, tag, seg, deck, segs)
-        .into_iter()
-        .collect()
+    nec_solver::validate::negative_resistance_warning(
+        z_re,
+        tag,
+        seg,
+        deck,
+        segs,
+        nec_solver::validate::SolverContext::cli_hallen(),
+    )
+    .into_iter()
+    .collect()
 }
 
 /// Distributed solve via `--hosts`.
@@ -1221,8 +1235,14 @@ mod tests {
         let (deck, segs) = deck_and_segs(LOW_TEE);
         let ground = nec_solver::ground_model_from_deck(&deck);
 
-        let produced =
-            nec_solver::validate::hallen_geometry_caveats(&deck, &segs, &ground, 14.2e6, false);
+        let produced = nec_solver::validate::hallen_geometry_caveats(
+            &deck,
+            &segs,
+            &ground,
+            14.2e6,
+            false,
+            crate::solve_session::CLI_MPIE_REMEDY,
+        );
         assert!(
             produced.len() >= 3,
             "fixture must earn several caveats or this proves little: {produced:?}"

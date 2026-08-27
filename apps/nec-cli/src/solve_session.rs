@@ -78,6 +78,13 @@ use nec_solver::{
 };
 use num_complex::Complex64;
 
+/// How a command-line user reaches the MPIE, for diagnostics that recommend it.
+///
+/// One constant rather than a literal at each call site: a GUI names its picker
+/// instead, and the whole point of the caller-supplied remedy is that neither
+/// frontend quotes the other's interface.
+pub(crate) const CLI_MPIE_REMEDY: &str = "re-run with `--solver mpie`";
+
 pub(super) struct PulseCurrentSourceConstraint {
     pub(super) seg_index: usize,
     pub(super) source_current: Complex64,
@@ -658,33 +665,24 @@ pub(super) fn negative_resistance_warnings(
     segs: &[Segment],
     solver_mode: SolverMode,
 ) -> Vec<String> {
-    match solver_mode {
-        SolverMode::Hallen => rows
-            .iter()
-            .filter_map(|r| {
-                nec_solver::validate::negative_resistance_warning(
-                    r.z_in.re, r.tag, r.seg, deck, segs,
-                )
-            })
-            .collect(),
-        SolverMode::Mpie => rows
-            .iter()
-            .filter(|r| nec_solver::validate::is_negative_resistance(r.z_in.re))
-            .map(|r| {
-                // The MPIE models junctions correctly, so a junction is never the
-                // reason — this cause is a claim about the solver, not the deck.
-                // The sentence around it is composed by the shared builder so the
-                // two arms cannot drift apart.
-                nec_solver::validate::negative_resistance_message(
-                    r.z_in.re,
-                    r.tag,
-                    r.seg,
-                    "please report it as a solver defect",
-                )
-            })
-            .collect(),
-        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => Vec::new(),
-    }
+    // The two arms are gone: `negative_resistance_cause` now takes the solver
+    // context and picks the cause itself, so the GUI's MPIE runs get the same
+    // "report it as a solver defect" wording this binary used to own alone.
+    let ctx = match solver_mode {
+        SolverMode::Hallen => nec_solver::validate::SolverContext::cli_hallen(),
+        SolverMode::Mpie => nec_solver::validate::SolverContext {
+            kind: nec_solver::validate::SolverKind::Mpie,
+            mpie_remedy: CLI_MPIE_REMEDY,
+        },
+        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => return Vec::new(),
+    };
+    rows.iter()
+        .filter_map(|r| {
+            nec_solver::validate::negative_resistance_warning(
+                r.z_in.re, r.tag, r.seg, deck, segs, ctx,
+            )
+        })
+        .collect()
 }
 
 /// Whether the opt-in Sommerfeld surface-wave correction (PH9-CHK-006) actually
@@ -1383,6 +1381,7 @@ pub(super) fn solve_frequency_point(
             ground,
             freq_hz,
             matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
+            CLI_MPIE_REMEDY,
         ) {
             eprintln!("warning: {w}");
         }
