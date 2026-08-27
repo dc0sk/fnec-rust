@@ -71,6 +71,25 @@ mod tests {
         );
     }
 
+    /// FND-041: the worker parsed the deck, produced caveats, and dropped them on
+    /// the next line (`let deck = parse_result.deck;`). Masked for the CLI, which
+    /// parses the identical bytes locally and prints its own — so the loss was
+    /// invisible for exactly one caller and total for every other, including
+    /// anything driving the public `run_worker_stdio`.
+    #[test]
+    fn a_parse_caveat_reaches_the_caller_instead_of_being_dropped() {
+        // An unrecognised card is a *warning*, not an error: the deck still
+        // solves, and the user still needs to know a line was ignored.
+        let deck = "CM unknown card\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    ZZ 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let r = solve_deck_at_frequency(deck, 14.2e6, "hallen").expect("deck still solves");
+        assert!(
+            r.warnings.iter().any(|w| w.contains("ZZ")),
+            "the ignored card must reach the caller: {:?}",
+            r.warnings
+        );
+    }
+
     #[test]
     fn a_clean_deck_reports_no_warnings() {
         let r = solve_deck_at_frequency(DIPOLE, 14.2e6, "hallen").expect("solve");
@@ -211,9 +230,12 @@ pub struct FeedpointResult {
     pub current_phase_deg: f64,
     /// Execution path actually taken: `"cpu"` | `"gpu"` (PH7-CHK-004).
     pub exec_used: String,
-    /// Caveats raised while filling the matrix — a malformed `LD`, `TL` or `NT`
-    /// card that was skipped. The worker is the only place these exist, so
-    /// dropping them here is the same as never producing them (FND-026).
+    /// Caveats this solve earned: the deck's own parse warnings (FND-041),
+    /// followed by those raised while filling the matrix — a malformed `LD`, `TL`
+    /// or `NT` card that was skipped (FND-026). The worker is the only place the
+    /// matrix-fill ones exist, so dropping them is the same as never producing
+    /// them; the parse ones are merely *masked* for the CLI, which parses the
+    /// same bytes locally, and lost outright for every other caller.
     pub warnings: Vec<String>,
 }
 
@@ -283,6 +305,15 @@ pub fn solve_deck_at_frequency_with_exec(
     let parse_result =
         nec_parser::parse(deck_str).map_err(|e| SolveError::ParseError(e.to_string()))?;
     let deck = parse_result.deck;
+    // The parse caveats travel with the result. Discarding them here was the same
+    // as never producing them for anything driving `run_worker_stdio`, which is
+    // public API: the CLI happens to parse the identical bytes locally and print
+    // its own, so the loss was masked for exactly one of the callers (FND-041).
+    let parse_warnings: Vec<String> = parse_result
+        .warnings
+        .iter()
+        .map(ToString::to_string)
+        .collect();
 
     // 2. Build geometry
     let segs = build_geometry(&deck).map_err(|e| SolveError::GeometryError(e.to_string()))?;
@@ -423,7 +454,13 @@ pub fn solve_deck_at_frequency_with_exec(
             v_source
         };
         return Ok(FeedpointResult {
-            warnings: stamps.warnings.clone(),
+            // Parse caveats first: they describe the deck the rest was derived
+            // from, so they read before the matrix-fill ones.
+            warnings: parse_warnings
+                .iter()
+                .chain(stamps.warnings.iter())
+                .cloned()
+                .collect(),
             impedance_re: z_in.re,
             impedance_im: z_in.im,
             current_mag: current.norm(),

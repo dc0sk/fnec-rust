@@ -207,6 +207,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The remote worker stops losing information the local path keeps** (FND-049,
+  FND-041). Two separate leaks, same class.
+
+  A deck that **parsed cleanly** crossed the wire as `parse_error`. The
+  `SolveError` → `ErrorCode` mapping ended in a catch-all, so anything it had not
+  named inherited `ParseError` — including `NoFeedpoint`, which a plane-wave
+  (`EX 1`) receive deck returns and which the local CLI solves happily. The reader
+  went hunting for a syntax mistake that was not there. The mapping is exhaustive
+  now, so a new `SolveError` forces a decision at compile time rather than
+  silently inheriting the wrong code; a genuine syntax error still earns
+  `ParseError`.
+
+  Separately, the worker parsed the deck and dropped its caveats on the next line
+  (`let deck = parse_result.deck;`), so an ignored card was never reported. That
+  was masked for the CLI, which parses the identical bytes locally and prints its
+  own — invisible for exactly one caller and total for every other, including
+  anything driving the public `run_worker_stdio`.
+
 - **A degenerate frequency is refused instead of answered** (FND-056, FND-030).
   Nothing validated `FR` at all, and the results were not merely wrong but
   confidently wrong. Measured on a 21-segment dipole before the fix:

@@ -104,24 +104,35 @@ fn process_task(line: &str) -> TaskResult {
                 warnings: fp.warnings,
             }
         }
-        Err(SolveError::SingularMatrix(m)) => TaskResult::Error {
-            task_id,
-            frequency_hz: freq_hz,
-            error_code: ErrorCode::SingularMatrix,
-            error_message: m,
-        },
-        Err(SolveError::UnsupportedConfig(m)) => TaskResult::Error {
-            task_id,
-            frequency_hz: freq_hz,
-            error_code: ErrorCode::UnsupportedConfig,
-            error_message: m,
-        },
-        Err(e) => TaskResult::Error {
-            task_id,
-            frequency_hz: freq_hz,
-            error_code: ErrorCode::ParseError,
-            error_message: e.to_string(),
-        },
+        Err(e) => {
+            // Exhaustive on purpose. This was a catch-all onto `ParseError`, so a
+            // deck that parsed cleanly — and that the local CLI solves — crossed
+            // the wire as `parse_error`, sending the reader hunting for a syntax
+            // mistake that is not there. A plane-wave (`EX 1`) receive deck is the
+            // live case: it returns `NoFeedpoint`, which is a statement about what
+            // this worker supports, not about the deck's syntax (FND-049).
+            //
+            // Listing every variant means a new `SolveError` forces a decision
+            // here at compile time instead of silently inheriting the wrong code —
+            // the mistake the catch-all made once already.
+            //
+            // Mapped onto existing `ErrorCode`s rather than adding one: the enum is
+            // serialised on the wire, so a new variant breaks an older controller's
+            // deserialisation outright, unlike the additive `warnings` field.
+            let error_code = match &e {
+                SolveError::ParseError(_) => ErrorCode::ParseError,
+                SolveError::SingularMatrix(_) => ErrorCode::SingularMatrix,
+                SolveError::GeometryError(_)
+                | SolveError::UnsupportedConfig(_)
+                | SolveError::NoFeedpoint => ErrorCode::UnsupportedConfig,
+            };
+            TaskResult::Error {
+                task_id,
+                frequency_hz: freq_hz,
+                error_code,
+                error_message: e.to_string(),
+            }
+        }
     }
 }
 
@@ -227,6 +238,60 @@ mod tests {
     fn process_task_missing_fields_returns_error() {
         let result = process_task(r#"{"task_id":"t1"}"#);
         assert!(!result.is_ok());
+    }
+
+    /// Build a task line for `deck`, so a test can drive the wire boundary rather
+    /// than the solver underneath it — which is where the mislabel was visible.
+    fn task_line(deck: &str) -> String {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(deck);
+        format!(
+            r#"{{"task_id":"t1","deck_hash":"abc","deck_b64":"{b64}",
+                "solver_config":{{"basis":"hallen","ground_model":"none"}},
+                "frequency_hz":14.2e6}}"#
+        )
+    }
+
+    /// FND-049: the catch-all stamped `ParseError` on every error it had not
+    /// named, so a deck that **parsed cleanly** crossed the wire as `parse_error`.
+    ///
+    /// A plane-wave receive deck is the live case: it has no driven feedpoint, so
+    /// the worker returns `NoFeedpoint` — a statement about what this worker
+    /// supports, not about the deck's syntax. The local CLI solves the same deck.
+    #[test]
+    fn a_cleanly_parsed_deck_is_not_reported_as_a_parse_error() {
+        // `EX 1` is an incident plane wave: no driven source for the worker to
+        // price, but nothing wrong with the text.
+        let deck = "CM plane-wave receive deck\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 1 1 1 0 0.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected an error for a deck with no driven feedpoint: {result:?}");
+        };
+        assert_ne!(
+            *error_code,
+            ErrorCode::ParseError,
+            "a deck that parsed cleanly must not cross the wire as parse_error; \
+             message was: {error_message}"
+        );
+        assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+    }
+
+    /// The negative control: a genuine syntax error still earns `ParseError`, so
+    /// the fix narrowed the code rather than abandoning it.
+    #[test]
+    fn a_genuinely_unparseable_deck_is_still_a_parse_error() {
+        let deck = "CM bad field\nCE\nGW 1 51 zz 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error { error_code, .. } = &result else {
+            panic!("expected a parse error: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::ParseError);
     }
 
     #[test]
