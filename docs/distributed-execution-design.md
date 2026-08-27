@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/distributed-execution-design.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-08-28
 ---
 
 # Distributed Execution Design
@@ -178,10 +178,18 @@ Defined `error_code` values:
 | Code | Meaning |
 |:-----|:--------|
 | `singular_matrix` | Z-matrix factorisation failed (NaN/Inf or zero pivot) |
-| `parse_error` | Deck failed to parse on the worker — a card the parser recognises carrying a field it cannot read. Free text is *not* this: it parses cleanly and fails later as `geometry_error` |
-| `unsupported_config` | The deck parsed but the worker will not solve it: a solver config it does not offer, geometry outside the supported class (FND-013), an `EX` naming a segment the geometry lacks (FND-021), or a current-source feedpoint it cannot price |
+| `parse_error` | Deck failed to parse on the worker — a card the parser recognises carrying a field it cannot read. Free text is *not* this: it parses cleanly and is refused later as `unsupported_config`. Also used for a task line or base64 payload the worker cannot decode, which is a transport fault rather than a deck fault — noted as a known imprecision, [FND-060](project/findings-ledger.md) |
+| `unsupported_config` | The deck parsed but the worker will not solve it: a solver config it does not offer, geometry outside the supported class (FND-013) **or that fails to build at all**, an `EX` naming a segment the geometry lacks (FND-021), a current-source feedpoint it cannot price, or **no driven feedpoint to price** — a receive-only (`EX 1` plane-wave) deck, which the local CLI solves (FND-049) |
 | `resource_exhausted` | Worker ran out of memory |
 | `internal` | Catch-all for unexpected panics |
+
+The `SolveError` → `error_code` mapping is **exhaustive** (`crates/nec_worker/src/worker.rs`), so a
+new solver error forces a decision here rather than inheriting whichever code a catch-all happened to
+name. It stopped being a catch-all in FND-049, after `NoFeedpoint` spent its life crossing the wire as
+`parse_error`. New codes are **not** added lightly: `ErrorCode` is an externally-tagged serde enum with
+no `#[serde(other)]` fallback, so an unknown variant fails deserialisation of the whole result line,
+which the pool then reads as a dead worker and evicts. One deck could cascade an old controller into
+draining its pool.
 
 ### 3.3 Failure semantics
 
