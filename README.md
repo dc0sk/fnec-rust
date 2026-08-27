@@ -120,6 +120,22 @@ This configures `core.hooksPath` to use `.githooks/`.
 
 ## Local workflow checks
 
+**Run `./scripts/check-all.sh` before pushing** — it is the whole gate, across
+**both** cargo trees. `bindings/fnec_py` is deliberately outside the workspace (a
+cdylib with its own lockfile), so `cargo fmt --all --check` at the repository root
+**exits 0 on an unformatted bindings crate** and CI then fails on it. Measured
+both ways:
+
+| misformat in | root `fmt --all --check` | `scripts/check-all.sh` |
+|:---|:---|:---|
+| `crates/nec_solver` | 1 | 1 |
+| `bindings/fnec_py`  | **0** — the blind spot | 1 |
+
+Pass `--fast` to skip the test suite. The script needs
+`PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` for the bindings clippy run on a machine
+whose Python is newer than pyo3 supports; it sets that itself, and CI must not —
+CI pins the interpreter instead.
+
 - Pre-commit: `cargo fmt --all -- --check`, `cargo test --workspace`
 - Pre-push: `cargo audit`
 - Docs validation: `./scripts/validate-doc-frontmatter.sh`
