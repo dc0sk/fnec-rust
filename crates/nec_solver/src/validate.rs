@@ -707,6 +707,77 @@ pub fn hallen_geometry_caveats(
     out
 }
 
+/// Every frequency (MHz) one `FR` card asks for.
+///
+/// A **superset** of what the frontends expand, deliberately. The CLI reads only
+/// the first `FR` card and treats an unrecognised `step_type` as "the start
+/// frequency alone"; `fnec_py` reads every `FR` card and treats an unrecognised
+/// `step_type` as linear. Those two readings disagree (recorded separately), and
+/// picking a winner here would be inventing multi-`FR` semantics inside a
+/// validator. Taking the linear expansion for everything that is not
+/// multiplicative covers both — the CLI's single start frequency is that list's
+/// first element — so a deck this function passes is safe on either reading.
+fn fr_frequencies_mhz(fr: &nec_model::card::FrCard) -> Vec<f64> {
+    let steps = fr.steps.max(1) as usize;
+    (0..steps)
+        .map(|i| {
+            if fr.step_type == 1 {
+                fr.frequency_mhz * fr.step_mhz.powi(i as i32)
+            } else {
+                fr.frequency_mhz + fr.step_mhz * (i as f64)
+            }
+        })
+        .collect()
+}
+
+/// Why a deck's requested frequencies cannot be solved, if they cannot.
+///
+/// A frequency must be **strictly positive**. Nothing checked this, and the
+/// results were not merely wrong but confidently wrong (FND-056), measured at
+/// `e5cc774` on a 21-segment dipole:
+///
+/// - `FR 0 1 0 0 0.0 0` drives the current to exactly zero, so `Z = V/I` takes
+///   its zero-current branch and prints the `EX` source voltage back as an
+///   impedance — `1.000000 + j0.000000`, exit 0, no warning.
+/// - `FR 0 1 0 0 -14.2 0` returns `67.161824 + j32.275596`, the exact complex
+///   **conjugate** of the +14.2 MHz answer. A typo'd minus sign flips the
+///   reactance between capacitive and inductive and reports it as fact.
+///
+/// The check is over the **generated** list, not the card's first field: a
+/// descending sweep passes any start-value test and still walks into negative
+/// frequency. `FR 0 5 0 0 10.0 -3.0` solves and reports `FREQ_MHZ -2.000000`.
+pub fn frequency_error(deck: &NecDeck) -> Option<String> {
+    for card in &deck.cards {
+        let Card::Fr(fr) = card else { continue };
+        for (i, f) in fr_frequencies_mhz(fr).into_iter().enumerate() {
+            if f > 0.0 {
+                continue;
+            }
+            let what = if fr.steps.max(1) > 1 {
+                format!(
+                    "step {} of the sweep starting at {} MHz is {f} MHz",
+                    i + 1,
+                    fr.frequency_mhz
+                )
+            } else {
+                format!("{f} MHz is not a usable frequency")
+            };
+            // One cause per case: quoting both would leave the reader to work out
+            // which of them applies to the deck in front of them.
+            let why = if f < 0.0 {
+                "a negative frequency returns the complex conjugate of its positive \
+                 counterpart, which silently flips the reactance between capacitive \
+                 and inductive"
+            } else {
+                "a zero frequency drives the current to zero, so the reported \
+                 impedance becomes the source voltage rather than an impedance"
+            };
+            return Some(format!("FR: {what}; {why}. Frequencies must be > 0"));
+        }
+    }
+    None
+}
+
 /// Why a deck driven by two kinds of source at once cannot be solved, if it is.
 ///
 /// A delta gap and a current source in one deck produce a **silently wrong**
@@ -880,7 +951,9 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
 /// which reason it reports is deliberate — geometry before excitation, because a
 /// deck whose wires cross has a problem no excitation change will fix.
 pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
-    geometry_error(deck, segs, ground).or_else(|| mixed_excitation_error(deck))
+    geometry_error(deck, segs, ground)
+        .or_else(|| mixed_excitation_error(deck))
+        .or_else(|| frequency_error(deck))
 }
 
 /// Every frontend-independent diagnostic for a solve, errors first.
@@ -1394,6 +1467,69 @@ mod tests {
             "must not recommend a solver that rejects the deck: {w}"
         );
         assert!(w.contains("deferred"), "{w}");
+    }
+
+    /// Each degenerate class gets its own case, because they reach the same
+    /// wrong answer by different routes and a single "bad frequency" test would
+    /// pass while any one of them regressed.
+    #[test]
+    fn every_degenerate_frequency_class_is_refused() {
+        let deck_with = |fr: &str| {
+            parse(&format!(
+                "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\n{fr}\nEX 0 1 11 0 1.0 0.0\nEN\n"
+            ))
+            .expect("deck parses")
+            .deck
+        };
+        for (fr, why) in [
+            ("FR 0 1 0 0 0.0 0", "zero"),
+            ("FR 0 1 0 0 -14.2 0", "negative"),
+            // Descending past zero: the start value is a perfectly good 10 MHz,
+            // so a check on the card's first field alone would pass this. It
+            // solves and reports FREQ_MHZ -2.000000 on main.
+            ("FR 0 5 0 0 10.0 -3.0", "descending sweep through zero"),
+            // Multiplicative (step_type is FR's *first* field) with a zero
+            // ratio: every step after the first collapses to 0 MHz.
+            ("FR 1 3 0 0 14.2 0.0", "multiplicative collapse to zero"),
+        ] {
+            assert!(
+                frequency_error(&deck_with(fr)).is_some(),
+                "{why} frequency must be refused: {fr}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ordinary_deck_and_a_single_point_sweep_are_not_refused() {
+        let deck_with = |fr: &str| {
+            parse(&format!(
+                "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\n{fr}\nEX 0 1 11 0 1.0 0.0\nEN\n"
+            ))
+            .expect("deck parses")
+            .deck
+        };
+        // Every corpus deck is `FR 0 1 0 0 f 0.0` — a step of 0.0 with one step
+        // must stay legal, or the whole corpus is refused.
+        assert_eq!(frequency_error(&deck_with("FR 0 1 0 0 14.2 0.0")), None);
+        assert_eq!(frequency_error(&deck_with("FR 0 5 0 0 14.0 0.1")), None);
+        assert_eq!(frequency_error(&deck_with("FR 1 3 0 0 14.0 2.0")), None);
+    }
+
+    /// The CLI expands only the first `FR` card; `fnec_py` expands them all. The
+    /// validator must cover the union, so a bad frequency in a later card cannot
+    /// slip through on the frontend that reads it.
+    #[test]
+    fn a_degenerate_frequency_in_a_later_fr_card_is_still_refused() {
+        let deck = parse(
+            "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
+             FR 0 1 0 0 -7.1 0\nEX 0 1 11 0 1.0 0.0\nEN\n",
+        )
+        .expect("deck parses")
+        .deck;
+        assert!(
+            frequency_error(&deck).is_some(),
+            "a bad frequency in the second FR card must be refused"
+        );
     }
 
     #[test]

@@ -17,6 +17,41 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A degenerate frequency is refused instead of answered** (FND-056, FND-030).
+  Nothing validated `FR` at all, and the results were not merely wrong but
+  confidently wrong. Measured on a 21-segment dipole before the fix:
+
+  | deck | reported | warnings |
+  |:---|:---|:---|
+  | `FR ... 0.0` | `Z = 1.000000 + j0.000000` | none, exit 0 |
+  | `FR ... -14.2` | `67.161824 + j32.275596` | none, exit 0 |
+  | `FR 0 5 0 0 10.0 -3.0` | solves and prints `FREQ_MHZ -2.000000` | none, exit 0 |
+
+  At zero the current is driven to zero, so `Z = V/I` takes its zero-current
+  branch and prints the `EX` **source voltage** back as an impedance. At −14.2 MHz
+  the answer is the exact complex **conjugate** of the +14.2 MHz one, so a typo'd
+  minus sign flips the reactance between capacitive and inductive and reports it
+  as fact.
+
+  `validate::frequency_error` is folded into the shared `pre_solve_error`
+  aggregate, so all four frontends refuse together. It checks the **generated**
+  frequency list rather than the card's first field: a descending sweep passes any
+  start-value test and still walks into negative frequency.
+
+  The GUI's sweep range needed its own guard — it comes from the UI and never
+  reaches an `FR` card, so a sweep from −5 MHz was invisible to the shared check.
+  Its docstring had promised "positive float" all along while nothing checked it.
+
+- **Non-finite deck fields are rejected at the parser** (FND-030). `f64::from_str`
+  accepts `NaN`, `inf` and `-inf`, and a NEC deck is plain text, so
+  `GW 1 21 0 0 NaN 0 0 5.0 0.001` printed a feedpoint row of `NaN NaN NaN NaN NaN
+  NaN` at exit 0 with **no** warning. `NaN` defeats the downstream checks by being
+  *unordered* rather than wrong: `current.norm() > 1e-60` is false for it, so the
+  feedpoint takes its zero-current branch, and `z_re < 0.0` is false too, so no
+  caveat fires. Rejecting in `parse_f64` closes the class for every card and every
+  frontend at once. A genuinely diverged CPU solve producing `NaN` is a separate
+  route and stays open.
+
 - **The GUI has a solver picker** (FND-007). Decks with a T/Y junction, a closed
   loop, or currents near lossy ground could only be solved correctly from the
   CLI; the GUI warned about them and told the user to leave. It now offers

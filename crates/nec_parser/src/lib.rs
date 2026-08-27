@@ -473,13 +473,33 @@ fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, Pa
         })
 }
 
+/// Parse one numeric field, rejecting `NaN` and the infinities.
+///
+/// Rust's `f64::from_str` accepts "NaN", "inf" and "-inf", and a NEC deck is
+/// plain text, so those reach the solver from any card. They do not merely give a
+/// wrong answer — they give an *unrecognisable* one, because `NaN` fails every
+/// comparison: `current.norm() > 1e-60` is false for `NaN`, so the feedpoint
+/// falls into its zero-current branch and reports the source voltage, and
+/// `is_negative_resistance` (`z_re < 0.0`) is false too, so no caveat fires.
+/// Measured before this check: `GW 1 21 0 0 NaN 0 0 5.0 0.001` printed a feedpoint
+/// row of `NaN NaN NaN NaN NaN NaN` at exit 0 with no warning (FND-030).
+///
+/// Rejecting at the parser closes the whole class in one place, for every card
+/// and every frontend, rather than teaching each downstream check to re-ask
+/// "is this actually a number". No corpus deck or test fixture uses a non-finite
+/// field.
 fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, ParseError> {
-    s.parse::<f64>().map_err(|_| ParseError::BadField {
+    let bad = || ParseError::BadField {
         line: lineno,
         card: card.to_string(),
         field,
         raw: s.to_string(),
-    })
+    };
+    let v = s.parse::<f64>().map_err(|_| bad())?;
+    if !v.is_finite() {
+        return Err(bad());
+    }
+    Ok(v)
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +509,45 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `f64::from_str` accepts "NaN", "inf" and "-inf", and a NEC deck is plain
+    /// text — so before this check those reached the solver from any card.
+    /// Measured on the CLI beforehand: `GW 1 21 0 0 NaN 0 0 5.0 0.001` printed a
+    /// feedpoint row of `NaN NaN NaN NaN NaN NaN` at exit 0 with **no** warning,
+    /// because `NaN` fails every comparison the downstream caveats test (FND-030).
+    #[test]
+    fn a_non_finite_field_is_rejected_on_any_card() {
+        for (deck, what) in [
+            (
+                "GW 1 21 0 0 NaN 0 0 5.0 0.001\nGE 0\nEN\n",
+                "NaN in a GW coordinate",
+            ),
+            (
+                "GW 1 21 0 0 inf 0 0 5.0 0.001\nGE 0\nEN\n",
+                "inf in a GW coordinate",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 -inf\nGE 0\nEN\n",
+                "-inf in a GW radius",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nFR 0 1 0 0 NaN 0\nEN\n",
+                "NaN in an FR frequency",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nEX 0 1 11 0 NaN 0.0\nEN\n",
+                "NaN in an EX voltage",
+            ),
+        ] {
+            assert!(parse(deck).is_err(), "{what} must be rejected");
+        }
+    }
+
+    #[test]
+    fn ordinary_numeric_fields_still_parse() {
+        // Including the forms that look unusual but are finite.
+        assert!(parse("GW 1 21 0 0 -5.2782e0 0 0 5.2782 1e-3\nGE 0\nEN\n").is_ok());
+    }
     use nec_model::card::{
         Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, RpCard,
     };
