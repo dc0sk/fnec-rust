@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod basis;
+pub mod current_source;
 pub mod excitation;
 pub mod farfield;
 pub mod geometry;
@@ -18,6 +19,7 @@ pub mod tl;
 pub mod validate;
 
 pub use basis::{ContinuityTransform, SinusoidalTransform};
+pub use current_source::{solve_current_source_hallen, CurrentSourceError, CurrentSourceFeedpoint};
 pub use excitation::{
     build_current_source_shape, build_current_source_shape_paths, build_excitation,
     build_hallen_rhs, build_hallen_rhs_paths, feedpoints, first_delta_gap_feedpoint,

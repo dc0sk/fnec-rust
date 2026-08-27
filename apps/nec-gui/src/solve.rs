@@ -376,23 +376,22 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
 
     // --- Hallen solve ----------------------------------------------------
-    let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
         .iter()
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
-    let sol = solve_hallen(
+    let (currents, port_voltage) = hallen_currents(
+        deck,
+        &segs,
         &z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
+        freq_hz,
         &wire_endpoints,
         &junction_tuples,
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
     // --- feedpoint impedance --------------------------------------------
-    let (z, tag, seg) = feedpoint_impedance(deck, &segs, &v_vec, &sol.currents, freq_hz)?;
+    let (z, tag, seg) = feedpoint_impedance(deck, &segs, &v_vec, &currents, freq_hz, port_voltage)?;
 
     // FND-014: physically impossible results were reported here without a caveat.
     // `warnings` is already rendered by `impedance_view`, so this needs no new
@@ -413,6 +412,49 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     })
 }
 
+/// The currents for a deck at one frequency, whichever drive it carries.
+///
+/// One step, three callers. The single solve, the sweep and the currents/pattern
+/// view each had their own copy of "build the RHS and call `solve_hallen`", and
+/// adding a current-source branch to one of them would have made an `EX 4` deck
+/// solvable on one tab and refused on three — the FND-038 shape.
+///
+/// A current-source deck cannot be handled by branching at the *pricing* step:
+/// its excitation vector is all zeros, so `V/I` has nothing to work with. It needs
+/// a different solve, which is why the branch is here (FND-045).
+///
+/// Returns the port voltage for a current-source deck, and `None` for a delta gap.
+/// A deck carrying both is refused before this by `validate::pre_solve_error`
+/// (FND-036), so the two cases really are exclusive.
+fn hallen_currents(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+    z_mat: &nec_solver::ZMatrix,
+    freq_hz: f64,
+    wire_endpoints: &[(usize, usize)],
+    junction_tuples: &[(usize, usize, f64)],
+) -> Result<(Vec<Complex64>, Option<Complex64>), String> {
+    let driven_by_current = nec_solver::feedpoints(deck)
+        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
+
+    if driven_by_current {
+        let fp = nec_solver::solve_current_source_hallen(deck, segs, z_mat, freq_hz)
+            .map_err(|e| e.to_string())?;
+        return Ok((fp.currents, Some(fp.port_voltage)));
+    }
+
+    let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+    let sol = solve_hallen(
+        z_mat,
+        &hallen_rhs.rhs,
+        &hallen_rhs.cos_vec,
+        wire_endpoints,
+        junction_tuples,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok((sol.currents, None))
+}
+
 /// Compute feedpoint impedance Z = V/I for the first EX card, with the tag and
 /// segment it resolved to — a caveat about the result has to name where it is.
 fn feedpoint_impedance(
@@ -421,12 +463,30 @@ fn feedpoint_impedance(
     v_vec: &[Complex64],
     i_vec: &[Complex64],
     _freq_hz: f64,
+    // `Some` when the deck is current-driven: its excitation vector is all zeros,
+    // so `V/I` has nothing to work with and the port voltage from the solve is the
+    // only `V` there is (FND-045).
+    port_voltage: Option<Complex64>,
 ) -> Result<(Complex64, usize, usize), String> {
+    // A current-driven deck is priced from the solved port voltage, not V/I: its
+    // excitation vector is all zeros, so there is no V to divide (FND-045). The
+    // source current is the one the `EX 4` card impressed.
+    if let Some(v_port) = port_voltage {
+        let (ex, _) = nec_solver::feedpoints(deck)
+            .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
+            .ok_or("a current-source solve without a current source")?;
+        let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        let z_in = if i0.norm() > 1e-60 {
+            v_port / i0
+        } else {
+            v_port
+        };
+        return Ok((z_in, ex.tag as usize, ex.segment as usize));
+    }
+
     // Through the shared seam (FND-031). This loop took the first `EX` of any
     // type, so a deck with a plane wave ahead of its voltage source reported the
-    // plane wave's NTHETA/NPHI as a feedpoint tag and segment. The GUI is
-    // Hallén-only and has no port-voltage machinery, so it wants the first
-    // delta-gap source specifically.
+    // plane wave's NTHETA/NPHI as a feedpoint tag and segment.
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
         let Some((idx, seg)) = segs
             .iter()
@@ -450,10 +510,9 @@ fn feedpoint_impedance(
         };
         return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
-    // Not "no EX card" — a current-source-only deck plainly has one, and saying
-    // otherwise sends the reader looking for a card that is right there
-    // (FND-038). The GUI is Hallén-only and does not wire up the current-source
-    // solve, though `nec_solver` exports it (FND-045).
+    // Reached only when the deck has no driven feedpoint at all — a plane-wave
+    // receive deck. Current sources are priced above now (FND-045), so the
+    // "use the fnec CLI" remedy no longer applies to them.
     Err(
         nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
             .unwrap_or_else(|| {
@@ -587,19 +646,23 @@ impl SweepJob {
         let mut z_mat = assemble_z_matrix_with_ground(&self.segs, freq_hz, &self.ground);
         nec_solver::build_deck_stamps(&self.deck, &self.segs, freq_hz).apply(&mut z_mat);
 
-        let hallen_rhs =
-            build_hallen_rhs(&self.deck, &self.segs, freq_hz).map_err(|e| e.to_string())?;
-        let sol = solve_hallen(
+        let (currents, port_voltage) = hallen_currents(
+            &self.deck,
+            &self.segs,
             &z_mat,
-            &hallen_rhs.rhs,
-            &hallen_rhs.cos_vec,
+            freq_hz,
             &self.wire_endpoints,
             &self.junction_tuples,
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
-        let (z, _tag, _seg) =
-            feedpoint_impedance(&self.deck, &self.segs, &self.v_vec, &sol.currents, freq_hz)?;
+        let (z, _tag, _seg) = feedpoint_impedance(
+            &self.deck,
+            &self.segs,
+            &self.v_vec,
+            &currents,
+            freq_hz,
+            port_voltage,
+        )?;
         Ok(SweepPoint {
             freq_mhz,
             z_re: z.re,
@@ -812,12 +875,10 @@ fn solve_for_currents(
     if let Some(e) = validate::pre_solve_error(deck, &segs, &ground) {
         return Err(e);
     }
-    // Including a current-source-only deck. Fixing the Solve tab's message while
-    // leaving this one to render zero currents and a meaningless pattern would be
-    // FND-038's original defect — Ok with garbage — surviving one tab over.
-    if let Some(e) = validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck") {
-        return Err(e);
-    }
+    // No current-source refusal here any more: this path prices one now, through
+    // the same `hallen_currents` step the Solve tab uses (FND-045). The guard that
+    // stood here existed because these views would otherwise have rendered zero
+    // currents and a meaningless pattern — that hazard is gone with the capability.
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     let freq_hz = deck
@@ -835,22 +896,24 @@ fn solve_for_currents(
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
     nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
 
-    let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
         .iter()
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
-    let sol = solve_hallen(
+    // Currents and pattern get the current-source branch too. Solving an `EX 4`
+    // deck on the Solve tab while these three refused it would be the FND-038
+    // shape all over again.
+    let (currents, _port_voltage) = hallen_currents(
+        deck,
+        &segs,
         &z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
+        freq_hz,
         &wire_endpoints,
         &junction_tuples,
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
-    Ok((segs, sol.currents, freq_hz, ground))
+    Ok((segs, currents, freq_hz, ground))
 }
 
 #[cfg(test)]
@@ -898,30 +961,53 @@ mod tests {
         );
     }
 
+    // The corpus reference for `dipole-ex4-freesp-51seg`, pinned under PH8-CHK-001:
+    // the current-source feedpoint Z = V_port/i0 equals the voltage-source dipole
+    // impedance, which is the internal consistency that path is validated against.
+    const EX4_DECK: &str = "CM current-source feed\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
     #[test]
-    fn a_current_source_deck_is_declined_by_name() {
-        // FND-038, at the entry point a user actually reaches. This deck errored
-        // with "deck has no EX card" — for a deck whose only card IS an EX.
-        const EX4: &str = "CM current-source feed\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-        let err = solve_deck_str(EX4).expect_err("the GUI cannot price a current source");
-        assert!(err.contains("current source"), "{err}");
+    fn a_current_source_deck_solves_and_agrees_with_the_cli() {
+        // FND-045. This used to error with "use the fnec CLI for this deck" — the
+        // machinery was in `nec_solver` all along, just unwired. The assertion is
+        // the corpus value the CLI produces, so the two frontends cannot drift.
+        let r = solve_deck_str(EX4_DECK).expect("the GUI can price a current source now");
         assert!(
-            !err.contains("no EX card"),
-            "must not blame a card the deck has: {err}"
+            (r.z_re - 74.23).abs() < 0.05 && (r.z_im - 13.9).abs() < 0.05,
+            "GUI disagrees with the CLI's corpus value: {} + j{}",
+            r.z_re,
+            r.z_im
+        );
+        // And it names the current source, not some other EX.
+        assert_eq!((r.feed_tag, r.feed_seg), (1, 26));
+    }
+
+    #[test]
+    fn a_current_source_sweep_agrees_with_the_single_solve() {
+        // The sweep is a separate solve path; solving on one tab and refusing on
+        // another is the FND-038 shape.
+        let job = SweepJob::prepare(EX4_DECK, 14.2, 14.4, 0.1).expect("prepare");
+        let pt = job.solve_at(14.2).expect("sweep must price it too");
+        let single = solve_deck_str(EX4_DECK).expect("single solve");
+        assert!(
+            (pt.z_re - single.z_re).abs() < 1e-6,
+            "sweep {} vs single {}",
+            pt.z_re,
+            single.z_re
         );
     }
 
     #[test]
-    fn the_currents_and_pattern_views_decline_a_current_source_deck_too() {
-        // The Solve tab declining by name while Currents and Pattern quietly draw
-        // zero currents would be the original FND-038 defect — Ok with garbage —
-        // alive one tab over. `every_gui_solve_path_applies_the_same_rejection`
-        // covers geometry; this covers the excitation.
-        const EX4: &str = "CM current-source feed\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-        let err = load_currents_str(EX4).expect_err("currents must refuse it too");
-        assert!(!err.contains("no EX card"), "{err}");
-        let err = pattern_grid_str(EX4).expect_err("the pattern view must refuse it too");
-        assert!(err.contains("current source"), "{err}");
+    fn the_currents_and_pattern_views_solve_a_current_source_deck_too() {
+        // They used to refuse it by name. Leaving them refusing while the Solve
+        // tab priced it would be the same one-tab-over defect this arc keeps
+        // finding — so all three paths go through `hallen_currents`.
+        let currents = load_currents_str(EX4_DECK).expect("currents view");
+        assert!(
+            currents.currents_ma.iter().any(|c| *c > 1e-9),
+            "a driven deck must carry current"
+        );
+        pattern_grid_str(EX4_DECK).expect("pattern view");
     }
 
     #[test]

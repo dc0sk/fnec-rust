@@ -85,22 +85,69 @@ fn solve_at_freq(
     warnings.extend(stamps.warnings.iter().cloned());
     stamps.apply(&mut z_mat);
 
-    let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
         .iter()
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
-    let sol = solve_hallen(
-        &z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
-        &wire_endpoints,
-        &junction_tuples,
-    )
-    .map_err(|e| e.to_string())?;
 
-    let i_vec = &sol.currents;
+    // A current-driven deck needs a different solve, not a different pricing step:
+    // its excitation vector is all zeros, so `V/I` has nothing to divide. The
+    // machinery was always in `nec_solver`; the bindings just never called it, and
+    // said "use the fnec CLI" instead (FND-045). A deck carrying both drive kinds
+    // is refused earlier by `validate::pre_solve_error` (FND-036), so the two
+    // branches are genuinely exclusive.
+    let driven_by_current = nec_solver::feedpoints(deck)
+        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
+
+    let (currents, port_voltage) = if driven_by_current {
+        let fp = nec_solver::solve_current_source_hallen(deck, &segs, &z_mat, freq_hz)
+            .map_err(|e| e.to_string())?;
+        (fp.currents, Some(fp.port_voltage))
+    } else {
+        let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
+        let sol = solve_hallen(
+            &z_mat,
+            &hallen_rhs.rhs,
+            &hallen_rhs.cos_vec,
+            &wire_endpoints,
+            &junction_tuples,
+        )
+        .map_err(|e| e.to_string())?;
+        (sol.currents, None)
+    };
+
+    let i_vec = &currents;
+
+    if let Some(v_port) = port_voltage {
+        let (ex, _) = nec_solver::feedpoints(deck)
+            .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
+            .ok_or("a current-source solve without a current source")?;
+        let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        let z_in = if i0.norm() > 1e-60 {
+            v_port / i0
+        } else {
+            v_port
+        };
+        let mut rec = std::collections::HashMap::new();
+        rec.insert("freq_mhz".to_string(), freq_hz / 1e6);
+        rec.insert("tag".to_string(), f64::from(ex.tag));
+        rec.insert("seg".to_string(), f64::from(ex.segment));
+        rec.insert("z_re".to_string(), z_in.re);
+        rec.insert("z_im".to_string(), z_in.im);
+        rec.insert("z_abs".to_string(), z_in.norm());
+        rec.insert("z_arg_deg".to_string(), z_in.im.atan2(z_in.re).to_degrees());
+        if let Some(w) = nec_solver::validate::negative_resistance_warning(
+            z_in.re,
+            ex.tag as usize,
+            ex.segment as usize,
+            deck,
+            &segs,
+        ) {
+            warnings.push(w);
+        }
+        return Ok((rec, warnings));
+    }
 
     // Find the first EX card and compute feedpoint impedance.
     // Through the shared seam (FND-031). This loop took the first `EX` of any
