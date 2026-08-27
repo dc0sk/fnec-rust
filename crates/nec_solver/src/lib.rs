@@ -10,6 +10,7 @@ pub mod linear;
 pub mod loads;
 pub mod matrix;
 pub mod mpie;
+pub mod mpie_session;
 pub mod network;
 pub mod planewave;
 pub mod sommerfeld;
@@ -52,6 +53,7 @@ pub use mpie::{
     solve_mpie_free_space, solve_mpie_ground, straight_wire, MpieError, MpieGeometry, MpieSolution,
     MpieWire,
 };
+pub use mpie_session::{mpie_unsupported, solve_mpie_session, MpieSessionError, MpieUnsupported};
 pub use network::{build_nt_stamps, NtStamp, NtWarning};
 pub use planewave::{
     build_planewave_hallen, build_planewave_hallen_paths, IncidentPlaneWave, PlaneWaveError,

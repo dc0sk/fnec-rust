@@ -250,27 +250,42 @@ fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
 ///
 /// Used to decide whether a diagnostic may recommend the MPIE as a remedy.
 pub fn mpie_compatible_deck(deck: &NecDeck) -> bool {
-    let mut has_voltage_source = false;
-    for card in &deck.cards {
-        match card {
-            Card::Ld(_) | Card::Tl(_) | Card::Nt(_) => return false,
-            Card::Ex(ex) => {
-                if ex.kind().is_plane_wave()
-                    || ex.kind() == nec_model::card::ExcitationKind::CurrentSource
-                {
-                    return false;
-                }
-                has_voltage_source = true;
-            }
-            _ => {}
-        }
+    if crate::mpie_session::mpie_unsupported(deck).is_some() {
+        return false;
     }
-    has_voltage_source
+    // A delta gap, not merely "not a plane wave": an unrecognised `EX` type is
+    // not a voltage source, and counting it as one recommended the MPIE for a
+    // deck it cannot drive (FND-037's cluster).
+    crate::excitation::first_delta_gap_feedpoint(deck).is_some()
 }
 
 // ---------------------------------------------------------------------------
 // Warnings
 // ---------------------------------------------------------------------------
+
+/// The MPIE's reduced thin-wire kernel uses a **single** wire radius (the first
+/// segment's) for the whole geometry, so a deck mixing radii is solved
+/// approximately for every differently-sized wire.
+///
+/// Shared rather than printed by one frontend: this caveat lived in the CLI, so
+/// the same deck solved elsewhere reported an approximate impedance with nothing
+/// said (the shape of FND-020). Returns `None` when every radius agrees, which is
+/// the common case.
+pub fn mpie_mixed_radius_caveat(segs: &[Segment]) -> Option<String> {
+    let first = segs.first()?;
+    let r0 = first.radius;
+    let mixed = segs
+        .iter()
+        .any(|s| (s.radius - r0).abs() > 1e-9 * r0.max(s.radius));
+    if !mixed {
+        return None;
+    }
+    Some(format!(
+        "the MPIE solver models a single wire radius; this deck mixes radii, so all \
+segments are solved with the first wire's radius ({r0} m) — impedance for the \
+differently-sized wires will be approximate"
+    ))
+}
 
 /// A `GN` type outside the supported set is treated as free space; say so, and
 /// echo the parsed medium parameters so the user can see what was read.

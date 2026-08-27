@@ -381,3 +381,83 @@ EN
         "unexpected negative-resistance warning:\n{stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Pinned acceptance values (FND-007)
+// ---------------------------------------------------------------------------
+//
+// The tests above assert *ranges*, which is the right gate for "is this
+// physical" but the wrong one for "does every frontend get the same answer".
+// `solve_mpie_session` is now shared, so these pin the CLI's exact digits: any
+// other frontend adopting the MPIE must reproduce them, and a refactor that
+// quietly moves an answer fails here rather than in a range that still contains
+// it. The Y-junction is the load-bearing case — it is the topology the MPIE
+// exists for, and the Hallén path answers it with R≈8 garbage, so a mis-routed
+// solver fails this loudly instead of passing on a dipole both solvers agree on.
+
+/// Pin: straight λ/2 dipole in free space.
+#[test]
+fn mpie_dipole_pinned_impedance() {
+    let deck = write_deck("pin_dipole", DIPOLE);
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie dipole failed: {out:?}");
+    let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
+    assert!(
+        (r - 74.437414).abs() < 0.05 && (x - 41.753720).abs() < 0.05,
+        "MPIE dipole moved: got {r} + j{x}, pinned 74.437414 + j41.753720"
+    );
+}
+
+/// Pin: degree-3 Y-junction — the topology the Hallén basis cannot feed.
+#[test]
+fn mpie_y_junction_pinned_impedance() {
+    let deck = write_deck(
+        "pin_yjunction",
+        "\
+CM Y-junction, feed mid arm 1
+CE
+GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
+GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
+GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie Y-junction failed: {out:?}");
+    let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
+    assert!(
+        (r - 63.673674).abs() < 0.05 && (x - -322.199211).abs() < 0.05,
+        "MPIE Y-junction moved: got {r} + j{x}, pinned 63.673674 - j322.199211"
+    );
+}
+
+/// Pin: horizontal dipole 10 m over `GN 2` finite ground — the near-ground
+/// currents case, the third frontier the MPIE retired.
+#[test]
+fn mpie_over_finite_ground_pinned_impedance() {
+    let deck = write_deck(
+        "pin_ground",
+        "\
+CM horizontal dipole over GN2
+CE
+GW 1 41 -5.2782 0.0 10.0 5.2782 0.0 10.0 0.001
+GE 0
+GN 2 0 0 0 13.0 0.005
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+XQ
+EN
+",
+    );
+    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success(), "mpie over ground failed: {out:?}");
+    let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
+    assert!(
+        (r - 73.857642).abs() < 0.05 && (x - 30.548668).abs() < 0.05,
+        "MPIE over GN2 moved: got {r} + j{x}, pinned 73.857642 + j30.548668"
+    );
+}

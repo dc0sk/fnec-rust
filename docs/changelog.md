@@ -118,6 +118,43 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The MPIE solve is a library capability, not CLI glue** (FND-007 groundwork,
+  FND-037, FND-052). `solve_mpie_session` moved from the CLI into
+  `nec_solver::mpie_session`, so a second frontend can offer the MPIE without
+  reimplementing which excitation feeds the geometry and which decks it must
+  refuse.
+
+  The refusals moved **with** it, into the solve rather than beside it. The MPIE's
+  triangle basis has nowhere to stamp an `LD`, `TL` or `NT`, and its delta-gap
+  feed cannot represent an incident field, so a deck carrying either would be
+  solved with the offending card silently ignored. Those checks sat in a
+  CLI-private function; a caller that skipped them got no answer, it got a wrong
+  one. `MpieUnsupported` is typed rather than a string, because a CLI naming a
+  flag, a GUI naming its picker and a Python exception are three audiences for one
+  decision.
+
+  The mixed-radius caveat moved too (FND-052) — the MPIE solves the whole geometry
+  with the first segment's radius, and that warning was an `eprintln!` in the CLI.
+  A shared solve whose caveat stayed behind is how one frontend ends up quietly
+  approximating.
+
+  Feedpoint selection is now `first_delta_gap_feedpoint`, closing FND-037 at the
+  move: the old `!is_plane_wave()` test admitted a type-4 current source and any
+  unrecognised `EX` type, and was safe only because callers happened to reject
+  those first. A shared function may not depend on what its callers checked.
+
+  No answer changed: the free-space dipole (74.437414 + j41.753720), the degree-3
+  Y-junction (63.673674 - j322.199211), a dipole over `GN 2` (73.857642 +
+  j30.548668), an `EX 5` dipole and an apex-fed inverted-V are all digit-identical
+  to before the move. The first three are now pinned as acceptance values so any
+  frontend adopting the MPIE must reproduce them.
+
+  **Two messages did change wording**, both because a shared string cannot name a
+  CLI flag: the mixed-radius caveat now opens "the MPIE solver models a single
+  wire radius" rather than "`--solver mpie` models…", and the no-interior-node
+  error drops a duplicated subject. The `LD`/`TL`/`NT` refusals and the
+  plane-wave/current-source refusals are byte-identical.
+
 ### Fixed
 
 - **A deck driven by two kinds of source is now refused instead of answered
