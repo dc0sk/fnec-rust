@@ -225,6 +225,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   own — invisible for exactly one caller and total for every other, including
   anything driving the public `run_worker_stdio`.
 
+  Sending them exposed a second-order defect in the same change: the CLI already
+  prints local parse warnings **once**, so an M-point distributed sweep would have
+  printed the same caveat M+1 times where a local run prints 1. The controller now
+  prints each distinct worker line once, keyed on the rendered text so the same
+  message from *different* workers is still shown separately — which is exactly
+  what a mixed-version pool needs.
+
 - **A degenerate frequency is refused instead of answered** (FND-056, FND-030).
   Nothing validated `FR` at all, and the results were not merely wrong but
   confidently wrong. Measured on a 21-segment dipole before the fix:

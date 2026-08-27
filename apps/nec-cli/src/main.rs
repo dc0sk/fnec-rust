@@ -719,6 +719,16 @@ fn run_distributed_solve(
     // each point the mean rather than inventing a number per point.
     let elapsed_ms = (batch_start.elapsed().as_millis() / (tasks.len().max(1) as u128)).max(1);
 
+    // A caveat that does not vary with frequency should be read once, not once
+    // per point. Before FND-041 the worker sent only stamp warnings, which the
+    // local CLI also re-prints per frequency, so repeating them was defensible
+    // symmetry. Parse warnings broke that: the local CLI prints those exactly
+    // once, so an M-point sweep of a deck with one unknown card printed M+1
+    // lines where a local run printed 1 — noise this PR would have introduced.
+    // Keyed on the rendered line, so the same text from *different* workers is
+    // still shown separately; a mixed-version pool is exactly when that matters.
+    let mut seen_worker_warnings: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     for ((fidx, &freq_hz), outcome) in freqs_hz.iter().enumerate().zip(outcomes) {
         let result = match outcome {
             Ok((
@@ -738,11 +748,13 @@ fn run_distributed_solve(
                 // stamps, so these exist nowhere else (FND-026). An older worker
                 // sends none, and this prints none.
                 //
-                // One line per frequency for a repeated caveat, matching the local
-                // CLI, which also re-prints stamp warnings per frequency: each
-                // distributed task re-parses the deck independently.
+                // Once per distinct line, not once per frequency: see
+                // `seen_worker_warnings` above.
                 for w in &warnings {
-                    eprintln!("warning: worker '{label}': {w}");
+                    let line = format!("warning: worker '{label}': {w}");
+                    if seen_worker_warnings.insert(line.clone()) {
+                        eprintln!("{line}");
+                    }
                 }
                 let freq_mhz = freq_hz / 1e6;
                 let report = format!(
