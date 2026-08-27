@@ -70,12 +70,11 @@ use nec_report::{
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_hallen_rhs, build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
-    compute_radiation_pattern, detect_wire_junctions, feed_node_for_segment, feed_reference_sign,
-    geometry_from_segments, integrate_radiated_power, merge_collinear_wire_endpoints,
-    radiation_efficiency, scale_excitation_for_pulse_rhs, segment_currents, solve, solve_hallen,
-    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    solve_hallen_sinusoidal_basis, solve_mpie, solve_mpie_ground,
-    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
+    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
+    GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -993,72 +992,6 @@ fn maybe_gpu_resident_hallen(
     })
 }
 
-/// Solve a deck on the MPIE path (PH9-CHK-007): build the triangle-basis graph
-/// from the segments, feed a delta-gap at the node nearest the driven segment,
-/// solve (free space or Sommerfeld half-space), and return the per-segment
-/// currents **aligned to `segs`** so the existing feedpoint / far-field / report
-/// machinery consumes them unchanged.
-///
-/// Note the feed model differs from the Hallén path: NEC's `EX` drives a segment
-/// gap, while the MPIE drives the nearest interior node — a half-segment offset
-/// that vanishes under refinement. The MPIE's value is the topologies the Hallén
-/// basis cannot reach (degree-3 junctions, closed loops, near-ground currents).
-fn solve_mpie_session(
-    deck: &nec_model::deck::NecDeck,
-    segs: &[Segment],
-    ground: &GroundModel,
-    freq_hz: f64,
-) -> Result<Vec<Complex64>, String> {
-    let ex = deck
-        .cards
-        .iter()
-        .find_map(|c| match c {
-            Card::Ex(ex) if !ex.kind().is_plane_wave() => Some(ex),
-            _ => None,
-        })
-        .ok_or("--solver mpie requires a voltage source (EX type 0)")?;
-    let driven_idx = segs
-        .iter()
-        .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        .ok_or_else(|| format!("EX: driven segment {}/{} not found", ex.tag, ex.segment))?;
-
-    let geom = geometry_from_segments(segs);
-    let feed_node = feed_node_for_segment(&geom, driven_idx)
-        .ok_or("--solver mpie: the feed segment has no interior (degree-2) node to drive")?;
-
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
-    let sol = if has_ground {
-        solve_mpie_ground(&geom, freq_hz, feed_node, ground)
-    } else {
-        solve_mpie(&geom, freq_hz, feed_node)
-    }
-    .map_err(|e| format!("--solver mpie: {e}"))?;
-
-    // `solve_mpie` drives the feed with a unit (1 V) source; scale the resulting
-    // currents by the deck's actual `EX` voltage so the reported currents are
-    // physical and the feedpoint V/I (in `build_feedpoint_rows`) is independent of
-    // the source voltage — MoM is linear, so I(V) = V·I(1 V).
-    //
-    // The unit source is applied along the *basis's* reference direction, which is
-    // set by the incidence order of the fed node's two arms. `EX` instead applies
-    // it along the driven segment's own `p0 → p1` tangent, and for a
-    // start-to-start junction feed (both `GW` cards written outward from the
-    // shared node, e.g. an apex-fed inverted-V) those oppose. Re-reference the
-    // solve to the deck's source polarity, or every reported current — and hence
-    // the feedpoint `V/I` — comes out negated (an unphysical negative resistance
-    // for a deck that is only written differently, not built differently).
-    let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
-    let source_v = Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign;
-    let mut currents = segment_currents(&geom, &sol.basis_currents);
-    for c in &mut currents {
-        *c *= source_v;
-    }
-    Ok(currents)
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn solve_frequency_point(
     deck: &nec_model::deck::NecDeck,
@@ -1085,24 +1018,18 @@ pub(super) fn solve_frequency_point(
         return Err("EX: current-source excitation requires --solver hallen".to_string());
     }
     if matches!(solver_mode, SolverMode::Mpie) {
-        // The MPIE path models geometry + delta-gap voltage sources over free
-        // space or a Sommerfeld half-space; loads / transmission lines / networks
-        // are not stamped into its triangle-basis system, so reject them rather
-        // than silently ignoring their effect.
+        // `--loads-config` is a CLI-only input that never appears in the deck, so
+        // no deck-only predicate can see it; this guard stays with the frontend
+        // that owns the flag. Everything the *deck* can carry is refused by
+        // `solve_mpie_session` itself, so no caller can bypass it.
         if !laplace_loads.is_empty() {
             return Err(
                 "Laplace loads (--loads-config) are not supported with --solver mpie; use --solver hallen"
                     .to_string(),
             );
         }
-        for card in &deck.cards {
-            let unsupported = match card {
-                Card::Ld(_) => "LD (loads)",
-                Card::Tl(_) => "TL (transmission line)",
-                Card::Nt(_) => "NT (network)",
-                _ => continue,
-            };
-            return Err(format!("{unsupported}: not supported with --solver mpie"));
+        if let Some(u) = nec_solver::mpie_unsupported(deck) {
+            return Err(format!("{}: not supported with --solver mpie", u.subject()));
         }
     }
 
@@ -1414,7 +1341,14 @@ pub(super) fn solve_frequency_point(
             }
         }
         SolverMode::Mpie => {
-            let currents = solve_mpie_session(deck, segs, ground, freq_hz)?;
+            let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz).map_err(
+                |e| match e {
+                    nec_solver::MpieSessionError::NoVoltageSource => {
+                        "--solver mpie requires a voltage source (EX type 0)".to_string()
+                    }
+                    other => format!("--solver mpie: {other}"),
+                },
+            )?;
             (currents, 0.0, 0.0, "mpie")
         }
     };

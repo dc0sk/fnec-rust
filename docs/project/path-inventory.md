@@ -182,7 +182,7 @@ this.
 | 8 | CLI distributed diagnostic | yes | `the_caveat_names_the_same_feedpoint_the_worker_reported` |
 | 9 | `validate::source_risk_geometry_error` | yes | `a_plane_wave_does_not_trigger_a_source_risk_rejection`; end-to-end `a_receive_only_deck_is_not_refused_for_a_source_it_does_not_have` |
 | 10 | `validate::feedpoint_at_junction_warnings` | yes | `an_unrecognised_excitation_is_not_treated_as_a_junction_feedpoint` |
-| 11 | MPIE session feedpoint | **NO** | gap — [FND-037](findings-ledger.md); `!is_plane_wave()` only, shielded by gates in another function |
+| 11 | MPIE session feedpoint | yes | `first_delta_gap_feedpoint`, since [FND-037](findings-ledger.md) closed in #414 — the shared `solve_mpie_session` no longer depends on gates in another function |
 
 Rows 1–3 keep their own loops rather than calling the reporting seam, and that is
 the principled half of the split: building an RHS needs an `UnsupportedType` error
