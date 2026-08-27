@@ -663,8 +663,26 @@ impl SweepJob {
         step_mhz: f64,
         solver: SolverKind,
     ) -> Result<Self, String> {
+        // Finiteness first: every comparison against `NaN` is false, so an
+        // ordering test alone lets one through (FND-056).
+        for (name, v) in [
+            ("start_mhz", start_mhz),
+            ("end_mhz", end_mhz),
+            ("step_mhz", step_mhz),
+        ] {
+            if !v.is_finite() {
+                return Err(format!("{name} must be a finite number, got {v}"));
+            }
+        }
         if step_mhz <= 0.0 {
             return Err(format!("step_mhz must be > 0, got {step_mhz}"));
+        }
+        // This range comes from the UI, never from the deck's `FR` card, so the
+        // shared `frequency_error` never sees it.
+        if start_mhz <= 0.0 {
+            return Err(format!(
+                "start_mhz must be a positive frequency, got {start_mhz}"
+            ));
         }
         if start_mhz >= end_mhz {
             return Err(format!(

@@ -338,3 +338,96 @@ fn distributed_run_refuses_sommerfeld_before_contacting_any_host() {
     );
     assert_eq!(out.status.code(), Some(1), "must exit 1");
 }
+
+// ---------------------------------------------------------------------------
+// Degenerate frequencies (FND-056)
+// ---------------------------------------------------------------------------
+
+/// The production entry point, not the unit: `frequency_error` is folded into the
+/// shared `pre_solve_error` aggregate precisely so every frontend refuses these,
+/// and a unit test would pass while the CLI still printed a number.
+#[test]
+fn the_cli_refuses_every_degenerate_frequency_class() {
+    const GEOM: &str = "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\n";
+    for (fr, needle, what) in [
+        ("FR 0 1 0 0 0.0 0", "zero frequency", "zero"),
+        ("FR 0 1 0 0 -14.2 0", "negative frequency", "negative"),
+        // The start value is a perfectly good 10 MHz — this is why the check has
+        // to be over the generated list. On main it solved and reported
+        // FREQ_MHZ -2.000000.
+        (
+            "FR 0 5 0 0 10.0 -3.0",
+            "negative frequency",
+            "descending through zero",
+        ),
+    ] {
+        let deck = common::TempDeck::new(
+            &format!("fnec_freq_{}.nec", what.replace(' ', "_")),
+            &format!("CM {what}\nCE\n{GEOM}{fr}\nEX 0 1 11 0 1.0 0.0\nEN\n"),
+        );
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .arg(deck.to_str().unwrap())
+            .output()
+            .expect("run fnec");
+        assert!(
+            !out.status.success(),
+            "a {what} frequency must be refused, got exit 0"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(needle),
+            "the refusal must name the cause for a {what} frequency: {stderr}"
+        );
+    }
+}
+
+/// The negative control, and the reason this gate is safe to add: every corpus
+/// deck is `FR 0 1 0 0 f 0.0`, so a step of 0.0 with one step must stay legal.
+#[test]
+fn an_ordinary_deck_still_solves_after_the_frequency_gate() {
+    let deck = common::TempDeck::new(
+        "fnec_freq_control.nec",
+        "CM control\nCE\nGW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\n\
+         FR 0 1 0 0 14.2 0\nEX 0 1 11 0 1.0 0.0\nEN\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(deck.to_str().unwrap())
+        .output()
+        .expect("run fnec");
+    assert!(
+        out.status.success(),
+        "the control deck must still solve: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A non-finite field on any card is a parse error now, closing one of the two
+/// input routes to the `NaN` feedpoint row FND-030 describes. The other — a
+/// finite field that overflows to an infinite frequency once multiplied into
+/// hertz — is closed by `validate::frequency_error`. Neither closes a genuinely
+/// diverged CPU solve, which is why that row stays open.
+#[test]
+fn the_cli_refuses_a_non_finite_field() {
+    let deck = common::TempDeck::new(
+        "fnec_nan_coord.nec",
+        "CM NaN coordinate\nCE\nGW 1 21 0 0 NaN 0 0 5.0 0.001\nGE 0\n\
+         FR 0 1 0 0 14.2 0\nEX 0 1 11 0 1.0 0.0\nEN\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(deck.to_str().unwrap())
+        .output()
+        .expect("run fnec");
+    assert!(
+        !out.status.success(),
+        "a NaN coordinate must be refused, got exit 0"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !combined.contains("NaN NaN"),
+        "a NaN feedpoint row reached the report: {combined}"
+    );
+}

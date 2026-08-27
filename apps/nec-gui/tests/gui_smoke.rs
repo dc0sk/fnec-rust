@@ -2048,3 +2048,92 @@ fn the_selected_solver_round_trips_through_a_session() {
     parsed.apply_to(&mut restored);
     assert_eq!(restored.solver, nec_gui::solve::SolverKind::Mpie);
 }
+
+/// The GUI's sweep range never reaches the deck's `FR` card, so the shared
+/// `frequency_error` cannot see it — a sweep from -5 to +5 ran and plotted the
+/// source voltage back at every point at or below 0 MHz (FND-056).
+#[test]
+fn a_gui_sweep_range_must_start_above_zero() {
+    let mut st = AppState {
+        sweep_start: "-5.0".into(),
+        sweep_end: "5.0".into(),
+        sweep_step: "0.5".into(),
+        ..AppState::default()
+    };
+    let err = st
+        .sweep_params()
+        .expect_err("a sweep from -5 MHz must be refused");
+    assert!(
+        err.contains("positive frequency"),
+        "the refusal must name the cause: {err}"
+    );
+
+    // Zero is refused for the same reason: the current goes to zero there.
+    st.sweep_start = "0.0".into();
+    assert!(
+        st.sweep_params().is_err(),
+        "a sweep from 0 MHz must be refused"
+    );
+
+    // Negative control: an ordinary range still parses. `end` moves too — it is
+    // still 5.0 from the case above, and leaving it there would trip the
+    // start < end check instead, making this control pass for the wrong reason.
+    st.sweep_start = "14.0".into();
+    st.sweep_end = "14.4".into();
+    assert!(
+        st.sweep_params().is_ok(),
+        "an ordinary sweep range must parse"
+    );
+}
+
+/// `parse::<f64>()` accepts "NaN", and every comparison against `NaN` is false —
+/// so the ordering tests alone waved it straight through.
+#[test]
+fn a_gui_sweep_range_rejects_non_finite_fields() {
+    let mut st = AppState {
+        sweep_start: "14.0".into(),
+        sweep_end: "14.4".into(),
+        ..AppState::default()
+    };
+    for bad in ["NaN", "inf", "-inf"] {
+        st.sweep_step = bad.into();
+        let err = st
+            .sweep_params()
+            .expect_err("a non-finite step must be refused");
+        assert!(
+            err.contains("finite"),
+            "the refusal must name finiteness for {bad}: {err}"
+        );
+    }
+}
+
+/// ...and the same guard on the job itself, which is a separate entry point.
+#[test]
+fn a_sweep_job_refuses_a_range_starting_at_or_below_zero() {
+    let deck = "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
+                EX 0 1 11 0 1.0 0.0\nEN\n";
+    for start in [-5.0, 0.0] {
+        assert!(
+            nec_gui::solve::SweepJob::prepare(
+                deck,
+                start,
+                5.0,
+                0.5,
+                nec_gui::solve::SolverKind::Hallen
+            )
+            .is_err(),
+            "a job swept from {start} MHz must be refused"
+        );
+    }
+    assert!(
+        nec_gui::solve::SweepJob::prepare(
+            deck,
+            14.0,
+            14.4,
+            0.1,
+            nec_gui::solve::SolverKind::Hallen
+        )
+        .is_ok(),
+        "control: an ordinary range still prepares"
+    );
+}

@@ -450,36 +450,63 @@ fn require_fields(
     }
 }
 
-fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, ParseError> {
-    // Accept floats like "1.0" that 4nec2 sometimes emits for integer fields.
-    s.parse::<f64>()
-        .map(|v| v as u32)
-        .map_err(|_| ParseError::BadField {
-            line: lineno,
-            card: card.to_string(),
-            field,
-            raw: s.to_string(),
-        })
-}
-
-fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
-    s.parse::<f64>()
-        .map(|v| v as i32)
-        .map_err(|_| ParseError::BadField {
-            line: lineno,
-            card: card.to_string(),
-            field,
-            raw: s.to_string(),
-        })
-}
-
-fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, ParseError> {
-    s.parse::<f64>().map_err(|_| ParseError::BadField {
+/// Parse one integer field.
+///
+/// These go through `f64` because 4nec2 sometimes emits "1.0" for an integer
+/// field — which means they inherit `from_str`'s acceptance of "NaN" and "inf",
+/// and Rust's saturating `as` cast then turns those into *plausible* integers
+/// rather than errors. `NaN as u32` is **0** and `inf as u32` is **u32::MAX**, so
+/// `FR 0 NaN 0 0 14.2 0` parsed and solved as a one-step sweep, and
+/// `FR 0 inf ...` asked for a four-billion-step one. Rejecting non-finite here
+/// keeps the numeric contract the same across integer and float fields; without
+/// it, "non-finite fields are rejected" would be true only of the float ones.
+fn parse_finite_f64_field(
+    lineno: usize,
+    card: &str,
+    field: usize,
+    s: &str,
+) -> Result<f64, ParseError> {
+    let bad = || ParseError::BadField {
         line: lineno,
         card: card.to_string(),
         field,
         raw: s.to_string(),
-    })
+    };
+    let v = s.parse::<f64>().map_err(|_| bad())?;
+    if !v.is_finite() {
+        return Err(bad());
+    }
+    Ok(v)
+}
+
+fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, ParseError> {
+    // Accept floats like "1.0" that 4nec2 sometimes emits for integer fields.
+    parse_finite_f64_field(lineno, card, field, s).map(|v| v as u32)
+}
+
+fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
+    parse_finite_f64_field(lineno, card, field, s).map(|v| v as i32)
+}
+
+/// Parse one numeric field, rejecting `NaN` and the infinities.
+///
+/// Rust's `f64::from_str` accepts "NaN", "inf" and "-inf", and a NEC deck is
+/// plain text, so those reach the solver from any card. They do not merely give a
+/// wrong answer — they give an *unrecognisable* one, because `NaN` fails every
+/// comparison: `current.norm() > 1e-60` is false for `NaN`, so the feedpoint
+/// falls into its zero-current branch and reports the source voltage, and
+/// `is_negative_resistance` (`z_re < 0.0`) is false too, so no caveat fires.
+/// Measured before this check: `GW 1 21 0 0 NaN 0 0 5.0 0.001` printed a feedpoint
+/// row of `NaN NaN NaN NaN NaN NaN` at exit 0 with no warning (FND-030).
+///
+/// Rejecting at the parser closes this input route in one place, for every card
+/// and every frontend, rather than teaching each downstream check to re-ask "is
+/// this actually a number". No corpus deck or test fixture uses a non-finite
+/// field. It does **not** close every route to a non-finite frequency: a finite
+/// field near the top of the range still overflows once multiplied into hertz,
+/// which `validate::frequency_error` catches instead.
+fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, ParseError> {
+    parse_finite_f64_field(lineno, card, field, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +516,72 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `f64::from_str` accepts "NaN", "inf" and "-inf", and a NEC deck is plain
+    /// text — so before this check those reached the solver from any card.
+    /// Measured on the CLI beforehand: `GW 1 21 0 0 NaN 0 0 5.0 0.001` printed a
+    /// feedpoint row of `NaN NaN NaN NaN NaN NaN` at exit 0 with **no** warning,
+    /// because `NaN` fails every comparison the downstream caveats test (FND-030).
+    #[test]
+    fn a_non_finite_field_is_rejected_on_any_card() {
+        for (deck, what) in [
+            (
+                "GW 1 21 0 0 NaN 0 0 5.0 0.001\nGE 0\nEN\n",
+                "NaN in a GW coordinate",
+            ),
+            (
+                "GW 1 21 0 0 inf 0 0 5.0 0.001\nGE 0\nEN\n",
+                "inf in a GW coordinate",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 -inf\nGE 0\nEN\n",
+                "-inf in a GW radius",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nFR 0 1 0 0 NaN 0\nEN\n",
+                "NaN in an FR frequency",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nEX 0 1 11 0 NaN 0.0\nEN\n",
+                "NaN in an EX voltage",
+            ),
+        ] {
+            assert!(parse(deck).is_err(), "{what} must be rejected");
+        }
+    }
+
+    /// Integer fields go through `f64` (4nec2 emits "1.0"), so they inherited
+    /// `from_str`'s acceptance of "NaN"/"inf" — and the saturating `as` cast then
+    /// produced a *plausible* integer instead of an error. `NaN as u32` is 0, so
+    /// `FR 0 NaN 0 0 14.2 0` parsed and solved as a one-step sweep; `inf as u32`
+    /// is `u32::MAX`, asking for a four-billion-step one.
+    #[test]
+    fn a_non_finite_integer_field_is_rejected_too() {
+        for (deck, what) in [
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nFR 0 NaN 0 0 14.2 0\nEN\n",
+                "NaN as an FR step count",
+            ),
+            (
+                "GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nFR 0 inf 0 0 14.2 0\nEN\n",
+                "inf as an FR step count",
+            ),
+            (
+                "GW 1 NaN 0 0 -1 0 0 1 0.001\nGE 0\nEN\n",
+                "NaN as a GW segment count",
+            ),
+        ] {
+            assert!(parse(deck).is_err(), "{what} must be rejected");
+        }
+    }
+
+    #[test]
+    fn ordinary_numeric_fields_still_parse() {
+        // Including the forms that look unusual but are finite.
+        assert!(parse("GW 1 21 0 0 -5.2782e0 0 0 5.2782 1e-3\nGE 0\nEN\n").is_ok());
+        // 4nec2 writes integer fields as floats; that must keep working.
+        assert!(parse("GW 1 21.0 0 0 -1 0 0 1 0.001\nGE 0\nFR 0 1.0 0 0 14.2 0\nEN\n").is_ok());
+    }
     use nec_model::card::{
         Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, RpCard,
     };

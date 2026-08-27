@@ -848,8 +848,27 @@ impl AppState {
             .sweep_step
             .parse::<f64>()
             .map_err(|_| format!("invalid step size: '{}'", self.sweep_step))?;
+        // `parse::<f64>()` accepts "NaN", "inf" and "-inf", and every comparison
+        // against `NaN` is false — so `step <= 0.0` waves a NaN step straight
+        // through. Check finiteness first, before any ordering test.
+        for (name, v) in [("start", start), ("end", end), ("step", step)] {
+            if !v.is_finite() {
+                return Err(format!("{name} must be a finite number, got {v}"));
+            }
+        }
         if step <= 0.0 {
             return Err(format!("step must be > 0, got {step}"));
+        }
+        // The docstring has always said "positive float"; nothing checked it, so a
+        // sweep from -5 to +5 ran and plotted the source voltage back at every
+        // point ≤ 0 MHz. This range never reaches the deck's `FR` card, so the
+        // shared `frequency_error` cannot see it (FND-056).
+        if start <= 0.0 {
+            return Err(format!(
+                "start must be a positive frequency, got {start} MHz: at or below \
+                 zero the current is driven to zero and the reported impedance \
+                 becomes the source voltage"
+            ));
         }
         if start >= end {
             return Err(format!("start ({start}) must be less than end ({end})"));
