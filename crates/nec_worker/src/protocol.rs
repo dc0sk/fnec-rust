@@ -83,6 +83,7 @@ mod tests {
             frequency_hz: 14.2e6,
             error_code: ErrorCode::SingularMatrix,
             error_message: "matrix is singular".into(),
+            warnings: vec!["line 5: unknown card 'ZZ'".into()],
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: TaskResult = serde_json::from_str(&json).unwrap();
@@ -255,6 +256,17 @@ pub enum TaskResult {
         frequency_hz: f64,
         error_code: ErrorCode,
         error_message: String,
+        /// Caveats the deck earned before the solve failed — an unrecognised card,
+        /// a skipped `LD`/`TL`/`NT`. A deck can be both flawed *and* refused, and
+        /// without this the flaw is lost: the reader is told why the solve stopped
+        /// and never that a line was ignored on the way there (FND-059).
+        ///
+        /// `#[serde(default)]` for the same reason the `Ok` variant's is: an older
+        /// worker sends no field and this reads empty, a newer worker's field is
+        /// ignored by an older controller. Additive both ways, unlike a new
+        /// `ErrorCode` variant, which would fail the whole line.
+        #[serde(default)]
+        warnings: Vec<String>,
     },
 }
 

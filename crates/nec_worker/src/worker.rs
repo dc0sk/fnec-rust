@@ -2,7 +2,7 @@ use base64::Engine;
 use std::io::{BufRead, Write};
 
 use crate::protocol::{ErrorCode, Impedance, TaskMessage, TaskResult};
-use crate::solve::{solve_deck_at_frequency_with_exec, SolveError};
+use crate::solve::SolveError;
 
 /// Run the worker stdio event loop.
 ///
@@ -52,6 +52,9 @@ fn process_task(line: &str) -> TaskResult {
                 frequency_hz: 0.0,
                 error_code: ErrorCode::ParseError,
                 error_message: format!("failed to deserialize task: {e}"),
+                // Nothing has been parsed yet, so there are no deck caveats to
+                // report — these three failures happen before there is a deck.
+                warnings: Vec::new(),
             };
         }
     };
@@ -69,6 +72,7 @@ fn process_task(line: &str) -> TaskResult {
                 frequency_hz: freq_hz,
                 error_code: ErrorCode::ParseError,
                 error_message: format!("base64 decode failed: {e}"),
+                warnings: Vec::new(),
             };
         }
     };
@@ -81,13 +85,18 @@ fn process_task(line: &str) -> TaskResult {
                 frequency_hz: freq_hz,
                 error_code: ErrorCode::ParseError,
                 error_message: format!("deck is not valid UTF-8: {e}"),
+                warnings: Vec::new(),
             };
         }
     };
 
     let deck_str = deck_str.to_string();
 
-    match solve_deck_at_frequency_with_exec(&deck_str, freq_hz, &basis, &exec) {
+    // Reporting form: a deck can be both flawed and refused, and the plain
+    // `Result` loses the flaw when it reports the refusal (FND-059).
+    let (outcome, warnings) =
+        crate::solve::solve_deck_reporting_warnings(&deck_str, freq_hz, &basis, &exec);
+    match outcome {
         Ok(fp) => {
             let vswr = vswr(fp.impedance_re, fp.impedance_im, 50.0);
             TaskResult::Ok {
@@ -131,6 +140,7 @@ fn process_task(line: &str) -> TaskResult {
                 frequency_hz: freq_hz,
                 error_code,
                 error_message: e.to_string(),
+                warnings,
             }
         }
     }
@@ -279,6 +289,45 @@ mod tests {
              message was: {error_message}"
         );
         assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+    }
+
+    /// FND-059: a deck can be **both flawed and refused**, and the plain `Result`
+    /// shape reported the refusal while losing the flaw. Here the deck carries an
+    /// unrecognised card *and* has no driven feedpoint: the reader was told the
+    /// solve stopped and never that a line was ignored on the way there — which is
+    /// often the reason it stopped.
+    #[test]
+    fn a_refused_deck_still_reports_the_caveats_it_earned() {
+        let deck = "CM flawed and refused\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    ZZ 1 2 3\nEX 1 1 1 0 0.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            warnings,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for a deck with no driven feedpoint: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+        assert!(
+            warnings.iter().any(|w| w.contains("ZZ")),
+            "the ignored card must survive the refusal: {warnings:?}"
+        );
+    }
+
+    /// ...and a deck refused before anything was parsed reports none, rather than
+    /// inventing caveats for a deck that never existed.
+    #[test]
+    fn a_task_refused_before_parsing_reports_no_caveats() {
+        let result = process_task(
+            r#"{"task_id":"t1","deck_hash":"a","deck_b64":"!!!bad!!!",
+            "solver_config":{"basis":"hallen","ground_model":"none"},"frequency_hz":14e6}"#,
+        );
+        let TaskResult::Error { warnings, .. } = &result else {
+            panic!("expected an error: {result:?}");
+        };
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     /// The negative control: a genuine syntax error still earns `ParseError`, so

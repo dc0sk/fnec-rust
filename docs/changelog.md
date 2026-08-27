@@ -207,6 +207,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A refused deck still reports the caveats it earned** (FND-059). A deck can be
+  both flawed *and* refused — an unrecognised card **and** no driven feedpoint —
+  and `TaskResult::Error` had nowhere to carry the first. The reader was told the
+  solve stopped and never that a line had been ignored on the way there, which is
+  often the reason it stopped.
+
+  The field is `#[serde(default)]`, additive both ways like the one FND-026 added
+  to `Ok`: an older worker sends none and this reads empty, and an older
+  controller ignores a newer worker's. A new `ErrorCode` variant would not have
+  been — `ErrorCode` has no `#[serde(other)]`, so an unknown one fails the whole
+  result line, which the pool reads as a dead worker and evicts.
+
+  The controller had been destructuring the error with `..`, which is exactly how
+  the `Ok` arm's warnings went unread for a release, so the decision of what to
+  print is now a named function a test can reach rather than a line inside a loop.
+  A task refused *before* anything is parsed reports no caveats, and that is
+  asserted too — it must not invent them for a deck that never existed.
+
 - **The remote worker stops losing information the local path keeps** (FND-049,
   FND-041). Two separate leaks, same class.
 

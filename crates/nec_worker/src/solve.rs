@@ -295,6 +295,36 @@ pub fn solve_deck_at_frequency_with_exec(
     basis: &str,
     exec: &str,
 ) -> Result<FeedpointResult, SolveError> {
+    solve_deck_reporting_warnings(deck_str, freq_hz, basis, exec).0
+}
+
+/// The solve, plus the caveats the deck earned **whether or not it succeeded**.
+///
+/// A deck can be both flawed and refused — an unrecognised card *and* a bad `EX`
+/// reference — and the plain `Result` shape loses the first when it reports the
+/// second. On success the returned list is the same one carried in
+/// [`FeedpointResult::warnings`]; on failure it is the only copy (FND-059).
+pub fn solve_deck_reporting_warnings(
+    deck_str: &str,
+    freq_hz: f64,
+    basis: &str,
+    exec: &str,
+) -> (Result<FeedpointResult, SolveError>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let result = solve_inner(deck_str, freq_hz, basis, exec, &mut warnings);
+    (result, warnings)
+}
+
+/// `warnings` is an out-parameter rather than part of the return type because
+/// every early exit here is a `?`, and threading a second value through eight of
+/// them would mean rewriting each one to say nothing new.
+fn solve_inner(
+    deck_str: &str,
+    freq_hz: f64,
+    basis: &str,
+    exec: &str,
+    warnings: &mut Vec<String>,
+) -> Result<FeedpointResult, SolveError> {
     if basis != "hallen" {
         return Err(SolveError::UnsupportedConfig(format!(
             "basis '{basis}' not supported in worker; only 'hallen' is implemented"
@@ -309,11 +339,7 @@ pub fn solve_deck_at_frequency_with_exec(
     // as never producing them for anything driving `run_worker_stdio`, which is
     // public API: the CLI happens to parse the identical bytes locally and print
     // its own, so the loss was masked for exactly one of the callers (FND-041).
-    let parse_warnings: Vec<String> = parse_result
-        .warnings
-        .iter()
-        .map(ToString::to_string)
-        .collect();
+    warnings.extend(parse_result.warnings.iter().map(ToString::to_string));
 
     // 2. Build geometry
     let segs = build_geometry(&deck).map_err(|e| SolveError::GeometryError(e.to_string()))?;
@@ -364,6 +390,7 @@ pub fn solve_deck_at_frequency_with_exec(
 
     // 4. Assemble Z-matrix and apply loads / TL stamps
     let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
+    warnings.extend(stamps.warnings.iter().cloned());
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
     stamps.apply(&mut z_mat);
 
@@ -456,11 +483,7 @@ pub fn solve_deck_at_frequency_with_exec(
         return Ok(FeedpointResult {
             // Parse caveats first: they describe the deck the rest was derived
             // from, so they read before the matrix-fill ones.
-            warnings: parse_warnings
-                .iter()
-                .chain(stamps.warnings.iter())
-                .cloned()
-                .collect(),
+            warnings: warnings.clone(),
             impedance_re: z_in.re,
             impedance_im: z_in.im,
             current_mag: current.norm(),
