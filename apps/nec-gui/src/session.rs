@@ -29,6 +29,9 @@ pub struct Session {
     pub sweep_step: String,
     /// Chart metric label ("SWR" or "|Z| (Ω)").
     pub sweep_metric: String,
+    /// Solver label ("Hallén" or "MPIE"), stored by name so an added solver does
+    /// not renumber the others (FND-007).
+    pub solver: String,
     pub cam_target: [f32; 3],
     pub cam_distance: f32,
     pub cam_yaw: f32,
@@ -55,6 +58,7 @@ impl Session {
             sweep_end: state.sweep_end.clone(),
             sweep_step: state.sweep_step.clone(),
             sweep_metric: state.sweep_metric.label().to_string(),
+            solver: state.solver.label().to_string(),
             cam_target: cam.target.to_array(),
             cam_distance: cam.distance,
             cam_yaw: cam.yaw,
@@ -74,6 +78,7 @@ impl Session {
         state.sweep_end = self.sweep_end.clone();
         state.sweep_step = self.sweep_step.clone();
         state.sweep_metric = metric_from_label(&self.sweep_metric);
+        state.solver = solver_from_label(&self.solver);
         let cam = &mut state.viewport.camera;
         cam.target = glam::Vec3::from(self.cam_target);
         cam.distance = self.cam_distance;
@@ -134,6 +139,18 @@ impl Session {
 }
 
 /// Map a chart-metric label back to a [`PlotMetric`] (defaults to SWR).
+/// The solver a stored label names, defaulting to Hallén.
+///
+/// Unknown labels fall back rather than fail: a session written by a future build
+/// that offers a third solver must still open here, on the default, instead of
+/// discarding the whole session file.
+fn solver_from_label(label: &str) -> crate::solve::SolverKind {
+    crate::solve::SolverKind::ALL
+        .into_iter()
+        .find(|k| k.label() == label)
+        .unwrap_or(crate::solve::SolverKind::Hallen)
+}
+
 fn metric_from_label(label: &str) -> PlotMetric {
     if label == PlotMetric::ZMag.label() {
         PlotMetric::ZMag
@@ -156,6 +173,7 @@ mod tests {
         state.sweep_end = "7.3".into();
         state.sweep_step = "0.05".into();
         state.sweep_metric = PlotMetric::ZMag;
+        state.solver = crate::solve::SolverKind::Mpie;
         state.viewport.camera.distance = 12.5;
         state.viewport.camera.yaw = 1.23;
         state.viewport.scene_opts.show_axes = false;
@@ -173,6 +191,7 @@ mod tests {
         assert_eq!(restored.sweep_end, "7.3");
         assert_eq!(restored.sweep_step, "0.05");
         assert_eq!(restored.sweep_metric, PlotMetric::ZMag);
+        assert_eq!(restored.solver, crate::solve::SolverKind::Mpie);
         assert!((restored.viewport.camera.distance - 12.5).abs() < 1e-6);
         assert!((restored.viewport.camera.yaw - 1.23).abs() < 1e-6);
         assert!(!restored.viewport.scene_opts.show_axes);

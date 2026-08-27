@@ -49,6 +49,19 @@ fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     freqs
 }
 
+/// The solver context these bindings run under.
+///
+/// Hallén-only for now — `fnec_py` exposes no solver choice, so a diagnostic that
+/// recommends the MPIE must tell a Python caller to reach for the CLI. Adopting
+/// `solve_mpie_session` here is tracked separately; what matters is that the
+/// choice is stated once rather than defaulted three times.
+fn py_solver_context() -> nec_solver::validate::SolverContext<'static> {
+    nec_solver::validate::SolverContext {
+        kind: nec_solver::validate::SolverKind::Hallen,
+        mpie_remedy: "re-run it with the fnec CLI's `--solver mpie`",
+    }
+}
+
 /// Solve a NEC deck string at one frequency.
 ///
 /// Returns the impedance record and the non-fatal caveats the caller should raise
@@ -70,7 +83,7 @@ fn solve_at_freq(
 
     // Same checks, in the same order, as the CLI and the GUI.
     let mut warnings = Vec::new();
-    for d in validate::diagnose(deck, &segs, &ground, freq_hz) {
+    for d in validate::diagnose(deck, &segs, &ground, freq_hz, py_solver_context()) {
         match d.level {
             nec_model::DiagnosticLevel::Error => return Err(d.message),
             nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
@@ -143,6 +156,7 @@ fn solve_at_freq(
             ex.segment as usize,
             deck,
             &segs,
+            py_solver_context(),
         ) {
             warnings.push(w);
         }
@@ -184,6 +198,7 @@ fn solve_at_freq(
             seg.tag_index as usize,
             deck,
             &segs,
+            py_solver_context(),
         ) {
             warnings.push(w);
         }

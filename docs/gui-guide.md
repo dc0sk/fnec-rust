@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-07-13
+last_updated: 2026-08-27
 ---
 
 # fnec-gui user guide
@@ -58,17 +58,28 @@ Controls above the view:
 Click **Solve** to run a single-frequency solve of the deck; the feedpoint
 frequency, resistance, reactance, and |Z| are shown.
 
-> **Solver note.** The GUI runs the **Hallén** solver. For geometries it does not
-> model accurately — junctions where three or more wires meet, closed loops, and
-> near-ground currents over finite ground — the Solve tab shows a ⚠ warning and
-> the numbers should not be trusted. Solve those with the command line, which has
-> the mixed-potential second solver:
+> **Solver note.** The **Solver** picker above the tabs chooses between:
 >
-> ```sh
-> fnec --solver mpie [--ground-solver sommerfeld] your-deck.nec
-> ```
+> - **Hallén** — the default, and the right answer for most decks.
+> - **MPIE** — the mixed-potential second solver, for the geometries Hallén does
+>   not model accurately: junctions where three or more wires meet, closed loops,
+>   and near-ground currents over finite ground.
 >
-> The GUI also surfaces ⚠ warnings for deferred ground models (treated as free
+> The choice applies to **every** tab — Solve, Sweep, Pattern and Currents — so
+> the impedance on screen and the pattern beside it always come from the same
+> solver. Changing it clears solved results, because the numbers showing were
+> produced by the other one.
+>
+> On Hallén, a deck with one of those geometries shows a warning naming the MPIE.
+> On MPIE, that warning is absent — the MPIE models those cases correctly — and
+> the caveat you may see instead is about **mixed wire radii**, since the MPIE
+> solves the whole geometry with the first wire's radius.
+>
+> The MPIE cannot represent loads: a deck with `LD`, `TL` or `NT` is **refused**
+> on that solver rather than solved with the card ignored. Switch back to Hallén
+> for loaded decks.
+>
+> The GUI also surfaces warnings for deferred ground models (treated as free
 > space) and unsupported loads.
 
 ## Sweep tab

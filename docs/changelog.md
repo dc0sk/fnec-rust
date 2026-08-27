@@ -17,6 +17,49 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **The GUI has a solver picker** (FND-007). Decks with a T/Y junction, a closed
+  loop, or currents near lossy ground could only be solved correctly from the
+  CLI; the GUI warned about them and told the user to leave. It now offers
+  **Hallén** and **MPIE**, and the choice reaches every tab.
+
+  The branch is in the one shared solve step, so Solve, Sweep, Currents and
+  Pattern all follow the picker together. A picker that changed only the tab in
+  front of you would be the FND-038 defect one solver over.
+
+  It reproduces the CLI exactly: the pinned free-space dipole (74.437414 +
+  j41.753720) and the degree-3 Y-junction (63.673674 - j322.199211) — the case
+  the MPIE exists for, where Hallén returns R≈8 garbage.
+
+  **Caveats now know which solver is running.** A T/Y deck on the MPIE no longer
+  carries the Hallén topology caveat, which was not merely redundant there but
+  false — and whose remedy would have recommended the solver already running.
+  Nothing in the GUI quotes a CLI flag any more: `validate::SolverContext` carries
+  the remedy, so each frontend phrases it for its own users. The same change
+  retired the CLI's private per-solver negative-resistance arm into the shared
+  producer.
+
+  A deck the MPIE cannot represent — `LD`, `TL`, `NT` — is **refused** on that
+  solver rather than solved with the card ignored, and a sweep refuses it when the
+  job is prepared rather than after queueing every point.
+
+  Switching solver **discards every solved view** — impedance, sweep, pattern,
+  currents, the 3-D overlay and the deck caveats — and results from a solve still
+  in flight when you switch no longer repopulate them. Leaving any of them up
+  would put one solver's impedance beside another's pattern with nothing saying
+  so, which is the disagreement the picker exists to prevent. The choice is
+  written to the session file, like the chart-metric picker beside it.
+
+  One CLI string changed wording: the junctionless negative-resistance cause now
+  reads "re-run with `--solver mpie` to cross-check" instead of "cross-check with
+  `--solver mpie`", because the remedy is supplied by the caller now. The topology
+  remedy, the MPIE "solver defect" cause, and the `LD`/`TL`/`NT` refusals are
+  byte-identical.
+
+  Only the two production solvers are offered. The experimental pulse, continuity
+  and sinusoidal modes are known-inaccurate for thin-wire antennas, and a picker
+  is an invitation to use what it lists. `fnec_py` still has no solver choice —
+  recorded as FND-055 rather than left as an oversight.
+
 - **The GUI and the Python bindings solve current-source decks** (FND-045). They
   used to decline an `EX 4` deck and say "use the fnec CLI" — but the machinery
   was never missing, only unwired: `nec_solver` has exported

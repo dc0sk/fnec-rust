@@ -104,6 +104,24 @@ fn apply_vars(input: &str, vars_path: Option<&str>) -> Result<String, String> {
     }
 }
 
+/// How a GUI user reaches the MPIE: a picker, not a command-line flag.
+///
+/// The shared diagnostics take this from the caller precisely so neither frontend
+/// quotes the other's interface — telling someone with a solver dropdown in front
+/// of them to "re-run with `--solver mpie`" describes a program they are not using.
+pub const GUI_MPIE_REMEDY: &str = "switch the solver to MPIE";
+
+/// The solver the GUI will run. Re-exported so the rest of the app names one type.
+pub use nec_solver::validate::SolverKind;
+
+/// The diagnostic context for a GUI solve on `solver`.
+fn gui_ctx(solver: SolverKind) -> nec_solver::validate::SolverContext<'static> {
+    nec_solver::validate::SolverContext {
+        kind: solver,
+        mpie_remedy: GUI_MPIE_REMEDY,
+    }
+}
+
 /// Result of a successful single-frequency solve.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SolveResult {
@@ -113,9 +131,10 @@ pub struct SolveResult {
     pub z_re: f64,
     /// Feedpoint reactance (Ω).
     pub z_im: f64,
-    /// Solver caveats for this deck (unreliable topology, deferred ground,
-    /// unsupported loads) — the GUI runs the Hallén solver, so junctions/loops
-    /// and finite-ground currents need the CLI's `--solver mpie`.
+    /// Caveats for this deck on the solver that produced it (unreliable
+    /// topology, deferred ground, unsupported loads). They are solver-dependent:
+    /// on Hallén a junction or loop earns a caveat naming the MPIE, and on the
+    /// MPIE that caveat is absent because it models those correctly.
     pub warnings: Vec<String>,
     /// Wire tag the impedance was measured at.
     pub feed_tag: usize,
@@ -143,11 +162,15 @@ pub struct SweepPoint {
 ///
 /// Returns `Err` with a human-readable message if the file cannot be read,
 /// parsed, or solved.
-pub fn solve_deck_path(path: &Path, vars_path: Option<&str>) -> Result<SolveResult, String> {
+pub fn solve_deck_path(
+    path: &Path,
+    vars_path: Option<&str>,
+    solver: SolverKind,
+) -> Result<SolveResult, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    solve_deck_str(&input)
+    solve_deck_str(&input, solver)
 }
 
 /// Parse a deck (with optional `$VAR` substitution) and build **only** its
@@ -203,16 +226,20 @@ pub fn load_model_doc_str(deck_text: &str) -> Result<crate::model_doc::ModelDoc,
 pub fn load_currents_path(
     path: &Path,
     vars_path: Option<&str>,
+    solver: SolverKind,
 ) -> Result<crate::mesh::GeometryCurrents, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    load_currents_str(&input)
+    load_currents_str(&input, solver)
 }
 
 /// Build geometry + current magnitudes from a raw NEC deck string.
-pub fn load_currents_str(deck_text: &str) -> Result<crate::mesh::GeometryCurrents, String> {
-    let (segs, currents, _freq_hz, ground) = solve_for_currents(deck_text)?;
+pub fn load_currents_str(
+    deck_text: &str,
+    solver: SolverKind,
+) -> Result<crate::mesh::GeometryCurrents, String> {
+    let (segs, currents, _freq_hz, ground) = solve_for_currents(deck_text, solver)?;
     let has_ground = !matches!(
         ground,
         GroundModel::FreeSpace | GroundModel::Deferred { .. }
@@ -234,17 +261,21 @@ pub fn load_currents_str(deck_text: &str) -> Result<crate::mesh::GeometryCurrent
 pub fn pattern_grid_path(
     path: &Path,
     vars_path: Option<&str>,
+    solver: SolverKind,
 ) -> Result<crate::mesh::PatternSolve, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    pattern_grid_str(&input)
+    pattern_grid_str(&input, solver)
 }
 
 /// Build geometry + full-sphere pattern grid from a raw NEC deck string.
-pub fn pattern_grid_str(deck_text: &str) -> Result<crate::mesh::PatternSolve, String> {
+pub fn pattern_grid_str(
+    deck_text: &str,
+    solver: SolverKind,
+) -> Result<crate::mesh::PatternSolve, String> {
     use crate::mesh::{LOBE_N_PHI, LOBE_N_THETA};
-    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text)?;
+    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text, solver)?;
 
     let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
     let mut points = Vec::with_capacity(nt * np);
@@ -295,9 +326,10 @@ fn validate_deck(
     ground: &GroundModel,
     freq_hz: f64,
     parse_warnings: &[nec_parser::ParseError],
+    solver: SolverKind,
 ) -> Result<Vec<String>, String> {
     let mut warnings: Vec<String> = parse_warnings.iter().map(ToString::to_string).collect();
-    for d in validate::diagnose(deck, segs, ground, freq_hz) {
+    for d in validate::diagnose(deck, segs, ground, freq_hz, gui_ctx(solver)) {
         match d.level {
             nec_model::DiagnosticLevel::Error => return Err(d.message),
             nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
@@ -320,7 +352,7 @@ fn validate_deck(
 /// Best-effort by design: a deck that cannot be parsed or built returns an empty
 /// list, because the action the user actually ran reports that failure itself and
 /// repeating it in a caveats strip would be noise.
-pub fn deck_warnings(deck_text: &str) -> Vec<String> {
+pub fn deck_warnings(deck_text: &str, solver: SolverKind) -> Vec<String> {
     let Ok(parsed) = parse(deck_text) else {
         return Vec::new();
     };
@@ -341,10 +373,10 @@ pub fn deck_warnings(deck_text: &str) -> Vec<String> {
         })
         .unwrap_or(0.0);
     // A hard rejection is surfaced by the action itself; keep only the caveats.
-    validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings).unwrap_or_default()
+    validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver).unwrap_or_default()
 }
 
-pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
+pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
@@ -368,12 +400,13 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
     // --- validation (before any solve) -----------------------------------
-    let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings)?;
+    let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver)?;
 
     // --- impedance matrix ------------------------------------------------
-    let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-
-    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
+    // Only the Hallén path consumes it. The MPIE builds its own system from the
+    // geometry and ignores `z_mat` entirely, so assembling it there was an O(N²)
+    // fill computed and thrown away on every solve.
+    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     // --- Hallen solve ----------------------------------------------------
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
@@ -381,13 +414,15 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
         .iter()
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
-    let (currents, port_voltage) = hallen_currents(
+    let (currents, port_voltage) = solve_currents(
         deck,
         &segs,
         &z_mat,
         freq_hz,
+        &ground,
         &wire_endpoints,
         &junction_tuples,
+        solver,
     )?;
 
     // --- feedpoint impedance --------------------------------------------
@@ -397,8 +432,14 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     // `warnings` is already rendered by `impedance_view`, so this needs no new
     // display path — only the check that was missing.
     let mut warnings = warnings;
-    if let Some(w) = nec_solver::validate::negative_resistance_warning(z.re, tag, seg, deck, &segs)
-    {
+    if let Some(w) = nec_solver::validate::negative_resistance_warning(
+        z.re,
+        tag,
+        seg,
+        deck,
+        &segs,
+        gui_ctx(solver),
+    ) {
         warnings.push(w);
     }
 
@@ -412,12 +453,14 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
     })
 }
 
-/// The currents for a deck at one frequency, whichever drive it carries.
+/// The currents for a deck at one frequency, on whichever solver and drive it carries.
 ///
 /// One step, three callers. The single solve, the sweep and the currents/pattern
 /// view each had their own copy of "build the RHS and call `solve_hallen`", and
 /// adding a current-source branch to one of them would have made an `EX 4` deck
-/// solvable on one tab and refused on three — the FND-038 shape.
+/// solvable on one tab and refused on three — the FND-038 shape. The solver
+/// picker branches here for the same reason: a picker that changed only the Solve
+/// tab would be that defect again, one solver over.
 ///
 /// A current-source deck cannot be handled by branching at the *pricing* step:
 /// its excitation vector is all zeros, so `V/I` has nothing to work with. It needs
@@ -426,14 +469,49 @@ pub fn solve_deck_str(deck_text: &str) -> Result<SolveResult, String> {
 /// Returns the port voltage for a current-source deck, and `None` for a delta gap.
 /// A deck carrying both is refused before this by `validate::pre_solve_error`
 /// (FND-036), so the two cases really are exclusive.
-fn hallen_currents(
+/// The stamped Hallén impedance matrix, or an empty one on the MPIE path.
+///
+/// The MPIE assembles its own system from the geometry and never reads this, so
+/// filling it there is pure waste — an O(N²) matrix built and discarded, and on
+/// a sweep once per frequency point. Returning an empty matrix rather than an
+/// `Option` keeps the one call signature for `solve_currents`, whose MPIE branch
+/// returns before touching it.
+fn hallen_z_matrix(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    ground: &GroundModel,
+    solver: SolverKind,
+) -> nec_solver::ZMatrix {
+    if solver == SolverKind::Mpie {
+        return nec_solver::ZMatrix::new(0);
+    }
+    let mut z_mat = assemble_z_matrix_with_ground(segs, freq_hz, ground);
+    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply(&mut z_mat);
+    z_mat
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_currents(
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
     z_mat: &nec_solver::ZMatrix,
     freq_hz: f64,
+    ground: &GroundModel,
     wire_endpoints: &[(usize, usize)],
     junction_tuples: &[(usize, usize, f64)],
+    solver: SolverKind,
 ) -> Result<(Vec<Complex64>, Option<Complex64>), String> {
+    // The MPIE builds its own system from the geometry, so it takes neither the
+    // assembled `z_mat` nor the Hallén endpoint/junction bookkeeping. Its
+    // refusals travel inside `solve_mpie_session` (#414), so this branch cannot
+    // hand it a deck it would answer wrongly.
+    if solver == SolverKind::Mpie {
+        let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz)
+            .map_err(|e| e.to_string())?;
+        return Ok((currents, None));
+    }
+
     let driven_by_current = nec_solver::feedpoints(deck)
         .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
 
@@ -524,7 +602,7 @@ fn feedpoint_impedance(
     )
 }
 
-/// Run a Hallen sweep over a frequency range for the deck at `path`.
+/// Run a sweep on the selected solver over a frequency range for the deck at `path`.
 ///
 /// `start_mhz`, `end_mhz`, `step_mhz` define the linear sweep.  The geometry
 /// and excitation vector are built once and reused for every frequency point.
@@ -535,21 +613,23 @@ pub fn sweep_deck_path(
     start_mhz: f64,
     end_mhz: f64,
     step_mhz: f64,
+    solver: SolverKind,
 ) -> Result<Vec<SweepPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    sweep_deck_str(&input, start_mhz, end_mhz, step_mhz)
+    sweep_deck_str(&input, start_mhz, end_mhz, step_mhz, solver)
 }
 
-/// Run a Hallen sweep for a deck given as a string.
+/// Run a sweep on the selected solver for a deck given as a string.
 pub fn sweep_deck_str(
     deck_text: &str,
     start_mhz: f64,
     end_mhz: f64,
     step_mhz: f64,
+    solver: SolverKind,
 ) -> Result<Vec<SweepPoint>, String> {
-    let job = SweepJob::prepare(deck_text, start_mhz, end_mhz, step_mhz)?;
+    let job = SweepJob::prepare(deck_text, start_mhz, end_mhz, step_mhz, solver)?;
     job.freqs_mhz().iter().map(|&f| job.solve_at(f)).collect()
 }
 
@@ -571,6 +651,7 @@ pub struct SweepJob {
     wire_endpoints: Vec<(usize, usize)>,
     junction_tuples: Vec<(usize, usize, f64)>,
     freqs_mhz: Vec<f64>,
+    solver: SolverKind,
 }
 
 impl SweepJob {
@@ -580,6 +661,7 @@ impl SweepJob {
         start_mhz: f64,
         end_mhz: f64,
         step_mhz: f64,
+        solver: SolverKind,
     ) -> Result<Self, String> {
         if step_mhz <= 0.0 {
             return Err(format!("step_mhz must be > 0, got {step_mhz}"));
@@ -609,6 +691,13 @@ impl SweepJob {
         if let Some(e) = validate::pre_solve_error(&deck, &segs, &ground) {
             return Err(e);
         }
+        // ...and what the *chosen solver* cannot take. Without this an MPIE sweep
+        // of a loaded deck would queue every point and fail on the first one.
+        if solver == SolverKind::Mpie {
+            if let Some(u) = nec_solver::mpie_unsupported(&deck) {
+                return Err(u.to_string());
+            }
+        }
         let wire_endpoints = wire_endpoints_from_segs(&segs);
         let junction_tuples: Vec<(usize, usize, f64)> =
             detect_wire_junctions(&segs, &wire_endpoints, 1e-6)
@@ -631,6 +720,7 @@ impl SweepJob {
             wire_endpoints,
             junction_tuples,
             freqs_mhz,
+            solver,
         })
     }
 
@@ -643,16 +733,18 @@ impl SweepJob {
     pub fn solve_at(&self, freq_mhz: f64) -> Result<SweepPoint, String> {
         let freq_hz = freq_mhz * 1_000_000.0;
 
-        let mut z_mat = assemble_z_matrix_with_ground(&self.segs, freq_hz, &self.ground);
-        nec_solver::build_deck_stamps(&self.deck, &self.segs, freq_hz).apply(&mut z_mat);
+        // Per point, so the discarded fill cost the whole sweep, not one solve.
+        let z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
 
-        let (currents, port_voltage) = hallen_currents(
+        let (currents, port_voltage) = solve_currents(
             &self.deck,
             &self.segs,
             &z_mat,
             freq_hz,
+            &self.ground,
             &self.wire_endpoints,
             &self.junction_tuples,
+            self.solver,
         )?;
 
         let (z, _tag, _seg) = feedpoint_impedance(
@@ -688,6 +780,14 @@ impl SweepJob {
         // do not vary with frequency — including them here printed the same
         // sentence twice on one screen for a junction-fed deck, which is the normal
         // case for a sweep that earns caveats at all.
+        // The MPIE carries the Sommerfeld surface wave in its Z-matrix, so on that
+        // solver the low-ground caveat does not apply — it describes a Hallén
+        // limitation. This used to pass a hardcoded `false` under a comment saying
+        // "the GUI is Hallén-only", which stopped being true the moment the picker
+        // landed.
+        if self.solver == SolverKind::Mpie {
+            return Vec::new();
+        }
         nec_solver::validate::swept_low_ground_caveat(
             &self.segs,
             &self.ground,
@@ -696,8 +796,6 @@ impl SweepJob {
                 .iter()
                 .map(|f| f * 1_000_000.0)
                 .collect::<Vec<_>>(),
-            // The GUI is Hallén-only and exposes no `--ground-solver`, so the
-            // surface wave is never modelled here.
             false,
         )
         .into_iter()
@@ -720,7 +818,11 @@ impl SweepJob {
         if n == 0 {
             return None;
         }
-        let cause = nec_solver::validate::negative_resistance_cause(&self.deck, &self.segs);
+        let cause = nec_solver::validate::negative_resistance_cause(
+            &self.deck,
+            &self.segs,
+            gui_ctx(self.solver),
+        );
         Some(format!(
             "{n} of {} sweep points report negative feedpoint resistance, which is \
              physically impossible for a passive antenna; those results are unreliable — {cause}",
@@ -762,16 +864,21 @@ pub fn pattern_slice_deck_path(
     path: &Path,
     vars_path: Option<&str>,
     phi_deg: f64,
+    solver: SolverKind,
 ) -> Result<Vec<PatternPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    pattern_slice_deck_str(&input, phi_deg)
+    pattern_slice_deck_str(&input, phi_deg, solver)
 }
 
 /// Compute an elevation-plane radiation-pattern slice from a raw deck string.
-pub fn pattern_slice_deck_str(deck_text: &str, phi_deg: f64) -> Result<Vec<PatternPoint>, String> {
-    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text)?;
+pub fn pattern_slice_deck_str(
+    deck_text: &str,
+    phi_deg: f64,
+    solver: SolverKind,
+) -> Result<Vec<PatternPoint>, String> {
+    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text, solver)?;
 
     // Build 37-point theta grid: 0, 5, 10, … 180 deg.
     let points: Vec<FarFieldPoint> = (0..=36)
@@ -813,16 +920,20 @@ pub struct CurrentPoint {
 pub fn current_distribution_deck_path(
     path: &Path,
     vars_path: Option<&str>,
+    solver: SolverKind,
 ) -> Result<Vec<CurrentPoint>, String> {
     let input = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
     let input = apply_vars(&input, vars_path)?;
-    current_distribution_deck_str(&input)
+    current_distribution_deck_str(&input, solver)
 }
 
 /// Compute the per-segment current distribution from a raw deck string.
-pub fn current_distribution_deck_str(deck_text: &str) -> Result<Vec<CurrentPoint>, String> {
-    let (segs, currents, _freq_hz, _ground) = solve_for_currents(deck_text)?;
+pub fn current_distribution_deck_str(
+    deck_text: &str,
+    solver: SolverKind,
+) -> Result<Vec<CurrentPoint>, String> {
+    let (segs, currents, _freq_hz, _ground) = solve_for_currents(deck_text, solver)?;
 
     let mut pos: f64 = 0.0;
     let mut prev_mid: Option<[f64; 3]> = None;
@@ -855,6 +966,7 @@ pub fn current_distribution_deck_str(deck_text: &str) -> Result<Vec<CurrentPoint
 
 fn solve_for_currents(
     deck_text: &str,
+    solver: SolverKind,
 ) -> Result<
     (
         Vec<nec_solver::Segment>,
@@ -876,7 +988,7 @@ fn solve_for_currents(
         return Err(e);
     }
     // No current-source refusal here any more: this path prices one now, through
-    // the same `hallen_currents` step the Solve tab uses (FND-045). The guard that
+    // the same `solve_currents` step the Solve tab uses (FND-045). The guard that
     // stood here existed because these views would otherwise have rendered zero
     // currents and a meaningless pattern — that hazard is gone with the capability.
     let wire_endpoints = wire_endpoints_from_segs(&segs);
@@ -893,8 +1005,7 @@ fn solve_for_currents(
         })
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
-    let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
+    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
@@ -904,13 +1015,15 @@ fn solve_for_currents(
     // Currents and pattern get the current-source branch too. Solving an `EX 4`
     // deck on the Solve tab while these three refused it would be the FND-038
     // shape all over again.
-    let (currents, _port_voltage) = hallen_currents(
+    let (currents, _port_voltage) = solve_currents(
         deck,
         &segs,
         &z_mat,
         freq_hz,
+        &ground,
         &wire_endpoints,
         &junction_tuples,
+        solver,
     )?;
 
     Ok((segs, currents, freq_hz, ground))
@@ -929,7 +1042,7 @@ mod tests {
 
     #[test]
     fn a_negative_resistance_solve_carries_a_caveat() {
-        let r = solve_deck_str(BENT_NEGATIVE_R).expect("solve");
+        let r = solve_deck_str(BENT_NEGATIVE_R, SolverKind::Hallen).expect("solve");
         assert!(
             r.z_re < 0.0,
             "fixture must produce Re Z < 0, got {}",
@@ -953,7 +1066,7 @@ mod tests {
     #[test]
     fn a_plane_wave_is_not_read_as_the_feedpoint() {
         let deck_src = include_str!("../../../corpus/dipole-planewave-then-source-51seg.nec");
-        let r = solve_deck_str(deck_src).expect("solve");
+        let r = solve_deck_str(deck_src, SolverKind::Hallen).expect("solve");
         assert_eq!(
             (r.feed_tag, r.feed_seg),
             (1, 26),
@@ -971,7 +1084,8 @@ mod tests {
         // FND-045. This used to error with "use the fnec CLI for this deck" — the
         // machinery was in `nec_solver` all along, just unwired. The assertion is
         // the corpus value the CLI produces, so the two frontends cannot drift.
-        let r = solve_deck_str(EX4_DECK).expect("the GUI can price a current source now");
+        let r = solve_deck_str(EX4_DECK, SolverKind::Hallen)
+            .expect("the GUI can price a current source now");
         assert!(
             (r.z_re - 74.23).abs() < 0.05 && (r.z_im - 13.9).abs() < 0.05,
             "GUI disagrees with the CLI's corpus value: {} + j{}",
@@ -986,9 +1100,10 @@ mod tests {
     fn a_current_source_sweep_agrees_with_the_single_solve() {
         // The sweep is a separate solve path; solving on one tab and refusing on
         // another is the FND-038 shape.
-        let job = SweepJob::prepare(EX4_DECK, 14.2, 14.4, 0.1).expect("prepare");
+        let job =
+            SweepJob::prepare(EX4_DECK, 14.2, 14.4, 0.1, SolverKind::Hallen).expect("prepare");
         let pt = job.solve_at(14.2).expect("sweep must price it too");
-        let single = solve_deck_str(EX4_DECK).expect("single solve");
+        let single = solve_deck_str(EX4_DECK, SolverKind::Hallen).expect("single solve");
         assert!(
             (pt.z_re - single.z_re).abs() < 1e-6,
             "sweep {} vs single {}",
@@ -1001,18 +1116,18 @@ mod tests {
     fn the_currents_and_pattern_views_solve_a_current_source_deck_too() {
         // They used to refuse it by name. Leaving them refusing while the Solve
         // tab priced it would be the same one-tab-over defect this arc keeps
-        // finding — so all three paths go through `hallen_currents`.
-        let currents = load_currents_str(EX4_DECK).expect("currents view");
+        // finding — so all three paths go through `solve_currents`.
+        let currents = load_currents_str(EX4_DECK, SolverKind::Hallen).expect("currents view");
         assert!(
             currents.currents_ma.iter().any(|c| *c > 1e-9),
             "a driven deck must carry current"
         );
-        pattern_grid_str(EX4_DECK).expect("pattern view");
+        pattern_grid_str(EX4_DECK, SolverKind::Hallen).expect("pattern view");
     }
 
     #[test]
     fn a_clean_solve_carries_no_negative_resistance_caveat() {
-        let r = solve_deck_str(CLEAN_DIPOLE).expect("solve");
+        let r = solve_deck_str(CLEAN_DIPOLE, SolverKind::Hallen).expect("solve");
         assert!(r.z_re > 0.0);
         assert!(
             !r.warnings.iter().any(|w| w.contains("negative resistance")),
@@ -1023,7 +1138,8 @@ mod tests {
 
     #[test]
     fn the_sweep_caveat_is_one_line_for_the_whole_sweep() {
-        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2).expect("prepare");
+        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2, SolverKind::Hallen)
+            .expect("prepare");
         let pts: Vec<SweepPoint> = job
             .freqs_mhz()
             .iter()
@@ -1051,13 +1167,14 @@ mod tests {
         // solve, wrong for a sweep, whose range the user types into the UI. This
         // deck is above the threshold at its `FR` frequency and far below it at the
         // bottom of the swept range, so the two answers genuinely differ.
-        let at_fr = deck_warnings(LOW_ONLY_WHEN_SWEPT);
+        let at_fr = deck_warnings(LOW_ONLY_WHEN_SWEPT, SolverKind::Hallen);
         assert!(
             !at_fr.iter().any(|w| w.contains("above finite ground")),
             "fixture must be clean at its FR frequency or this proves nothing: {at_fr:?}"
         );
 
-        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 14.2, 60.0, 5.0).expect("prepare");
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 14.2, 60.0, 5.0, SolverKind::Hallen)
+            .expect("prepare");
         let caveats = job.geometry_caveats();
         assert!(
             caveats.iter().any(|w| w.contains("above finite ground")),
@@ -1079,8 +1196,8 @@ mod tests {
         // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
         // an empty strip and prove nothing.
         const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-        let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2).expect("prepare");
-        let strip = deck_warnings(LOW_TEE);
+        let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
+        let strip = deck_warnings(LOW_TEE, SolverKind::Hallen);
         let panel = job.geometry_caveats();
         assert!(
             !strip.is_empty(),
@@ -1103,7 +1220,8 @@ mod tests {
         // Positive control's mirror: the same deck swept only where it is high
         // must stay quiet, or the test above would pass for a check that always
         // fires.
-        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 60.0, 80.0, 5.0).expect("prepare");
+        let job = SweepJob::prepare(LOW_ONLY_WHEN_SWEPT, 60.0, 80.0, 5.0, SolverKind::Hallen)
+            .expect("prepare");
         let caveats = job.geometry_caveats();
         assert!(
             !caveats.iter().any(|w| w.contains("above finite ground")),
@@ -1115,7 +1233,8 @@ mod tests {
     fn the_sweep_caveat_counts_only_the_negative_points() {
         // An all-negative fixture cannot tell a real count from `points.len()`:
         // both read "N of N". This mixes signs so the numerator has to be earned.
-        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2).expect("prepare");
+        let job = SweepJob::prepare(BENT_NEGATIVE_R, 13.8, 14.6, 0.2, SolverKind::Hallen)
+            .expect("prepare");
         let mut pts: Vec<SweepPoint> = job
             .freqs_mhz()
             .iter()
@@ -1136,7 +1255,8 @@ mod tests {
 
     #[test]
     fn a_clean_sweep_earns_no_caveat() {
-        let job = SweepJob::prepare(CLEAN_DIPOLE, 14.0, 14.4, 0.1).expect("prepare");
+        let job =
+            SweepJob::prepare(CLEAN_DIPOLE, 14.0, 14.4, 0.1, SolverKind::Hallen).expect("prepare");
         let pts: Vec<SweepPoint> = job
             .freqs_mhz()
             .iter()
@@ -1209,13 +1329,15 @@ mod tests {
 
     #[test]
     fn gui_refuses_the_geometry_the_cli_refuses() {
-        let err = solve_deck_str(CROSSING_WIRES).expect_err("crossing wires must be refused");
+        let err = solve_deck_str(CROSSING_WIRES, SolverKind::Hallen)
+            .expect_err("crossing wires must be refused");
         assert!(err.contains("intersecting-wire"), "unexpected: {err}");
-        let err = solve_deck_str(BURIED_OVER_PEC)
+        let err = solve_deck_str(BURIED_OVER_PEC, SolverKind::Hallen)
             .expect_err("a wire on the ground plane must be refused");
         assert!(err.contains("buried-wire"), "unexpected: {err}");
         // Negative control: a clean deck still solves, with nothing to report.
-        let ok = solve_deck_str(GOOD_DIPOLE).expect("a clean dipole must still solve");
+        let ok = solve_deck_str(GOOD_DIPOLE, SolverKind::Hallen)
+            .expect("a clean dipole must still solve");
         assert!(ok.z_re > 50.0 && ok.z_re < 100.0, "unexpected Z: {ok:?}");
         assert!(
             ok.warnings.is_empty(),
@@ -1230,12 +1352,12 @@ mod tests {
     /// pattern for geometry it should not have solved.
     #[test]
     fn every_gui_solve_path_applies_the_same_rejection() {
-        let sweep = match SweepJob::prepare(CROSSING_WIRES, 14.0, 14.4, 0.1) {
+        let sweep = match SweepJob::prepare(CROSSING_WIRES, 14.0, 14.4, 0.1, SolverKind::Hallen) {
             Err(e) => e,
             Ok(_) => panic!("the sweep path must refuse it too"),
         };
         assert!(sweep.contains("intersecting-wire"), "unexpected: {sweep}");
-        let currents = match solve_for_currents(CROSSING_WIRES) {
+        let currents = match solve_for_currents(CROSSING_WIRES, SolverKind::Hallen) {
             Err(e) => e,
             Ok(_) => panic!("the currents path must refuse it too"),
         };
@@ -1244,8 +1366,8 @@ mod tests {
             "unexpected: {currents}"
         );
         // Negative control: the clean deck is accepted on both.
-        assert!(SweepJob::prepare(GOOD_DIPOLE, 14.0, 14.4, 0.1).is_ok());
-        assert!(solve_for_currents(GOOD_DIPOLE).is_ok());
+        assert!(SweepJob::prepare(GOOD_DIPOLE, 14.0, 14.4, 0.1, SolverKind::Hallen).is_ok());
+        assert!(solve_for_currents(GOOD_DIPOLE, SolverKind::Hallen).is_ok());
     }
 
     /// The GUI omitted the CLI's low-finite-ground warning, so a user got an
@@ -1256,6 +1378,7 @@ mod tests {
         // ground model is only approximate.
         let low = solve_deck_str(
             "GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            SolverKind::Hallen,
         )
         .expect("a low dipole over finite ground still solves");
         assert!(
@@ -1265,14 +1388,21 @@ mod tests {
             "missing the low-ground warning: {:?}",
             low.warnings
         );
-        // A degree-3 junction must still be flagged, and still name the MPIE.
+        // A degree-3 junction must still be flagged, and must point at the MPIE
+        // in *this* frontend's terms — a GUI user has a picker, not a flag.
         let tee = solve_deck_str(
             "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            SolverKind::Hallen,
         )
         .expect("a T junction solves, unreliably");
         assert!(
-            tee.warnings.iter().any(|w| w.contains("--solver mpie")),
+            tee.warnings.iter().any(|w| w.contains(GUI_MPIE_REMEDY)),
             "missing the topology warning: {:?}",
+            tee.warnings
+        );
+        assert!(
+            !tee.warnings.iter().any(|w| w.contains("--solver")),
+            "the GUI must not quote a CLI flag at a user who has a picker: {:?}",
             tee.warnings
         );
     }
@@ -1283,8 +1413,10 @@ mod tests {
     fn deck_warnings_reports_the_same_caveats_the_solve_panel_shows() {
         // 0.05 lambda over GN 2 — solvable, but only approximately.
         let low = "GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-        let from_panel = solve_deck_str(low).expect("solves").warnings;
-        let from_deck = deck_warnings(low);
+        let from_panel = solve_deck_str(low, SolverKind::Hallen)
+            .expect("solves")
+            .warnings;
+        let from_deck = deck_warnings(low, SolverKind::Hallen);
         assert!(
             !from_deck.is_empty(),
             "a low antenna over finite ground must produce caveats"
@@ -1298,7 +1430,7 @@ mod tests {
     #[test]
     fn a_clean_deck_has_no_caveats_so_the_strip_stays_hidden() {
         let clean = "GW 1 21 -5.278 0 0 5.278 0 0 0.001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-        assert!(deck_warnings(clean).is_empty());
+        assert!(deck_warnings(clean, SolverKind::Hallen).is_empty());
     }
 
     /// A deck that cannot be parsed or built reports nothing here: the action the
@@ -1306,10 +1438,10 @@ mod tests {
     /// This must not panic — it runs on every solve.
     #[test]
     fn an_unusable_deck_yields_no_caveats_rather_than_panicking() {
-        assert!(deck_warnings("NOT A DECK\n").is_empty());
-        assert!(deck_warnings("").is_empty());
+        assert!(deck_warnings("NOT A DECK\n", SolverKind::Hallen).is_empty());
+        assert!(deck_warnings("", SolverKind::Hallen).is_empty());
         // Parses, but the geometry cannot be built (no GW cards).
-        assert!(deck_warnings("GE\nEN\n").is_empty());
+        assert!(deck_warnings("GE\nEN\n", SolverKind::Hallen).is_empty());
     }
 
     /// The topology caveat is what a Sweep- or Pattern-only user most needs and
@@ -1317,10 +1449,19 @@ mod tests {
     #[test]
     fn deck_warnings_carries_the_unreliable_topology_caveat() {
         let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-        let w = deck_warnings(tee);
+        let w = deck_warnings(tee, SolverKind::Hallen);
         assert!(
-            w.iter().any(|m| m.contains("--solver mpie")),
+            w.iter().any(|m| m.contains(GUI_MPIE_REMEDY)),
             "expected the topology caveat: {w:?}"
+        );
+
+        // ...and on the MPIE the same deck earns no topology caveat at all: the
+        // MPIE models the junction correctly, so repeating a Hallén limitation
+        // there would be false — and its remedy would name the running solver.
+        let w_mpie = deck_warnings(tee, SolverKind::Mpie);
+        assert!(
+            !w_mpie.iter().any(|m| m.contains("T/Y junction")),
+            "the MPIE solves T/Y junctions; it must not carry the Hallén caveat: {w_mpie:?}"
         );
     }
 }

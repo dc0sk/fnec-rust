@@ -111,6 +111,9 @@ impl FnecGui {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        // Read once, up front: every task spawned below must use the solver that
+        // was selected when the user acted, not one a later message changed.
+        let solver = self.state.solver;
         let spawn_solve = matches!(message, Message::Solve);
         let spawn_sweep = matches!(message, Message::RunSweep);
         let spawn_pattern = matches!(message, Message::RunPattern);
@@ -123,21 +126,8 @@ impl FnecGui {
         let spawn_apply_solve = matches!(message, Message::EditApplySolve);
         // Any action that reads the deck refreshes its caveats, so they are current
         // on whichever tab the user is looking at — not only the Solve panel.
-        let refresh_warnings =
-            spawn_solve || spawn_sweep || spawn_pattern || spawn_currents || spawn_apply_solve;
-        // Settings changes worth persisting to the session file.
-        let persist = matches!(
-            message,
-            Message::DeckPathChanged(_)
-                | Message::VarsPathChanged(_)
-                | Message::SweepStartChanged(_)
-                | Message::SweepEndChanged(_)
-                | Message::SweepStepChanged(_)
-                | Message::SweepMetricSelected(_)
-                | Message::ToggleAxes(_)
-                | Message::ToggleGrid(_)
-                | Message::Viewport(ViewportMsg::ResetView)
-        );
+        let refresh_warnings = nec_gui::app_state::refreshes_deck_warnings(&message);
+        let persist = nec_gui::app_state::persists_to_session(&message);
         // Pane resize is an iced-layout concern handled here (not in AppState).
         if let Message::PaneResized(ratio) = message {
             self.panes.resize(self.main_split, ratio);
@@ -157,7 +147,7 @@ impl FnecGui {
                 Some(self.state.vars_path.clone())
             };
             Task::perform(
-                async move { solve_deck_path(&path, vars.as_deref()) },
+                async move { solve_deck_path(&path, vars.as_deref(), solver) },
                 Message::SolveComplete,
             )
         } else if spawn_sweep {
@@ -184,6 +174,7 @@ impl FnecGui {
                                     start,
                                     end,
                                     step,
+                                    solver,
                                     &mut output,
                                 )
                                 .await;
@@ -212,7 +203,7 @@ impl FnecGui {
                         Some(self.state.vars_path.clone())
                     };
                     Task::perform(
-                        async move { pattern_slice_deck_path(&path, vars.as_deref(), phi_deg) },
+                        async move { pattern_slice_deck_path(&path, vars.as_deref(), phi_deg, solver) },
                         Message::PatternComplete,
                     )
                 }
@@ -229,7 +220,7 @@ impl FnecGui {
                 Some(self.state.vars_path.clone())
             };
             Task::perform(
-                async move { current_distribution_deck_path(&path, vars.as_deref()) },
+                async move { current_distribution_deck_path(&path, vars.as_deref(), solver) },
                 Message::CurrentsComplete,
             )
         } else if spawn_geometry {
@@ -251,7 +242,7 @@ impl FnecGui {
                 Some(self.state.vars_path.clone())
             };
             Task::perform(
-                async move { load_currents_path(&path, vars.as_deref()) },
+                async move { load_currents_path(&path, vars.as_deref(), solver) },
                 Message::CurrentsSolved,
             )
         } else if spawn_pattern_3d {
@@ -262,7 +253,7 @@ impl FnecGui {
                 Some(self.state.vars_path.clone())
             };
             Task::perform(
-                async move { pattern_grid_path(&path, vars.as_deref()) },
+                async move { pattern_grid_path(&path, vars.as_deref(), solver) },
                 Message::Pattern3dComplete,
             )
         } else if spawn_edit_load {
@@ -298,9 +289,10 @@ impl FnecGui {
             // Solve the edited in-memory deck (apply() already validated it and set
             // the Solving phase; on an invalid deck it recorded the error instead).
             match self.state.editor.doc.to_deck_string() {
-                Ok(text) => {
-                    Task::perform(async move { solve_deck_str(&text) }, Message::SolveComplete)
-                }
+                Ok(text) => Task::perform(
+                    async move { solve_deck_str(&text, solver) },
+                    Message::SolveComplete,
+                ),
                 Err(_) => Task::none(),
             }
         } else if matches!(message, Message::BrowseDeck) {
@@ -353,7 +345,7 @@ impl FnecGui {
             let warn = Task::perform(
                 async move {
                     read_deck_text(&path, vars.as_deref())
-                        .map(|t| deck_warnings(&t))
+                        .map(|t| deck_warnings(&t, solver))
                         .unwrap_or_default()
                 },
                 Message::DeckWarnings,
@@ -402,6 +394,27 @@ impl FnecGui {
             tab("Edit", ActiveTab::Editor),
         ]
         .spacing(4);
+
+        // The solver picker sits with the deck inputs, above the tab bar's
+        // content: it applies to every tab, so putting it inside one of them
+        // would suggest it only governs that view.
+        let solver_row = row![
+            text("Solver:").width(Length::Fixed(80.0)),
+            pick_list(
+                &nec_gui::solve::SolverKind::ALL[..],
+                Some(self.state.solver),
+                Message::SolverSelected,
+            ),
+            text(match self.state.solver {
+                nec_gui::solve::SolverKind::Hallen =>
+                    "Hallén's integral equation — the default; not valid for T/Y junctions or closed loops",
+                nec_gui::solve::SolverKind::Mpie =>
+                    "mixed-potential EFIE — solves T/Y junctions, closed loops and near-ground currents; no loads (LD/TL/NT)",
+            })
+            .width(Length::Fill),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
 
         let path_row = row![
             text("Deck file:").width(Length::Fixed(80.0)),
@@ -453,9 +466,16 @@ impl FnecGui {
         }
 
         scrollable(
-            column![tab_bar, path_row, vars_row, caveats, tab_content]
-                .spacing(12)
-                .padding(12),
+            column![
+                tab_bar,
+                path_row,
+                vars_row,
+                solver_row,
+                caveats,
+                tab_content
+            ]
+            .spacing(12)
+            .padding(12),
         )
         .into()
     }

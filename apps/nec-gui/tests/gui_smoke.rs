@@ -151,7 +151,7 @@ EX 0 1 26 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
 EN
 ";
-    let result = solve_deck_str(DECK).expect("solve failed");
+    let result = solve_deck_str(DECK, nec_gui::solve::SolverKind::Hallen).expect("solve failed");
     assert!(
         (result.freq_mhz - 14.2).abs() < 0.001,
         "freq mismatch: {}",
@@ -177,7 +177,7 @@ fn solve_corpus_dipole_freesp() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
 
-    let result = solve_deck_path(&deck_path, None)
+    let result = solve_deck_path(&deck_path, None, nec_gui::solve::SolverKind::Hallen)
         .unwrap_or_else(|e| panic!("solve failed for corpus dipole: {e}"));
 
     // Reference impedance: Z ≈ 73 + j42 Ω (Hallen, 14.2 MHz).
@@ -196,6 +196,7 @@ fn solve_deck_path_nonexistent_file_returns_err() {
     let result = solve_deck_path(
         std::path::Path::new("/tmp/does-not-exist-fnec-gui-test.nec"),
         None,
+        nec_gui::solve::SolverKind::Hallen,
     );
     assert!(result.is_err(), "expected Err for nonexistent file");
     let msg = result.unwrap_err();
@@ -214,7 +215,7 @@ GE
 EX 0 1 26 0 1.0 0.0
 EN
 ";
-    let result = solve_deck_str(DECK_NO_FR);
+    let result = solve_deck_str(DECK_NO_FR, nec_gui::solve::SolverKind::Hallen);
     assert!(result.is_err(), "expected Err with missing FR card");
 }
 
@@ -413,7 +414,8 @@ fn viewport_camera_messages_move_and_reset() {
 fn currents_solve_colors_wires_and_toggles() {
     // Center-fed λ/2 dipole → current peaks at the feed (middle segment).
     let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
-    let gc = nec_gui::solve::load_currents_str(deck).expect("currents solve");
+    let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents solve");
     assert_eq!(gc.currents_ma.len(), 11);
     // The peak |I| is at (or adjacent to) the center-fed segment, not a tip.
     let peak_i = gc
@@ -464,7 +466,8 @@ fn pane_resize_is_a_layout_noop_on_core_state() {
 #[test]
 fn pattern_solve_builds_lobe_and_toggles() {
     let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
-    let ps = nec_gui::solve::pattern_grid_str(deck).expect("pattern solve");
+    let ps = nec_gui::solve::pattern_grid_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("pattern solve");
     assert_eq!(ps.grid.gains_dbi.len(), ps.grid.n_theta * ps.grid.n_phi);
 
     let mut state = AppState::default();
@@ -545,7 +548,14 @@ fn sweep_params_zero_step_is_error() {
 /// sweep_deck_str produces correct number of points for a 5-step sweep.
 #[test]
 fn sweep_deck_str_produces_five_points() {
-    let pts = sweep_deck_str(DIPOLE_DECK, 14.0, 15.0, 0.25).expect("sweep failed");
+    let pts = sweep_deck_str(
+        DIPOLE_DECK,
+        14.0,
+        15.0,
+        0.25,
+        nec_gui::solve::SolverKind::Hallen,
+    )
+    .expect("sweep failed");
     // 14.0, 14.25, 14.5, 14.75, 15.0 → 5 points
     assert_eq!(pts.len(), 5, "expected 5 points, got {}", pts.len());
 }
@@ -553,7 +563,14 @@ fn sweep_deck_str_produces_five_points() {
 /// Frequencies in sweep output match the requested grid.
 #[test]
 fn sweep_deck_str_freqs_match_grid() {
-    let pts = sweep_deck_str(DIPOLE_DECK, 14.0, 14.4, 0.1).expect("sweep failed");
+    let pts = sweep_deck_str(
+        DIPOLE_DECK,
+        14.0,
+        14.4,
+        0.1,
+        nec_gui::solve::SolverKind::Hallen,
+    )
+    .expect("sweep failed");
     let expected = [14.0_f64, 14.1, 14.2, 14.3, 14.4];
     assert_eq!(pts.len(), expected.len());
     for (pt, exp) in pts.iter().zip(expected.iter()) {
@@ -568,7 +585,14 @@ fn sweep_deck_str_freqs_match_grid() {
 /// Impedance values from a sweep are physically plausible for a near-resonant dipole.
 #[test]
 fn sweep_deck_str_impedances_are_plausible() {
-    let pts = sweep_deck_str(DIPOLE_DECK, 13.0, 16.0, 1.0).expect("sweep failed");
+    let pts = sweep_deck_str(
+        DIPOLE_DECK,
+        13.0,
+        16.0,
+        1.0,
+        nec_gui::solve::SolverKind::Hallen,
+    )
+    .expect("sweep failed");
     assert_eq!(pts.len(), 4);
     for pt in &pts {
         assert!(pt.z_re > 0.0, "Z_re must be positive, got {}", pt.z_re);
@@ -578,14 +602,26 @@ fn sweep_deck_str_impedances_are_plausible() {
 /// sweep_deck_str rejects invalid parameters (step <= 0).
 #[test]
 fn sweep_deck_str_rejects_zero_step() {
-    let result = sweep_deck_str(DIPOLE_DECK, 14.0, 15.0, 0.0);
+    let result = sweep_deck_str(
+        DIPOLE_DECK,
+        14.0,
+        15.0,
+        0.0,
+        nec_gui::solve::SolverKind::Hallen,
+    );
     assert!(result.is_err(), "expected Err for zero step");
 }
 
 /// sweep_deck_str rejects start >= end.
 #[test]
 fn sweep_deck_str_rejects_start_ge_end() {
-    let result = sweep_deck_str(DIPOLE_DECK, 15.0, 14.0, 0.5);
+    let result = sweep_deck_str(
+        DIPOLE_DECK,
+        15.0,
+        14.0,
+        0.5,
+        nec_gui::solve::SolverKind::Hallen,
+    );
     assert!(result.is_err(), "expected Err for start >= end");
 }
 
@@ -822,7 +858,8 @@ fn current_display_bars_empty_when_not_done() {
 /// pattern_slice_deck_str produces 37 elevation points for a free-space dipole.
 #[test]
 fn pattern_slice_deck_str_produces_elevation_slice() {
-    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0, nec_gui::solve::SolverKind::Hallen)
+        .expect("pattern failed");
     // 0, 5, 10, … 180 deg → 37 points
     assert_eq!(pts.len(), 37, "expected 37 theta points, got {}", pts.len());
 }
@@ -830,7 +867,8 @@ fn pattern_slice_deck_str_produces_elevation_slice() {
 /// Pattern theta values span 0..=180 in 5° steps.
 #[test]
 fn pattern_slice_theta_grid_is_correct() {
-    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0, nec_gui::solve::SolverKind::Hallen)
+        .expect("pattern failed");
     for (i, pt) in pts.iter().enumerate() {
         let expected = i as f64 * 5.0;
         assert!(
@@ -845,7 +883,8 @@ fn pattern_slice_theta_grid_is_correct() {
 /// end-fire gain (θ=0°) — the dipole radiates broadside, not end-fire.
 #[test]
 fn pattern_slice_dipole_broadside_exceeds_endfire() {
-    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0).expect("pattern failed");
+    let pts = pattern_slice_deck_str(DIPOLE_DECK, 0.0, nec_gui::solve::SolverKind::Hallen)
+        .expect("pattern failed");
     let endfire = pts
         .iter()
         .find(|p| p.theta_deg == 0.0)
@@ -871,6 +910,7 @@ fn pattern_slice_corpus_dipole_freesp() {
         &std::fs::read_to_string(&deck_path)
             .unwrap_or_else(|e| panic!("cannot read corpus file: {e}")),
         0.0,
+        nec_gui::solve::SolverKind::Hallen,
     )
     .expect("pattern failed for corpus dipole");
     assert_eq!(pts.len(), 37);
@@ -891,7 +931,8 @@ fn pattern_slice_corpus_dipole_freesp() {
 /// current_distribution_deck_str returns one entry per segment.
 #[test]
 fn current_distribution_segment_count() {
-    let pts = current_distribution_deck_str(DIPOLE_DECK).expect("currents failed");
+    let pts = current_distribution_deck_str(DIPOLE_DECK, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents failed");
     // DIPOLE_DECK has GW with 51 segments.
     assert_eq!(pts.len(), 51, "expected 51 segments, got {}", pts.len());
 }
@@ -900,7 +941,8 @@ fn current_distribution_segment_count() {
 /// half-wave dipole).
 #[test]
 fn current_distribution_peak_near_feedpoint() {
-    let pts = current_distribution_deck_str(DIPOLE_DECK).expect("currents failed");
+    let pts = current_distribution_deck_str(DIPOLE_DECK, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents failed");
     let peak_idx = pts
         .iter()
         .enumerate()
@@ -922,6 +964,7 @@ fn current_distribution_corpus_dipole_freesp() {
     let pts = current_distribution_deck_str(
         &std::fs::read_to_string(&deck_path)
             .unwrap_or_else(|e| panic!("cannot read corpus file: {e}")),
+        nec_gui::solve::SolverKind::Hallen,
     )
     .expect("currents failed for corpus dipole");
     assert!(!pts.is_empty(), "expected at least one segment");
@@ -1257,6 +1300,12 @@ use nec_gui::plot::PlotMetric;
 
 fn done_sweep() -> AppState {
     let mut state = AppState::default();
+    // Through `RunSweep` first, as the app always does: the button sets `Running`
+    // before the task is spawned, and a completion is now only accepted while a
+    // sweep is actually in flight (so a switched-away sweep cannot refill a
+    // cleared chart). Skipping it here made the helper unfaithful, not the guard
+    // wrong.
+    state.apply(&Message::RunSweep);
     let pts = vec![
         SweepPoint {
             freq_mhz: 14.0,
@@ -1473,8 +1522,9 @@ fn browse_messages_are_noops_in_core_state() {
 // ── GUI solver caveats (pre-release fix 1a) ──────────────────────────────────
 
 /// A degree-3 Y-junction deck still solves on the GUI's Hallén path, but the
-/// result carries a warning recommending the CLI's `--solver mpie` (the GUI has
-/// no MPIE path), so the GUI never presents the junction number as trustworthy.
+/// result carries a warning pointing at the MPIE — in the GUI's own terms, since
+/// the picker is right there — so the junction number is never presented as
+/// trustworthy.
 #[test]
 fn solve_warns_on_high_degree_junction() {
     const Y: &str = "\
@@ -1488,10 +1538,13 @@ FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0
 EN
 ";
-    let r = solve_deck_str(Y).expect("Y-junction still solves (unreliably)");
+    let r = solve_deck_str(Y, nec_gui::solve::SolverKind::Hallen)
+        .expect("Y-junction still solves (unreliably)");
     assert!(
-        r.warnings.iter().any(|w| w.contains("mpie")),
-        "expected an mpie recommendation, got {:?}",
+        r.warnings
+            .iter()
+            .any(|w| w.contains(nec_gui::solve::GUI_MPIE_REMEDY)),
+        "expected an MPIE recommendation in GUI terms, got {:?}",
         r.warnings
     );
 }
@@ -1499,7 +1552,7 @@ EN
 /// A plain free-space dipole is fully supported — no solver caveats.
 #[test]
 fn solve_clean_dipole_has_no_warnings() {
-    let r = solve_deck_str(DIPOLE_DECK).expect("dipole solves");
+    let r = solve_deck_str(DIPOLE_DECK, nec_gui::solve::SolverKind::Hallen).expect("dipole solves");
     assert!(
         r.warnings.is_empty(),
         "unexpected warnings: {:?}",
@@ -1513,13 +1566,26 @@ fn solve_clean_dipole_has_no_warnings() {
 fn sweep_point_count_is_capped() {
     use nec_gui::solve::{SweepJob, MAX_SWEEP_POINTS};
     // 1..1000 MHz at 0.0001 MHz ≈ 10^7 points — must be refused.
-    let err = match SweepJob::prepare(DIPOLE_DECK, 1.0, 1000.0, 0.0001) {
+    let err = match SweepJob::prepare(
+        DIPOLE_DECK,
+        1.0,
+        1000.0,
+        0.0001,
+        nec_gui::solve::SolverKind::Hallen,
+    ) {
         Err(e) => e,
         Ok(_) => panic!("runaway sweep must be rejected"),
     };
     assert!(err.contains("max") && err.contains(&MAX_SWEEP_POINTS.to_string()));
     // A sane sweep still prepares fine.
-    assert!(SweepJob::prepare(DIPOLE_DECK, 14.0, 14.4, 0.1).is_ok());
+    assert!(SweepJob::prepare(
+        DIPOLE_DECK,
+        14.0,
+        14.4,
+        0.1,
+        nec_gui::solve::SolverKind::Hallen
+    )
+    .is_ok());
 }
 
 // ── Additional app_state arm coverage (pre-release) ──────────────────────────
@@ -1623,4 +1689,362 @@ fn changing_the_deck_path_clears_stale_caveats() {
         "caveats for the previous deck must not persist: {:?}",
         state.deck_warnings
     );
+}
+
+// ---------------------------------------------------------------------------
+// The solver picker reproduces the CLI, on every path (FND-007)
+// ---------------------------------------------------------------------------
+//
+// The CLI pins these three values in `apps/nec-cli/tests/mpie_solver_cli.rs`.
+// A picker whose numbers merely look physical is not the requirement — the
+// requirement is that the same deck gives the same answer whichever frontend
+// the user reaches for. The Y-junction is the load-bearing case: it is the
+// topology the MPIE exists for, and Hallén answers it with R≈8 garbage, so a
+// picker wired to the wrong solver fails here loudly.
+
+const MPIE_Y_JUNCTION: &str = "\
+CM Y-junction, feed mid arm 1
+CE
+GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
+GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
+GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 10 0 1.0 0.0
+EN
+";
+
+const MPIE_DIPOLE: &str = "\
+CM half-wave dipole 14.2 MHz
+CE
+GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+EN
+";
+
+#[test]
+fn the_gui_mpie_reproduces_the_cli_dipole() {
+    let r = solve_deck_str(MPIE_DIPOLE, nec_gui::solve::SolverKind::Mpie).expect("MPIE solve");
+    assert!(
+        (r.z_re - 74.437414).abs() < 0.05 && (r.z_im - 41.753720).abs() < 0.05,
+        "GUI MPIE dipole {} + j{} != CLI 74.437414 + j41.753720",
+        r.z_re,
+        r.z_im
+    );
+}
+
+#[test]
+fn the_gui_mpie_reproduces_the_cli_y_junction() {
+    let r = solve_deck_str(MPIE_Y_JUNCTION, nec_gui::solve::SolverKind::Mpie).expect("MPIE solve");
+    assert!(
+        (r.z_re - 63.673674).abs() < 0.05 && (r.z_im - -322.199211).abs() < 0.05,
+        "GUI MPIE Y-junction {} + j{} != CLI 63.673674 - j322.199211",
+        r.z_re,
+        r.z_im
+    );
+}
+
+/// The picker must reach the Sweep, Currents and Pattern paths too, not just
+/// Solve. A picker that changed one tab would be FND-038 one solver over.
+#[test]
+fn the_picker_reaches_every_solve_path() {
+    use nec_gui::solve::SolverKind;
+
+    // Sweep: its own solve path, so it gets its own comparison against the
+    // single solve rather than being assumed to follow it.
+    let job = nec_gui::solve::SweepJob::prepare(MPIE_Y_JUNCTION, 14.2, 14.3, 0.1, SolverKind::Mpie)
+        .expect("MPIE sweep prepares");
+    let pt = job.solve_at(14.2).expect("MPIE sweep solves");
+    assert!(
+        (pt.z_re - 63.673674).abs() < 0.05,
+        "MPIE sweep {} != CLI 63.673674",
+        pt.z_re
+    );
+
+    // Currents and pattern: a Hallén solve of this deck is garbage, so if the
+    // picker did not reach them these would differ from the MPIE currents.
+    let mpie_currents =
+        nec_gui::solve::current_distribution_deck_str(MPIE_Y_JUNCTION, SolverKind::Mpie)
+            .expect("MPIE currents");
+    let hallen_currents =
+        nec_gui::solve::current_distribution_deck_str(MPIE_Y_JUNCTION, SolverKind::Hallen)
+            .expect("Hallén currents");
+    let peak = |v: &[nec_gui::solve::CurrentPoint]| {
+        v.iter().map(|p| p.current_mag_ma).fold(0.0_f64, f64::max)
+    };
+    assert!(
+        (peak(&mpie_currents) - peak(&hallen_currents)).abs() > 1e-6,
+        "the currents view ignored the picker: both solvers gave the same peak"
+    );
+
+    assert!(
+        nec_gui::solve::pattern_grid_str(MPIE_Y_JUNCTION, SolverKind::Mpie).is_ok(),
+        "the pattern view must solve on the MPIE too"
+    );
+}
+
+/// The MPIE cannot stamp a load, so the GUI refuses such a deck rather than
+/// solving it with the `LD` silently ignored — and says so before any solve.
+#[test]
+fn the_gui_refuses_an_mpie_deck_the_solver_cannot_represent() {
+    const LOADED: &str = "\
+CM loaded dipole
+CE
+GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+LD 0 1 21 21 10.0 0.0 0.0
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+EN
+";
+    let err = solve_deck_str(LOADED, nec_gui::solve::SolverKind::Mpie)
+        .expect_err("an MPIE solve of a loaded deck must be refused");
+    assert!(
+        err.contains("LD"),
+        "the refusal must name the offending card, got: {err}"
+    );
+    // ...and the same deck is fine on Hallén, so this is the solver's limit and
+    // not a broken deck.
+    assert!(
+        solve_deck_str(LOADED, nec_gui::solve::SolverKind::Hallen).is_ok(),
+        "the loaded deck must still solve on the Hallén path"
+    );
+}
+
+/// A sweep must refuse such a deck *when it is prepared*, not on the first point.
+///
+/// The distinction is the user-visible one: `prepare` runs before the progress
+/// bar appears, so refusing there says "this cannot work" immediately, while a
+/// refusal at the first solve says "your sweep failed" after queueing every
+/// point. `solve_mpie_session`'s own guard would catch it either way, which is
+/// exactly why this needs its own test — the safety net hides the missing check.
+#[test]
+fn an_mpie_sweep_refuses_an_unstampable_deck_up_front() {
+    const LOADED: &str = "\
+CM loaded dipole
+CE
+GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
+GE 0
+LD 0 1 21 21 10.0 0.0 0.0
+FR 0 1 0 0 14.2 0
+EX 0 1 21 0 1.0 0.0
+EN
+";
+    let err = match nec_gui::solve::SweepJob::prepare(
+        LOADED,
+        14.0,
+        14.4,
+        0.1,
+        nec_gui::solve::SolverKind::Mpie,
+    ) {
+        Ok(_) => panic!("preparing an MPIE sweep of a loaded deck must fail"),
+        Err(e) => e,
+    };
+    assert!(
+        err.contains("LD"),
+        "the refusal must name the offending card, got: {err}"
+    );
+    assert!(
+        nec_gui::solve::SweepJob::prepare(
+            LOADED,
+            14.0,
+            14.4,
+            0.1,
+            nec_gui::solve::SolverKind::Hallen
+        )
+        .is_ok(),
+        "the same sweep must still prepare on the Hallén path"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Switching solver discards what the other solver produced
+// ---------------------------------------------------------------------------
+//
+// The changelog and `docs/gui-guide.md` both promise "changing it clears solved
+// results". These pin that promise. Before them, three of the five solved views
+// survived the switch, so a Hallén pattern could sit beside an MPIE impedance
+// with nothing on screen saying so — the exact frontend-disagreement the picker
+// exists to prevent.
+
+fn solved_on_hallen() -> AppState {
+    let mut st = AppState::default();
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    st
+}
+
+#[test]
+fn switching_solver_clears_every_solved_view() {
+    let mut st = AppState::default();
+    // Put each view into a Done state the way its own task would.
+    st.apply(&Message::Solve);
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    st.apply(&Message::RunPattern);
+    st.apply(&Message::PatternComplete(Ok(vec![])));
+    st.apply(&Message::RunCurrents);
+    st.apply(&Message::CurrentsComplete(Ok(vec![])));
+    st.deck_warnings = vec!["a Hallén-era caveat".into()];
+
+    assert!(matches!(st.phase, SolvePhase::Done(_)), "setup: solve done");
+    assert!(
+        matches!(st.pattern_phase, PatternPhase::Done(_)),
+        "setup: pattern done"
+    );
+    assert!(
+        matches!(st.currents_phase, CurrentsPhase::Done(_)),
+        "setup: currents done"
+    );
+
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+
+    assert!(matches!(st.phase, SolvePhase::Idle), "impedance survived");
+    assert!(
+        matches!(st.pattern_phase, PatternPhase::Idle),
+        "the pattern survived the switch — it would sit beside an MPIE impedance"
+    );
+    assert!(
+        matches!(st.currents_phase, CurrentsPhase::Idle),
+        "the currents survived the switch"
+    );
+    assert!(
+        st.deck_warnings.is_empty(),
+        "the caveat strip survived: it is solver-dependent, so the leftover one \
+         would tell a user who just picked MPIE to pick MPIE"
+    );
+    assert!(
+        st.viewport.currents_ma.is_none() && st.viewport.grid.is_none(),
+        "the 3-D viewport kept the other solver's currents or pattern grid"
+    );
+}
+
+/// A task launched before the switch is still running, and its result must not
+/// resurrect the view that was just discarded.
+#[test]
+fn an_in_flight_result_does_not_survive_a_solver_switch() {
+    let mut st = AppState::default();
+    st.apply(&Message::Solve); // task launched on Hallén
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    // ...and now the Hallén task completes.
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    assert!(
+        matches!(st.phase, SolvePhase::Idle),
+        "an in-flight Hallén solve repopulated the panel under an MPIE picker"
+    );
+}
+
+/// The streaming sweep is the worst case: it delivers many messages over many
+/// seconds, and its accumulator used to start a fresh `Streaming` phase from
+/// *any* state — so a discarded chart refilled point by point.
+#[test]
+fn an_in_flight_sweep_does_not_refill_a_discarded_chart() {
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+    }));
+    assert!(
+        !st.sweep_points().is_empty(),
+        "setup: the sweep is streaming"
+    );
+
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    assert!(st.sweep_points().is_empty(), "the switch cleared the chart");
+
+    // The old sweep is still running and keeps sending.
+    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
+        freq_mhz: 14.3,
+        z_re: 8.0,
+        z_im: -960.0,
+    }));
+    st.apply(&Message::SweepCaveats(vec![
+        "a Hallén-era sweep caveat".into()
+    ]));
+    assert!(
+        st.sweep_points().is_empty(),
+        "the discarded chart refilled with the other solver's points"
+    );
+    assert!(
+        st.sweep_caveats.is_empty(),
+        "the discarded sweep's caveats came back"
+    );
+}
+
+/// Picking a solver must trigger the session save, like the chart-metric picker
+/// beside it. Tested through the named predicate rather than the round-trip
+/// alone: the field, the restore path and the round-trip all existed while the
+/// choice was still discarded on quit, because the trigger was an untestable
+/// line in `update` (FND-034's shape).
+#[test]
+fn picking_a_solver_triggers_the_session_save() {
+    use nec_gui::app_state::persists_to_session;
+    assert!(
+        persists_to_session(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie)),
+        "the solver picker must persist, as the metric picker beside it does"
+    );
+    assert!(
+        persists_to_session(&Message::SweepMetricSelected(PlotMetric::ZMag)),
+        "control: the analogous picker persists"
+    );
+    assert!(
+        !persists_to_session(&Message::Solve),
+        "control: running a solve is not a settings change"
+    );
+}
+
+/// ...and it must refresh the caveat strip, which is solver-dependent now.
+#[test]
+fn picking_a_solver_refreshes_the_deck_caveats() {
+    use nec_gui::app_state::refreshes_deck_warnings;
+    assert!(
+        refreshes_deck_warnings(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie)),
+        "a stale strip would tell a user who just picked MPIE to pick MPIE"
+    );
+    assert!(
+        refreshes_deck_warnings(&Message::Solve),
+        "control: a solve still refreshes them"
+    );
+    assert!(
+        !refreshes_deck_warnings(&Message::TabSelected(ActiveTab::Sweep)),
+        "control: switching tabs does not re-read the deck"
+    );
+}
+
+/// Picking a solver must be persisted, like the chart-metric picker beside it —
+/// otherwise the canonical flow (open, switch to MPIE, solve, quit) reopens on
+/// Hallén having silently discarded the choice.
+#[test]
+fn the_selected_solver_round_trips_through_a_session() {
+    let mut st = solved_on_hallen();
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    let session = nec_gui::session::Session::from_state(&st);
+    let toml = session.to_toml().expect("serialize");
+    let parsed = nec_gui::session::Session::from_toml(&toml).expect("parse");
+    let mut restored = AppState::default();
+    parsed.apply_to(&mut restored);
+    assert_eq!(restored.solver, nec_gui::solve::SolverKind::Mpie);
 }
