@@ -60,6 +60,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   is an invitation to use what it lists. `fnec_py` still has no solver choice —
   recorded as FND-055 rather than left as an oversight.
 
+- **`scripts/check-all.sh`** — the full local gate over **both** cargo trees
+  (FND-024). `bindings/fnec_py` sits outside the workspace, so `cargo fmt --all
+  --check` at the root exits 0 on an unformatted bindings crate and CI fails on it
+  instead; that happened, and cost a red build on a two-line import wrap after
+  every local check had passed. The fmt step runs from `bindings/fnec_py`, which
+  sees both trees because the workspace crates are path dependencies there.
+
 - **The GUI and the Python bindings solve current-source decks** (FND-045). They
   used to decline an `EX 4` deck and say "use the fnec CLI" — but the machinery
   was never missing, only unwired: `nec_solver` has exported
