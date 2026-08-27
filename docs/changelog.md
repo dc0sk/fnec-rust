@@ -42,6 +42,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   solver rather than solved with the card ignored, and a sweep refuses it when the
   job is prepared rather than after queueing every point.
 
+  Switching solver **discards every solved view** — impedance, sweep, pattern,
+  currents, the 3-D overlay and the deck caveats — and results from a solve still
+  in flight when you switch no longer repopulate them. Leaving any of them up
+  would put one solver's impedance beside another's pattern with nothing saying
+  so, which is the disagreement the picker exists to prevent. The choice is
+  written to the session file, like the chart-metric picker beside it.
+
+  One CLI string changed wording: the junctionless negative-resistance cause now
+  reads "re-run with `--solver mpie` to cross-check" instead of "cross-check with
+  `--solver mpie`", because the remedy is supplied by the caller now. The topology
+  remedy, the MPIE "solver defect" cause, and the `LD`/`TL`/`NT` refusals are
+  byte-identical.
+
   Only the two production solvers are offered. The experimental pulse, continuity
   and sinusoidal modes are known-inaccurate for thin-wire antennas, and a picker
   is an invitation to use what it lists. `fnec_py` still has no solver choice —

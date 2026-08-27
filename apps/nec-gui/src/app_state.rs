@@ -415,6 +415,48 @@ pub enum Message {
     EditDeleteControl(usize),
 }
 
+/// Whether this message changes a setting worth writing to the session file.
+///
+/// A free function rather than a `matches!` inside `FnecGui::update`, because
+/// nothing can call `update` from a test — the solver picker was added to the
+/// session struct, restored on load and round-trip tested, and still never
+/// persisted, because the one line that triggers the save had no coverage. That
+/// is FND-034's shape, and the fix this repo already settled on is to give the
+/// decision a name a test can reach.
+pub fn persists_to_session(message: &Message) -> bool {
+    matches!(
+        message,
+        Message::DeckPathChanged(_)
+            | Message::VarsPathChanged(_)
+            | Message::SweepStartChanged(_)
+            | Message::SweepEndChanged(_)
+            | Message::SweepStepChanged(_)
+            | Message::SweepMetricSelected(_)
+            | Message::SolverSelected(_)
+            | Message::ToggleAxes(_)
+            | Message::ToggleGrid(_)
+            | Message::Viewport(ViewportMsg::ResetView)
+    )
+}
+
+/// Whether this message should recompute the deck-caveat strip.
+///
+/// The caveats are solver-dependent, so a solver change earns a refresh just as
+/// a solve action does — otherwise the strip keeps showing the other solver's
+/// advice, which for the topology caveat means telling a user who has just
+/// picked MPIE to pick MPIE.
+pub fn refreshes_deck_warnings(message: &Message) -> bool {
+    matches!(
+        message,
+        Message::Solve
+            | Message::RunSweep
+            | Message::RunPattern
+            | Message::RunCurrents
+            | Message::EditApplySolve
+            | Message::SolverSelected(_)
+    )
+}
+
 impl AppState {
     /// Apply a message to the state machine.
     ///
@@ -438,15 +480,7 @@ impl AppState {
             Message::SolverSelected(solver) => {
                 if self.solver != *solver {
                     self.solver = *solver;
-                    // Every solved view on screen was produced by the *other*
-                    // solver. Leaving them up would show one solver's impedance
-                    // beside another's pattern with nothing saying so, which is
-                    // the frontend-disagreement class this whole arc is about.
-                    self.phase = SolvePhase::Idle;
-                    // The swept points live inside the phase, so resetting it
-                    // drops them with it.
-                    self.sweep_phase = SweepPhase::Idle;
-                    self.sweep_caveats.clear();
+                    self.discard_solver_derived_state();
                 }
             }
             Message::Solve => {
@@ -456,10 +490,14 @@ impl AppState {
                 self.deck_warnings = w.clone();
             }
             Message::SolveComplete(Ok(r)) => {
-                self.phase = SolvePhase::Done(r.clone());
+                if self.awaiting_solve() {
+                    self.phase = SolvePhase::Done(r.clone());
+                }
             }
             Message::SolveComplete(Err(e)) => {
-                self.phase = SolvePhase::Failed(e.clone());
+                if self.awaiting_solve() {
+                    self.phase = SolvePhase::Failed(e.clone());
+                }
             }
             Message::SweepStartChanged(s) => self.sweep_start = s.clone(),
             Message::SweepEndChanged(s) => self.sweep_end = s.clone(),
@@ -474,20 +512,32 @@ impl AppState {
                 self.sweep_caveats.clear();
             }
             Message::SweepComplete(Ok(pts)) => {
-                self.sweep_phase = SweepPhase::Done(pts.clone());
+                if self.awaiting_sweep() {
+                    self.sweep_phase = SweepPhase::Done(pts.clone());
+                }
             }
             Message::SweepComplete(Err(e)) => {
-                self.sweep_phase = SweepPhase::Failed(e.clone());
+                if self.awaiting_sweep() {
+                    self.sweep_phase = SweepPhase::Failed(e.clone());
+                }
             }
             Message::SweepPointComputed(pt) => {
-                // Accumulate into a Streaming phase (starting one if needed).
+                // Accumulate into a Streaming phase, starting one only from
+                // `Running`. Starting one from *any* state let a sweep that had
+                // been discarded — by a solver switch — refill its chart point by
+                // point with the old solver's numbers, under the new picker.
                 match &mut self.sweep_phase {
                     SweepPhase::Streaming(pts) => pts.push(pt.clone()),
-                    _ => self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]),
+                    SweepPhase::Running => {
+                        self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]);
+                    }
+                    _ => {}
                 }
             }
             Message::SweepCaveats(caveats) => {
-                self.sweep_caveats.extend(caveats.iter().cloned());
+                if self.awaiting_sweep() {
+                    self.sweep_caveats.extend(caveats.iter().cloned());
+                }
             }
             Message::SweepStreamDone => {
                 // Finalize whatever streamed in (empty stream → a failure note).
@@ -518,19 +568,27 @@ impl AppState {
                 self.pattern_phase = PatternPhase::Running;
             }
             Message::PatternComplete(Ok(pts)) => {
-                self.pattern_phase = PatternPhase::Done(pts.clone());
+                if matches!(self.pattern_phase, PatternPhase::Running) {
+                    self.pattern_phase = PatternPhase::Done(pts.clone());
+                }
             }
             Message::PatternComplete(Err(e)) => {
-                self.pattern_phase = PatternPhase::Failed(e.clone());
+                if matches!(self.pattern_phase, PatternPhase::Running) {
+                    self.pattern_phase = PatternPhase::Failed(e.clone());
+                }
             }
             Message::RunCurrents => {
                 self.currents_phase = CurrentsPhase::Running;
             }
             Message::CurrentsComplete(Ok(pts)) => {
-                self.currents_phase = CurrentsPhase::Done(pts.clone());
+                if matches!(self.currents_phase, CurrentsPhase::Running) {
+                    self.currents_phase = CurrentsPhase::Done(pts.clone());
+                }
             }
             Message::CurrentsComplete(Err(e)) => {
-                self.currents_phase = CurrentsPhase::Failed(e.clone());
+                if matches!(self.currents_phase, CurrentsPhase::Running) {
+                    self.currents_phase = CurrentsPhase::Failed(e.clone());
+                }
             }
             Message::LoadGeometry => {
                 self.viewport.status = "Loading geometry…".into();
@@ -817,6 +875,56 @@ impl AppState {
             }),
         }
         v
+    }
+
+    /// Whether a single solve is in flight, so a completion belongs to it.
+    ///
+    /// A task that was launched before the solver changed is still running and
+    /// will deliver the *other* solver's numbers. Applying it would undo the
+    /// discard and put a Hallén impedance under an MPIE picker.
+    fn awaiting_solve(&self) -> bool {
+        matches!(self.phase, SolvePhase::Solving)
+    }
+
+    /// Whether a sweep is in flight — same reasoning, and it matters more here
+    /// because a streaming sweep delivers many messages over many seconds.
+    fn awaiting_sweep(&self) -> bool {
+        matches!(
+            self.sweep_phase,
+            SweepPhase::Running | SweepPhase::Streaming(_)
+        )
+    }
+
+    /// Drop everything that was computed by a solver.
+    ///
+    /// One function rather than a list at the call site: the Solve, Sweep,
+    /// Pattern and Currents panels and the 3-D viewport each hold their own
+    /// solved state, and clearing four of the five is how a Hallén pattern ends
+    /// up beside an MPIE impedance with nothing saying so. The deck caveats go
+    /// too — they are solver-dependent now, and the topology one would otherwise
+    /// keep telling a user on MPIE to switch to MPIE.
+    ///
+    /// Geometry is deliberately kept: it comes from the deck, not from a solve,
+    /// and blanking the viewport on a picker change would be a worse experience
+    /// for no correctness gain.
+    fn discard_solver_derived_state(&mut self) {
+        self.phase = SolvePhase::Idle;
+        // The swept points live inside the phase, so resetting it drops them.
+        self.sweep_phase = SweepPhase::Idle;
+        self.sweep_caveats.clear();
+        self.pattern_phase = PatternPhase::default();
+        self.currents_phase = CurrentsPhase::default();
+        self.deck_warnings.clear();
+        self.viewport.currents_ma = None;
+        self.viewport.grid = None;
+        self.viewport.show_currents = false;
+        self.viewport.show_pattern = false;
+        self.viewport.rebuild_scene();
+        // `rebuild_scene` does not touch the lobe, so the 3-D radiation overlay
+        // would otherwise hang in the viewport after its grid was discarded —
+        // the most visible version of this defect, since it is drawn over the
+        // geometry rather than tucked in a panel.
+        self.viewport.rebuild_lobe();
     }
 
     /// The swept points in their computed (frequency) order — available both

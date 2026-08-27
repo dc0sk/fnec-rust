@@ -1300,6 +1300,12 @@ use nec_gui::plot::PlotMetric;
 
 fn done_sweep() -> AppState {
     let mut state = AppState::default();
+    // Through `RunSweep` first, as the app always does: the button sets `Running`
+    // before the task is spawned, and a completion is now only accepted while a
+    // sweep is actually in flight (so a switched-away sweep cannot refill a
+    // cleared chart). Skipping it here made the helper unfaithful, not the guard
+    // wrong.
+    state.apply(&Message::RunSweep);
     let pts = vec![
         SweepPoint {
             freq_mhz: 14.0,
@@ -1516,8 +1522,9 @@ fn browse_messages_are_noops_in_core_state() {
 // ── GUI solver caveats (pre-release fix 1a) ──────────────────────────────────
 
 /// A degree-3 Y-junction deck still solves on the GUI's Hallén path, but the
-/// result carries a warning recommending the CLI's `--solver mpie` (the GUI has
-/// no MPIE path), so the GUI never presents the junction number as trustworthy.
+/// result carries a warning pointing at the MPIE — in the GUI's own terms, since
+/// the picker is right there — so the junction number is never presented as
+/// trustworthy.
 #[test]
 fn solve_warns_on_high_degree_junction() {
     const Y: &str = "\
@@ -1850,4 +1857,194 @@ EN
         .is_ok(),
         "the same sweep must still prepare on the Hallén path"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Switching solver discards what the other solver produced
+// ---------------------------------------------------------------------------
+//
+// The changelog and `docs/gui-guide.md` both promise "changing it clears solved
+// results". These pin that promise. Before them, three of the five solved views
+// survived the switch, so a Hallén pattern could sit beside an MPIE impedance
+// with nothing on screen saying so — the exact frontend-disagreement the picker
+// exists to prevent.
+
+fn solved_on_hallen() -> AppState {
+    let mut st = AppState::default();
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    st
+}
+
+#[test]
+fn switching_solver_clears_every_solved_view() {
+    let mut st = AppState::default();
+    // Put each view into a Done state the way its own task would.
+    st.apply(&Message::Solve);
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    st.apply(&Message::RunPattern);
+    st.apply(&Message::PatternComplete(Ok(vec![])));
+    st.apply(&Message::RunCurrents);
+    st.apply(&Message::CurrentsComplete(Ok(vec![])));
+    st.deck_warnings = vec!["a Hallén-era caveat".into()];
+
+    assert!(matches!(st.phase, SolvePhase::Done(_)), "setup: solve done");
+    assert!(
+        matches!(st.pattern_phase, PatternPhase::Done(_)),
+        "setup: pattern done"
+    );
+    assert!(
+        matches!(st.currents_phase, CurrentsPhase::Done(_)),
+        "setup: currents done"
+    );
+
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+
+    assert!(matches!(st.phase, SolvePhase::Idle), "impedance survived");
+    assert!(
+        matches!(st.pattern_phase, PatternPhase::Idle),
+        "the pattern survived the switch — it would sit beside an MPIE impedance"
+    );
+    assert!(
+        matches!(st.currents_phase, CurrentsPhase::Idle),
+        "the currents survived the switch"
+    );
+    assert!(
+        st.deck_warnings.is_empty(),
+        "the caveat strip survived: it is solver-dependent, so the leftover one \
+         would tell a user who just picked MPIE to pick MPIE"
+    );
+    assert!(
+        st.viewport.currents_ma.is_none() && st.viewport.grid.is_none(),
+        "the 3-D viewport kept the other solver's currents or pattern grid"
+    );
+}
+
+/// A task launched before the switch is still running, and its result must not
+/// resurrect the view that was just discarded.
+#[test]
+fn an_in_flight_result_does_not_survive_a_solver_switch() {
+    let mut st = AppState::default();
+    st.apply(&Message::Solve); // task launched on Hallén
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    // ...and now the Hallén task completes.
+    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 10,
+    })));
+    assert!(
+        matches!(st.phase, SolvePhase::Idle),
+        "an in-flight Hallén solve repopulated the panel under an MPIE picker"
+    );
+}
+
+/// The streaming sweep is the worst case: it delivers many messages over many
+/// seconds, and its accumulator used to start a fresh `Streaming` phase from
+/// *any* state — so a discarded chart refilled point by point.
+#[test]
+fn an_in_flight_sweep_does_not_refill_a_discarded_chart() {
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
+        freq_mhz: 14.2,
+        z_re: 8.0,
+        z_im: -960.0,
+    }));
+    assert!(
+        !st.sweep_points().is_empty(),
+        "setup: the sweep is streaming"
+    );
+
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    assert!(st.sweep_points().is_empty(), "the switch cleared the chart");
+
+    // The old sweep is still running and keeps sending.
+    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
+        freq_mhz: 14.3,
+        z_re: 8.0,
+        z_im: -960.0,
+    }));
+    st.apply(&Message::SweepCaveats(vec![
+        "a Hallén-era sweep caveat".into()
+    ]));
+    assert!(
+        st.sweep_points().is_empty(),
+        "the discarded chart refilled with the other solver's points"
+    );
+    assert!(
+        st.sweep_caveats.is_empty(),
+        "the discarded sweep's caveats came back"
+    );
+}
+
+/// Picking a solver must trigger the session save, like the chart-metric picker
+/// beside it. Tested through the named predicate rather than the round-trip
+/// alone: the field, the restore path and the round-trip all existed while the
+/// choice was still discarded on quit, because the trigger was an untestable
+/// line in `update` (FND-034's shape).
+#[test]
+fn picking_a_solver_triggers_the_session_save() {
+    use nec_gui::app_state::persists_to_session;
+    assert!(
+        persists_to_session(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie)),
+        "the solver picker must persist, as the metric picker beside it does"
+    );
+    assert!(
+        persists_to_session(&Message::SweepMetricSelected(PlotMetric::ZMag)),
+        "control: the analogous picker persists"
+    );
+    assert!(
+        !persists_to_session(&Message::Solve),
+        "control: running a solve is not a settings change"
+    );
+}
+
+/// ...and it must refresh the caveat strip, which is solver-dependent now.
+#[test]
+fn picking_a_solver_refreshes_the_deck_caveats() {
+    use nec_gui::app_state::refreshes_deck_warnings;
+    assert!(
+        refreshes_deck_warnings(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie)),
+        "a stale strip would tell a user who just picked MPIE to pick MPIE"
+    );
+    assert!(
+        refreshes_deck_warnings(&Message::Solve),
+        "control: a solve still refreshes them"
+    );
+    assert!(
+        !refreshes_deck_warnings(&Message::TabSelected(ActiveTab::Sweep)),
+        "control: switching tabs does not re-read the deck"
+    );
+}
+
+/// Picking a solver must be persisted, like the chart-metric picker beside it —
+/// otherwise the canonical flow (open, switch to MPIE, solve, quit) reopens on
+/// Hallén having silently discarded the choice.
+#[test]
+fn the_selected_solver_round_trips_through_a_session() {
+    let mut st = solved_on_hallen();
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    let session = nec_gui::session::Session::from_state(&st);
+    let toml = session.to_toml().expect("serialize");
+    let parsed = nec_gui::session::Session::from_toml(&toml).expect("parse");
+    let mut restored = AppState::default();
+    parsed.apply_to(&mut restored);
+    assert_eq!(restored.solver, nec_gui::solve::SolverKind::Mpie);
 }

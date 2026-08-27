@@ -49,13 +49,6 @@ fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     freqs
 }
 
-/// Solve a NEC deck string at one frequency.
-///
-/// Returns the impedance record and the non-fatal caveats the caller should raise
-/// as Python warnings. `Err` means the deck was rejected — either it could not be
-/// solved at all, or `nec_solver::validate` found geometry outside the supported
-/// class, which the CLI has always refused and these bindings used to solve
-/// silently (review-260719 FIND-004).
 /// The solver context these bindings run under.
 ///
 /// Hallén-only for now — `fnec_py` exposes no solver choice, so a diagnostic that
@@ -69,6 +62,13 @@ fn py_solver_context() -> nec_solver::validate::SolverContext<'static> {
     }
 }
 
+/// Solve a NEC deck string at one frequency.
+///
+/// Returns the impedance record and the non-fatal caveats the caller should raise
+/// as Python warnings. `Err` means the deck was rejected — either it could not be
+/// solved at all, or `nec_solver::validate` found geometry outside the supported
+/// class, which the CLI has always refused and these bindings used to solve
+/// silently (review-260719 FIND-004).
 fn solve_at_freq(
     deck: &nec_model::deck::NecDeck,
     freq_hz: f64,

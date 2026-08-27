@@ -1397,6 +1397,38 @@ mod tests {
     }
 
     #[test]
+    fn an_mpie_deck_with_a_load_is_an_error_from_diagnose_not_a_warning() {
+        // The severity is the whole point and nothing else pins it: the shared
+        // `solve_mpie_session` refuses this deck anyway and with the identical
+        // text, so downgrading this arm to a Warning is invisible through any
+        // solve. What it changes is *when* the user learns — an Error is the
+        // pre-solve refusal, while a Warning would let the caveat strip render it
+        // and the solve proceed to fail later (FND-054).
+        let (deck, segs) = deck_and_segs(
+            "GW 1 41 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nLD 0 1 21 21 10.0 0.0 0.0\n\
+             EX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        let ctx = SolverContext {
+            kind: SolverKind::Mpie,
+            mpie_remedy: "unused on the MPIE arm",
+        };
+        let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, ctx);
+        assert!(
+            has_error(&diags),
+            "an LD deck on the MPIE must be an Error, not a caveat: {diags:?}"
+        );
+        // ...and on Hallén the same deck is fine, so this is the solver's limit.
+        let hallen = diagnose(
+            &deck,
+            &segs,
+            &GroundModel::FreeSpace,
+            14.2e6,
+            SolverContext::cli_hallen(),
+        );
+        assert!(!has_error(&hallen), "the LD deck must solve on Hallén");
+    }
+
+    #[test]
     fn an_unrecognised_ge_flag_and_a_deferred_gn_type_each_warn() {
         let (deck, _segs) = deck_and_segs(
             "GW 1 21 -5.278 0 1 5.278 0 1 0.001\nGE 7\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",

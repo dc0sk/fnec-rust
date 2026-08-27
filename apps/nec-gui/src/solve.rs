@@ -131,9 +131,10 @@ pub struct SolveResult {
     pub z_re: f64,
     /// Feedpoint reactance (Ω).
     pub z_im: f64,
-    /// Solver caveats for this deck (unreliable topology, deferred ground,
-    /// unsupported loads) — the GUI runs the Hallén solver, so junctions/loops
-    /// and finite-ground currents need the CLI's `--solver mpie`.
+    /// Caveats for this deck on the solver that produced it (unreliable
+    /// topology, deferred ground, unsupported loads). They are solver-dependent:
+    /// on Hallén a junction or loop earns a caveat naming the MPIE, and on the
+    /// MPIE that caveat is absent because it models those correctly.
     pub warnings: Vec<String>,
     /// Wire tag the impedance was measured at.
     pub feed_tag: usize,
@@ -402,9 +403,10 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver)?;
 
     // --- impedance matrix ------------------------------------------------
-    let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-
-    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
+    // Only the Hallén path consumes it. The MPIE builds its own system from the
+    // geometry and ignores `z_mat` entirely, so assembling it there was an O(N²)
+    // fill computed and thrown away on every solve.
+    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     // --- Hallen solve ----------------------------------------------------
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
@@ -467,6 +469,28 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
 /// Returns the port voltage for a current-source deck, and `None` for a delta gap.
 /// A deck carrying both is refused before this by `validate::pre_solve_error`
 /// (FND-036), so the two cases really are exclusive.
+/// The stamped Hallén impedance matrix, or an empty one on the MPIE path.
+///
+/// The MPIE assembles its own system from the geometry and never reads this, so
+/// filling it there is pure waste — an O(N²) matrix built and discarded, and on
+/// a sweep once per frequency point. Returning an empty matrix rather than an
+/// `Option` keeps the one call signature for `solve_currents`, whose MPIE branch
+/// returns before touching it.
+fn hallen_z_matrix(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    ground: &GroundModel,
+    solver: SolverKind,
+) -> nec_solver::ZMatrix {
+    if solver == SolverKind::Mpie {
+        return nec_solver::ZMatrix::new(0);
+    }
+    let mut z_mat = assemble_z_matrix_with_ground(segs, freq_hz, ground);
+    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply(&mut z_mat);
+    z_mat
+}
+
 #[allow(clippy::too_many_arguments)]
 fn solve_currents(
     deck: &nec_model::deck::NecDeck,
@@ -578,7 +602,7 @@ fn feedpoint_impedance(
     )
 }
 
-/// Run a Hallen sweep over a frequency range for the deck at `path`.
+/// Run a sweep on the selected solver over a frequency range for the deck at `path`.
 ///
 /// `start_mhz`, `end_mhz`, `step_mhz` define the linear sweep.  The geometry
 /// and excitation vector are built once and reused for every frequency point.
@@ -597,7 +621,7 @@ pub fn sweep_deck_path(
     sweep_deck_str(&input, start_mhz, end_mhz, step_mhz, solver)
 }
 
-/// Run a Hallen sweep for a deck given as a string.
+/// Run a sweep on the selected solver for a deck given as a string.
 pub fn sweep_deck_str(
     deck_text: &str,
     start_mhz: f64,
@@ -709,8 +733,8 @@ impl SweepJob {
     pub fn solve_at(&self, freq_mhz: f64) -> Result<SweepPoint, String> {
         let freq_hz = freq_mhz * 1_000_000.0;
 
-        let mut z_mat = assemble_z_matrix_with_ground(&self.segs, freq_hz, &self.ground);
-        nec_solver::build_deck_stamps(&self.deck, &self.segs, freq_hz).apply(&mut z_mat);
+        // Per point, so the discarded fill cost the whole sweep, not one solve.
+        let z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
 
         let (currents, port_voltage) = solve_currents(
             &self.deck,
@@ -981,8 +1005,7 @@ fn solve_for_currents(
         })
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
-    let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    nec_solver::build_deck_stamps(deck, &segs, freq_hz).apply(&mut z_mat);
+    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions

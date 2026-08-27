@@ -126,21 +126,8 @@ impl FnecGui {
         let spawn_apply_solve = matches!(message, Message::EditApplySolve);
         // Any action that reads the deck refreshes its caveats, so they are current
         // on whichever tab the user is looking at — not only the Solve panel.
-        let refresh_warnings =
-            spawn_solve || spawn_sweep || spawn_pattern || spawn_currents || spawn_apply_solve;
-        // Settings changes worth persisting to the session file.
-        let persist = matches!(
-            message,
-            Message::DeckPathChanged(_)
-                | Message::VarsPathChanged(_)
-                | Message::SweepStartChanged(_)
-                | Message::SweepEndChanged(_)
-                | Message::SweepStepChanged(_)
-                | Message::SweepMetricSelected(_)
-                | Message::ToggleAxes(_)
-                | Message::ToggleGrid(_)
-                | Message::Viewport(ViewportMsg::ResetView)
-        );
+        let refresh_warnings = nec_gui::app_state::refreshes_deck_warnings(&message);
+        let persist = nec_gui::app_state::persists_to_session(&message);
         // Pane resize is an iced-layout concern handled here (not in AppState).
         if let Message::PaneResized(ratio) = message {
             self.panes.resize(self.main_split, ratio);

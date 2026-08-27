@@ -88,8 +88,9 @@ unphysical and the user must be told.
 | 1 | CLI, `--solver hallen` | yes | `apps/nec-cli/tests/junction_feedpoint.rs` |
 | 2 | CLI, `--solver mpie` | yes | armed as a standing tripwire in #365 |
 | 3 | CLI, pulse / continuity / sinusoidal | n/a | deliberately skipped: the current-source corpus has documented negative-`R` values |
-| 4 | GUI, single solve | yes | `a_negative_resistance_solve_carries_a_caveat` |
-| 5 | GUI, sweep | yes | `the_sweep_caveat_is_one_line_for_the_whole_sweep` |
+| 4 | GUI, single solve, Hallén | yes | `a_negative_resistance_solve_carries_a_caveat` |
+| 4b | GUI, single solve, MPIE | yes | the cause is routed by `SolverContext` since #415, so the GUI's MPIE arm is the CLI's — `the_mpie_arm_blames_the_solver_rather_than_the_geometry` covers the shared producer |
+| 5 | GUI, sweep | yes | `the_sweep_caveat_is_one_line_for_the_whole_sweep`; the swept cause takes the same context |
 | 6 | Python bindings | yes | `test_a_negative_resistance_deck_raises_a_warning` |
 | 7 | Remote worker (`--hosts`) | yes | `a_negative_distributed_result_earns_a_caveat_naming_the_real_feedpoint` |
 
@@ -134,10 +135,10 @@ in it. There is no second way to reach that kernel.
 |:--|:-----|:--------|:---------|
 | 1 | CLI low-antenna-over-finite-ground | yes | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` |
 | 2 | CLI declined Sommerfeld request | yes | `declined_sommerfeld_geometry_is_reported_not_silent` |
-| 3 | GUI / Python **single solve** low-ground | yes | carried by `validate::diagnose` |
+| 3 | GUI / Python **single solve** low-ground | yes | carried by `validate::diagnose`. Since #415 it is raised only on the Hallén arm — the MPIE carries the Sommerfeld surface wave in its Z-matrix, so the caveat describes a limitation it does not have |
 | 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. The send is pinned by `the_geometry_caveats_arrive_before_the_first_point` |
 | 5 | CLI distributed low-ground | yes | `the_low_ground_check_uses_the_worst_case_frequency_not_the_first` |
-| 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made |
+| 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made. The GUI's MPIE path reaches the surface wave through the solver picker instead (#415) |
 
 Row 3's "yes" was unqualified until #399 split it. The check is frequency-dependent,
 and a *sweep* is a different frequency from the deck's `FR` card — so covering the
