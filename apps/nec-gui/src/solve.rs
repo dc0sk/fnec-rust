@@ -547,7 +547,7 @@ impl SweepJob {
         let ground = ground_model_from_deck(&deck);
         // Reject geometry the solver cannot honestly take, before queueing a whole
         // sweep of solves on it.
-        if let Some(e) = validate::geometry_error(&deck, &segs, &ground) {
+        if let Some(e) = validate::pre_solve_error(&deck, &segs, &ground) {
             return Err(e);
         }
         let wire_endpoints = wire_endpoints_from_segs(&segs);
@@ -809,7 +809,7 @@ fn solve_for_currents(
     let ground = ground_model_from_deck(deck);
     // The currents/pattern views share this path; they must refuse the same decks
     // the impedance view does rather than draw a plausible-looking wrong pattern.
-    if let Some(e) = validate::geometry_error(deck, &segs, &ground) {
+    if let Some(e) = validate::pre_solve_error(deck, &segs, &ground) {
         return Err(e);
     }
     // Including a current-source-only deck. Fixing the Solve tab's message while

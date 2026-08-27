@@ -282,7 +282,7 @@ fn main() -> ExitCode {
         }
     };
     let ground = ground_model_from_deck(deck);
-    if let Some(err) = nec_solver::validate::geometry_error(deck, &segs, &ground) {
+    if let Some(err) = nec_solver::validate::pre_solve_error(deck, &segs, &ground) {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;
     }

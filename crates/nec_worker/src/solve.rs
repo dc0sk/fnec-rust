@@ -304,7 +304,7 @@ pub fn solve_deck_at_frequency_with_exec(
     // `parse_error`, which is simply untrue and would send a user looking at their
     // deck's syntax. Adding a new `ErrorCode` variant instead would break older
     // controllers, which fail the whole result line on an unknown variant.
-    if let Some(err) = nec_solver::validate::geometry_error(&deck, &segs, &ground) {
+    if let Some(err) = nec_solver::validate::pre_solve_error(&deck, &segs, &ground) {
         return Err(SolveError::UnsupportedConfig(err));
     }
 

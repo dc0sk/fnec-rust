@@ -603,6 +603,46 @@ pub fn hallen_geometry_caveats(
     out
 }
 
+/// Why a deck driven by two kinds of source at once cannot be solved, if it is.
+///
+/// A delta gap and a current source in one deck produce a **silently wrong**
+/// answer, not merely an ambiguous one. The current-source solve replaces the
+/// right-hand side entirely — `build_current_source_shape` drops the other `EX`
+/// cards and the Hallén rows for the delta gap are zeroed — so its feedpoint is
+/// priced over currents that never saw its drive. Measured on a 51-segment
+/// dipole carrying both: the voltage feedpoint reports **0.678 + j0.086 Ω** where
+/// the same deck without the current source gives **74.243 + j13.900**, a
+/// hundredfold error at exit 0 with no warning (FND-036).
+///
+/// Superposition would be the physically correct answer and is real solver work.
+/// Refusing is the honest interim: the numbers were never meaningful, so nothing
+/// is lost by declining to print them.
+///
+/// Scope is deliberately the two *driven* kinds. A plane wave alongside a driven
+/// source is a different mix — receive versus transmit — routed elsewhere, and it
+/// has its own wrong answer recorded separately (FND-050) rather than being swept
+/// in here on the way past.
+pub fn mixed_excitation_error(deck: &NecDeck) -> Option<String> {
+    let mut delta_gap = None;
+    let mut current_source = None;
+    for (ex, role) in crate::excitation::feedpoints(deck) {
+        match role {
+            FeedpointRole::DeltaGap if delta_gap.is_none() => delta_gap = Some(ex),
+            FeedpointRole::CurrentSource if current_source.is_none() => current_source = Some(ex),
+            _ => {}
+        }
+    }
+    let (v, i) = (delta_gap?, current_source?);
+    Some(format!(
+        "EX: this deck is driven by both a voltage source (type {} on tag {} segment {}) \
+         and a current source (type {} on tag {} segment {}). fnec solves one drive kind \
+         at a time — the current-source path replaces the right-hand side, so the voltage \
+         source's feedpoint would be reported from currents its own drive never produced. \
+         Remove one, or solve them as separate decks",
+        v.excitation_type, v.tag, v.segment, i.excitation_type, i.tag, i.segment
+    ))
+}
+
 /// Why a deck has no impedance a delta-gap frontend can report, if that is the
 /// case — named, rather than left to a fallthrough.
 ///
@@ -719,6 +759,21 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
         .or_else(|| buried_wire_geometry_error(segs, ground))
 }
 
+/// Every reason a deck must not be solved at all, geometry or otherwise.
+///
+/// This is the gate a frontend calls before solving; [`geometry_error`] is one
+/// part of it and keeps its narrower name honest. The distinction matters because
+/// the first non-geometry refusal — mixed excitation (FND-036) — would otherwise
+/// have been bolted into a function called `geometry_error`, where the next reader
+/// looking for "why was my deck refused" would never think to look.
+///
+/// Errors first and one at a time: a caller that sees `Some` must not solve, and
+/// which reason it reports is deliberate — geometry before excitation, because a
+/// deck whose wires cross has a problem no excitation change will fix.
+pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
+    geometry_error(deck, segs, ground).or_else(|| mixed_excitation_error(deck))
+}
+
 /// Every frontend-independent diagnostic for a solve, errors first.
 ///
 /// A single `Error` (if any) is the hard geometry rejection from [`geometry_error`];
@@ -741,7 +796,7 @@ pub fn diagnose(
     freq_hz: f64,
 ) -> Vec<ValidationDiagnostic> {
     let mut out = Vec::new();
-    if let Some(e) = geometry_error(deck, segs, ground) {
+    if let Some(e) = pre_solve_error(deck, segs, ground) {
         out.push(ValidationDiagnostic::error(e));
     }
     for w in [
@@ -947,6 +1002,48 @@ mod tests {
             swept_low_ground_caveat(&segs, &gn2, &[60.0e6, 80.0e6], false),
             None
         );
+    }
+
+    #[test]
+    fn a_deck_driven_by_two_kinds_of_source_is_refused_by_name() {
+        // FND-036. This reported 0.678 + j0.086 Ω for the voltage feedpoint where
+        // the same deck without the current source gives 74.243 + j13.900 — a
+        // hundredfold error, exit 0, no warning. The current-source solve replaces
+        // the right-hand side, so the delta gap was priced over currents its own
+        // drive never produced.
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\nEX 4 1 13 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let msg = mixed_excitation_error(&deck).expect("a refusal");
+        // Both cards named: "remove one" is unactionable if the reader cannot tell
+        // which two are fighting.
+        assert!(msg.contains("type 0 on tag 1 segment 26"), "{msg}");
+        assert!(msg.contains("type 4 on tag 1 segment 13"), "{msg}");
+    }
+
+    #[test]
+    fn a_single_drive_kind_is_not_refused() {
+        // Both controls matter: firing on an ordinary deck would refuse every
+        // corpus case, and firing on neither would leave FND-036 open.
+        for deck_src in [
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        ] {
+            let (deck, _segs) = deck_and_segs(deck_src);
+            assert_eq!(mixed_excitation_error(&deck), None, "{deck_src}");
+        }
+    }
+
+    #[test]
+    fn a_plane_wave_beside_a_driven_source_is_out_of_scope_here() {
+        // A different mix — receive versus transmit — routed elsewhere, and with
+        // its own wrong answer (FND-050). Sweeping it in here would also refuse a
+        // corpus fixture two frontends' tests depend on, so the scope boundary is
+        // deliberate rather than an oversight.
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 3 0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert_eq!(mixed_excitation_error(&deck), None);
     }
 
     #[test]

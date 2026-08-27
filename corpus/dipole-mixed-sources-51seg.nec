@@ -1,0 +1,16 @@
+CM A dipole driven by BOTH a voltage source and a current source.
+CM
+CM fnec solves one drive kind at a time: the current-source path replaces the
+CM right-hand side, so the voltage source's feedpoint was priced over currents its
+CM own drive never produced. This deck reported 0.678 + j0.086 ohm for the EX 0
+CM row where the same deck without the EX 4 gives 74.243 + j13.900 — a hundredfold
+CM error, exit 0, no warning (FND-036).
+CM
+CM Kept as a refusal fixture: it must NOT solve.
+CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE 0
+EX 0 1 26 0 1.0 0.0
+EX 4 1 13 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
