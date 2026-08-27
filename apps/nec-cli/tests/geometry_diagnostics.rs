@@ -401,8 +401,11 @@ fn an_ordinary_deck_still_solves_after_the_frequency_gate() {
     );
 }
 
-/// A non-finite field on any card is a parse error now, so the `NaN` feedpoint
-/// row FND-030 describes cannot be produced from a deck at all.
+/// A non-finite field on any card is a parse error now, closing one of the two
+/// input routes to the `NaN` feedpoint row FND-030 describes. The other — a
+/// finite field that overflows to an infinite frequency once multiplied into
+/// hertz — is closed by `validate::frequency_error`. Neither closes a genuinely
+/// diverged CPU solve, which is why that row stays open.
 #[test]
 fn the_cli_refuses_a_non_finite_field() {
     let deck = common::TempDeck::new(

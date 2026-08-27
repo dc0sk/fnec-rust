@@ -2112,11 +2112,19 @@ fn a_gui_sweep_range_rejects_non_finite_fields() {
 fn a_sweep_job_refuses_a_range_starting_at_or_below_zero() {
     let deck = "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
                 EX 0 1 11 0 1.0 0.0\nEN\n";
-    assert!(
-        nec_gui::solve::SweepJob::prepare(deck, -5.0, 5.0, 0.5, nec_gui::solve::SolverKind::Hallen)
+    for start in [-5.0, 0.0] {
+        assert!(
+            nec_gui::solve::SweepJob::prepare(
+                deck,
+                start,
+                5.0,
+                0.5,
+                nec_gui::solve::SolverKind::Hallen
+            )
             .is_err(),
-        "a job swept from -5 MHz must be refused"
-    );
+            "a job swept from {start} MHz must be refused"
+        );
+    }
     assert!(
         nec_gui::solve::SweepJob::prepare(
             deck,
