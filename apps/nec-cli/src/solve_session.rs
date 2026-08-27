@@ -1341,14 +1341,11 @@ pub(super) fn solve_frequency_point(
             }
         }
         SolverMode::Mpie => {
-            let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz).map_err(
-                |e| match e {
-                    nec_solver::MpieSessionError::NoVoltageSource => {
-                        "--solver mpie requires a voltage source (EX type 0)".to_string()
-                    }
-                    other => format!("--solver mpie: {other}"),
-                },
-            )?;
+            // One mapping for every variant: the special-cased `NoVoltageSource`
+            // arm existed only to preserve a byte-identical string, and it named
+            // "EX type 0" where the shared message now correctly says type 0 or 5.
+            let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz)
+                .map_err(|e| format!("--solver mpie: {e}"))?;
             (currents, 0.0, 0.0, "mpie")
         }
     };

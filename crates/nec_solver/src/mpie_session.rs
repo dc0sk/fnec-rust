@@ -92,15 +92,16 @@ impl std::fmt::Display for MpieSessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported(u) => write!(f, "{u}"),
-            Self::NoVoltageSource => {
-                write!(f, "the MPIE solver requires a voltage source (EX type 0)")
-            }
+            Self::NoVoltageSource => write!(
+                f,
+                "the MPIE solver requires a delta-gap voltage source (EX type 0 or 5)"
+            ),
             Self::DrivenSegmentNotFound { tag, segment } => {
                 write!(f, "EX: driven segment {tag}/{segment} not found")
             }
             Self::NoInteriorNode => write!(
                 f,
-                "the MPIE solver: the feed segment has no interior (degree-2) node to drive"
+                "the feed segment has no interior (degree-2) node to drive"
             ),
             Self::Solve(e) => write!(f, "{e}"),
         }

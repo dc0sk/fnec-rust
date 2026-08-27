@@ -43,9 +43,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   those first. A shared function may not depend on what its callers checked.
 
   No answer changed: the free-space dipole (74.437414 + j41.753720), the degree-3
-  Y-junction (63.673674 - j322.199211) and a dipole over `GN 2` (73.857642 +
-  j30.548668) are digit-identical to before the move, and are now pinned as
-  acceptance values so any frontend adopting the MPIE must reproduce them.
+  Y-junction (63.673674 - j322.199211), a dipole over `GN 2` (73.857642 +
+  j30.548668), an `EX 5` dipole and an apex-fed inverted-V are all digit-identical
+  to before the move. The first three are now pinned as acceptance values so any
+  frontend adopting the MPIE must reproduce them.
+
+  **Two messages did change wording**, both because a shared string cannot name a
+  CLI flag: the mixed-radius caveat now opens "the MPIE solver models a single
+  wire radius" rather than "`--solver mpie` models…", and the no-interior-node
+  error drops a duplicated subject. The `LD`/`TL`/`NT` refusals and the
+  plane-wave/current-source refusals are byte-identical.
 
 ### Added
 

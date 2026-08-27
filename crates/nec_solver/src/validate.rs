@@ -263,8 +263,6 @@ pub fn mpie_compatible_deck(deck: &NecDeck) -> bool {
 // Warnings
 // ---------------------------------------------------------------------------
 
-/// A `GN` type outside the supported set is treated as free space; say so, and
-/// echo the parsed medium parameters so the user can see what was read.
 /// The MPIE's reduced thin-wire kernel uses a **single** wire radius (the first
 /// segment's) for the whole geometry, so a deck mixing radii is solved
 /// approximately for every differently-sized wire.
@@ -289,6 +287,8 @@ differently-sized wires will be approximate"
     ))
 }
 
+/// A `GN` type outside the supported set is treated as free space; say so, and
+/// echo the parsed medium parameters so the user can see what was read.
 pub fn deferred_ground_warning(ground: &GroundModel) -> Option<String> {
     let GroundModel::Deferred {
         gn_type,
