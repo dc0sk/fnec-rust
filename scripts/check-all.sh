@@ -61,6 +61,12 @@ for c in check-changelog-headings check-findings-ledger check-path-inventory \
     run "$c" python3 "scripts/$c.py"
 done
 
+# The one checker with a committed self-test, and it only ran in CI — so a defect
+# in the checker itself reached a release and was found by reading its output by
+# hand (FND-062). A gate whose own test runs somewhere else is a gate you trust
+# for reasons you cannot see locally.
+run "check-release-tags self-test" python3 scripts/test-check-release-tags.py
+
 # Against the merge base, so it sees the doc-regression half — a doc comment can
 # only come adrift from an item *relative to* where that item was documented.
 BASE="$(git merge-base HEAD origin/main 2>/dev/null || echo '')"
