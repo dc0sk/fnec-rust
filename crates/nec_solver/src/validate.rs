@@ -754,6 +754,34 @@ fn fr_extreme_frequencies_mhz(fr: &nec_model::card::FrCard) -> Vec<f64> {
     }
 }
 
+/// Every `EX` card whose type this build does not recognise.
+///
+/// A **warning**, not an error, and the distinction is the whole point. The deck
+/// cannot be solved — `build_excitation` refuses an unrecognised type — but the
+/// GUI's keystroke-time strip renders `diagnose`'s *warnings* and deliberately
+/// swallows its errors, on the reasoning that a hard rejection is surfaced by the
+/// action the user ran. That left a deck with an unknown `EX` type looking clean
+/// while typing and failing on Solve, with nothing in between (FND-039).
+///
+/// So this warns that the solve will refuse, rather than claiming the deck is
+/// merely imperfect. Phrased to say what will happen, not to imply it might work.
+pub fn unrecognised_excitation_warnings(deck: &NecDeck) -> Vec<String> {
+    deck.cards
+        .iter()
+        .filter_map(|c| match c {
+            Card::Ex(ex) => match ex.kind() {
+                nec_model::card::ExcitationKind::Unknown(t) => Some(format!(
+                    "EX type {t} (tag {}, segment {}) is not a recognised excitation; \
+                     NEC-2 defines types 0-5, and the solve will refuse this deck",
+                    ex.tag, ex.segment
+                )),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 /// Why a deck's requested frequencies cannot be solved, if they cannot.
 ///
 /// A frequency must be **finite and strictly positive**. Nothing checked this, and
@@ -1035,6 +1063,11 @@ pub fn diagnose(
     .into_iter()
     .flatten()
     {
+        out.push(ValidationDiagnostic::warning(w));
+    }
+    // Solver-independent too: an `EX` type nothing recognises is a fact about the
+    // deck, and both solvers refuse it.
+    for w in unrecognised_excitation_warnings(deck) {
         out.push(ValidationDiagnostic::warning(w));
     }
 
@@ -1565,6 +1598,72 @@ mod tests {
     /// Each degenerate class gets its own case, because they reach the same
     /// wrong answer by different routes and a single "bad frequency" test would
     /// pass while any one of them regressed.
+    /// FND-039: a deck with an unrecognised `EX` type looked clean in the GUI's
+    /// keystroke-time strip and then failed on Solve, with nothing in between.
+    /// Measured before the fix: `deck_warnings` returned `[]` and the solve
+    /// returned `EX: unknown excitation type (I1=9, ...)`.
+    #[test]
+    fn an_unrecognised_excitation_type_earns_a_caveat() {
+        let deck = parse(
+            "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
+             EX 9 1 11 0 1.0 0.0\nEN\n",
+        )
+        .expect("deck parses")
+        .deck;
+        let w = unrecognised_excitation_warnings(&deck);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("type 9") && w[0].contains("tag 1"), "{w:?}");
+        // It must not imply the deck might work: the solve refuses it.
+        assert!(w[0].contains("refuse"), "{w:?}");
+    }
+
+    /// It reaches `diagnose` as a **warning**, because the GUI's caveat strip
+    /// renders warnings and swallows errors — an error here would leave the
+    /// original defect exactly as it was.
+    #[test]
+    fn the_unrecognised_excitation_caveat_is_a_warning_not_an_error() {
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
+             EX 9 1 11 0 1.0 0.0\nEN\n",
+        );
+        let diags = diagnose(
+            &deck,
+            &segs,
+            &GroundModel::FreeSpace,
+            14.2e6,
+            SolverContext::cli_hallen(),
+        );
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.level == DiagnosticLevel::Warning && d.message.contains("type 9")),
+            "{diags:?}"
+        );
+        assert!(
+            !has_error(&diags),
+            "an error would be swallowed by the strip"
+        );
+    }
+
+    /// Negative control: every canonical type 0-5 is recognised, so an ordinary
+    /// deck earns no such caveat. Swept from the type list rather than spot-checked,
+    /// so a new canonical type cannot be silently reported as unrecognised.
+    #[test]
+    fn no_canonical_excitation_type_is_called_unrecognised() {
+        for t in 0..=5 {
+            let deck = parse(&format!(
+                "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nFR 0 1 0 0 14.2 0\n\
+                 EX {t} 1 11 0 1.0 0.0\nEN\n"
+            ))
+            .expect("deck parses")
+            .deck;
+            assert!(
+                unrecognised_excitation_warnings(&deck).is_empty(),
+                "EX type {t} is canonical and must not be called unrecognised"
+            );
+        }
+    }
+
     #[test]
     fn every_degenerate_frequency_class_is_refused() {
         let deck_with = |fr: &str| {

@@ -2137,3 +2137,35 @@ fn a_sweep_job_refuses_a_range_starting_at_or_below_zero() {
         "control: an ordinary range still prepares"
     );
 }
+
+/// FND-039: the caveat strip is where this defect was visible, so it is tested
+/// there and not only at the producer. A deck with an unrecognised `EX` type used
+/// to render as clean while typing and fail the moment Solve was pressed —
+/// measured: `deck_warnings` returned `[]`, then
+/// `EX: unknown excitation type (I1=9, ...)`.
+#[test]
+fn an_unrecognised_excitation_warns_while_typing_rather_than_at_solve() {
+    const EX9: &str = "CM unrecognised EX type\nCE\nGW 1 21 0 0 -5.2782 0 0 5.2782 0.001\n\
+                       GE 0\nFR 0 1 0 0 14.2 0\nEX 9 1 11 0 1.0 0.0\nEN\n";
+    let w = nec_gui::solve::deck_warnings(EX9, nec_gui::solve::SolverKind::Hallen);
+    assert!(
+        w.iter().any(|m| m.contains("type 9")),
+        "the strip must name the unrecognised type while typing: {w:?}"
+    );
+
+    // ...and the solve still refuses it. The caveat warns, it does not license.
+    assert!(
+        solve_deck_str(EX9, nec_gui::solve::SolverKind::Hallen).is_err(),
+        "an unrecognised EX type must still refuse at solve"
+    );
+
+    // Negative control: an ordinary deck earns no such caveat, so the check is
+    // not simply warning about every deck.
+    let clean = nec_gui::solve::deck_warnings(DIPOLE_DECK, nec_gui::solve::SolverKind::Hallen);
+    assert!(
+        !clean
+            .iter()
+            .any(|m| m.contains("not a recognised excitation")),
+        "a plain dipole must not be told its excitation is unrecognised: {clean:?}"
+    );
+}
