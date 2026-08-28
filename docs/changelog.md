@@ -91,6 +91,18 @@ see `docs/project/findings-ledger.md`.
 
 ### Added
 
+- **`fnec project convert`** — the CLI entry point for project files (FND-006,
+  FND-016). GAP-015 asked for Markdown project import and export "with documented
+  schema, round-trip stability tests, **and explicit CLI/API entry points**". The
+  library half shipped and the item was marked Done citing only that half; the
+  entry point was never written, which is also why `nec_project` sat in the CLI's
+  manifest as a dependency no source file imported. One omission, two findings.
+
+  Format comes from each path's extension. Conversion parses then renders through
+  `nec_project`, so the converter cannot be more permissive than the loader it
+  delegates to, and it renders before touching the destination — a conversion that
+  cannot be produced does not truncate the file it was going to replace.
+
 - **`scripts/check-doc-attachment.py`** — a gate for doc comments that came
   adrift from the item they describe (FND-061). Two shapes, both of which
   compile, pass clippy and pass every test: a blank line between a `///` block
