@@ -15,6 +15,21 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release-tag checker no longer misreports what it examined** (FND-062).
+  `in_flight` was set whenever the newest changelog section matched the workspace
+  version, whether or not that version was tagged — so a *tagged* release was
+  called "in flight", and the count of versions checked subtracted it even though
+  its tag had been verified. Found by reading the checker's own output during the
+  v0.16.0 release, where it said `7 released version(s) checked ... 0.16.0 in
+  flight` about a tag minted minutes before.
+
+  Its self-test now asserts the checker's **output**, not only its exit code.
+  Every prior case read the exit code, which is why a wrong summary survived: the
+  checker passed while under-reporting its own coverage.
+
+
 ## [0.16.0] — 2026-08-28 — What the solver will not answer
 
 Sixteen changes closing nineteen findings. Most are the same decision in

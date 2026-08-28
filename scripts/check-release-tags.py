@@ -193,7 +193,16 @@ def main() -> int:
               file=sys.stderr)
         return 1
     newest = max(changelog_versions, key=semver_key)
-    in_flight = newest if newest == head_version else None
+    # In flight means "the newest release has no tag *yet*" — so a version that
+    # already has one is not in flight, it is simply released. Testing only
+    # `newest == head_version` made this true from the moment a release merged
+    # until the next version bump, which reported a tagged release as still in
+    # flight and, worse, subtracted it from the `checked` count below although
+    # its tag *was* checked. That is the arithmetic the comment on `checked`
+    # warns against, made by the line that comment sits under.
+    in_flight = (
+        newest if newest == head_version and f"v{newest}" not in tags else None
+    )
 
     for version in sorted(set(changelog_versions), key=semver_key):
         if version in UNTAGGED_RELEASES:

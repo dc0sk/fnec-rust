@@ -144,6 +144,34 @@ def e2e(name: str, versions: list[str], tags: dict[str, str], head: str, want: i
         failures.append(f"{name}: exit {got}, want {want}")
 
 
+def e2e_reports(name: str, versions: list[str], tags: dict[str, str], head: str,
+                must_contain: list[str], must_not_contain: list[str]) -> None:
+    """Assert on what the checker *says*, not only on whether it passed.
+
+    Every other case here reads the exit code, which is why a wrong summary line
+    survived to be found by hand during a release: the checker exited 0 while
+    calling a tagged release "in flight" and subtracting it from the count of
+    versions it had examined. A checker that misreports its own coverage is the
+    one kind that must not, so its output gets asserted too.
+    """
+    global ran
+    ran += 1
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "repo"
+        build_repo(root, versions, tags, head)
+        out = subprocess.run(
+            [sys.executable,
+             str(Path(__file__).parent.resolve() / "check-release-tags.py")],
+            cwd=root, capture_output=True, text=True,
+        ).stdout
+    for needle in must_contain:
+        if needle not in out:
+            failures.append(f"{name}: expected {needle!r} in output, got {out.strip()!r}")
+    for needle in must_not_contain:
+        if needle in out:
+            failures.append(f"{name}: {needle!r} must not appear, got {out.strip()!r}")
+
+
 def e2e_aged(name: str, versions: list[str], tags: dict[str, str], head: str,
              changelog_age_days: int, want: int) -> None:
     """Like `e2e`, but backdates the commit that introduces the newest section.
@@ -182,6 +210,22 @@ e2e("untagged release", ["1.0.0", "1.1.0"], {"v1.1.0": "1.1.0"}, "1.1.0", 1)
 # The release in flight — its section exists before its tag does, so a release PR
 # must not fail its own gate.
 e2e("in flight", ["1.0.0", "1.1.0"], {"v1.0.0": "1.0.0"}, "1.1.0", 0)
+
+# The summary, not just the verdict. Found during the v0.16.0 release: with the
+# newest version *tagged*, the checker still called it "in flight" and subtracted
+# it from `checked`, so it reported examining one fewer version than it had.
+e2e_reports(
+    "a tagged newest release is not called in flight",
+    ["1.0.0", "1.1.0"], {"v1.0.0": "1.0.0", "v1.1.0": "1.1.0"}, "1.1.0",
+    must_contain=["2 released version(s) checked"],
+    must_not_contain=["in flight"],
+)
+e2e_reports(
+    "an untagged newest release still is",
+    ["1.0.0", "1.1.0"], {"v1.0.0": "1.0.0"}, "1.1.0",
+    must_contain=["1 released version(s) checked", "1.1.0 in flight"],
+    must_not_contain=[],
+)
 
 # ...but only while it really is the version being released. A stray section is
 # not excused just for being newest.
