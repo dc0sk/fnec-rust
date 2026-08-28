@@ -15,6 +15,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-28 — What the solver will not answer
+
+Sixteen changes closing nineteen findings. Most are the same decision in
+different places: when fnec cannot answer honestly it refuses, rather than
+printing a number. Seven new findings were opened and deliberately left open —
+see `docs/project/findings-ledger.md`.
+
 ### Added
 
 - **`scripts/check-doc-attachment.py`** — a gate for doc comments that came
@@ -1884,7 +1891,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dc0sk/fnec-rust/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/dc0sk/fnec-rust/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/dc0sk/fnec-rust/compare/v0.12.0...v0.13.0
