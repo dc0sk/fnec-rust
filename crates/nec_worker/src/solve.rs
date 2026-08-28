@@ -365,6 +365,16 @@ fn solve_inner(
         return Err(SolveError::UnsupportedConfig(err));
     }
 
+    // 2c. Stamps are computed here, before the RHS, because their *caveats* must
+    // be in hand if the RHS build fails. `build_deck_stamps` needs only the deck,
+    // the segments and the frequency, so nothing about the ordering is forced —
+    // and with it after step 3, a deck that was both flawed (a skipped `LD`) and
+    // refused (an `EX` naming a missing segment) reported the refusal with the
+    // flaw missing, which is FND-059's own sentence one exit over. Applying them
+    // stays at step 4, where the matrix exists.
+    let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
+    warnings.extend(stamps.warnings.iter().cloned());
+
     // 3. Build Hallén RHS
     let hallen_rhs = build_hallen_rhs(&deck, &segs, freq_hz).map_err(|e| {
         use nec_solver::ExcitationError;
@@ -389,8 +399,6 @@ fn solve_inner(
     })?;
 
     // 4. Assemble Z-matrix and apply loads / TL stamps
-    let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
-    warnings.extend(stamps.warnings.iter().cloned());
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
     stamps.apply(&mut z_mat);
 

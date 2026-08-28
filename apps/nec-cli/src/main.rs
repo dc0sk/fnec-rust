@@ -582,26 +582,6 @@ fn exec_fallback_warning(
     ))
 }
 
-/// The negative-resistance caveat for one distributed result, if it earns one.
-///
-/// Split out so it can be unit-tested without a worker: the distributed path is
-/// the one frontend whose end-to-end gate needs SSH, and a check nothing can
-/// exercise is how FND-014 survived in the first place.
-///
-/// The feedpoint tag/segment come from `nec_solver::first_delta_gap_feedpoint` —
-/// the same call the worker uses to decide which segment it reported — because the
-/// wire protocol does not carry them back. The controller already fabricates
-/// `tag: 0, seg: 0` for `SweepPointSummary`, and a caveat naming segment 0 would
-/// point at nothing.
-///
-/// Sharing the call is the point. This used to hand-roll the filter and a comment
-/// asked the two files to be kept in step; they diverged twice inside one review
-/// (FND-031).
-///
-/// Only `Hallen` reaches here in practice — the worker rejects any other basis —
-/// but that invariant lives in another crate, so this matches on the mode rather
-/// than assuming it. If a worker ever gains the MPIE, this must not go on
-/// recommending `--solver mpie` to someone already running it.
 /// The worker-warning lines to print, given what has already been printed.
 ///
 /// A free function, and deduplicating, for two reasons that are the same reason.
@@ -625,6 +605,26 @@ fn worker_warning_lines(
         .collect()
 }
 
+/// The negative-resistance caveat for one distributed result, if it earns one.
+///
+/// Split out so it can be unit-tested without a worker: the distributed path is
+/// the one frontend whose end-to-end gate needs SSH, and a check nothing can
+/// exercise is how FND-014 survived in the first place.
+///
+/// The feedpoint tag/segment come from `nec_solver::first_delta_gap_feedpoint` —
+/// the same call the worker uses to decide which segment it reported — because the
+/// wire protocol does not carry them back. The controller already fabricates
+/// `tag: 0, seg: 0` for `SweepPointSummary`, and a caveat naming segment 0 would
+/// point at nothing.
+///
+/// Sharing the call is the point. This used to hand-roll the filter and a comment
+/// asked the two files to be kept in step; they diverged twice inside one review
+/// (FND-031).
+///
+/// Only `Hallen` reaches here in practice — the worker rejects any other basis —
+/// but that invariant lives in another crate, so this matches on the mode rather
+/// than assuming it. If a worker ever gains the MPIE, this must not go on
+/// recommending `--solver mpie` to someone already running it.
 fn distributed_negative_resistance_warnings(
     z_re: f64,
     deck: &nec_model::deck::NecDeck,

@@ -225,6 +225,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   A task refused *before* anything is parsed reports no caveats, and that is
   asserted too — it must not invent them for a deck that never existed.
 
+  The caveats are collected *before* the right-hand-side build rather than after,
+  so a flaw found later than the parse survives too: a skipped `LD` plus an `EX`
+  naming a segment the geometry lacks used to report the refusal with the load
+  never mentioned.
+
 - **The remote worker stops losing information the local path keeps** (FND-049,
   FND-041). Two separate leaks, same class.
 

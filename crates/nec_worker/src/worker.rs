@@ -303,6 +303,7 @@ mod tests {
         let result = process_task(&task_line(deck));
         let TaskResult::Error {
             error_code,
+            error_message,
             warnings,
             ..
         } = &result
@@ -310,9 +311,46 @@ mod tests {
             panic!("expected a refusal for a deck with no driven feedpoint: {result:?}");
         };
         assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+        // The message, not just the code: `UnsupportedConfig` is also what an
+        // earlier RHS failure yields, so asserting the code alone would let a
+        // reclassification silently certify the wrong exit as the tested one.
+        assert!(
+            error_message.contains("no driven feedpoint"),
+            "expected the no-feedpoint exit, got: {error_message}"
+        );
         assert!(
             warnings.iter().any(|w| w.contains("ZZ")),
             "the ignored card must survive the refusal: {warnings:?}"
+        );
+    }
+
+    /// The residual half of FND-059: a flaw found *later* than the parse must also
+    /// survive a refusal. A skipped `LD` is a stamp-level caveat, and stamps used
+    /// to be computed after the RHS build — so a deck with a bad `LD` **and** an
+    /// `EX` naming a missing segment reported the refusal with the flaw missing.
+    /// Found by review after the first fix, by walking every error exit and asking
+    /// which caveats existed yet at each one.
+    #[test]
+    fn a_flaw_found_after_parsing_also_survives_a_refusal() {
+        let deck = "CM skipped load, and a source on a segment that is not there\nCE\n\
+                    GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 9 1 1 51 0.0 0.0 0.0\n\
+                    EX 0 1 999 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_message,
+            warnings,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for an EX naming a missing segment: {result:?}");
+        };
+        assert!(
+            error_message.contains("999"),
+            "the refusal must name the missing segment: {error_message}"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("LD")),
+            "the skipped load must survive the refusal: {warnings:?}"
         );
     }
 

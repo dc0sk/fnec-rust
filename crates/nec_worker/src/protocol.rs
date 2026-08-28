@@ -89,6 +89,49 @@ mod tests {
         let back: TaskResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back.task_id(), "t-err");
         assert!(!back.is_ok());
+        // Asserted on the way back, not just on the way out: without this a
+        // `skip_serializing` on the field would leave every test green.
+        let TaskResult::Error { warnings, .. } = back else {
+            panic!("expected the error variant");
+        };
+        assert_eq!(warnings, vec!["line 5: unknown card 'ZZ'".to_string()]);
+    }
+
+    /// The `Error` variant's half of the back-compat contract. The `Ok` variant
+    /// has had this since FND-026; the variant this field was *added* to had
+    /// nothing, which is the half that matters for a mixed-version pool.
+    #[test]
+    fn a_legacy_error_line_without_warnings_still_deserialises() {
+        let legacy = r#"{"status":"error","task_id":"t1","frequency_hz":14.2e6,
+            "error_code":"singular_matrix","error_message":"boom"}"#;
+        let back: TaskResult = serde_json::from_str(legacy).expect("an older worker's line");
+        let TaskResult::Error { warnings, .. } = back else {
+            panic!("expected the error variant");
+        };
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// ...and the other direction: a newer worker's extra field must not break an
+    /// older controller. Unknown fields are ignored; an unknown `error_code`
+    /// **value** is not, which is why this field was added instead of a new code.
+    #[test]
+    fn an_error_line_with_an_unknown_field_still_deserialises() {
+        let newer = r#"{"status":"error","task_id":"t1","frequency_hz":14.2e6,
+            "error_code":"singular_matrix","error_message":"boom",
+            "warnings":["a caveat"],"some_future_field":42}"#;
+        let back: TaskResult = serde_json::from_str(newer).expect("a newer worker's line");
+        let TaskResult::Error { warnings, .. } = back else {
+            panic!("expected the error variant");
+        };
+        assert_eq!(warnings, vec!["a caveat".to_string()]);
+
+        let unknown_code = r#"{"status":"error","task_id":"t1","frequency_hz":14.2e6,
+            "error_code":"brand_new_code","error_message":"boom"}"#;
+        assert!(
+            serde_json::from_str::<TaskResult>(unknown_code).is_err(),
+            "an unknown error_code must fail the line — the reason a field was \
+             added rather than a new code"
+        );
     }
 
     #[test]
