@@ -18,7 +18,6 @@
 //! ground) are emitted as Python `UserWarning`s, so they are visible by default and
 //! can be filtered or escalated with the standard `warnings` module.
 
-use nec_model::card::Card;
 use nec_parser::parse;
 use nec_solver::validate;
 use nec_solver::{
@@ -30,23 +29,12 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 /// Extract all frequencies (Hz) from the FR cards in a deck.
+/// The frequencies this deck will be solved at.
+///
+/// Delegates to `nec_solver::frequency`, the one expansion. This read **every**
+/// `FR` card; `nec2c` runs only the last one before execution (FND-057).
 fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
-    let mut freqs = Vec::new();
-    for card in &deck.cards {
-        let Card::Fr(fr) = card else { continue };
-        let step_count = fr.steps.max(1) as usize;
-        for i in 0..step_count {
-            let f_mhz = if fr.step_type == 1 {
-                // Multiplicative: freq(i) = start * step_mhz^i
-                fr.frequency_mhz * fr.step_mhz.powi(i as i32)
-            } else {
-                // Linear
-                fr.frequency_mhz + fr.step_mhz * (i as f64)
-            };
-            freqs.push(f_mhz * 1e6);
-        }
-    }
-    freqs
+    nec_solver::frequencies_hz(deck)
 }
 
 /// The solver context these bindings run under.
