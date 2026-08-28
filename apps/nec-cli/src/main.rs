@@ -582,6 +582,29 @@ fn exec_fallback_warning(
     ))
 }
 
+/// The worker-warning lines to print, given what has already been printed.
+///
+/// A free function, and deduplicating, for two reasons that are the same reason.
+/// A caveat that does not vary with frequency should be read once, not once per
+/// point: the local CLI prints parse warnings exactly once, so echoing a worker's
+/// per frequency turned one line into M+1 for a sweep. And the *deciding* lived
+/// inline in the result loop, which nothing can call — the arrangement that let
+/// the `Ok` arm's warnings go unread for a release (FND-026, FND-034).
+///
+/// Keyed on the rendered line, so the same text from two different workers is
+/// still shown separately; a mixed-version pool is exactly when that matters.
+fn worker_warning_lines(
+    label: &str,
+    warnings: &[String],
+    seen: &mut std::collections::HashSet<String>,
+) -> Vec<String> {
+    warnings
+        .iter()
+        .map(|w| format!("warning: worker '{label}': {w}"))
+        .filter(|line| seen.insert(line.clone()))
+        .collect()
+}
+
 /// The negative-resistance caveat for one distributed result, if it earns one.
 ///
 /// Split out so it can be unit-tested without a worker: the distributed path is
@@ -748,13 +771,8 @@ fn run_distributed_solve(
                 // stamps, so these exist nowhere else (FND-026). An older worker
                 // sends none, and this prints none.
                 //
-                // Once per distinct line, not once per frequency: see
-                // `seen_worker_warnings` above.
-                for w in &warnings {
-                    let line = format!("warning: worker '{label}': {w}");
-                    if seen_worker_warnings.insert(line.clone()) {
-                        eprintln!("{line}");
-                    }
+                for line in worker_warning_lines(&label, &warnings, &mut seen_worker_warnings) {
+                    eprintln!("{line}");
                 }
                 let freq_mhz = freq_hz / 1e6;
                 let report = format!(
@@ -832,12 +850,22 @@ fn run_distributed_solve(
                     frequency_hz,
                     error_code,
                     error_message,
+                    warnings,
                     ..
                 },
                 label,
-            )) => Err(format!(
-                "worker '{label}' failed at {frequency_hz} Hz: {error_code:?} — {error_message}"
-            )),
+            )) => {
+                // A refused deck can also be a flawed one, and the flaw is worth
+                // reading even though the solve stopped — often it is the reason
+                // (FND-059). Destructuring these with `..` is how the `Ok` arm's
+                // warnings went unread for a whole release (FND-026).
+                for line in worker_warning_lines(&label, &warnings, &mut seen_worker_warnings) {
+                    eprintln!("{line}");
+                }
+                Err(format!(
+                    "worker '{label}' failed at {frequency_hz} Hz: {error_code:?} — {error_message}"
+                ))
+            }
             Err(e) => Err(e),
         };
         solved.push((fidx, result, elapsed_ms));
@@ -1164,8 +1192,8 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, steer_execution_mode_by_profile, CompatibilityProfile,
-        ExecutionMode,
+        exec_fallback_warning, steer_execution_mode_by_profile, worker_warning_lines,
+        CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use num_complex::Complex64;
@@ -1287,6 +1315,41 @@ mod tests {
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
         );
+    }
+
+    /// FND-041's second-order defect: the local CLI prints a parse warning once,
+    /// so echoing the worker's copy per frequency turned 1 line into M+1 for an
+    /// M-point sweep.
+    #[test]
+    fn a_repeated_worker_caveat_is_printed_once_per_sweep() {
+        let mut seen = std::collections::HashSet::new();
+        let w = vec!["line 5: unknown card 'ZZ'".to_string()];
+        let first = worker_warning_lines("ssh:hostA", &w, &mut seen);
+        assert_eq!(first.len(), 1, "the first point must print it");
+        assert!(first[0].contains("ssh:hostA") && first[0].contains("ZZ"));
+        assert!(
+            worker_warning_lines("ssh:hostA", &w, &mut seen).is_empty(),
+            "the second frequency point must not repeat it"
+        );
+    }
+
+    /// ...but the same text from a *different* worker is its own fact. A
+    /// mixed-version pool is exactly when that distinction matters, so deduping
+    /// on the message alone would hide which host disagreed.
+    #[test]
+    fn the_same_caveat_from_another_worker_is_still_shown() {
+        let mut seen = std::collections::HashSet::new();
+        let w = vec!["line 5: unknown card 'ZZ'".to_string()];
+        assert_eq!(worker_warning_lines("ssh:hostA", &w, &mut seen).len(), 1);
+        let other = worker_warning_lines("ssh:hostB", &w, &mut seen);
+        assert_eq!(other.len(), 1, "hostB's copy is a separate fact");
+        assert!(other[0].contains("ssh:hostB"));
+    }
+
+    #[test]
+    fn a_worker_with_no_caveats_prints_nothing() {
+        let mut seen = std::collections::HashSet::new();
+        assert!(worker_warning_lines("ssh:hostA", &[], &mut seen).is_empty());
     }
 
     #[test]

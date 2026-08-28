@@ -157,7 +157,9 @@ A successful result message:
   },
   "vswr_50": 1.46,
   "feedpoint_current_mag": 0.01384,
-  "feedpoint_current_phase_deg": -1.34
+  "feedpoint_current_phase_deg": -1.34,
+  "exec_used": "cpu",                 // optional; absent from an older worker
+  "warnings": []                      // optional; caveats the deck earned
 }
 ```
 
@@ -169,9 +171,20 @@ A failed result message:
   "status": "error",
   "frequency_hz": 14.175e6,
   "error_code": "singular_matrix",    // machine-readable code
-  "error_message": "Z-matrix is singular at 14.175 MHz — check geometry"
+  "error_message": "Z-matrix is singular at 14.175 MHz — check geometry",
+  "warnings": []                      // optional; see below
 }
 ```
+
+`warnings` is optional on **both** shapes and defaults to empty, so an older
+worker that sends no field still deserialises and an older controller ignores a
+newer worker's. That is the only kind of protocol change that is safe in both
+directions here, and it is why new `error_code` values are not added instead.
+
+On the error shape it carries the caveats the deck earned *before* the solve
+failed: a deck can be both flawed and refused, and without this the flaw is lost
+(FND-059). A task refused before the deck is parsed at all — an undecodable
+payload — carries none.
 
 Defined `error_code` values:
 
