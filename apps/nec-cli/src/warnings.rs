@@ -70,3 +70,27 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 
 // PT cards are applied to the current output in solve_session (PH9-CHK-004);
 // no deferred-support warning is emitted.
+
+/// Say that the GPU-resident dense solve is measured slower than the CPU.
+///
+/// PH7-CHK-003 measured it at **0.04x-0.48x** the CPU across every tested size,
+/// and identified the cause as structural rather than tuning: the LU dispatches
+/// one workgroup, so it runs on a single compute unit and more GPU hardware
+/// cannot help. Its own recommendation was to treat the path as not-recommended
+/// until the LU is re-implemented across workgroups — recorded in the document
+/// and never acted on, so a user asking for `--exec gpu` still got the slow path
+/// silently (FND-009).
+///
+/// A warning rather than a removal: the Z-fill and RP kernels on the same flag
+/// earn their place decisively (100-290x and 56-234x), so `--exec gpu` is worth
+/// asking for. It is the dense solve alone that loses, and the honest thing is
+/// to say which part.
+pub(super) fn warn_gpu_resident_solve_is_slower() {
+    eprintln!(
+        "warning: the GPU-resident dense solve was measured at 0.04x-0.48x the CPU \
+at every tested size (PH7-CHK-003). The cause is structural: its LU dispatches one \
+workgroup, so it runs on a single compute unit. The Z-fill and far-field kernels on \
+this flag are much faster than the CPU; it is the solve that loses. Use --exec cpu \
+if wall-clock matters."
+    );
+}

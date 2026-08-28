@@ -966,6 +966,11 @@ fn maybe_gpu_resident_hallen(
         })
         .collect();
 
+    // Measured slower than the CPU at every tested size, for a structural reason
+    // (FND-009). Said once, here, where the path is actually taken — a note in a
+    // design document is not something a user running the flag ever sees.
+    crate::warnings::warn_gpu_resident_solve_is_slower();
+
     let x = pollster::block_on(nec_accel::solve_hallen_gpu_resident(
         &z_inputs,
         &hallen_rhs.rhs,
@@ -1419,7 +1424,7 @@ pub(super) fn solve_frequency_point(
 
         let gpu_segments: Vec<_> = segs
             .iter()
-            .map(|seg| nec_accel::gpu_kernels::GpuSegment {
+            .map(|seg| nec_accel::kernel_reference::GpuSegment {
                 midpoint: seg.midpoint,
                 direction: seg.direction,
                 length: seg.length,

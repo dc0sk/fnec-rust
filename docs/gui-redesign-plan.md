@@ -32,7 +32,7 @@ start-coding detail.
 - `crates/nec_solver/src/farfield.rs` — `compute_radiation_pattern(&[Segment],
   &[Complex64], freq_hz, &[FarFieldPoint], &GroundModel) -> Vec<FarFieldResult>`
   (per-point `gain_total_dbi`, θ/φ components, −999.99 dB floor sentinel).
-- `crates/nec_accel/src/{wgpu_device.rs,gpu_kernels.rs}` — compute-only wgpu
+- `crates/nec_accel/src/{wgpu_device.rs,kernel_reference.rs}` — compute-only wgpu
   **29.x** device (`new_without_display_handle`), Hallén-FR kernels.
 - `crates/nec_model/src/card.rs` — `GwCard`, `ExCard`, `GnCard`, `LdCard`,
   `FrCard` field sets (the editors' data model).
@@ -222,7 +222,7 @@ NOT add a direct wgpu dependency to nec-gui). Requires iced feature
   the same worker. `rayon` becomes a direct nec-gui dependency (already in the
   workspace).
 - **GPU compute (`nec_accel`)**: untouched; a later optional increment can
-  route the sweep worker through `HallenFrGpuKernel`. Render and compute
+  route the sweep worker through `HallenFrReferenceKernel`. Render and compute
   devices are independent (§3.5).
 
 ### Solver-crate reuse
