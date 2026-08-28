@@ -43,10 +43,14 @@ fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
 /// recommends the MPIE must tell a Python caller to reach for the CLI. Adopting
 /// `solve_mpie_session` here is tracked separately; what matters is that the
 /// choice is stated once rather than defaulted three times.
-fn py_solver_context() -> nec_solver::validate::SolverContext<'static> {
+fn py_solver_context(
+    kind: nec_solver::validate::SolverKind,
+) -> nec_solver::validate::SolverContext<'static> {
     nec_solver::validate::SolverContext {
-        kind: nec_solver::validate::SolverKind::Hallen,
-        mpie_remedy: "re-run it with the fnec CLI's `--solver mpie`",
+        kind,
+        // The bindings have a solver argument now, so the remedy names it rather
+        // than pointing a Python caller at a different program (FND-055).
+        mpie_remedy: "pass solver=\"mpie\"",
     }
 }
 
@@ -60,6 +64,7 @@ fn py_solver_context() -> nec_solver::validate::SolverContext<'static> {
 fn solve_at_freq(
     deck: &nec_model::deck::NecDeck,
     freq_hz: f64,
+    solver: nec_solver::validate::SolverKind,
 ) -> Result<(std::collections::HashMap<String, f64>, Vec<String>), String> {
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
     if segs.is_empty() {
@@ -71,20 +76,33 @@ fn solve_at_freq(
 
     // Same checks, in the same order, as the CLI and the GUI.
     let mut warnings = Vec::new();
-    for d in validate::diagnose(deck, &segs, &ground, freq_hz, py_solver_context()) {
+    for d in validate::diagnose(deck, &segs, &ground, freq_hz, py_solver_context(solver)) {
         match d.level {
             nec_model::DiagnosticLevel::Error => return Err(d.message),
             nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
         }
     }
 
-    let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
+    // The MPIE builds its own system from the geometry and reads neither the
+    // assembled matrix nor the Hallén bookkeeping, so assembling them here would
+    // be an O(N^2) fill computed and discarded (FND-055). Its refusals travel
+    // inside `solve_mpie_session`, so this branch cannot hand it a deck it would
+    // answer wrongly.
+    let mpie = solver == nec_solver::validate::SolverKind::Mpie;
+
+    let mut z_mat = if mpie {
+        nec_solver::ZMatrix::new(0)
+    } else {
+        assemble_z_matrix_with_ground(&segs, freq_hz, &ground)
+    };
     // The shared seam: LD loads, TL lines and NT networks. NT was previously
     // absent here, so the same deck solved to a different impedance than the CLI
     // (FND-015).
-    let stamps = nec_solver::build_deck_stamps(deck, &segs, freq_hz);
-    warnings.extend(stamps.warnings.iter().cloned());
-    stamps.apply(&mut z_mat);
+    if !mpie {
+        let stamps = nec_solver::build_deck_stamps(deck, &segs, freq_hz);
+        warnings.extend(stamps.warnings.iter().cloned());
+        stamps.apply(&mut z_mat);
+    }
 
     let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
@@ -101,7 +119,13 @@ fn solve_at_freq(
     let driven_by_current = nec_solver::feedpoints(deck)
         .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
 
-    let (currents, port_voltage) = if driven_by_current {
+    let (currents, port_voltage) = if mpie {
+        // Its refusals travel inside `solve_mpie_session` (#414), so this branch
+        // cannot hand it a deck it would answer with a card silently ignored.
+        let currents = nec_solver::solve_mpie_session(deck, &segs, &ground, freq_hz)
+            .map_err(|e| e.to_string())?;
+        (currents, None)
+    } else if driven_by_current {
         let fp = nec_solver::solve_current_source_hallen(deck, &segs, &z_mat, freq_hz)
             .map_err(|e| e.to_string())?;
         (fp.currents, Some(fp.port_voltage))
@@ -142,7 +166,7 @@ fn solve_at_freq(
             ex.segment as usize,
             deck,
             &segs,
-            py_solver_context(),
+            py_solver_context(solver),
         ) {
             warnings.push(w);
         }
@@ -186,7 +210,7 @@ fn solve_at_freq(
             seg.tag_index as usize,
             deck,
             &segs,
-            py_solver_context(),
+            py_solver_context(solver),
         ) {
             warnings.push(w);
         }
@@ -235,6 +259,24 @@ fn emit_warnings(py: Python<'_>, messages: &[String], seen: &mut Vec<String>) ->
     Ok(())
 }
 
+/// Map the Python `solver=` argument onto the shared solver kind.
+///
+/// `fnec_py` was the last frontend without a solver choice: the CLI has
+/// `--solver mpie` and the GUI a picker, so a Python caller with a T/Y junction
+/// or a closed loop was told to reach for a different program (FND-055). The
+/// machinery is one library call — the same `solve_mpie_session` both others use.
+///
+/// Defaulted rather than required, so every existing caller keeps its behaviour.
+fn solver_from_name(name: &str) -> PyResult<nec_solver::validate::SolverKind> {
+    match name {
+        "hallen" => Ok(nec_solver::validate::SolverKind::Hallen),
+        "mpie" => Ok(nec_solver::validate::SolverKind::Mpie),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown solver '{other}': expected 'hallen' or 'mpie'"
+        ))),
+    }
+}
+
 /// Solve a NEC deck string at the first frequency defined by its FR card.
 ///
 /// Returns a dict with keys: ``freq_mhz``, ``tag``, ``seg``,
@@ -242,7 +284,9 @@ fn emit_warnings(py: Python<'_>, messages: &[String], seen: &mut Vec<String>) ->
 ///
 /// Raises ``RuntimeError`` on parse or solver errors.
 #[pyfunction]
-fn solve_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
+#[pyo3(signature = (deck, solver = "hallen"))]
+fn solve_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject> {
+    let solver = solver_from_name(solver)?;
     let result = parse(deck)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
     let freqs = frequencies_from_deck(&result.deck);
@@ -250,8 +294,8 @@ fn solve_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
         .first()
         .copied()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("deck has no FR card"))?;
-    let (rec, mut warnings) =
-        solve_at_freq(&result.deck, freq_hz).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+    let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz, solver)
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
     let mut seen = Vec::new();
     let parse_warnings: Vec<String> = result.warnings.iter().map(ToString::to_string).collect();
     emit_warnings(py, &parse_warnings, &mut seen)?;
@@ -272,7 +316,9 @@ fn solve_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
 ///
 /// Raises ``RuntimeError`` on parse or solver errors.
 #[pyfunction]
-fn sweep_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
+#[pyo3(signature = (deck, solver = "hallen"))]
+fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject> {
+    let solver = solver_from_name(solver)?;
     let result = parse(deck)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
     let freqs = frequencies_from_deck(&result.deck);
@@ -285,9 +331,19 @@ fn sweep_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
     emit_warnings(py, &parse_warnings, &mut seen)?;
 
     let mut records = Vec::with_capacity(freqs.len());
+    let mut z_res: Vec<f64> = Vec::with_capacity(freqs.len());
     for freq_hz in freqs {
-        let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz)
+        let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz, solver)
             .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        if let Some(z) = rec.get("z_re") {
+            z_res.push(*z);
+        }
+        // The per-point negative-resistance sentence embeds `Re Z = {z_re:.3}`,
+        // so every point's text differs and `seen` cannot dedup it: a 500-point
+        // junctioned sweep raised 500 distinct `UserWarning`s (FND-032). Held
+        // back here and reported once below, which is what the GUI does — through
+        // the same producer, so the two cannot drift.
+        warnings.retain(|w| !nec_solver::validate::is_negative_resistance_message(w));
         warnings.sort();
         emit_warnings(py, &warnings, &mut seen)?;
         let d = PyDict::new(py);
@@ -295,6 +351,20 @@ fn sweep_deck_str(py: Python<'_>, deck: &str) -> PyResult<PyObject> {
             d.set_item(k, v)?;
         }
         records.push(d.into_pyobject(py)?.into_any().unbind());
+    }
+
+    // One line for the whole sweep. The cause is a property of the geometry,
+    // fixed across the run, so repeating it per point restated a `z_re` the
+    // record already carries.
+    let segs = nec_solver::build_geometry(&result.deck)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    if let Some(w) = nec_solver::validate::swept_negative_resistance_caveat(
+        &z_res,
+        &result.deck,
+        &segs,
+        py_solver_context(solver),
+    ) {
+        emit_warnings(py, &[w], &mut seen)?;
     }
     Ok(pyo3::types::PyList::new(py, records)?.into())
 }

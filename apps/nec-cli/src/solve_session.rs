@@ -87,8 +87,8 @@ use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
     build_hallen_rhs, build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    merge_collinear_wire_endpoints, radiation_efficiency, scale_excitation_for_pulse_rhs, solve,
-    solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    merge_collinear_wire_endpoints, scale_excitation_for_pulse_rhs, solve, solve_hallen,
+    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
     solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
     GroundModel, Segment, ZMatrix,
 };
@@ -1495,9 +1495,10 @@ pub(super) fn solve_frequency_point(
             .iter()
             .map(|r| 0.5 * (r.v_source * r.current.conj()).re)
             .sum();
-        if p_in > 0.0 {
-            let eta = radiation_efficiency(segs, &i_vec, freq_hz, ground, p_in);
-            let delta_db = 10.0 * eta.log10();
+        // Through the shared producer, so the GUI's pattern view applies the same
+        // correction rather than reporting directivity as gain (FND-053).
+        if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)
+        {
             for row in &mut pattern_table {
                 for g in [
                     &mut row.gain_total_dbi,

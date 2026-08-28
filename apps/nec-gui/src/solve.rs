@@ -238,7 +238,13 @@ pub fn load_currents_str(
     deck_text: &str,
     solver: SolverKind,
 ) -> Result<crate::mesh::GeometryCurrents, String> {
-    let (segs, currents, _freq_hz, ground) = solve_for_currents(deck_text, solver)?;
+    let SolvedDeck {
+        segs,
+        currents,
+        freq_hz: _freq_hz,
+        ground,
+        v_vec: _v_vec,
+    } = solve_for_currents(deck_text, solver)?;
     let has_ground = !matches!(
         ground,
         GroundModel::FreeSpace | GroundModel::Deferred { .. }
@@ -274,7 +280,13 @@ pub fn pattern_grid_str(
     solver: SolverKind,
 ) -> Result<crate::mesh::PatternSolve, String> {
     use crate::mesh::{LOBE_N_PHI, LOBE_N_THETA};
-    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text, solver)?;
+    let SolvedDeck {
+        segs,
+        currents,
+        freq_hz,
+        ground,
+        v_vec,
+    } = solve_for_currents(deck_text, solver)?;
 
     let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
     let mut points = Vec::with_capacity(nt * np);
@@ -289,7 +301,14 @@ pub fn pattern_grid_str(
         }
     }
     let results = compute_radiation_pattern(&segs, &currents, freq_hz, &points, &ground);
-    let gains_dbi = results.iter().map(|r| r.gain_total_dbi as f32).collect();
+    // Directivity becomes gain over lossy ground, as the CLI has done since
+    // PH9-CHK-003. Without this the same deck's lobe read as gain in one frontend
+    // and directivity in the other, with nothing saying which (FND-053).
+    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
+    let gains_dbi = results
+        .iter()
+        .map(|r| (r.gain_total_dbi + delta_db) as f32)
+        .collect();
 
     let has_ground = !matches!(
         ground,
@@ -820,23 +839,15 @@ impl SweepJob {
     /// deck sweeps negative nearly everywhere, so this is the normal case, not the
     /// pathological one. One aggregate line instead, counting the points.
     pub fn negative_resistance_caveat(&self, points: &[SweepPoint]) -> Option<String> {
-        let n = points
-            .iter()
-            .filter(|p| nec_solver::validate::is_negative_resistance(p.z_re))
-            .count();
-        if n == 0 {
-            return None;
-        }
-        let cause = nec_solver::validate::negative_resistance_cause(
+        // Through the shared producer: `fnec_py` needs the same sentence, and a
+        // second copy is how the GUI's fix stayed local (FND-032).
+        let z_res: Vec<f64> = points.iter().map(|p| p.z_re).collect();
+        nec_solver::validate::swept_negative_resistance_caveat(
+            &z_res,
             &self.deck,
             &self.segs,
             gui_ctx(self.solver),
-        );
-        Some(format!(
-            "{n} of {} sweep points report negative feedpoint resistance, which is \
-             physically impossible for a passive antenna; those results are unreliable — {cause}",
-            points.len()
-        ))
+        )
     }
 }
 
@@ -881,13 +892,40 @@ pub fn pattern_slice_deck_path(
     pattern_slice_deck_str(&input, phi_deg, solver)
 }
 
+/// The lossy-ground gain correction for a GUI pattern, in dB (0.0 when none).
+///
+/// Re-parses the deck for its feedpoints rather than threading them through four
+/// call sites: the parse is already done once per pattern request and costs
+/// nothing beside the solve, and the alternative was a fifth parameter on a
+/// function that already carries five.
+fn gui_gain_correction_db(
+    deck_text: &str,
+    segs: &[nec_solver::Segment],
+    currents: &[Complex64],
+    freq_hz: f64,
+    ground: &GroundModel,
+    v_vec: &[Complex64],
+) -> f64 {
+    let Ok(parsed) = parse(deck_text) else {
+        return 0.0;
+    };
+    let p_in = nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, currents);
+    nec_solver::gain_correction_db(segs, currents, freq_hz, ground, p_in).unwrap_or(0.0)
+}
+
 /// Compute an elevation-plane radiation-pattern slice from a raw deck string.
 pub fn pattern_slice_deck_str(
     deck_text: &str,
     phi_deg: f64,
     solver: SolverKind,
 ) -> Result<Vec<PatternPoint>, String> {
-    let (segs, currents, freq_hz, ground) = solve_for_currents(deck_text, solver)?;
+    let SolvedDeck {
+        segs,
+        currents,
+        freq_hz,
+        ground,
+        v_vec,
+    } = solve_for_currents(deck_text, solver)?;
 
     // Build 37-point theta grid: 0, 5, 10, … 180 deg.
     let points: Vec<FarFieldPoint> = (0..=36)
@@ -898,13 +936,17 @@ pub fn pattern_slice_deck_str(
         .collect();
 
     let results = compute_radiation_pattern(&segs, &currents, freq_hz, &points, &ground);
+    // Same correction as the full-sphere grid: the elevation slice is the same
+    // quantity, and correcting one view and not the other would put two different
+    // numbers for one deck on two tabs (FND-053).
+    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
 
     Ok(results
         .into_iter()
         .map(|r| PatternPoint {
             theta_deg: r.theta_deg,
             phi_deg: r.phi_deg,
-            gain_total_dbi: r.gain_total_dbi,
+            gain_total_dbi: r.gain_total_dbi + delta_db,
         })
         .collect())
 }
@@ -942,7 +984,13 @@ pub fn current_distribution_deck_str(
     deck_text: &str,
     solver: SolverKind,
 ) -> Result<Vec<CurrentPoint>, String> {
-    let (segs, currents, _freq_hz, _ground) = solve_for_currents(deck_text, solver)?;
+    let SolvedDeck {
+        segs,
+        currents,
+        freq_hz: _freq_hz,
+        ground: _ground,
+        v_vec: _v_vec,
+    } = solve_for_currents(deck_text, solver)?;
 
     let mut pos: f64 = 0.0;
     let mut prev_mid: Option<[f64; 3]> = None;
@@ -973,23 +1021,26 @@ pub fn current_distribution_deck_str(
 // Internal: shared Hallen solve returning (segs, currents, freq_hz, ground)
 // ---------------------------------------------------------------------------
 
-fn solve_for_currents(
-    deck_text: &str,
-    solver: SolverKind,
-) -> Result<
-    (
-        Vec<nec_solver::Segment>,
-        Vec<Complex64>,
-        f64,
-        nec_solver::GroundModel,
-    ),
-    String,
-> {
+/// Everything a pattern or currents view needs from one solve.
+///
+/// A named struct rather than a five-tuple: it grew a fifth member when the gain
+/// correction needed the excitation vector (FND-053), at which point the tuple
+/// stopped being readable and clippy said so.
+struct SolvedDeck {
+    segs: Vec<nec_solver::Segment>,
+    currents: Vec<Complex64>,
+    freq_hz: f64,
+    ground: nec_solver::GroundModel,
+    /// Needed for the feedpoint input power the gain correction divides by.
+    v_vec: Vec<Complex64>,
+}
+
+fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
-    let _v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
+    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
     // The currents/pattern views share this path; they must refuse the same decks
     // the impedance view does rather than draw a plausible-looking wrong pattern.
@@ -1029,7 +1080,13 @@ fn solve_for_currents(
         solver,
     )?;
 
-    Ok((segs, currents, freq_hz, ground))
+    Ok(SolvedDeck {
+        segs,
+        currents,
+        freq_hz,
+        ground,
+        v_vec,
+    })
 }
 
 #[cfg(test)]
