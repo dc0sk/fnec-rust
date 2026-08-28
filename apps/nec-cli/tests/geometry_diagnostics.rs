@@ -298,6 +298,73 @@ fn distributed_run_refuses_laplace_loads_before_contacting_any_host() {
     assert_eq!(out.status.code(), Some(1), "must exit 1");
 }
 
+/// FND-018: the worker implements the Hallén basis only, so every task of a
+/// `--solver mpie` run failed `UnsupportedConfig` — but only after the pool had
+/// dialled every host, and once per frequency point. The answer was knowable
+/// before the first connection.
+///
+/// Proven the way its siblings are: the host name must not appear in stderr. A
+/// timing assertion would not do it — an unresolvable name fails DNS in
+/// milliseconds, so the delay this saves only shows on a host that resolves and
+/// does not answer, which a test cannot depend on.
+#[test]
+fn distributed_run_refuses_a_non_hallen_solver_before_contacting_any_host() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-solver-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg("--solver")
+        .arg("mpie")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-freesp-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--solver mpie is not supported with --hosts"),
+        "must name the flag it is refusing:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains(UNREACHABLE_HOST),
+        "must fail BEFORE contacting any host:\n{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(1), "must exit 1");
+}
+
+/// The negative control: the default solver is the one the worker implements, so
+/// a distributed Hallén run must still reach the hosts. Without this, refusing
+/// every solver would pass the test above.
+#[test]
+fn a_distributed_hallen_run_still_reaches_the_hosts() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-hallen-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-freesp-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("is not supported with --hosts"),
+        "a Hallén run must not be refused by the solver pre-check:\n{stderr}"
+    );
+}
+
 /// The sibling of the test above, and the reason the class matters more than the
 /// instance: `--ground-solver sommerfeld` was dropped by `--hosts` exactly as the
 /// Laplace loads were. The worker derives its ground model from the deck alone,

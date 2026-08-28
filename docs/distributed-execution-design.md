@@ -191,8 +191,8 @@ Defined `error_code` values:
 | Code | Meaning |
 |:-----|:--------|
 | `singular_matrix` | Z-matrix factorisation failed (NaN/Inf or zero pivot) |
-| `parse_error` | Deck failed to parse on the worker — a card the parser recognises carrying a field it cannot read. Free text is *not* this: it parses cleanly and is refused later as `unsupported_config`. Also used for a task line or base64 payload the worker cannot decode, which is a transport fault rather than a deck fault — noted as a known imprecision, [FND-060](project/findings-ledger.md) |
-| `unsupported_config` | The deck parsed but the worker will not solve it: a solver config it does not offer, geometry outside the supported class (FND-013) **or that fails to build at all**, an `EX` naming a segment the geometry lacks (FND-021), a current-source feedpoint it cannot price, or **no driven feedpoint to price** — a receive-only (`EX 1` plane-wave) deck, which the local CLI solves (FND-049) |
+| `parse_error` | Deck failed to parse on the worker — a card the parser recognises carrying a field it cannot read. Free text is *not* this: it parses cleanly and is refused later as `unsupported_config`. Also used for a task line or base64 payload the worker cannot decode. That is a transport fault rather than a deck fault, and the code cannot distinguish them without a new `ErrorCode` — so those messages open with `transport:` and state that **no deck was read** (FND-060) |
+| `unsupported_config` | The deck parsed but the worker will not solve it, **or the task asked for something it cannot honour** — a `solver_config.ground_model` other than `"none"`, which the worker refuses rather than discarding, since ground comes from the deck's `GN` card (FND-019). Also: a solver config it does not offer, geometry outside the supported class (FND-013) **or that fails to build at all**, an `EX` naming a segment the geometry lacks (FND-021), a current-source feedpoint it cannot price, or **no driven feedpoint to price** — a receive-only (`EX 1` plane-wave) deck, which the local CLI solves (FND-049) |
 | `resource_exhausted` | Worker ran out of memory |
 | `internal` | Catch-all for unexpected panics |
 

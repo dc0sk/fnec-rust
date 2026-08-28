@@ -51,9 +51,19 @@ fn process_task(line: &str) -> TaskResult {
                 task_id: "unknown".to_string(),
                 frequency_hz: 0.0,
                 error_code: ErrorCode::ParseError,
-                error_message: format!("failed to deserialize task: {e}"),
+                error_message: format!(
+                    "transport: the task line could not be decoded, so no deck was read: {e}"
+                ),
                 // Nothing has been parsed yet, so there are no deck caveats to
                 // report — these three failures happen before there is a deck.
+                //
+                // The code stays `ParseError` because `ErrorCode` is an
+                // externally-tagged serde enum with no `#[serde(other)]`: a new
+                // variant fails an older controller's whole result line, which
+                // the pool then reads as a dead worker and evicts. So the
+                // *message* carries the distinction instead, opening with
+                // "transport:" and saying no deck was read — the protocol doc
+                // records this as a known imprecision (FND-060).
                 warnings: Vec::new(),
             };
         }
@@ -64,6 +74,26 @@ fn process_task(line: &str) -> TaskResult {
     let basis = task.solver_config.basis.clone();
     let exec = task.solver_config.exec.clone();
 
+    // `ground_model` reads as though it selects one and does not: the worker
+    // derives ground from the deck's own `GN` card, which is authoritative and is
+    // what the local solve uses. Refusing a value it cannot honour turns a silent
+    // ignore into a statement — the FND-013 trap, which is that a field looking
+    // like a control while being discarded is worse than no field (FND-019).
+    if task.solver_config.ground_model != "none" {
+        return TaskResult::Error {
+            task_id,
+            frequency_hz: freq_hz,
+            error_code: ErrorCode::UnsupportedConfig,
+            error_message: format!(
+                "solver_config.ground_model = '{}' is not honoured: the worker takes the \
+                 ground model from the deck's GN card, not from the task. Send 'none' and \
+                 put the ground in the deck",
+                task.solver_config.ground_model
+            ),
+            warnings: Vec::new(),
+        };
+    }
+
     let deck_bytes = match decode_b64(&task.deck_b64) {
         Ok(b) => b,
         Err(e) => {
@@ -71,7 +101,9 @@ fn process_task(line: &str) -> TaskResult {
                 task_id,
                 frequency_hz: freq_hz,
                 error_code: ErrorCode::ParseError,
-                error_message: format!("base64 decode failed: {e}"),
+                error_message: format!(
+                    "transport: the task's base64 deck payload could not be decoded, so no deck was read: {e}"
+                ),
                 warnings: Vec::new(),
             };
         }
@@ -84,7 +116,9 @@ fn process_task(line: &str) -> TaskResult {
                 task_id,
                 frequency_hz: freq_hz,
                 error_code: ErrorCode::ParseError,
-                error_message: format!("deck is not valid UTF-8: {e}"),
+                error_message: format!(
+                    "transport: the decoded payload is not valid UTF-8, so no deck was read: {e}"
+                ),
                 warnings: Vec::new(),
             };
         }
@@ -366,6 +400,84 @@ mod tests {
             panic!("expected an error: {result:?}");
         };
         assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// FND-019: `ground_model` reads as though it selects one and never did. The
+    /// worker takes ground from the deck's `GN` card, so a controller that set
+    /// this field got its choice silently discarded — the FND-013 trap.
+    #[test]
+    fn a_ground_model_the_worker_cannot_honour_is_refused_not_ignored() {
+        let deck = "CM d\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(deck);
+        let line = format!(
+            r#"{{"task_id":"t1","deck_hash":"a","deck_b64":"{b64}",
+                "solver_config":{{"basis":"hallen","ground_model":"sommerfeld"}},
+                "frequency_hz":14.2e6}}"#
+        );
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = process_task(&line)
+        else {
+            panic!("a ground model the worker cannot honour must be refused");
+        };
+        assert_eq!(error_code, ErrorCode::UnsupportedConfig);
+        assert!(error_message.contains("sommerfeld"), "{error_message}");
+        assert!(error_message.contains("GN card"), "{error_message}");
+    }
+
+    /// The negative control: `"none"` is what every controller sends, and it must
+    /// keep working — refusing it would break every distributed run.
+    #[test]
+    fn the_default_ground_model_is_accepted() {
+        let deck = "CM d\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        assert!(
+            process_task(&task_line(deck)).is_ok(),
+            "the ordinary distributed path must be unaffected"
+        );
+    }
+
+    /// FND-060: a transport fault and a deck fault shared `ErrorCode::ParseError`
+    /// *and* a message shape, so a truncated SSH payload read to the user as a
+    /// typo in their antenna file. The code cannot change — a new `ErrorCode`
+    /// fails an older controller's whole result line — so the message carries it.
+    #[test]
+    fn a_transport_fault_does_not_read_as_a_deck_fault() {
+        for (line, what) in [
+            ("not json at all", "a corrupt task line"),
+            (
+                r#"{"task_id":"t1","deck_hash":"a","deck_b64":"!!!bad!!!",
+                   "solver_config":{"basis":"hallen","ground_model":"none"},"frequency_hz":14e6}"#,
+                "an undecodable payload",
+            ),
+        ] {
+            let TaskResult::Error { error_message, .. } = process_task(line) else {
+                panic!("{what} must be an error");
+            };
+            assert!(
+                error_message.starts_with("transport:"),
+                "{what} must name itself a transport fault: {error_message}"
+            );
+            assert!(
+                error_message.contains("no deck was read"),
+                "{what} must say no deck was read: {error_message}"
+            );
+        }
+    }
+
+    /// ...and a genuine deck fault must NOT claim to be a transport one, or the
+    /// distinction is decoration.
+    #[test]
+    fn a_deck_fault_is_not_dressed_as_a_transport_fault() {
+        let deck = "CM bad field\nCE\nGW 1 51 zz 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let TaskResult::Error { error_message, .. } = process_task(&task_line(deck)) else {
+            panic!("expected a parse error");
+        };
+        assert!(!error_message.starts_with("transport:"), "{error_message}");
     }
 
     /// The negative control: a genuine syntax error still earns `ParseError`, so

@@ -198,7 +198,18 @@ pub struct WorkerSolverConfig {
     /// Solver basis: `"hallen"` | `"sinusoidal"` | `"pulse"` | `"continuity"`.
     #[serde(default = "default_basis")]
     pub basis: String,
-    /// Ground model: `"none"` | `"perfect"` | `"sommerfeld"`.
+    /// **Not honoured, and refused if it is not `"none"`** (FND-019).
+    ///
+    /// It reads as though it selects a ground model. It does not: the worker
+    /// derives ground from the deck's own `GN` card via `ground_model_from_deck`,
+    /// which is the authoritative source and the same one the local solve uses.
+    /// A field that looks like a control and is silently ignored is the trap that
+    /// produced FND-013, so the worker now refuses a value it cannot honour
+    /// instead of accepting one it will not apply.
+    ///
+    /// It stays on the wire because removing it is a breaking protocol change for
+    /// a field every current controller already sends as `"none"`, and it feeds
+    /// the result-cache key. Kept, documented, and checked — not quietly dead.
     #[serde(default = "default_ground")]
     pub ground_model: String,
     /// Execution preference: `"cpu"` | `"gpu"` (PH7-CHK-004). When `"gpu"` and the

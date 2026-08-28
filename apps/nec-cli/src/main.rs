@@ -329,6 +329,20 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
+        // The worker accepts `basis == "hallen"` and nothing else, so every task
+        // of a non-Hallén run fails `UnsupportedConfig` — but only after the pool
+        // has dialled every host at a 5 s SSH timeout each, and only once per
+        // frequency point. The user waits N x 5 s to be told something knowable
+        // before the first connection (FND-018).
+        if !matches!(solver_mode, SolverMode::Hallen) {
+            eprintln!(
+                "error: --solver {} is not supported with --hosts; the worker \
+                 implements the Hallén basis only, so every task would be refused. \
+                 Run without --hosts, or use --solver hallen.",
+                solver_mode.as_flag()
+            );
+            return ExitCode::FAILURE;
+        }
         if matches!(ground_solver, GroundSolver::Sommerfeld) {
             // The worker derives its ground model from the deck alone, so the
             // surface-wave correction never reaches it. Measured on
