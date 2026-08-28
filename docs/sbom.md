@@ -13,12 +13,13 @@ dependency is added, removed, or its status changes.
 
 The **complete** machine-readable SBOM is generated per release and attached to the GitHub
 release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the full
-transitive graph — 526 packages at v0.16.0 — where this table covers the ones a reader
+transitive graph — 526 packages at v0.17.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
 
-**No dependency changed between v0.15.0 and v0.16.0** — `Cargo.lock` and every manifest's
-dependency lines are byte-identical across that range — so this table's content is
-unchanged for v0.16.0 rather than merely unreviewed.
+**No dependency changed between v0.16.0 and v0.17.0** either — `Cargo.lock` and every
+manifest's dependency lines are byte-identical across that range, as they were across
+v0.15.0..v0.16.0 — so this table's content is unchanged *for a reason* rather than
+merely unreviewed.
 
 ## Conventions
 
