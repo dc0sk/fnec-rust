@@ -17,6 +17,25 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **One reading of a deck's frequencies, and it matches the reference** (FND-057).
+  Five places decided which `FR` card a deck is solved at, and they disagreed: the
+  CLI took the **first** card, `fnec_py` swept **every** card, the GUI read the
+  first card in three more places, and the validator expanded a fourth way.
+
+  `nec2c` settles it, and **neither implementation was right**. `FR 14.2` then
+  `FR 7.1` solves at 7.1 MHz; reversing the cards solves at 14.2 — the **last**
+  card governs. And `FR 2 3 0 0 14.2 0.1` runs 14.2/14.3/14.4, so an unrecognised
+  `step_type` is linear, where the CLI used only the start frequency.
+
+  All five now derive from one function in `nec_solver::frequency`.
+
+  A superseded `FR` card is **warned about rather than dropped in silence**: such
+  a deck is usually written `FR/XQ/FR/RP`, which NEC-2 runs both halves of and
+  fnec — having no execution-card sequencing — cannot. Saying nothing would
+  discard a run the author asked for.
+
+  No deck in the repository has two `FR` cards, so no existing result changes.
+
 - **An unrecognised `EX` type is flagged while you type, not at solve** (FND-039).
   A deck with, say, `EX 9` rendered as clean in the GUI's keystroke-time caveat
   strip and then failed the moment Solve was pressed, with nothing in between.

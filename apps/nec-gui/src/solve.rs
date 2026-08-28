@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use nec_model::card::Card;
 use nec_model::deck::NecDeck;
 use nec_parser::parse;
 use nec_solver::validate;
@@ -361,16 +360,14 @@ pub fn deck_warnings(deck_text: &str, solver: SolverKind) -> Vec<String> {
         return Vec::new();
     };
     let ground = ground_model_from_deck(deck);
-    let freq_hz = deck
-        .cards
-        .iter()
-        .find_map(|c| {
-            if let Card::Fr(fr) = c {
-                Some(fr.frequency_mhz * 1_000_000.0)
-            } else {
-                None
-            }
-        })
+    // The *governing* FR card — the last one — through the shared expansion, not
+    // the first card read inline. Three sites in this file read the first card,
+    // which is a divergent copy of a decision `nec_solver::frequency` now owns
+    // (FND-057). The `0.0` placeholder for an FR-less deck is unchanged; the
+    // caveat producers guard against it explicitly.
+    let freq_hz = nec_solver::frequencies_hz(deck)
+        .first()
+        .copied()
         .unwrap_or(0.0);
     // A hard rejection is surfaced by the action itself; keep only the caveats.
     validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver).unwrap_or_default()
@@ -387,16 +384,10 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     // --- frequency -------------------------------------------------------
-    let freq_hz = deck
-        .cards
-        .iter()
-        .find_map(|c| {
-            if let Card::Fr(fr) = c {
-                Some(fr.frequency_mhz * 1_000_000.0)
-            } else {
-                None
-            }
-        })
+    // The governing FR card, via the shared expansion (FND-057).
+    let freq_hz = nec_solver::frequencies_hz(deck)
+        .first()
+        .copied()
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
     // --- validation (before any solve) -----------------------------------
@@ -1011,16 +1002,10 @@ fn solve_for_currents(
     // currents and a meaningless pattern — that hazard is gone with the capability.
     let wire_endpoints = wire_endpoints_from_segs(&segs);
 
-    let freq_hz = deck
-        .cards
-        .iter()
-        .find_map(|c| {
-            if let Card::Fr(fr) = c {
-                Some(fr.frequency_mhz * 1_000_000.0)
-            } else {
-                None
-            }
-        })
+    // The governing FR card, via the shared expansion (FND-057).
+    let freq_hz = nec_solver::frequencies_hz(deck)
+        .first()
+        .copied()
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
     let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);

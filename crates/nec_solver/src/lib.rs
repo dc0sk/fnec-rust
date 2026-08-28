@@ -5,6 +5,7 @@ pub mod basis;
 pub mod current_source;
 pub mod excitation;
 pub mod farfield;
+pub mod frequency;
 pub mod geometry;
 pub mod linear;
 pub mod loads;
@@ -30,6 +31,9 @@ pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, near_e_field,
     near_h_field, radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, NearFieldE,
     NearFieldH, NearFieldPoint, RpGainGrid,
+};
+pub use frequency::{
+    fr_sweeps, frequencies_hz, governing_fr_sweep, superseded_fr_warnings, FrSweep,
 };
 pub use geometry::{
     build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,

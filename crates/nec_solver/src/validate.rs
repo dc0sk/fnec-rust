@@ -707,53 +707,6 @@ pub fn hallen_geometry_caveats(
     out
 }
 
-/// The frequencies (MHz) that decide whether one `FR` card is acceptable.
-///
-/// **Two values, never a list.** The obvious implementation collects
-/// `steps.max(1)` floats — and `steps` is a `u32`, so `FR 0 400000000 0 0 14.0 0.0`
-/// asks a *validator* to allocate 3.2 GB and `u32::MAX` asks for 34 GB. This
-/// function runs inside `pre_solve_error`, which the GUI calls on every
-/// Apply+Solve and the worker on every task, so a two-integer field would have
-/// become a way to stall or abort those processes from inside validation. That is
-/// a defect introduced by the check, not caught by it.
-///
-/// It is unnecessary as well as dangerous, because both expansions are monotone
-/// in magnitude, so the extremes decide the whole list:
-///
-/// - **Linear** `start + i·step` is monotone in `i`, so the first and last
-///   elements bracket every value between them.
-/// - **Multiplicative** `start · ratio^i` keeps one sign when `ratio > 0`, and its
-///   magnitude moves monotonically, so first and last bracket it too. A ratio that
-///   is zero or negative is handled directly: zero collapses every later step to
-///   0 MHz, and a negative ratio alternates the sign.
-///
-/// A **superset** of what the frontends expand, deliberately. The CLI reads only
-/// the first `FR` card and treats an unrecognised `step_type` as "the start
-/// frequency alone"; `fnec_py` reads every card and treats it as linear. Taking
-/// the linear reading for everything non-multiplicative covers both, since the
-/// CLI's single start frequency is that list's first element.
-fn fr_extreme_frequencies_mhz(fr: &nec_model::card::FrCard) -> Vec<f64> {
-    let steps = fr.steps.max(1) as u64;
-    let last = steps - 1;
-    if fr.step_type == 1 {
-        if steps > 1 && fr.step_mhz <= 0.0 {
-            // A zero ratio collapses every later step to exactly 0 MHz; a negative
-            // one alternates the sign. Report the second element, which is the
-            // first one that goes wrong.
-            return vec![fr.frequency_mhz, fr.frequency_mhz * fr.step_mhz];
-        }
-        // `powi` takes an i32; a step count beyond its range can only make the
-        // magnitude more extreme, so clamping the exponent cannot hide a bad value.
-        let exp = last.min(i32::MAX as u64) as i32;
-        vec![fr.frequency_mhz, fr.frequency_mhz * fr.step_mhz.powi(exp)]
-    } else {
-        vec![
-            fr.frequency_mhz,
-            fr.frequency_mhz + fr.step_mhz * (last as f64),
-        ]
-    }
-}
-
 /// Every `EX` card whose type this build does not recognise.
 ///
 /// A **warning**, not an error, and the distinction is the whole point. The deck
@@ -806,39 +759,82 @@ pub fn unrecognised_excitation_warnings(deck: &NecDeck) -> Vec<String> {
 /// currents, and `Z = 1.000000 + j0.000000`: both of the defects this function
 /// exists to stop, from a deck it would otherwise have accepted.
 pub fn frequency_error(deck: &NecDeck) -> Option<String> {
-    for card in &deck.cards {
-        let Card::Fr(fr) = card else { continue };
-        for f in fr_extreme_frequencies_mhz(fr) {
-            let hz = f * 1e6;
-            if hz.is_finite() && f > 0.0 {
-                continue;
-            }
-            let what = if fr.steps.max(1) > 1 {
-                format!(
-                    "the sweep starting at {} MHz reaches {f} MHz",
-                    fr.frequency_mhz
-                )
-            } else {
-                format!("{f} MHz is not a usable frequency")
-            };
-            // One cause per case: quoting all three would leave the reader to work
-            // out which applies to the deck in front of them.
-            let why = if !hz.is_finite() {
-                "a frequency at or beyond the limit of the number format overflows \
-                 to infinity once converted to hertz, and every current solved from \
-                 it comes out NaN"
-            } else if f < 0.0 {
-                "a negative frequency returns the complex conjugate of its positive \
-                 counterpart, which silently flips the reactance between capacitive \
-                 and inductive"
-            } else {
-                "a zero frequency drives the current to zero, so the reported \
-                 impedance becomes the source voltage rather than an impedance"
-            };
-            return Some(format!("FR: {what}; {why}. Frequencies must be > 0"));
+    // The **governing** card only. An earlier card is superseded and never runs
+    // (see `frequency::governing_fr_sweep`), and nec2c answers a deck whose first
+    // FR is degenerate and whose last is fine — refusing it would be a rejection
+    // the reference does not make. A superseded card that is *also* degenerate is
+    // reported by `superseded_frequency_warnings` instead: ignored and broken is
+    // a caveat, not a refusal.
+    let sweep = crate::frequency::governing_fr_sweep(deck)?;
+    for f in sweep.extremes_mhz() {
+        let hz = f * 1e6;
+        if hz.is_finite() && f > 0.0 {
+            continue;
         }
+        let what = if sweep.len() > 1 {
+            format!(
+                "the sweep starting at {} MHz reaches {f} MHz",
+                sweep.start_mhz
+            )
+        } else {
+            format!("{f} MHz is not a usable frequency")
+        };
+        // One cause per case: quoting all three would leave the reader to work
+        // out which applies to the deck in front of them.
+        let why = if !hz.is_finite() {
+            "a frequency at or beyond the limit of the number format overflows \
+             to infinity once converted to hertz, and every current solved from \
+             it comes out NaN"
+        } else if f < 0.0 {
+            "a negative frequency returns the complex conjugate of its positive \
+             counterpart, which silently flips the reactance between capacitive \
+             and inductive"
+        } else {
+            "a zero frequency drives the current to zero, so the reported \
+             impedance becomes the source voltage rather than an impedance"
+        };
+        return Some(format!("FR: {what}; {why}. Frequencies must be > 0"));
     }
     None
+}
+
+/// Caveats about `FR` cards that do not govern the solve.
+///
+/// Two kinds, and both are warnings rather than errors: the card is superseded
+/// (so fnec will not run it, though NEC-2 might have), and separately it may be
+/// degenerate. A degenerate card that never runs is not grounds to refuse a deck
+/// the reference answers — but it is almost certainly a typo, so it is said out
+/// loud.
+pub fn superseded_frequency_warnings(deck: &NecDeck) -> Vec<String> {
+    let mut out = crate::frequency::superseded_fr_warnings(deck);
+    let sweeps = crate::frequency::fr_sweeps(deck);
+    if sweeps.len() > 1 {
+        for (i, s) in sweeps[..sweeps.len() - 1].iter().enumerate() {
+            if s.extremes_mhz()
+                .iter()
+                .any(|f| !(f * 1e6).is_finite() || *f <= 0.0)
+            {
+                out.push(format!(
+                    "FR card {} is also not a usable frequency ({} MHz); it is \
+                     superseded, so this refuses nothing — but it is very likely a typo",
+                    i + 1,
+                    s.start_mhz
+                ));
+            }
+        }
+    }
+    // A card asking for more points than will be expanded: say so rather than
+    // silently returning a shorter sweep than the deck requested.
+    if let Some(g) = crate::frequency::governing_fr_sweep(deck) {
+        if g.is_truncated() {
+            out.push(format!(
+                "FR asks for {} frequency points; only the first {} are solved",
+                g.len(),
+                crate::frequency::MAX_FR_POINTS
+            ));
+        }
+    }
+    out
 }
 
 /// Why a deck driven by two kinds of source at once cannot be solved, if it is.
@@ -1068,6 +1064,9 @@ pub fn diagnose(
     // Solver-independent too: an `EX` type nothing recognises is a fact about the
     // deck, and both solvers refuse it.
     for w in unrecognised_excitation_warnings(deck) {
+        out.push(ValidationDiagnostic::warning(w));
+    }
+    for w in superseded_frequency_warnings(deck) {
         out.push(ValidationDiagnostic::warning(w));
     }
 

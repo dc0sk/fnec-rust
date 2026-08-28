@@ -867,34 +867,15 @@ pub(super) fn build_load_rows(deck: &nec_model::deck::NecDeck) -> Vec<LoadRow> {
         .collect()
 }
 
+/// The frequencies this deck will be solved at.
+///
+/// Delegates: the expansion lives in `nec_solver::frequency`, which the GUI, the
+/// bindings and the validator also use. This function read only the **first**
+/// `FR` card and treated an unrecognised `step_type` as "the start frequency
+/// alone"; `nec2c` takes the **last** card and treats it as linear, so both were
+/// wrong and differently wrong from `fnec_py` (FND-057).
 pub(super) fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
-    let Some(fr) = deck
-        .cards
-        .iter()
-        .find_map(|c| if let Card::Fr(fr) = c { Some(fr) } else { None })
-    else {
-        return Vec::new();
-    };
-
-    let steps = fr.steps.max(1) as usize;
-    let mut out = Vec::with_capacity(steps);
-    match fr.step_type {
-        0 => {
-            for idx in 0..steps {
-                out.push((fr.frequency_mhz + (idx as f64) * fr.step_mhz) * 1e6);
-            }
-        }
-        1 => {
-            for idx in 0..steps {
-                out.push(fr.frequency_mhz * fr.step_mhz.powi(idx as i32) * 1e6);
-            }
-        }
-        _ => {
-            // Unsupported FR stepping mode: use the first frequency only.
-            out.push(fr.frequency_mhz * 1e6);
-        }
-    }
-    out
+    nec_solver::frequencies_hz(deck)
 }
 
 pub(super) fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {

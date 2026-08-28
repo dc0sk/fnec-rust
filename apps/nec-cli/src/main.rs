@@ -182,6 +182,16 @@ fn main() -> ExitCode {
 
     let deck = &result.deck;
 
+    // A deck with several `FR` cards was usually written as `FR/XQ/FR/RP`, where
+    // NEC-2 runs each. fnec drops `XQ` as an unknown card and runs one execution,
+    // at the last `FR` — so an earlier card is dropped, and dropping it silently
+    // discards a run the author asked for (FND-057). The GUI and the bindings get
+    // this through `validate::diagnose`; this binary composes its own caveats, so
+    // it has to ask.
+    for w in nec_solver::validate::superseded_frequency_warnings(deck) {
+        eprintln!("warning: {w}");
+    }
+
     warn_pulse_mode_experimental(solver_mode);
     warn_ge_ground_reflection_flag(deck);
     // NT cards are now stamped in the solve path (PH8-CHK-004); malformed/
