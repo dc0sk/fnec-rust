@@ -61,6 +61,15 @@ for c in check-changelog-headings check-findings-ledger check-path-inventory \
     run "$c" python3 "scripts/$c.py"
 done
 
+# Against the merge base, so it sees the doc-regression half — a doc comment can
+# only come adrift from an item *relative to* where that item was documented.
+BASE="$(git merge-base HEAD origin/main 2>/dev/null || echo '')"
+if [[ -n "$BASE" ]]; then
+    run "check-doc-attachment" python3 scripts/check-doc-attachment.py --base "$BASE"
+else
+    run "check-doc-attachment" python3 scripts/check-doc-attachment.py
+fi
+
 echo
 if [[ ${#FAILED[@]} -eq 0 ]]; then
     echo "all gates passed"
