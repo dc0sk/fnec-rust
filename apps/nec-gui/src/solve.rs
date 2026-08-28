@@ -545,11 +545,9 @@ fn feedpoint_impedance(
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
             .ok_or("a current-source solve without a current source")?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in = if i0.norm() > 1e-60 {
-            v_port / i0
-        } else {
-            v_port
-        };
+        let z_in =
+            nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
+                .map_err(|e| e.to_string())?;
         return Ok((z_in, ex.tag as usize, ex.segment as usize));
     }
 
@@ -572,11 +570,13 @@ fn feedpoint_impedance(
         };
         let current = i_vec[idx];
         let v_source = v_vec[idx] * seg.length;
-        let z_in = if current.norm() > 1e-60 {
-            v_source / current
-        } else {
-            v_source
-        };
+        let z_in = nec_solver::feedpoint_impedance(
+            v_source,
+            current,
+            ex.tag as usize,
+            ex.segment as usize,
+        )
+        .map_err(|e| e.to_string())?;
         return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
     // Reached only when the deck has no driven feedpoint at all — a plane-wave
@@ -1058,23 +1058,27 @@ mod tests {
         );
     }
 
-    /// FND-031: this loop took the first `EX` card of any type, so a plane wave
-    /// standing ahead of the driven source had its NTHETA/NPHI read as a feedpoint
-    /// tag and segment.
+    /// FND-031, still pinned through the GUI's own entry point — but the deck is
+    /// now **refused** rather than solved (FND-050), so the assertion moved from
+    /// the solved feedpoint to the refusal's text.
     ///
-    /// Goes through `solve_deck_str`, the GUI's own entry point. An earlier
-    /// version called `first_delta_gap_feedpoint` directly, which tested the seam
-    /// and not the adoption: reverting the GUI to its old unfiltered loop passed
-    /// it, because no call edge to the GUI existed at all.
+    /// It is the same fact either way: the message must name tag 1 segment 26,
+    /// the *voltage source*, and not the plane wave's NTHETA/NPHI, which the old
+    /// unfiltered loop read as a feedpoint. An earlier version of this test called
+    /// `first_delta_gap_feedpoint` directly, which tested the seam and not the
+    /// adoption — reverting the GUI to its old loop passed it, because no call
+    /// edge to the GUI existed at all. That trap is why this still goes through
+    /// `solve_deck_str`.
     #[test]
     fn a_plane_wave_is_not_read_as_the_feedpoint() {
         let deck_src = include_str!("../../../corpus/dipole-planewave-then-source-51seg.nec");
-        let r = solve_deck_str(deck_src, SolverKind::Hallen).expect("solve");
-        assert_eq!(
-            (r.feed_tag, r.feed_seg),
-            (1, 26),
-            "must resolve the voltage source, not the plane wave's NTHETA/NPHI"
+        let e = solve_deck_str(deck_src, SolverKind::Hallen)
+            .expect_err("a plane wave beside a driven source is refused");
+        assert!(
+            e.contains("tag 1 segment 26"),
+            "must name the voltage source, not the plane wave's NTHETA/NPHI: {e}"
         );
+        assert!(e.contains("plane wave"), "{e}");
     }
 
     // The corpus reference for `dipole-ex4-freesp-51seg`, pinned under PH8-CHK-001:

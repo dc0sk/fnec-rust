@@ -728,7 +728,7 @@ pub(super) fn build_feedpoint_rows(
     freq_hz: f64,
     ground: &GroundModel,
     ground_solver: GroundSolver,
-) -> (Vec<FeedpointRow>, SommerfeldOutcome) {
+) -> Result<(Vec<FeedpointRow>, SommerfeldOutcome), String> {
     let mut rows = Vec::new();
 
     // PH9-CHK-006: precompute the Sommerfeld surface-wave ΔZ correction inputs once
@@ -789,11 +789,16 @@ pub(super) fn build_feedpoint_rows(
         } else {
             v_vec[idx] * seg.length
         };
-        let mut z_in = if current.norm() > 1e-60 {
-            v_source / current
-        } else {
-            v_source
-        };
+        // The shared seam: a zero current has no impedance, and printing the
+        // source voltage instead was reporting a different quantity in the units
+        // of the one asked for (FND-050/058).
+        let mut z_in = nec_solver::feedpoint_impedance(
+            v_source,
+            current,
+            ex.tag as usize,
+            ex.segment as usize,
+        )
+        .map_err(|e| e.to_string())?;
 
         // PH9-CHK-006: add the Sommerfeld surface-wave correction to the near-ground
         // feedpoint impedance for any straight wire — horizontal, vertical, or tilted
@@ -829,7 +834,7 @@ pub(super) fn build_feedpoint_rows(
         sommerfeld_outcome = SommerfeldOutcome::NotRequested;
     }
 
-    (rows, sommerfeld_outcome)
+    Ok((rows, sommerfeld_outcome))
 }
 
 pub(super) fn build_source_rows(deck: &nec_model::deck::NecDeck) -> Vec<SourceRow> {
@@ -1340,7 +1345,7 @@ pub(super) fn solve_frequency_point(
         freq_hz,
         ground,
         ground_solver,
-    );
+    )?;
 
     // PH9-CHK-005: guard the junction-fed feedpoint limitation. When the driven
     // segment sits at a wire junction the feed current splits across the joined

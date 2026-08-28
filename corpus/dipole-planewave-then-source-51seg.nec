@@ -7,9 +7,16 @@ CM dimension — as the antenna feedpoint, where the CLI reported segment 26.
 CM
 CM Fixture for the FND-031 feedpoint seam. The feedpoint is tag 1 segment 26.
 CM
-CM This deck pins RESOLUTION, not a value. Carrying a plane wave routes the CLI
-CM to its receive path, so the reported impedance here is degenerate by design;
-CM assert on the tag and segment, not on Z.
+CM This deck is REFUSED since FND-050, and pins the refusal's text rather than a
+CM solved value. It carries two drive kinds at once, which fnec will not solve --
+CM and neither does NEC-2: nec2c answers it 79.348 + j46.223, bit-identical to
+CM the same deck with the plane wave deleted, so the reference discards rather
+CM than superposes. Before the refusal the three frontends gave three different
+CM answers for it, none flagged.
+CM
+CM Assert that the refusal names tag 1 segment 26 -- the driven source, not the
+CM plane wave's NTHETA/NPHI. That is the same FND-031 fact this fixture always
+CM pinned; only the place it is read from has moved.
 CE
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
 GE 0

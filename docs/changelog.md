@@ -17,6 +17,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A feedpoint with no current has no impedance, and says so** (FND-050,
+  FND-058). Six places computed `Z = V/I`, and all six fell back to printing the
+  **source voltage** when the current was zero — not a degraded answer but a
+  different quantity wearing the units of the one asked for. Measured before the
+  fix, all at exit 0 with no warning:
+
+  | deck | `I` | reported `Z` |
+  |:---|:---|:---|
+  | plane wave beside a driven source | 0 + j0 | 1.000000 + j0.000000 |
+  | `EX 0 ... 0.0 0.0` (zero amplitude) | 0 + j0 | 0.000000 + j0.000000 |
+  | `FR ... 1e-300` | 0 + j0 | 1.000000 + j0.000000 |
+
+  One division now, in `nec_solver::feedpoint`. It also separates **non-finite
+  from zero**: `current.norm() > 1e-60` is false for `NaN`, so a diverged solve
+  took the zero branch and was told its current was zero — the wrong sentence for
+  a solve that did not converge.
+
+  **A plane wave beside a driven source is refused**, and the reference settles
+  why that loses nothing: nec2c answers that deck 79.348 + j46.223, *bit-identical*
+  to the same deck with the plane wave deleted, so NEC-2 discards rather than
+  superposes. fnec's three frontends had meanwhile been giving three different
+  answers for it. A plane-wave-**only** receive deck is untouched.
+
 - **One reading of a deck's frequencies, and it matches the reference** (FND-057).
   Five places decided which `FR` card a deck is solved at, and they disagreed: the
   CLI took the **first** card, `fnec_py` swept **every** card, the GUI read the
