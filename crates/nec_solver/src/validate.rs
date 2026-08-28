@@ -548,10 +548,17 @@ pub fn negative_resistance_warning(
 /// so that all of them agree on what "negative" means for a non-finite value.
 pub fn negative_resistance_message(z_re: f64, tag: usize, seg: usize, cause: &str) -> String {
     format!(
-        "feedpoint tag {tag} segment {seg} has negative resistance (Re Z = {z_re:.3} Ω), \
+        "feedpoint tag {tag} segment {seg} {NEGATIVE_RESISTANCE_PHRASE} (Re Z = {z_re:.3} Ω), \
          which is physically impossible for a passive antenna; the result is unreliable — {cause}"
     )
 }
+
+/// The invariant part of the per-point sentence.
+///
+/// Shared by the builder and by [`is_negative_resistance_message`], so a caller
+/// aggregating a sweep recognises exactly what the builder produces — and cannot
+/// stop recognising it because the wording moved.
+const NEGATIVE_RESISTANCE_PHRASE: &str = "has negative resistance";
 
 /// The single predicate for "this resistance earns the negative-resistance
 /// caveat", so a sweep counter, a solver-mode arm and the shared seam cannot
@@ -565,6 +572,44 @@ pub fn negative_resistance_message(z_re: f64, tag: usize, seg: usize, cause: &st
 /// which is also the behaviour the CLI had before the check was shared.
 pub fn is_negative_resistance(z_re: f64) -> bool {
     z_re < 0.0
+}
+
+/// Whether a warning string is the per-point negative-resistance sentence.
+///
+/// A caller aggregating a sweep needs to hold these back, and cannot match on
+/// them by identity: the text embeds `Re Z = {z_re:.3}`, so every point differs.
+/// Matching on the invariant phrase keeps that knowledge next to the builder that
+/// produces it rather than in each frontend's filter.
+pub fn is_negative_resistance_message(message: &str) -> bool {
+    message.contains(NEGATIVE_RESISTANCE_PHRASE)
+}
+
+/// One line for a whole sweep's negative-resistance points, or `None`.
+///
+/// The per-point sentence embeds `Re Z = {z_re:.3}`, so every point's text
+/// differs and any dedup on message identity fails — a 500-point junctioned
+/// sweep raises 500 distinct warnings. The GUI solved that by aggregating and
+/// `fnec_py` did not, which made the GUI's fix a local one (FND-032). Shared, so
+/// there is one sentence for the situation rather than one per frontend.
+///
+/// The cause is a property of the geometry, fixed for the whole sweep, so it is
+/// stated once rather than repeated with each point's own impedance.
+pub fn swept_negative_resistance_caveat(
+    z_res: &[f64],
+    deck: &NecDeck,
+    segs: &[Segment],
+    ctx: SolverContext<'_>,
+) -> Option<String> {
+    let n = z_res.iter().filter(|z| is_negative_resistance(**z)).count();
+    if n == 0 {
+        return None;
+    }
+    Some(format!(
+        "{n} of {} sweep points report negative feedpoint resistance, which is \
+         physically impossible for a passive antenna; those results are unreliable — {}",
+        z_res.len(),
+        negative_resistance_cause(deck, segs, ctx)
+    ))
 }
 
 /// The explanation [`negative_resistance_warning`] offers, on its own.

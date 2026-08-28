@@ -29,9 +29,9 @@ pub use excitation::{
     scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
 };
 pub use farfield::{
-    bilinear_interp_gain, compute_radiation_pattern, integrate_radiated_power, near_e_field,
-    near_h_field, radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, NearFieldE,
-    NearFieldH, NearFieldPoint, RpGainGrid,
+    bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power, gain_correction_db,
+    integrate_radiated_power, near_e_field, near_h_field, radiation_efficiency, rp_card_points,
+    FarFieldPoint, FarFieldResult, NearFieldE, NearFieldH, NearFieldPoint, RpGainGrid,
 };
 pub use feedpoint::{feedpoint_impedance, FeedpointError, MIN_FEEDPOINT_CURRENT};
 pub use frequency::{

@@ -17,6 +17,30 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GUI reported directivity as gain over lossy ground** (FND-053). The CLI
+  has converted directivity to gain since PH9-CHK-003; the GUI never did, so one
+  deck's pattern meant different things on the two frontends with nothing saying
+  which. Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI's peak is
+  **0.2997 dBi** and the GUI's was **6.3355** — a 6.04 dB overstatement, exactly
+  the ground loss it was not accounting for. Both GUI pattern views apply the
+  shared correction now.
+
+- **A failed sweep keeps the points it computed** (FND-033). A sweep that failed
+  at point 400 of 500 discarded 399 real answers at the moment of failure, and
+  left the negative-resistance caveat — which describes exactly those points —
+  standing beside an error with nothing to point at.
+
+- **`fnec_py` gained a solver argument** (FND-055) —
+  `solve_deck_str(deck, solver="mpie")`, defaulted to `"hallen"` so existing
+  callers are unaffected. It was the last frontend without one, so a Python caller
+  with a T/Y junction was told to reach for a different program.
+
+- **A `fnec_py` sweep reports negative resistance once, not per point**
+  (FND-032). The per-point sentence embeds the impedance, so every point's text
+  differed and deduplication could not see it — a 500-point junctioned sweep
+  raised 500 warnings. It now emits the same aggregate line the GUI does, from the
+  same producer.
+
 - **The distributed path stops wasting your time and stops misnaming faults**
   (FND-018, FND-060, FND-019).
 

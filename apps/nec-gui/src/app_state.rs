@@ -50,7 +50,13 @@ pub enum SweepPhase {
     /// Points arriving incrementally from the streaming sweep (GUI-CHK-009).
     Streaming(Vec<SweepPoint>),
     Done(Vec<SweepPoint>),
-    Failed(String),
+    /// The error, **and the points computed before it**.
+    ///
+    /// A sweep that fails at point 400 of 500 has 399 real answers; discarding
+    /// them at the moment of failure threw away the data and left the
+    /// negative-resistance caveat standing next to an error with nothing to
+    /// describe (FND-033). The points are as true as they were a moment earlier.
+    Failed(String, Vec<SweepPoint>),
 }
 
 /// Current phase of the pattern computation pipeline.
@@ -323,9 +329,9 @@ pub enum Message {
     /// that fails partway never sends that: it emits `SweepComplete(Err)` and
     /// returns, so the caveat for everything it *did* compute would be skipped.
     ///
-    /// Note the `Failed` phase currently hides the chart and table, so on that
-    /// path the caveats outlive the points they describe and stand next to the
-    /// error alone (FND-033). They are still true of what was computed, and
+    /// The `Failed` phase keeps its points and renders them since FND-033, so the
+    /// caveats stand beside the results they describe rather than beside an error
+    /// alone. They are true of what was computed, and
     /// reporting a run's non-physical results only when the run happens to finish
     /// cleanly is the worse failure.
     SweepCaveats(Vec<String>),
@@ -518,7 +524,10 @@ impl AppState {
             }
             Message::SweepComplete(Err(e)) => {
                 if self.awaiting_sweep() {
-                    self.sweep_phase = SweepPhase::Failed(e.clone());
+                    // Keep whatever streamed in. `sweep_points()` renders these,
+                    // so a partial sweep stays on screen with its error above it.
+                    let kept = self.sweep_points().to_vec();
+                    self.sweep_phase = SweepPhase::Failed(e.clone(), kept);
                 }
             }
             Message::SweepPointComputed(pt) => {
@@ -543,7 +552,7 @@ impl AppState {
                 // Finalize whatever streamed in (empty stream → a failure note).
                 if let SweepPhase::Streaming(pts) = &self.sweep_phase {
                     self.sweep_phase = if pts.is_empty() {
-                        SweepPhase::Failed("sweep produced no points".into())
+                        SweepPhase::Failed("sweep produced no points".into(), Vec::new())
                     } else {
                         SweepPhase::Done(pts.clone())
                     };
@@ -950,7 +959,7 @@ impl AppState {
     /// while streaming and once done.
     pub fn sweep_points(&self) -> &[SweepPoint] {
         match &self.sweep_phase {
-            SweepPhase::Streaming(pts) | SweepPhase::Done(pts) => pts,
+            SweepPhase::Streaming(pts) | SweepPhase::Done(pts) | SweepPhase::Failed(_, pts) => pts,
             _ => &[],
         }
     }
@@ -989,7 +998,10 @@ impl AppState {
             SweepPhase::Running => String::from("Sweeping…"),
             SweepPhase::Streaming(pts) => format!("Sweeping… {} points", pts.len()),
             SweepPhase::Done(pts) => format!("Done — {} points", pts.len()),
-            SweepPhase::Failed(e) => format!("Error: {e}"),
+            SweepPhase::Failed(e, pts) if !pts.is_empty() => {
+                format!("Error after {} point(s): {e}", pts.len())
+            }
+            SweepPhase::Failed(e, _) => format!("Error: {e}"),
         }
     }
 

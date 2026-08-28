@@ -294,6 +294,66 @@ const EPS0: f64 = 8.854_187_812_8e-12; // F/m
 const MU0: f64 = 4.0 * PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
 
+/// The dB to add to a directivity to make it a **gain**, over lossy ground.
+///
+/// `compute_radiation_pattern` returns directivity: it normalises by the power
+/// the antenna radiates, not by the power put into it. Over a lossy ground those
+/// differ by the ground loss, and PH9-CHK-003 corrects for it — in the CLI only,
+/// so the same deck's pattern read as gain there and as directivity in the GUI,
+/// with nothing saying which (FND-053). Measured on
+/// `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI's peak is 0.2997 dBi and
+/// the GUI's was 6.3355, a 6.04 dB overstatement. Shared so there is one
+/// correction rather than one per frontend.
+///
+/// `None` when it does not apply: free space and PEC ground have no loss to
+/// account for, and a non-positive input power means no feedpoint is delivering
+/// any, so the ratio is undefined rather than zero.
+pub fn gain_correction_db(
+    segs: &[Segment],
+    i_vec: &[Complex64],
+    freq_hz: f64,
+    ground: &GroundModel,
+    input_power: f64,
+) -> Option<f64> {
+    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) || input_power <= 0.0 {
+        return None;
+    }
+    let eta = radiation_efficiency(segs, i_vec, freq_hz, ground, input_power);
+    if eta <= 0.0 || !eta.is_finite() {
+        return None;
+    }
+    Some(10.0 * eta.log10())
+}
+
+/// The power delivered into the deck's feedpoints, for [`gain_correction_db`].
+///
+/// `0.5 * Re(V * conj(I))` summed over the driven segments — the same quantity
+/// the CLI computed inline from its feedpoint rows. Taking it from the deck and
+/// the solved vectors instead means a frontend that never builds those rows (the
+/// GUI's pattern view) can still ask for the correction.
+pub fn feedpoint_input_power(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+    v_vec: &[Complex64],
+    i_vec: &[Complex64],
+) -> f64 {
+    let mut total = 0.0;
+    for (ex, _role) in crate::excitation::feedpoints(deck) {
+        let Some(idx) = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+        else {
+            continue;
+        };
+        if idx >= v_vec.len() || idx >= i_vec.len() {
+            continue;
+        }
+        let v_source = v_vec[idx] * segs[idx].length;
+        total += 0.5 * (v_source * i_vec[idx].conj()).re;
+    }
+    total
+}
+
 /// Radiation efficiency `η = P_radiated / P_input` for an antenna over the given
 /// ground, from the far-field integral and the delivered input power.
 ///

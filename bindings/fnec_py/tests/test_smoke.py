@@ -170,7 +170,10 @@ def test_a_clean_deck_solves_with_no_warnings():
     "deck,fragment",
     [
         (LOW_OVER_GROUND, "above finite ground"),
-        (TEE_JUNCTION, "--solver mpie"),
+        # The remedy names the bindings' own argument now, not the CLI's flag:
+        # `fnec_py` gained `solver="mpie"` in FND-055, so pointing a Python caller
+        # at a different program stopped being the right advice.
+        (TEE_JUNCTION, 'pass solver="mpie"'),
     ],
 )
 def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):
@@ -351,3 +354,62 @@ def test_a_deck_with_two_kinds_of_source_is_refused():
     else:
         raise AssertionError("a mixed-source deck must not solve")
 
+
+
+def test_the_bindings_offer_the_mpie_solver():
+    """FND-055: `fnec_py` was the last frontend without a solver choice.
+
+    The CLI has `--solver mpie` and the GUI a picker, so a Python caller with a
+    degree-3 junction was told to reach for a different program. The assertion is
+    the CLI's pinned value, so the frontends cannot drift.
+    """
+    y_junction = (
+        "CM Y-junction, feed mid arm 1\nCE\n"
+        "GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001\n"
+        "GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001\n"
+        "GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001\n"
+        "GE 0\nFR 0 1 0 0 14.2 0\nEX 0 1 10 0 1.0 0.0\nEN\n"
+    )
+    got = fnec_py.solve_deck_str(y_junction, solver="mpie")
+    assert abs(got["z_re"] - 63.673674) < 0.05, got
+    assert abs(got["z_im"] - -322.199211) < 0.05, got
+
+
+def test_the_default_solver_is_unchanged():
+    """Existing callers pass no solver and must get exactly what they got before."""
+    deck = (
+        "CM dipole\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n"
+        "EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n"
+    )
+    default = fnec_py.solve_deck_str(deck)
+    explicit = fnec_py.solve_deck_str(deck, solver="hallen")
+    assert default == explicit
+
+
+def test_an_unknown_solver_name_is_refused():
+    with pytest.raises(ValueError) as excinfo:
+        fnec_py.solve_deck_str("GW 1 21 0 0 -1 0 0 1 0.001\nGE 0\nEN\n", solver="wishful")
+    assert "wishful" in str(excinfo.value)
+
+
+def test_a_sweep_reports_negative_resistance_once_not_per_point():
+    """FND-032: the per-point sentence embeds `Re Z = {z_re:.3}`, so every point's
+    text differs and dedup on message identity fails. A junctioned sweep raised one
+    UserWarning per frequency; the GUI had aggregated and the bindings had not.
+    """
+    bent = (
+        "CM inverted-V fed away from the apex\nCE\n"
+        "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\n"
+        "GW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\n"
+        "GE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.sweep_deck_str(bent)
+    negative = [w for w in caught if "negative resistance" in str(w.message)]
+    assert len(negative) <= 1, (
+        f"expected one aggregate line, got {len(negative)}: "
+        f"{[str(w.message)[:60] for w in negative]}"
+    )
+    if negative:
+        assert "sweep points report negative" in str(negative[0].message)

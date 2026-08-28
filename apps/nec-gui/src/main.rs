@@ -603,6 +603,11 @@ impl FnecGui {
 
         let result_section: Element<Message> = match &self.state.sweep_phase {
             SweepPhase::Streaming(_) | SweepPhase::Done(_) => self.sweep_chart_and_table(),
+            // A sweep that failed at point 400 of 500 still has 399 real answers,
+            // and the caveats above describe *them*. Hiding the chart left those
+            // caveats standing next to an error with nothing to point at
+            // (FND-033). The status line says how many the run got through.
+            SweepPhase::Failed(_, pts) if !pts.is_empty() => self.sweep_chart_and_table(),
             _ => text("").into(),
         };
 

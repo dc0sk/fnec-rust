@@ -308,7 +308,7 @@ fn sweep_complete_err_transitions_to_failed() {
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunSweep);
     state.apply(&Message::SweepComplete(Err("parse failed".into())));
-    assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
+    assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
     assert!(
         state.can_sweep(),
         "Run Sweep button should re-enable after failure"
@@ -1411,7 +1411,7 @@ fn streaming_sweep_empty_stream_is_a_failure() {
         pts.clear();
     }
     state.apply(&Message::SweepStreamDone);
-    assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
+    assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
 }
 
 // ── Sweep caveat lifetime (FND-014) ──────────────────────────────────────────
@@ -1472,7 +1472,7 @@ fn a_sweep_that_fails_partway_still_carries_the_caveat_for_what_it_showed() {
         "1 of 1 sweep points report negative feedpoint resistance".into(),
     ]));
     state.apply(&Message::SweepComplete(Err("worker died".into())));
-    assert!(matches!(state.sweep_phase, SweepPhase::Failed(_)));
+    assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
     assert!(
         !state.sweep_caveats.is_empty(),
         "the points already shown still earn their caveat"
@@ -2168,4 +2168,110 @@ fn an_unrecognised_excitation_warns_while_typing_rather_than_at_solve() {
             .any(|m| m.contains("not a recognised excitation")),
         "a plain dipole must not be told its excitation is unrecognised: {clean:?}"
     );
+}
+
+/// FND-053: `compute_radiation_pattern` returns **directivity**. Over lossy
+/// ground the CLI converts it to gain (PH9-CHK-003) and the GUI did not, so one
+/// deck's pattern read as gain on one frontend and directivity on the other with
+/// nothing saying which.
+///
+/// Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI reports a peak
+/// `GAIN_DB` of 0.2997, and the GUI reported **6.3355** — overstating gain by
+/// 6.04 dB, which is the ground loss it was not accounting for.
+#[test]
+fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
+    let deck = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/dipole-gn2-near-ground-51seg.nec"
+    ))
+    .expect("corpus deck");
+
+    let slice =
+        nec_gui::solve::pattern_slice_deck_str(&deck, 0.0, nec_gui::solve::SolverKind::Hallen)
+            .expect("pattern slice");
+    let peak = slice
+        .iter()
+        .map(|p| p.gain_total_dbi)
+        .fold(f64::MIN, f64::max);
+    assert!(
+        (peak - 0.2997).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.2997; \
+         6.34 would mean the ground loss is unaccounted for"
+    );
+}
+
+/// The free-space control, and an honest note on what it does *not* prove.
+///
+/// It pins that a free-space pattern is still the textbook ~2.15 dBi, so a
+/// correction with the wrong sign or magnitude fails here. It does **not** prove
+/// the ground-type guard is load-bearing: removing that guard leaves this test
+/// green, because radiation efficiency in free space is ~1 and the correction is
+/// then ~0 dB anyway. Verified by sabotage rather than assumed. The guard earns
+/// its place on the PEC-ground path, not this one.
+#[test]
+fn a_free_space_pattern_is_not_shifted_by_the_ground_correction() {
+    let deck = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/dipole-freesp-51seg.nec"
+    ))
+    .expect("corpus deck");
+    let slice =
+        nec_gui::solve::pattern_slice_deck_str(&deck, 0.0, nec_gui::solve::SolverKind::Hallen)
+            .expect("pattern slice");
+    let peak = slice
+        .iter()
+        .map(|p| p.gain_total_dbi)
+        .fold(f64::MIN, f64::max);
+    // A half-wave dipole in free space is ~2.15 dBi.
+    assert!(
+        (peak - 2.15).abs() < 0.3,
+        "free-space peak {peak:.4} dBi is not the textbook ~2.15"
+    );
+}
+
+/// FND-033: a sweep that failed partway discarded every point it had already
+/// computed. `SweepPhase::Failed` carried only the error, so 399 real answers
+/// vanished at the moment the 400th failed — and #395's negative-resistance
+/// caveat, which describes exactly those points, was left standing beside an
+/// error with nothing to point at.
+#[test]
+fn a_failed_sweep_keeps_the_points_it_computed() {
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    for f in [14.0_f64, 14.1, 14.2] {
+        st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
+            freq_mhz: f,
+            z_re: 70.0,
+            z_im: 0.0,
+        }));
+    }
+    assert_eq!(st.sweep_points().len(), 3, "setup: three points streamed");
+
+    st.apply(&Message::SweepComplete(
+        Err("solver blew up at 14.3".into()),
+    ));
+
+    assert!(matches!(st.sweep_phase, SweepPhase::Failed(..)));
+    assert_eq!(
+        st.sweep_points().len(),
+        3,
+        "the points computed before the failure must survive it"
+    );
+    // ...and the status says both what happened and how far it got.
+    let status = st.sweep_status_text();
+    assert!(status.contains("3 point"), "{status}");
+    assert!(status.contains("blew up"), "{status}");
+}
+
+/// The negative control: a sweep that fails having computed nothing must not
+/// claim partial results. Without this, "keep the points" could be satisfied by
+/// inventing some.
+#[test]
+fn a_sweep_that_fails_immediately_reports_no_points() {
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    st.apply(&Message::SweepComplete(Err("could not prepare".into())));
+    assert!(st.sweep_points().is_empty());
+    let status = st.sweep_status_text();
+    assert!(!status.contains("point("), "{status}");
 }
