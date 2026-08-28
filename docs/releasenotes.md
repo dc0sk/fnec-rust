@@ -2,10 +2,108 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-08-25
+last_updated: 2026-08-28
 ---
 
 # Release Notes
+
+## 0.16.0 — What the solver will not answer
+
+Sixteen changes closing **nineteen** findings, and seven new ones opened and left
+open. Most of the nineteen are the same decision made in different places: **when
+fnec cannot answer honestly, it must say so rather than print a number**.
+
+The seven new ones are recorded rather than fixed, so the gaps this release did
+*not* close are visible: `docs/project/findings-ledger.md` has each with its
+reason.
+
+Every value quoted below was re-measured at the release commit, not carried
+forward from the change that produced it.
+
+### Answers that change
+
+Read this section before upgrading if you have recorded results.
+
+**Decks that used to produce a number now exit 1.** Each of these was returning a
+confident, wrong answer:
+
+| deck | before | now |
+|:-----|:-------|:----|
+| `FR ... 0.0` (zero frequency) | `Z = 1.000000 + j0.000000` | refused |
+| `FR ... -14.2` (negative frequency) | `67.161824 + j32.275596` — the **conjugate** of the +14.2 answer | refused |
+| `FR 0 5 0 0 10.0 -3.0` (sweep descending through zero) | solved and printed `FREQ_MHZ -2.000000` | refused |
+| a voltage source **and** a current source in one deck | `0.678 + j0.086 Ω` against a true 74.243 | refused, naming both cards |
+| any card field of `NaN`, `inf` or `-inf` | a feedpoint row of `NaN NaN NaN NaN NaN NaN`, exit 0 | refused at the parser |
+
+The negative-frequency case is the one to check your decks for. It returned the
+exact complex conjugate of the correct answer, so a typo'd minus sign flipped the
+reactance between capacitive and inductive — the difference between adding a
+capacitor and adding an inductor — and reported it as fact.
+
+**A current source on a collinear split wire delivered half its current.** A
+51-segment `EX 4` dipole written as one `GW` gave 74.228 + j13.897 Ω at
+`I = 1.0`; the identical geometry written as two collinear `GW` cards gave
+**36.953 + j7.013 Ω at I = 0.5**. Exit 0, no warning. If you modelled a
+current-driven antenna in split segments, re-run it.
+
+### New
+
+**The GUI has a solver picker.** Decks with a T/Y junction, a closed loop, or
+currents near lossy ground could only be solved correctly from the command line;
+the GUI warned about them and told you to leave. It now offers **Hallén** and
+**MPIE**, and the choice applies to every tab — Solve, Sweep, Pattern and
+Currents follow it together, so the impedance on screen and the pattern beside it
+always come from the same solver.
+
+It reproduces the CLI exactly: 74.437414 + j41.753720 for a free-space dipole,
+63.673674 - j322.199211 for a degree-3 Y-junction — the case the MPIE exists for,
+where the Hallén path returns an unphysical R≈8.
+
+Changing the solver clears every solved view, because the numbers showing came
+from the other one.
+
+**The GUI and `fnec_py` solve current-source (`EX 4`) decks.** They used to
+decline and point at the CLI. `corpus/dipole-ex4-freesp-51seg.nec` now gives
+74.227929 + j13.896926 in the GUI, identical to the CLI.
+
+**Caveats know which solver is running.** On the MPIE, a T/Y deck no longer
+carries the Hallén topology caveat — which was not merely redundant there but
+false, and whose remedy recommended the solver already running. Nothing in the
+GUI quotes a command-line flag at you any more.
+
+### The distributed path stops losing information
+
+Three fixes, one shape: a caller over the wire learned less than a caller running
+the identical code locally.
+
+- A deck that **parsed cleanly** crossed the wire as `parse_error`. A plane-wave
+  (`EX 1`) receive deck has no driven feedpoint for the worker to price — a
+  statement about what the worker supports, not about your deck's syntax — and
+  the local CLI solves it happily.
+- Parse caveats were computed and dropped, so an ignored card was never reported.
+- A deck that was both flawed **and** refused lost the flaw: you were told the
+  solve stopped and never that a line had been ignored on the way there, which is
+  often the reason it stopped.
+
+`TaskResult`'s `warnings` field is optional on both shapes and defaults to empty,
+so a mixed-version pool keeps working in both directions. **No protocol change is
+required** — `--hosts` against an older worker behaves as before.
+
+### Migration
+
+- **`fnec_py` 0.6.0 → 0.7.0.** No API change. It gains current-source decks and
+  the shared refusals; a deck it used to answer wrongly now raises.
+- **No wire-protocol break.** An older worker and a newer controller interoperate,
+  and the reverse.
+- **If a deck now exits 1**, the message names what it objects to. Every refusal
+  added here replaced a wrong number, not a right one.
+
+### Verification
+
+`cargo test --workspace` — 957 tests. `fmt`, `clippy -D warnings` across both
+cargo trees, and six document checkers, all green in CI on the release commit.
+Evidence tier: unit and end-to-end tests against a CPU solve, plus corpus
+cross-checks against `nec2c`. No hardware-in-the-loop or field tier is claimed.
 
 ## 0.15.0 — Every frontend tells the same truth
 

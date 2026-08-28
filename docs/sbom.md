@@ -2,13 +2,23 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-05-05
+last_updated: 2026-08-28
 ---
 
 # SBOM
 
-This SBOM tracks all significant components used in or referenced by fnec-rust, including license, authors, activity status, and source URL.  
-Update this file whenever a dependency is added, removed, or its status changes.
+This file is the **curated** view: the significant components used in or referenced by
+fnec-rust, with license, authors, activity status and source URL. Update it whenever a
+dependency is added, removed, or its status changes.
+
+The **complete** machine-readable SBOM is generated per release and attached to the GitHub
+release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the full
+transitive graph — 526 packages at v0.16.0 — where this table covers the ones a reader
+needs to reason about. Both are shipped; neither replaces the other.
+
+**No dependency changed between v0.15.0 and v0.16.0** — `Cargo.lock` and every manifest's
+dependency lines are byte-identical across that range — so this table's content is
+unchanged for v0.16.0 rather than merely unreviewed.
 
 ## Conventions
 

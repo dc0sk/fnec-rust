@@ -4,7 +4,7 @@
 [package]
 name = "fnec_py"
 description = "Python bindings for fnec — expose NEC deck solve/sweep via PyO3"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Simon Keimer (DC0SK)"]
 license = "GPL-3.0-only"
 edition = "2021"
