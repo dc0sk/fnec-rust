@@ -18,6 +18,22 @@ pub(super) enum SolverMode {
 }
 
 impl SolverMode {
+    /// The `--solver` value that selects this mode.
+    ///
+    /// So a message about the flag can name what the user actually typed rather
+    /// than a `Debug` spelling that differs from it.
+    pub(super) fn as_flag(self) -> &'static str {
+        match self {
+            SolverMode::Hallen => "hallen",
+            SolverMode::Pulse => "pulse",
+            SolverMode::Continuity => "continuity",
+            SolverMode::Sinusoidal => "sinusoidal",
+            SolverMode::Mpie => "mpie",
+        }
+    }
+}
+
+impl SolverMode {
     pub(super) fn as_str(self) -> &'static str {
         match self {
             SolverMode::Hallen => "hallen",

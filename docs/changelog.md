@@ -17,6 +17,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The distributed path stops wasting your time and stops misnaming faults**
+  (FND-018, FND-060, FND-019).
+
+  `--hosts` with any solver but Hallén now refuses **before dialling a host**. The
+  worker implements the Hallén basis only, so every task was going to fail — after
+  the pool had connected to every host, once per frequency point.
+
+  A transport fault no longer reads as a deck fault. A corrupt task line or an
+  undecodable payload shares `ErrorCode::ParseError` with a real syntax error,
+  because a new code would fail an older controller's whole result line — so those
+  messages now open with `transport:` and say **no deck was read**, and a genuine
+  deck fault is tested not to claim it is one.
+
+  `solver_config.ground_model` reads as though it selects a ground model and never
+  did — ground comes from the deck's `GN` card. A controller sending anything but
+  `"none"` is now told, rather than having its choice silently discarded.
+
 - **A feedpoint with no current has no impedance, and says so** (FND-050,
   FND-058). Six places computed `Z = V/I`, and all six fell back to printing the
   **source voltage** when the current was zero — not a degraded answer but a
