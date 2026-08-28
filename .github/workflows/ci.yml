@@ -164,6 +164,20 @@ jobs:
       # coverage claim backed by nothing.
       - name: Path inventory references resolve
         run: python3 scripts/check-path-inventory.py
+      # A doc comment can come adrift from its item in two ways that compile,
+      # pass clippy and pass every test: a blank line between them, or new code
+      # inserted between them — which hands the previous item's rationale to the
+      # new one and leaves the original undocumented. It happened four times in
+      # one session, three caught only by review. The base ref is what makes the
+      # second shape visible: it is a diff property, not a static one.
+      - name: Doc comments stay attached to their items
+        run: |
+          BASE="$(git merge-base HEAD origin/${{ github.base_ref || 'main' }} 2>/dev/null || true)"
+          if [ -n "$BASE" ]; then
+            python3 scripts/check-doc-attachment.py --base "$BASE"
+          else
+            python3 scripts/check-doc-attachment.py
+          fi
       # Entries are added one PR at a time and each brings its own heading, so a
       # release section drifts into `### Fixed` three times over. Caught only on
       # release day twice; now caught on the PR that causes it.

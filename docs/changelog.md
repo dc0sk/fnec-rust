@@ -17,6 +17,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`scripts/check-doc-attachment.py`** — a gate for doc comments that came
+  adrift from the item they describe (FND-061). Two shapes, both of which
+  compile, pass clippy and pass every test: a blank line between a `///` block
+  and its item, or new code inserted *between* them — which hands the previous
+  item's rationale to the new item's rustdoc and leaves the original
+  undocumented.
+
+  The second shape is invisible statically, because the doc is still contiguous
+  with *a* function, just the wrong one. So the check takes a base revision and
+  reports an item that **had** a doc comment and no longer does. It runs in the
+  local gate and the CI docs job against the merge base.
+
+  It exists because the mistake happened four times in one working session, three
+  caught only because a reviewer was reading the file — and the fourth after a
+  written rule against it already existed. A rule forgotten four times wants a
+  gate, not another sentence.
+
 - **The GUI has a solver picker** (FND-007). Decks with a T/Y junction, a closed
   loop, or currents near lossy ground could only be solved correctly from the
   CLI; the GUI warned about them and told the user to leave. It now offers

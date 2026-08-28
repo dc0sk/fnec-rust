@@ -131,7 +131,9 @@ both ways:
 | `crates/nec_solver` | 1 | 1 |
 | `bindings/fnec_py`  | **0** — the blind spot | 1 |
 
-Pass `--fast` to skip the test suite. The script needs
+Pass `--fast` to skip the test suite. It also runs `check-doc-attachment.py`, which
+needs a base revision to catch a doc comment an insert has separated from its item;
+the script picks the merge base with `origin/main` itself. The script needs
 `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` for the bindings clippy run on a machine
 whose Python is newer than pyo3 supports; it sets that itself, and CI must not —
 CI pins the interpreter instead.
