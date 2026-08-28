@@ -118,19 +118,45 @@ mod tests {
         );
     }
 
-    /// A current source *is* a feedpoint, but pricing it needs the solved port
-    /// voltage, which only the CLI's Hallén path computes. Saying that beats the
-    /// old "no feedpoint", which was false.
+    /// FND-051: the worker was the last frontend refusing a current-source deck,
+    /// while the CLI, the GUI and `fnec_py` all priced one. That was a scope
+    /// choice, not a technical one — the machinery has been in `nec_solver` since
+    /// #412, and `FeedpointResult` already carried impedance and current, so the
+    /// wire format never needed the port voltage.
+    ///
+    /// The assertion is the CLI's corpus-pinned value, so the four frontends
+    /// cannot drift apart.
+    /// The GPU-resident path solves a delta-gap right-hand side from raw segment
+    /// inputs, so it cannot serve a current source at all — it must stay on the
+    /// CPU rather than being answered with the wrong physics.
     #[test]
-    fn a_current_source_deck_is_refused_by_name_not_called_feedpointless() {
-        let err = solve_deck_at_frequency(DIPOLE_EX4, 14.2e6, "hallen").unwrap_err();
-        match err {
-            SolveError::UnsupportedConfig(m) => {
-                assert!(m.contains("current source"), "{m}");
-                assert!(m.contains("--hosts"), "{m}");
-            }
-            other => panic!("expected UnsupportedConfig, got {other:?}"),
-        }
+    fn a_current_source_deck_never_takes_the_gpu_resident_path() {
+        let r = solve_deck_at_frequency_with_exec(DIPOLE_EX4, 14.2e6, "hallen", "gpu")
+            .expect("still solved");
+        assert_eq!(
+            r.exec_used, "cpu",
+            "a current source must not go to the GPU"
+        );
+        // ...and the answer is the same one the CPU path gives.
+        assert!(
+            (r.impedance_re - 74.227929).abs() < 0.05,
+            "{}",
+            r.impedance_re
+        );
+    }
+
+    #[test]
+    fn a_current_source_deck_is_priced_and_agrees_with_the_cli() {
+        let r = solve_deck_at_frequency(DIPOLE_EX4, 14.2e6, "hallen")
+            .expect("the worker prices a current source now");
+        assert!(
+            (r.impedance_re - 74.227929).abs() < 0.05 && (r.impedance_im - 13.896926).abs() < 0.05,
+            "worker gave {} + j{}, CLI gives 74.227929 + j13.896926",
+            r.impedance_re,
+            r.impedance_im
+        );
+        // The reported current is the impressed one, which is what was asked for.
+        assert!((r.current_mag - 1.0).abs() < 1e-9, "{}", r.current_mag);
     }
 
     /// A plane wave has no feedpoint at all: its tag/segment fields carry
@@ -402,6 +428,15 @@ fn solve_inner(
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
     stamps.apply(&mut z_mat);
 
+    // Which drive this deck carries. A current source is a real feedpoint, but it
+    // needs its own solve — the excitation vector is all zeros, so `V/I` has
+    // nothing to divide. The machinery has been in `nec_solver` since #412; the
+    // worker was the last frontend not calling it (FND-051). A deck carrying both
+    // kinds is refused earlier by `pre_solve_error`, so these are exclusive.
+    let driven_by_current = nec_solver::feedpoints(&deck)
+        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
+    let mut current_source_port: Option<Complex64> = None;
+
     // 5. Wire-junction constraints
     let junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
     let junc_constraints: Vec<(usize, usize, f64)> = junctions
@@ -421,7 +456,12 @@ fn solve_inner(
         // stamps. This gate was already value-based rather than a card-type list,
         // which is why it never had the CLI's NT hole (FND-023) — it now asks the
         // same question through the shared seam.
-        && stamps.is_identity();
+        && stamps.is_identity()
+        // The device solves a delta-gap right-hand side from raw segment inputs;
+        // a current source needs a different solve entirely (it forces `I` and
+        // recovers `V`), so it is excluded here rather than silently answered
+        // with the wrong physics (FND-051).
+        && !driven_by_current;
 
     let (currents, exec_used) = if gpu_eligible {
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
@@ -448,6 +488,14 @@ fn solve_inner(
                 "cpu",
             ),
         }
+    } else if driven_by_current {
+        // The current-source solve: forces `I` on the source segment and recovers
+        // the port voltage, which is what makes `Z = V_port/i0` available. Always
+        // CPU — the GPU gate above excludes this class.
+        let fp = nec_solver::solve_current_source_hallen(&deck, &segs, &z_mat, freq_hz)
+            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        current_source_port = Some(fp.port_voltage);
+        (fp.currents, "cpu")
     } else {
         (
             cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
@@ -463,13 +511,27 @@ fn solve_inner(
     // answer, reporting "no EX type-0 card found" for a deck the CLI, the GUI and
     // the Python bindings all solve to the digit (FND-031).
     //
-    // A current source is excluded here on purpose rather than by omission: it is
-    // a real feedpoint, but pricing it needs the solved port voltage, which only
-    // the CLI's Hallén path computes. Saying so beats returning "no feedpoint".
-    if let Some(msg) =
-        nec_solver::validate::unpriceable_feedpoint_error(&deck, "run without --hosts")
-    {
-        return Err(SolveError::UnsupportedConfig(msg));
+    // A current source is priced here now (FND-051). It was refused while only the
+    // CLI could compute the port voltage `Z = V_port/i0` needs; that machinery has
+    // been in `nec_solver` since #412, and `FeedpointResult` already carries
+    // impedance and current, so nothing about the wire format had to change — the
+    // port voltage never crosses it.
+    if let Some(v_port) = current_source_port {
+        let (ex, _) = nec_solver::feedpoints(&deck)
+            .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
+            .ok_or(SolveError::NoFeedpoint)?;
+        let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        let z_in =
+            nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
+                .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        return Ok(FeedpointResult {
+            warnings: warnings.clone(),
+            impedance_re: z_in.re,
+            impedance_im: z_in.im,
+            current_mag: i0.norm(),
+            current_phase_deg: i0.im.atan2(i0.re).to_degrees(),
+            exec_used: exec_used.to_string(),
+        });
     }
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(&deck) {
         // A feedpoint naming a segment the geometry does not contain is a bad

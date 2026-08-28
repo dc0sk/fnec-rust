@@ -17,6 +17,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The remote worker solves current-source decks** (FND-051). It was the last of
+  the four frontends refusing one, which was a scope choice rather than a
+  technical limit: `FeedpointResult` already carried impedance and current, so
+  `Z = V_port/i0` fits the existing wire format and the port voltage never has to
+  cross it. `corpus/dipole-ex4-freesp-51seg.nec` returns 74.227929 + j13.896926
+  through `--hosts`, identical to the other three.
+
+  The GPU-resident path is excluded for this class: it solves a delta-gap
+  right-hand side from raw segment inputs and cannot represent a forced current,
+  so such a deck stays on the CPU rather than being answered with the wrong
+  physics.
+
 - **The GUI reported directivity as gain over lossy ground** (FND-053). The CLI
   has converted directivity to gain since PH9-CHK-003; the GUI never did, so one
   deck's pattern meant different things on the two frontends with nothing saying
