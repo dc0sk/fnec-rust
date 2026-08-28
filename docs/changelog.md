@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **An unrecognised `EX` type is flagged while you type, not at solve** (FND-039).
+  A deck with, say, `EX 9` rendered as clean in the GUI's keystroke-time caveat
+  strip and then failed the moment Solve was pressed, with nothing in between.
+
+  It is a **warning** rather than an error deliberately: the strip renders
+  `diagnose`'s warnings and swallows its errors, on the reasoning that a hard
+  rejection is the running action's job to report. An error here would have
+  changed nothing. The wording says the solve will refuse, so it warns without
+  implying the deck might work — and the solve still refuses it.
+
 - **The release-tag checker no longer misreports what it examined** (FND-062).
   `in_flight` was set whenever the newest changelog section matched the workspace
   version, whether or not that version was tagged — so a *tagged* release was
