@@ -839,6 +839,12 @@ pub fn superseded_frequency_warnings(deck: &NecDeck) -> Vec<String> {
 
 /// Why a deck driven by two kinds of source at once cannot be solved, if it is.
 ///
+/// Two mixes, both refused. Voltage + current was FND-036. Plane wave + driven
+/// source was deliberately *out* of scope here until nec2c settled it: that deck
+/// answers identically with the plane wave deleted, so NEC-2 takes the last `EX`
+/// type and discards the rest rather than superposing transmit and receive. A
+/// plane-wave-**only** deck is untouched — the mix is the problem, not receive.
+///
 /// A delta gap and a current source in one deck produce a **silently wrong**
 /// answer, not merely an ambiguous one. The current-source solve replaces the
 /// right-hand side entirely — `build_current_source_shape` drops the other `EX`
@@ -866,15 +872,46 @@ pub fn mixed_excitation_error(deck: &NecDeck) -> Option<String> {
             _ => {}
         }
     }
-    let (v, i) = (delta_gap?, current_source?);
-    Some(format!(
-        "EX: this deck is driven by both a voltage source (type {} on tag {} segment {}) \
-         and a current source (type {} on tag {} segment {}). fnec solves one drive kind \
-         at a time — the current-source path replaces the right-hand side, so the voltage \
-         source's feedpoint would be reported from currents its own drive never produced. \
-         Remove one, or solve them as separate decks",
-        v.excitation_type, v.tag, v.segment, i.excitation_type, i.tag, i.segment
-    ))
+    if let (Some(v), Some(i)) = (delta_gap, current_source) {
+        return Some(format!(
+            "EX: this deck is driven by both a voltage source (type {} on tag {} segment {}) \
+             and a current source (type {} on tag {} segment {}). fnec solves one drive kind \
+             at a time — the current-source path replaces the right-hand side, so the voltage \
+             source's feedpoint would be reported from currents its own drive never produced. \
+             Remove one, or solve them as separate decks",
+            v.excitation_type, v.tag, v.segment, i.excitation_type, i.tag, i.segment
+        ));
+    }
+
+    // A plane wave beside a *driven* source is the same mix one kind over
+    // (FND-050). It reached a wrong answer by a different route: the CLI routes
+    // any plane-wave-carrying deck to the receive solve, so the driven current
+    // came out zero and `V/I` printed the source voltage — 1.000 + j0.000 for
+    // `corpus/dipole-planewave-then-source-51seg.nec` — while the GUI and the
+    // bindings, having no receive route, skipped the plane wave and answered
+    // ~74.24 + j13.9. Three frontends, three answers, none flagged.
+    //
+    // Refusing loses nothing the reference offers. Measured: nec2c on that deck
+    // with an `XQ` reports 79.348 + j46.223, **bit-identical** to the same deck
+    // with the plane wave deleted — NEC-2 takes the last `EX` type and discards
+    // the rest rather than superposing transmit and receive. So there is no
+    // combined answer to lose; there is only a silent discard to make explicit.
+    let driven = crate::excitation::feedpoints(deck)
+        .find(|(_, role)| matches!(role, FeedpointRole::DeltaGap | FeedpointRole::CurrentSource));
+    let plane_wave = deck.cards.iter().find_map(|c| match c {
+        Card::Ex(ex) if ex.kind().is_plane_wave() => Some(ex),
+        _ => None,
+    });
+    if let (Some((d, _)), Some(p)) = (driven, plane_wave) {
+        return Some(format!(
+            "EX: this deck carries both an incident plane wave (type {}) and a driven \
+             source (type {} on tag {} segment {}). fnec solves one at a time, and NEC-2 \
+             does not superpose them either — it runs the last EX type and discards the \
+             rest. Solve the receive and transmit cases as separate decks",
+            p.excitation_type, d.excitation_type, d.tag, d.segment
+        ));
+    }
+    None
 }
 
 /// Why a deck has no impedance a delta-gap frontend can report, if that is the
@@ -1329,14 +1366,35 @@ mod tests {
         }
     }
 
+    /// The scope boundary this test used to defend has been moved deliberately.
+    ///
+    /// It previously asserted that a plane wave beside a driven source was *not*
+    /// refused here: a different mix, routed elsewhere, and refusing it would
+    /// have broken a corpus fixture two frontends depended on. What changed is
+    /// the evidence, not the appetite — nec2c answers that deck **identically**
+    /// to the same deck with the plane wave deleted (79.348 + j46.223 either
+    /// way), so NEC-2 runs the last `EX` type and discards the rest rather than
+    /// superposing. There is no combined answer to lose, and the three frontends
+    /// were meanwhile giving three different ones (FND-050).
     #[test]
-    fn a_plane_wave_beside_a_driven_source_is_out_of_scope_here() {
-        // A different mix — receive versus transmit — routed elsewhere, and with
-        // its own wrong answer (FND-050). Sweeping it in here would also refuse a
-        // corpus fixture two frontends' tests depend on, so the scope boundary is
-        // deliberate rather than an oversight.
+    fn a_plane_wave_beside_a_driven_source_is_refused() {
         let (deck, _segs) = deck_and_segs(
             "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 3 0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let e = mixed_excitation_error(&deck).expect("the mix is refused");
+        // Must name the *driven* source, not the plane wave's NTHETA/NPHI — the
+        // FND-031 fact this deck has always been used to pin.
+        assert!(e.contains("tag 1 segment 26"), "{e}");
+        assert!(e.contains("plane wave"), "{e}");
+    }
+
+    /// ...and a plane-wave-**only** deck is untouched. A receive deck is a
+    /// legitimate thing to solve; only the mix is refused (FND-035 is this
+    /// project's record of what a refusal without this control costs).
+    #[test]
+    fn a_plane_wave_only_deck_is_not_refused() {
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 3 0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert_eq!(mixed_excitation_error(&deck), None);
     }

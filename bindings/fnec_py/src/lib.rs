@@ -125,11 +125,9 @@ fn solve_at_freq(
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
             .ok_or("a current-source solve without a current source")?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in = if i0.norm() > 1e-60 {
-            v_port / i0
-        } else {
-            v_port
-        };
+        let z_in =
+            nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
+                .map_err(|e| e.to_string())?;
         let mut rec = std::collections::HashMap::new();
         rec.insert("freq_mhz".to_string(), freq_hz / 1e6);
         rec.insert("tag".to_string(), f64::from(ex.tag));
@@ -170,11 +168,13 @@ fn solve_at_freq(
         };
         let current: Complex64 = i_vec[idx];
         let v_source: Complex64 = v_vec[idx] * seg.length;
-        let z_in: Complex64 = if current.norm() > 1e-60 {
-            v_source / current
-        } else {
-            v_source
-        };
+        let z_in: Complex64 = nec_solver::feedpoint_impedance(
+            v_source,
+            current,
+            ex.tag as usize,
+            ex.segment as usize,
+        )
+        .map_err(|e| e.to_string())?;
         // FND-014: a negative Re(Z) is physically impossible for a passive antenna.
         // The CLI has warned about this since PH9-CHK-005; here it was silent, so a
         // junctioned deck returned an unreliable impedance as if it were sound.

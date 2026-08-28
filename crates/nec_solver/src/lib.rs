@@ -5,6 +5,7 @@ pub mod basis;
 pub mod current_source;
 pub mod excitation;
 pub mod farfield;
+pub mod feedpoint;
 pub mod frequency;
 pub mod geometry;
 pub mod linear;
@@ -32,6 +33,7 @@ pub use farfield::{
     near_h_field, radiation_efficiency, rp_card_points, FarFieldPoint, FarFieldResult, NearFieldE,
     NearFieldH, NearFieldPoint, RpGainGrid,
 };
+pub use feedpoint::{feedpoint_impedance, FeedpointError, MIN_FEEDPOINT_CURRENT};
 pub use frequency::{
     fr_sweeps, frequencies_hz, governing_fr_sweep, superseded_fr_warnings, FrSweep,
 };

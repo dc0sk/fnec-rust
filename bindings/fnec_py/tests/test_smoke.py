@@ -295,23 +295,30 @@ def test_a_clean_deck_raises_no_negative_resistance_warning():
 
 
 def test_a_plane_wave_is_not_read_as_the_feedpoint():
-    """FND-031: the bindings took the first `EX` card of any type.
+    """FND-031, still pinned — but the deck is now refused (FND-050).
 
-    A plane wave has no feedpoint — its tag/segment fields carry NTHETA and NPHI —
+    A plane wave has no feedpoint: its tag/segment fields carry NTHETA and NPHI,
     so this deck used to report segment 3, a grid dimension, as the antenna
     feedpoint where the CLI reported segment 26.
 
-    Asserts on resolution, not on the impedance: a deck carrying a plane wave is a
-    receive deck, and its driven-feedpoint value is degenerate.
+    The deck is refused now, because a plane wave beside a driven source is a mix
+    fnec will not solve and NEC-2 does not superpose either — nec2c answers it
+    identically to the same deck with the plane wave deleted. So the assertion
+    moved from the resolved feedpoint to the refusal's text; it is the same fact,
+    and it still fails if the plane wave is read as the feedpoint.
     """
     root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
     path = os.path.join(root, "corpus", "dipole-planewave-then-source-51seg.nec")
     with open(path) as f:
-        got = fnec_py.solve_deck_str(f.read())
+        deck = f.read()
 
-    assert (got["tag"], got["seg"]) == (1, 26), (
-        f"resolved the wrong EX: tag={got['tag']} seg={got['seg']}"
+    with pytest.raises(Exception) as excinfo:
+        fnec_py.solve_deck_str(deck)
+    message = str(excinfo.value)
+    assert "tag 1 segment 26" in message, (
+        f"the refusal must name the voltage source, not the plane wave: {message}"
     )
+    assert "plane wave" in message, message
 
 
 def test_a_current_source_deck_solves_and_agrees_with_the_cli():

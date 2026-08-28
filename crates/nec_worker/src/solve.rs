@@ -483,11 +483,13 @@ fn solve_inner(
         };
         let current = currents[idx];
         let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in = if current.norm() > 1e-60 {
-            v_source / current
-        } else {
-            v_source
-        };
+        let z_in = nec_solver::feedpoint_impedance(
+            v_source,
+            current,
+            ex.tag as usize,
+            ex.segment as usize,
+        )
+        .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         return Ok(FeedpointResult {
             // Parse caveats first: they describe the deck the rest was derived
             // from, so they read before the matrix-fill ones.
