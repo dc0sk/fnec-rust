@@ -75,7 +75,7 @@ pub struct GpuFarFieldPoint {
 /// normalisation constant. It is the input to both the CPU reference
 /// (`compute_hallen_fr_*_cpu`) and the real wgpu kernels in
 /// [`crate::wgpu_device`].
-pub struct HallenFrGpuKernel {
+pub struct HallenFrReferenceKernel {
     /// GPU-prepared segments (flatten from NEC model).
     pub gpu_segments: Vec<GpuSegment>,
     /// Solved current vector (one complex per segment).
@@ -88,7 +88,7 @@ pub struct HallenFrGpuKernel {
     pub total_radiated: f64,
 }
 
-impl HallenFrGpuKernel {
+impl HallenFrReferenceKernel {
     /// Prepare a Hallen FR kernel from CPU-side geometry and currents.
     ///
     /// This function performs the host-side prep work: converting geometry
@@ -107,7 +107,7 @@ impl HallenFrGpuKernel {
         normalisation: f64,
     ) -> Self {
         let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
-        HallenFrGpuKernel {
+        HallenFrReferenceKernel {
             gpu_segments: segments,
             currents,
             freq_hz,
@@ -136,7 +136,7 @@ impl HallenFrGpuKernel {
 /// # Returns
 /// Computed far-field result with directivity in dBi for each polarization.
 pub fn compute_hallen_fr_point_cpu(
-    kernel: &HallenFrGpuKernel,
+    kernel: &HallenFrReferenceKernel,
     theta_deg: f64,
     phi_deg: f64,
 ) -> GpuFarFieldPoint {
@@ -148,7 +148,7 @@ pub fn compute_hallen_fr_point_cpu(
 /// Same as `compute_hallen_fr_point_cpu()` but returns a CPU timing breakdown.
 /// Enable timing collection via `FNEC_GPU_BENCH=1` environment variable.
 pub fn compute_hallen_fr_point_with_timing(
-    kernel: &HallenFrGpuKernel,
+    kernel: &HallenFrReferenceKernel,
     theta_deg: f64,
     phi_deg: f64,
 ) -> (GpuFarFieldPoint, KernelTiming) {
@@ -243,7 +243,7 @@ pub fn compute_hallen_fr_point_with_timing(
 /// Processes a batch of (θ, φ) points, returning directivity at each point.
 /// This is the typical interface for sweeping radiation patterns.
 pub fn compute_hallen_fr_batch_cpu(
-    kernel: &HallenFrGpuKernel,
+    kernel: &HallenFrReferenceKernel,
     points: &[(f64, f64)],
 ) -> Vec<GpuFarFieldPoint> {
     points
@@ -327,7 +327,7 @@ mod tests {
             length: 1.0,
         };
         let currents = vec![Complex64::new(1.0, 0.0)];
-        let kernel = HallenFrGpuKernel::new(vec![seg], currents, 14.2e6, 1.0);
+        let kernel = HallenFrReferenceKernel::new(vec![seg], currents, 14.2e6, 1.0);
 
         assert_eq!(kernel.freq_hz, 14.2e6);
         assert!(kernel.wavenumber > 0.0);
@@ -346,7 +346,7 @@ mod tests {
         let freq_hz = 14.2e6;
 
         // Normalisation for Hertzian dipole (approximate)
-        let kernel = HallenFrGpuKernel::new(vec![seg], currents, freq_hz, 1e-4);
+        let kernel = HallenFrReferenceKernel::new(vec![seg], currents, freq_hz, 1e-4);
 
         // At θ = 90° (equator), dipole should have max gain
         let point_eq = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
@@ -365,7 +365,7 @@ mod tests {
             length: 0.01,
         };
         let currents = vec![Complex64::new(1.0, 0.0)];
-        let kernel = HallenFrGpuKernel::new(vec![seg], currents, 14.2e6, 1e-4);
+        let kernel = HallenFrReferenceKernel::new(vec![seg], currents, 14.2e6, 1e-4);
 
         let points = vec![(0.0, 0.0), (90.0, 0.0), (180.0, 0.0)];
         let results = compute_hallen_fr_batch_cpu(&kernel, &points);
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn one_segment_hallen_fr_kernel_construction() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.5)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn one_segment_kernel_compute_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn one_segment_batch_returns_one_result() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn very_low_frequency_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(1.0)],
             vec![Complex64::new(1.0, 0.0)],
             1.0,
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn very_high_frequency_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.001)],
             vec![Complex64::new(1.0, 0.0)],
             1e12,
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn very_low_frequency_wavenumber_is_tiny() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(1.0)],
             vec![Complex64::new(1.0, 0.0)],
             1.0,
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn very_high_frequency_wavenumber_is_large() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.001)],
             vec![Complex64::new(1.0, 0.0)],
             1e12,
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn nan_current_produces_sentinel_gain() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(f64::NAN, 0.0)],
             14.2e6,
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn zero_current_produces_sentinel_gain() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(0.0, 0.0)],
             14.2e6,
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn zero_normalisation_produces_zero_gain_or_sentinel() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn pattern_at_north_pole_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -544,7 +544,7 @@ mod tests {
 
     #[test]
     fn pattern_at_south_pole_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn vertical_dipole_has_null_at_both_poles() {
         // A z-aligned dipole has zero radiation at the poles in both θ and φ.
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn batch_at_poles_returns_correct_theta_values() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,
@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn empty_segment_list_does_not_panic() {
-        let kernel = HallenFrGpuKernel::new(vec![], vec![], 14.2e6, 1e-4);
+        let kernel = HallenFrReferenceKernel::new(vec![], vec![], 14.2e6, 1e-4);
         let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
         // No segments ⟹ zero field ⟹ sentinel -999.99.
         assert_eq!(result.gain_total_dbi, -999.99);
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn empty_batch_returns_empty_vec() {
-        let kernel = HallenFrGpuKernel::new(
+        let kernel = HallenFrReferenceKernel::new(
             vec![single_seg(0.01)],
             vec![Complex64::new(1.0, 0.0)],
             14.2e6,

@@ -17,6 +17,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GPU cluster closed out** (FND-009, FND-010, FND-011, FND-012; FND-008
+  deferred). Four findings that had stood since the Phase-6 review, none of them
+  a code defect in the usual sense.
+
+  `--exec gpu` now **warns where the GPU-resident dense solve is taken**: it was
+  measured at 0.04×–0.48× the CPU at every tested size, for a structural reason
+  (its LU dispatches one workgroup, so it runs on a single compute unit). That
+  recommendation existed in a design document, which nobody running the flag
+  reads. The Z-fill and far-field kernels on the same flag are 100–290× and
+  56–234× faster, so the warning names *which part* loses rather than
+  discouraging the flag.
+
+  `nec_accel::gpu_kernels` is now `kernel_reference`, and `HallenFrGpuKernel` is
+  `HallenFrReferenceKernel`. The emulation behaviour was removed long ago; the
+  name was the last true part of "a path can report CPU time under a GPU-sounding
+  name". `GpuSegment` and `GpuFarFieldPoint` keep theirs — those really are the
+  layouts the shaders consume.
+
+  `docs/gpu-arch.md` carries a **dated statement** of which backends have actually
+  been run: only wgpu Vulkan, only on an integrated adapter. Previously a reader
+  could infer from "via wgpu" that the others had been tried, because nothing said
+  otherwise.
+
+  **FND-008 is deferred, not closed**: it asks for benchmark evidence from a
+  discrete GPU, and that needs hardware rather than work.
+
 - **The remote worker solves current-source decks** (FND-051). It was the last of
   the four frontends refusing one, which was a scope choice rather than a
   technical limit: `FeedpointResult` already carried impedance and current, so

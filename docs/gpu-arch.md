@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gpu-arch.md
 status: living
-last_updated: 2026-05-03
+last_updated: 2026-08-28
 ---
 
 # GPU Architecture Decision
@@ -36,7 +36,7 @@ This document satisfies **GAP-007** (GPU rollout criteria).
 |:---------|:---------|
 | Primary GPU API | **wgpu** (Rust-native, Vulkan/Metal/DX12/OpenCL/WGSL backend) |
 | Compute shader language | **WGSL** (portable; compiles to SPIR-V for Vulkan, MSL for Metal, HLSL for DX12) |
-| First-offload candidate | **RP far-field gain computation** (embarrassingly parallel, existing CPU reference in `nec_accel::gpu_kernels`) |
+| First-offload candidate | **RP far-field gain computation** (embarrassingly parallel, existing CPU reference in `nec_accel::kernel_reference`) |
 | CUDA support | Not in Phase 5 — CUDA is single-vendor; wgpu covers NVIDIA via Vulkan |
 | OpenCL support | Not as a first-class backend; wgpu's OpenCL adapter covers it where available |
 | ROCm/AMD support | Via wgpu Vulkan backend on supported AMD GPUs |
@@ -92,7 +92,7 @@ needing GPU runners, which is critical for the corpus tolerance gate.
 1. **Embarrassingly parallel**: each `(theta, phi)` observation point is
    independent — no inter-thread data dependencies.  Perfect GPU workload shape.
 
-2. **Existing stub baseline**: `nec_accel::gpu_kernels::HallenFrGpuKernel` and
+2. **Existing stub baseline**: `nec_accel::kernel_reference::HallenFrReferenceKernel` and
    `compute_hallen_fr_batch_stub` already implement the CPU reference path with
    the exact data layout (`GpuSegment`, `GpuFarFieldPoint`) that a WGSL compute
    shader will consume.  The migration path from stub to real GPU is a shader
@@ -212,13 +212,13 @@ gate:
 
 ## 8. Stub-to-real migration path
 
-The existing CPU-emulation stubs in `nec_accel::gpu_kernels` are the migration
+The existing CPU-emulation stubs in `nec_accel::kernel_reference` are the migration
 starting point, not dead code:
 
 | Existing stub | Migration target |
 |:--------------|:----------------|
 | `compute_hallen_fr_batch_stub` | Replaced by wgpu compute dispatch in G3 |
-| `HallenFrGpuKernel::execute_stub` | Replaced by `HallenFrGpuKernel::execute_wgpu` in G3 |
+| `HallenFrReferenceKernel::execute_stub` | Replaced by `HallenFrReferenceKernel::execute_wgpu` in G3 |
 | `HallenRhsGpuKernel` stub | Replaced by WGSL RHS assembly kernel in G6 |
 | `PocklingtonMatrixGpuKernel` stub | Replaced by WGSL Pocklington kernel (post-G7, if pulse mode GPU is in scope) |
 
@@ -236,6 +236,23 @@ The following are explicitly deferred:
 |:--------------|:-------|
 | CUDA-native kernels | Single-vendor; covered by Vulkan on NVIDIA; NVIDIA users are not blocked |
 | ROCm-native (HIP) kernels | AMD hardware covered by Vulkan via wgpu; HIP requires a separate toolchain |
+
+### Backend validation status (dated, FND-010)
+
+**As of 2026-08-28, only the wgpu **Vulkan** backend has been exercised on real
+hardware**, and only on an integrated adapter (RADV RENOIR — see FND-008). No
+ROCm, SYCL, Metal or DX12 path has been run.
+
+This is a **dated "not yet", not a claim of support.** The gap was previously
+neither validated nor recorded, which is the worse of the two states: a reader
+could reasonably infer from "via wgpu" that the other backends had been tried,
+because nothing said otherwise. wgpu makes them *reachable*; reachable is not
+tested.
+
+What would change this line: one run of the corpus parity gate on each backend,
+with the adapter string recorded next to the result — the same evidence standard
+the Vulkan path already meets. Until then this section is the answer to "which
+backends work", and the answer is one.
 | Distributed/cluster execution | Explicitly gated behind full GPU solver support (Phase 5 roadmap note) |
 | NEC-5-class surface / mixed-potential | Separate architecture decision required; not part of GPU acceleration path |
 | Windows / macOS primary CI | Opportunistic validation only; Linux `x86_64` and `aarch64` are primary |
@@ -247,4 +264,4 @@ The following are explicitly deferred:
 - [`docs/phase5-entry-criteria.md`](phase5-entry-criteria.md) — Phase 5 entry gate (all criteria met)
 - [`docs/benchmarks.md`](benchmarks.md) — CPU baseline timing and benchmark methodology
 - [`docs/requirements.md`](requirements.md) — Numerical tolerance matrix
-- [`crates/nec_accel/src/gpu_kernels.rs`](../crates/nec_accel/src/gpu_kernels.rs) — Existing GPU kernel stubs (migration starting point)
+- [`crates/nec_accel/src/kernel_reference.rs`](../crates/nec_accel/src/kernel_reference.rs) — Existing GPU kernel stubs (migration starting point)

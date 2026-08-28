@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-001-gpu-stub-retirement.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-08-28
 ---
 
 # PH7-CHK-001: Retire the GPU CPU-emulation scaffold
@@ -114,3 +114,28 @@ Three concrete places reported CPU compute as GPU:
   `--gpu-fr`, `compute_hallen_fr_*_stub`, `HallenRhsGpuKernel`,
   `PocklingtonMatrixGpuKernel`, or "CPU computation marked as GPU" in
   non-test source.
+
+## Resolution of the residual (2026-08-28, FND-012)
+
+The 2026-06-27 work removed the emulation *behaviour* — no path reports CPU time
+as GPU time, and the grep audit above pins that. What it left was the **naming**:
+the module was still `gpu_kernels` and its type still `HallenFrGpuKernel`, so the
+ledger kept a finding open saying "a path can report CPU time under a
+GPU-sounding name". The name was the last true part of that sentence.
+
+The requirement offered "retire or realize". Neither fits, and taking either
+literally would have made things worse:
+
+- **Retiring** it would delete the parity baseline the wgpu shaders are tested
+  against — the module is not dead code, it is the reference.
+- **Realizing** it as a GPU path would delete the *point* of it: a CPU reference
+  that runs on the GPU is not a reference any more.
+
+So the third option: name it for what it is. `nec_accel::kernel_reference`, with
+`HallenFrReferenceKernel` inside. `GpuSegment` and `GpuFarFieldPoint` keep their
+names deliberately — those genuinely are the layouts the real shaders consume,
+and renaming them would trade one inaccuracy for another.
+
+The requirement text above is left exactly as written. It asked the right
+question in 2026-06; the answer turned out to be outside the two options it
+listed, and rewriting it to match would erase that.

@@ -29,7 +29,7 @@
 //! Human-readable tables go to stderr; the machine-readable JSON artifact goes to
 //! stdout. Exits 0 with an empty `{}` if no adapter is present.
 
-use nec_accel::gpu_kernels::GpuSegment;
+use nec_accel::kernel_reference::GpuSegment;
 use nec_accel::wgpu_device::{enumerate_compute_adapters, run_rp_farfield_batch_wgpu};
 use nec_accel::{microbench_zmatrix_dispatch, ZSegmentInput};
 use nec_solver::{assemble_z_matrix, build_geometry, compute_radiation_pattern, FarFieldPoint};

@@ -3,20 +3,20 @@
 
 //! Integration tests for the Hallén FR CPU reference kernel (parity baseline for the wgpu RP shader).
 
-use nec_accel::gpu_kernels::{
-    compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, GpuSegment, HallenFrGpuKernel,
+use nec_accel::kernel_reference::{
+    compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, GpuSegment, HallenFrReferenceKernel,
 };
 use num_complex::Complex64;
 
 /// Build a test dipole (single segment, z-axis).
-fn dipole_test_kernel(length: f64, freq_hz: f64, norm: f64) -> HallenFrGpuKernel {
+fn dipole_test_kernel(length: f64, freq_hz: f64, norm: f64) -> HallenFrReferenceKernel {
     let seg = GpuSegment {
         midpoint: [0.0, 0.0, 0.0],
         direction: [0.0, 0.0, 1.0],
         length,
     };
     let currents = vec![Complex64::new(1.0, 0.0)];
-    HallenFrGpuKernel::new(vec![seg], currents, freq_hz, norm)
+    HallenFrReferenceKernel::new(vec![seg], currents, freq_hz, norm)
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn multi_segment_linear_array() {
         Complex64::new(1.0, 0.0),
         Complex64::new(1.0, 0.0), // co-phase
     ];
-    let kernel = HallenFrGpuKernel::new(vec![seg1, seg2], currents, 14.2e6, 1e-4);
+    let kernel = HallenFrReferenceKernel::new(vec![seg1, seg2], currents, 14.2e6, 1e-4);
 
     let result = compute_hallen_fr_point_cpu(&kernel, 90.0, 0.0);
     assert!(

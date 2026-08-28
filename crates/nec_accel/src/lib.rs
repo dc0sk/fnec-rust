@@ -7,12 +7,20 @@
 //!
 //! GPU acceleration is implemented in two layers:
 //!
-//! - **`gpu_kernels`** — the **CPU reference** far-field (radiation-pattern)
+//! - **`kernel_reference`** — the **CPU reference** far-field (radiation-pattern)
 //!   implementation, plus the GPU-ready data layouts (`GpuSegment`,
 //!   `GpuFarFieldPoint`) that the real wgpu kernels consume.  It runs the same
 //!   numerical algorithm as the wgpu shaders and is the parity baseline they are
 //!   tested against.  No GPU dispatch occurs in this module, and no path here
 //!   reports its CPU time as GPU time.
+//!
+//!   It was called `gpu_kernels`, with a `HallenFrGpuKernel` inside it, which is
+//!   how "a path can report CPU time under a GPU-sounding name" became a standing
+//!   finding (FND-012). It is neither retired nor realized as a GPU path, because
+//!   it is neither dead nor meant to be one: it is the reference the real shaders
+//!   are checked against, and it is named that now. `GpuSegment` and
+//!   `GpuFarFieldPoint` keep their names — those genuinely are the layouts the
+//!   GPU consumes.
 //!
 //! - **`wgpu_device`** — real wgpu GPU dispatch (gated behind `feature = "wgpu"`).
 //!   Contains WGSL compute shaders for far-field radiation pattern (`RP`) and
@@ -21,7 +29,7 @@
 //!
 //! | Kernel / entry point | Module | Status |
 //! |---|---|---|
-//! | `compute_hallen_fr_point_cpu` / `compute_hallen_fr_batch_cpu` | `gpu_kernels` | CPU reference (parity baseline) |
+//! | `compute_hallen_fr_point_cpu` / `compute_hallen_fr_batch_cpu` | `kernel_reference` | CPU reference (parity baseline) |
 //! | `run_rp_farfield_wgpu` | `wgpu_device` | **Real wgpu** — WGSL compute shader |
 //! | `run_rp_farfield_batch_wgpu` | `wgpu_device` | **Real wgpu** — batch WGSL dispatch |
 //! | `fill_zmatrix_wgpu` | `wgpu_device` | **Real wgpu** — N×N Z-matrix fill |
@@ -49,7 +57,7 @@
 //! Remaining GPU work is tracked under DEC-003 in `docs/requirements.md` and
 //! Phase 7 (`PH7-CHK-003`, `PH7-CHK-004`) in `docs/roadmap.md`.
 
-pub mod gpu_kernels;
+pub mod kernel_reference;
 
 #[cfg(feature = "wgpu")]
 pub mod wgpu_device;
@@ -60,9 +68,9 @@ pub use wgpu_device::{
     solve_hallen_gpu_resident, GpuMicrobench, ZElem, ZSegmentInput,
 };
 
-pub use gpu_kernels::{
+pub use kernel_reference::{
     compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, compute_hallen_fr_point_with_timing,
-    HallenFrGpuKernel, KernelTiming,
+    HallenFrReferenceKernel, KernelTiming,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,7 +219,7 @@ mod wgpu_tests {
     /// bare-metal hosts without a software rasterizer.
     #[test]
     fn wgpu_rp_farfield_parity_vs_cpu_reference() {
-        use super::gpu_kernels::{GpuSegment, HallenFrGpuKernel};
+        use super::kernel_reference::{GpuSegment, HallenFrReferenceKernel};
         use super::wgpu_device::{run_rp_farfield_wgpu, RpPipelineResult};
         use num_complex::Complex64;
 
@@ -246,7 +254,7 @@ mod wgpu_tests {
         let wavenumber = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
 
         // Build CPU kernel (total_radiated = 1.0 — we only compare u_theta/u_phi).
-        let cpu_kernel = HallenFrGpuKernel {
+        let cpu_kernel = HallenFrReferenceKernel {
             gpu_segments: segs.clone(),
             currents: currents.clone(),
             freq_hz,
@@ -279,7 +287,7 @@ mod wgpu_tests {
             // CPU reference: compute_hallen_fr_point_with_timing returns the
             // intermediate radiation intensity values we need.  We re-derive
             // them from the point's gain fields using the same math.
-            use super::gpu_kernels::compute_hallen_fr_point_with_timing;
+            use super::kernel_reference::compute_hallen_fr_point_with_timing;
             let (cpu_pt, _timing) =
                 compute_hallen_fr_point_with_timing(&cpu_kernel, theta_deg, phi_deg);
 

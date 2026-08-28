@@ -375,7 +375,7 @@ const RP_BATCH_WGSL: &str = include_str!("shaders/rp_farfield_batch.wgsl");
 /// Dispatch the RP far-field WGSL shader for one (θ, φ) observation direction.
 ///
 /// # Arguments
-/// * `segments`  — GPU-ready segment list from `nec_accel::gpu_kernels::GpuSegment`
+/// * `segments`  — GPU-ready segment list from `nec_accel::kernel_reference::GpuSegment`
 /// * `currents`  — solved current vector (complex128 on CPU, downcast to f32 pairs for GPU)
 /// * `k`         — wavenumber 2πf/c
 /// * `theta_deg` — zenith angle in degrees
@@ -384,7 +384,7 @@ const RP_BATCH_WGSL: &str = include_str!("shaders/rp_farfield_batch.wgsl");
 /// Returns `RpPipelineResult::NoAdapterAvailable` when no wgpu adapter can be
 /// obtained (headless CI without software rasterizer).
 pub async fn run_rp_farfield_wgpu(
-    segments: &[crate::gpu_kernels::GpuSegment],
+    segments: &[crate::kernel_reference::GpuSegment],
     currents: &[num_complex::Complex64],
     k: f64,
     theta_deg: f64,
@@ -630,7 +630,7 @@ pub async fn run_rp_farfield_wgpu(
 /// Returns `None` when no wgpu adapter can be obtained; the caller should
 /// fall back to the CPU path in that case.
 pub async fn run_rp_farfield_batch_wgpu(
-    segments: &[crate::gpu_kernels::GpuSegment],
+    segments: &[crate::kernel_reference::GpuSegment],
     currents: &[num_complex::Complex64],
     k: f64,
     total_radiated: f64,

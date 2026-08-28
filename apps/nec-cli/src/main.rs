@@ -615,6 +615,25 @@ fn exec_fallback_warning(
     ))
 }
 
+/// What `exec` the controller asks each worker for (PH7-CHK-004).
+///
+/// A named function rather than a conditional inside `run_distributed_solve`,
+/// because nothing can call that: FND-011 recorded that `--exec gpu` never
+/// reached remote nodes, and by the time anyone looked it *did* — but the
+/// derivation had no test, so neither the claim nor its refutation could be
+/// checked. Each worker still falls back to CPU on its own if it has no adapter
+/// or the deck is out of class, and reports which it used.
+///
+/// Only `Gpu` asks for a GPU: `Hybrid` splits work on the *controller*, which
+/// says nothing about what a remote node should do with its own task.
+fn worker_exec_preference(mode: ExecutionMode) -> String {
+    if mode == ExecutionMode::Gpu {
+        "gpu".to_string()
+    } else {
+        "cpu".to_string()
+    }
+}
+
 /// The worker-warning lines to print, given what has already been printed.
 ///
 /// A free function, and deduplicating, for two reasons that are the same reason.
@@ -737,13 +756,7 @@ fn run_distributed_solve(
     let deck_b64 = encode_deck(input);
     let deck_hash = "na".to_string(); // informational; worker does not verify
     let basis = solver_mode.as_str().to_string();
-    // PH7-CHK-004: ask workers to use the GPU when the run is --exec gpu; each
-    // worker falls back to CPU if it has no adapter or the deck is out of class.
-    let exec = if execution_mode == ExecutionMode::Gpu {
-        "gpu".to_string()
-    } else {
-        "cpu".to_string()
-    };
+    let exec = worker_exec_preference(execution_mode);
     let solver_config = WorkerSolverConfig {
         basis,
         exec,
@@ -1225,8 +1238,8 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, steer_execution_mode_by_profile, worker_warning_lines,
-        CompatibilityProfile, ExecutionMode,
+        exec_fallback_warning, steer_execution_mode_by_profile, worker_exec_preference,
+        worker_warning_lines, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use num_complex::Complex64;
@@ -1348,6 +1361,25 @@ mod tests {
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
         );
+    }
+
+    /// FND-011: `--exec gpu` must reach the workers, or GPU-capable remote nodes
+    /// never use their GPU. It does — PH7-CHK-004 wired it — but the derivation
+    /// sat inside `run_distributed_solve`, which no test can call, so the finding
+    /// stood open long after the code it described had changed.
+    #[test]
+    fn a_gpu_run_asks_its_workers_for_the_gpu() {
+        assert_eq!(worker_exec_preference(ExecutionMode::Gpu), "gpu");
+    }
+
+    /// ...and nothing else does. `Hybrid` splits work on the *controller*, which
+    /// says nothing about what a remote node should do with its own task, so
+    /// asking every worker for a GPU would be a claim the flag never made.
+    #[test]
+    fn only_a_gpu_run_asks_its_workers_for_the_gpu() {
+        for mode in [ExecutionMode::Cpu, ExecutionMode::Hybrid] {
+            assert_eq!(worker_exec_preference(mode), "cpu", "{mode:?}");
+        }
     }
 
     /// FND-041's second-order defect: the local CLI prints a parse warning once,
