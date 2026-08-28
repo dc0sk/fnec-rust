@@ -5,6 +5,7 @@ mod bench;
 mod cli_args;
 mod exec_profile;
 mod laplace_config;
+mod project_cmd;
 mod resonance_search;
 mod solve_session;
 mod sweep_config;
@@ -54,6 +55,14 @@ fn main() -> ExitCode {
     // --- sweep subcommand ---------------------------------------------------
     if args.get(1).map(String::as_str) == Some("sweep") {
         return run_sweep_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
+
+    // --- project subcommand -------------------------------------------------
+    // GAP-015's "explicit CLI entry points", which were never written (FND-006),
+    // and the reason `nec_project` was a dependency nothing imported (FND-016).
+    if args.get(1).map(String::as_str) == Some("project") {
+        return project_cmd::run(&args);
     }
     // ------------------------------------------------------------------------
 
