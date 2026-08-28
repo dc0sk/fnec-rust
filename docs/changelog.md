@@ -15,6 +15,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-08-28 — Nothing left open
+
+Nine changes bringing the findings ledger to **zero open items**: 20 findings
+reached a terminal state, 19 fixed and one deferred with an owner and a reason.
+Several were closed by *recording* rather than coding — a dated "not yet" was
+what one of them literally asked for — and one turned out to have been fixed
+already, standing open only because nothing could check it either way.
+
+### Added
+
+- **`fnec project convert`** — the CLI entry point for project files (FND-006,
+  FND-016). GAP-015 asked for Markdown project import and export "with documented
+  schema, round-trip stability tests, **and explicit CLI/API entry points**". The
+  library half shipped and the item was marked Done citing only that half; the
+  entry point was never written, which is also why `nec_project` sat in the CLI's
+  manifest as a dependency no source file imported. One omission, two findings.
+
+  Format comes from each path's extension. Conversion parses then renders through
+  `nec_project`, so the converter cannot be more permissive than the loader it
+  delegates to, and it renders before touching the destination — a conversion that
+  cannot be produced does not truncate the file it was going to replace.
+
 ### Fixed
 
 - **The GPU cluster closed out** (FND-009, FND-010, FND-011, FND-012; FND-008
@@ -97,7 +119,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `"none"` is now told, rather than having its choice silently discarded.
 
 - **A feedpoint with no current has no impedance, and says so** (FND-050,
-  FND-058). Six places computed `Z = V/I`, and all six fell back to printing the
+  FND-058, and FND-030's residual). Six places computed `Z = V/I`, and all six fell back to printing the
   **source voltage** when the current was zero — not a degraded answer but a
   different quantity wearing the units of the one asked for. Measured before the
   fix, all at exit 0 with no warning:
@@ -111,7 +133,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   One division now, in `nec_solver::feedpoint`. It also separates **non-finite
   from zero**: `current.norm() > 1e-60` is false for `NaN`, so a diverged solve
   took the zero branch and was told its current was zero — the wrong sentence for
-  a solve that did not converge.
+  a solve that did not converge. That closes FND-030's remaining half: v0.16.0
+  stopped a non-finite field *entering* from a deck, and this stops a non-finite
+  current *leaving* as an impedance.
 
   **A plane wave beside a driven source is refused**, and the reference settles
   why that loses nothing: nec2c answers that deck 79.348 + j46.223, *bit-identical*
@@ -169,18 +193,6 @@ printing a number. Seven new findings were opened and deliberately left open —
 see `docs/project/findings-ledger.md`.
 
 ### Added
-
-- **`fnec project convert`** — the CLI entry point for project files (FND-006,
-  FND-016). GAP-015 asked for Markdown project import and export "with documented
-  schema, round-trip stability tests, **and explicit CLI/API entry points**". The
-  library half shipped and the item was marked Done citing only that half; the
-  entry point was never written, which is also why `nec_project` sat in the CLI's
-  manifest as a dependency no source file imported. One omission, two findings.
-
-  Format comes from each path's extension. Conversion parses then renders through
-  `nec_project`, so the converter cannot be more permissive than the loader it
-  delegates to, and it renders before touching the destination — a conversion that
-  cannot be produced does not truncate the file it was going to replace.
 
 - **`scripts/check-doc-attachment.py`** — a gate for doc comments that came
   adrift from the item they describe (FND-061). Two shapes, both of which
@@ -2049,7 +2061,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dc0sk/fnec-rust/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/dc0sk/fnec-rust/compare/v0.13.0...v0.14.0

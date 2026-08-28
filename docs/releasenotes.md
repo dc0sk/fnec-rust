@@ -7,6 +7,95 @@ last_updated: 2026-08-28
 
 # Release Notes
 
+## 0.17.0 — Nothing left open
+
+Nine changes that bring the findings ledger to **zero open items**. Twenty
+findings reached a terminal state — nineteen fixed, one deferred with an owner
+and a stated reason — plus one found and fixed inside this cycle.
+
+Every value quoted below was re-measured at the release commit.
+
+### Answers that change
+
+Read this before upgrading if you have recorded results.
+
+**The GUI was overstating gain by 6 dB over lossy ground.** It reported
+*directivity* where the CLI reported *gain*; the CLI has applied the
+radiation-efficiency correction since PH9-CHK-003 and the GUI never did. On
+`corpus/dipole-gn2-near-ground-51seg.nec` the CLI's peak is **0.2997 dBi** and the
+GUI's was **6.3355** — the difference is exactly the ground loss it was not
+accounting for. If you took a gain figure off a GUI pattern over `GN 2`, re-read
+it.
+
+**A deck with several `FR` cards now solves at a different frequency.** `nec2c`
+takes the **last** `FR` card before execution; the CLI took the *first* and
+`fnec_py` swept *all* of them, so both were wrong and differently wrong. An
+unrecognised `step_type` is linear, where the CLI previously used only the start
+frequency. Superseded `FR` cards are now warned about rather than silently
+dropped. No deck in the corpus has more than one `FR` card, so nothing shipped
+here changes — but your decks might.
+
+**Decks with no feedpoint current are refused rather than answered.** `Z = V/I`
+with `I = 0` is undefined, and six places used to print the *source voltage*
+instead — a different quantity in the units of the one you asked for. This
+affects a plane wave beside a driven source (also refused outright now, because
+NEC-2 discards rather than superposes them — nec2c answers such a deck
+identically to the same deck with the plane wave deleted), a zero-amplitude
+source, and a frequency small enough to underflow.
+
+### New
+
+**`fnec project convert <in> [out]`** — the CLI entry point for Markdown project
+import and export. GAP-015 asked for one and was marked Done citing only the
+library half, which is also why `nec_project` sat in the CLI's manifest as a
+dependency nothing imported.
+
+**`fnec_py` takes a solver argument** — `solve_deck_str(deck, solver="mpie")`,
+defaulted to `"hallen"`. It was the last frontend without a choice.
+
+**The remote worker prices current-source decks**, so all four frontends now
+return 74.227929 + j13.896926 for the same `EX 4` deck.
+
+### Told, rather than left to find out
+
+**`--hosts` with a non-Hallén solver refuses before dialling a host.** Every task
+was going to fail; the answer was knowable before the first connection.
+
+**A transport fault no longer reads as a deck fault.** A corrupt task line shares
+an error code with a real syntax error — a new code would break an older
+controller — so those messages now open with `transport:` and say no deck was
+read.
+
+**A refused deck still reports the caveats it earned**, and a failed sweep keeps
+the points it computed. Previously the negative-resistance caveat could stand
+beside an error with nothing left to describe.
+
+**`--exec gpu` says which part is slow.** The GPU-resident dense solve measures
+0.04×–0.48× the CPU for a structural reason; the Z-fill and far-field kernels on
+the same flag are 100–290× and 56–234× faster. That was recorded in a design
+document nobody running the flag reads.
+
+### Migration
+
+- **`fnec_py` 0.7.0 → 0.8.0.** Additive: the new `solver=` argument defaults to
+  the previous behaviour.
+- **No wire-protocol break.** `TaskResult::Error` gained an optional `warnings`
+  field; an older worker and a newer controller interoperate in both directions.
+- **`nec_accel::gpu_kernels` is now `kernel_reference`**, and `HallenFrGpuKernel`
+  is `HallenFrReferenceKernel`. Internal crate; no published API is affected.
+- **If a deck now exits 1**, the message names what it objects to. Every refusal
+  added here replaced a wrong number.
+
+### Verification
+
+`cargo test --workspace` — 991 tests. `fmt`, `clippy -D warnings` across both
+cargo trees, six document checkers and the tag checker's own self-test, all green
+in CI on the release commit.
+Evidence tier: unit and end-to-end tests against a CPU solve, plus corpus
+cross-checks against `nec2c` — which also settled the `FR` and plane-wave
+questions above. No hardware-in-the-loop or field tier is claimed, and GPU
+benchmark evidence remains integrated-adapter only (FND-008, deferred).
+
 ## 0.16.0 — What the solver will not answer
 
 Sixteen changes closing **nineteen** findings, and seven new ones opened and left
