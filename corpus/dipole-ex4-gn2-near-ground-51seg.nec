@@ -1,0 +1,15 @@
+CE FND-114 gate: a CURRENT source (EX 4) over GN 2 lossy ground.
+CE The class was ungated: every other EX 4 deck in the corpus is free space,
+CE and the pattern gain correction only fires over a lossy finite ground, so
+CE nothing exercised the two together. The GUI reported 6.34 dBi here where
+CE the CLI reported 0.56 -- directivity read as gain, because the current
+CE source leaves the excitation vector all zeros and the input power came out
+CE exactly 0.
+CE Geometry, ground and frequency are dipole-gn2-near-ground-51seg.nec
+CE unchanged, so the ONLY difference from that fixture is the drive.
+GW 1 51 0 0 0.5 0 0 11.064 0.001
+GE
+GN 2 0 0 0 13.0 0.005
+EX 4 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

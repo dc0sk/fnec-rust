@@ -77,20 +77,32 @@ fn an_infinite_vswr_reaches_the_controller() {
 /// fully restored. It proved the pool survives a deck it CAN price. This stub
 /// produces the fault directly.
 fn stub_worker_emitting_unusable_results() -> std::path::PathBuf {
+    use std::io::Write;
     let dir = std::env::temp_dir().join(format!("fnec-stub-worker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch dir");
+    let staged = dir.join("stub-worker.staging");
     let path = dir.join("stub-worker.sh");
+
     // Valid JSON, correct framing, missing every required field of TaskResult.
-    std::fs::write(
-        &path,
-        "#!/bin/sh\nwhile IFS= read -r line; do\n  case \"$line\" in\n    *shutdown*) exit 0 ;;\n  esac\n  printf '{\"status\":\"ok\",\"task_id\":\"x\"}\\n'\ndone\n",
-    )
-    .expect("write stub");
-    #[cfg(unix)]
+    //
+    // Written to a staging name, synced, closed, and only then renamed into the
+    // path that gets executed. Writing straight to the exec target races the
+    // kernel: Linux returns ETXTBSY ("Text file busy") if the image is still
+    // open for writing anywhere, and under full-workspace test parallelism this
+    // failed where an isolated `--test` run had passed. The renamed-into path is
+    // never itself opened for writing, so the race cannot occur.
     {
+        let mut f = std::fs::File::create(&staged).expect("create stub");
+        f.write_all(
+            b"#!/bin/sh\nwhile IFS= read -r line; do\n  case \"$line\" in\n    *shutdown*) exit 0 ;;\n  esac\n  printf '{\"status\":\"ok\",\"task_id\":\"x\"}\\n'\ndone\n",
+        )
+        .expect("write stub");
+        f.sync_all().expect("sync stub");
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        f.set_permissions(std::fs::Permissions::from_mode(0o755))
+            .expect("chmod stub");
     }
+    std::fs::rename(&staged, &path).expect("stage stub into place");
     path
 }
 

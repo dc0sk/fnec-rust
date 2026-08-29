@@ -790,26 +790,29 @@ pub(super) fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if role == nec_model::card::FeedpointRole::CurrentSource {
-            // Hallén current source: the solved port voltage V (feedpoint Z=V/i0).
-            // The dormant pulse path is retained as a fallback but is unreachable
-            // now that current sources require --solver hallen.
-            current_source_port.unwrap_or_else(|| {
-                if matches!(solver_mode, SolverMode::Pulse) {
-                    pulse_current_sources
-                        .iter()
-                        .find(|constraint| constraint.seg_index == idx)
-                        .map(|constraint| {
-                            pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
-                        })
-                        .unwrap_or(v_vec[idx] * seg.length)
-                } else {
-                    v_vec[idx] * seg.length
-                }
-            })
-        } else {
-            v_vec[idx] * seg.length
-        };
+        // Through the shared seam, so this column and the GUI's gain correction
+        // cannot disagree about what a feedpoint's voltage is — they did, and the
+        // GUI lost 5.78 dB on every current-source deck over lossy ground
+        // (FND-114). Sabotaging that one function now moves BOTH.
+        let v_source =
+            nec_solver::feedpoint_drive_voltage(role, seg.length, v_vec[idx], current_source_port)
+                .unwrap_or_else(|| {
+                    // Reached only for a current source with no solved port voltage. The
+                    // dormant pulse path is retained here rather than deleted: EX 4 with
+                    // any non-Hallén solver is refused at function entry and that refusal
+                    // is corpus-pinned, so this is unreachable today (FND-130).
+                    if matches!(solver_mode, SolverMode::Pulse) {
+                        pulse_current_sources
+                            .iter()
+                            .find(|constraint| constraint.seg_index == idx)
+                            .map(|constraint| {
+                                pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                            })
+                            .unwrap_or(v_vec[idx] * seg.length)
+                    } else {
+                        v_vec[idx] * seg.length
+                    }
+                });
         // The shared seam: a zero current has no impedance, and printing the
         // source voltage instead was reporting a different quantity in the units
         // of the one asked for (FND-050/058).
@@ -1508,10 +1511,14 @@ pub(super) fn solve_frequency_point(
     // the reported dBi matches nec2c's gain. (Free-space / PEC are lossless → η ≈ 1,
     // and are left as directivity so their corpus gates are unchanged.)
     if matches!(ground, GroundModel::SimpleFiniteGround { .. }) && !pattern_table.is_empty() {
-        let p_in: f64 = rows
-            .iter()
-            .map(|r| 0.5 * (r.v_source * r.current.conj()).re)
-            .sum();
+        // The shared producer, not a second inline sum. It computed a different
+        // number for a current source than this loop did, and since only the GUI
+        // called it, the divergence was invisible from here (FND-114). Identical
+        // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
+        // already run and aborts the session on any feedpoint it cannot price, so
+        // no feedpoint can reach this that the rows skipped.
+        let p_in: f64 =
+            nec_solver::feedpoint_input_power(deck, segs, v_vec, &i_vec, current_source_port);
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)

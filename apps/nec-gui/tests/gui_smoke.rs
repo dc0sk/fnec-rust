@@ -2200,6 +2200,45 @@ fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
     );
 }
 
+/// FND-114 — the same gate for a CURRENT source, which the voltage-drive test
+/// above cannot reach.
+///
+/// The gain correction divides by the power delivered into the feedpoints, and
+/// that power was read from the excitation vector — which `apply_ex` leaves all
+/// zeros for an `EX 4` drive. So `P_in` was exactly 0, `gain_correction_db`
+/// declined, `unwrap_or(0.0)` swallowed it, and this view reported directivity
+/// as gain. Measured before the fix: **6.3372 dBi here against the CLI's
+/// 0.5590**, a 5.78 dB overstatement, on a deck differing from
+/// `dipole-gn2-near-ground-51seg.nec` by its EX card alone.
+///
+/// The pin is ABSOLUTE, against the CLI's own number, deliberately. A test that
+/// merely compared the two drives to each other would pass if the correction
+/// were skipped for BOTH — and it would also be asserting something false, since
+/// the two drives legitimately differ by ~0.26 dB here (that gap is FND-118,
+/// which is about the solver, not this seam).
+#[test]
+fn the_gui_pattern_corrects_a_current_source_drive_as_the_cli_does() {
+    let deck = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/dipole-ex4-gn2-near-ground-51seg.nec"
+    ))
+    .expect("corpus deck");
+
+    let slice =
+        nec_gui::solve::pattern_slice_deck_str(&deck, 0.0, nec_gui::solve::SolverKind::Hallen)
+            .expect("pattern slice");
+    let peak = slice
+        .iter()
+        .map(|p| p.gain_total_dbi)
+        .fold(f64::MIN, f64::max);
+    assert!(
+        (peak - 0.5590).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.5590 for this current-source \
+         deck; 6.34 would mean the ground loss is unaccounted for, which is exactly \
+         what a current source used to do"
+    );
+}
+
 /// The free-space control, and an honest note on what it does *not* prove.
 ///
 /// It pins that a free-space pattern is still the textbook ~2.15 dBi, so a

@@ -243,6 +243,7 @@ pub fn load_currents_str(
         freq_hz: _freq_hz,
         ground,
         v_vec: _v_vec,
+        port_voltage: _port_voltage,
     } = solve_for_currents(deck_text, solver)?;
     let has_ground = !matches!(
         ground,
@@ -285,6 +286,7 @@ pub fn pattern_grid_str(
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
@@ -303,7 +305,15 @@ pub fn pattern_grid_str(
     // Directivity becomes gain over lossy ground, as the CLI has done since
     // PH9-CHK-003. Without this the same deck's lobe read as gain in one frontend
     // and directivity in the other, with nothing saying which (FND-053).
-    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
+    let delta_db = gui_gain_correction_db(
+        deck_text,
+        &segs,
+        &currents,
+        freq_hz,
+        &ground,
+        &v_vec,
+        port_voltage,
+    );
     let gains_dbi = results
         .iter()
         .map(|r| (r.gain_total_dbi + delta_db) as f32)
@@ -869,11 +879,16 @@ fn gui_gain_correction_db(
     freq_hz: f64,
     ground: &GroundModel,
     v_vec: &[Complex64],
+    port_voltage: Option<Complex64>,
 ) -> f64 {
     let Ok(parsed) = parse(deck_text) else {
         return 0.0;
     };
-    let p_in = nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, currents);
+    let p_in = nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, currents, port_voltage);
+    // `unwrap_or(0.0)` is right for free space and PEC, where there is no loss to
+    // account for. Over a LOSSY ground it means the correction was unavailable,
+    // not that it is zero — so anything that can make it unavailable there is a
+    // silent wrong answer, which is exactly how FND-114 hid.
     nec_solver::gain_correction_db(segs, currents, freq_hz, ground, p_in).unwrap_or(0.0)
 }
 
@@ -889,6 +904,7 @@ pub fn pattern_slice_deck_str(
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     // Build 37-point theta grid: 0, 5, 10, … 180 deg.
@@ -903,7 +919,15 @@ pub fn pattern_slice_deck_str(
     // Same correction as the full-sphere grid: the elevation slice is the same
     // quantity, and correcting one view and not the other would put two different
     // numbers for one deck on two tabs (FND-053).
-    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
+    let delta_db = gui_gain_correction_db(
+        deck_text,
+        &segs,
+        &currents,
+        freq_hz,
+        &ground,
+        &v_vec,
+        port_voltage,
+    );
 
     Ok(results
         .into_iter()
@@ -954,6 +978,7 @@ pub fn current_distribution_deck_str(
         freq_hz: _freq_hz,
         ground: _ground,
         v_vec: _v_vec,
+        port_voltage: _port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     let mut pos: f64 = 0.0;
@@ -997,6 +1022,13 @@ struct SolvedDeck {
     ground: nec_solver::GroundModel,
     /// Needed for the feedpoint input power the gain correction divides by.
     v_vec: Vec<Complex64>,
+    /// The solved port voltage, for a current-source drive.
+    ///
+    /// `v_vec` alone is not enough: it is all zeros on an `EX 4` deck, so the
+    /// input power came out exactly 0 and the ground-loss correction silently
+    /// did not happen — this view reported directivity as gain while the Solve
+    /// tab, which already threaded this value, was right (FND-114).
+    port_voltage: Option<Complex64>,
 }
 
 fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck, String> {
@@ -1027,7 +1059,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     // Currents and pattern get the current-source branch too. Solving an `EX 4`
     // deck on the Solve tab while these three refused it would be the FND-038
     // shape all over again.
-    let (currents, _port_voltage) =
+    let (currents, port_voltage) =
         solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     Ok(SolvedDeck {
@@ -1036,6 +1068,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     })
 }
 

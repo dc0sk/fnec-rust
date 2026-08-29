@@ -30,6 +30,7 @@
 //! sentence — "the current is zero" is the wrong thing to say about a solve that
 //! did not converge. The two are distinguished here.
 
+use nec_model::card::FeedpointRole;
 use num_complex::Complex64;
 
 /// Below this magnitude a feedpoint current is treated as no current at all.
@@ -39,6 +40,35 @@ use num_complex::Complex64;
 /// to trip this falsely, so it separates an exact-zero right-hand side from any
 /// current a real antenna carries.
 pub const MIN_FEEDPOINT_CURRENT: f64 = 1e-60;
+
+/// The driving voltage at one feedpoint, or `None` if this caller cannot say.
+///
+/// One function because the answer depends on the DRIVE, and that dependence was
+/// being re-decided per caller. The CLI knew a current source is priced from its
+/// solved port voltage; `feedpoint_input_power` did not, and used the delta-gap
+/// expression for every drive. On an `EX 4` deck the excitation vector is all
+/// zeros — `apply_ex` returns early for a current source without ever writing
+/// `v` — so the shared producer computed `P_in = 0.0` exactly, `gain_correction_db`
+/// declined on its `input_power <= 0.0` guard, and the GUI's `unwrap_or(0.0)`
+/// reported directivity as gain: 6.34 dBi where the CLI says 0.56 (FND-114).
+///
+/// **`None` for a current source without a port voltage is deliberate, and is not
+/// the same as zero.** The obvious fallback — use the delta-gap expression anyway
+/// — is precisely the bug above, kept alive for the next caller that forgets to
+/// thread the port through. A caller that cannot supply it must decline the
+/// feedpoint, so the failure mode is a missing correction rather than a wrong
+/// number laundered through a plausible-looking formula.
+pub fn feedpoint_drive_voltage(
+    role: FeedpointRole,
+    seg_length: f64,
+    v_at_feed: Complex64,
+    port_voltage: Option<Complex64>,
+) -> Option<Complex64> {
+    match role {
+        FeedpointRole::CurrentSource => port_voltage,
+        _ => Some(v_at_feed * seg_length),
+    }
+}
 
 /// A solved current vector that is not a number.
 ///

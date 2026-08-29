@@ -35,8 +35,8 @@ pub use farfield::{
     FarFieldPoint, FarFieldResult, NearFieldE, NearFieldH, NearFieldPoint, RpGainGrid,
 };
 pub use feedpoint::{
-    check_currents_finite, feedpoint_impedance, FeedpointError, NonFiniteCurrents,
-    MIN_FEEDPOINT_CURRENT,
+    check_currents_finite, feedpoint_drive_voltage, feedpoint_impedance, FeedpointError,
+    NonFiniteCurrents, MIN_FEEDPOINT_CURRENT,
 };
 pub use frequency::{
     fr_sweeps, frequencies_hz, governing_fr_sweep, is_usable_frequency_mhz, superseded_fr_warnings,
