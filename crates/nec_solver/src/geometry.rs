@@ -142,6 +142,13 @@ pub enum GeometryError {
     ZeroLengthWire { tag: u32 },
     /// No GW cards were found in the deck.
     NoWires,
+    /// A `GM` or `GR` card's tag arithmetic left the `u32` tag-number space.
+    ///
+    /// Unchecked, this was an `attempt to multiply with overflow` panic in debug
+    /// and a silently wrapped tag in release — and in `fnec worker --stdio` it
+    /// killed the process without emitting a result line at all, which the
+    /// controller cannot tell from a dead worker (FND-113).
+    TagOverflow { card: &'static str, detail: String },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -154,6 +161,12 @@ impl std::fmt::Display for GeometryError {
                 write!(f, "GW tag {tag}: wire has zero length (start == end)")
             }
             GeometryError::NoWires => write!(f, "deck contains no GW (wire) cards"),
+            GeometryError::TagOverflow { card, detail } => write!(
+                f,
+                "{card} card: {detail} leaves the u32 tag-number space (largest \
+                 representable tag is {})",
+                u32::MAX
+            ),
         }
     }
 }
@@ -781,7 +794,12 @@ fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
             .cloned()
             .collect();
         for mut seg in base {
-            seg.tag += gm.tag_increment;
+            seg.tag = seg.tag.checked_add(gm.tag_increment).ok_or_else(|| {
+                GeometryError::TagOverflow {
+                    card: "GM",
+                    detail: format!("tag {} plus tag increment {}", seg.tag, gm.tag_increment),
+                }
+            })?;
             seg.start = transform_point(seg.start, gm);
             seg.end = transform_point(seg.end, gm);
             seg.midpoint = transform_point(seg.midpoint, gm);
@@ -801,12 +819,26 @@ fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
     // Snapshot original set of segments (before any copies).
     let originals: Vec<Segment> = segs.clone();
     for copy_idx in 1..=gr.count {
+        // Loop-invariant, and the multiply is where the overflow actually happens.
+        let step =
+            gr.tag_increment
+                .checked_mul(copy_idx)
+                .ok_or_else(|| GeometryError::TagOverflow {
+                    card: "GR",
+                    detail: format!("tag increment {} times copy {copy_idx}", gr.tag_increment),
+                })?;
         let total_angle_deg = gr.angle_deg * copy_idx as f64;
         let cos_a = total_angle_deg.to_radians().cos();
         let sin_a = total_angle_deg.to_radians().sin();
         for orig in &originals {
             let mut seg = orig.clone();
-            seg.tag += gr.tag_increment * copy_idx;
+            seg.tag = seg
+                .tag
+                .checked_add(step)
+                .ok_or_else(|| GeometryError::TagOverflow {
+                    card: "GR",
+                    detail: format!("tag {} plus tag increment {step}", seg.tag),
+                })?;
             seg.start = rotate_z(seg.start, cos_a, sin_a);
             seg.end = rotate_z(seg.end, cos_a, sin_a);
             seg.midpoint = rotate_z(seg.midpoint, cos_a, sin_a);
@@ -1142,6 +1174,96 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert!((segs[0].start[2] - 2.0).abs() < 1e-12);
         assert!((segs[0].end[2] - 2.0).abs() < 1e-12);
+    }
+
+    // -------------------------------------------------------------------------
+    // FND-113 — tag arithmetic must not leave the u32 tag space
+    // -------------------------------------------------------------------------
+
+    /// A GM tag increment that overflows u32 is refused, not panicked on.
+    ///
+    /// Unchecked this was `attempt to add with overflow` in debug and a wrapped
+    /// tag in release. In `fnec worker --stdio` the panic took the process down
+    /// with no result line at all, which a controller cannot distinguish from a
+    /// dead worker — so the deck-driven failure looked like an infrastructure
+    /// one.
+    #[test]
+    fn gm_tag_increment_overflow_is_refused_not_panicked() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 7,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gm(make_gm(
+            u32::MAX,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        )));
+        let err = build_geometry(&deck).expect_err("tag 7 + increment u32::MAX overflows");
+        assert!(
+            matches!(err, GeometryError::TagOverflow { card: "GM", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// The GR overflow is in the MULTIPLY, one copy before the add, so a test
+    /// that only exercises the addition would miss it.
+    #[test]
+    fn gr_tag_increment_multiply_overflow_is_refused_not_panicked() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        // increment * copy_idx overflows on the second copy: 3e9 * 2 > u32::MAX.
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 3_000_000_000,
+            count: 2,
+            angle_deg: 10.0,
+        }));
+        let err = build_geometry(&deck).expect_err("3e9 * 2 overflows u32");
+        assert!(
+            matches!(err, GeometryError::TagOverflow { card: "GR", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// Negative control: the ordinary GR replication a real deck uses still
+    /// works. Without this, a fix that refused every GR card would pass the two
+    /// tests above.
+    #[test]
+    fn ordinary_gr_replication_is_unaffected() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 3,
+            angle_deg: 90.0,
+        }));
+        let segs = build_geometry(&deck).expect("a 4-fold turnstile is an ordinary deck");
+        assert_eq!(segs.len(), 4);
+        assert_eq!(
+            segs.iter().map(|s| s.tag).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
     }
 
     /// GM with tag_increment>0 creates a copy with incremented tag.
