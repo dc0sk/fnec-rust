@@ -186,8 +186,9 @@ impl std::error::Error for HallenSessionError {}
 pub fn solve_hallen_routed(
     deck: &NecDeck,
     segs: &[Segment],
-    z_mat: &ZMatrix,
+    z_mat: &mut ZMatrix,
     freq_hz: f64,
+    loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
     let route = hallen_route(deck, segs);
     let paths = if route.paths {
@@ -195,6 +196,27 @@ pub fn solve_hallen_routed(
     } else {
         None
     };
+
+    // Lumped series loads enter as matrix *columns*, not diagonal terms, and the
+    // coordinate they use must match the basis that will run — which is why this
+    // happens here, after the route is known, rather than in `DeckStamps::apply`
+    // where the basis is not yet decided (FND-122).
+    //
+    // These are deltas: call once per matrix, exactly as the old `apply` was.
+    if loads.iter().any(|z| *z != Complex64::new(0.0, 0.0)) {
+        for (col, column) in crate::excitation::hallen_load_columns(
+            segs,
+            freq_hz,
+            loads,
+            nontrivial_paths(segs).as_deref(),
+        ) {
+            for (row, delta) in column.iter().enumerate() {
+                if *delta != Complex64::new(0.0, 0.0) {
+                    z_mat.add_to_entry(row, col, *delta);
+                }
+            }
+        }
+    }
 
     // Path grouping, built once and shared by every arm below.
     let grouped = paths.as_ref().map(|ps| {
@@ -410,7 +432,8 @@ mod routing_tests {
     fn the_two_bases_disagree_so_the_route_decides_the_answer() {
         let (deck, segs, z) = setup(SPLIT_V);
 
-        let routed = solve_hallen_routed(&deck, &segs, &z, 14.2e6).expect("routed solve");
+        let mut z = z;
+        let routed = solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &[]).expect("routed solve");
         assert!(routed.route.paths, "this deck must take the path route");
         let z_paths = Complex64::new(1.0, 0.0) / feed_current(&deck, &segs, &routed.currents);
 
@@ -429,6 +452,108 @@ mod routing_tests {
             (z_plain.re - z_paths.re).abs() > 100.0,
             "the two bases must still disagree for this test to be meaningful; \
              plain gave {z_plain}, paths gave {z_paths}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod load_stamp_tests {
+    use super::*;
+    use crate::geometry::{build_geometry, ground_model_from_deck};
+    use crate::matrix::assemble_z_matrix_with_ground;
+
+    const F: f64 = 14.2e6;
+    const BASE: &str = "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\n";
+
+    /// Feedpoint Z for a deck body, with the load cards caller-supplied.
+    fn z_in(load_cards: &str) -> Complex64 {
+        let src = format!("{BASE}{load_cards}FR 0 1 0 0 14.2 0\nEN\n");
+        let deck = nec_parser::parse(&src).expect("parses").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        let ground = ground_model_from_deck(&deck);
+        let mut z = assemble_z_matrix_with_ground(&segs, F, &ground);
+        let stamps = crate::stamps::build_deck_stamps(&deck, &segs, F);
+        stamps.apply_couplings(&mut z);
+        let routed =
+            solve_hallen_routed(&deck, &segs, &mut z, F, &stamps.diagonal).expect("routed solve");
+        let ex = crate::first_delta_gap_feedpoint(&deck).expect("feedpoint");
+        let idx = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            .expect("feed segment");
+        Complex64::new(ex.voltage_real, ex.voltage_imag) / routed.currents[idx]
+    }
+
+    /// The port identity: a series impedance at the feed shifts the feedpoint
+    /// impedance by exactly itself, in any correct method of moments. It is the
+    /// one load check that needs no oracle.
+    ///
+    /// Tolerance, not equality. The identity is exact for an exact square solve;
+    /// fnec solves an overdetermined system by regularized normal equations, and
+    /// the controlled-source superposition argument does not survive least
+    /// squares untouched. The measured residual is ~7e-3 Ω here. Asserting
+    /// equality would be asserting something false.
+    ///
+    /// Before the fix this shift was +699.86 + j134.76 for a 100 Ω load: ohms
+    /// added to a dimensionless matrix, over-applied by a clean linear factor of
+    /// 7.0 (FND-122).
+    #[test]
+    fn a_load_at_the_feed_shifts_z_by_exactly_itself() {
+        let unloaded = z_in("");
+        for r in [1.0_f64, 10.0, 100.0, 1000.0] {
+            let loaded = z_in(&format!("LD 4 1 26 26 {r} 0.0 0.0\n"));
+            let shift = loaded - unloaded;
+            let tol = (1e-3 * r).max(0.05);
+            assert!(
+                (shift.re - r).abs() < tol && shift.im.abs() < tol,
+                "{r} Ω at the feed should shift Z by {r}+j0, got {shift} (tol {tol})"
+            );
+        }
+    }
+
+    /// A reactive load must move the reactance by itself and leave the resistance
+    /// alone — the identity's other half, which a magnitude-only check would miss.
+    #[test]
+    fn a_reactive_load_at_the_feed_moves_only_the_reactance() {
+        let unloaded = z_in("");
+        // LD 4 takes R and X directly.
+        let shift = z_in("LD 4 1 26 26 0.0 250.0 0.0\n") - unloaded;
+        assert!(
+            shift.re.abs() < 0.05 && (shift.im - 250.0).abs() < 0.25,
+            "a +j250 load should shift Z by j250, got {shift}"
+        );
+    }
+
+    /// The physics the port identity cannot see. If the load column were built
+    /// from the same scale error as the source term, the identity above would
+    /// still pass — it only proves stamp-scale equals source-scale. These two
+    /// cases are checked against an oracle instead.
+    ///
+    /// Reference values are `/usr/bin/nec2c` on the identical decks; fnec's
+    /// Hallén differs from nec2c by a systematic few percent, so the tolerance is
+    /// 10%. Before the fix, off-feed series *resistors* made the feedpoint
+    /// resistance go **down** by 2.29 Ω, and LD 5 conductor loss was ~20× low.
+    #[test]
+    fn off_feed_and_distributed_loads_track_the_oracle() {
+        let unloaded = z_in("");
+
+        let off_feed = z_in("LD 4 1 13 13 50.0 0.0 0.0\nLD 4 1 39 39 50.0 0.0 0.0\n") - unloaded;
+        assert!(
+            off_feed.re > 0.0,
+            "series resistors must raise the feedpoint resistance, got {off_feed}"
+        );
+        assert!(
+            (off_feed.re - 52.9).abs() / 52.9 < 0.10 && (off_feed.im + 9.0).abs() < 1.5,
+            "two 50 Ω at segs 13/39: nec2c gives +52.9 - j9.0, got {off_feed}"
+        );
+
+        // LD 5 is a distributed wire conductivity. Its per-segment stamp is the
+        // midpoint-rule discretisation of the same integral, so it takes the same
+        // column treatment rather than a special case.
+        let copper = z_in("LD 5 1 0 0 5.8e7 0.0 0.0\n") - unloaded;
+        assert!(
+            (copper.re - 0.939).abs() / 0.939 < 0.10,
+            "copper loss: nec2c gives +0.939 Ω, got {copper}"
         );
     }
 }

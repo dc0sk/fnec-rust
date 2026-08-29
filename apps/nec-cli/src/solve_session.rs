@@ -1110,7 +1110,44 @@ pub(super) fn solve_frequency_point(
     for warning in &laplace_warnings {
         eprintln!("warning: {warning}");
     }
-    stamps.apply(&mut z_mat);
+    // Loads are applied by the Hallen session, as matrix columns in the basis
+    // that will actually run (FND-122). Only the two-port couplings are stamped
+    // here — and their model carries the same units error the loads did, so they
+    // are caveated rather than answered silently.
+    if matches!(solver_mode, SolverMode::Hallen) {
+        stamps.apply_couplings(&mut z_mat);
+    } else {
+        // Pulse and continuity solve a Pocklington system in field units, and
+        // sinusoidal uses a basis for which the column stamp is not the load
+        // sample. None of those has a derived load treatment yet, so they keep
+        // the old diagonal add and say so.
+        stamps.apply_with_diagonal_loads(&mut z_mat);
+        if stamps
+            .diagonal
+            .iter()
+            .any(|z| *z != Complex64::new(0.0, 0.0))
+        {
+            eprintln!(
+                "warning: LD/--loads-config loads on --solver {} use the unvalidated \
+                 diagonal stamp; only the hallen basis has a derived load model \
+                 (FND-122). Treat the loaded result as indicative",
+                match solver_mode {
+                    SolverMode::Pulse => "pulse",
+                    SolverMode::Continuity => "continuity",
+                    SolverMode::Sinusoidal => "sinusoidal",
+                    _ => "this",
+                }
+            );
+        }
+    }
+    if stamps.has_couplings() {
+        eprintln!(
+            "warning: TL/NT two-port couplings are stamped as series impedances \
+             into a dimensionless matrix; that model is not derived and the \
+             resulting impedance is unreliable (FND-122). A correct treatment \
+             needs extra unknowns, not a different stamp"
+        );
+    }
     let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
         collect_pulse_current_source_constraints(deck, segs)?
     } else {
@@ -1185,8 +1222,14 @@ pub(super) fn solve_frequency_point(
                 );
                 (sol.currents, a, r, "hallen")
             } else {
-                let routed = nec_solver::solve_hallen_routed(deck, segs, &z_mat, freq_hz)
-                    .map_err(|e| e.to_string())?;
+                let routed = nec_solver::solve_hallen_routed(
+                    deck,
+                    segs,
+                    &mut z_mat,
+                    freq_hz,
+                    &stamps.diagonal,
+                )
+                .map_err(|e| e.to_string())?;
                 current_source_port = routed.port_voltage;
                 let (a, r) = match &routed.residual_inputs {
                     Some(ri) => match &ri.grouping {

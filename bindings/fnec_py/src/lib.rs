@@ -99,7 +99,15 @@ fn solve_at_freq(
     if !mpie {
         let stamps = nec_solver::build_deck_stamps(deck, &segs, freq_hz);
         warnings.extend(stamps.warnings.iter().cloned());
-        stamps.apply(&mut z_mat);
+        stamps.apply_couplings(&mut z_mat);
+        if stamps.has_couplings() {
+            warnings.push(
+                "TL/NT two-port couplings are stamped as series impedances into a \
+                 dimensionless matrix; that model is not derived and the resulting \
+                 impedance is unreliable (FND-122)"
+                    .to_string(),
+            );
+        }
     }
 
     // A current-driven deck needs a different solve, not a different pricing step:
@@ -119,7 +127,8 @@ fn solve_at_freq(
             .map_err(|e| e.to_string())?;
         (currents, None)
     } else {
-        let routed = nec_solver::solve_hallen_routed(deck, &segs, &z_mat, freq_hz)
+        let loads = nec_solver::build_deck_stamps(deck, &segs, freq_hz).diagonal;
+        let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
         (routed.currents, routed.port_voltage)
     };

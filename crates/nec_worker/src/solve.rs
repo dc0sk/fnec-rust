@@ -441,7 +441,17 @@ fn solve_inner(
 
     // 4. Assemble Z-matrix and apply loads / TL stamps
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    stamps.apply(&mut z_mat);
+    // Loads reach the solve as data, applied by the session as matrix columns in
+    // the basis that runs (FND-122). Only the two-port couplings are stamped here.
+    stamps.apply_couplings(&mut z_mat);
+    if stamps.has_couplings() {
+        warnings.push(
+            "TL/NT two-port couplings are stamped as series impedances into a \
+             dimensionless matrix; that model is not derived and the resulting \
+             impedance is unreliable (FND-122)"
+                .to_string(),
+        );
+    }
 
     // Which drive this deck carries. A current source is a real feedpoint, but it
     // needs its own solve — the excitation vector is all zeros, so `V/I` has
@@ -520,8 +530,9 @@ fn solve_inner(
         // This branch used to be a plain `solve_hallen`, so a bent or split
         // geometry came back 9.15 - j767.60 where the CLI — which had the paths
         // arm — gave 264.88 + j410.86 and nec2c 268.56 + j452.26 (FND-121).
-        let routed = nec_solver::solve_hallen_routed(&deck, &segs, &z_mat, freq_hz)
-            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        let routed =
+            nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
+                .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         current_source_port = routed.port_voltage;
         (routed.currents, "cpu")
     };
@@ -737,8 +748,8 @@ mod frontend_parity_tests {
             let deck = nec_parser::parse(deck_str).expect("parses").deck;
             let segs = nec_solver::build_geometry(&deck).expect("geometry");
             let ground = nec_solver::ground_model_from_deck(&deck);
-            let z = nec_solver::assemble_z_matrix_with_ground(&segs, 14.2e6, &ground);
-            let routed = nec_solver::solve_hallen_routed(&deck, &segs, &z, 14.2e6)
+            let mut z = nec_solver::assemble_z_matrix_with_ground(&segs, 14.2e6, &ground);
+            let routed = nec_solver::solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &[])
                 .unwrap_or_else(|e| panic!("{name}: routed solve failed: {e}"));
 
             let ex = nec_solver::first_delta_gap_feedpoint(&deck).expect("feedpoint");

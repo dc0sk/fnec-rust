@@ -1288,10 +1288,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD cards parsed and applied)",
+      "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified independently of any reference engine by the port identity: LD 4 (50 Ohm) and LD 1 (1000 Ohm) at the feed series-accumulate to 1050 Ohm, and the measured shift from the unloaded 74.242874 + j13.899516 is +1049.9881 - j0.0024. nec2c performs the same accumulation and shifts by exactly +1050 + j0.",
       "feedpoint_impedance": {
-        "real_ohm": 7422.769493,
-        "imag_ohm": 1428.846488
+        "real_ohm": 1124.231015,
+        "imag_ohm": 13.897144
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ inserted before EN)",
@@ -1303,10 +1303,10 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 5.0,
         "X_absolute_ohm": 5.0,
-        "ExternalR_absolute_ohm": 6500.0,
-        "ExternalX_absolute_ohm": 1500.0
+        "ExternalR_absolute_ohm": 10.1,
+        "ExternalX_absolute_ohm": 40.4
       },
-      "status": "Phase-2 regression lock: LD cards parsed and applied. fnec now applies LD type 1+4 loads; impedance reflects loaded operation. External nec2c reference not yet aligned (pending further LD model validation).",
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
       "last_produced_on": "2026-04-30",
       "last_produced_in": "0.3.0"
     },
@@ -1318,10 +1318,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD type 2 series-RL parsed and applied)",
+      "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified against the analytic value rather than against fnec's own prior output: LD 2 with R=10 Ohm and L=1e-6 H at 14.2 MHz must shift the feedpoint by +10 + j*omega*L = +10 + j89.2212. Measured shift from the unloaded baseline is +9.9919 + j89.2245.",
       "feedpoint_impedance": {
-        "real_ohm": 23.997576,
-        "imag_ohm": 651.798682
+        "real_ohm": 84.234792,
+        "imag_ohm": 103.124053
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1329,7 +1329,7 @@
         "R_absolute_ohm": 0.1,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: LD type 2 (series RL, R=10 Ω, L=1 µH at 14.2 MHz) parsed and applied; Z_IM dominated by inductive reactance.",
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
       "last_produced_on": "2026-04-30",
       "last_produced_in": "0.3.0"
     },
@@ -1341,10 +1341,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "fnec Hallen solver (Phase-2 regression reference; LD type 3 series-RC parsed and applied)",
+      "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified against the analytic value: LD 3 with R=10 Ohm and C=1e-12 F at 14.2 MHz must shift the feedpoint by +10 - j/(omega*C) = +10 - j11208.15. Measured shift from the unloaded baseline is +9.9873 - j11208.0971.",
       "feedpoint_impedance": {
-        "real_ohm": 15247.905051,
-        "imag_ohm": -78413.559716
+        "real_ohm": 84.230146,
+        "imag_ohm": -11194.197538
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1352,7 +1352,7 @@
         "R_absolute_ohm": 50.0,
         "X_absolute_ohm": 500.0
       },
-      "status": "Phase-2 regression lock: LD type 3 (series RC, R=10 Ω, C=1 pF at 14.2 MHz) parsed and applied; Z_IM strongly capacitive (X_C ≈11.2 kΩ).",
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
       "last_produced_on": "2026-04-30",
       "last_produced_in": "0.3.0"
     },

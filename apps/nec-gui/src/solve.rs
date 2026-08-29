@@ -414,10 +414,11 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     // Only the Hallén path consumes it. The MPIE builds its own system from the
     // geometry and ignores `z_mat` entirely, so assembling it there was an O(N²)
     // fill computed and thrown away on every solve.
-    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
+    let mut z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     // --- Hallen solve ----------------------------------------------------
-    let (currents, port_voltage) = solve_currents(deck, &segs, &z_mat, freq_hz, &ground, solver)?;
+    let (currents, port_voltage) =
+        solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     // --- feedpoint impedance --------------------------------------------
     let (z, tag, seg) = feedpoint_impedance(deck, &segs, &v_vec, &currents, freq_hz, port_voltage)?;
@@ -481,7 +482,7 @@ fn hallen_z_matrix(
         return nec_solver::ZMatrix::new(0);
     }
     let mut z_mat = assemble_z_matrix_with_ground(segs, freq_hz, ground);
-    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply(&mut z_mat);
+    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply_couplings(&mut z_mat);
     z_mat
 }
 
@@ -489,7 +490,7 @@ fn hallen_z_matrix(
 fn solve_currents(
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
-    z_mat: &nec_solver::ZMatrix,
+    z_mat: &mut nec_solver::ZMatrix,
     freq_hz: f64,
     ground: &GroundModel,
     solver: SolverKind,
@@ -510,8 +511,12 @@ fn solve_currents(
     // geometry on the wrong basis and showed the result with no caveat, because
     // the shared caveat producer suppresses the junction warning for exactly
     // that class.
-    let routed =
-        nec_solver::solve_hallen_routed(deck, segs, z_mat, freq_hz).map_err(|e| e.to_string())?;
+    // Loads are applied by the session as matrix columns in the basis that runs
+    // (FND-122), so they arrive here as data and are stamped into the matrix that
+    // is solved. Deltas, not assignments: this runs once per matrix.
+    let loads = nec_solver::build_deck_stamps(deck, segs, freq_hz).diagonal;
+    let routed = nec_solver::solve_hallen_routed(deck, segs, z_mat, freq_hz, &loads)
+        .map_err(|e| e.to_string())?;
     Ok((routed.currents, routed.port_voltage))
 }
 
@@ -723,12 +728,12 @@ impl SweepJob {
         let freq_hz = freq_mhz * 1_000_000.0;
 
         // Per point, so the discarded fill cost the whole sweep, not one solve.
-        let z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
+        let mut z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
 
         let (currents, port_voltage) = solve_currents(
             &self.deck,
             &self.segs,
-            &z_mat,
+            &mut z_mat,
             freq_hz,
             &self.ground,
             self.solver,
@@ -1017,12 +1022,13 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         .copied()
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
-    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
+    let mut z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     // Currents and pattern get the current-source branch too. Solving an `EX 4`
     // deck on the Solve tab while these three refused it would be the FND-038
     // shape all over again.
-    let (currents, _port_voltage) = solve_currents(deck, &segs, &z_mat, freq_hz, &ground, solver)?;
+    let (currents, _port_voltage) =
+        solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     Ok(SolvedDeck {
         segs,
