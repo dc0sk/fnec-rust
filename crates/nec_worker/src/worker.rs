@@ -168,6 +168,11 @@ fn process_task(line: &str) -> TaskResult {
                 SolveError::GeometryError(_)
                 | SolveError::UnsupportedConfig(_)
                 | SolveError::NoFeedpoint => ErrorCode::UnsupportedConfig,
+                // The first producer of this code. It has been in the enum — and
+                // so deserialisable by every released controller — since the
+                // crate's first commit, which is why a too-big deck can be given
+                // its own code without the wire break a new variant would mean.
+                SolveError::ResourceExhausted(_) => ErrorCode::ResourceExhausted,
             };
             TaskResult::Error {
                 task_id,
@@ -293,6 +298,38 @@ mod tests {
                 "solver_config":{{"basis":"hallen","ground_model":"none"}},
                 "frequency_hz":14.2e6}}"#
         )
+    }
+
+    /// FND-125: an over-large deck is well-formed and its geometry is supported —
+    /// it is simply too big. That is a different remedy from "this config is not
+    /// supported", so it gets `ResourceExhausted`, which had been on the wire
+    /// with no producer since this crate's first commit.
+    ///
+    /// The wire boundary is the thing under test, not the geometry check: the
+    /// `SolveError` variant is one `match` away from silently inheriting
+    /// `UnsupportedConfig`, which is exactly how FND-049 happened.
+    #[test]
+    fn an_oversized_deck_crosses_the_wire_as_resource_exhausted() {
+        // 100 000 segments: past MAX_SEGMENTS by 10x, and ~13 MB rather than a
+        // memory bomb should the geometry guard ever be removed.
+        let deck = "CE\nGW 1 100000 0 0 -5.282 0 0 5.282 0.001\nGE\n\
+                    EX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for an oversized deck: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::ResourceExhausted);
+        // The message too: `ResourceExhausted` must not become the new catch-all
+        // that `ParseError` once was.
+        assert!(
+            error_message.contains("segments"),
+            "message should name what ran out: {error_message}"
+        );
     }
 
     /// FND-049: the catch-all stamped `ParseError` on every error it had not

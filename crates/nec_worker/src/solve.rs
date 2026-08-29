@@ -276,6 +276,13 @@ pub enum SolveError {
     SingularMatrix(String),
     UnsupportedConfig(String),
     NoFeedpoint,
+    /// The deck asks for more of some resource than this worker will allocate.
+    ///
+    /// Distinct from `UnsupportedConfig` because the remedy is different: the
+    /// deck is well-formed and the geometry is supported, it is simply too big.
+    /// `ErrorCode::ResourceExhausted` has been on the wire since this crate's
+    /// first commit with no producer; this is what it was for (FND-125).
+    ResourceExhausted(String),
 }
 
 impl std::fmt::Display for SolveError {
@@ -285,6 +292,7 @@ impl std::fmt::Display for SolveError {
             SolveError::GeometryError(m) => write!(f, "geometry error: {m}"),
             SolveError::SingularMatrix(m) => write!(f, "singular matrix: {m}"),
             SolveError::UnsupportedConfig(m) => write!(f, "unsupported config: {m}"),
+            SolveError::ResourceExhausted(m) => write!(f, "resource exhausted: {m}"),
             SolveError::NoFeedpoint => {
                 write!(f, "no driven feedpoint (EX voltage source) found in deck")
             }
@@ -383,7 +391,14 @@ fn solve_inner(
     warnings.extend(parse_result.warnings.iter().map(ToString::to_string));
 
     // 2. Build geometry
-    let segs = build_geometry(&deck).map_err(|e| SolveError::GeometryError(e.to_string()))?;
+    let segs = build_geometry(&deck).map_err(|e| match e {
+        // Well-formed deck, supported geometry, simply too big — a different
+        // remedy from "this config is not supported", so a different code.
+        nec_solver::GeometryError::SegmentBudgetExceeded { .. } => {
+            SolveError::ResourceExhausted(e.to_string())
+        }
+        other => SolveError::GeometryError(other.to_string()),
+    })?;
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let ground = ground_model_from_deck(&deck);
 
