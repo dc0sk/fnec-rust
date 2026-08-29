@@ -24,6 +24,56 @@ pub struct LocalWorkerHandle {
     stdout: BufReader<ChildStdout>,
 }
 
+/// Why a dispatch failed, and therefore whether the worker survives it.
+///
+/// Before this distinction every failure was one `String`, and the pool treated
+/// every `Err` as a dead worker — so a perfectly reproducible, deck-driven
+/// failure on one frequency permanently destroyed the pool for every remaining
+/// frequency (FND-117). One negative-resistance point in a sweep took out every
+/// host.
+#[derive(Debug, Clone)]
+pub enum DispatchError {
+    /// The worker is unusable: the transport broke, the process died, or the
+    /// stream is no longer in sync. Evict it and try another.
+    Worker(String),
+    /// The worker is fine; this particular task produced something the
+    /// controller cannot use. Fail the task and keep the worker.
+    ///
+    /// A result that fails to deserialise belongs here, not in `Worker`: the
+    /// protocol is line-framed and the parse happens after a COMPLETE line has
+    /// been read, so the stream is still in sync and the next task will be
+    /// answered normally.
+    Task(String),
+}
+
+impl std::fmt::Display for DispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Worker(m) | Self::Task(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+impl std::error::Error for DispatchError {}
+
+impl From<DispatchError> for String {
+    fn from(e: DispatchError) -> Self {
+        e.to_string()
+    }
+}
+
+/// An untyped error from a transport helper is a worker fault.
+///
+/// Every `String` error reaching a dispatch is produced by the connect,
+/// reconnect or write path — the worker's health, not the task's. The one
+/// failure that is NOT a worker fault, an unreadable result line, is constructed
+/// explicitly as `Task` at its own site rather than falling through here.
+impl From<String> for DispatchError {
+    fn from(m: String) -> Self {
+        DispatchError::Worker(m)
+    }
+}
+
 impl LocalWorkerHandle {
     /// Spawn a worker subprocess.  `binary` is the path to the `fnec` binary.
     ///
@@ -51,19 +101,28 @@ impl LocalWorkerHandle {
     /// The result is matched to the task by `task_id`; if the worker sends a
     /// result with a different `task_id` it is returned as-is (the protocol
     /// guarantees one result per task in the single-in-flight model).
-    pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, String> {
-        let json = serde_json::to_string(task).map_err(|e| e.to_string())?;
-        writeln!(self.stdin, "{json}").map_err(|e| e.to_string())?;
-        self.stdin.flush().map_err(|e| e.to_string())?;
+    pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, DispatchError> {
+        // Our own request failed to serialise: nothing has been sent, so the
+        // worker is untouched and this is the task's problem.
+        let json = serde_json::to_string(task).map_err(|e| DispatchError::Task(e.to_string()))?;
+        writeln!(self.stdin, "{json}").map_err(|e| DispatchError::Worker(e.to_string()))?;
+        self.stdin
+            .flush()
+            .map_err(|e| DispatchError::Worker(e.to_string()))?;
 
         let mut line = String::new();
         self.stdout
             .read_line(&mut line)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| DispatchError::Worker(e.to_string()))?;
         if line.is_empty() {
-            return Err("worker closed stdout unexpectedly".to_string());
+            return Err(DispatchError::Worker(
+                "worker closed stdout unexpectedly".to_string(),
+            ));
         }
-        let result: TaskResult = serde_json::from_str(line.trim()).map_err(|e| e.to_string())?;
+        // A COMPLETE line was read, so the stream is in sync whatever the line
+        // says. The worker is healthy; this one result is unusable.
+        let result: TaskResult = serde_json::from_str(line.trim())
+            .map_err(|e| DispatchError::Task(format!("unreadable result from worker: {e}")))?;
         Ok(result)
     }
 

@@ -126,7 +126,7 @@ impl SshWorkerHandle {
     ///
     /// If the connection drops mid-task, a single reconnection is attempted
     /// automatically before returning an error.
-    pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, String> {
+    pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, crate::DispatchError> {
         let json = serde_json::to_string(task).map_err(|e| e.to_string())?;
 
         let send_ok = writeln!(self.stdin, "{json}")
@@ -157,14 +157,18 @@ impl SshWorkerHandle {
                 .read_line(&mut line)
                 .map_err(|e| e.to_string())?;
             if line.is_empty() {
-                return Err(format!(
+                return Err(crate::DispatchError::Worker(format!(
                     "SSH worker '{}' still disconnected after reconnect",
                     self.hostname
-                ));
+                )));
             }
         }
 
-        let result: TaskResult = serde_json::from_str(line.trim()).map_err(|e| e.to_string())?;
+        // A complete line came back, so the connection is in sync whatever it
+        // says. The host is healthy; this one result is unusable (FND-117).
+        let result: TaskResult = serde_json::from_str(line.trim()).map_err(|e| {
+            crate::DispatchError::Task(format!("unreadable result from worker: {e}"))
+        })?;
         Ok(result)
     }
 

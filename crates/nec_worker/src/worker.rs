@@ -132,6 +132,24 @@ fn process_task(line: &str) -> TaskResult {
         crate::solve::solve_deck_reporting_warnings(&deck_str, freq_hz, &basis, &exec);
     match outcome {
         Ok(fp) => {
+            // A non-finite impedance serialises as JSON `null` in a plain `f64`
+            // field, and the resulting line cannot be deserialised at all — so
+            // the controller sees a broken worker rather than a bad task. Report
+            // it as what it is (FND-117). `Impedance` is two plain `f64`s, so
+            // this must be caught before the line is built, not after.
+            if !fp.impedance_re.is_finite() || !fp.impedance_im.is_finite() {
+                return TaskResult::Error {
+                    task_id,
+                    frequency_hz: freq_hz,
+                    error_code: ErrorCode::SingularMatrix,
+                    error_message: format!(
+                        "the solve produced a non-finite feedpoint impedance \
+                         ({} + j{}), so it did not converge",
+                        fp.impedance_re, fp.impedance_im
+                    ),
+                    warnings,
+                };
+            }
             let vswr = vswr(fp.impedance_re, fp.impedance_im, 50.0);
             TaskResult::Ok {
                 task_id,
@@ -196,7 +214,12 @@ fn vswr(z_re: f64, z_im: f64, z0: f64) -> f64 {
         return f64::INFINITY;
     }
     let gamma = num_sq.sqrt() / den_sq.sqrt();
-    if gamma >= 1.0 {
+    // `gamma` is NaN when both sums overflowed to infinity, which happens for a
+    // finite but astronomical |Z| (roughly 1e154 and up). That IS an open
+    // circuit, so the honest answer is infinite SWR — and saying so here is what
+    // makes the wire invariant "null means infinite" true by construction rather
+    // than by luck (FND-117).
+    if gamma.is_nan() || gamma >= 1.0 {
         return f64::INFINITY;
     }
     (1.0 + gamma) / (1.0 - gamma)

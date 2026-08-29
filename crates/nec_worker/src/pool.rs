@@ -23,7 +23,7 @@ pub enum WorkerHandle {
 
 impl WorkerHandle {
     /// Dispatch a task to this worker and block for the result.
-    fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, String> {
+    fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, crate::DispatchError> {
         match self {
             WorkerHandle::Local(h) => h.dispatch(task),
             WorkerHandle::Ssh(h) => h.dispatch(task),
@@ -159,7 +159,18 @@ impl WorkerPool {
                     self.next_worker = (idx + 1) % self.workers.len();
                     return Ok((result, label));
                 }
-                Err(e) => {
+                // A task fault says nothing about the worker's health, so the
+                // worker stays and the failure is returned for THIS task only.
+                // Treating the two alike meant one negative-resistance frequency
+                // -- whose infinite VSWR the controller could not parse -- evicted
+                // every host in the pool, one dispatch at a time, and every
+                // remaining frequency then failed with "all workers in pool
+                // failed" (FND-117).
+                Err(crate::DispatchError::Task(e)) => {
+                    self.next_worker = (idx + 1) % self.workers.len();
+                    return Err(format!("worker '{label}' returned an unusable result: {e}"));
+                }
+                Err(crate::DispatchError::Worker(e)) => {
                     eprintln!("warning: worker '{label}' failed, removing from pool: {e}");
                     self.workers.remove(idx);
                     // idx now points to the next worker (shifted down by one after removal).
@@ -222,7 +233,18 @@ impl WorkerPool {
                             Ok(result) => {
                                 slots.lock().expect("slots lock")[i] = Some(Ok((result, label)));
                             }
-                            Err(e) => {
+                            // Same taxonomy as `dispatch`, and it must be here
+                            // too: the batch path is the one a sweep actually
+                            // uses, so a single unusable result would otherwise
+                            // take out a worker per bad frequency (FND-117).
+                            // Not retried, either — a task fault is
+                            // deterministic, so a retry just fails again.
+                            Err(crate::DispatchError::Task(e)) => {
+                                slots.lock().expect("slots lock")[i] = Some(Err(format!(
+                                    "worker '{label}' returned an unusable result: {e}"
+                                )));
+                            }
+                            Err(crate::DispatchError::Worker(e)) => {
                                 eprintln!(
                                     "warning: worker '{label}' failed, removing from pool: {e}"
                                 );
