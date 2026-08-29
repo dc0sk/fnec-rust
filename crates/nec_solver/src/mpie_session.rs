@@ -86,6 +86,8 @@ pub enum MpieSessionError {
     NoInteriorNode,
     /// The numerics failed.
     Solve(MpieError),
+    /// The solve returned, but not with numbers (FND-126).
+    NonFiniteCurrents(crate::NonFiniteCurrents),
 }
 
 impl std::fmt::Display for MpieSessionError {
@@ -104,6 +106,7 @@ impl std::fmt::Display for MpieSessionError {
                 "the feed segment has no interior (degree-2) node to drive"
             ),
             Self::Solve(e) => write!(f, "{e}"),
+            Self::NonFiniteCurrents(e) => write!(f, "{e}"),
         }
     }
 }
@@ -197,6 +200,10 @@ pub fn solve_mpie_session(
     for c in &mut currents {
         *c *= source_v;
     }
+    // The MPIE had no finiteness check anywhere: a diverged solve whose feed
+    // current happened to stay finite printed NaN rows for every other segment
+    // (FND-126).
+    crate::check_currents_finite(&currents).map_err(MpieSessionError::NonFiniteCurrents)?;
     Ok(currents)
 }
 

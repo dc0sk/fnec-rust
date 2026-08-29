@@ -40,6 +40,58 @@ use num_complex::Complex64;
 /// current a real antenna carries.
 pub const MIN_FEEDPOINT_CURRENT: f64 = 1e-60;
 
+/// A solved current vector that is not a number.
+///
+/// Reported by [`check_currents_finite`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonFiniteCurrents {
+    /// Index of the first segment whose current is not finite.
+    pub first_bad: usize,
+    /// How many segments were solved for.
+    pub total: usize,
+}
+
+impl std::fmt::Display for NonFiniteCurrents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (i, n) = (self.first_bad, self.total);
+        write!(
+            f,
+            "the solve did not converge: segment {i} of {n} has a current that is \
+             not a finite number, so everything derived from it — impedance, \
+             pattern, gain — would be meaningless"
+        )
+    }
+}
+
+impl std::error::Error for NonFiniteCurrents {}
+
+/// Refuse a solved current vector that contains a non-finite entry.
+///
+/// [`FeedpointError::NonFiniteCurrent`] guards the same thing, but only at the
+/// feedpoint, and therefore only on decks that HAVE one. A plane-wave receive
+/// deck has none, so a fully diverged solve printed 51 rows of `NaN NaN NaN NaN`
+/// and exited 0 — while the identical deck with `EX 0` instead of `EX 1` exited 1
+/// with the right diagnostic. The guard existed and the sibling path had none
+/// (FND-126).
+///
+/// This is the shared check, deliberately a free function rather than a hook
+/// inside one solver: the CLI's GPU-resident arm and its receive-pattern sweep
+/// exist precisely because they bypass the session entry points, so there is no
+/// single choke point that covers everything. One implementation, called at every
+/// site that produces currents, is the honest shape.
+pub fn check_currents_finite(currents: &[Complex64]) -> Result<(), NonFiniteCurrents> {
+    match currents
+        .iter()
+        .position(|c| !c.re.is_finite() || !c.im.is_finite())
+    {
+        Some(first_bad) => Err(NonFiniteCurrents {
+            first_bad,
+            total: currents.len(),
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Why a feedpoint has no impedance to report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeedpointError {

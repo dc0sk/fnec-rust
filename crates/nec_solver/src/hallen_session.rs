@@ -162,6 +162,8 @@ pub enum HallenSessionError {
     PlaneWave(String),
     CurrentSource(CurrentSourceError),
     Solve(SolveError),
+    /// The solve returned, but not with numbers (FND-126).
+    NonFiniteCurrents(crate::NonFiniteCurrents),
 }
 
 impl std::fmt::Display for HallenSessionError {
@@ -170,6 +172,7 @@ impl std::fmt::Display for HallenSessionError {
             Self::Excitation(m) | Self::PlaneWave(m) => write!(f, "{m}"),
             Self::CurrentSource(e) => write!(f, "{e}"),
             Self::Solve(e) => write!(f, "{e}"),
+            Self::NonFiniteCurrents(e) => write!(f, "{e}"),
         }
     }
 }
@@ -184,6 +187,21 @@ impl std::error::Error for HallenSessionError {}
 /// its own path only for the route it actually supports, rather than repeating
 /// the routing decision.
 pub fn solve_hallen_routed(
+    deck: &NecDeck,
+    segs: &[Segment],
+    z_mat: &mut ZMatrix,
+    freq_hz: f64,
+    loads: &[Complex64],
+) -> Result<HallenRouted, HallenSessionError> {
+    let routed = solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?;
+    // One exit, guarded once. The inner function returns from three arms, and a
+    // check per arm is three chances to add a fourth arm without one (FND-126).
+    crate::check_currents_finite(&routed.currents)
+        .map_err(HallenSessionError::NonFiniteCurrents)?;
+    Ok(routed)
+}
+
+fn solve_hallen_routed_inner(
     deck: &NecDeck,
     segs: &[Segment],
     z_mat: &mut ZMatrix,

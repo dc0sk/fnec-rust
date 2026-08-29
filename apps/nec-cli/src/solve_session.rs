@@ -369,6 +369,12 @@ fn plane_wave_receive_sweep(
                 }
             }
             let currents = solve_plane_wave_hallen(&d, segs, z_mat, wire_endpoints, freq_hz)?;
+            // Before the reduction, not after. `f64::max` returns the OTHER
+            // operand when one side is NaN, so `fold(0.0, f64::max)` turns a
+            // fully diverged solve into exactly 0.0 — printed as a -999.99 dB
+            // null indistinguishable from a real one (FND-127). Refusing here
+            // means the laundering has nothing to launder.
+            nec_solver::check_currents_finite(&currents).map_err(|e| e.to_string())?;
             let peak = currents.iter().map(|c| c.norm()).fold(0.0f64, f64::max);
             raw.push((theta, phi, peak));
         }
@@ -1212,6 +1218,9 @@ pub(super) fn solve_frequency_point(
             };
 
             if let Some((sol, hallen_rhs, merged_endpoints)) = gpu_sol {
+                // This arm exists because it bypasses `solve_hallen_routed`, so
+                // the guard there does not reach it (FND-126).
+                nec_solver::check_currents_finite(&sol.currents).map_err(|e| e.to_string())?;
                 let (a, r) = residual_hallen(
                     &z_mat,
                     &sol.currents,
