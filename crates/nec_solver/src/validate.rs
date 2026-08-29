@@ -27,8 +27,8 @@ use nec_model::deck::NecDeck;
 use nec_model::{DiagnosticLevel, ValidationDiagnostic};
 
 use crate::geometry::{
-    build_conductor_paths, classify_unsupported_topology, detect_wire_junctions,
-    merge_collinear_wire_endpoints, UnsupportedTopology,
+    classify_unsupported_topology, detect_wire_junctions, merge_collinear_wire_endpoints,
+    UnsupportedTopology,
 };
 use crate::{GroundModel, Segment};
 
@@ -445,16 +445,26 @@ pub fn unsupported_topology_warning(
 /// where the feed current splits across the joined wires so the single-segment `V/I`
 /// is not the true feedpoint impedance.
 ///
-/// Silent when the whole deck decomposes into supported degree-2 conductor paths —
-/// every junction feed there (bends, start-to-start splits, an inverted-V apex) is
-/// solved correctly on a continuous basis. The merged (collinear-conductor) grouping
-/// is used so a straight conductor merely split across `GW` cards is not flagged.
+/// Silent when the solve that will actually run uses the continuous conductor-path
+/// basis, which handles a junction feed (a bend, a start-to-start split, an
+/// inverted-V apex) correctly. The merged (collinear-conductor) grouping is used so
+/// a straight conductor merely split across `GW` cards is not flagged.
+///
+/// The condition is the **route**, not whether paths merely decompose. Those are
+/// not the same statement, and the difference was FND-121's aggravator: this
+/// returned early whenever `build_conductor_paths` succeeded, on the reasoning that
+/// such feeds "are solved correctly on a continuous basis" — true only in the CLI,
+/// which was the one frontend with a paths arm. The GUI, the bindings and the
+/// worker solved that exact class on the plain basis and had their only warning
+/// about it suppressed by this line, so the three frontends that most needed the
+/// caveat were the ones the shared producer silenced. A suppression may only
+/// assume a capability every caller has.
 pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
-    if build_conductor_paths(segs).is_some() {
+    if crate::hallen_session::hallen_route(deck, segs).paths {
         return Vec::new();
     }
     let merged = merge_collinear_wire_endpoints(segs);
-    let junctions = detect_wire_junctions(segs, &merged, 1e-6);
+    let junctions = detect_wire_junctions(segs, &merged, crate::hallen_session::JUNCTION_TOL_M);
     if junctions.is_empty() {
         return Vec::new();
     }

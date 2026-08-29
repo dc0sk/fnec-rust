@@ -8,6 +8,7 @@ pub mod farfield;
 pub mod feedpoint;
 pub mod frequency;
 pub mod geometry;
+pub mod hallen_session;
 pub mod linear;
 pub mod loads;
 pub mod matrix;
@@ -42,6 +43,10 @@ pub use geometry::{
     build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,
     ground_model_from_deck, merge_collinear_wire_endpoints, wire_endpoints_from_segs,
     ConductorPath, GeometryError, GroundModel, Segment, UnsupportedTopology, WireJunction,
+};
+pub use hallen_session::{
+    deck_has_current_source, deck_has_plane_wave, hallen_route, solve_hallen_routed, HallenDrive,
+    HallenRoute, HallenRouted, HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,

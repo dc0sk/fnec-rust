@@ -461,8 +461,19 @@ fn solve_inner(
 
     // 6. Solve — GPU-resident (PH7-CHK-003) for the supported class when
     // requested, else the f64 CPU solve.
+    // The route decides which member of the Hallén family this deck needs, and
+    // it is the same decision every frontend makes (FND-121). The device path
+    // below implements exactly one of them — the plain delta-gap solve — so it
+    // must ask, rather than assume.
+    let route = nec_solver::hallen_route(&deck, &segs);
+
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
+        // The device solves on the merged-straight-conductor basis. A bend, a
+        // start-to-start split or an apex feed needs the conductor-path basis,
+        // which the device does not implement — solving it here would reproduce
+        // on the GPU exactly the wrong answer the CPU path used to give.
+        && !route.paths
         && matches!(
             ground,
             GroundModel::FreeSpace | GroundModel::Deferred { .. }
@@ -503,19 +514,16 @@ fn solve_inner(
                 "cpu",
             ),
         }
-    } else if driven_by_current {
-        // The current-source solve: forces `I` on the source segment and recovers
-        // the port voltage, which is what makes `Z = V_port/i0` available. Always
-        // CPU — the GPU gate above excludes this class.
-        let fp = nec_solver::solve_current_source_hallen(&deck, &segs, &z_mat, freq_hz)
-            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
-        current_source_port = Some(fp.port_voltage);
-        (fp.currents, "cpu")
     } else {
-        (
-            cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
-            "cpu",
-        )
+        // One call for every Hallén route: plane-wave, current-source, and
+        // delta-gap on either the merged-conductor or the conductor-path basis.
+        // This branch used to be a plain `solve_hallen`, so a bent or split
+        // geometry came back 9.15 - j767.60 where the CLI — which had the paths
+        // arm — gave 264.88 + j410.86 and nec2c 268.56 + j452.26 (FND-121).
+        let routed = nec_solver::solve_hallen_routed(&deck, &segs, &z_mat, freq_hz)
+            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        current_source_port = routed.port_voltage;
+        (routed.currents, "cpu")
     };
 
     // 7. Extract the feedpoint, through the shared seam.
@@ -690,6 +698,65 @@ mod wire_frequency_gate_tests {
             assert!(
                 matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
                 "{f}: {err:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod frontend_parity_tests {
+    use super::*;
+
+    /// Bent and split geometry, the class FND-121 was measured on: an apex-fed
+    /// inverted-V and a start-to-start split fed mid-wire. Both need the
+    /// conductor-path basis; both used to be answered here on the plain one.
+    const SPLIT_V: &str = "CE\nGW 1 21 0 0 3 -5 0 0 .001\nGW 2 21 0 0 3 5 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const INVERTED_V: &str = "CE\nGW 1 21 -5 0 0 0 0 3 .001\nGW 2 21 0 0 3 5 0 0 .001\nGE\nEX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const STRAIGHT: &str =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// The worker and the library seam every other frontend calls must agree on
+    /// the same deck at the same frequency.
+    ///
+    /// This is the gate that was missing. The worker reached its answer through
+    /// its own `build_hallen_rhs` + `solve_hallen`, so it could — and did —
+    /// diverge from the CLI without any test noticing: a split inverted-V came
+    /// back 9.15 - j767.60 here against 264.88 + j410.86 there, `status: ok`,
+    /// `warnings: []`, with nec2c at 268.56 + j452.26.
+    #[test]
+    fn the_worker_agrees_with_the_shared_solver_seam_on_path_geometry() {
+        for (name, deck_str) in [
+            ("split-V", SPLIT_V),
+            ("inverted-V", INVERTED_V),
+            ("straight", STRAIGHT),
+        ] {
+            let got = solve_deck_at_frequency(deck_str, 14.2e6, "hallen")
+                .unwrap_or_else(|e| panic!("{name}: worker solve failed: {e}"));
+
+            // The same deck through the library seam the CLI, GUI and bindings use.
+            let deck = nec_parser::parse(deck_str).expect("parses").deck;
+            let segs = nec_solver::build_geometry(&deck).expect("geometry");
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            let z = nec_solver::assemble_z_matrix_with_ground(&segs, 14.2e6, &ground);
+            let routed = nec_solver::solve_hallen_routed(&deck, &segs, &z, 14.2e6)
+                .unwrap_or_else(|e| panic!("{name}: routed solve failed: {e}"));
+
+            let ex = nec_solver::first_delta_gap_feedpoint(&deck).expect("feedpoint");
+            let idx = segs
+                .iter()
+                .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+                .expect("feed segment");
+            let v = Complex64::new(ex.voltage_real, ex.voltage_imag);
+            let want = v / routed.currents[idx];
+
+            assert!(
+                (got.impedance_re - want.re).abs() < 1e-6
+                    && (got.impedance_im - want.im).abs() < 1e-6,
+                "{name}: worker {} + j{} vs shared seam {} + j{}",
+                got.impedance_re,
+                got.impedance_im,
+                want.re,
+                want.im
             );
         }
     }

@@ -21,8 +21,7 @@
 use nec_parser::parse;
 use nec_solver::validate;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs,
-    detect_wire_junctions, ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
+    assemble_z_matrix_with_ground, build_excitation, build_geometry, ground_model_from_deck,
 };
 use num_complex::Complex64;
 use pyo3::prelude::*;
@@ -72,7 +71,6 @@ fn solve_at_freq(
     }
     let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
-    let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     // Same checks, in the same order, as the CLI and the GUI.
     let mut warnings = Vec::new();
@@ -104,42 +102,26 @@ fn solve_at_freq(
         stamps.apply(&mut z_mat);
     }
 
-    let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
-    let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
-        .iter()
-        .map(|j| (j.seg_a, j.seg_b, j.sign))
-        .collect();
-
     // A current-driven deck needs a different solve, not a different pricing step:
     // its excitation vector is all zeros, so `V/I` has nothing to divide. The
     // machinery was always in `nec_solver`; the bindings just never called it, and
-    // said "use the fnec CLI" instead (FND-045). A deck carrying both drive kinds
-    // is refused earlier by `validate::pre_solve_error` (FND-036), so the two
-    // branches are genuinely exclusive.
-    let driven_by_current = nec_solver::feedpoints(deck)
-        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
-
+    // said "use the fnec CLI" instead (FND-045).
+    //
+    // Which member of the Hallén family a deck needs — plane-wave, current-source,
+    // or delta-gap on the merged-conductor or the conductor-path basis — is now
+    // one decision shared by every frontend (FND-121). This branch used to end in
+    // a plain `solve_hallen` with no paths arm, so a bent or split geometry was
+    // answered on the wrong basis, silently, exactly as in the worker and the GUI.
     let (currents, port_voltage) = if mpie {
         // Its refusals travel inside `solve_mpie_session` (#414), so this branch
         // cannot hand it a deck it would answer with a card silently ignored.
         let currents = nec_solver::solve_mpie_session(deck, &segs, &ground, freq_hz)
             .map_err(|e| e.to_string())?;
         (currents, None)
-    } else if driven_by_current {
-        let fp = nec_solver::solve_current_source_hallen(deck, &segs, &z_mat, freq_hz)
-            .map_err(|e| e.to_string())?;
-        (fp.currents, Some(fp.port_voltage))
     } else {
-        let hallen_rhs = build_hallen_rhs(deck, &segs, freq_hz).map_err(|e| e.to_string())?;
-        let sol = solve_hallen(
-            &z_mat,
-            &hallen_rhs.rhs,
-            &hallen_rhs.cos_vec,
-            &wire_endpoints,
-            &junction_tuples,
-        )
-        .map_err(|e| e.to_string())?;
-        (sol.currents, None)
+        let routed = nec_solver::solve_hallen_routed(deck, &segs, &z_mat, freq_hz)
+            .map_err(|e| e.to_string())?;
+        (routed.currents, routed.port_voltage)
     };
 
     let i_vec = &currents;
