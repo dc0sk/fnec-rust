@@ -811,11 +811,12 @@ pub fn frequency_error(deck: &NecDeck) -> Option<String> {
     // reported by `superseded_frequency_warnings` instead: ignored and broken is
     // a caveat, not a refusal.
     let sweep = crate::frequency::governing_fr_sweep(deck)?;
-    for f in sweep.extremes_mhz() {
+    // Every expanded value, not the endpoints. The endpoints bracket the rest in
+    // magnitude only, so a negative multiplicative ratio hid a negative
+    // frequency between two positive extremes (FND-097).
+    {
+        let f = sweep.unusable_frequency_mhz()?;
         let hz = f * 1e6;
-        if hz.is_finite() && f > 0.0 {
-            continue;
-        }
         let what = if sweep.len() > 1 {
             format!(
                 "the sweep starting at {} MHz reaches {f} MHz",
@@ -838,9 +839,8 @@ pub fn frequency_error(deck: &NecDeck) -> Option<String> {
             "a zero frequency drives the current to zero, so the reported \
              impedance becomes the source voltage rather than an impedance"
         };
-        return Some(format!("FR: {what}; {why}. Frequencies must be > 0"));
+        Some(format!("FR: {what}; {why}. Frequencies must be > 0"))
     }
-    None
 }
 
 /// Caveats about `FR` cards that do not govern the solve.
@@ -855,10 +855,7 @@ pub fn superseded_frequency_warnings(deck: &NecDeck) -> Vec<String> {
     let sweeps = crate::frequency::fr_sweeps(deck);
     if sweeps.len() > 1 {
         for (i, s) in sweeps[..sweeps.len() - 1].iter().enumerate() {
-            if s.extremes_mhz()
-                .iter()
-                .any(|f| !(f * 1e6).is_finite() || *f <= 0.0)
-            {
+            if s.unusable_frequency_mhz().is_some() {
                 out.push(format!(
                     "FR card {} is also not a usable frequency ({} MHz); it is \
                      superseded, so this refuses nothing — but it is very likely a typo",

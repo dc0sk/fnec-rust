@@ -43,6 +43,23 @@ use nec_model::deck::NecDeck;
 /// passes. Matches the GUI's own sweep cap, which exists for the same reason.
 pub const MAX_FR_POINTS: usize = 100_000;
 
+/// The one definition of "a frequency the solver can answer", in MHz.
+///
+/// Every frequency entry point calls this: the `FR` card expansion, the CLI's
+/// `--sweep-config` (both `points_mhz` and range mode), and the worker's wire
+/// `frequency_hz`. Before it existed the rule lived in four copies with three
+/// different domains — the FR seam checked finite-and-positive, the GUI checked
+/// finiteness first *because* every comparison against NaN is false, and
+/// `--sweep-config` checked only `<= 0.0`, which NaN and `+inf` walk straight
+/// through (FND-076, FND-076, FND-109).
+///
+/// Finiteness is tested first and explicitly. `f > 0.0` alone is not a
+/// positivity test in the presence of NaN: it is false, so a bare `<= 0.0`
+/// rejection lets NaN pass.
+pub fn is_usable_frequency_mhz(f: f64) -> bool {
+    f.is_finite() && f > 0.0 && (f * 1e6).is_finite()
+}
+
 /// One `FR` card's sweep, as a value.
 ///
 /// Everything that needs to know a deck's frequencies goes through this, so a
@@ -97,13 +114,32 @@ impl FrSweep {
             .collect()
     }
 
-    /// First and last only, for a check that must not build the list.
+    /// First and last of the frequencies this card **actually expands to**.
     ///
-    /// Both expansions are monotone in magnitude, so the extremes bracket every
-    /// value between them — which is what lets validation stay O(1) while the
-    /// expander is bounded rather than free.
+    /// Kept for reporting a sweep's span. It is deliberately **not** what
+    /// validation checks: the extremes bracket every value between them only in
+    /// *magnitude*, and a negative multiplicative ratio alternates in *sign*, so
+    /// an odd point count puts a negative frequency strictly between two
+    /// positive extremes (FND-097). Indexing is over the truncated length, so
+    /// this and [`Self::frequencies_mhz`] cannot describe different sets
+    /// (FND-100). Use [`Self::unusable_frequency_mhz`] to validate.
     pub fn extremes_mhz(&self) -> [f64; 2] {
-        [self.frequency_mhz(0), self.frequency_mhz(self.len() - 1)]
+        let last = self.len().min(MAX_FR_POINTS) - 1;
+        [self.frequency_mhz(0), self.frequency_mhz(last)]
+    }
+
+    /// The first frequency this card expands to that the solver cannot answer,
+    /// or `None` if every one of them is usable.
+    ///
+    /// Checks **every** expanded value rather than the endpoints. That costs at
+    /// most [`MAX_FR_POINTS`] comparisons and is the only form that is correct
+    /// for a sign-alternating multiplicative sweep; an endpoint test silently
+    /// admitted `FR 1 3 0 0 10.0 -2.0`, which solved at −20 MHz and printed a
+    /// confident conjugate impedance (FND-097).
+    pub fn unusable_frequency_mhz(&self) -> Option<f64> {
+        (0..self.len().min(MAX_FR_POINTS))
+            .map(|i| self.frequency_mhz(i))
+            .find(|f| !is_usable_frequency_mhz(*f))
     }
 
     /// Whether this card asks for more points than will be expanded.
@@ -262,5 +298,73 @@ mod tests {
             .deck;
         assert!(frequencies_hz(&d).is_empty());
         assert!(governing_fr_sweep(&d).is_none());
+    }
+}
+
+#[cfg(test)]
+mod usable_frequency_tests {
+    use super::*;
+
+    /// The endpoint test that this replaced passed this card: both extremes are
+    /// positive (10 and +40 MHz) while the middle point is −20 MHz, because a
+    /// negative ratio alternates in sign and only the *magnitude* is monotone.
+    /// The deck solved at −20 MHz, exit 0, no warning (FND-097).
+    #[test]
+    fn a_negative_multiplicative_ratio_is_caught_between_positive_extremes() {
+        let s = FrSweep {
+            start_mhz: 10.0,
+            step_mhz: -2.0,
+            multiplicative: true,
+            steps: 3,
+        };
+        let [lo, hi] = s.extremes_mhz();
+        assert!(
+            lo > 0.0 && hi > 0.0,
+            "extremes must both be positive: {lo}, {hi}"
+        );
+        assert_eq!(s.unusable_frequency_mhz(), Some(-20.0));
+    }
+
+    /// The validator judged the untruncated card while the expander truncated,
+    /// so one run could warn "only the first 100000 are solved" and then refuse
+    /// the deck for a point it had just said it would not solve (FND-100).
+    #[test]
+    fn validation_and_expansion_describe_the_same_set_when_truncated() {
+        let s = FrSweep {
+            start_mhz: 30.0,
+            step_mhz: -0.0001,
+            multiplicative: false,
+            steps: 400_001,
+        };
+        assert!(s.is_truncated());
+        let expanded = s.frequencies_mhz();
+        let [lo, hi] = s.extremes_mhz();
+        assert_eq!(lo, expanded[0]);
+        assert_eq!(hi, *expanded.last().unwrap());
+        assert!(
+            expanded.iter().all(|f| is_usable_frequency_mhz(*f)),
+            "every solved point is positive, so the card must not be refused"
+        );
+        assert_eq!(s.unusable_frequency_mhz(), None);
+    }
+
+    /// `f > 0.0` is false for NaN, so a bare `<= 0.0` rejection lets NaN pass.
+    /// That is how NaN reached the solver through `--sweep-config` (FND-076).
+    #[test]
+    fn nan_and_infinity_are_not_usable_frequencies() {
+        assert!(!is_usable_frequency_mhz(f64::NAN));
+        assert!(!is_usable_frequency_mhz(f64::INFINITY));
+        assert!(!is_usable_frequency_mhz(-f64::INFINITY));
+        assert!(!is_usable_frequency_mhz(0.0));
+        assert!(!is_usable_frequency_mhz(-14.2));
+        assert!(
+            !is_usable_frequency_mhz(1e303),
+            "finite in MHz but overflows to inf once converted to hertz"
+        );
+        assert!(
+            is_usable_frequency_mhz(1e300),
+            "1e306 Hz is large but finite"
+        );
+        assert!(is_usable_frequency_mhz(14.2));
     }
 }

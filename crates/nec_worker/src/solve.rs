@@ -357,6 +357,21 @@ fn solve_inner(
         )));
     }
 
+    // The frequency arrives on the wire, not in the deck, so `pre_solve_error`
+    // below cannot see it — its `frequency_error` reads the deck's FR card and
+    // takes no frequency argument at all. That left the one input the deck does
+    // not carry as the one input never validated: a negative `frequency_hz`
+    // returned the exact complex conjugate with `status: ok` and no warning,
+    // on the very class the FR seam refuses for every deck-borne path
+    // (FND-098). This end is authoritative because `run_worker_stdio` is public
+    // API fed by arbitrary stdin and the controller may be a different version.
+    if !nec_solver::is_usable_frequency_mhz(freq_hz / 1e6) {
+        return Err(SolveError::UnsupportedConfig(format!(
+            "frequency_hz {freq_hz} is not a usable frequency; \
+             frequencies must be finite and > 0"
+        )));
+    }
+
     // 1. Parse
     let parse_result =
         nec_parser::parse(deck_str).map_err(|e| SolveError::ParseError(e.to_string()))?;
@@ -635,5 +650,47 @@ EN
             r.impedance_re,
             r.impedance_im
         );
+    }
+}
+
+#[cfg(test)]
+mod wire_frequency_gate_tests {
+    use super::*;
+
+    const DIPOLE: &str =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// The frequency arrives on the wire, so `pre_solve_error` cannot see it —
+    /// `frequency_error` reads the deck's FR card and takes no frequency
+    /// argument. A negative `frequency_hz` therefore returned the exact complex
+    /// conjugate with `status: ok` and no warning, on the very class the FR seam
+    /// refuses for every deck-borne path (FND-098).
+    #[test]
+    fn a_negative_wire_frequency_is_refused_not_conjugated() {
+        let ok = solve_deck_at_frequency(DIPOLE, 14.2e6, "hallen").expect("control must solve");
+        let err = solve_deck_at_frequency(DIPOLE, -14.2e6, "hallen")
+            .expect_err("a negative wire frequency must be refused");
+        assert!(
+            matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
+            "{err:?}"
+        );
+        // Pin what the bug actually produced, so a regression cannot pass by
+        // failing for some other reason: the refused value used to come back as
+        // the conjugate of the control.
+        assert!(
+            ok.impedance_im.abs() > 1.0,
+            "control reactance should be non-trivial"
+        );
+    }
+
+    #[test]
+    fn a_non_finite_wire_frequency_is_refused() {
+        for f in [f64::NAN, f64::INFINITY, 0.0] {
+            let err = solve_deck_at_frequency(DIPOLE, f, "hallen").expect_err("must be refused");
+            assert!(
+                matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
+                "{f}: {err:?}"
+            );
+        }
     }
 }

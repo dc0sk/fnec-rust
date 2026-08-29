@@ -35,7 +35,8 @@ pub use farfield::{
 };
 pub use feedpoint::{feedpoint_impedance, FeedpointError, MIN_FEEDPOINT_CURRENT};
 pub use frequency::{
-    fr_sweeps, frequencies_hz, governing_fr_sweep, superseded_fr_warnings, FrSweep,
+    fr_sweeps, frequencies_hz, governing_fr_sweep, is_usable_frequency_mhz, superseded_fr_warnings,
+    FrSweep, MAX_FR_POINTS,
 };
 pub use geometry::{
     build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,
