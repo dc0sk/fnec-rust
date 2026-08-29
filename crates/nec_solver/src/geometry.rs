@@ -133,7 +133,6 @@ pub struct Segment {
     pub radius: f64,
 }
 
-/// Error returned by [`build_geometry`].
 /// The largest segment count [`build_geometry`] will produce.
 ///
 /// The binding constraint is not the segment list — a `Segment` is about 128
@@ -147,6 +146,7 @@ pub struct Segment {
 /// this clears every real fixture by a factor of about 39.
 pub const MAX_SEGMENTS: usize = 10_000;
 
+/// Error returned by [`build_geometry`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum GeometryError {
     /// A GW card specified zero segments.
