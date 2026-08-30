@@ -1767,6 +1767,40 @@
       "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X",
       "last_produced_on": "2026-05-05",
       "last_produced_in": "0.5.0"
+    },
+    "split-v-conductor-path-freesp": {
+      "deck_file": "split-v-conductor-path-freesp.nec",
+      "description": "Two 5 m wires meeting START-to-START at (0,0,3) and running outward and down, fed on wire 1. The reversed traversal is what makes the conductor path non-trivial, so this is the geometry class PH9-CHK-002 exists for -- and, until this row, the class no corpus deck reached.",
+      "frequency_mhz": 14.2,
+      "segments": 42,
+      "wires": 2,
+      "sources": 1,
+      "ground": "none",
+      "reference_source": "fnec Hallen conductor-path solve (self-pinned regression), cross-checked against nec2c 268.56 + j452.26 on the same deck",
+      "feedpoint_impedance": {
+        "real_ohm": 264.882179,
+        "imag_ohm": 410.856326
+      },
+      "external_reference": {
+        "engine": "nec2c",
+        "real_ohm": 268.56,
+        "imag_ohm": 452.26,
+        "captured_on": "2026-08-30"
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 4.0,
+        "ExternalX_absolute_ohm": 42.0
+      },
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [],
+      "expected_warning_counts": {},
+      "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances are wide ON PURPOSE and are not a defect being hidden: fnec's Hallen formulation differs from nec2c systematically (R within 1.4 percent here, X within 9.2 percent), which is the documented corpus-validation position for this solver. The tight gates are the self-pinned regression; the external numbers say the answer is the right shape.",
+      "last_produced_on": "2026-08-30",
+      "last_produced_in": "0.17.0"
     }
   }
 }
