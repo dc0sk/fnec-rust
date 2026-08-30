@@ -9,7 +9,6 @@
 //! Only excitation type 0 (series voltage source) is implemented in Phase 1.
 
 use num_complex::Complex64;
-use std::collections::BTreeMap;
 
 use nec_model::card::{Card, ExCard, FeedpointRole};
 use nec_model::deck::NecDeck;
@@ -188,46 +187,51 @@ pub fn build_hallen_rhs(
         }
     }
 
-    let Some(ex) = first_ex else {
+    // Only decides whether the deck has any delta gap at all; the sources
+    // themselves are collected below.
+    let Some(_ex) = first_ex else {
         return Ok(HallenRhs {
             rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
             cos_vec: vec![0.0; segs.len()],
         });
     };
 
-    let feed_idx = segs
-        .iter()
-        .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        .ok_or(ExcitationError::SegmentNotFound {
-            tag: ex.tag,
-            segment: ex.segment,
-        })?;
-
-    let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
     let scale = 2.0 * std::f64::consts::PI / ETA0;
-    let driven_tag = segs[feed_idx].tag;
 
-    // Build a map from wire tag → (feed_seg_idx, v_source) for every delta-gap EX
-    // card. This handles multi-source decks where several wires each have one.
-    // (The comment said "type-0"; the predicate has always admitted type 5 too,
-    // which is correct — fnec drives both as delta gaps.)
-    let mut source_by_tag: BTreeMap<u32, (usize, Complex64)> =
-        BTreeMap::from([(driven_tag, (feed_idx, v_source))]);
+    // Every delta-gap card is a source, in deck order.
+    //
+    // This was a `BTreeMap` keyed by wire tag, which can hold only ONE source per
+    // wire — so a second gap on the same tag was dropped in silence, and the
+    // `ex2.tag == driven_tag` guard dropped it before the map could even try. The
+    // superposition below was already written for several sources; it was the
+    // COLLECTION that deduplicated (FND-120).
+    //
+    // The conductor-path sibling, `build_hallen_rhs_paths`, iterates the cards
+    // directly and has always superposed correctly. Measured on a start-to-start
+    // split, which routes there: adding a second same-tag source changes the
+    // CURRENTS block. On a straight wire, which routes here, it did not — the two
+    // blocks were byte-identical, so the card contributed exactly nothing while
+    // the report still printed a feedpoint row for it.
+    //
+    // A missing segment is now an error for EVERY card, not just the first. The
+    // first card's was already a hard error and every card's is one in the path
+    // sibling, so silently skipping later ones was the odd case out — and a
+    // silently skipped card is the shape of FND-026.
+    let mut sources: Vec<(usize, Complex64)> = Vec::new();
     for card in &deck.cards {
         let Card::Ex(ex2) = card else { continue };
-        if ex2.kind().feedpoint_role() != FeedpointRole::DeltaGap || ex2.tag == driven_tag {
+        if ex2.kind().feedpoint_role() != FeedpointRole::DeltaGap {
             continue;
         }
-        if let Some(idx) = segs
+        let idx = segs
             .iter()
             .position(|s| s.tag == ex2.tag && s.tag_index == ex2.segment)
-        {
-            source_by_tag.insert(
-                ex2.tag,
-                (idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)),
-            );
-        }
+            .ok_or(ExcitationError::SegmentNotFound {
+                tag: ex2.tag,
+                segment: ex2.segment,
+            })?;
+        sources.push((idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)));
     }
 
     // Collinear-connected `GW` wires form one logical conductor for the Hallén
@@ -269,7 +273,7 @@ pub fn build_hallen_rhs(
 
     // rhs: each voltage source drives its whole merged conductor; `s` is measured
     // from the source segment along its axis. (Superposes for multi-source decks.)
-    for &(fi, vsrc) in source_by_tag.values() {
+    for &(fi, vsrc) in &sources {
         let (cf, cl) = components[comp_of_seg[fi]];
         let src_mid = segs[fi].midpoint;
         let src_dir = segs[fi].direction;
@@ -649,6 +653,104 @@ mod tests {
 
     fn deck_of(src: &str) -> NecDeck {
         nec_parser::parse(src).expect("parse").deck
+    }
+
+    // -----------------------------------------------------------------------
+    // FND-120 — every delta gap drives the deck, not one per wire tag
+    // -----------------------------------------------------------------------
+
+    /// A mirror-symmetric wire driven at two mirror-image segments must present
+    /// the SAME impedance at both. It is a symmetry argument, so it holds
+    /// whatever the basis does and cannot be satisfied by a formulation quirk.
+    ///
+    /// Before the fix the second source contributed exactly nothing: the RHS
+    /// collection was a `BTreeMap` keyed by wire tag, so one wire could hold one
+    /// source. Measured on a 51-segment dipole fed at segments 16 and 36, the two
+    /// feedpoints reported 112.18 + j16.63 and 106.72 + j28.78 — visibly
+    /// asymmetric on a symmetric problem — and the CURRENTS block was
+    /// byte-identical to the same deck with the second `EX` card deleted.
+    ///
+    /// The asymmetry is the assertion. Pinning one impedance would pass if both
+    /// sources were dropped.
+    #[test]
+    fn two_gaps_on_one_wire_drive_it_symmetrically() {
+        let src = "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\n\
+                   EX 0 1 16 0 1.0 0.0\nEX 0 1 36 0 1.0 0.0\n\
+                   FR 0 1 0 0 14.2 0.0\nEN\n";
+        let deck = deck_of(src);
+        let segs = crate::build_geometry(&deck).expect("geometry");
+        let rhs = build_hallen_rhs(&deck, &segs, 14.2e6).expect("rhs builds");
+
+        let idx = |tag_index: u32| {
+            segs.iter()
+                .position(|s| s.tag == 1 && s.tag_index == tag_index)
+                .expect("segment exists")
+        };
+        let (a, b) = (idx(16), idx(36));
+
+        // Both feed segments must carry the same driving term, since each is the
+        // other's mirror image and both sources are 1 V.
+        let (ra, rb) = (rhs.rhs[a], rhs.rhs[b]);
+        assert!(
+            (ra - rb).norm() < 1e-12,
+            "symmetric drive must give symmetric RHS at the two feeds: \
+             {ra} vs {rb}"
+        );
+
+        // And the mirror symmetry must hold across the whole wire, which fails if
+        // only one source is present: with one gap at 16 the profile is
+        // lopsided.
+        for m in 0..segs.len() {
+            let mirror = segs.len() - 1 - m;
+            let d = (rhs.rhs[m] - rhs.rhs[mirror]).norm();
+            assert!(
+                d < 1e-9,
+                "segment {m} and its mirror {mirror} differ by {d}; a deck \
+                 symmetric in geometry and drive cannot have an asymmetric RHS"
+            );
+        }
+    }
+
+    /// The control that stops the test above passing for the wrong reason: with
+    /// ONE gap, off centre, the RHS must NOT be mirror-symmetric. Without this, a
+    /// change that zeroed the RHS entirely would satisfy every assertion above.
+    #[test]
+    fn one_off_centre_gap_is_deliberately_asymmetric() {
+        let src = "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\n\
+                   EX 0 1 16 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let deck = deck_of(src);
+        let segs = crate::build_geometry(&deck).expect("geometry");
+        let rhs = build_hallen_rhs(&deck, &segs, 14.2e6).expect("rhs builds");
+        let worst = (0..segs.len())
+            .map(|m| (rhs.rhs[m] - rhs.rhs[segs.len() - 1 - m]).norm())
+            .fold(0.0f64, f64::max);
+        assert!(
+            worst > 1e-6,
+            "a single off-centre gap must produce an asymmetric RHS, got {worst}"
+        );
+    }
+
+    /// A second `EX` naming a segment that does not exist was silently skipped
+    /// here while the conductor-path sibling refused it. A skipped card is the
+    /// FND-026 shape: the deck asked for something and nobody said no.
+    #[test]
+    fn a_later_gap_on_a_missing_segment_is_refused_not_skipped() {
+        let src = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGE\n\
+                   EX 0 1 11 0 1.0 0.0\nEX 0 1 99 0 1.0 0.0\n\
+                   FR 0 1 0 0 14.2 0.0\nEN\n";
+        let deck = deck_of(src);
+        let segs = crate::build_geometry(&deck).expect("geometry");
+        let err = build_hallen_rhs(&deck, &segs, 14.2e6).expect_err("segment 99 does not exist");
+        assert!(
+            matches!(
+                err,
+                ExcitationError::SegmentNotFound {
+                    tag: 1,
+                    segment: 99
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[test]
