@@ -46,6 +46,7 @@ canonical list.
 | FR-008 | Stable automation-oriented core APIs | Phase 4 (PH4-CHK-003/004/006) |
 | FR-009 | Early geometry diagnostics | Phase 2 (PH2-CHK-006) |
 | FR-010 | Resonance/convergence/matching helpers | Phase 3 (PH3-CHK-008) |
+| FR-011 | Tag-range selection for geometry transforms, in non-NEC syntax | **Planned.** The capability FND-119 evicted from GM's standard I2/F7 fields; if it returns it gets its own syntax |
 
 ## Non-functional requirements (`NFR-*`) — source: `docs/requirements.md`
 

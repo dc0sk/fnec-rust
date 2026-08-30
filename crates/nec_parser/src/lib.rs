@@ -30,6 +30,19 @@ pub enum ParseError {
         field: usize,
         raw: String,
     },
+    /// A field parsed cleanly but names something fnec will not represent.
+    ///
+    /// Distinct from [`ParseError::BadField`] because the remedy differs: the
+    /// deck is not malformed, it asks for something out of scope, and saying
+    /// "cannot parse '-10'" about a perfectly well-formed -10 sends the reader
+    /// hunting for a typo that is not there.
+    UnsupportedValue {
+        line: usize,
+        card: String,
+        field: usize,
+        raw: String,
+        reason: String,
+    },
     /// A card did not have enough fields.
     TooFewFields {
         line: usize,
@@ -52,6 +65,15 @@ impl std::fmt::Display for ParseError {
                 raw,
             } => {
                 write!(f, "line {line}: {card} field {field}: cannot parse '{raw}'")
+            }
+            ParseError::UnsupportedValue {
+                line,
+                card,
+                field,
+                raw,
+                reason,
+            } => {
+                write!(f, "line {line}: {card} field {field} = '{raw}': {reason}")
             }
             ParseError::TooFewFields {
                 line,
@@ -141,19 +163,47 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "GM" => {
-                // GM I1 I2 F1 F2 F3 F4 F5 F6 F7
+                // GM ITGI NRPT ROX ROY ROZ XS YS ZS ITS
+                //
+                // Trailing fields may be omitted and default to 0, as nec2c does
+                // — verified: a bare `GM`, `GM 0`, `GM 0 1` and the 6-field form
+                // are all accepted there, where fnec used to exit 1 demanding
+                // nine (FND-119). Defaults are what make that safe: an absent
+                // rotation or translation is no movement, and an absent NRPT is
+                // an in-place move.
                 let fields = parse_fields(rest);
-                require_fields(lineno, "GM", &fields, 9)?;
+                let f = |i: usize| -> &str { fields.get(i).copied().unwrap_or("0") };
+
+                // ITGI is signed in NEC and nec2c will happily produce a NEGATIVE
+                // tag from it (measured: `GM -10 1 …` yields tag -9). fnec's tags
+                // are u32, so that structure is unrepresentable — and `as u32`
+                // saturates a negative to 0, which would silently make a same-tag
+                // copy instead. Refuse it by name rather than answer a different
+                // question.
+                let itgi = parse_finite_f64_field(lineno, "GM", 1, f(0))?;
+                if itgi < 0.0 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GM".to_string(),
+                        field: 1,
+                        raw: f(0).to_string(),
+                        reason: "a negative tag increment produces negative tag \
+                                 numbers (nec2c yields tag -9 here), which fnec's \
+                                 unsigned tags cannot represent"
+                            .to_string(),
+                    });
+                }
+
                 deck.cards.push(Card::Gm(GmCard {
-                    tag_increment: parse_u32(lineno, "GM", 1, fields[0])?,
-                    last_tag: parse_u32(lineno, "GM", 2, fields[1])?,
-                    rot_x_deg: parse_f64(lineno, "GM", 3, fields[2])?,
-                    rot_y_deg: parse_f64(lineno, "GM", 4, fields[3])?,
-                    rot_z_deg: parse_f64(lineno, "GM", 5, fields[4])?,
-                    translate_x: parse_f64(lineno, "GM", 6, fields[5])?,
-                    translate_y: parse_f64(lineno, "GM", 7, fields[6])?,
-                    translate_z: parse_f64(lineno, "GM", 8, fields[7])?,
-                    first_tag: parse_u32(lineno, "GM", 9, fields[8])?,
+                    tag_increment: itgi as u32,
+                    repeat_count: parse_u32(lineno, "GM", 2, f(1))?,
+                    rot_x_deg: parse_f64(lineno, "GM", 3, f(2))?,
+                    rot_y_deg: parse_f64(lineno, "GM", 4, f(3))?,
+                    rot_z_deg: parse_f64(lineno, "GM", 5, f(4))?,
+                    translate_x: parse_f64(lineno, "GM", 6, f(5))?,
+                    translate_y: parse_f64(lineno, "GM", 7, f(6))?,
+                    translate_z: parse_f64(lineno, "GM", 8, f(7))?,
+                    start_tag: parse_u32(lineno, "GM", 9, f(8))?,
                 }));
             }
             "GR" => {
@@ -863,14 +913,14 @@ EN
             gm,
             Some(&GmCard {
                 tag_increment: 0,
-                last_tag: 1,
+                repeat_count: 1,
                 rot_x_deg: 0.0,
                 rot_y_deg: 0.0,
                 rot_z_deg: 0.0,
                 translate_x: 1.0,
                 translate_y: 0.0,
                 translate_z: 0.0,
-                first_tag: 1,
+                start_tag: 1,
             })
         );
     }
@@ -922,9 +972,41 @@ EN
     }
 
     #[test]
-    fn gm_too_few_fields_is_error() {
-        let input = "GM 0 1 0 0\nEN\n";
-        assert!(parse(input).is_err());
+    fn a_short_gm_card_is_accepted_with_zero_defaults() {
+        // This test used to assert the opposite. nec2c accepts a GM card with
+        // any number of trailing fields omitted -- measured: a bare `GM`, `GM 0`,
+        // `GM 0 1` and the 6-field form all parse there, where fnec exited 1
+        // demanding nine (FND-119). Absent fields default to 0, which is what
+        // makes that safe: no rotation, no translation, and NRPT = 0 is an
+        // in-place move.
+        let result = parse("GM 0 1 0 0\nEN\n").expect("a short GM card must parse");
+        let gm = result
+            .deck
+            .cards
+            .iter()
+            .find_map(|c| if let Card::Gm(gm) = c { Some(gm) } else { None })
+            .expect("the GM card is present");
+        assert_eq!(gm.tag_increment, 0);
+        assert_eq!(gm.repeat_count, 1);
+        assert_eq!(gm.translate_z, 0.0, "an absent translation is no movement");
+        assert_eq!(gm.start_tag, 0, "an absent ITS is the whole structure");
+    }
+
+    #[test]
+    fn a_negative_tag_increment_is_refused_by_name() {
+        // nec2c accepts it and produces a NEGATIVE tag (measured: tag -9 for
+        // `GM -10 1 ...`). fnec's tags are unsigned, so that structure cannot be
+        // represented -- and `as u32` would saturate it to 0, silently making a
+        // same-tag copy instead. Refuse, and say why.
+        let Err(err) = parse("GW 1 3 0 0 -.5 0 0 .5 .001\nGM -10 1 0 0 0 1. 0 0 0\nEN\n") else {
+            panic!("a negative tag increment must be refused");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("negative tag"), "{msg}");
+        assert!(
+            !msg.contains("cannot parse"),
+            "the deck is well-formed; the value is out of scope, not malformed: {msg}"
+        );
     }
 
     #[test]

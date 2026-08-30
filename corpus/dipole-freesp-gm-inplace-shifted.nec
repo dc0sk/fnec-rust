@@ -1,6 +1,13 @@
-CE
+CE Re-authored 2026-08-30 (FND-119). The card was `GM 0 1 ... 1`, which fnec
+CE read as "in place, tags 1..1" but which NEC-2 reads as NRPT=1 -- one same-tag
+CE COPY at x+1, and nec2c gives 102 segments here, not 51. This fixture exists to
+CE test in-place translation INVARIANCE (corpus README 1b), so the card is now
+CE `GM 0 0 ... 0`: NRPT=0 is NEC's in-place move, over the whole structure.
+CE The deck now means what its entry always claimed, and its pinned impedance
+CE 74.242874 + j13.899516 is unchanged -- verified before and after the semantic
+CE change.
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
-GM 0 1 0 0 0 1.0 0 0 1
+GM 0 0 0 0 0 1.0 0 0 0
 GE
 EX 0 1 26 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0

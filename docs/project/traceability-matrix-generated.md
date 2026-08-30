@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix-generated.md
 status: living
-last_updated: 2026-08-24
+last_updated: 2026-08-30
 ---
 
 # Traceability matrix (generated — do not hand-edit)
@@ -25,6 +25,11 @@ the citations, then regenerate — never edit this file by hand.
 | FR-008 | Stable automation-oriented core APIs (structured output without text scraping) | implemented | high | test | `apps/nec-cli/tests/json_output_contract.rs:70` |
 | FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:8` |
 | FR-010 | Automation helpers for resonance targeting and convergence studies | implemented | medium | review | review — Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial. |
+| FR-011 | Tag-range selection for geometry transforms, in syntax NEC-2 does not define | planned | low | review | review — Planned, not built; the review is that the syntax is deliberately not accepted yet. Moves to verification = "test" when implemented.
+
+Origin: fnec's GM card used to carry a tag-RANGE filter (a first tag and a last tag) in the standard I2 and F7 fields, where NEC-2 defines NRPT (number of new structures) and ITS (the structure suffix to move). That made fnec misread every standard GM deck and made fnec-authored decks unreadable everywhere else, so FND-119 replaced those fields with the NEC-2 meanings.
+
+The CAPABILITY that occupied them may still be wanted: selecting an arbitrary tag range to transform is expressive, and NEC's ITS can only name a suffix in definition order. This requirement records the decision that if it comes back it gets its OWN syntax -- a distinct card, or a documented extension marker -- and never a standard field. Occupying a standard field is what caused FND-119, and the failure is silent in both directions. |
 | NFR-001 | Primary runtime target Linux (Wayland), then macOS, then Windows | implemented | medium | review | review — Platform/deployment target — verified by build targets and CI runner, not a unit test. |
 | NFR-002 | CPU execution multithreaded and deterministic by default | implemented | high | review | review — Determinism is asserted across many solver tests; parallelism is a rayon config fact. |
 | NFR-003 | GPU acceleration optional at runtime with reliable CPU fallback | implemented | high | test | `apps/nec-cli/tests/exec_modes.rs:186` |

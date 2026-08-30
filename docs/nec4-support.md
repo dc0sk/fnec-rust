@@ -32,7 +32,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
 | GE | Geometry end | FULL | Parsed; GE I1=1 infers PEC ground when no GN card is present. GE I1=-1 emits a below-ground warning; other unknown values warn with valid range hint; both fall back to free-space. |
 | SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
-| GM | Move segments | PARTIAL | Supported subset: rotate (Rx/Ry/Rz) and translate wire tag ranges. `tag_increment=0` modifies in place; `tag_increment>0` appends one transformed copy with incremented tags. Broader NEC GM semantics should be reviewed before claiming full parity. |
+| GM | Move segments | FULL | NEC-2 semantics, pinned against nec2c in `crates/nec_solver/tests/gm_nec2c.rs`: I2 = NRPT (number of new structures, 0 = move in place), F7 = ITS (the tag whose first segment begins the affected suffix, in definition order, 0 = whole structure), copies cumulative and tagged `tag + k*ITGI`, an in-place move retagged too, tag-0 segments never retagged, an ITS naming no wire refused. Trailing fields may be omitted. NOT supported, and refused by name: a negative ITGI, which yields negative tags nec2c accepts and fnec's unsigned tags cannot represent. Previously PARTIAL and, in two fields, simply wrong (FND-119). |
 | GR | Repeat segments | PARTIAL | Supported subset: repeats existing wires by successive z-axis rotations. Each copy is rotated by a cumulative multiple of `angle_deg` with incremented tag numbers. Broader NEC GR semantics should be reviewed before claiming full parity. |
 | GF | Scale segments | DEFERRED | Geometry scaling. Phase 2. |
 
@@ -104,7 +104,7 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 | FR | Frequency specification | `recognized` | FULL | Single frequency and step sweep fully supported. |
 | GE | Geometry end | `recognized` | FULL | Ground-reflection flag preserved; GE I1=1 infers PEC ground. |
 | GF | Scale segments | `unknown` | DEFERRED | Geometry scaling. Phase 2+. |
-| GM | Move segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for rotate/translate. In-place (`tag_increment=0`) and copy (`tag_increment>0`) modes supported. Broader NEC GM semantics should be reviewed before claiming full parity. |
+| GM | Move segments | `recognized` | FULL | NEC-2 field meanings throughout (NRPT, ITS), cumulative copies, in-place retagging, absent-ITS refusal; oracle-pinned. A negative ITGI is refused by name. See FND-119. |
 | GN | Ground definition | `recognized` | PARTIAL | Types 0/2 finite-conductivity (Fresnel), type 1 PEC image, type -1 free-space implemented. Full Sommerfeld/Norton deferred. |
 | GR | Repeat segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for z-axis rotation repeat. Each copy rotated by cumulative multiple of `angle_deg` with incremented tag numbers. |
 | GW | Wire segment | `recognized` | FULL | Straight wire; tag, segments, endpoints, radius fully supported. |
