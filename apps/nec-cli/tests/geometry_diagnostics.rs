@@ -146,6 +146,41 @@ fn a_deck_driven_by_two_kinds_of_source_is_refused() {
     );
 }
 
+/// FND-129, at the production entry point.
+///
+/// Same reason as the test above: the unit test pins
+/// `validate::multiple_current_sources_error`, and this pins that the CLI
+/// actually reaches it. Dropping the check out of `pre_solve_error` leaves every
+/// unit test green while the CLI prints the wrong feedpoint again.
+#[test]
+fn a_deck_with_two_current_sources_is_refused() {
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-two-current-sources-freesp.nec"
+        ))
+        .output()
+        .expect("run fnec");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a deck whose second feedpoint would be meaningless must not solve:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("2 current sources") && stderr.contains("tag 2 segment 11"),
+        "the refusal must name how many and which one is dropped:\n{stderr}"
+    );
+    // The old behaviour, pinned so it cannot come back quietly: a FEEDPOINTS
+    // block for the undriven source.
+    assert!(
+        !stdout.contains("FEEDPOINTS"),
+        "no feedpoint may be reported for a deck that was refused:\n{stdout}"
+    );
+}
+
 /// FND-035: a receive-only deck was hard-rejected for a source it does not have.
 ///
 /// The source-risk check read every `EX` card with no type filter, so a plane

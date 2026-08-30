@@ -132,6 +132,24 @@ fn process_task(line: &str) -> TaskResult {
         crate::solve::solve_deck_reporting_warnings(&deck_str, freq_hz, &basis, &exec);
     match outcome {
         Ok(fp) => {
+            // A non-finite impedance serialises as JSON `null` in a plain `f64`
+            // field, and the resulting line cannot be deserialised at all — so
+            // the controller sees a broken worker rather than a bad task. Report
+            // it as what it is (FND-117). `Impedance` is two plain `f64`s, so
+            // this must be caught before the line is built, not after.
+            if !fp.impedance_re.is_finite() || !fp.impedance_im.is_finite() {
+                return TaskResult::Error {
+                    task_id,
+                    frequency_hz: freq_hz,
+                    error_code: ErrorCode::SingularMatrix,
+                    error_message: format!(
+                        "the solve produced a non-finite feedpoint impedance \
+                         ({} + j{}), so it did not converge",
+                        fp.impedance_re, fp.impedance_im
+                    ),
+                    warnings,
+                };
+            }
             let vswr = vswr(fp.impedance_re, fp.impedance_im, 50.0);
             TaskResult::Ok {
                 task_id,
@@ -168,6 +186,11 @@ fn process_task(line: &str) -> TaskResult {
                 SolveError::GeometryError(_)
                 | SolveError::UnsupportedConfig(_)
                 | SolveError::NoFeedpoint => ErrorCode::UnsupportedConfig,
+                // The first producer of this code. It has been in the enum — and
+                // so deserialisable by every released controller — since the
+                // crate's first commit, which is why a too-big deck can be given
+                // its own code without the wire break a new variant would mean.
+                SolveError::ResourceExhausted(_) => ErrorCode::ResourceExhausted,
             };
             TaskResult::Error {
                 task_id,
@@ -191,7 +214,12 @@ fn vswr(z_re: f64, z_im: f64, z0: f64) -> f64 {
         return f64::INFINITY;
     }
     let gamma = num_sq.sqrt() / den_sq.sqrt();
-    if gamma >= 1.0 {
+    // `gamma` is NaN when both sums overflowed to infinity, which happens for a
+    // finite but astronomical |Z| (roughly 1e154 and up). That IS an open
+    // circuit, so the honest answer is infinite SWR — and saying so here is what
+    // makes the wire invariant "null means infinite" true by construction rather
+    // than by luck (FND-117).
+    if gamma.is_nan() || gamma >= 1.0 {
         return f64::INFINITY;
     }
     (1.0 + gamma) / (1.0 - gamma)
@@ -293,6 +321,64 @@ mod tests {
                 "solver_config":{{"basis":"hallen","ground_model":"none"}},
                 "frequency_hz":14.2e6}}"#
         )
+    }
+
+    /// FND-129: the worker reaches the shared refusal too.
+    ///
+    /// Four frontends, four routes to one `pre_solve_error`. Each needs its own
+    /// test that the route exists, because a unit test on the refusal itself
+    /// stays green for all of them when the wiring is dropped — verified by
+    /// sabotage, not assumed.
+    #[test]
+    fn a_deck_with_two_current_sources_is_refused() {
+        let deck = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGW 2 21 3.0 0 -5.0 3.0 0 5.0 0.001\nGE\n\
+                    EX 4 1 11 0 1.0 0.0\nEX 4 2 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for two current sources: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+        assert!(
+            error_message.contains("2 current sources"),
+            "the refusal must say what it found: {error_message}"
+        );
+    }
+
+    /// FND-125: an over-large deck is well-formed and its geometry is supported —
+    /// it is simply too big. That is a different remedy from "this config is not
+    /// supported", so it gets `ResourceExhausted`, which had been on the wire
+    /// with no producer since this crate's first commit.
+    ///
+    /// The wire boundary is the thing under test, not the geometry check: the
+    /// `SolveError` variant is one `match` away from silently inheriting
+    /// `UnsupportedConfig`, which is exactly how FND-049 happened.
+    #[test]
+    fn an_oversized_deck_crosses_the_wire_as_resource_exhausted() {
+        // 100 000 segments: past MAX_SEGMENTS by 10x, and ~13 MB rather than a
+        // memory bomb should the geometry guard ever be removed.
+        let deck = "CE\nGW 1 100000 0 0 -5.282 0 0 5.282 0.001\nGE\n\
+                    EX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for an oversized deck: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::ResourceExhausted);
+        // The message too: `ResourceExhausted` must not become the new catch-all
+        // that `ParseError` once was.
+        assert!(
+            error_message.contains("segments"),
+            "message should name what ran out: {error_message}"
+        );
     }
 
     /// FND-049: the catch-all stamped `ParseError` on every error it had not

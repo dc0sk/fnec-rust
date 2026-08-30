@@ -276,6 +276,13 @@ pub enum SolveError {
     SingularMatrix(String),
     UnsupportedConfig(String),
     NoFeedpoint,
+    /// The deck asks for more of some resource than this worker will allocate.
+    ///
+    /// Distinct from `UnsupportedConfig` because the remedy is different: the
+    /// deck is well-formed and the geometry is supported, it is simply too big.
+    /// `ErrorCode::ResourceExhausted` has been on the wire since this crate's
+    /// first commit with no producer; this is what it was for (FND-125).
+    ResourceExhausted(String),
 }
 
 impl std::fmt::Display for SolveError {
@@ -285,6 +292,7 @@ impl std::fmt::Display for SolveError {
             SolveError::GeometryError(m) => write!(f, "geometry error: {m}"),
             SolveError::SingularMatrix(m) => write!(f, "singular matrix: {m}"),
             SolveError::UnsupportedConfig(m) => write!(f, "unsupported config: {m}"),
+            SolveError::ResourceExhausted(m) => write!(f, "resource exhausted: {m}"),
             SolveError::NoFeedpoint => {
                 write!(f, "no driven feedpoint (EX voltage source) found in deck")
             }
@@ -357,6 +365,21 @@ fn solve_inner(
         )));
     }
 
+    // The frequency arrives on the wire, not in the deck, so `pre_solve_error`
+    // below cannot see it — its `frequency_error` reads the deck's FR card and
+    // takes no frequency argument at all. That left the one input the deck does
+    // not carry as the one input never validated: a negative `frequency_hz`
+    // returned the exact complex conjugate with `status: ok` and no warning,
+    // on the very class the FR seam refuses for every deck-borne path
+    // (FND-098). This end is authoritative because `run_worker_stdio` is public
+    // API fed by arbitrary stdin and the controller may be a different version.
+    if !nec_solver::is_usable_frequency_mhz(freq_hz / 1e6) {
+        return Err(SolveError::UnsupportedConfig(format!(
+            "frequency_hz {freq_hz} is not a usable frequency; \
+             frequencies must be finite and > 0"
+        )));
+    }
+
     // 1. Parse
     let parse_result =
         nec_parser::parse(deck_str).map_err(|e| SolveError::ParseError(e.to_string()))?;
@@ -368,7 +391,14 @@ fn solve_inner(
     warnings.extend(parse_result.warnings.iter().map(ToString::to_string));
 
     // 2. Build geometry
-    let segs = build_geometry(&deck).map_err(|e| SolveError::GeometryError(e.to_string()))?;
+    let segs = build_geometry(&deck).map_err(|e| match e {
+        // Well-formed deck, supported geometry, simply too big — a different
+        // remedy from "this config is not supported", so a different code.
+        nec_solver::GeometryError::SegmentBudgetExceeded { .. } => {
+            SolveError::ResourceExhausted(e.to_string())
+        }
+        other => SolveError::GeometryError(other.to_string()),
+    })?;
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let ground = ground_model_from_deck(&deck);
 
@@ -426,7 +456,17 @@ fn solve_inner(
 
     // 4. Assemble Z-matrix and apply loads / TL stamps
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    stamps.apply(&mut z_mat);
+    // Loads reach the solve as data, applied by the session as matrix columns in
+    // the basis that runs (FND-122). Only the two-port couplings are stamped here.
+    stamps.apply_couplings(&mut z_mat);
+    if stamps.has_couplings() {
+        warnings.push(
+            "TL/NT two-port couplings are stamped as series impedances into a \
+             dimensionless matrix; that model is not derived and the resulting \
+             impedance is unreliable (FND-122)"
+                .to_string(),
+        );
+    }
 
     // Which drive this deck carries. A current source is a real feedpoint, but it
     // needs its own solve — the excitation vector is all zeros, so `V/I` has
@@ -446,8 +486,19 @@ fn solve_inner(
 
     // 6. Solve — GPU-resident (PH7-CHK-003) for the supported class when
     // requested, else the f64 CPU solve.
+    // The route decides which member of the Hallén family this deck needs, and
+    // it is the same decision every frontend makes (FND-121). The device path
+    // below implements exactly one of them — the plain delta-gap solve — so it
+    // must ask, rather than assume.
+    let route = nec_solver::hallen_route(&deck, &segs);
+
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
+        // The device solves on the merged-straight-conductor basis. A bend, a
+        // start-to-start split or an apex feed needs the conductor-path basis,
+        // which the device does not implement — solving it here would reproduce
+        // on the GPU exactly the wrong answer the CPU path used to give.
+        && !route.paths
         && matches!(
             ground,
             GroundModel::FreeSpace | GroundModel::Deferred { .. }
@@ -488,19 +539,17 @@ fn solve_inner(
                 "cpu",
             ),
         }
-    } else if driven_by_current {
-        // The current-source solve: forces `I` on the source segment and recovers
-        // the port voltage, which is what makes `Z = V_port/i0` available. Always
-        // CPU — the GPU gate above excludes this class.
-        let fp = nec_solver::solve_current_source_hallen(&deck, &segs, &z_mat, freq_hz)
-            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
-        current_source_port = Some(fp.port_voltage);
-        (fp.currents, "cpu")
     } else {
-        (
-            cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
-            "cpu",
-        )
+        // One call for every Hallén route: plane-wave, current-source, and
+        // delta-gap on either the merged-conductor or the conductor-path basis.
+        // This branch used to be a plain `solve_hallen`, so a bent or split
+        // geometry came back 9.15 - j767.60 where the CLI — which had the paths
+        // arm — gave 264.88 + j410.86 and nec2c 268.56 + j452.26 (FND-121).
+        let routed =
+            nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
+                .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        current_source_port = routed.port_voltage;
+        (routed.currents, "cpu")
     };
 
     // 7. Extract the feedpoint, through the shared seam.
@@ -635,5 +684,106 @@ EN
             r.impedance_re,
             r.impedance_im
         );
+    }
+}
+
+#[cfg(test)]
+mod wire_frequency_gate_tests {
+    use super::*;
+
+    const DIPOLE: &str =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// The frequency arrives on the wire, so `pre_solve_error` cannot see it —
+    /// `frequency_error` reads the deck's FR card and takes no frequency
+    /// argument. A negative `frequency_hz` therefore returned the exact complex
+    /// conjugate with `status: ok` and no warning, on the very class the FR seam
+    /// refuses for every deck-borne path (FND-098).
+    #[test]
+    fn a_negative_wire_frequency_is_refused_not_conjugated() {
+        let ok = solve_deck_at_frequency(DIPOLE, 14.2e6, "hallen").expect("control must solve");
+        let err = solve_deck_at_frequency(DIPOLE, -14.2e6, "hallen")
+            .expect_err("a negative wire frequency must be refused");
+        assert!(
+            matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
+            "{err:?}"
+        );
+        // Pin what the bug actually produced, so a regression cannot pass by
+        // failing for some other reason: the refused value used to come back as
+        // the conjugate of the control.
+        assert!(
+            ok.impedance_im.abs() > 1.0,
+            "control reactance should be non-trivial"
+        );
+    }
+
+    #[test]
+    fn a_non_finite_wire_frequency_is_refused() {
+        for f in [f64::NAN, f64::INFINITY, 0.0] {
+            let err = solve_deck_at_frequency(DIPOLE, f, "hallen").expect_err("must be refused");
+            assert!(
+                matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
+                "{f}: {err:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod frontend_parity_tests {
+    use super::*;
+
+    /// Bent and split geometry, the class FND-121 was measured on: an apex-fed
+    /// inverted-V and a start-to-start split fed mid-wire. Both need the
+    /// conductor-path basis; both used to be answered here on the plain one.
+    const SPLIT_V: &str = "CE\nGW 1 21 0 0 3 -5 0 0 .001\nGW 2 21 0 0 3 5 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const INVERTED_V: &str = "CE\nGW 1 21 -5 0 0 0 0 3 .001\nGW 2 21 0 0 3 5 0 0 .001\nGE\nEX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const STRAIGHT: &str =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// The worker and the library seam every other frontend calls must agree on
+    /// the same deck at the same frequency.
+    ///
+    /// This is the gate that was missing. The worker reached its answer through
+    /// its own `build_hallen_rhs` + `solve_hallen`, so it could — and did —
+    /// diverge from the CLI without any test noticing: a split inverted-V came
+    /// back 9.15 - j767.60 here against 264.88 + j410.86 there, `status: ok`,
+    /// `warnings: []`, with nec2c at 268.56 + j452.26.
+    #[test]
+    fn the_worker_agrees_with_the_shared_solver_seam_on_path_geometry() {
+        for (name, deck_str) in [
+            ("split-V", SPLIT_V),
+            ("inverted-V", INVERTED_V),
+            ("straight", STRAIGHT),
+        ] {
+            let got = solve_deck_at_frequency(deck_str, 14.2e6, "hallen")
+                .unwrap_or_else(|e| panic!("{name}: worker solve failed: {e}"));
+
+            // The same deck through the library seam the CLI, GUI and bindings use.
+            let deck = nec_parser::parse(deck_str).expect("parses").deck;
+            let segs = nec_solver::build_geometry(&deck).expect("geometry");
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            let mut z = nec_solver::assemble_z_matrix_with_ground(&segs, 14.2e6, &ground);
+            let routed = nec_solver::solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &[])
+                .unwrap_or_else(|e| panic!("{name}: routed solve failed: {e}"));
+
+            let ex = nec_solver::first_delta_gap_feedpoint(&deck).expect("feedpoint");
+            let idx = segs
+                .iter()
+                .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+                .expect("feed segment");
+            let v = Complex64::new(ex.voltage_real, ex.voltage_imag);
+            let want = v / routed.currents[idx];
+
+            assert!(
+                (got.impedance_re - want.re).abs() < 1e-6
+                    && (got.impedance_im - want.im).abs() < 1e-6,
+                "{name}: worker {} + j{} vs shared seam {} + j{}",
+                got.impedance_re,
+                got.impedance_im,
+                want.re,
+                want.im
+            );
+        }
     }
 }

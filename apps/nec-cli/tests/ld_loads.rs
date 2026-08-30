@@ -75,15 +75,22 @@ fn ld_type4_changes_feedpoint_impedance() {
         !loaded_err.contains("unknown card 'LD'"),
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
-    // LD type 4 (R=100, X=50) shifts Z_RE to ~706.7 Ω (vs free-space ~74.2 Ω).
+    // The port identity: a series 100 + j50 Ω load at the feed shifts the
+    // feedpoint impedance by exactly itself, in any correct method of moments.
+    //
+    // This used to assert 706.724 + j498.586 — fnec's own output from the broken
+    // stamp, which added the load in ohms to the dimensionless Hallén matrix and
+    // over-applied it 7.0x (FND-122). A pinned number cannot tell a right answer
+    // from a wrong one it was measured from, so the assertion is now the physics.
     let (loaded_r, loaded_x) = first_feedpoint_impedance(&loaded_out);
+    let (base_r, base_x) = (74.242874_f64, 13.899516_f64);
     assert!(
-        (loaded_r - 706.724).abs() < 1.0,
-        "Phase-2 LD4 Z_RE should be ~706.7 Ω, got {loaded_r}"
+        (loaded_r - base_r - 100.0).abs() < 0.2,
+        "LD4 R=100 must shift Z_RE by +100 from {base_r}, got {loaded_r}"
     );
     assert!(
-        (loaded_x - 498.586).abs() < 1.0,
-        "Phase-2 LD4 Z_IM should be ~498.6 Ω, got {loaded_x}"
+        (loaded_x - base_x - 50.0).abs() < 0.2,
+        "LD4 X=50 must shift Z_IM by +50 from {base_x}, got {loaded_x}"
     );
 }
 
@@ -138,18 +145,22 @@ fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
         !loaded_err.contains("unknown card 'LD'"),
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
+    // A 1000 Ω resistive load at the feed shifts the feedpoint resistance by
+    // exactly 1000 Ω. Was pinned at 7072.840 — fnec's own output through the
+    // broken stamp, 7.0x over-applied (FND-122).
     let (loaded_r, _) = first_feedpoint_impedance(&loaded_out);
     assert!(
-        (loaded_r - 7072.840).abs() < 5.0,
-        "Phase-2 LD1 (R=1000 Ω parallel) Z_RE should be ~7072.8 Ω, got {loaded_r}"
+        (loaded_r - 74.242874 - 1000.0).abs() < 1.0,
+        "LD1 R=1000 must shift Z_RE by +1000 from 74.242874, got {loaded_r}"
     );
 }
 
 #[test]
 fn ld_type2_series_rl_is_supported_and_changes_impedance() {
     // Phase-2: LD type 2 (series RL) is parsed and applied.
-    // R=10 Ω, L=1 µH at 14.2 MHz: X_L = ωL ≈ 89.1 Ω added to seg 26.
-    // Z_IM shifts from ~13.9 Ω (free-space) to ~651.8 Ω.
+    // R=10 Ω, L=1 µH at 14.2 MHz: X_L = ωL = 2π·14.2e6·1e-6 = 89.2212 Ω.
+    // The load sits at the feed, so the port identity gives the whole answer:
+    // Z_IM shifts from 13.899516 Ω by +89.2212, and Z_RE by +10.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -168,9 +179,13 @@ fn ld_type2_series_rl_is_supported_and_changes_impedance() {
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
     let (_, loaded_x) = first_feedpoint_impedance(&loaded_out);
+    // Analytic, not pinned: ωL is a textbook quantity and the identity fixes the
+    // shift exactly. The old assertion was fnec's own 651.8 Ω from the broken
+    // stamp — a self-consistent checker that could not fail (FND-122).
+    let omega_l = 2.0 * std::f64::consts::PI * 14.2e6 * 1e-6;
     assert!(
-        (loaded_x - 651.799).abs() < 2.0,
-        "Phase-2 LD2 (series RL) Z_IM should be ~651.8 Ω, got {loaded_x}"
+        (loaded_x - 13.899516 - omega_l).abs() < 0.2,
+        "LD2 series RL must shift Z_IM by +ωL = {omega_l:.4} from 13.899516, got {loaded_x}"
     );
 }
 

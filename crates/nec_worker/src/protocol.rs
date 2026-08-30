@@ -10,6 +10,70 @@
 mod tests {
     use super::*;
 
+    /// FND-117: an infinite VSWR is a legitimate answer whenever Re(Z) <= 0, and
+    /// `serde_json` writes a non-finite f64 as `null`. A plain `f64` field could
+    /// not read that back, so the whole result line failed to deserialise — and
+    /// the pool read that as a dead worker.
+    ///
+    /// This asserts the ROUND TRIP, not just the write. Asserting only that the
+    /// JSON contains `null` would have passed before the fix too.
+    #[test]
+    fn an_infinite_vswr_survives_the_round_trip() {
+        let result = TaskResult::Ok {
+            task_id: "t-inf".into(),
+            frequency_hz: 14.2e6,
+            impedance: Impedance {
+                re_ohm: -5.973,
+                im_ohm: 42.0,
+            },
+            vswr_50: f64::INFINITY,
+            feedpoint_current_mag: 1.0,
+            feedpoint_current_phase_deg: 0.0,
+            exec_used: "cpu".into(),
+            warnings: Vec::new(),
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(
+            json.contains(r#""vswr_50":null"#),
+            "the wire format must be unchanged: {json}"
+        );
+        let back: TaskResult = serde_json::from_str(&json).expect("an old wire form must parse");
+        let TaskResult::Ok { vswr_50, .. } = back else {
+            panic!("expected Ok");
+        };
+        assert!(
+            vswr_50.is_infinite() && vswr_50 > 0.0,
+            "null must read back as +inf, got {vswr_50}"
+        );
+    }
+
+    /// A finite VSWR must still cross as a number — otherwise the fix above
+    /// could be "serialise everything as null", which round-trips perfectly and
+    /// tells the reader nothing.
+    #[test]
+    fn a_finite_vswr_still_crosses_as_a_number() {
+        let result = TaskResult::Ok {
+            task_id: "t-fin".into(),
+            frequency_hz: 14.2e6,
+            impedance: Impedance {
+                re_ohm: 74.24,
+                im_ohm: 13.9,
+            },
+            vswr_50: 1.5,
+            feedpoint_current_mag: 1.0,
+            feedpoint_current_phase_deg: 0.0,
+            exec_used: "cpu".into(),
+            warnings: Vec::new(),
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains(r#""vswr_50":1.5"#), "{json}");
+        let back: TaskResult = serde_json::from_str(&json).expect("parse");
+        let TaskResult::Ok { vswr_50, .. } = back else {
+            panic!("expected Ok");
+        };
+        assert!((vswr_50 - 1.5).abs() < 1e-12, "{vswr_50}");
+    }
+
     #[test]
     fn task_result_ok_roundtrip() {
         let result = TaskResult::Ok {
@@ -255,6 +319,28 @@ pub struct TaskMessage {
     pub frequency_hz: f64,
 }
 
+/// Serde for a field whose infinity must survive the round trip.
+///
+/// `serde_json` already writes a non-finite `f64` as `null`; what it cannot do
+/// is read one back into an `f64`. This keeps the write side exactly as it was
+/// and teaches the read side that `null` — and an absent field, for a worker old
+/// enough to predate the field — means infinity.
+mod infinite_as_null {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+        if v.is_finite() {
+            s.serialize_f64(*v)
+        } else {
+            s.serialize_none()
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::INFINITY))
+    }
+}
+
 /// Feedpoint impedance from a successful solve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Impedance {
@@ -281,6 +367,21 @@ pub enum TaskResult {
         task_id: String,
         frequency_hz: f64,
         impedance: Impedance,
+        /// VSWR against 50 Ω, which is legitimately infinite whenever
+        /// `Re(Z) <= 0` — and `serde_json` writes a non-finite `f64` as `null`,
+        /// which a plain `f64` field cannot read back (FND-117).
+        ///
+        /// The wire format is unchanged: `null` is what already crossed. Only
+        /// the READER is made able to accept it, so an old controller talking to
+        /// a new worker and a new controller talking to an old worker both keep
+        /// working.
+        ///
+        /// `null` means infinite and nothing else. `vswr()` maps its one
+        /// NaN-producing case (both sums overflowing for an astronomical |Z|) to
+        /// infinity, and a non-finite impedance is refused as a task error
+        /// before a line is ever built, so no other quantity can arrive here as
+        /// `null`.
+        #[serde(with = "infinite_as_null")]
         vswr_50: f64,
         feedpoint_current_mag: f64,
         feedpoint_current_phase_deg: f64,

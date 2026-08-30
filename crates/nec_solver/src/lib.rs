@@ -8,6 +8,7 @@ pub mod farfield;
 pub mod feedpoint;
 pub mod frequency;
 pub mod geometry;
+pub mod hallen_session;
 pub mod linear;
 pub mod loads;
 pub mod matrix;
@@ -33,14 +34,23 @@ pub use farfield::{
     integrate_radiated_power, near_e_field, near_h_field, radiation_efficiency, rp_card_points,
     FarFieldPoint, FarFieldResult, NearFieldE, NearFieldH, NearFieldPoint, RpGainGrid,
 };
-pub use feedpoint::{feedpoint_impedance, FeedpointError, MIN_FEEDPOINT_CURRENT};
+pub use feedpoint::{
+    check_currents_finite, feedpoint_drive_voltage, feedpoint_impedance, FeedpointError,
+    NonFiniteCurrents, MIN_FEEDPOINT_CURRENT,
+};
 pub use frequency::{
-    fr_sweeps, frequencies_hz, governing_fr_sweep, superseded_fr_warnings, FrSweep,
+    fr_sweeps, frequencies_hz, governing_fr_sweep, is_usable_frequency_mhz, superseded_fr_warnings,
+    FrSweep, MAX_FR_POINTS,
 };
 pub use geometry::{
     build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,
     ground_model_from_deck, merge_collinear_wire_endpoints, wire_endpoints_from_segs,
     ConductorPath, GeometryError, GroundModel, Segment, UnsupportedTopology, WireJunction,
+    MAX_SEGMENTS,
+};
+pub use hallen_session::{
+    deck_has_current_source, deck_has_plane_wave, hallen_route, solve_hallen_routed, HallenDrive,
+    HallenRoute, HallenRouted, HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,

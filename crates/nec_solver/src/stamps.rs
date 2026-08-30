@@ -50,17 +50,48 @@ pub struct DeckStamps {
 }
 
 impl DeckStamps {
-    /// Add every stamp to `z`.
+    /// Add every stamp to `z`, loads included, by adding the load impedance to
+    /// the diagonal.
+    ///
+    /// **This is dimensionally wrong for the Hallén matrix** and is kept only for
+    /// the solver modes that have not been given a derived load treatment yet:
+    /// pulse and continuity solve a Pocklington system in field units, and
+    /// sinusoidal uses the Hallén matrix with a basis in which the rank-1 column
+    /// update is not the load-current sample either. Those modes keep the old
+    /// behaviour and now say so out loud rather than reporting it silently
+    /// (FND-122; the derivation for the other bases is not done).
+    ///
+    /// The Hallén path must use [`Self::apply_couplings`] plus
+    /// [`crate::excitation::hallen_load_columns`] instead.
     ///
     /// Must run before any destructive matrix edit (`replace_row`), and must not be
     /// applied twice to the same matrix — these are deltas, not assignments.
-    pub fn apply(&self, z: &mut ZMatrix) {
+    pub fn apply_with_diagonal_loads(&self, z: &mut ZMatrix) {
         if !self.diagonal.is_empty() {
             z.add_to_diagonal(&self.diagonal);
         }
+        self.apply_couplings(z);
+    }
+
+    /// Add only the two-port couplings (`TL`, `NT`), leaving loads to the caller.
+    ///
+    /// The Hallén path applies loads as matrix *columns* rather than diagonal
+    /// terms, so it takes [`Self::diagonal`] as data and stamps it itself.
+    ///
+    /// The couplings carry the same units error as the loads did — they are
+    /// impedances added to a dimensionless matrix — and are not fixed here: a
+    /// two-port network couples port *voltages*, which are not unknowns in the
+    /// Hallén system, so a correct treatment needs extra unknowns and equations
+    /// rather than a different stamp. They earn a caveat, not a silent answer.
+    pub fn apply_couplings(&self, z: &mut ZMatrix) {
         for &(row, col, delta) in &self.entries {
             z.add_to_entry(row, col, delta);
         }
+    }
+
+    /// Whether this deck stamps any two-port coupling whose model is unvalidated.
+    pub fn has_couplings(&self) -> bool {
+        !self.entries.is_empty()
     }
 
     /// Whether applying this would leave the matrix unchanged.

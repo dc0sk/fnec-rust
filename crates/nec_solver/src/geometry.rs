@@ -133,6 +133,19 @@ pub struct Segment {
     pub radius: f64,
 }
 
+/// The largest segment count [`build_geometry`] will produce.
+///
+/// The binding constraint is not the segment list — a `Segment` is about 128
+/// bytes, so even 100 000 of them is ~13 MB — but the dense impedance matrix
+/// every solver allocates from it: `ZMatrix::new(n)` is `n * n` `Complex64`,
+/// i.e. `16 * N^2` bytes, and its factorisation is `O(N^3)`. At this cap that
+/// is 1.6 GB and minutes of arithmetic, which is the last point at which
+/// refusing is more use to the caller than trying and dying on allocation.
+///
+/// The largest deck in `corpus/` is 255 segments (`yagi-5elm-51seg.nec`), so
+/// this clears every real fixture by a factor of about 39.
+pub const MAX_SEGMENTS: usize = 10_000;
+
 /// Error returned by [`build_geometry`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum GeometryError {
@@ -142,6 +155,19 @@ pub enum GeometryError {
     ZeroLengthWire { tag: u32 },
     /// No GW cards were found in the deck.
     NoWires,
+    /// The deck asks for more segments than [`MAX_SEGMENTS`].
+    ///
+    /// Refused rather than truncated: a silently shortened antenna is a wrong
+    /// answer, and the caller asked for something this solver will not build
+    /// (FND-125).
+    SegmentBudgetExceeded { card: &'static str, projected: u64 },
+    /// A `GM` or `GR` card's tag arithmetic left the `u32` tag-number space.
+    ///
+    /// Unchecked, this was an `attempt to multiply with overflow` panic in debug
+    /// and a silently wrapped tag in release — and in `fnec worker --stdio` it
+    /// killed the process without emitting a result line at all, which the
+    /// controller cannot tell from a dead worker (FND-113).
+    TagOverflow { card: &'static str, detail: String },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -154,6 +180,19 @@ impl std::fmt::Display for GeometryError {
                 write!(f, "GW tag {tag}: wire has zero length (start == end)")
             }
             GeometryError::NoWires => write!(f, "deck contains no GW (wire) cards"),
+            GeometryError::SegmentBudgetExceeded { card, projected } => write!(
+                f,
+                "{card} card: the deck reaches {projected} segments, past the \
+                 {MAX_SEGMENTS} this solver will build — the impedance matrix is \
+                 16*N^2 bytes and its factorisation O(N^3), so the cap is already \
+                 about 1.6 GB of matrix"
+            ),
+            GeometryError::TagOverflow { card, detail } => write!(
+                f,
+                "{card} card: {detail} leaves the u32 tag-number space (largest \
+                 representable tag is {})",
+                u32::MAX
+            ),
         }
     }
 }
@@ -707,6 +746,24 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Refuse a card that would take the running segment total past [`MAX_SEGMENTS`].
+///
+/// A *running* total, checked before each card expands, rather than a per-card
+/// limit: `GM` copy cards double the structure, so forty innocent-looking cards
+/// compose into a 2^40 blow-up that no per-card check would ever see.
+///
+/// Done in `u64` on purpose. The deck supplies `u32` counts, and the projections
+/// this guards — `have + adding`, and `originals * count` for `GR` — overflow
+/// `u32` for exactly the inputs the guard exists to catch, so doing the
+/// arithmetic in the input's own type would wrap into a passing number.
+fn check_segment_budget(have: usize, adding: u64, card: &'static str) -> Result<(), GeometryError> {
+    let projected = have as u64 + adding;
+    if projected > MAX_SEGMENTS as u64 {
+        return Err(GeometryError::SegmentBudgetExceeded { card, projected });
+    }
+    Ok(())
+}
+
 fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError> {
     if gw.segments == 0 {
         return Err(GeometryError::ZeroSegments { tag: gw.tag });
@@ -723,6 +780,10 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
     if wire_len == 0.0 {
         return Err(GeometryError::ZeroLengthWire { tag: gw.tag });
     }
+
+    // Before the loop, not inside it: `gw.segments` is a u32 straight off the
+    // card, so `GW 1 4000000000` is a ~512 GB allocation from a one-line deck.
+    check_segment_budget(out.len(), u64::from(gw.segments), "GW")?;
 
     let direction = [wire_dx / wire_len, wire_dy / wire_len, wire_dz / wire_len];
     let n = gw.segments as f64;
@@ -780,8 +841,14 @@ fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
             .filter(|s| tag_in_range(s.tag, gm.first_tag, gm.last_tag))
             .cloned()
             .collect();
+        check_segment_budget(segs.len(), base.len() as u64, "GM")?;
         for mut seg in base {
-            seg.tag += gm.tag_increment;
+            seg.tag = seg.tag.checked_add(gm.tag_increment).ok_or_else(|| {
+                GeometryError::TagOverflow {
+                    card: "GM",
+                    detail: format!("tag {} plus tag increment {}", seg.tag, gm.tag_increment),
+                }
+            })?;
             seg.start = transform_point(seg.start, gm);
             seg.end = transform_point(seg.end, gm);
             seg.midpoint = transform_point(seg.midpoint, gm);
@@ -800,13 +867,32 @@ fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
     }
     // Snapshot original set of segments (before any copies).
     let originals: Vec<Segment> = segs.clone();
+    check_segment_budget(
+        segs.len(),
+        originals.len() as u64 * u64::from(gr.count),
+        "GR",
+    )?;
     for copy_idx in 1..=gr.count {
+        // Loop-invariant, and the multiply is where the overflow actually happens.
+        let step =
+            gr.tag_increment
+                .checked_mul(copy_idx)
+                .ok_or_else(|| GeometryError::TagOverflow {
+                    card: "GR",
+                    detail: format!("tag increment {} times copy {copy_idx}", gr.tag_increment),
+                })?;
         let total_angle_deg = gr.angle_deg * copy_idx as f64;
         let cos_a = total_angle_deg.to_radians().cos();
         let sin_a = total_angle_deg.to_radians().sin();
         for orig in &originals {
             let mut seg = orig.clone();
-            seg.tag += gr.tag_increment * copy_idx;
+            seg.tag = seg
+                .tag
+                .checked_add(step)
+                .ok_or_else(|| GeometryError::TagOverflow {
+                    card: "GR",
+                    detail: format!("tag {} plus tag increment {step}", seg.tag),
+                })?;
             seg.start = rotate_z(seg.start, cos_a, sin_a);
             seg.end = rotate_z(seg.end, cos_a, sin_a);
             seg.midpoint = rotate_z(seg.midpoint, cos_a, sin_a);
@@ -1142,6 +1228,231 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert!((segs[0].start[2] - 2.0).abs() < 1e-12);
         assert!((segs[0].end[2] - 2.0).abs() < 1e-12);
+    }
+
+    // -------------------------------------------------------------------------
+    // FND-125 — geometry must refuse before it allocates
+    // -------------------------------------------------------------------------
+
+    fn one_segment_wire(tag: u32) -> GwCard {
+        GwCard {
+            tag,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }
+    }
+
+    /// The largest hole, and the one needing no GM or GR at all: a single GW
+    /// card with a u32 segment count is a ~512 GB allocation from a one-line
+    /// deck. Measured before the fix under `ulimit -v 2000000`: SIGABRT, exit
+    /// 134, "memory allocation of 2147483648 bytes failed" — still growing when
+    /// it hit the ceiling.
+    #[test]
+    fn a_single_gw_card_cannot_ask_for_more_segments_than_the_cap() {
+        let mut deck = NecDeck::new();
+        // 100 000, not 4e9: over the cap by 10x, but only ~13 MB if the guard is
+        // removed. A cap test whose sabotage run is itself an unbounded
+        // allocation cannot be sabotage-verified safely — the u32-overflow half
+        // of this guard is proven below against `check_segment_budget` directly,
+        // where nothing is allocated at all.
+        deck.cards.push(Card::Gw(GwCard {
+            segments: 100_000,
+            ..one_segment_wire(1)
+        }));
+        let err = build_geometry(&deck).expect_err("100k segments must be refused");
+        assert!(
+            matches!(err, GeometryError::SegmentBudgetExceeded { card: "GW", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// The GR form: the count multiplies the whole structure, so the projection
+    /// must be computed in u64 — `originals * count` overflows u32 for exactly
+    /// the input being guarded against.
+    #[test]
+    fn a_gr_card_cannot_replicate_past_the_cap() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(one_segment_wire(1)));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 100_000,
+            angle_deg: 10.0,
+        }));
+        let err = build_geometry(&deck).expect_err("100k copies must be refused");
+        assert!(
+            matches!(err, GeometryError::SegmentBudgetExceeded { card: "GR", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// The reason the budget is a RUNNING total rather than a per-card limit.
+    /// Each GM copy card doubles the structure, and every one of these cards is
+    /// individually innocent — a per-card check passes all of them.
+    #[test]
+    fn gm_copy_cards_cannot_compose_their_way_past_the_cap() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(one_segment_wire(1)));
+        // 2^15 = 32 768 segments if nothing is watching the total: past the cap,
+        // but ~4 MB rather than a memory bomb when the guard is sabotaged away.
+        for i in 0..15 {
+            deck.cards
+                .push(Card::Gm(make_gm(i + 1, 0, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
+        }
+        let err = build_geometry(&deck).expect_err("15 doublings must be refused");
+        assert!(
+            matches!(err, GeometryError::SegmentBudgetExceeded { card: "GM", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// The projection arithmetic must not wrap. `originals * count` and
+    /// `have + adding` both overflow u32 for exactly the inputs this guard
+    /// exists to catch, so a projection computed in the deck's own type would
+    /// wrap into a small number and pass. Asserted directly against the helper,
+    /// because reaching this through `build_geometry` would mean actually
+    /// allocating the thing being refused.
+    #[test]
+    fn the_budget_projection_does_not_wrap_at_u32() {
+        // 4e9 + 4e9 wraps to ~3.7e9 in u32 — still over the cap, so use the case
+        // that wraps to a PASSING value: 2^32 exactly.
+        let err = check_segment_budget(0, u64::from(u32::MAX) + 1, "GW")
+            .expect_err("2^32 segments must be refused, not wrapped to 0");
+        assert!(
+            matches!(
+                err,
+                GeometryError::SegmentBudgetExceeded {
+                    card: "GW",
+                    projected: 4_294_967_296
+                }
+            ),
+            "{err:?}"
+        );
+        // And a GR-shaped product that overflows u32: 100 000 * 100 000 = 1e10.
+        let err = check_segment_budget(100_000, 100_000u64 * 100_000u64, "GR")
+            .expect_err("1e10 segments must be refused");
+        assert!(
+            matches!(
+                err,
+                GeometryError::SegmentBudgetExceeded {
+                    card: "GR",
+                    projected: 10_000_100_000
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// Negative control, and the reason the cap sits where it does: the largest
+    /// deck in `corpus/` is 255 segments (`yagi-5elm-51seg.nec`). A cap that
+    /// refused real decks would pass all three tests above.
+    #[test]
+    fn the_largest_corpus_deck_is_far_inside_the_cap() {
+        let mut deck = NecDeck::new();
+        for tag in 1..=5 {
+            deck.cards.push(Card::Gw(GwCard {
+                segments: 51,
+                ..one_segment_wire(tag)
+            }));
+        }
+        let segs = build_geometry(&deck).expect("a 5-element yagi is an ordinary deck");
+        assert_eq!(segs.len(), 255);
+        assert!(
+            segs.len() * 39 < MAX_SEGMENTS,
+            "the cap must clear the largest real fixture by a wide margin, \
+             or it is a limit on antennas rather than on allocations"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // FND-113 — tag arithmetic must not leave the u32 tag space
+    // -------------------------------------------------------------------------
+
+    /// A GM tag increment that overflows u32 is refused, not panicked on.
+    ///
+    /// Unchecked this was `attempt to add with overflow` in debug and a wrapped
+    /// tag in release. In `fnec worker --stdio` the panic took the process down
+    /// with no result line at all, which a controller cannot distinguish from a
+    /// dead worker — so the deck-driven failure looked like an infrastructure
+    /// one.
+    #[test]
+    fn gm_tag_increment_overflow_is_refused_not_panicked() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 7,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gm(make_gm(
+            u32::MAX,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        )));
+        let err = build_geometry(&deck).expect_err("tag 7 + increment u32::MAX overflows");
+        assert!(
+            matches!(err, GeometryError::TagOverflow { card: "GM", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// The GR overflow is in the MULTIPLY, one copy before the add, so a test
+    /// that only exercises the addition would miss it.
+    #[test]
+    fn gr_tag_increment_multiply_overflow_is_refused_not_panicked() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        // increment * copy_idx overflows on the second copy: 3e9 * 2 > u32::MAX.
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 3_000_000_000,
+            count: 2,
+            angle_deg: 10.0,
+        }));
+        let err = build_geometry(&deck).expect_err("3e9 * 2 overflows u32");
+        assert!(
+            matches!(err, GeometryError::TagOverflow { card: "GR", .. }),
+            "{err:?}"
+        );
+    }
+
+    /// Negative control: the ordinary GR replication a real deck uses still
+    /// works. Without this, a fix that refused every GR card would pass the two
+    /// tests above.
+    #[test]
+    fn ordinary_gr_replication_is_unaffected() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(GwCard {
+            tag: 1,
+            segments: 1,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            radius: 0.001,
+        }));
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 1,
+            count: 3,
+            angle_deg: 90.0,
+        }));
+        let segs = build_geometry(&deck).expect("a 4-fold turnstile is an ordinary deck");
+        assert_eq!(segs.len(), 4);
+        assert_eq!(
+            segs.iter().map(|s| s.tag).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
     }
 
     /// GM with tag_increment>0 creates a copy with incremented tag.

@@ -327,18 +327,28 @@ pub fn gain_correction_db(
 
 /// The power delivered into the deck's feedpoints, for [`gain_correction_db`].
 ///
-/// `0.5 * Re(V * conj(I))` summed over the driven segments — the same quantity
-/// the CLI computed inline from its feedpoint rows. Taking it from the deck and
-/// the solved vectors instead means a frontend that never builds those rows (the
-/// GUI's pattern view) can still ask for the correction.
+/// `0.5 * Re(V * conj(I))` summed over the driven segments, where `V` comes from
+/// [`crate::feedpoint_drive_voltage`] — the same seam the CLI's feedpoint rows
+/// use, so the two frontends cannot disagree about what a feedpoint's voltage is.
+///
+/// It did disagree. This function read `v_vec` for every drive, and `v_vec` is
+/// all zeros on a current-source deck, so `P_in` was exactly `0.0` and the whole
+/// correction silently vanished on the one frontend that calls this (FND-114).
+///
+/// `port_voltage` is the solved port voltage for a current-source drive, from
+/// `HallenRouted::port_voltage`. Pass `None` only when there is genuinely none:
+/// a current-source feedpoint is then SKIPPED rather than priced with the
+/// delta-gap expression, so a caller that forgets to thread it gets no
+/// correction instead of a wrong one.
 pub fn feedpoint_input_power(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
     v_vec: &[Complex64],
     i_vec: &[Complex64],
+    port_voltage: Option<Complex64>,
 ) -> f64 {
     let mut total = 0.0;
-    for (ex, _role) in crate::excitation::feedpoints(deck) {
+    for (ex, role) in crate::excitation::feedpoints(deck) {
         let Some(idx) = segs
             .iter()
             .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
@@ -348,7 +358,11 @@ pub fn feedpoint_input_power(
         if idx >= v_vec.len() || idx >= i_vec.len() {
             continue;
         }
-        let v_source = v_vec[idx] * segs[idx].length;
+        let Some(v_source) =
+            crate::feedpoint_drive_voltage(role, segs[idx].length, v_vec[idx], port_voltage)
+        else {
+            continue;
+        };
         total += 0.5 * (v_source * i_vec[idx].conj()).re;
     }
     total
@@ -843,6 +857,105 @@ mod tests {
     use super::*;
     use crate::geometry::Segment;
     use num_complex::Complex64;
+
+    // -------------------------------------------------------------------------
+    // FND-114 — a current source delivers power too
+    // -------------------------------------------------------------------------
+
+    fn one_metre_segment() -> Segment {
+        Segment {
+            tag: 1,
+            tag_index: 1,
+            global_index: 0,
+            start: [0.0, 0.0, 0.0],
+            end: [1.0, 0.0, 0.0],
+            midpoint: [0.5, 0.0, 0.0],
+            direction: [1.0, 0.0, 0.0],
+            length: 1.0,
+            radius: 0.001,
+        }
+    }
+
+    fn deck_with_ex(excitation_type: u32) -> nec_model::deck::NecDeck {
+        let mut deck = nec_model::deck::NecDeck::new();
+        deck.cards
+            .push(nec_model::card::Card::Ex(nec_model::card::ExCard {
+                excitation_type,
+                tag: 1,
+                segment: 1,
+                i4: 0,
+                voltage_real: 1.0,
+                voltage_imag: 0.0,
+                polarization_deg: 0.0,
+                polarization_ratio: 0.0,
+                theta_inc: 0.0,
+                phi_inc: 0.0,
+            }));
+        deck
+    }
+
+    /// The defect: `apply_ex` never writes `v` for a current source, so `v_vec`
+    /// is all zeros and this returned EXACTLY 0.0 — which
+    /// `gain_correction_db`'s `input_power <= 0.0` guard reads as "no
+    /// correction", and the GUI's `unwrap_or(0.0)` then reports directivity as
+    /// gain.
+    #[test]
+    fn a_current_source_delivers_power_when_its_port_voltage_is_known() {
+        let deck = deck_with_ex(4);
+        let segs = [one_metre_segment()];
+        let v_vec = [Complex64::new(0.0, 0.0)]; // what apply_ex actually leaves
+        let i_vec = [Complex64::new(1.0, 0.0)]; // 1 A impressed
+        let port = Complex64::new(80.0, 0.0);
+
+        let p = feedpoint_input_power(&deck, &segs, &v_vec, &i_vec, Some(port));
+        assert!(
+            (p - 40.0).abs() < 1e-12,
+            "0.5 * Re(80 * conj(1)) = 40 W, got {p}"
+        );
+    }
+
+    /// And without a port voltage it must decline, NOT fall back to the
+    /// delta-gap expression. The fallback is the bug: it would price this
+    /// feedpoint from an excitation vector that is all zeros and hand back a
+    /// confident 0.0.
+    #[test]
+    fn a_current_source_without_a_port_voltage_is_skipped_not_guessed() {
+        let deck = deck_with_ex(4);
+        let segs = [one_metre_segment()];
+        let v_vec = [Complex64::new(7.0, 0.0)]; // deliberately NOT zero
+        let i_vec = [Complex64::new(1.0, 0.0)];
+
+        let p = feedpoint_input_power(&deck, &segs, &v_vec, &i_vec, None);
+        assert_eq!(
+            p, 0.0,
+            "a current source with no port voltage must contribute nothing, \
+             not 0.5 * Re(7 * conj(1)) = 3.5 from the wrong formula"
+        );
+    }
+
+    /// Negative control: the delta-gap drive, which always worked, must be
+    /// untouched — and must ignore the port voltage entirely.
+    #[test]
+    fn a_delta_gap_still_uses_its_excitation_vector() {
+        let deck = deck_with_ex(0);
+        let segs = [one_metre_segment()];
+        let v_vec = [Complex64::new(2.0, 0.0)];
+        let i_vec = [Complex64::new(1.0, 0.0)];
+
+        let p = feedpoint_input_power(&deck, &segs, &v_vec, &i_vec, None);
+        assert!((p - 1.0).abs() < 1e-12, "0.5 * Re(2 * 1) = 1 W, got {p}");
+        let with_port = feedpoint_input_power(
+            &deck,
+            &segs,
+            &v_vec,
+            &i_vec,
+            Some(Complex64::new(999.0, 0.0)),
+        );
+        assert!(
+            (with_port - 1.0).abs() < 1e-12,
+            "a delta gap must ignore the port voltage, got {with_port}"
+        );
+    }
 
     #[test]
     fn axial_ratio_linear_circular_limits() {

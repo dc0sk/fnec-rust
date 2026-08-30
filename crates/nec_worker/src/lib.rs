@@ -16,7 +16,7 @@ pub mod ssh_worker;
 pub mod worker;
 
 pub use capability::{Capability, CapabilityCache};
-pub use controller::LocalWorkerHandle;
+pub use controller::{DispatchError, LocalWorkerHandle};
 pub use hosts::{HostEntry, HostsConfig, HostsConfigError};
 pub use pool::{DispatchOutcome, WorkerPool};
 pub use protocol::{ErrorCode, Impedance, TaskMessage, TaskResult, WorkerSolverConfig};

@@ -11,9 +11,8 @@ use nec_model::deck::NecDeck;
 use nec_parser::parse;
 use nec_solver::validate;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_excitation, build_geometry, build_hallen_rhs,
-    compute_radiation_pattern, detect_wire_junctions, ground_model_from_deck, solve_hallen,
-    wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
+    assemble_z_matrix_with_ground, build_excitation, build_geometry, compute_radiation_pattern,
+    ground_model_from_deck, FarFieldPoint, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -244,6 +243,7 @@ pub fn load_currents_str(
         freq_hz: _freq_hz,
         ground,
         v_vec: _v_vec,
+        port_voltage: _port_voltage,
     } = solve_for_currents(deck_text, solver)?;
     let has_ground = !matches!(
         ground,
@@ -286,6 +286,7 @@ pub fn pattern_grid_str(
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     let (nt, np) = (LOBE_N_THETA, LOBE_N_PHI);
@@ -304,7 +305,15 @@ pub fn pattern_grid_str(
     // Directivity becomes gain over lossy ground, as the CLI has done since
     // PH9-CHK-003. Without this the same deck's lobe read as gain in one frontend
     // and directivity in the other, with nothing saying which (FND-053).
-    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
+    let delta_db = gui_gain_correction_db(
+        deck_text,
+        &segs,
+        &currents,
+        freq_hz,
+        &ground,
+        &v_vec,
+        port_voltage,
+    );
     let gains_dbi = results
         .iter()
         .map(|r| (r.gain_total_dbi + delta_db) as f32)
@@ -400,7 +409,6 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
     let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
-    let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     // --- frequency -------------------------------------------------------
     // The governing FR card, via the shared expansion (FND-057).
@@ -416,24 +424,11 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     // Only the Hallén path consumes it. The MPIE builds its own system from the
     // geometry and ignores `z_mat` entirely, so assembling it there was an O(N²)
     // fill computed and thrown away on every solve.
-    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
+    let mut z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
     // --- Hallen solve ----------------------------------------------------
-    let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
-    let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
-        .iter()
-        .map(|j| (j.seg_a, j.seg_b, j.sign))
-        .collect();
-    let (currents, port_voltage) = solve_currents(
-        deck,
-        &segs,
-        &z_mat,
-        freq_hz,
-        &ground,
-        &wire_endpoints,
-        &junction_tuples,
-        solver,
-    )?;
+    let (currents, port_voltage) =
+        solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     // --- feedpoint impedance --------------------------------------------
     let (z, tag, seg) = feedpoint_impedance(deck, &segs, &v_vec, &currents, freq_hz, port_voltage)?;
@@ -497,7 +492,7 @@ fn hallen_z_matrix(
         return nec_solver::ZMatrix::new(0);
     }
     let mut z_mat = assemble_z_matrix_with_ground(segs, freq_hz, ground);
-    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply(&mut z_mat);
+    nec_solver::build_deck_stamps(deck, segs, freq_hz).apply_couplings(&mut z_mat);
     z_mat
 }
 
@@ -505,11 +500,9 @@ fn hallen_z_matrix(
 fn solve_currents(
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
-    z_mat: &nec_solver::ZMatrix,
+    z_mat: &mut nec_solver::ZMatrix,
     freq_hz: f64,
     ground: &GroundModel,
-    wire_endpoints: &[(usize, usize)],
-    junction_tuples: &[(usize, usize, f64)],
     solver: SolverKind,
 ) -> Result<(Vec<Complex64>, Option<Complex64>), String> {
     // The MPIE builds its own system from the geometry, so it takes neither the
@@ -522,25 +515,19 @@ fn solve_currents(
         return Ok((currents, None));
     }
 
-    let driven_by_current = nec_solver::feedpoints(deck)
-        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
-
-    if driven_by_current {
-        let fp = nec_solver::solve_current_source_hallen(deck, segs, z_mat, freq_hz)
-            .map_err(|e| e.to_string())?;
-        return Ok((fp.currents, Some(fp.port_voltage)));
-    }
-
-    let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-    let sol = solve_hallen(
-        z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
-        wire_endpoints,
-        junction_tuples,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok((sol.currents, None))
+    // One call for every Hallén route (#FND-121). This used to be a
+    // current-source branch followed by a plain `solve_hallen`, with no arm for
+    // the conductor-path basis the CLI had — so the GUI answered a bent or split
+    // geometry on the wrong basis and showed the result with no caveat, because
+    // the shared caveat producer suppresses the junction warning for exactly
+    // that class.
+    // Loads are applied by the session as matrix columns in the basis that runs
+    // (FND-122), so they arrive here as data and are stamped into the matrix that
+    // is solved. Deltas, not assignments: this runs once per matrix.
+    let loads = nec_solver::build_deck_stamps(deck, segs, freq_hz).diagonal;
+    let routed = nec_solver::solve_hallen_routed(deck, segs, z_mat, freq_hz, &loads)
+        .map_err(|e| e.to_string())?;
+    Ok((routed.currents, routed.port_voltage))
 }
 
 /// Compute feedpoint impedance Z = V/I for the first EX card, with the tag and
@@ -658,8 +645,6 @@ pub struct SweepJob {
     segs: Vec<Segment>,
     v_vec: Vec<Complex64>,
     ground: GroundModel,
-    wire_endpoints: Vec<(usize, usize)>,
-    junction_tuples: Vec<(usize, usize, f64)>,
     freqs_mhz: Vec<f64>,
     solver: SolverKind,
 }
@@ -726,13 +711,6 @@ impl SweepJob {
                 return Err(u.to_string());
             }
         }
-        let wire_endpoints = wire_endpoints_from_segs(&segs);
-        let junction_tuples: Vec<(usize, usize, f64)> =
-            detect_wire_junctions(&segs, &wire_endpoints, 1e-6)
-                .iter()
-                .map(|j| (j.seg_a, j.seg_b, j.sign))
-                .collect();
-
         let mut freqs_mhz = Vec::new();
         let mut f = start_mhz;
         while f <= end_mhz + step_mhz * 1e-9 {
@@ -745,8 +723,6 @@ impl SweepJob {
             segs,
             v_vec,
             ground,
-            wire_endpoints,
-            junction_tuples,
             freqs_mhz,
             solver,
         })
@@ -762,16 +738,14 @@ impl SweepJob {
         let freq_hz = freq_mhz * 1_000_000.0;
 
         // Per point, so the discarded fill cost the whole sweep, not one solve.
-        let z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
+        let mut z_mat = hallen_z_matrix(&self.deck, &self.segs, freq_hz, &self.ground, self.solver);
 
         let (currents, port_voltage) = solve_currents(
             &self.deck,
             &self.segs,
-            &z_mat,
+            &mut z_mat,
             freq_hz,
             &self.ground,
-            &self.wire_endpoints,
-            &self.junction_tuples,
             self.solver,
         )?;
 
@@ -905,11 +879,16 @@ fn gui_gain_correction_db(
     freq_hz: f64,
     ground: &GroundModel,
     v_vec: &[Complex64],
+    port_voltage: Option<Complex64>,
 ) -> f64 {
     let Ok(parsed) = parse(deck_text) else {
         return 0.0;
     };
-    let p_in = nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, currents);
+    let p_in = nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, currents, port_voltage);
+    // `unwrap_or(0.0)` is right for free space and PEC, where there is no loss to
+    // account for. Over a LOSSY ground it means the correction was unavailable,
+    // not that it is zero — so anything that can make it unavailable there is a
+    // silent wrong answer, which is exactly how FND-114 hid.
     nec_solver::gain_correction_db(segs, currents, freq_hz, ground, p_in).unwrap_or(0.0)
 }
 
@@ -925,6 +904,7 @@ pub fn pattern_slice_deck_str(
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     // Build 37-point theta grid: 0, 5, 10, … 180 deg.
@@ -939,7 +919,15 @@ pub fn pattern_slice_deck_str(
     // Same correction as the full-sphere grid: the elevation slice is the same
     // quantity, and correcting one view and not the other would put two different
     // numbers for one deck on two tabs (FND-053).
-    let delta_db = gui_gain_correction_db(deck_text, &segs, &currents, freq_hz, &ground, &v_vec);
+    let delta_db = gui_gain_correction_db(
+        deck_text,
+        &segs,
+        &currents,
+        freq_hz,
+        &ground,
+        &v_vec,
+        port_voltage,
+    );
 
     Ok(results
         .into_iter()
@@ -990,6 +978,7 @@ pub fn current_distribution_deck_str(
         freq_hz: _freq_hz,
         ground: _ground,
         v_vec: _v_vec,
+        port_voltage: _port_voltage,
     } = solve_for_currents(deck_text, solver)?;
 
     let mut pos: f64 = 0.0;
@@ -1033,6 +1022,13 @@ struct SolvedDeck {
     ground: nec_solver::GroundModel,
     /// Needed for the feedpoint input power the gain correction divides by.
     v_vec: Vec<Complex64>,
+    /// The solved port voltage, for a current-source drive.
+    ///
+    /// `v_vec` alone is not enough: it is all zeros on an `EX 4` deck, so the
+    /// input power came out exactly 0 and the ground-loss correction silently
+    /// did not happen — this view reported directivity as gain while the Solve
+    /// tab, which already threaded this value, was right (FND-114).
+    port_voltage: Option<Complex64>,
 }
 
 fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck, String> {
@@ -1051,7 +1047,6 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     // the same `solve_currents` step the Solve tab uses (FND-045). The guard that
     // stood here existed because these views would otherwise have rendered zero
     // currents and a meaningless pattern — that hazard is gone with the capability.
-    let wire_endpoints = wire_endpoints_from_segs(&segs);
 
     // The governing FR card, via the shared expansion (FND-057).
     let freq_hz = nec_solver::frequencies_hz(deck)
@@ -1059,26 +1054,13 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         .copied()
         .ok_or_else(|| "deck has no FR card".to_string())?;
 
-    let z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
+    let mut z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 
-    let wire_junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
-    let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
-        .iter()
-        .map(|j| (j.seg_a, j.seg_b, j.sign))
-        .collect();
     // Currents and pattern get the current-source branch too. Solving an `EX 4`
     // deck on the Solve tab while these three refused it would be the FND-038
     // shape all over again.
-    let (currents, _port_voltage) = solve_currents(
-        deck,
-        &segs,
-        &z_mat,
-        freq_hz,
-        &ground,
-        &wire_endpoints,
-        &junction_tuples,
-        solver,
-    )?;
+    let (currents, port_voltage) =
+        solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     Ok(SolvedDeck {
         segs,
@@ -1086,6 +1068,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         freq_hz,
         ground,
         v_vec,
+        port_voltage,
     })
 }
 

@@ -532,6 +532,114 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
 // Tests
 // ---------------------------------------------------------------------------
 
+/// The columns a set of lumped series loads contributes to the Hallén matrix.
+///
+/// A load is not a diagonal term. In Hallén's equation the unknown is the current
+/// and the matrix is dimensionless (`A[m,n] = cos α · ∫G dl`), while the driving
+/// term carries the `−j·2π/η₀` scale and a `sin(k|s − s'|)` shape — the particular
+/// solution of `(d²/ds² + k²)A_s = −jωμε·E_s`, whose kernel is `sin(k|s−s'|)/(2k)`.
+///
+/// A lumped series impedance `Z_p` at segment `p` imposes
+/// `E_s = Z_p·I(s_p)·δ(s − s_p)`, which is *exactly* a delta-gap source of
+/// `−I_p·Z_p`. The delta integrates out, so there is no `Δl` and no factor of
+/// one half. Because `I_p` is the unknown, the term moves to the left-hand side
+/// as a rank-1 update of column `p`, with the same shape the source term uses:
+///
+/// ```text
+/// A[m, p] += −j·(2π/η₀)·Z_p·sin(k·|s_m − s_p|)
+/// ```
+///
+/// Adding `Z_p` to `A[p,p]` instead — ohms onto a dimensionless matrix — was
+/// FND-122: a 100 Ω load at the feed shifted Z by +700+j135 where the port
+/// identity requires exactly +100, and off-feed series resistors *lowered* the
+/// feedpoint resistance.
+///
+/// The stamp contributes nothing to its own row, since `sin(0) = 0`. That reads
+/// wrong and is right: a load's effect on the current at its own position comes
+/// through the rest of the column, not through a self term.
+///
+/// Returns `(column_index, column)` pairs; segments with a zero load are skipped.
+pub fn hallen_load_columns(
+    segs: &[Segment],
+    freq_hz: f64,
+    loads: &[Complex64],
+    paths: Option<&[ConductorPath]>,
+) -> Vec<(usize, Vec<Complex64>)> {
+    let n = segs.len();
+    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
+    let zero = Complex64::new(0.0, 0.0);
+    let mut out = Vec::new();
+
+    match paths {
+        // Conductor-path basis: signed arc length, and the column carries the
+        // product of the two signs exactly as the source term carries
+        // `sign_of[m] * feed_sign`. Without it a load on a reversed arm of a
+        // start-to-start split stamps with the wrong sign — invisible on every
+        // straight-wire test.
+        Some(paths) => {
+            let mut path_of = vec![0usize; n];
+            let mut sign_of = vec![1.0f64; n];
+            let mut s_of = vec![0.0f64; n];
+            for (pi, p) in paths.iter().enumerate() {
+                for (j, &m) in p.segs.iter().enumerate() {
+                    path_of[m] = pi;
+                    sign_of[m] = p.signs[j];
+                    s_of[m] = p.s_mid[j];
+                }
+            }
+            for (p_idx, &z_load) in loads.iter().enumerate().take(n) {
+                if z_load == zero {
+                    continue;
+                }
+                let mut col = vec![zero; n];
+                let load_sign = sign_of[p_idx];
+                for (m, slot) in col.iter_mut().enumerate() {
+                    if path_of[m] != path_of[p_idx] {
+                        continue;
+                    }
+                    let ds = (s_of[m] - s_of[p_idx]).abs();
+                    *slot = Complex64::new(0.0, -scale * (k * ds).sin())
+                        * z_load
+                        * (sign_of[m] * load_sign);
+                }
+                out.push((p_idx, col));
+            }
+        }
+        // Merged-conductor basis: the straight-axis coordinate the plain source
+        // term uses, measured from the loaded segment along its own direction.
+        None => {
+            let components = crate::geometry::merge_collinear_wire_endpoints(segs);
+            let mut comp_of = vec![0usize; n];
+            for (ci, &(first, last)) in components.iter().enumerate() {
+                for slot in comp_of.iter_mut().take(last + 1).skip(first) {
+                    *slot = ci;
+                }
+            }
+            for (p_idx, &z_load) in loads.iter().enumerate().take(n) {
+                if z_load == zero {
+                    continue;
+                }
+                let mut col = vec![zero; n];
+                let (cf, cl) = components[comp_of[p_idx]];
+                let src_mid = segs[p_idx].midpoint;
+                let src_dir = segs[p_idx].direction;
+                for m in cf..=cl {
+                    let d = [
+                        segs[m].midpoint[0] - src_mid[0],
+                        segs[m].midpoint[1] - src_mid[1],
+                        segs[m].midpoint[2] - src_mid[2],
+                    ];
+                    let s = d[0] * src_dir[0] + d[1] * src_dir[1] + d[2] * src_dir[2];
+                    col[m] = Complex64::new(0.0, -scale * (k * s.abs()).sin()) * z_load;
+                }
+                out.push((p_idx, col));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
 

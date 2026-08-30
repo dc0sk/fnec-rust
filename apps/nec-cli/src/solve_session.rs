@@ -85,12 +85,11 @@ use nec_report::{
 };
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
-    build_hallen_rhs, build_hallen_rhs_paths, build_planewave_hallen, build_planewave_hallen_paths,
+    build_hallen_rhs, build_planewave_hallen, build_planewave_hallen_paths,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
     merge_collinear_wire_endpoints, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
-    GroundModel, Segment, ZMatrix,
+    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -370,6 +369,12 @@ fn plane_wave_receive_sweep(
                 }
             }
             let currents = solve_plane_wave_hallen(&d, segs, z_mat, wire_endpoints, freq_hz)?;
+            // Before the reduction, not after. `f64::max` returns the OTHER
+            // operand when one side is NaN, so `fold(0.0, f64::max)` turns a
+            // fully diverged solve into exactly 0.0 — printed as a -999.99 dB
+            // null indistinguishable from a real one (FND-127). Refusing here
+            // means the laundering has nothing to launder.
+            nec_solver::check_currents_finite(&currents).map_err(|e| e.to_string())?;
             let peak = currents.iter().map(|c| c.norm()).fold(0.0f64, f64::max);
             raw.push((theta, phi, peak));
         }
@@ -785,26 +790,29 @@ pub(super) fn build_feedpoint_rows(
         };
 
         let current = i_vec[idx];
-        let v_source = if role == nec_model::card::FeedpointRole::CurrentSource {
-            // Hallén current source: the solved port voltage V (feedpoint Z=V/i0).
-            // The dormant pulse path is retained as a fallback but is unreachable
-            // now that current sources require --solver hallen.
-            current_source_port.unwrap_or_else(|| {
-                if matches!(solver_mode, SolverMode::Pulse) {
-                    pulse_current_sources
-                        .iter()
-                        .find(|constraint| constraint.seg_index == idx)
-                        .map(|constraint| {
-                            pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
-                        })
-                        .unwrap_or(v_vec[idx] * seg.length)
-                } else {
-                    v_vec[idx] * seg.length
-                }
-            })
-        } else {
-            v_vec[idx] * seg.length
-        };
+        // Through the shared seam, so this column and the GUI's gain correction
+        // cannot disagree about what a feedpoint's voltage is — they did, and the
+        // GUI lost 5.78 dB on every current-source deck over lossy ground
+        // (FND-114). Sabotaging that one function now moves BOTH.
+        let v_source =
+            nec_solver::feedpoint_drive_voltage(role, seg.length, v_vec[idx], current_source_port)
+                .unwrap_or_else(|| {
+                    // Reached only for a current source with no solved port voltage. The
+                    // dormant pulse path is retained here rather than deleted: EX 4 with
+                    // any non-Hallén solver is refused at function entry and that refusal
+                    // is corpus-pinned, so this is unreachable today (FND-130).
+                    if matches!(solver_mode, SolverMode::Pulse) {
+                        pulse_current_sources
+                            .iter()
+                            .find(|constraint| constraint.seg_index == idx)
+                            .map(|constraint| {
+                                pulse_current_source_voltage(constraint, i_vec, seg.length, freq_hz)
+                            })
+                            .unwrap_or(v_vec[idx] * seg.length)
+                    } else {
+                        v_vec[idx] * seg.length
+                    }
+                });
         // The shared seam: a zero current has no impedance, and printing the
         // source voltage instead was reporting a different quantity in the units
         // of the one asked for (FND-050/058).
@@ -1111,7 +1119,44 @@ pub(super) fn solve_frequency_point(
     for warning in &laplace_warnings {
         eprintln!("warning: {warning}");
     }
-    stamps.apply(&mut z_mat);
+    // Loads are applied by the Hallen session, as matrix columns in the basis
+    // that will actually run (FND-122). Only the two-port couplings are stamped
+    // here — and their model carries the same units error the loads did, so they
+    // are caveated rather than answered silently.
+    if matches!(solver_mode, SolverMode::Hallen) {
+        stamps.apply_couplings(&mut z_mat);
+    } else {
+        // Pulse and continuity solve a Pocklington system in field units, and
+        // sinusoidal uses a basis for which the column stamp is not the load
+        // sample. None of those has a derived load treatment yet, so they keep
+        // the old diagonal add and say so.
+        stamps.apply_with_diagonal_loads(&mut z_mat);
+        if stamps
+            .diagonal
+            .iter()
+            .any(|z| *z != Complex64::new(0.0, 0.0))
+        {
+            eprintln!(
+                "warning: LD/--loads-config loads on --solver {} use the unvalidated \
+                 diagonal stamp; only the hallen basis has a derived load model \
+                 (FND-122). Treat the loaded result as indicative",
+                match solver_mode {
+                    SolverMode::Pulse => "pulse",
+                    SolverMode::Continuity => "continuity",
+                    SolverMode::Sinusoidal => "sinusoidal",
+                    _ => "this",
+                }
+            );
+        }
+    }
+    if stamps.has_couplings() {
+        eprintln!(
+            "warning: TL/NT two-port couplings are stamped as series impedances \
+             into a dimensionless matrix; that model is not derived and the \
+             resulting impedance is unreliable (FND-122). A correct treatment \
+             needs extra unknowns, not a different stamp"
+        );
+    }
     let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
         collect_pulse_current_source_constraints(deck, segs)?
     } else {
@@ -1130,94 +1175,36 @@ pub(super) fn solve_frequency_point(
     let mut current_source_port: Option<Complex64> = None;
 
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
-        SolverMode::Hallen if deck_has_plane_wave(deck) => {
-            let currents = solve_plane_wave_hallen(deck, segs, &z_mat, wire_endpoints, freq_hz)?;
-            (currents, 0.0, 0.0, "hallen-planewave")
-        }
-        SolverMode::Hallen if deck_has_current_source(deck) => {
-            // Through `nec_solver` now, so the GUI and the bindings solve the
-            // same decks by the same route rather than being told to use the CLI
-            // (FND-045).
-            let fp = nec_solver::solve_current_source_hallen(deck, segs, &z_mat, freq_hz)
-                .map_err(|e| e.to_string())?;
-            current_source_port = Some(fp.port_voltage);
-            let currents = fp.currents;
-            (currents, 0.0, 0.0, "hallen-current-source")
-        }
-        SolverMode::Hallen
-            if build_conductor_paths(segs).is_some_and(|ps| ps.iter().any(|p| !p.is_trivial())) =>
-        {
-            // PH9-CHK-002 general junction: the deck contains a degree-2 conductor
-            // chain the collinear merge cannot handle (a bend, start-to-start /
-            // end-to-end split, or inverted-V apex feed). Solve on continuous
-            // conductor paths — one shared homogeneous constant per path, signed
-            // arc-length `cos(k·s)`, and `I = 0` only at the true free ends — so the
-            // Hallén basis stays continuous across the junction. Reducible decks
-            // (single wires, collinear chains) and out-of-scope topologies (degree-3
-            // T/Y, closed loops) fall through to the pre-existing path below.
-            let paths = build_conductor_paths(segs).expect("checked in guard");
-            let hallen_rhs =
-                build_hallen_rhs_paths(deck, segs, freq_hz, &paths).map_err(|e| e.to_string())?;
-            let mut path_of = vec![0usize; segs.len()];
-            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
-            for (pi, p) in paths.iter().enumerate() {
-                for &m in &p.segs {
-                    path_of[m] = pi;
-                }
-                free_ends.push(p.free_ends.0);
-                free_ends.push(p.free_ends.1);
-            }
-            let sol = solve_hallen_paths(
-                &z_mat,
-                &hallen_rhs.rhs,
-                &hallen_rhs.cos_vec,
-                &path_of,
-                &free_ends,
-            )
-            .map_err(|e| e.to_string())?;
-            let (a, r) = residual_hallen_paths(
-                &z_mat,
-                &sol.currents,
-                &sol.c_hom_per_wire,
-                &hallen_rhs.cos_vec,
-                &hallen_rhs.rhs,
-                &path_of,
-            );
-            (sol.currents, a, r, "hallen")
-        }
         SolverMode::Hallen => {
-            let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-            // PH9-CHK-002: collinear-connected wires are merged into one logical
-            // conductor for the Hallén homogeneous solution (matching build_hallen_rhs).
-            // Junctions internal to a merged conductor are handled by the merged
-            // basis, so only cross-conductor junctions keep an explicit continuity
-            // constraint.
-            let merged_endpoints = merge_collinear_wire_endpoints(segs);
-            let mut comp_of = vec![0usize; segs.len()];
-            for (ci, &(first, last)) in merged_endpoints.iter().enumerate() {
-                for slot in comp_of.iter_mut().take(last + 1).skip(first) {
-                    *slot = ci;
+            // One decision, shared with the GUI, the bindings and the worker
+            // (FND-121). It used to be four arms here and nowhere else, so those
+            // three answered a bent or split geometry on the plain basis while
+            // this frontend used conductor paths: 264.88 + j410.86 here against
+            // 9.15 - j767.60 from the worker on the same deck, both silent.
+            //
+            // The GPU-resident fill+solve implements exactly one route — the
+            // plain delta-gap solve — so it asks `hallen_route` rather than
+            // assuming, and declines anything else.
+            let route = nec_solver::hallen_route(deck, segs);
+            let gpu_sol = if route.drive == nec_solver::HallenDrive::DeltaGap
+                && !route.paths
+                && laplace_loads.is_empty()
+            {
+                let hallen_rhs =
+                    build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+                let merged_endpoints = merge_collinear_wire_endpoints(segs);
+                let mut comp_of = vec![0usize; segs.len()];
+                for (ci, &(first, last)) in merged_endpoints.iter().enumerate() {
+                    for slot in comp_of.iter_mut().take(last + 1).skip(first) {
+                        *slot = ci;
+                    }
                 }
-            }
-            // Detect wire junctions for continuity constraints.
-            // Tolerance: 1e-6 m — well below any practical segment length.
-            let wire_junctions = detect_wire_junctions(segs, &merged_endpoints, 1e-6);
-            let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
-                .iter()
-                .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
-                .map(|j| (j.seg_a, j.seg_b, j.sign))
-                .collect();
-
-            // GPU-resident fill+solve (PH7-CHK-003): for the supported class the
-            // entire fill→solve runs on the device (no full-matrix copy-back).
-            // Only valid when the host applies no matrix modifications the GPU
-            // path does not reproduce: free-space/deferred ground, no load or TL
-            // stamps, and enough segments to amortize device setup.
-            // Laplace loads are a CLI-only input, so `maybe_gpu_resident_hallen`
-            // cannot see them — and the device solve would discard them silently
-            // (FND-023: `--exec gpu --loads-config` returned the *unloaded*
-            // 74.234 + j13.898 where the CPU gives 442.655 - j971.944). Decline here.
-            let sol = if laplace_loads.is_empty() {
+                let junction_tuples: Vec<(usize, usize, f64)> =
+                    detect_wire_junctions(segs, &merged_endpoints, nec_solver::JUNCTION_TOL_M)
+                        .iter()
+                        .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
+                        .map(|j| (j.seg_a, j.seg_b, j.sign))
+                        .collect();
                 maybe_gpu_resident_hallen(
                     deck,
                     segs,
@@ -1228,29 +1215,57 @@ pub(super) fn solve_frequency_point(
                     execution_mode,
                     freq_hz,
                 )
+                .map(|sol| (sol, hallen_rhs, merged_endpoints))
             } else {
                 None
-            }
-            .map(Ok)
-            .unwrap_or_else(|| {
-                solve_hallen(
+            };
+
+            if let Some((sol, hallen_rhs, merged_endpoints)) = gpu_sol {
+                // This arm exists because it bypasses `solve_hallen_routed`, so
+                // the guard there does not reach it (FND-126).
+                nec_solver::check_currents_finite(&sol.currents).map_err(|e| e.to_string())?;
+                let (a, r) = residual_hallen(
                     &z_mat,
-                    &hallen_rhs.rhs,
+                    &sol.currents,
+                    &sol.c_hom_per_wire,
                     &hallen_rhs.cos_vec,
+                    &hallen_rhs.rhs,
                     &merged_endpoints,
-                    &junction_tuples,
+                );
+                (sol.currents, a, r, "hallen")
+            } else {
+                let routed = nec_solver::solve_hallen_routed(
+                    deck,
+                    segs,
+                    &mut z_mat,
+                    freq_hz,
+                    &stamps.diagonal,
                 )
-            })
-            .map_err(|e| e.to_string())?;
-            let (a, r) = residual_hallen(
-                &z_mat,
-                &sol.currents,
-                &sol.c_hom_per_wire,
-                &hallen_rhs.cos_vec,
-                &hallen_rhs.rhs,
-                &merged_endpoints,
-            );
-            (sol.currents, a, r, "hallen")
+                .map_err(|e| e.to_string())?;
+                current_source_port = routed.port_voltage;
+                let (a, r) = match &routed.residual_inputs {
+                    Some(ri) => match &ri.grouping {
+                        Ok(endpoints) => residual_hallen(
+                            &z_mat,
+                            &routed.currents,
+                            &ri.c_hom,
+                            &ri.cos_vec,
+                            &ri.rhs,
+                            endpoints,
+                        ),
+                        Err(path_of) => residual_hallen_paths(
+                            &z_mat,
+                            &routed.currents,
+                            &ri.c_hom,
+                            &ri.cos_vec,
+                            &ri.rhs,
+                            path_of,
+                        ),
+                    },
+                    None => (0.0, 0.0),
+                };
+                (routed.currents, a, r, routed.route.mode_label())
+            }
         }
         SolverMode::Pulse => {
             let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
@@ -1496,10 +1511,14 @@ pub(super) fn solve_frequency_point(
     // the reported dBi matches nec2c's gain. (Free-space / PEC are lossless → η ≈ 1,
     // and are left as directivity so their corpus gates are unchanged.)
     if matches!(ground, GroundModel::SimpleFiniteGround { .. }) && !pattern_table.is_empty() {
-        let p_in: f64 = rows
-            .iter()
-            .map(|r| 0.5 * (r.v_source * r.current.conj()).re)
-            .sum();
+        // The shared producer, not a second inline sum. It computed a different
+        // number for a current source than this loop did, and since only the GUI
+        // called it, the divergence was invisible from here (FND-114). Identical
+        // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
+        // already run and aborts the session on any feedpoint it cannot price, so
+        // no feedpoint can reach this that the rows skipped.
+        let p_in: f64 =
+            nec_solver::feedpoint_input_power(deck, segs, v_vec, &i_vec, current_source_port);
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)
