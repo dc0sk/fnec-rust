@@ -27,6 +27,11 @@ use crate::solve::SweepJob;
 ///    without it, so points already on screen were never qualified (FND-014).
 /// 4. `SweepStreamDone`, or `SweepComplete(Err)` if the sweep failed.
 pub async fn run_sweep_stream(
+    // The run this stream reports under. Threaded through the signature rather
+    // than stamped by the caller on receipt, so the unit tests here — which
+    // collect every emitted message — can assert that EVERY message carries it.
+    // The many-message leg is then lib-tested rather than review-carried.
+    run: crate::app_state::RunId,
     deck_text: String,
     start_mhz: f64,
     end_mhz: f64,
@@ -39,13 +44,13 @@ pub async fn run_sweep_stream(
     let job = match SweepJob::prepare(&deck_text, start_mhz, end_mhz, step_mhz, solver) {
         Ok(job) => job,
         Err(e) => {
-            let _ = output.send(Message::SweepComplete(Err(e))).await;
+            let _ = output.send(Message::SweepComplete(run, Err(e))).await;
             return;
         }
     };
 
     let _ = output
-        .send(Message::SweepCaveats(job.geometry_caveats()))
+        .send(Message::SweepCaveats(run, job.geometry_caveats()))
         .await;
 
     // Accumulated here because the job holds the geometry and the UI thread does
@@ -55,7 +60,7 @@ pub async fn run_sweep_stream(
         match job.solve_at(f) {
             Ok(pt) => {
                 seen.push(pt.clone());
-                let _ = output.send(Message::SweepPointComputed(pt)).await;
+                let _ = output.send(Message::SweepPointComputed(run, pt)).await;
             }
             Err(e) => {
                 // The `Failed` phase currently hides the points themselves, so
@@ -64,10 +69,11 @@ pub async fn run_sweep_stream(
                 // be editing this seam.
                 let _ = output
                     .send(Message::SweepCaveats(
+                        run,
                         job.negative_resistance_caveat(&seen).into_iter().collect(),
                     ))
                     .await;
-                let _ = output.send(Message::SweepComplete(Err(e))).await;
+                let _ = output.send(Message::SweepComplete(run, Err(e))).await;
                 return;
             }
         }
@@ -75,10 +81,11 @@ pub async fn run_sweep_stream(
 
     let _ = output
         .send(Message::SweepCaveats(
+            run,
             job.negative_resistance_caveat(&seen).into_iter().collect(),
         ))
         .await;
-    let _ = output.send(Message::SweepStreamDone).await;
+    let _ = output.send(Message::SweepStreamDone(run)).await;
 }
 
 #[cfg(test)]
@@ -88,11 +95,26 @@ mod tests {
     use iced::futures::StreamExt;
 
     /// Drive the stream to completion and collect everything it sent.
-    fn run(deck: &str, start: f64, end: f64, step: f64) -> Vec<Message> {
+    ///
+    /// The run id comes from a real `AppState` rather than a literal: `RunId`'s
+    /// field is private, so this harness cannot fabricate one — which is what
+    /// makes `every_message_carries_the_run_id` below an honest assertion.
+    fn run_with_id(
+        deck: &str,
+        start: f64,
+        end: f64,
+        step: f64,
+    ) -> (crate::app_state::RunId, Vec<Message>) {
+        let mut state = crate::app_state::AppState::default();
+        state.apply(&Message::RunSweep);
+        let id = state
+            .current_sweep_run()
+            .expect("RunSweep arms the sweep pipeline");
         let (mut tx, rx) = mpsc::channel::<Message>(256);
         let deck = deck.to_string();
-        iced::futures::executor::block_on(async move {
+        let msgs = iced::futures::executor::block_on(async move {
             run_sweep_stream(
+                id,
                 deck,
                 start,
                 end,
@@ -103,13 +125,38 @@ mod tests {
             .await;
             drop(tx);
             rx.collect::<Vec<_>>().await
-        })
+        });
+        (id, msgs)
+    }
+
+    fn run(deck: &str, start: f64, end: f64, step: f64) -> Vec<Message> {
+        run_with_id(deck, start, end, step).1
+    }
+
+    /// FND-115: the streaming leg is the one that delivers MANY messages, so a
+    /// stamp missing from any single send would let that message be accepted by
+    /// whatever run happened to be current. Asserted here, over every message the
+    /// stream emits, rather than left to review of the send sites.
+    #[test]
+    fn every_message_carries_the_run_id() {
+        let (id, msgs) = run_with_id(CLEAN, 14.0, 14.2, 0.1);
+        assert!(!msgs.is_empty(), "the stream must emit something");
+        for m in &msgs {
+            let carried = match m {
+                Message::SweepCaveats(r, _)
+                | Message::SweepPointComputed(r, _)
+                | Message::SweepComplete(r, _)
+                | Message::SweepStreamDone(r) => *r,
+                other => panic!("unexpected message from the sweep stream: {other:?}"),
+            };
+            assert_eq!(carried, id, "every emitted message must carry the run id");
+        }
     }
 
     fn caveats(msgs: &[Message]) -> Vec<&Vec<String>> {
         msgs.iter()
             .filter_map(|m| match m {
-                Message::SweepCaveats(c) => Some(c),
+                Message::SweepCaveats(_, c) => Some(c),
                 _ => None,
             })
             .collect()
@@ -129,11 +176,11 @@ mod tests {
         let msgs = run(LOW_DIPOLE, 14.0, 14.4, 0.1);
         let first_caveat = msgs
             .iter()
-            .position(|m| matches!(m, Message::SweepCaveats(c) if !c.is_empty()))
+            .position(|m| matches!(m, Message::SweepCaveats(_, c) if !c.is_empty()))
             .expect("a caveat");
         let first_point = msgs
             .iter()
-            .position(|m| matches!(m, Message::SweepPointComputed(_)))
+            .position(|m| matches!(m, Message::SweepPointComputed(..)))
             .expect("a point");
         assert!(
             first_caveat < first_point,
@@ -152,12 +199,12 @@ mod tests {
     fn a_completed_sweep_ends_with_stream_done() {
         let msgs = run(CLEAN, 14.0, 14.4, 0.1);
         assert!(
-            matches!(msgs.last(), Some(Message::SweepStreamDone)),
+            matches!(msgs.last(), Some(Message::SweepStreamDone(_))),
             "{msgs:?}"
         );
         assert_eq!(
             msgs.iter()
-                .filter(|m| matches!(m, Message::SweepPointComputed(_)))
+                .filter(|m| matches!(m, Message::SweepPointComputed(..)))
                 .count(),
             5
         );
@@ -179,7 +226,7 @@ mod tests {
         const BENT_NEGATIVE_R: &str = "CM inverted-V fed away from the apex\nCE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let msgs = run(BENT_NEGATIVE_R, 13.8, 14.6, 0.2);
         assert!(
-            matches!(msgs.last(), Some(Message::SweepStreamDone)),
+            matches!(msgs.last(), Some(Message::SweepStreamDone(_))),
             "{msgs:?}"
         );
         let sent = caveats(&msgs);
@@ -200,7 +247,7 @@ mod tests {
         // crossing-wires deck takes.
         let msgs = run(CLEAN, 14.4, 14.0, 0.1); // start >= end
         assert_eq!(msgs.len(), 1, "{msgs:?}");
-        assert!(matches!(msgs[0], Message::SweepComplete(Err(_))));
+        assert!(matches!(msgs[0], Message::SweepComplete(_, Err(_))));
     }
 
     #[test]
@@ -211,7 +258,7 @@ mod tests {
         const NO_EX: &str = "CM no excitation\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEN\n";
         let msgs = run(NO_EX, 14.0, 14.2, 0.1);
         assert!(
-            matches!(msgs.last(), Some(Message::SweepComplete(Err(_)))),
+            matches!(msgs.last(), Some(Message::SweepComplete(_, Err(_)))),
             "{msgs:?}"
         );
         // Two `SweepCaveats`, not merely "at least one": the geometry send fires
@@ -233,7 +280,9 @@ mod tests {
         // feedpoint, none of which appear partway through a sweep. The completion
         // path's aggregate IS content-pinned, by the test below.
         assert!(
-            !msgs.iter().any(|m| matches!(m, Message::SweepStreamDone)),
+            !msgs
+                .iter()
+                .any(|m| matches!(m, Message::SweepStreamDone(_))),
             "a failed sweep must not report completion: {msgs:?}"
         );
     }

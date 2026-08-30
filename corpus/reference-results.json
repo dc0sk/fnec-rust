@@ -1257,7 +1257,7 @@
       ],
       "expected_warning_counts": {},
       "status": "FND-114 gate. Pins the current-source drive over lossy ground so the CLI and the GUI cannot diverge on it again: before the fix the GUI reported 6.3372 dBi of pattern gain here against the CLI's 0.5590, because the current source leaves the excitation vector all zeros and the input power the gain correction divides by came out exactly 0. HONEST LIMIT, and a second open finding: this R of 86.24 is 6.5% below the 92.27 the SAME antenna gives under a voltage drive (dipole-gn2-near-ground-51seg), and the two patterns differ by ~0.26 dB. Free-space EX4/EX0 consistency is pinned to the digit; over ground it is not. That inconsistency is FND-118 and is solver work, not this seam -- this row freezes and documents the current behaviour rather than endorsing it.",
-      "last_produced_on": "2026-08-29",
+      "last_produced_on": "2026-08-30",
       "last_produced_in": "0.17.0"
     },
     "dipole-gn-1-null": {
@@ -1338,7 +1338,7 @@
         "ExternalX_absolute_ohm": 40.4
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-29",
+      "last_produced_on": "2026-08-30",
       "last_produced_in": "0.17.0"
     },
     "dipole-ld-series-rl-51seg": {
@@ -1361,7 +1361,7 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-29",
+      "last_produced_on": "2026-08-30",
       "last_produced_in": "0.17.0"
     },
     "dipole-ld-series-rc-51seg": {
@@ -1384,7 +1384,7 @@
         "X_absolute_ohm": 500.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-29",
+      "last_produced_on": "2026-08-30",
       "last_produced_in": "0.17.0"
     },
     "tl-two-dipoles-linked": {

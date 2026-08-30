@@ -7,7 +7,8 @@
 // without opening an iced window.  They are the CI gate for this feature.
 
 use nec_gui::app_state::{
-    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, SolvePhase, SweepPhase, SweepSortCol,
+    ActiveTab, AppState, CurrentsPhase, Message, PatternPhase, RunId, SolvePhase, SweepPhase,
+    SweepSortCol,
 };
 use nec_gui::solve::{
     current_distribution_deck_str, pattern_slice_deck_str, solve_deck_path, solve_deck_str,
@@ -41,7 +42,7 @@ fn solve_message_transitions_to_solving() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::Solve);
-    assert_eq!(state.phase, SolvePhase::Solving);
+    assert!(matches!(state.phase, SolvePhase::Solving(_)));
     assert!(
         !state.can_solve(),
         "Solve button should be disabled while solving"
@@ -62,7 +63,7 @@ fn solve_complete_ok_transitions_to_done() {
         feed_tag: 1,
         feed_seg: 26,
     };
-    state.apply(&Message::SolveComplete(Ok(result.clone())));
+    deliver_solve(&mut state, Ok(result.clone()));
     assert_eq!(state.phase, SolvePhase::Done(result));
     assert!(
         state.can_solve(),
@@ -76,7 +77,7 @@ fn solve_complete_err_transitions_to_failed() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::Solve);
-    state.apply(&Message::SolveComplete(Err("no FR card".into())));
+    deliver_solve(&mut state, Err("no FR card".into()));
     assert!(matches!(state.phase, SolvePhase::Failed(_)));
     assert!(
         state.can_solve(),
@@ -90,7 +91,7 @@ fn deck_path_change_clears_failed_state() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::Solve);
-    state.apply(&Message::SolveComplete(Err("oops".into())));
+    deliver_solve(&mut state, Err("oops".into()));
     assert!(matches!(state.phase, SolvePhase::Failed(_)));
     state.apply(&Message::DeckPathChanged("bar.nec".into()));
     assert_eq!(state.phase, SolvePhase::Idle);
@@ -126,14 +127,17 @@ fn status_text_done_contains_impedance() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("a.nec".into()));
     state.apply(&Message::Solve);
-    state.apply(&Message::SolveComplete(Ok(SolveResult {
-        freq_mhz: 14.2,
-        z_re: 73.1,
-        z_im: -1.5,
-        warnings: Vec::new(),
-        feed_tag: 1,
-        feed_seg: 26,
-    })));
+    deliver_solve(
+        &mut state,
+        Ok(SolveResult {
+            freq_mhz: 14.2,
+            z_re: 73.1,
+            z_im: -1.5,
+            warnings: Vec::new(),
+            feed_tag: 1,
+            feed_seg: 26,
+        }),
+    );
     let s = state.status_text();
     assert!(s.contains("14.2") || s.contains("MHz"), "freq missing: {s}");
     assert!(s.contains("73"), "Z_re missing: {s}");
@@ -266,7 +270,7 @@ fn run_sweep_transitions_to_running() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunSweep);
-    assert_eq!(state.sweep_phase, SweepPhase::Running);
+    assert!(matches!(state.sweep_phase, SweepPhase::Running(_)));
     assert!(
         !state.can_sweep(),
         "Run Sweep button should be disabled while running"
@@ -296,7 +300,7 @@ fn sweep_complete_ok_transitions_to_done() {
             z_im: 12.0,
         },
     ];
-    state.apply(&Message::SweepComplete(Ok(pts.clone())));
+    deliver_sweep(&mut state, Ok(pts.clone()));
     assert!(matches!(state.sweep_phase, SweepPhase::Done(_)));
     assert_eq!(state.sorted_sweep_rows().len(), 3);
 }
@@ -307,7 +311,7 @@ fn sweep_complete_err_transitions_to_failed() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunSweep);
-    state.apply(&Message::SweepComplete(Err("parse failed".into())));
+    deliver_sweep(&mut state, Err("parse failed".into()));
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
     assert!(
         state.can_sweep(),
@@ -353,7 +357,8 @@ CM dipole\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2
     let mut state = AppState::default();
     assert!(state.viewport.scene.is_none());
     let rev0 = state.viewport.scene_rev;
-    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    state.apply(&Message::LoadGeometry);
+    deliver_geometry(&mut state, Ok(geo));
     let vp = &state.viewport;
     assert!(vp.scene.is_some(), "scene mesh should be built");
     assert!(vp.scene_rev > rev0, "scene revision must bump");
@@ -374,7 +379,8 @@ CM dipole\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2
 #[test]
 fn geometry_load_error_clears_scene() {
     let mut state = AppState::default();
-    state.apply(&Message::GeometryLoaded(Err("no geometry".into())));
+    state.apply(&Message::LoadGeometry);
+    deliver_geometry(&mut state, Err("no geometry".into()));
     assert!(state.viewport.scene.is_none());
     assert!(state.viewport.status.starts_with("Error:"));
 }
@@ -387,7 +393,8 @@ fn viewport_camera_messages_move_and_reset() {
     let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     let geo = nec_gui::solve::load_geometry_str(deck).unwrap();
     let mut state = AppState::default();
-    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    state.apply(&Message::LoadGeometry);
+    deliver_geometry(&mut state, Ok(geo));
     let fit = state.viewport.camera;
 
     // Orbit changes yaw/pitch.
@@ -432,7 +439,8 @@ fn currents_solve_colors_wires_and_toggles() {
 
     let mut state = AppState::default();
     let rev0 = state.viewport.scene_rev;
-    state.apply(&Message::CurrentsSolved(Ok(gc)));
+    state.apply(&Message::LoadCurrents);
+    deliver_viewport_currents(&mut state, Ok(gc));
     assert!(state.viewport.show_currents, "currents coloring turns on");
     assert!(state.viewport.currents_ma.is_some());
     assert!(state.viewport.scene.is_some());
@@ -471,7 +479,8 @@ fn pattern_solve_builds_lobe_and_toggles() {
     assert_eq!(ps.grid.gains_dbi.len(), ps.grid.n_theta * ps.grid.n_phi);
 
     let mut state = AppState::default();
-    state.apply(&Message::Pattern3dComplete(Ok(ps)));
+    state.apply(&Message::LoadPattern3d);
+    deliver_viewport_pattern(&mut state, Ok(ps));
     assert!(state.viewport.show_pattern, "pattern overlay turns on");
     let lobe = state.viewport.lobe.as_ref().expect("lobe built");
     assert!(lobe.triangle_count() > 1000, "lobe has a triangle surface");
@@ -511,7 +520,7 @@ fn sorted_sweep_rows_zmag_descending() {
             z_im: 1.0,
         }, // |Z|=1
     ];
-    state.apply(&Message::SweepComplete(Ok(pts)));
+    deliver_sweep(&mut state, Ok(pts));
     // Sort by |Z| ascending first click, then toggle to descending.
     state.apply(&Message::SweepSortBy(SweepSortCol::ZMag));
     state.apply(&Message::SweepSortBy(SweepSortCol::ZMag));
@@ -641,7 +650,7 @@ fn run_pattern_transitions_to_running() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunPattern);
-    assert_eq!(state.pattern_phase, PatternPhase::Running);
+    assert!(matches!(state.pattern_phase, PatternPhase::Running(_)));
     assert!(
         !state.can_run_pattern(),
         "button should be disabled while running"
@@ -671,7 +680,7 @@ fn pattern_complete_ok_transitions_to_done() {
             gain_total_dbi: -10.0,
         },
     ];
-    state.apply(&Message::PatternComplete(Ok(pts)));
+    deliver_pattern(&mut state, Ok(pts));
     assert!(matches!(state.pattern_phase, PatternPhase::Done(_)));
     assert!(
         state.can_run_pattern(),
@@ -685,7 +694,7 @@ fn pattern_complete_err_transitions_to_failed() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunPattern);
-    state.apply(&Message::PatternComplete(Err("no FR card".into())));
+    deliver_pattern(&mut state, Err("no FR card".into()));
     assert!(matches!(state.pattern_phase, PatternPhase::Failed(_)));
 }
 
@@ -722,7 +731,7 @@ fn run_currents_transitions_to_running() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("foo.nec".into()));
     state.apply(&Message::RunCurrents);
-    assert_eq!(state.currents_phase, CurrentsPhase::Running);
+    assert!(matches!(state.currents_phase, CurrentsPhase::Running(_)));
     assert!(!state.can_run_currents());
 }
 
@@ -744,7 +753,7 @@ fn currents_complete_ok_transitions_to_done() {
             current_mag_ma: 1.0,
         },
     ];
-    state.apply(&Message::CurrentsComplete(Ok(pts)));
+    deliver_currents(&mut state, Ok(pts));
     assert!(matches!(state.currents_phase, CurrentsPhase::Done(_)));
 }
 
@@ -773,7 +782,7 @@ fn pattern_display_rows_frac_in_range() {
             gain_total_dbi: -5.0,
         },
     ];
-    state.apply(&Message::PatternComplete(Ok(pts)));
+    deliver_pattern(&mut state, Ok(pts));
     let rows = state.pattern_display_rows();
     assert_eq!(rows.len(), 3);
     for r in &rows {
@@ -818,7 +827,7 @@ fn current_display_bars_peak_is_one() {
             current_mag_ma: 2.0,
         },
     ];
-    state.apply(&Message::CurrentsComplete(Ok(pts)));
+    deliver_currents(&mut state, Ok(pts));
     let bars = state.current_display_bars();
     assert_eq!(bars.len(), 3);
     let peak = bars
@@ -1201,17 +1210,20 @@ fn editor_apply_solve_enters_solving_then_done() {
     let mut state = loaded_editor();
     state.apply(&Message::EditApplySolve);
     assert!(
-        matches!(state.phase, SolvePhase::Solving),
+        matches!(state.phase, SolvePhase::Solving(_)),
         "a valid edited deck should start solving"
     );
-    state.apply(&Message::SolveComplete(Ok(SolveResult {
-        freq_mhz: 14.2,
-        z_re: 73.0,
-        z_im: 5.0,
-        warnings: Vec::new(),
-        feed_tag: 1,
-        feed_seg: 26,
-    })));
+    deliver_solve(
+        &mut state,
+        Ok(SolveResult {
+            freq_mhz: 14.2,
+            z_re: 73.0,
+            z_im: 5.0,
+            warnings: Vec::new(),
+            feed_tag: 1,
+            feed_seg: 26,
+        }),
+    );
     assert!(matches!(state.phase, SolvePhase::Done(_)));
 }
 
@@ -1226,7 +1238,7 @@ fn editor_apply_solve_rejects_invalid_deck() {
     });
     state.apply(&Message::EditApplySolve);
     assert!(
-        !matches!(state.phase, SolvePhase::Solving),
+        !matches!(state.phase, SolvePhase::Solving(_)),
         "an invalid deck must not start solving"
     );
     assert!(state.editor.error.is_some());
@@ -1298,6 +1310,143 @@ fn editor_add_control_is_undoable() {
 
 use nec_gui::plot::PlotMetric;
 
+// ---------------------------------------------------------------------------
+// Run-identity helpers (FND-115/FND-116)
+// ---------------------------------------------------------------------------
+//
+// `RunId`'s inner value is private, so a test cannot fabricate a stamp: it must
+// read back the id the state actually issued. That is the point — it makes "this
+// test used a real run id" a compile-time property instead of a review one — but
+// it means every completion has to be delivered through one of these.
+//
+// `*_as` variants take an id captured earlier, which is how a STALE completion is
+// expressed: arm a run, capture its id, supersede it, then deliver under the old
+// id and assert nothing moved.
+
+fn deliver_solve(state: &mut AppState, r: Result<SolveResult, String>) {
+    let id = state
+        .current_solve_run()
+        .expect("a solve must be in flight");
+    state.apply(&Message::SolveComplete(id, r));
+}
+
+fn deliver_sweep(state: &mut AppState, r: Result<Vec<SweepPoint>, String>) {
+    let id = state
+        .current_sweep_run()
+        .expect("a sweep must be in flight");
+    state.apply(&Message::SweepComplete(id, r));
+}
+
+fn deliver_sweep_point(state: &mut AppState, pt: SweepPoint) {
+    let id = state
+        .current_sweep_run()
+        .expect("a sweep must be in flight");
+    state.apply(&Message::SweepPointComputed(id, pt));
+}
+
+fn deliver_sweep_done(state: &mut AppState) {
+    let id = state
+        .current_sweep_run()
+        .expect("a sweep must be in flight");
+    state.apply(&Message::SweepStreamDone(id));
+}
+
+fn deliver_sweep_caveats(state: &mut AppState, c: Vec<String>) {
+    let id = state
+        .current_sweep_run()
+        .expect("a sweep must be in flight");
+    state.apply(&Message::SweepCaveats(id, c));
+}
+
+fn deliver_pattern(state: &mut AppState, r: Result<Vec<PatternPoint>, String>) {
+    let id = state
+        .current_pattern_run()
+        .expect("a pattern run must be in flight");
+    state.apply(&Message::PatternComplete(id, r));
+}
+
+fn deliver_currents(state: &mut AppState, r: Result<Vec<CurrentPoint>, String>) {
+    let id = state
+        .current_currents_run()
+        .expect("a currents run must be in flight");
+    state.apply(&Message::CurrentsComplete(id, r));
+}
+
+fn deliver_geometry(state: &mut AppState, r: Result<nec_gui::mesh::SceneGeometry, String>) {
+    let id = state
+        .current_geometry_run()
+        .expect("a geometry load must be in flight");
+    state.apply(&Message::GeometryLoaded(id, r));
+}
+
+fn deliver_viewport_currents(
+    state: &mut AppState,
+    r: Result<nec_gui::mesh::GeometryCurrents, String>,
+) {
+    let id = state
+        .current_viewport_currents_run()
+        .expect("a viewport currents solve must be in flight");
+    state.apply(&Message::CurrentsSolved(id, r));
+}
+
+fn deliver_viewport_pattern(state: &mut AppState, r: Result<nec_gui::mesh::PatternSolve, String>) {
+    let id = state
+        .current_viewport_pattern_run()
+        .expect("a viewport pattern solve must be in flight");
+    state.apply(&Message::Pattern3dComplete(id, r));
+}
+
+fn deliver_sweep_point_as(state: &mut AppState, id: RunId, pt: SweepPoint) {
+    state.apply(&Message::SweepPointComputed(id, pt));
+}
+
+fn deliver_sweep_done_as(state: &mut AppState, id: RunId) {
+    state.apply(&Message::SweepStreamDone(id));
+}
+
+fn deliver_sweep_caveats_as(state: &mut AppState, id: RunId, c: Vec<String>) {
+    state.apply(&Message::SweepCaveats(id, c));
+}
+
+fn deliver_sweep_as(state: &mut AppState, id: RunId, r: Result<Vec<SweepPoint>, String>) {
+    state.apply(&Message::SweepComplete(id, r));
+}
+
+fn deliver_solve_as(state: &mut AppState, id: RunId, r: Result<SolveResult, String>) {
+    state.apply(&Message::SolveComplete(id, r));
+}
+
+fn deliver_geometry_as(
+    state: &mut AppState,
+    id: RunId,
+    r: Result<nec_gui::mesh::SceneGeometry, String>,
+) {
+    state.apply(&Message::GeometryLoaded(id, r));
+}
+
+fn deliver_viewport_currents_as(
+    state: &mut AppState,
+    id: RunId,
+    r: Result<nec_gui::mesh::GeometryCurrents, String>,
+) {
+    state.apply(&Message::CurrentsSolved(id, r));
+}
+
+fn deliver_viewport_pattern_as(
+    state: &mut AppState,
+    id: RunId,
+    r: Result<nec_gui::mesh::PatternSolve, String>,
+) {
+    state.apply(&Message::Pattern3dComplete(id, r));
+}
+
+fn deliver_deck_warnings(state: &mut AppState, w: Vec<String>) {
+    let id = state
+        .current_deck_warnings_run()
+        .expect("a caveat refresh must be in flight");
+    state.apply(&Message::DeckWarnings(id, w));
+}
+
 fn done_sweep() -> AppState {
     let mut state = AppState::default();
     // Through `RunSweep` first, as the app always does: the button sets `Running`
@@ -1323,7 +1472,7 @@ fn done_sweep() -> AppState {
             z_im: 30.0,
         },
     ];
-    state.apply(&Message::SweepComplete(Ok(pts)));
+    deliver_sweep(&mut state, Ok(pts));
     state
 }
 
@@ -1371,27 +1520,33 @@ fn streaming_sweep_accumulates_points_then_finalizes() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("d.nec".into()));
     state.apply(&Message::RunSweep); // → Running
-    assert_eq!(state.sweep_phase, SweepPhase::Running);
+    assert!(matches!(state.sweep_phase, SweepPhase::Running(_)));
 
     // Points arrive incrementally.
-    state.apply(&Message::SweepPointComputed(SweepPoint {
-        freq_mhz: 14.0,
-        z_re: 60.0,
-        z_im: -10.0,
-    }));
-    assert!(matches!(state.sweep_phase, SweepPhase::Streaming(ref p) if p.len() == 1));
+    deliver_sweep_point(
+        &mut state,
+        SweepPoint {
+            freq_mhz: 14.0,
+            z_re: 60.0,
+            z_im: -10.0,
+        },
+    );
+    assert!(matches!(state.sweep_phase, SweepPhase::Streaming(_, ref p) if p.len() == 1));
     // The chart/table can already read the partial data, and Run is disabled.
     assert_eq!(state.sweep_points().len(), 1);
     assert!(!state.can_sweep());
 
-    state.apply(&Message::SweepPointComputed(SweepPoint {
-        freq_mhz: 15.0,
-        z_re: 72.0,
-        z_im: 0.0,
-    }));
+    deliver_sweep_point(
+        &mut state,
+        SweepPoint {
+            freq_mhz: 15.0,
+            z_re: 72.0,
+            z_im: 0.0,
+        },
+    );
     assert!(state.sweep_status_text().contains('2'));
 
-    state.apply(&Message::SweepStreamDone);
+    deliver_sweep_done(&mut state);
     assert!(matches!(state.sweep_phase, SweepPhase::Done(ref p) if p.len() == 2));
     assert!(state.can_sweep(), "Run re-enables once the sweep is done");
 }
@@ -1402,15 +1557,18 @@ fn streaming_sweep_empty_stream_is_a_failure() {
     state.apply(&Message::DeckPathChanged("d.nec".into()));
     state.apply(&Message::RunSweep);
     // Force a Streaming phase with no points, then finish.
-    state.apply(&Message::SweepPointComputed(SweepPoint {
-        freq_mhz: 14.0,
-        z_re: 1.0,
-        z_im: 0.0,
-    }));
-    if let SweepPhase::Streaming(pts) = &mut state.sweep_phase {
+    deliver_sweep_point(
+        &mut state,
+        SweepPoint {
+            freq_mhz: 14.0,
+            z_re: 1.0,
+            z_im: 0.0,
+        },
+    );
+    if let SweepPhase::Streaming(_, pts) = &mut state.sweep_phase {
         pts.clear();
     }
-    state.apply(&Message::SweepStreamDone);
+    deliver_sweep_done(&mut state);
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
 }
 
@@ -1430,15 +1588,19 @@ fn a_new_sweep_clears_the_previous_sweeps_caveat() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("bent.nec".into()));
     state.apply(&Message::RunSweep);
-    state.apply(&Message::SweepPointComputed(SweepPoint {
-        freq_mhz: 14.0,
-        z_re: -6.0,
-        z_im: -1100.0,
-    }));
-    state.apply(&Message::SweepCaveats(vec![
-        "3 of 3 sweep points report negative feedpoint resistance".into(),
-    ]));
-    state.apply(&Message::SweepStreamDone);
+    deliver_sweep_point(
+        &mut state,
+        SweepPoint {
+            freq_mhz: 14.0,
+            z_re: -6.0,
+            z_im: -1100.0,
+        },
+    );
+    deliver_sweep_caveats(
+        &mut state,
+        vec!["3 of 3 sweep points report negative feedpoint resistance".into()],
+    );
+    deliver_sweep_done(&mut state);
     assert!(!state.sweep_caveats.is_empty(), "fixture assumption");
 
     // A second run on a different deck must start clean, before any point arrives.
@@ -1463,15 +1625,19 @@ fn a_sweep_that_fails_partway_still_carries_the_caveat_for_what_it_showed() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("bent.nec".into()));
     state.apply(&Message::RunSweep);
-    state.apply(&Message::SweepPointComputed(SweepPoint {
-        freq_mhz: 14.0,
-        z_re: -6.0,
-        z_im: -1100.0,
-    }));
-    state.apply(&Message::SweepCaveats(vec![
-        "1 of 1 sweep points report negative feedpoint resistance".into(),
-    ]));
-    state.apply(&Message::SweepComplete(Err("worker died".into())));
+    deliver_sweep_point(
+        &mut state,
+        SweepPoint {
+            freq_mhz: 14.0,
+            z_re: -6.0,
+            z_im: -1100.0,
+        },
+    );
+    deliver_sweep_caveats(
+        &mut state,
+        vec!["1 of 1 sweep points report negative feedpoint resistance".into()],
+    );
+    deliver_sweep(&mut state, Err("worker died".into()));
     assert!(matches!(state.sweep_phase, SweepPhase::Failed(..)));
     assert!(
         !state.sweep_caveats.is_empty(),
@@ -1487,7 +1653,8 @@ fn viewport_axes_and_grid_toggles_rebuild_scene() {
     // Load a grounded geometry so both axes and grid are present.
     let geo = nec_gui::solve::load_geometry_str("GW 1 5 0 0 1 0 0 3 0.001\nGE 1\nGN 1\nEN\n")
         .expect("geometry");
-    state.apply(&Message::GeometryLoaded(Ok(geo)));
+    state.apply(&Message::LoadGeometry);
+    deliver_geometry(&mut state, Ok(geo));
     assert!(state.viewport.scene_opts.show_axes);
     assert!(state.viewport.scene_opts.show_grid);
     let full = state.viewport.scene.as_ref().unwrap().vertices.len();
@@ -1608,7 +1775,7 @@ fn status_texts_cover_all_phases() {
     assert!(state.currents_status_text().contains("Run Currents"));
     state.apply(&Message::RunCurrents);
     assert!(state.currents_status_text().contains("Computing"));
-    state.apply(&Message::CurrentsComplete(Err("boom".into())));
+    deliver_currents(&mut state, Err("boom".into()));
     assert!(state.currents_status_text().contains("boom"));
     // Pattern.
     assert!(
@@ -1617,10 +1784,11 @@ fn status_texts_cover_all_phases() {
     );
     state.apply(&Message::RunPattern);
     assert!(state.pattern_status_text().contains("Computing"));
-    state.apply(&Message::PatternComplete(Err("nope".into())));
+    deliver_pattern(&mut state, Err("nope".into()));
     assert!(state.pattern_status_text().contains("nope"));
     // Sweep failure text.
-    state.apply(&Message::SweepComplete(Err("range".into())));
+    state.apply(&Message::RunSweep);
+    deliver_sweep(&mut state, Err("range".into()));
     assert!(state.sweep_status_text().contains("range"));
 }
 
@@ -1652,10 +1820,14 @@ fn deck_warnings_land_in_state_for_every_tab_to_render() {
     let mut state = AppState::default();
     assert!(state.deck_warnings.is_empty(), "starts clean");
 
-    state.apply(&Message::DeckWarnings(vec![
-        "geometry contains a closed loop …".to_string(),
-        "antenna is 0.050 λ above finite ground …".to_string(),
-    ]));
+    state.apply(&Message::Solve);
+    deliver_deck_warnings(
+        &mut state,
+        vec![
+            "geometry contains a closed loop …".to_string(),
+            "antenna is 0.050 λ above finite ground …".to_string(),
+        ],
+    );
     assert_eq!(state.deck_warnings.len(), 2);
 
     // The strip is deck-level, so switching tabs must not clear it — that is the
@@ -1681,7 +1853,9 @@ fn deck_warnings_land_in_state_for_every_tab_to_render() {
 #[test]
 fn changing_the_deck_path_clears_stale_caveats() {
     let mut state = AppState::default();
-    state.apply(&Message::DeckWarnings(vec!["stale caveat".to_string()]));
+    // Arm the refresh the way the binary does: a caveat send belongs to a run.
+    state.apply(&Message::Solve);
+    deliver_deck_warnings(&mut state, vec!["stale caveat".to_string()]);
     assert_eq!(state.deck_warnings.len(), 1);
     state.apply(&Message::DeckPathChanged("other.nec".into()));
     assert!(
@@ -1871,14 +2045,18 @@ EN
 
 fn solved_on_hallen() -> AppState {
     let mut st = AppState::default();
-    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
-        freq_mhz: 14.2,
-        z_re: 8.0,
-        z_im: -960.0,
-        warnings: vec![],
-        feed_tag: 1,
-        feed_seg: 10,
-    })));
+    st.apply(&Message::Solve);
+    deliver_solve(
+        &mut st,
+        Ok(nec_gui::solve::SolveResult {
+            freq_mhz: 14.2,
+            z_re: 8.0,
+            z_im: -960.0,
+            warnings: vec![],
+            feed_tag: 1,
+            feed_seg: 10,
+        }),
+    );
     st
 }
 
@@ -1887,18 +2065,21 @@ fn switching_solver_clears_every_solved_view() {
     let mut st = AppState::default();
     // Put each view into a Done state the way its own task would.
     st.apply(&Message::Solve);
-    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
-        freq_mhz: 14.2,
-        z_re: 8.0,
-        z_im: -960.0,
-        warnings: vec![],
-        feed_tag: 1,
-        feed_seg: 10,
-    })));
+    deliver_solve(
+        &mut st,
+        Ok(nec_gui::solve::SolveResult {
+            freq_mhz: 14.2,
+            z_re: 8.0,
+            z_im: -960.0,
+            warnings: vec![],
+            feed_tag: 1,
+            feed_seg: 10,
+        }),
+    );
     st.apply(&Message::RunPattern);
-    st.apply(&Message::PatternComplete(Ok(vec![])));
+    deliver_pattern(&mut st, Ok(vec![]));
     st.apply(&Message::RunCurrents);
-    st.apply(&Message::CurrentsComplete(Ok(vec![])));
+    deliver_currents(&mut st, Ok(vec![]));
     st.deck_warnings = vec!["a Hallén-era caveat".into()];
 
     assert!(matches!(st.phase, SolvePhase::Done(_)), "setup: solve done");
@@ -1939,16 +2120,21 @@ fn switching_solver_clears_every_solved_view() {
 fn an_in_flight_result_does_not_survive_a_solver_switch() {
     let mut st = AppState::default();
     st.apply(&Message::Solve); // task launched on Hallén
+    let stale = st.current_solve_run().expect("Solve armed the pipeline");
     st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
-    // ...and now the Hallén task completes.
-    st.apply(&Message::SolveComplete(Ok(nec_gui::solve::SolveResult {
-        freq_mhz: 14.2,
-        z_re: 8.0,
-        z_im: -960.0,
-        warnings: vec![],
-        feed_tag: 1,
-        feed_seg: 10,
-    })));
+    // ...and now the Hallén task completes, under ITS id.
+    deliver_solve_as(
+        &mut st,
+        stale,
+        Ok(nec_gui::solve::SolveResult {
+            freq_mhz: 14.2,
+            z_re: 8.0,
+            z_im: -960.0,
+            warnings: vec![],
+            feed_tag: 1,
+            feed_seg: 10,
+        }),
+    );
     assert!(
         matches!(st.phase, SolvePhase::Idle),
         "an in-flight Hallén solve repopulated the panel under an MPIE picker"
@@ -1962,11 +2148,15 @@ fn an_in_flight_result_does_not_survive_a_solver_switch() {
 fn an_in_flight_sweep_does_not_refill_a_discarded_chart() {
     let mut st = AppState::default();
     st.apply(&Message::RunSweep);
-    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
-        freq_mhz: 14.2,
-        z_re: 8.0,
-        z_im: -960.0,
-    }));
+    let stale = st.current_sweep_run().expect("RunSweep armed the sweep");
+    deliver_sweep_point(
+        &mut st,
+        nec_gui::solve::SweepPoint {
+            freq_mhz: 14.2,
+            z_re: 8.0,
+            z_im: -960.0,
+        },
+    );
     assert!(
         !st.sweep_points().is_empty(),
         "setup: the sweep is streaming"
@@ -1975,15 +2165,18 @@ fn an_in_flight_sweep_does_not_refill_a_discarded_chart() {
     st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
     assert!(st.sweep_points().is_empty(), "the switch cleared the chart");
 
-    // The old sweep is still running and keeps sending.
-    st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
-        freq_mhz: 14.3,
-        z_re: 8.0,
-        z_im: -960.0,
-    }));
-    st.apply(&Message::SweepCaveats(vec![
-        "a Hallén-era sweep caveat".into()
-    ]));
+    // The old sweep is still running and keeps sending — under ITS id, which is
+    // the only way to express a stale completion now that ids cannot be faked.
+    deliver_sweep_point_as(
+        &mut st,
+        stale,
+        nec_gui::solve::SweepPoint {
+            freq_mhz: 14.3,
+            z_re: 8.0,
+            z_im: -960.0,
+        },
+    );
+    deliver_sweep_caveats_as(&mut st, stale, vec!["a Hallén-era sweep caveat".into()]);
     assert!(
         st.sweep_points().is_empty(),
         "the discarded chart refilled with the other solver's points"
@@ -2054,12 +2247,10 @@ fn the_selected_solver_round_trips_through_a_session() {
 /// source voltage back at every point at or below 0 MHz (FND-056).
 #[test]
 fn a_gui_sweep_range_must_start_above_zero() {
-    let mut st = AppState {
-        sweep_start: "-5.0".into(),
-        sweep_end: "5.0".into(),
-        sweep_step: "0.5".into(),
-        ..AppState::default()
-    };
+    let mut st = AppState::default();
+    st.sweep_start = "-5.0".into();
+    st.sweep_end = "5.0".into();
+    st.sweep_step = "0.5".into();
     let err = st
         .sweep_params()
         .expect_err("a sweep from -5 MHz must be refused");
@@ -2090,11 +2281,9 @@ fn a_gui_sweep_range_must_start_above_zero() {
 /// so the ordering tests alone waved it straight through.
 #[test]
 fn a_gui_sweep_range_rejects_non_finite_fields() {
-    let mut st = AppState {
-        sweep_start: "14.0".into(),
-        sweep_end: "14.4".into(),
-        ..AppState::default()
-    };
+    let mut st = AppState::default();
+    st.sweep_start = "14.0".into();
+    st.sweep_end = "14.4".into();
     for bad in ["NaN", "inf", "-inf"] {
         st.sweep_step = bad.into();
         let err = st
@@ -2307,17 +2496,18 @@ fn a_failed_sweep_keeps_the_points_it_computed() {
     let mut st = AppState::default();
     st.apply(&Message::RunSweep);
     for f in [14.0_f64, 14.1, 14.2] {
-        st.apply(&Message::SweepPointComputed(nec_gui::solve::SweepPoint {
-            freq_mhz: f,
-            z_re: 70.0,
-            z_im: 0.0,
-        }));
+        deliver_sweep_point(
+            &mut st,
+            nec_gui::solve::SweepPoint {
+                freq_mhz: f,
+                z_re: 70.0,
+                z_im: 0.0,
+            },
+        );
     }
     assert_eq!(st.sweep_points().len(), 3, "setup: three points streamed");
 
-    st.apply(&Message::SweepComplete(
-        Err("solver blew up at 14.3".into()),
-    ));
+    deliver_sweep(&mut st, Err("solver blew up at 14.3".into()));
 
     assert!(matches!(st.sweep_phase, SweepPhase::Failed(..)));
     assert_eq!(
@@ -2338,8 +2528,262 @@ fn a_failed_sweep_keeps_the_points_it_computed() {
 fn a_sweep_that_fails_immediately_reports_no_points() {
     let mut st = AppState::default();
     st.apply(&Message::RunSweep);
-    st.apply(&Message::SweepComplete(Err("could not prepare".into())));
+    deliver_sweep(&mut st, Err("could not prepare".into()));
     assert!(st.sweep_points().is_empty());
     let status = st.sweep_status_text();
     assert!(!status.contains("point("), "{status}");
+}
+
+// ---------------------------------------------------------------------------
+// FND-115 / FND-116 — a completion belongs to ONE run
+// ---------------------------------------------------------------------------
+//
+// Phase alone could not tell which. `SolvePhase::Solving` says *a* solve is in
+// flight, so a superseded task's result was accepted as the current one's; the
+// three viewport arms had no guard at all and silently undid a deliberate
+// discard. Each test below supersedes a run and proves the STALE one is dropped
+// while the CURRENT one lands — with different numbers per run, so acceptance is
+// proven by content and not merely by phase kind.
+
+/// The window that needs no solver switch at all.
+///
+/// Apply+Solve is ungated, so two clicks put two SAME-SOLVER tasks in flight.
+/// A fix that discriminated on solver identity would pass every other test here
+/// and still lose a result on this one.
+#[test]
+fn a_superseded_same_solver_solve_does_not_win() {
+    let mut st = AppState::default();
+    st.apply(&Message::DeckPathChanged("d.nec".into()));
+    st.apply(&Message::Solve);
+    let first = st.current_solve_run().expect("first solve armed");
+    st.apply(&Message::Solve);
+    let second = st.current_solve_run().expect("second solve armed");
+    assert_ne!(first, second, "each launch must mint a distinct run");
+
+    let result = |z_re: f64| nec_gui::solve::SolveResult {
+        freq_mhz: 14.2,
+        z_re,
+        z_im: 0.0,
+        warnings: vec![],
+        feed_tag: 1,
+        feed_seg: 26,
+    };
+    // The superseded task finishes last, which is the case that used to win.
+    deliver_solve_as(&mut st, second, Ok(result(74.0)));
+    deliver_solve_as(&mut st, first, Ok(result(8.0)));
+    match &st.phase {
+        SolvePhase::Done(r) => assert!(
+            (r.z_re - 74.0).abs() < 1e-9,
+            "the current run's answer must stand, got {}",
+            r.z_re
+        ),
+        other => panic!("expected Done from the current run, got {other:?}"),
+    }
+}
+
+/// The sweep leg, which carries many messages and so had many ways to mix.
+///
+/// Every assertion here failed before the fix: the stale point seeded the new
+/// run's accumulator, both streams appended into one vector, the stale caveat
+/// landed in the new run's strip, and the stale `SweepStreamDone` finalized the
+/// mixture as `Done`.
+#[test]
+fn a_superseded_sweep_stream_cannot_mix_into_the_current_one() {
+    let pt = |freq_mhz: f64| nec_gui::solve::SweepPoint {
+        freq_mhz,
+        z_re: 50.0,
+        z_im: 0.0,
+    };
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    let a = st.current_sweep_run().expect("run A armed");
+    deliver_sweep_point_as(&mut st, a, pt(14.0));
+
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    st.apply(&Message::RunSweep);
+    let b = st.current_sweep_run().expect("run B armed");
+    assert_ne!(a, b);
+
+    // A keeps sending. None of it may reach B.
+    deliver_sweep_point_as(&mut st, a, pt(14.1));
+    assert!(
+        st.sweep_points().is_empty(),
+        "a stale point must not seed the current run's accumulator: {:?}",
+        st.sweep_points()
+    );
+
+    deliver_sweep_point_as(&mut st, b, pt(21.0));
+    deliver_sweep_point_as(&mut st, a, pt(14.2));
+    let freqs: Vec<f64> = st.sweep_points().iter().map(|p| p.freq_mhz).collect();
+    assert_eq!(freqs, vec![21.0], "only run B's points may accumulate");
+
+    deliver_sweep_caveats_as(&mut st, a, vec!["stale caveat".into()]);
+    assert!(
+        st.sweep_caveats.is_empty(),
+        "a stale caveat must not land in the current run's strip: {:?}",
+        st.sweep_caveats
+    );
+
+    deliver_sweep_done_as(&mut st, a);
+    assert!(
+        matches!(st.sweep_phase, SweepPhase::Streaming(..)),
+        "a stale stream must not finalize the current run: {:?}",
+        st.sweep_phase
+    );
+
+    deliver_sweep_done_as(&mut st, b);
+    match &st.sweep_phase {
+        SweepPhase::Done(pts) => assert_eq!(pts.len(), 1),
+        other => panic!("run B must finalize its own stream, got {other:?}"),
+    }
+}
+
+/// A stale sweep FAILURE must not move the current run to `Failed` either — the
+/// error legs were guarded by the same kind-only predicate as the success ones.
+#[test]
+fn a_superseded_sweep_failure_does_not_fail_the_current_run() {
+    let mut st = AppState::default();
+    st.apply(&Message::RunSweep);
+    let a = st.current_sweep_run().expect("run A armed");
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+    st.apply(&Message::RunSweep);
+
+    deliver_sweep_as(&mut st, a, Err("stale failure".into()));
+    assert!(
+        matches!(st.sweep_phase, SweepPhase::Running(_)),
+        "the current run must still be running, got {:?}",
+        st.sweep_phase
+    );
+}
+
+/// FND-116: a stale viewport currents solve silently undid the discard that a
+/// solver switch had just performed, and switched the overlay back on.
+#[test]
+fn a_stale_viewport_currents_solve_cannot_undo_the_discard() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents solve");
+
+    let mut st = AppState::default();
+    st.apply(&Message::LoadCurrents);
+    let stale = st
+        .current_viewport_currents_run()
+        .expect("the viewport currents solve is armed");
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+
+    deliver_viewport_currents_as(&mut st, stale, Ok(gc));
+    assert!(
+        st.viewport.currents_ma.is_none(),
+        "a discarded overlay must stay discarded"
+    );
+    assert!(
+        !st.viewport.show_currents,
+        "a stale completion must not switch the overlay back on"
+    );
+}
+
+/// The deliberate ASYMMETRY, and the reason a blanket "orphan everything on
+/// discard" would be wrong: geometry comes from the deck, not from a solve —
+/// `load_geometry_path` does not even take a solver — so a load in flight across
+/// a solver switch still delivers a valid result and must land.
+#[test]
+fn a_geometry_load_survives_a_solver_switch() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let geo = nec_gui::solve::load_geometry_str(deck).expect("geometry");
+
+    let mut st = AppState::default();
+    st.apply(&Message::LoadGeometry);
+    let run = st.current_geometry_run().expect("geometry load armed");
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+
+    deliver_geometry_as(&mut st, run, Ok(geo));
+    assert!(
+        st.viewport.scene.is_some(),
+        "a solver switch must not orphan a geometry load: it is deck-derived"
+    );
+}
+
+/// A superseded geometry load must still be dropped — including its FAILURE,
+/// which blanked a good scene unconditionally.
+#[test]
+fn a_superseded_geometry_load_cannot_blank_a_good_scene() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let geo = nec_gui::solve::load_geometry_str(deck).expect("geometry");
+
+    let mut st = AppState::default();
+    st.apply(&Message::LoadGeometry);
+    let first = st.current_geometry_run().expect("first load armed");
+    st.apply(&Message::LoadGeometry);
+    let second = st.current_geometry_run().expect("second load armed");
+    assert_ne!(first, second);
+
+    deliver_geometry_as(&mut st, second, Ok(geo));
+    assert!(st.viewport.scene.is_some(), "the current load lands");
+
+    deliver_geometry_as(&mut st, first, Err("stale failure".into()));
+    assert!(
+        st.viewport.scene.is_some(),
+        "a stale failure must not blank the scene the current load built"
+    );
+}
+
+/// The SECOND discard site. Editing a wire clears the solved overlays exactly as
+/// a solver switch does, and a completion in flight across the edit undid it just
+/// the same.
+#[test]
+fn a_stale_currents_solve_cannot_survive_an_editor_edit() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents solve");
+
+    // Same fixture the existing editor-discard test uses.
+    let mut st = loaded_editor();
+    st.apply(&Message::LoadCurrents);
+    let stale = st
+        .current_viewport_currents_run()
+        .expect("viewport currents armed");
+
+    st.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z1,
+        value: "-3.0".into(),
+    });
+
+    deliver_viewport_currents_as(&mut st, stale, Ok(gc));
+    assert!(
+        st.viewport.currents_ma.is_none(),
+        "an edit discards the overlay, and a stale solve must not restore it"
+    );
+}
+
+/// The pattern leg of FND-116, which had exactly the same missing guard as the
+/// currents leg and the most visible symptom: the lobe is drawn *over* the
+/// geometry, so a stale one reappearing is the hardest to miss and was the
+/// easiest to mistake for a live result.
+#[test]
+fn a_stale_viewport_pattern_solve_cannot_undo_the_discard() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let ps = nec_gui::solve::pattern_grid_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("pattern solve");
+
+    let mut st = AppState::default();
+    st.apply(&Message::LoadPattern3d);
+    let stale = st
+        .current_viewport_pattern_run()
+        .expect("the viewport pattern solve is armed");
+    st.apply(&Message::SolverSelected(nec_gui::solve::SolverKind::Mpie));
+
+    deliver_viewport_pattern_as(&mut st, stale, Ok(ps));
+    assert!(
+        st.viewport.grid.is_none(),
+        "a discarded pattern grid must stay discarded"
+    );
+    assert!(
+        !st.viewport.show_pattern,
+        "a stale completion must not switch the lobe overlay back on"
+    );
+    assert!(
+        st.viewport.lobe.is_none(),
+        "and it must not rebuild the lobe that the discard tore down"
+    );
 }

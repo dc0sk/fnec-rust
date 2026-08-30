@@ -327,3 +327,79 @@ fn ex_type3_i4_runtime_mode_divide_by_i4_scales_source_and_current() {
         "EX type 3 plane-wave solve should report induced CURRENTS; stdout:\n{stdout}"
     );
 }
+
+/// FND-120, at the production entry point.
+///
+/// A mirror-symmetric wire driven at two mirror-image segments must present the
+/// same impedance at both. That is a symmetry argument, so it holds whatever the
+/// basis does — it cannot be satisfied by a formulation quirk, and it cannot be
+/// satisfied by dropping both sources either, because then there is nothing to
+/// report.
+///
+/// Before the fix the RHS collection was a map keyed by wire tag, so one wire
+/// could carry one source. Measured on this deck: 112.181884 + j16.627983 at
+/// segment 16 against 106.722105 + j28.781021 at segment 36 — visibly asymmetric
+/// on a symmetric problem — and the CURRENTS block was byte-identical (md5) to
+/// the same deck with the second `EX` card removed, so the second source
+/// contributed exactly nothing while the report still printed a feedpoint row
+/// for it, at exit 0 with no warning.
+///
+/// The unit test in `nec_solver::excitation` pins the RHS; this pins that a user
+/// running `fnec` actually gets it.
+#[test]
+fn two_gaps_on_one_wire_report_the_same_impedance_at_both() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root")
+        .to_path_buf();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("fnec-fnd120-{}-{nanos}", std::process::id()));
+    fs::create_dir_all(&dir).expect("scratch dir");
+    let deck = dir.join("two-gaps.nec");
+    fs::write(
+        &deck,
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\n\
+         EX 0 1 16 0 1.0 0.0\nEX 0 1 36 0 1.0 0.0\n\
+         FR 0 1 0 0 14.2 0.0\nEN\n",
+    )
+    .expect("write deck");
+
+    let out = run_fnec_output(&deck, &root, &[]);
+    let _ = fs::remove_dir_all(&dir);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "deck must solve: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Both feedpoint rows: TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
+    let rows: Vec<Vec<f64>> = stdout
+        .lines()
+        .filter_map(|l| {
+            let c: Vec<&str> = l.split_whitespace().collect();
+            if c.len() != 8 || c[0] != "1" {
+                return None;
+            }
+            c.iter().map(|v| v.parse::<f64>().ok()).collect()
+        })
+        .collect();
+    assert_eq!(rows.len(), 2, "expected two feedpoint rows:\n{stdout}");
+
+    let (z1_re, z1_im) = (rows[0][6], rows[0][7]);
+    let (z2_re, z2_im) = (rows[1][6], rows[1][7]);
+    assert!(
+        (z1_re - z2_re).abs() < 1e-6 && (z1_im - z2_im).abs() < 1e-6,
+        "a symmetric deck driven symmetrically must report one impedance at both \
+         feeds, got {z1_re}+j{z1_im} and {z2_re}+j{z2_im}"
+    );
+    // And a real one — dropping both sources would make them trivially equal.
+    assert!(
+        z1_re > 1.0 && z1_re.is_finite(),
+        "the feeds must actually be driven, got R = {z1_re}"
+    );
+}

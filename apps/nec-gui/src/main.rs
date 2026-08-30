@@ -146,9 +146,16 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            // The id is read back from the state AFTER `apply` minted it, so the
+            // binary stamps tasks with the run the reducer actually issued and
+            // cannot invent one — `RunId`'s field is private.
+            let run = self
+                .state
+                .current_solve_run()
+                .expect("solve was just armed");
             Task::perform(
                 async move { solve_deck_path(&path, vars.as_deref(), solver) },
-                Message::SolveComplete,
+                move |r| Message::SolveComplete(run, r),
             )
         } else if spawn_sweep {
             // Parse parameters (validated in apply; if invalid, sweep_phase becomes
@@ -163,6 +170,10 @@ impl FnecGui {
                     };
                     // Read + substitute now (fast, surfaces file errors early), then
                     // stream the per-frequency solves so the chart fills in live.
+                    let run = self
+                        .state
+                        .current_sweep_run()
+                        .expect("sweep was just armed");
                     match read_deck_text(&path, vars.as_deref()) {
                         Ok(deck_text) => Task::run(
                             iced::stream::channel(64, move |mut output| async move {
@@ -170,6 +181,7 @@ impl FnecGui {
                                 // can be asserted: inline here, deleting any of its
                                 // sends left the whole suite green (FND-034).
                                 nec_gui::sweep_stream::run_sweep_stream(
+                                    run,
                                     deck_text,
                                     start,
                                     end,
@@ -182,14 +194,20 @@ impl FnecGui {
                             |m| m,
                         ),
                         Err(e) => {
-                            self.state.apply(&Message::SweepComplete(Err(e)));
+                            self.state.apply(&Message::SweepComplete(run, Err(e)));
                             Task::none()
                         }
                     }
                 }
                 Err(e) => {
-                    // Surface parameter error as a completed sweep failure.
-                    self.state.apply(&Message::SweepComplete(Err(e)));
+                    // Surface parameter error as a completed sweep failure. The id
+                    // is still the one just armed, so the failure lands on the run
+                    // it belongs to.
+                    let run = self
+                        .state
+                        .current_sweep_run()
+                        .expect("sweep was just armed");
+                    self.state.apply(&Message::SweepComplete(run, Err(e)));
                     Task::none()
                 }
             }
@@ -202,13 +220,21 @@ impl FnecGui {
                     } else {
                         Some(self.state.vars_path.clone())
                     };
+                    let run = self
+                        .state
+                        .current_pattern_run()
+                        .expect("pattern was just armed");
                     Task::perform(
                         async move { pattern_slice_deck_path(&path, vars.as_deref(), phi_deg, solver) },
-                        Message::PatternComplete,
+                        move |r| Message::PatternComplete(run, r),
                     )
                 }
                 Err(e) => {
-                    self.state.apply(&Message::PatternComplete(Err(e)));
+                    let run = self
+                        .state
+                        .current_pattern_run()
+                        .expect("pattern was just armed");
+                    self.state.apply(&Message::PatternComplete(run, Err(e)));
                     Task::none()
                 }
             }
@@ -219,9 +245,13 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_currents_run()
+                .expect("currents was just armed");
             Task::perform(
                 async move { current_distribution_deck_path(&path, vars.as_deref(), solver) },
-                Message::CurrentsComplete,
+                move |r| Message::CurrentsComplete(run, r),
             )
         } else if spawn_geometry {
             let path = PathBuf::from(self.state.deck_path.clone());
@@ -230,9 +260,13 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_geometry_run()
+                .expect("geometry load was just armed");
             Task::perform(
                 async move { load_geometry_path(&path, vars.as_deref()) },
-                Message::GeometryLoaded,
+                move |r| Message::GeometryLoaded(run, r),
             )
         } else if spawn_currents_3d {
             let path = PathBuf::from(self.state.deck_path.clone());
@@ -241,9 +275,13 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_viewport_currents_run()
+                .expect("viewport currents was just armed");
             Task::perform(
                 async move { load_currents_path(&path, vars.as_deref(), solver) },
-                Message::CurrentsSolved,
+                move |r| Message::CurrentsSolved(run, r),
             )
         } else if spawn_pattern_3d {
             let path = PathBuf::from(self.state.deck_path.clone());
@@ -252,9 +290,13 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_viewport_pattern_run()
+                .expect("viewport pattern was just armed");
             Task::perform(
                 async move { pattern_grid_path(&path, vars.as_deref(), solver) },
-                Message::Pattern3dComplete,
+                move |r| Message::Pattern3dComplete(run, r),
             )
         } else if spawn_edit_load {
             let path = PathBuf::from(self.state.deck_path.clone());
@@ -289,10 +331,15 @@ impl FnecGui {
             // Solve the edited in-memory deck (apply() already validated it and set
             // the Solving phase; on an invalid deck it recorded the error instead).
             match self.state.editor.doc.to_deck_string() {
-                Ok(text) => Task::perform(
-                    async move { solve_deck_str(&text, solver) },
-                    Message::SolveComplete,
-                ),
+                Ok(text) => {
+                    let run = self
+                        .state
+                        .current_solve_run()
+                        .expect("Apply+Solve was just armed");
+                    Task::perform(async move { solve_deck_str(&text, solver) }, move |r| {
+                        Message::SolveComplete(run, r)
+                    })
+                }
                 Err(_) => Task::none(),
             }
         } else if matches!(message, Message::BrowseDeck) {
@@ -342,13 +389,17 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_deck_warnings_run()
+                .expect("a caveat refresh was just armed");
             let warn = Task::perform(
                 async move {
                     read_deck_text(&path, vars.as_deref())
                         .map(|t| deck_warnings(&t, solver))
                         .unwrap_or_default()
                 },
-                Message::DeckWarnings,
+                move |w| Message::DeckWarnings(run, w),
             );
             Task::batch([primary, warn])
         } else {
@@ -602,7 +653,7 @@ impl FnecGui {
         let status = text(self.state.sweep_status_text());
 
         let result_section: Element<Message> = match &self.state.sweep_phase {
-            SweepPhase::Streaming(_) | SweepPhase::Done(_) => self.sweep_chart_and_table(),
+            SweepPhase::Streaming(..) | SweepPhase::Done(_) => self.sweep_chart_and_table(),
             // A sweep that failed at point 400 of 500 still has 399 real answers,
             // and the caveats above describe *them*. Hiding the chart left those
             // caveats standing next to an error with nothing to point at
