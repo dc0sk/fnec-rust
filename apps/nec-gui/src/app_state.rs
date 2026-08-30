@@ -27,14 +27,36 @@ pub enum ActiveTab {
     Viewport,
 }
 
+/// Identifies one launched background run.
+///
+/// Every completion message carries the id of the run that produced it, and the
+/// reducer accepts it only if that id is still the one the pipeline is waiting
+/// for. Phase alone could not do this: `SolvePhase::Solving(_)` says *a* run is in
+/// flight, not *which*, so a superseded task's result was accepted as the
+/// current one's (FND-115/FND-116).
+///
+/// **The inner value is private on purpose.** Ids are minted only by
+/// [`AppState::mint_run`], so neither the binary nor a test can fabricate a
+/// stamp — a test that hardcoded an id would not compile, and must instead read
+/// the real one back through an accessor. That makes "the test used the id the
+/// state actually issued" a compiler-checked property rather than a review one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RunId(u64);
+
 /// Current phase of the single-frequency solver pipeline.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum SolvePhase {
     /// No solve has been attempted yet (or deck path was just changed).
     #[default]
     Idle,
-    /// A solve is running asynchronously.
-    Solving,
+    /// A solve is running asynchronously, and this is which one.
+    ///
+    /// The id lives *in* the phase rather than beside it: one fact, one place.
+    /// A separate `solve_run` field would store "a run is in flight" twice and
+    /// let the two drift — and it would need `discard_solver_derived_state` to
+    /// remember to bump it. Resetting the phase to `Idle` destroys the id, so a
+    /// discard orphans in-flight work structurally, with nothing to forget.
+    Solving(RunId),
     /// Solve finished successfully; result is available.
     Done(SolveResult),
     /// Solve finished with an error.
@@ -46,9 +68,14 @@ pub enum SolvePhase {
 pub enum SweepPhase {
     #[default]
     Idle,
-    Running,
+    Running(RunId),
     /// Points arriving incrementally from the streaming sweep (GUI-CHK-009).
-    Streaming(Vec<SweepPoint>),
+    ///
+    /// The id is carried through streaming, not just through `Running`: a
+    /// superseded run's next point used to seed a fresh `Streaming` for the
+    /// *current* run, after which both streams appended into one vector and the
+    /// stale run's `SweepStreamDone` finalized the mixture (FND-115).
+    Streaming(RunId, Vec<SweepPoint>),
     Done(Vec<SweepPoint>),
     /// The error, **and the points computed before it**.
     ///
@@ -64,7 +91,7 @@ pub enum SweepPhase {
 pub enum PatternPhase {
     #[default]
     Idle,
-    Running,
+    Running(RunId),
     Done(Vec<PatternPoint>),
     Failed(String),
 }
@@ -74,7 +101,7 @@ pub enum PatternPhase {
 pub enum CurrentsPhase {
     #[default]
     Idle,
-    Running,
+    Running(RunId),
     Done(Vec<CurrentPoint>),
     Failed(String),
 }
@@ -137,6 +164,15 @@ pub struct AppState {
     // ── 3-D viewport state (GUI redesign) ──────────────────────────────────
     /// GPU viewport: camera + built line mesh + status (`docs/gui-redesign-plan.md`).
     pub viewport: ViewportState,
+    /// Monotonic source of [`RunId`]s. Private: minting goes through
+    /// [`AppState::mint_run`] so there is one place ids come from.
+    next_run: u64,
+    /// The deck-caveat refresh this state is waiting for, if any.
+    ///
+    /// The caveat strip had no phase at all and applied every result it was
+    /// handed, so two refreshes in flight resolved by arrival order and a stale
+    /// one could repopulate a strip that a deck change had just cleared.
+    deck_warnings_run: Option<RunId>,
     // ── Wire-editor state (GUI-CHK-007) ────────────────────────────────────
     /// Editable deck document + editor UI status.
     pub editor: EditorState,
@@ -186,6 +222,20 @@ pub struct ViewportState {
     pub show_pattern: bool,
     /// Reference-geometry display toggles (axes / ground grid) — GUI-CHK-010.
     pub scene_opts: crate::mesh::SceneOptions,
+    /// The geometry load this viewport is waiting for, if any (FND-116).
+    ///
+    /// Three separate pendings rather than one, because the three legs are not
+    /// interchangeable. Geometry comes from the deck and not from a solve, so a
+    /// load in flight across a solver switch still delivers a valid result and
+    /// must land — `discard_solver_derived_state` deliberately keeps geometry.
+    /// One shared stamp would also make "Solve currents" and "Solve pattern"
+    /// cancel each other, which they do not: they write disjoint fields and a
+    /// user may legitimately want both.
+    pub pending_geometry: Option<RunId>,
+    /// The currents solve this viewport is waiting for, if any.
+    pub pending_currents: Option<RunId>,
+    /// The pattern solve this viewport is waiting for, if any.
+    pub pending_pattern: Option<RunId>,
 }
 
 impl ViewportState {
@@ -252,6 +302,8 @@ impl Default for AppState {
             deck_path: String::new(),
             vars_path: String::new(),
             active_tab: ActiveTab::default(),
+            next_run: 0,
+            deck_warnings_run: None,
             phase: SolvePhase::default(),
             deck_warnings: Vec::new(),
             solver: crate::solve::SolverKind::Hallen,
@@ -300,9 +352,9 @@ pub enum Message {
     /// User clicked the Solve button.
     Solve,
     /// Background single-frequency solve task completed.
-    SolveComplete(Result<SolveResult, String>),
+    SolveComplete(RunId, Result<SolveResult, String>),
     /// Deck-level caveats recomputed for the current deck; rendered on every tab.
-    DeckWarnings(Vec<String>),
+    DeckWarnings(RunId, Vec<String>),
     // ── Sweep tab ────────────────────────────────────────────────────────
     /// User edited the sweep start frequency.
     SweepStartChanged(String),
@@ -313,11 +365,11 @@ pub enum Message {
     /// User clicked the Run Sweep button.
     RunSweep,
     /// Background sweep task completed (batch path / error).
-    SweepComplete(Result<Vec<SweepPoint>, String>),
+    SweepComplete(RunId, Result<Vec<SweepPoint>, String>),
     /// One sweep point arrived from the streaming sweep.
-    SweepPointComputed(SweepPoint),
+    SweepPointComputed(RunId, SweepPoint),
     /// The streaming sweep finished (finalize the accumulated points).
-    SweepStreamDone,
+    SweepStreamDone(RunId),
     /// Caveats from the sweep task, **appended** to whatever it has already sent.
     ///
     /// Sent twice per run: the deck's geometry and ground caveats as soon as the
@@ -334,7 +386,7 @@ pub enum Message {
     /// alone. They are true of what was computed, and
     /// reporting a run's non-physical results only when the run happens to finish
     /// cleanly is the worse failure.
-    SweepCaveats(Vec<String>),
+    SweepCaveats(RunId, Vec<String>),
     /// User clicked a column header to sort.
     SweepSortBy(SweepSortCol),
     /// User moved the sweep-chart frequency cursor (fraction `0..=1`).
@@ -347,29 +399,29 @@ pub enum Message {
     /// User clicked Run Pattern.
     RunPattern,
     /// Background pattern computation completed.
-    PatternComplete(Result<Vec<PatternPoint>, String>),
+    PatternComplete(RunId, Result<Vec<PatternPoint>, String>),
     // ── Currents tab ──────────────────────────────────────────────────────
     /// User clicked Run Currents.
     RunCurrents,
     /// Background current-distribution computation completed.
-    CurrentsComplete(Result<Vec<CurrentPoint>, String>),
+    CurrentsComplete(RunId, Result<Vec<CurrentPoint>, String>),
     // ── 3-D viewport ──────────────────────────────────────────────────────
     /// User clicked "Load geometry" in the 3-D view.
     LoadGeometry,
     /// Background geometry build completed (parse + `build_geometry`, no solve).
-    GeometryLoaded(Result<crate::mesh::SceneGeometry, String>),
+    GeometryLoaded(RunId, Result<crate::mesh::SceneGeometry, String>),
     /// Camera interaction from the 3-D viewport widget (GUI-CHK-003).
     Viewport(ViewportMsg),
     /// User clicked "Solve currents" in the 3-D view.
     LoadCurrents,
     /// Background geometry+currents solve completed (GUI-CHK-004).
-    CurrentsSolved(Result<crate::mesh::GeometryCurrents, String>),
+    CurrentsSolved(RunId, Result<crate::mesh::GeometryCurrents, String>),
     /// User toggled current-magnitude coloring.
     ToggleCurrents(bool),
     /// User clicked "Solve pattern" in the 3-D view.
     LoadPattern3d,
     /// Background geometry + full-sphere pattern solve completed (GUI-CHK-005).
-    Pattern3dComplete(Result<crate::mesh::PatternSolve, String>),
+    Pattern3dComplete(RunId, Result<crate::mesh::PatternSolve, String>),
     /// User toggled the 3-D radiation-pattern lobe overlay.
     TogglePattern(bool),
     /// User toggled the xyz axis triad (GUI-CHK-010).
@@ -464,10 +516,146 @@ pub fn refreshes_deck_warnings(message: &Message) -> bool {
 }
 
 impl AppState {
+    /// Issue the next [`RunId`]. The only place ids come from.
+    fn mint_run(&mut self) -> RunId {
+        self.next_run += 1;
+        RunId(self.next_run)
+    }
+
+    /// Which run this message claims to be reporting, if it reports one.
+    ///
+    /// Paired with [`AppState::accepted_run_for`] below, this is the whole guard.
+    /// The alternative — an `if` inside each completion arm — is eleven copies of
+    /// one decision, and three of them were simply missing, which is how
+    /// FND-115 and FND-116 came to be two findings instead of one. With the guard
+    /// at a single seam, adding a pipeline is one arm in each function, and
+    /// deleting the guard fails every stale-rejection test at once rather than
+    /// one of them.
+    fn claimed_run(msg: &Message) -> Option<RunId> {
+        match msg {
+            Message::SolveComplete(id, _)
+            | Message::DeckWarnings(id, _)
+            | Message::SweepComplete(id, _)
+            | Message::SweepPointComputed(id, _)
+            | Message::SweepStreamDone(id)
+            | Message::SweepCaveats(id, _)
+            | Message::PatternComplete(id, _)
+            | Message::CurrentsComplete(id, _)
+            | Message::GeometryLoaded(id, _)
+            | Message::CurrentsSolved(id, _)
+            | Message::Pattern3dComplete(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// Which run that message's pipeline is currently willing to hear from.
+    ///
+    /// `None` means "nothing is in flight for this pipeline", which rejects every
+    /// completion — that is the discard case, and it is why
+    /// `discard_solver_derived_state` needs no counter bump: resetting a phase to
+    /// `Idle` destroys the id it carried, and no future mint can equal it.
+    fn accepted_run_for(&self, msg: &Message) -> Option<RunId> {
+        match msg {
+            Message::SolveComplete(..) => match self.phase {
+                SolvePhase::Solving(id) => Some(id),
+                _ => None,
+            },
+            Message::DeckWarnings(..) => self.deck_warnings_run,
+            Message::SweepComplete(..)
+            | Message::SweepPointComputed(..)
+            | Message::SweepStreamDone(..)
+            | Message::SweepCaveats(..) => match self.sweep_phase {
+                SweepPhase::Running(id) | SweepPhase::Streaming(id, _) => Some(id),
+                _ => None,
+            },
+            Message::PatternComplete(..) => match self.pattern_phase {
+                PatternPhase::Running(id) => Some(id),
+                _ => None,
+            },
+            Message::CurrentsComplete(..) => match self.currents_phase {
+                CurrentsPhase::Running(id) => Some(id),
+                _ => None,
+            },
+            Message::GeometryLoaded(..) => self.viewport.pending_geometry,
+            Message::CurrentsSolved(..) => self.viewport.pending_currents,
+            Message::Pattern3dComplete(..) => self.viewport.pending_pattern,
+            _ => None,
+        }
+    }
+
+    /// The run id a freshly launched solve will report under, for the binary to
+    /// stamp its task with. Read *after* `apply`, which does the minting.
+    pub fn current_solve_run(&self) -> Option<RunId> {
+        match self.phase {
+            SolvePhase::Solving(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// As [`AppState::current_solve_run`], for the sweep pipeline.
+    pub fn current_sweep_run(&self) -> Option<RunId> {
+        match self.sweep_phase {
+            SweepPhase::Running(id) | SweepPhase::Streaming(id, _) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// As [`AppState::current_solve_run`], for the pattern tab.
+    pub fn current_pattern_run(&self) -> Option<RunId> {
+        match self.pattern_phase {
+            PatternPhase::Running(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// As [`AppState::current_solve_run`], for the currents tab.
+    pub fn current_currents_run(&self) -> Option<RunId> {
+        match self.currents_phase {
+            CurrentsPhase::Running(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// As [`AppState::current_solve_run`], for the deck-caveat refresh.
+    pub fn current_deck_warnings_run(&self) -> Option<RunId> {
+        self.deck_warnings_run
+    }
+
+    /// As [`AppState::current_solve_run`], for the viewport's geometry leg.
+    pub fn current_geometry_run(&self) -> Option<RunId> {
+        self.viewport.pending_geometry
+    }
+
+    /// As [`AppState::current_solve_run`], for the viewport's currents leg.
+    pub fn current_viewport_currents_run(&self) -> Option<RunId> {
+        self.viewport.pending_currents
+    }
+
+    /// As [`AppState::current_solve_run`], for the viewport's pattern leg.
+    pub fn current_viewport_pattern_run(&self) -> Option<RunId> {
+        self.viewport.pending_pattern
+    }
+
     /// Apply a message to the state machine.
     ///
     /// This is a pure function of the state — no I/O, no iced dependency.
     pub fn apply(&mut self, msg: &Message) {
+        // One guard, before the match. A completion from a run this state no
+        // longer owns is dropped whole — Ok and Err alike, since a stale
+        // *failure* blanked a good scene just as readily as a stale success
+        // overwrote one (FND-115/FND-116).
+        if let Some(claimed) = Self::claimed_run(msg) {
+            if self.accepted_run_for(msg) != Some(claimed) {
+                return;
+            }
+        }
+        // The binary spawns a caveat refresh for exactly these messages, so the
+        // id is minted here rather than there: `refreshes_deck_warnings` stays
+        // the single statement of *when* a refresh happens.
+        if refreshes_deck_warnings(msg) {
+            let id = self.mint_run();
+            self.deck_warnings_run = Some(id);
+        }
         match msg {
             Message::DeckPathChanged(p) => {
                 self.deck_path = p.clone();
@@ -490,26 +678,28 @@ impl AppState {
                 }
             }
             Message::Solve => {
-                self.phase = SolvePhase::Solving;
+                let id = self.mint_run();
+                self.phase = SolvePhase::Solving(id);
             }
-            Message::DeckWarnings(w) => {
+            Message::DeckWarnings(_, w) => {
                 self.deck_warnings = w.clone();
+                self.deck_warnings_run = None;
             }
-            Message::SolveComplete(Ok(r)) => {
-                if self.awaiting_solve() {
-                    self.phase = SolvePhase::Done(r.clone());
-                }
+            // The `awaiting_*` checks that used to live in these arms are gone:
+            // the seam above already rejected anything from a superseded run, and
+            // a second kind-only test here would be a copy that can rot.
+            Message::SolveComplete(_, Ok(r)) => {
+                self.phase = SolvePhase::Done(r.clone());
             }
-            Message::SolveComplete(Err(e)) => {
-                if self.awaiting_solve() {
-                    self.phase = SolvePhase::Failed(e.clone());
-                }
+            Message::SolveComplete(_, Err(e)) => {
+                self.phase = SolvePhase::Failed(e.clone());
             }
             Message::SweepStartChanged(s) => self.sweep_start = s.clone(),
             Message::SweepEndChanged(s) => self.sweep_end = s.clone(),
             Message::SweepStepChanged(s) => self.sweep_step = s.clone(),
             Message::RunSweep => {
-                self.sweep_phase = SweepPhase::Running;
+                let id = self.mint_run();
+                self.sweep_phase = SweepPhase::Running(id);
                 // Without this, a caveat from the *previous* deck outlives its
                 // sweep: `sweep_view` renders it in every phase, so switching to a
                 // clean deck — or starting a run that then fails — leaves the old
@@ -517,40 +707,34 @@ impl AppState {
                 // next to unrelated results.
                 self.sweep_caveats.clear();
             }
-            Message::SweepComplete(Ok(pts)) => {
-                if self.awaiting_sweep() {
-                    self.sweep_phase = SweepPhase::Done(pts.clone());
-                }
+            Message::SweepComplete(_, Ok(pts)) => {
+                self.sweep_phase = SweepPhase::Done(pts.clone());
             }
-            Message::SweepComplete(Err(e)) => {
-                if self.awaiting_sweep() {
-                    // Keep whatever streamed in. `sweep_points()` renders these,
-                    // so a partial sweep stays on screen with its error above it.
-                    let kept = self.sweep_points().to_vec();
-                    self.sweep_phase = SweepPhase::Failed(e.clone(), kept);
-                }
+            Message::SweepComplete(_, Err(e)) => {
+                // Keep whatever streamed in. `sweep_points()` renders these,
+                // so a partial sweep stays on screen with its error above it.
+                let kept = self.sweep_points().to_vec();
+                self.sweep_phase = SweepPhase::Failed(e.clone(), kept);
             }
-            Message::SweepPointComputed(pt) => {
-                // Accumulate into a Streaming phase, starting one only from
-                // `Running`. Starting one from *any* state let a sweep that had
-                // been discarded — by a solver switch — refill its chart point by
-                // point with the old solver's numbers, under the new picker.
+            Message::SweepPointComputed(id, pt) => {
+                // The id carries through the transition, so a superseded run can
+                // no longer seed the accumulator of the current one — which is
+                // how two streams used to merge into a single vector that the
+                // stale run then finalized (FND-115).
                 match &mut self.sweep_phase {
-                    SweepPhase::Streaming(pts) => pts.push(pt.clone()),
-                    SweepPhase::Running => {
-                        self.sweep_phase = SweepPhase::Streaming(vec![pt.clone()]);
+                    SweepPhase::Streaming(_, pts) => pts.push(pt.clone()),
+                    SweepPhase::Running(_) => {
+                        self.sweep_phase = SweepPhase::Streaming(*id, vec![pt.clone()]);
                     }
                     _ => {}
                 }
             }
-            Message::SweepCaveats(caveats) => {
-                if self.awaiting_sweep() {
-                    self.sweep_caveats.extend(caveats.iter().cloned());
-                }
+            Message::SweepCaveats(_, caveats) => {
+                self.sweep_caveats.extend(caveats.iter().cloned());
             }
-            Message::SweepStreamDone => {
+            Message::SweepStreamDone(_) => {
                 // Finalize whatever streamed in (empty stream → a failure note).
-                if let SweepPhase::Streaming(pts) = &self.sweep_phase {
+                if let SweepPhase::Streaming(_, pts) = &self.sweep_phase {
                     self.sweep_phase = if pts.is_empty() {
                         SweepPhase::Failed("sweep produced no points".into(), Vec::new())
                     } else {
@@ -574,35 +758,32 @@ impl AppState {
             }
             Message::PatternPhiChanged(s) => self.pattern_phi_deg = s.clone(),
             Message::RunPattern => {
-                self.pattern_phase = PatternPhase::Running;
+                let id = self.mint_run();
+                self.pattern_phase = PatternPhase::Running(id);
             }
-            Message::PatternComplete(Ok(pts)) => {
-                if matches!(self.pattern_phase, PatternPhase::Running) {
-                    self.pattern_phase = PatternPhase::Done(pts.clone());
-                }
+            Message::PatternComplete(_, Ok(pts)) => {
+                self.pattern_phase = PatternPhase::Done(pts.clone());
             }
-            Message::PatternComplete(Err(e)) => {
-                if matches!(self.pattern_phase, PatternPhase::Running) {
-                    self.pattern_phase = PatternPhase::Failed(e.clone());
-                }
+            Message::PatternComplete(_, Err(e)) => {
+                self.pattern_phase = PatternPhase::Failed(e.clone());
             }
             Message::RunCurrents => {
-                self.currents_phase = CurrentsPhase::Running;
+                let id = self.mint_run();
+                self.currents_phase = CurrentsPhase::Running(id);
             }
-            Message::CurrentsComplete(Ok(pts)) => {
-                if matches!(self.currents_phase, CurrentsPhase::Running) {
-                    self.currents_phase = CurrentsPhase::Done(pts.clone());
-                }
+            Message::CurrentsComplete(_, Ok(pts)) => {
+                self.currents_phase = CurrentsPhase::Done(pts.clone());
             }
-            Message::CurrentsComplete(Err(e)) => {
-                if matches!(self.currents_phase, CurrentsPhase::Running) {
-                    self.currents_phase = CurrentsPhase::Failed(e.clone());
-                }
+            Message::CurrentsComplete(_, Err(e)) => {
+                self.currents_phase = CurrentsPhase::Failed(e.clone());
             }
             Message::LoadGeometry => {
+                let id = self.mint_run();
+                self.viewport.pending_geometry = Some(id);
                 self.viewport.status = "Loading geometry…".into();
             }
-            Message::GeometryLoaded(Ok(geo)) => {
+            Message::GeometryLoaded(_, Ok(geo)) => {
+                self.viewport.pending_geometry = None;
                 let (center, radius) = geo.bounds();
                 self.viewport.camera.fit(center, radius);
                 self.viewport.fit_bounds = Some((center, radius));
@@ -611,14 +792,20 @@ impl AppState {
                 self.viewport.currents_ma = None;
                 self.viewport.rebuild_scene();
             }
-            Message::GeometryLoaded(Err(e)) => {
+            Message::GeometryLoaded(_, Err(e)) => {
+                // Guarded like the Ok arm: a STALE failure blanking a good scene
+                // is the same defect wearing the other sign (FND-116).
+                self.viewport.pending_geometry = None;
                 self.viewport.scene = None;
                 self.viewport.status = format!("Error: {e}");
             }
             Message::LoadCurrents => {
+                let id = self.mint_run();
+                self.viewport.pending_currents = Some(id);
                 self.viewport.status = "Solving currents…".into();
             }
-            Message::CurrentsSolved(Ok(gc)) => {
+            Message::CurrentsSolved(_, Ok(gc)) => {
+                self.viewport.pending_currents = None;
                 let (center, radius) = gc.geometry.bounds();
                 self.viewport.camera.fit(center, radius);
                 self.viewport.fit_bounds = Some((center, radius));
@@ -634,7 +821,8 @@ impl AppState {
                 };
                 self.viewport.rebuild_scene();
             }
-            Message::CurrentsSolved(Err(e)) => {
+            Message::CurrentsSolved(_, Err(e)) => {
+                self.viewport.pending_currents = None;
                 self.viewport.status = format!("Error: {e}");
             }
             Message::ToggleCurrents(on) => {
@@ -642,9 +830,12 @@ impl AppState {
                 self.viewport.rebuild_scene();
             }
             Message::LoadPattern3d => {
+                let id = self.mint_run();
+                self.viewport.pending_pattern = Some(id);
                 self.viewport.status = "Computing radiation pattern…".into();
             }
-            Message::Pattern3dComplete(Ok(ps)) => {
+            Message::Pattern3dComplete(_, Ok(ps)) => {
+                self.viewport.pending_pattern = None;
                 let (center, radius) = ps.geometry.bounds();
                 self.viewport.camera.fit(center, radius);
                 self.viewport.fit_bounds = Some((center, radius));
@@ -655,7 +846,8 @@ impl AppState {
                 self.viewport.rebuild_lobe();
                 self.viewport.status = "Radiation pattern lobe shown".into();
             }
-            Message::Pattern3dComplete(Err(e)) => {
+            Message::Pattern3dComplete(_, Err(e)) => {
+                self.viewport.pending_pattern = None;
                 self.viewport.status = format!("Error: {e}");
             }
             Message::TogglePattern(on) => {
@@ -732,10 +924,15 @@ impl AppState {
             // resulting path change arrives as DeckPathChanged/VarsPathChanged/
             // DeckSaved, so these are no-ops in the pure state machine.
             Message::BrowseDeck | Message::BrowseVars | Message::BrowseSaveDeck => {}
+            // The SECOND solve-arming site. Its button is ungated, so two clicks
+            // put two same-solver tasks in flight — which is why the guard keys
+            // on run identity and not on the solver: a solver-keyed fix would
+            // pass every solver-switch test and still lose a result here.
             Message::EditApplySolve => match self.editor.doc.to_deck_string() {
                 Ok(_) => {
                     self.editor.error = None;
-                    self.phase = SolvePhase::Solving;
+                    let id = self.mint_run();
+                    self.phase = SolvePhase::Solving(id);
                 }
                 Err(e) => {
                     self.editor.error = Some(e);
@@ -800,6 +997,15 @@ impl AppState {
                     self.viewport.show_currents = false;
                     self.viewport.grid = None;
                     self.viewport.show_pattern = false;
+                    // The SECOND discard site, and it needs the same reach: a
+                    // stale completion landing after an edit silently undid this
+                    // clearing exactly as it did after a solver switch. All THREE
+                    // legs go here, geometry included — after an edit the editor's
+                    // document owns the viewport geometry, so a file load still in
+                    // flight would clobber the preview with the deck on disk.
+                    self.viewport.pending_currents = None;
+                    self.viewport.pending_pattern = None;
+                    self.viewport.pending_geometry = None;
                     self.viewport.rebuild_scene();
                     self.viewport.rebuild_lobe();
                 }
@@ -813,7 +1019,7 @@ impl AppState {
 
     /// Returns `true` when the single-frequency Solve button should be enabled.
     pub fn can_solve(&self) -> bool {
-        !self.deck_path.is_empty() && !matches!(self.phase, SolvePhase::Solving)
+        !self.deck_path.is_empty() && !matches!(self.phase, SolvePhase::Solving(_))
     }
 
     /// Returns `true` when the Run Sweep button should be enabled.
@@ -821,13 +1027,13 @@ impl AppState {
         !self.deck_path.is_empty()
             && !matches!(
                 self.sweep_phase,
-                SweepPhase::Running | SweepPhase::Streaming(_)
+                SweepPhase::Running(_) | SweepPhase::Streaming(..)
             )
     }
 
     /// Returns `true` when the Run Pattern button should be enabled.
     pub fn can_run_pattern(&self) -> bool {
-        !self.deck_path.is_empty() && !matches!(self.pattern_phase, PatternPhase::Running)
+        !self.deck_path.is_empty() && !matches!(self.pattern_phase, PatternPhase::Running(_))
     }
 
     /// Parse the pattern phi angle; returns `Err` if it is not a valid float.
@@ -839,7 +1045,7 @@ impl AppState {
 
     /// Returns `true` when the Run Currents button should be enabled.
     pub fn can_run_currents(&self) -> bool {
-        !self.deck_path.is_empty() && !matches!(self.currents_phase, CurrentsPhase::Running)
+        !self.deck_path.is_empty() && !matches!(self.currents_phase, CurrentsPhase::Running(_))
     }
 
     /// Parse sweep parameters; returns `Err` with a diagnostic if any field
@@ -887,7 +1093,7 @@ impl AppState {
 
     /// Returns sorted rows for the sweep result table (streaming or done).
     pub fn sorted_sweep_rows(&self) -> Vec<SweepPoint> {
-        let (SweepPhase::Streaming(rows) | SweepPhase::Done(rows)) = &self.sweep_phase else {
+        let (SweepPhase::Streaming(_, rows) | SweepPhase::Done(rows)) = &self.sweep_phase else {
             return Vec::new();
         };
         let mut v = rows.clone();
@@ -903,24 +1109,6 @@ impl AppState {
             }),
         }
         v
-    }
-
-    /// Whether a single solve is in flight, so a completion belongs to it.
-    ///
-    /// A task that was launched before the solver changed is still running and
-    /// will deliver the *other* solver's numbers. Applying it would undo the
-    /// discard and put a Hallén impedance under an MPIE picker.
-    fn awaiting_solve(&self) -> bool {
-        matches!(self.phase, SolvePhase::Solving)
-    }
-
-    /// Whether a sweep is in flight — same reasoning, and it matters more here
-    /// because a streaming sweep delivers many messages over many seconds.
-    fn awaiting_sweep(&self) -> bool {
-        matches!(
-            self.sweep_phase,
-            SweepPhase::Running | SweepPhase::Streaming(_)
-        )
     }
 
     /// Drop everything that was computed by a solver.
@@ -947,6 +1135,13 @@ impl AppState {
         self.viewport.grid = None;
         self.viewport.show_currents = false;
         self.viewport.show_pattern = false;
+        // Orphan the two SOLVER-derived viewport legs, so a task launched before
+        // the switch cannot land afterwards and undo this discard. Geometry is
+        // deliberately NOT orphaned: it comes from the deck, `load_geometry_path`
+        // does not even take a solver, and a load in flight across a switch still
+        // delivers a valid result that should land (FND-116).
+        self.viewport.pending_currents = None;
+        self.viewport.pending_pattern = None;
         self.viewport.rebuild_scene();
         // `rebuild_scene` does not touch the lobe, so the 3-D radiation overlay
         // would otherwise hang in the viewport after its grid was discarded —
@@ -959,7 +1154,9 @@ impl AppState {
     /// while streaming and once done.
     pub fn sweep_points(&self) -> &[SweepPoint] {
         match &self.sweep_phase {
-            SweepPhase::Streaming(pts) | SweepPhase::Done(pts) | SweepPhase::Failed(_, pts) => pts,
+            SweepPhase::Streaming(_, pts) | SweepPhase::Done(pts) | SweepPhase::Failed(_, pts) => {
+                pts
+            }
             _ => &[],
         }
     }
@@ -982,7 +1179,7 @@ impl AppState {
     pub fn status_text(&self) -> String {
         match &self.phase {
             SolvePhase::Idle => String::from("Ready"),
-            SolvePhase::Solving => String::from("Solving…"),
+            SolvePhase::Solving(_) => String::from("Solving…"),
             SolvePhase::Done(r) => format!(
                 "Done — {:.3} MHz | Z = {:.2} + j{:.2} Ω",
                 r.freq_mhz, r.z_re, r.z_im
@@ -995,8 +1192,8 @@ impl AppState {
     pub fn sweep_status_text(&self) -> String {
         match &self.sweep_phase {
             SweepPhase::Idle => String::from("Enter a frequency range and click Run Sweep."),
-            SweepPhase::Running => String::from("Sweeping…"),
-            SweepPhase::Streaming(pts) => format!("Sweeping… {} points", pts.len()),
+            SweepPhase::Running(_) => String::from("Sweeping…"),
+            SweepPhase::Streaming(_, pts) => format!("Sweeping… {} points", pts.len()),
             SweepPhase::Done(pts) => format!("Done — {} points", pts.len()),
             SweepPhase::Failed(e, pts) if !pts.is_empty() => {
                 format!("Error after {} point(s): {e}", pts.len())
@@ -1009,7 +1206,7 @@ impl AppState {
     pub fn pattern_status_text(&self) -> String {
         match &self.pattern_phase {
             PatternPhase::Idle => String::from("Enter an azimuth angle φ and click Run Pattern."),
-            PatternPhase::Running => String::from("Computing pattern…"),
+            PatternPhase::Running(_) => String::from("Computing pattern…"),
             PatternPhase::Done(pts) => format!("Done — {} points", pts.len()),
             PatternPhase::Failed(e) => format!("Error: {e}"),
         }
@@ -1019,7 +1216,7 @@ impl AppState {
     pub fn currents_status_text(&self) -> String {
         match &self.currents_phase {
             CurrentsPhase::Idle => String::from("Click Run Currents to compute the distribution."),
-            CurrentsPhase::Running => String::from("Computing currents…"),
+            CurrentsPhase::Running(_) => String::from("Computing currents…"),
             CurrentsPhase::Done(pts) => format!("Done — {} segments", pts.len()),
             CurrentsPhase::Failed(e) => format!("Error: {e}"),
         }
