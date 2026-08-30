@@ -146,6 +146,46 @@ fn a_deck_driven_by_two_kinds_of_source_is_refused() {
     );
 }
 
+/// FND-093 / FND-094, at the production entry point.
+///
+/// The unit tests pin `validate::grid_budget_error`; this pins that the check is
+/// in the `pre_solve_error` chain at all. Dropping that one line leaves every
+/// unit test green while the CLI goes back to asking the allocator for
+/// **68 717 379 600 bytes** and aborting — measured, not assumed.
+///
+/// Which FRONTEND reaches the chain is already gated per-frontend by the FND-129
+/// tests (CLI, GUI, worker and bindings each have one), so this does not repeat
+/// that; it gates membership of the chain, which is the new thing.
+#[test]
+fn an_oversized_grid_card_is_refused() {
+    let dir = std::env::temp_dir().join(format!("fnec-grid-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let deck = dir.join("huge-rp.nec");
+    std::fs::write(
+        &deck,
+        "CE\nGW 1 21 0 0 -5 0 0 5 0.001\nGE\nEX 0 1 11 0 1.0 0.0\n\
+         FR 0 1 0 0 14.2 0\nRP 0 65535 65535 1000 0 0 1 1\nEN\n",
+    )
+    .expect("write deck");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(&deck)
+        .output()
+        .expect("run fnec");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an oversized grid must be refused, not attempted:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("RP") && stderr.contains("the limit is"),
+        "the refusal must name the card and the limit:\n{stderr}"
+    );
+}
+
 /// FND-129, at the production entry point.
 ///
 /// Same reason as the test above: the unit test pins
