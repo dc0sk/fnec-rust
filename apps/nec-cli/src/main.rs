@@ -41,6 +41,98 @@ use warnings::{
     warn_mpie_mixed_radius, warn_pulse_mode_experimental,
 };
 
+/// Print every point a sweep computed, and report the ones that failed.
+///
+/// Returns `true` if any point failed, so the caller can exit non-zero after the
+/// output rather than instead of it.
+///
+/// **The policy changed here (FND-101/FND-102 follow-up).** This loop used to
+/// `return ExitCode::FAILURE` on the first `Err`, so a sweep that lost one point
+/// threw away every point after it — and when a distributed run drained its
+/// worker pool, the first result was already an error and the invocation printed
+/// *nothing at all*, having solved most of the sweep. A point that computed is as
+/// true as it was a moment earlier; the GUI has kept its points on a failed sweep
+/// since FND-033, and this brings the CLI to the same answer.
+///
+/// Failures go to stderr as they are met, results to stdout, and the exit code
+/// still says the run was not clean — so a script that checks the status is
+/// unaffected, while a human gets the 499 points that worked.
+#[allow(clippy::too_many_arguments)]
+fn emit_sweep_points(
+    solved: Vec<(usize, Result<FrequencySolveResult, String>, u128)>,
+    output_format: OutputFormat,
+    sweep_rows: &mut Vec<SweepPointSummary>,
+    json_records: &mut Vec<String>,
+    enable_benchmarking: bool,
+    bench_format: BenchFormat,
+    bench_target: &str,
+    bench_deck: &str,
+    bench_solver: &str,
+) -> bool {
+    let mut any_failed = false;
+    for (fidx, result, elapsed_ms) in solved {
+        let solved_point = match result {
+            Ok(v) => v,
+            Err(e) => {
+                // Report and carry on. Returning here is what discarded the rest
+                // of the sweep.
+                eprintln!("error: {e}");
+                any_failed = true;
+                continue;
+            }
+        };
+
+        if output_format == OutputFormat::Text {
+            if fidx > 0 {
+                println!();
+            }
+            print!("{}", solved_point.report);
+        }
+        if let Some(summary) = solved_point.sweep_summary {
+            if output_format == OutputFormat::Json {
+                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
+                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
+                json_records.push(format!(
+                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
+                    freq_mhz = summary.freq_mhz,
+                    tag = summary.tag,
+                    seg = summary.seg,
+                    z_re = summary.z_re,
+                    z_im = summary.z_im,
+                    z_abs = z_abs,
+                    z_arg_deg = z_arg_deg,
+                ));
+            }
+            sweep_rows.push(summary);
+        }
+        eprintln!("{}", solved_point.diag_line);
+
+        if enable_benchmarking {
+            let run = fidx + 1;
+            match bench_format {
+                BenchFormat::Human => {}
+                BenchFormat::Csv => emit_bench_record_csv(
+                    bench_target,
+                    bench_deck,
+                    bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+                BenchFormat::Json => emit_bench_record_json(
+                    bench_target,
+                    bench_deck,
+                    bench_solver,
+                    run,
+                    elapsed_ms,
+                    &solved_point.bench,
+                ),
+            }
+        }
+    }
+    any_failed
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let profile = detect_compatibility_profile(args.first().map(String::as_str).unwrap_or("fnec"));
@@ -449,63 +541,21 @@ fn main() -> ExitCode {
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
 
-    for (fidx, result, elapsed_ms) in solved {
-        let solved_point = match result {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("error: {e}");
-                return ExitCode::FAILURE;
-            }
-        };
-
-        if output_format == OutputFormat::Text {
-            if fidx > 0 {
-                println!();
-            }
-            print!("{}", solved_point.report);
-        }
-        if let Some(summary) = solved_point.sweep_summary {
-            if output_format == OutputFormat::Json {
-                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
-                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
-                json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
-                    freq_mhz = summary.freq_mhz,
-                    tag = summary.tag,
-                    seg = summary.seg,
-                    z_re = summary.z_re,
-                    z_im = summary.z_im,
-                    z_abs = z_abs,
-                    z_arg_deg = z_arg_deg,
-                ));
-            }
-            sweep_rows.push(summary);
-        }
-        eprintln!("{}", solved_point.diag_line);
-
-        if enable_benchmarking {
-            let run = fidx + 1;
-            match bench_format {
-                BenchFormat::Human => {}
-                BenchFormat::Csv => emit_bench_record_csv(
-                    &bench_target,
-                    &bench_deck,
-                    &bench_solver,
-                    run,
-                    elapsed_ms,
-                    &solved_point.bench,
-                ),
-                BenchFormat::Json => emit_bench_record_json(
-                    &bench_target,
-                    &bench_deck,
-                    &bench_solver,
-                    run,
-                    elapsed_ms,
-                    &solved_point.bench,
-                ),
-            }
-        }
-    }
+    // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
+    // between the local and distributed sweep paths (verified: identical md5),
+    // which is how a policy decision comes to be made twice and, eventually,
+    // differently.
+    let any_failed = emit_sweep_points(
+        solved,
+        output_format,
+        &mut sweep_rows,
+        &mut json_records,
+        enable_benchmarking,
+        bench_format,
+        &bench_target,
+        &bench_deck,
+        &bench_solver,
+    );
 
     if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
         println!();
@@ -524,7 +574,14 @@ fn main() -> ExitCode {
         println!("[{records}]", records = json_records.join(","));
     }
 
-    ExitCode::SUCCESS
+    // The exit code still says the run was not clean, so a script checking the
+    // status is unaffected; what changed is that a human now gets the points
+    // that worked instead of nothing.
+    if any_failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Every pre-solve caveat a distributed run owes its user.
@@ -935,63 +992,21 @@ fn run_distributed_solve(
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
 
-    for (fidx, result, elapsed_ms) in solved {
-        let solved_point = match result {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("error: {e}");
-                return ExitCode::FAILURE;
-            }
-        };
-
-        if output_format == OutputFormat::Text {
-            if fidx > 0 {
-                println!();
-            }
-            print!("{}", solved_point.report);
-        }
-        if let Some(summary) = solved_point.sweep_summary {
-            if output_format == OutputFormat::Json {
-                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
-                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
-                json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
-                    freq_mhz = summary.freq_mhz,
-                    tag = summary.tag,
-                    seg = summary.seg,
-                    z_re = summary.z_re,
-                    z_im = summary.z_im,
-                    z_abs = z_abs,
-                    z_arg_deg = z_arg_deg,
-                ));
-            }
-            sweep_rows.push(summary);
-        }
-        eprintln!("{}", solved_point.diag_line);
-
-        if enable_benchmarking {
-            let run = fidx + 1;
-            match bench_format {
-                BenchFormat::Human => {}
-                BenchFormat::Csv => emit_bench_record_csv(
-                    &bench_target,
-                    &bench_deck,
-                    &bench_solver,
-                    run,
-                    elapsed_ms,
-                    &solved_point.bench,
-                ),
-                BenchFormat::Json => emit_bench_record_json(
-                    &bench_target,
-                    &bench_deck,
-                    &bench_solver,
-                    run,
-                    elapsed_ms,
-                    &solved_point.bench,
-                ),
-            }
-        }
-    }
+    // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
+    // between the local and distributed sweep paths (verified: identical md5),
+    // which is how a policy decision comes to be made twice and, eventually,
+    // differently.
+    let any_failed = emit_sweep_points(
+        solved,
+        output_format,
+        &mut sweep_rows,
+        &mut json_records,
+        enable_benchmarking,
+        bench_format,
+        &bench_target,
+        &bench_deck,
+        &bench_solver,
+    );
 
     if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
         println!();
@@ -1010,7 +1025,14 @@ fn run_distributed_solve(
         println!("[{records}]", records = json_records.join(","));
     }
 
-    ExitCode::SUCCESS
+    // The exit code still says the run was not clean, so a script checking the
+    // status is unaffected; what changed is that a human now gets the points
+    // that worked instead of nothing.
+    if any_failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Entry point for `fnec worker --stdio`.
