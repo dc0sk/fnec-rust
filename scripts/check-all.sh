@@ -69,6 +69,20 @@ for c in check-changelog-headings check-findings-ledger check-path-inventory \
     run "$c" python3 "scripts/$c.py"
 done
 
+# The three CI enforces that this script did not, so a stale artifact could only
+# ever be caught after a push. All three are --check modes of generators, so the
+# fix when one fails is to run the generator without --check and commit.
+#
+# Found the hard way: the corpus provenance stamps for three LD cases still said
+# "produced in 0.3.0 on 2026-04-30" after FND-122 re-derived them on 2026-08-29,
+# and the first thing to notice was a red `docs contract` job on the PR. Those
+# stamps ARE the evidence-expiry mechanism — a validation dated before the change
+# it validates is exactly what they exist to surface — so a stale one is a real
+# defect, not paperwork.
+run "docs frontmatter" bash scripts/validate-docs-frontmatter.sh
+run "traceability matrix fresh" python3 scripts/gen-traceability-matrix.py --check
+run "corpus provenance fresh" python3 scripts/derive-corpus-provenance.py --check
+
 # The one checker with a committed self-test, and it only ran in CI — so a defect
 # in the checker itself reached a release and was found by reading its output by
 # hand (FND-062). A gate whose own test runs somewhere else is a gate you trust
