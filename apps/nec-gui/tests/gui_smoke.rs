@@ -2200,6 +2200,35 @@ fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
     );
 }
 
+/// FND-129: the GUI reaches the shared refusal, on BOTH of its entry points.
+///
+/// It calls `pre_solve_error` from two places — the solve path and the pattern
+/// path — so one of them can lose the wiring while the other keeps it, which is
+/// the shape of half the findings in this ledger.
+#[test]
+fn a_deck_with_two_current_sources_is_refused_on_both_gui_paths() {
+    let deck = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/dipole-two-current-sources-freesp.nec"
+    ))
+    .expect("corpus deck");
+
+    let solve = nec_gui::solve::solve_deck_str(&deck, nec_gui::solve::SolverKind::Hallen);
+    let pattern =
+        nec_gui::solve::pattern_slice_deck_str(&deck, 0.0, nec_gui::solve::SolverKind::Hallen);
+
+    for (label, err) in [
+        ("solve", solve.err()),
+        ("pattern", pattern.err().map(|e| e.to_string())),
+    ] {
+        let msg = err.unwrap_or_else(|| panic!("the {label} path must refuse this deck"));
+        assert!(
+            msg.contains("2 current sources"),
+            "the {label} path must give the shared reason, got: {msg}"
+        );
+    }
+}
+
 /// FND-114 — the same gate for a CURRENT source, which the voltage-drive test
 /// above cannot reach.
 ///

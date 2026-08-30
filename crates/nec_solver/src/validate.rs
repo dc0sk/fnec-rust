@@ -897,6 +897,61 @@ pub fn superseded_frequency_warnings(deck: &NecDeck) -> Vec<String> {
 /// type and discards the rest rather than superposing transmit and receive. A
 /// plane-wave-**only** deck is untouched — the mix is the problem, not receive.
 ///
+/// Two current sources in one deck: fnec drives the first and silently ignores
+/// the rest.
+///
+/// `solve_current_source_hallen` picks its source with a `find_map` over the
+/// deck's `EX` cards (`current_source.rs:96`) and `first_current_source` does the
+/// same (`hallen_session.rs:101`); the solve then pins the current at that ONE
+/// segment and returns ONE port voltage. Every later current source contributes
+/// nothing — and because the CLI builds a feedpoint row per `EX` card and prices
+/// all of them from that single port voltage, the extra rows are not merely
+/// missing, they are wrong.
+///
+/// Measured on a two-wire deck asking for 1 A on each of two tags, exit 0 with no
+/// warning at all: both rows printed the SAME voltage, `42.004192 - j121.198169`,
+/// which is the first source's port voltage, while the second row's current came
+/// out `-0.250051 - j0.311050` A rather than the 1 A requested. That non-unity
+/// current is the decisive part — it is induced current from the other element,
+/// so the second source was never impressed, not merely mis-reported. Its
+/// reported `170.74 + j272.30 Ω` is a wrong voltage over a current nobody drove
+/// (FND-129).
+///
+/// Refusing is the honest interim, exactly as for the mixed-drive case below.
+/// Supporting N current sources is real solver work: it needs N pinned
+/// constraints and N port voltages, and `CurrentSourceFeedpoint` carries one of
+/// each. The numbers were never meaningful, so nothing is lost by declining to
+/// print them. No deck in `corpus/` carries two.
+///
+/// Deliberately NOT extended to delta gaps: fnec superposes voltage sources
+/// across tags, and that path works. The separate defect where a second delta gap
+/// on the SAME tag is dropped is FND-120, and sweeping it in here would hide it.
+pub fn multiple_current_sources_error(deck: &NecDeck) -> Option<String> {
+    let sources: Vec<_> = crate::excitation::feedpoints(deck)
+        .filter(|(_, role)| *role == FeedpointRole::CurrentSource)
+        .map(|(ex, _)| ex)
+        .collect();
+    if sources.len() < 2 {
+        return None;
+    }
+    let first = sources[0];
+    let second = sources[1];
+    Some(format!(
+        "EX: this deck has {n} current sources (type 4), and fnec drives only the \
+         first (tag {ft} segment {fs}). The Hallén current-source solve pins the \
+         current at a single segment and yields a single port voltage, so the one \
+         on tag {st} segment {ss} is not driven at all — its feedpoint would be \
+         reported from the first source's port voltage over a current its own \
+         drive never produced. Solve them as separate decks and superpose the \
+         results, or drive the deck with voltage sources (EX type 0)",
+        n = sources.len(),
+        ft = first.tag,
+        fs = first.segment,
+        st = second.tag,
+        ss = second.segment,
+    ))
+}
+
 /// A delta gap and a current source in one deck produce a **silently wrong**
 /// answer, not merely an ambiguous one. The current-source solve replaces the
 /// right-hand side entirely — `build_current_source_shape` drops the other `EX`
@@ -1101,13 +1156,18 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
 pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
     geometry_error(deck, segs, ground)
         .or_else(|| mixed_excitation_error(deck))
+        .or_else(|| multiple_current_sources_error(deck))
         .or_else(|| frequency_error(deck))
 }
 
 /// Every frontend-independent diagnostic for a solve, errors first.
 ///
-/// A single `Error` (if any) is the hard geometry rejection from [`geometry_error`];
-/// a caller that sees one must not solve. The rest are warnings the caller should
+/// A single `Error` (if any) is whatever [`pre_solve_error`] refused — geometry,
+/// excitation or frequency — plus anything the *chosen* solver cannot represent;
+/// a caller that sees one must not solve. (This said "the hard geometry rejection
+/// from `geometry_error`" long after it stopped being only that, which matters
+/// because `fnec_py` reaches every one of those refusals through here rather than
+/// through `pre_solve_error` directly.) The rest are warnings the caller should
 /// surface but may otherwise ignore.
 ///
 /// Solver-specific caveats (experimental basis modes, mixed radii on the MPIE,
@@ -1386,6 +1446,45 @@ mod tests {
             swept_low_ground_caveat(&segs, &gn2, &[60.0e6, 80.0e6], false),
             None
         );
+    }
+
+    #[test]
+    fn a_deck_with_two_current_sources_is_refused_by_name() {
+        // FND-129. Measured before this refusal, exit 0 and no warning at all:
+        // both feedpoint rows printed the SAME voltage, 42.004192 - j121.198169,
+        // which is the FIRST source's port voltage, while the second row's
+        // current came out -0.250051 - j0.311050 A instead of the 1 A asked for.
+        // The non-unity current is the decisive part — it is current induced by
+        // the other element, so the second source was never impressed at all.
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.0 0 0 5.0 0.001\nGW 2 21 3.0 0 -5.0 3.0 0 5.0 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nEX 4 2 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let msg = multiple_current_sources_error(&deck).expect("a refusal");
+        // Both named, for the same reason the mixed-drive message names both: a
+        // reader who cannot tell which source was dropped cannot act on this.
+        assert!(msg.contains("tag 1 segment 11"), "{msg}");
+        assert!(msg.contains("tag 2 segment 11"), "{msg}");
+        assert!(msg.contains("2 current sources"), "{msg}");
+    }
+
+    #[test]
+    fn one_current_source_beside_voltage_sources_is_not_refused_here() {
+        // Three controls, and each one is load-bearing.
+        for deck_src in [
+            // A single current source: the supported case, and the whole corpus.
+            "GW 1 21 0 0 -5.0 0 0 5.0 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            // No current source at all.
+            "GW 1 21 0 0 -5.0 0 0 5.0 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            // TWO voltage sources on different tags. fnec superposes these and the
+            // path works, so counting drives rather than current sources would
+            // refuse decks that solve correctly today. (A second delta gap on the
+            // SAME tag is a real defect, but it is FND-120, and sweeping it in
+            // here would hide it behind an unrelated refusal.)
+            "GW 1 21 0 0 -5.0 0 0 5.0 0.001\nGW 2 21 3.0 0 -5.0 3.0 0 5.0 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nEX 0 2 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        ] {
+            let (deck, _segs) = deck_and_segs(deck_src);
+            assert_eq!(multiple_current_sources_error(&deck), None, "{deck_src}");
+        }
     }
 
     #[test]

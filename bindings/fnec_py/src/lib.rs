@@ -367,3 +367,50 @@ fn fnec_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sweep_deck_str, m)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// FND-129, at the bindings' own entry point.
+    ///
+    /// Every Python call funnels through [`solve_at_freq`], and it reaches the
+    /// shared refusals through `validate::diagnose` rather than calling
+    /// `pre_solve_error` itself — a second route to the same gate, and therefore
+    /// a second place the wiring can be missing. The CLI, the GUI and the worker
+    /// each have their own test that the refusal reaches them; this is that test
+    /// for the bindings, and it needs no Python interpreter to run.
+    #[test]
+    fn a_deck_with_two_current_sources_is_refused() {
+        let deck_src = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGW 2 21 3.0 0 -5.0 3.0 0 5.0 0.001\nGE\nEX 4 1 11 0 1.0 0.0\nEX 4 2 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let err = solve_at_freq(
+            &parsed.deck,
+            14.2e6,
+            nec_solver::validate::SolverKind::Hallen,
+        )
+        .expect_err("two current sources must be refused");
+        assert!(err.contains("2 current sources"), "{err}");
+        assert!(err.contains("tag 2 segment 11"), "{err}");
+    }
+
+    /// The control. Without it, a guard that refused every deck would pass above.
+    #[test]
+    fn one_current_source_still_solves_through_the_bindings() {
+        let deck_src = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGE\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let (rec, _warnings) = solve_at_freq(
+            &parsed.deck,
+            14.2e6,
+            nec_solver::validate::SolverKind::Hallen,
+        )
+        .expect("a single current source is the supported case");
+        // A current source at the centre of a 21-segment half-wave element:
+        // finite, non-zero, and priced from the solved port voltage.
+        let z_re = rec.get("z_re").copied().expect("z_re in the record");
+        assert!(
+            z_re.is_finite() && z_re > 0.0,
+            "expected a real positive resistance, got {rec:?}"
+        );
+    }
+}

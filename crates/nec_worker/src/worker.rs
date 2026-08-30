@@ -323,6 +323,32 @@ mod tests {
         )
     }
 
+    /// FND-129: the worker reaches the shared refusal too.
+    ///
+    /// Four frontends, four routes to one `pre_solve_error`. Each needs its own
+    /// test that the route exists, because a unit test on the refusal itself
+    /// stays green for all of them when the wiring is dropped — verified by
+    /// sabotage, not assumed.
+    #[test]
+    fn a_deck_with_two_current_sources_is_refused() {
+        let deck = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGW 2 21 3.0 0 -5.0 3.0 0 5.0 0.001\nGE\n\
+                    EX 4 1 11 0 1.0 0.0\nEX 4 2 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_code,
+            error_message,
+            ..
+        } = &result
+        else {
+            panic!("expected a refusal for two current sources: {result:?}");
+        };
+        assert_eq!(*error_code, ErrorCode::UnsupportedConfig);
+        assert!(
+            error_message.contains("2 current sources"),
+            "the refusal must say what it found: {error_message}"
+        );
+    }
+
     /// FND-125: an over-large deck is well-formed and its geometry is supported —
     /// it is simply too big. That is a different remedy from "this config is not
     /// supported", so it gets `ResourceExhausted`, which had been on the wire
