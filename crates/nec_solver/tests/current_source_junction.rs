@@ -14,9 +14,8 @@
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_conductor_paths, build_current_source_shape_paths,
-    build_geometry, build_hallen_rhs_paths, solve_hallen_current_source_paths, solve_hallen_paths,
-    ConductorPath, GroundModel, Segment,
+    assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_hallen_rhs_paths,
+    solve_current_source_hallen, solve_hallen_paths, ConductorPath, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -74,14 +73,28 @@ fn current_source_z(
     i0: Complex64,
 ) -> (Complex64, Complex64) {
     let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
-    let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
-    let (shape, cos_vec, src_seg) =
-        build_current_source_shape_paths(deck, segs, FREQ, feed_tag, feed_seg, &paths).unwrap();
-    let (path_of, free_ends) = paths_index_vectors(&paths, segs.len());
-    let sol =
-        solve_hallen_current_source_paths(&z, &shape, &cos_vec, src_seg, i0, &path_of, &free_ends)
-            .unwrap();
-    (sol.port_voltage / i0, sol.currents[src_seg])
+    // The entry point reads i0 from the deck's own EX card, so the amplitude
+    // under test has to go there rather than into a parameter beside it —
+    // otherwise `i0` names an amplitude the solve never sees, which is how this
+    // helper silently stopped testing linearity when it moved to the production
+    // seam.
+    let mut d = deck.clone();
+    for c in d.cards.iter_mut() {
+        if let Card::Ex(ex) = c {
+            if ex.excitation_type == 4 {
+                ex.voltage_real = i0.re;
+                ex.voltage_imag = i0.im;
+            }
+        }
+    }
+    // Through the production entry point. The bespoke path current-source solver
+    // is gone: a current source is now the voltage solve rescaled (FND-118).
+    let fp = solve_current_source_hallen(&d, segs, &z, FREQ).expect("current-source solve");
+    let src_seg = segs
+        .iter()
+        .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)
+        .expect("feed segment");
+    (fp.port_voltage / i0, fp.currents[src_seg])
 }
 
 /// Split λ/2 dipole: two 26-seg arms that BOTH start at the origin (start-to-start,

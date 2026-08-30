@@ -53,8 +53,7 @@ pub use hallen_session::{
     HallenRoute, HallenRouted, HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
-    solve, solve_hallen, solve_hallen_current_source, solve_hallen_current_source_paths,
-    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
     solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, CurrentSourceSolution, HallenSolution, SolveError,

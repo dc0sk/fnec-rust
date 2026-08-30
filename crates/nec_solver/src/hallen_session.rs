@@ -34,8 +34,8 @@ use crate::geometry::{
     Segment,
 };
 use crate::linear::{
-    solve_hallen, solve_hallen_current_source_paths, solve_hallen_paths, solve_hallen_planewave,
-    solve_hallen_planewave_paths, SolveError,
+    solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
+    SolveError,
 };
 use crate::matrix::ZMatrix;
 use crate::planewave::{build_planewave_hallen, build_planewave_hallen_paths};
@@ -372,12 +372,23 @@ fn solve_current_source(
     let (shape, cos_vec, src_seg) =
         build_current_source_shape_paths(deck, segs, freq_hz, tag, seg, &paths)
             .map_err(|e| HallenSessionError::Excitation(e.to_string()))?;
-    let sol =
-        solve_hallen_current_source_paths(z_mat, &shape, &cos_vec, src_seg, i0, path_of, free_ends)
-            .map_err(HallenSessionError::Solve)?;
+    // The same scaling as the plain branch, through the same helper. This branch
+    // is a SECOND copy of the current-source decision -- `solve_current_source`
+    // intercepts the path case here rather than letting `current_source.rs`
+    // handle it -- so fixing only that file would have left junctioned decks on
+    // the old solver. Measured before this line changed: a start-to-start split
+    // answered 247.935 + j384.841 under EX 4 against 264.882 + j410.856 under
+    // EX 0, a 6.4% split in FREE SPACE. The defect is not confined to ground; it
+    // appears wherever the augmented system is inconsistent, and a bent conductor
+    // does that too (FND-118).
+    let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, path_of, free_ends)
+        .map_err(HallenSessionError::Solve)?;
+    let (currents, port_voltage) =
+        crate::current_source::scale_to_impressed_current(sol.currents, src_seg, i0, tag, seg)
+            .map_err(HallenSessionError::CurrentSource)?;
     Ok(HallenRouted {
-        currents: sol.currents,
-        port_voltage: Some(sol.port_voltage),
+        currents,
+        port_voltage: Some(port_voltage),
         route,
         residual_inputs: None,
     })
