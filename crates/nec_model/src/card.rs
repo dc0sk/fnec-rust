@@ -340,22 +340,41 @@ pub struct LdCard {
 
 /// GM — Geometry move card.
 ///
-/// Translates and/or rotates a range of wire tags (or all wires).
-/// Supports either in-place transformation (`tag_increment = 0`) or appending
-/// one transformed copy with incremented tags (`tag_increment > 0`).
+/// Rotates and/or translates part of the structure, optionally generating
+/// `repeat_count` new copies of it.
 ///
 /// NEC field mapping:
-///   I1 = tag number increment between copies (0 = move in place)
-///   I2 = tag number of the last wire to move (0 = all wires so far)
+///   I1 = ITGI, tag number increment applied per copy
+///   I2 = NRPT, the NUMBER OF NEW STRUCTURES to generate (0 = move in place)
 ///   F1–F3 = rotation angles about x, y, z axes (degrees)
 ///   F4–F6 = translation (metres) in x, y, z
-///   F7    = starting tag for the range to move (0 = all)
+///   F7    = ITS, the tag whose FIRST segment begins the affected suffix
+///           (0 = the whole structure)
+///
+/// **Two of these fields used to mean something else.** fnec read I2 as a *last
+/// tag* and F7 as a *first tag*, giving a tag-range filter that NEC-2 does not
+/// define, and it generated at most one copy because it had no NRPT concept at
+/// all. A standard deck therefore lost wires silently: `GM 10 2 0 0 0 0 0 1. 0`
+/// is 9 segments tagged 1/11/21 in nec2c and was 6 tagged 1/11 in fnec
+/// (FND-119). The range-selection capability is not discarded — it is recorded
+/// as requirement FR-011, to return in syntax NEC does not define.
+///
+/// `ITS` selects a **suffix in definition order**, not a range and not "every
+/// tag ≥ ITS": it resolves to the first segment carrying that tag, and
+/// everything from there to the end of the structure moves. Verified against
+/// nec2c with wires defined in the order 5, 2, 3 — moving from tag 2 moves
+/// wires 2 **and** 3 and leaves 5 alone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GmCard {
-    /// Tag increment for the appended transformed copy (0 = transform in place).
+    /// ITGI — tag increment applied per generated copy, and to the moved
+    /// segments themselves when `repeat_count == 0`.
     pub tag_increment: u32,
-    /// Last tag in the affected range (0 = all wires defined so far).
-    pub last_tag: u32,
+    /// NRPT — how many new copies of the affected suffix to generate.
+    ///
+    /// `0` means move in place rather than copy. Note this is NEC's rule; fnec
+    /// previously keyed in-place off `tag_increment == 0`, which is a different
+    /// condition and produced a different structure.
+    pub repeat_count: u32,
     /// Rotation about x-axis, degrees.
     pub rot_x_deg: f64,
     /// Rotation about y-axis, degrees.
@@ -368,8 +387,12 @@ pub struct GmCard {
     pub translate_y: f64,
     /// Translation along z, metres.
     pub translate_z: f64,
-    /// Starting tag for the affected range (0 = all wires defined so far).
-    pub first_tag: u32,
+    /// ITS — the tag whose first segment begins the affected suffix.
+    ///
+    /// `0` means the whole structure. A tag no wire carries is a hard error:
+    /// nec2c exits 255 with "NO SEGMENT HAS AN ITAG OF n", where fnec used to
+    /// match nothing and solve on regardless.
+    pub start_tag: u32,
 }
 
 /// GR — Geometry repeat card.

@@ -92,7 +92,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 **Geometry**:
 - Frequency: 14.2 MHz
 - Start with the canonical `dipole-freesp-51seg` wire
-- Apply `GM 0 1 0 0 0 1.0 0 0 1` to translate the geometry by +1.0 m along x in place
+- Apply `GM 0 0 0 0 0 1.0 0 0 0` to translate the geometry by +1.0 m along x in place (NRPT=0 is NEC's in-place move; the card was `GM 0 1 ... 1` until FND-119, which NEC reads as one same-tag COPY — nec2c gives 102 segments for it, not 51, so the deck did not test what this entry claims)
 - Feed: Center segment (tag=1, seg=26), 1.0 V excitation
 - Ground: None
 
@@ -330,7 +330,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Tolerance gates**: Same as `multi-source.nec`.
 
-**Why this case**: It locks the currently implemented `GM` behavior into corpus validation and makes the supported subset explicit: one in-place transform or one appended transformed copy, not full unqualified NEC GM parity.
+**Why this case**: It locks `GM` translated-copy behaviour into corpus validation. Note it cannot discriminate the FND-119 defect on its own: with `NRPT = 1` the old last-tag reading and the NEC reading happen to agree. `dipole-gm-nrpt2-freesp.nec` and `crates/nec_solver/tests/gm_nec2c.rs` cover the cases that separate them.
 
 ## Corpus metadata
 

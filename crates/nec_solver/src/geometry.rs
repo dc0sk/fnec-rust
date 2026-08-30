@@ -155,6 +155,13 @@ pub enum GeometryError {
     ZeroLengthWire { tag: u32 },
     /// No GW cards were found in the deck.
     NoWires,
+    /// A `GM` card's `ITS` names a tag no wire carries.
+    ///
+    /// nec2c refuses this outright ("NO SEGMENT HAS AN ITAG OF n", exit 255).
+    /// fnec used to match nothing, move nothing, and solve the unmoved structure
+    /// at exit 0 — a deck asking to move a wire it had mistyped got a confident
+    /// answer about a different antenna (FND-119).
+    StartTagNotFound { tag: u32 },
     /// The deck asks for more segments than [`MAX_SEGMENTS`].
     ///
     /// Refused rather than truncated: a silently shortened antenna is a wrong
@@ -186,6 +193,11 @@ impl std::fmt::Display for GeometryError {
                  {MAX_SEGMENTS} this solver will build — the impedance matrix is \
                  16*N^2 bytes and its factorisation O(N^3), so the cap is already \
                  about 1.6 GB of matrix"
+            ),
+            GeometryError::StartTagNotFound { tag } => write!(
+                f,
+                "GM card: no segment has tag {tag}, so there is nothing to move \
+                 from there"
             ),
             GeometryError::TagOverflow { card, detail } => write!(
                 f,
@@ -814,47 +826,86 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
     Ok(())
 }
 
-/// Apply a GM card: rotate then translate matching wires; optionally replicate.
+/// Apply a GM card: rotate then translate a suffix of the structure, optionally
+/// generating `repeat_count` copies of it.
 ///
-/// When `tag_increment == 0` the existing wires are transformed in place.
-/// When `tag_increment > 0` a copy with incremented tags is appended and the
-/// originals are left unchanged.
+/// The three rules here are NEC-2's, and all three differed from what fnec did
+/// before (FND-119). Each is pinned by a test against nec2c.
 ///
-/// Tag filtering: `first_tag..=last_tag` if both are > 0; `first_tag..` if
-/// only `first_tag` > 0; `..=last_tag` if only `last_tag` > 0; all wires if
-/// both are 0.
+/// - **`ITS` selects a SUFFIX in definition order.** It resolves to the first
+///   segment carrying that tag; everything from there to the end of the
+///   structure is affected. Not a tag range, and not "every tag ≥ ITS": with
+///   wires defined 5, 2, 3, moving from tag 2 moves wires 2 **and** 3 and leaves
+///   5 alone. `0` means the whole structure. A tag no wire carries is refused —
+///   nec2c exits 255 there, and fnec used to match nothing and carry on.
+/// - **`NRPT`, not `ITGI`, decides copy-versus-in-place.** `NRPT == 0` moves the
+///   suffix where it stands; fnec keyed this off `ITGI == 0`, a different
+///   condition producing a different structure.
+/// - **An in-place move applies `ITGI` to the tags as well**, so
+///   `GM 10 0 … 1. 0` leaves three segments all tagged 11. Tag-0 segments are
+///   never retagged, matching nec2c's `if (itag[i] != 0)` guard.
+///
+/// Copies are cumulative: copy *k* is the transform applied *k* times, tagged
+/// `tag + k·ITGI`. That falls out of building each copy from the PREVIOUS one
+/// rather than from the original, which is also what nec2c does — so neither
+/// property needs special-casing.
 fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
-    if gm.tag_increment == 0 {
-        // In-place transform: mutate matching segments.
-        for seg in segs.iter_mut() {
-            if tag_in_range(seg.tag, gm.first_tag, gm.last_tag) {
-                seg.start = transform_point(seg.start, gm);
-                seg.end = transform_point(seg.end, gm);
-                seg.midpoint = transform_point(seg.midpoint, gm);
-                seg.direction = recompute_direction(seg.start, seg.end);
-            }
-        }
+    // Resolve ITS to where the affected suffix begins.
+    let start_idx = if gm.start_tag == 0 {
+        0
     } else {
-        // Copy transform: append new segments with incremented tag numbers.
-        let base: Vec<Segment> = segs
-            .iter()
-            .filter(|s| tag_in_range(s.tag, gm.first_tag, gm.last_tag))
-            .cloned()
-            .collect();
-        check_segment_budget(segs.len(), base.len() as u64, "GM")?;
-        for mut seg in base {
-            seg.tag = seg.tag.checked_add(gm.tag_increment).ok_or_else(|| {
-                GeometryError::TagOverflow {
-                    card: "GM",
-                    detail: format!("tag {} plus tag increment {}", seg.tag, gm.tag_increment),
-                }
-            })?;
+        segs.iter()
+            .position(|s| s.tag == gm.start_tag)
+            .ok_or(GeometryError::StartTagNotFound { tag: gm.start_tag })?
+    };
+    let suffix_len = segs.len() - start_idx;
+
+    let retag = |tag: u32| -> Result<u32, GeometryError> {
+        // nec2c never retags a tag-0 segment, in either branch.
+        if tag == 0 {
+            return Ok(0);
+        }
+        tag.checked_add(gm.tag_increment)
+            .ok_or_else(|| GeometryError::TagOverflow {
+                card: "GM",
+                detail: format!("tag {tag} plus tag increment {}", gm.tag_increment),
+            })
+    };
+
+    if gm.repeat_count == 0 {
+        for seg in segs.iter_mut().skip(start_idx) {
+            seg.tag = retag(seg.tag)?;
+            seg.start = transform_point(seg.start, gm);
+            seg.end = transform_point(seg.end, gm);
+            seg.midpoint = transform_point(seg.midpoint, gm);
+            seg.direction = recompute_direction(seg.start, seg.end);
+        }
+        return Ok(());
+    }
+
+    // Before the loop, and in u64: NRPT is a deck-supplied multiplier exactly
+    // like GR's count, and fifteen composing GM cards was FND-125's lesson.
+    check_segment_budget(
+        segs.len(),
+        suffix_len as u64 * u64::from(gm.repeat_count),
+        "GM",
+    )?;
+
+    let mut src = start_idx..segs.len();
+    for _ in 0..gm.repeat_count {
+        let next_start = segs.len();
+        for i in src.clone() {
+            let mut seg = segs[i].clone();
+            seg.tag = retag(seg.tag)?;
             seg.start = transform_point(seg.start, gm);
             seg.end = transform_point(seg.end, gm);
             seg.midpoint = transform_point(seg.midpoint, gm);
             seg.direction = recompute_direction(seg.start, seg.end);
             segs.push(seg);
         }
+        // The next copy is built from the one just made, which is what makes the
+        // transform and the tag increment both cumulative.
+        src = next_start..segs.len();
     }
     Ok(())
 }
@@ -906,13 +957,6 @@ fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
 // ---------------------------------------------------------------------------
 // Geometry helpers
 // ---------------------------------------------------------------------------
-
-/// True if `tag` falls in [first_tag, last_tag] with 0 meaning "no limit".
-fn tag_in_range(tag: u32, first_tag: u32, last_tag: u32) -> bool {
-    let above_first = first_tag == 0 || tag >= first_tag;
-    let below_last = last_tag == 0 || tag <= last_tag;
-    above_first && below_last
-}
 
 /// Apply GM rotation (Rx Ry Rz) then translation to a point.
 ///
@@ -1188,8 +1232,8 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn make_gm(
         tag_increment: u32,
-        last_tag: u32,
-        first_tag: u32,
+        repeat_count: u32,
+        start_tag: u32,
         rx: f64,
         ry: f64,
         rz: f64,
@@ -1199,8 +1243,8 @@ mod tests {
     ) -> GmCard {
         GmCard {
             tag_increment,
-            last_tag,
-            first_tag,
+            repeat_count,
+            start_tag,
             rot_x_deg: rx,
             rot_y_deg: ry,
             rot_z_deg: rz,
@@ -1210,7 +1254,7 @@ mod tests {
         }
     }
 
-    /// GM with tag_increment=0 translates segments in place.
+    /// GM with NRPT=0 translates segments in place (ITGI=0 here, so no retag).
     #[test]
     fn gm_inplace_translate() {
         let mut deck = NecDeck::new();
@@ -1298,7 +1342,7 @@ mod tests {
         // but ~4 MB rather than a memory bomb when the guard is sabotaged away.
         for i in 0..15 {
             deck.cards
-                .push(Card::Gm(make_gm(i + 1, 0, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
+                .push(Card::Gm(make_gm(i + 1, 1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
         }
         let err = build_geometry(&deck).expect_err("15 doublings must be refused");
         assert!(
@@ -1455,7 +1499,11 @@ mod tests {
         );
     }
 
-    /// GM with tag_increment>0 creates a copy with incremented tag.
+    /// GM with NRPT>=1 creates a copy, tagged `tag + ITGI`.
+    ///
+    /// It is NRPT and not ITGI that decides copy-versus-in-place: this card was
+    /// `make_gm(1, 0, ..)` until FND-119, which NEC-2 reads as an in-place move
+    /// that retags, not a copy.
     #[test]
     fn gm_copy_increments_tag() {
         let mut deck = NecDeck::new();
@@ -1468,7 +1516,7 @@ mod tests {
         }));
         // Copy with tag_increment=1, translate +1 m along y
         deck.cards
-            .push(Card::Gm(make_gm(1, 0, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
+            .push(Card::Gm(make_gm(1, 1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
         let segs = build_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 2);
         // Original (tag=1) unchanged
