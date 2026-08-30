@@ -99,6 +99,20 @@ verification = "review"
 rationale = "Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial."
 
 [[requirement]]
+id = "FR-011"
+title = "Tag-range selection for geometry transforms, in syntax NEC-2 does not define"
+status = "planned"
+criticality = "low"
+verification = "review"
+rationale = """
+Planned, not built; the review is that the syntax is deliberately not accepted yet. Moves to verification = "test" when implemented.
+
+Origin: fnec's GM card used to carry a tag-RANGE filter (a first tag and a last tag) in the standard I2 and F7 fields, where NEC-2 defines NRPT (number of new structures) and ITS (the structure suffix to move). That made fnec misread every standard GM deck and made fnec-authored decks unreadable everywhere else, so FND-119 replaced those fields with the NEC-2 meanings.
+
+The CAPABILITY that occupied them may still be wanted: selecting an arbitrary tag range to transform is expressive, and NEC's ITS can only name a suffix in definition order. This requirement records the decision that if it comes back it gets its OWN syntax -- a distinct card, or a documented extension marker -- and never a standard field. Occupying a standard field is what caused FND-119, and the failure is silent in both directions.
+"""
+
+[[requirement]]
 id = "NFR-001"
 title = "Primary runtime target Linux (Wayland), then macOS, then Windows"
 status = "implemented"
