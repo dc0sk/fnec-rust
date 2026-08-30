@@ -100,14 +100,16 @@ impl WorkerPipe {
 
     /// Write one line to the worker.
     ///
-    /// A serialisation failure is a TASK fault: nothing has been sent, so the
-    /// worker is untouched. Both handles used to decide this for themselves and
-    /// the SSH one decided it wrong (FND-136).
+    /// A failed write is `Unreachable`, not `Worker`: the pipe was already
+    /// broken, so nothing was delivered and the task is not implicated in this
+    /// worker's death. That distinction is what the retry budget turns on — a
+    /// task blamed for workers that never received it would be blamed for a dead
+    /// host it had nothing to do with (FND-102).
     pub fn send(&mut self, line: &str) -> Result<(), DispatchError> {
-        writeln!(self.stdin, "{line}").map_err(|e| DispatchError::Worker(e.to_string()))?;
+        writeln!(self.stdin, "{line}").map_err(|e| DispatchError::Unreachable(e.to_string()))?;
         self.stdin
             .flush()
-            .map_err(|e| DispatchError::Worker(e.to_string()))
+            .map_err(|e| DispatchError::Unreachable(e.to_string()))
     }
 
     /// Wait for one line, up to `deadline`.

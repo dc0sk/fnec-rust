@@ -38,8 +38,19 @@ pub struct LocalWorkerHandle {
 /// host.
 #[derive(Debug, Clone)]
 pub enum DispatchError {
-    /// The worker is unusable: the transport broke, the process died, or the
-    /// stream is no longer in sync. Evict it and try another.
+    /// The worker was already unusable when the task was handed to it: connect
+    /// or write failed, so nothing was delivered.
+    ///
+    /// Distinct from [`DispatchError::Worker`] by WHEN, and the distinction sets
+    /// the retry rule. The task is not implicated in this death — it never
+    /// arrived — so it may walk the whole pool looking for a live worker, which
+    /// is what lets a healthy task get past three dead hosts (FND-102).
+    Unreachable(String),
+    /// The worker accepted the task and then died or went silent.
+    ///
+    /// The task IS implicated: it may be what killed the worker. Resending it to
+    /// every survivor is how one poison task drains a pool, so this is the fault
+    /// the retry budget counts.
     Worker(String),
     /// The worker is fine; this particular task produced something the
     /// controller cannot use. Fail the task and keep the worker.
@@ -54,7 +65,7 @@ pub enum DispatchError {
 impl std::fmt::Display for DispatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Worker(m) | Self::Task(m) => write!(f, "{m}"),
+            Self::Unreachable(m) | Self::Worker(m) | Self::Task(m) => write!(f, "{m}"),
         }
     }
 }
@@ -75,7 +86,12 @@ impl From<DispatchError> for String {
 /// explicitly as `Task` at its own site rather than falling through here.
 impl From<String> for DispatchError {
     fn from(m: String) -> Self {
-        DispatchError::Worker(m)
+        // Unreachable, not Worker: every String error reaching a dispatch comes
+        // from connect or reconnect, which is by definition before the task was
+        // delivered. The previous version of this comment claimed the same thing
+        // while the SSH path had a counter-example one file away (FND-136); the
+        // shared `WorkerPipe` is what makes it true now rather than asserted.
+        DispatchError::Unreachable(m)
     }
 }
 
@@ -96,6 +112,12 @@ impl LocalWorkerHandle {
             pipe: crate::pipe::WorkerPipe::new(child),
             deadline: crate::pipe::DEFAULT_SOLVE_DEADLINE,
         })
+    }
+
+    /// Kill this worker's subprocess but keep the handle. See
+    /// [`crate::WorkerPool::kill_for_test`].
+    pub fn kill_for_test(&mut self) {
+        self.pipe.kill();
     }
 
     /// Override the answer deadline. For tests, and for a future per-host
