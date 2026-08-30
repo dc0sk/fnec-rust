@@ -54,6 +54,14 @@ run "clippy (fnec_py)" bash -c \
 
 if [[ $FAST -eq 0 ]]; then
     run "test (workspace)" cargo test --workspace
+
+    # The bindings crate is outside the workspace, so `cargo test --workspace`
+    # never reached it and NOTHING ran its Rust tests — `clippy --all-targets`
+    # above compiles them and walks away. CI runs pytest against a built wheel,
+    # which needs maturin and an interpreter pyo3 supports; these run anywhere.
+    # Same asymmetry as the fmt note at the top of this file (FND-024).
+    run "test (fnec_py)" bash -c \
+        "cd '$ROOT/bindings/fnec_py' && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo test"
 fi
 
 for c in check-changelog-headings check-findings-ledger check-path-inventory \
