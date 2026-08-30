@@ -1,0 +1,25 @@
+CE FND-132 gate: the ONLY corpus deck that reaches the conductor-path basis.
+CE Two wires meeting START-to-START at (0,0,3) and running outward and down.
+CE What routes a deck here is needing a traversal REVERSAL to walk the two wires
+CE as one conductor. Measured 2026-08-30, of the four ways two wires can meet:
+CE   start-to-start          paths
+CE   end-to-end              paths
+CE   start of 1 meets end of 2   paths
+CE   end of 1 meets start of 2   PLAIN basis (already a chain in deck order)
+CE So the one case that does NOT route is the one people write by hand without
+CE thinking about it -- wires listed in the order you would walk them.
+CE Probed 2026-08-30: of every deck then in corpus/, ZERO routed here, so
+CE PH9-CHK-002 was reachable only from in-source unit tests -- and FND-121, a
+CE CRITICAL finding about this very basis being wired to one frontend of four,
+CE was found by audit rather than by the corpus, because the corpus could not
+CE reach the code at all.
+CE fnec 264.882179 + j410.856326; nec2c 268.56 + j452.26 on the same deck
+CE (R within 1.4%, X within 9.2%) -- inside the documented Hallen-vs-nec2c
+CE systematic, and the same pair of numbers FND-121 recorded when the four
+CE frontends disagreed by 29x.
+GW 1 21 0 0 3 -5 0 0 .001
+GW 2 21 0 0 3 5 0 0 .001
+GE
+EX 0 1 11 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN
