@@ -187,8 +187,8 @@
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 74.242874,
+        "imag_ohm": 13.899516
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -196,9 +196,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole. Re-pinned 2026-08-30 (FND-118): was 74.23 + j13.9, fnec's old bespoke current-source solver, which agreed with the voltage drive to 0.02 percent rather than exactly. The current drive is now the voltage solve rescaled, so this is the voltage-drive value to the digit. The change is 0.015 ohm and the row passed its tolerance either way; it is re-pinned so the reference states what the code produces rather than what it produced.",
+      "last_produced_on": "2026-08-30",
+      "last_produced_in": "0.17.0"
     },
     "dipole-ex4-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex4-pulse-current-freesp-51seg.nec",
@@ -1237,10 +1237,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "finite conductivity GN2 near-ground class",
-      "reference_source": "fnec Hallen current-source solve over the GN2 scoped finite-ground path; Z = V_port / i0 (self-pinned regression, not an external oracle)",
+      "reference_source": "fnec Hallen current-source solve over the GN2 scoped finite-ground path. Since FND-118 a current source is the unit-voltage solve rescaled by i0/I_feed, so this is the SAME number as the voltage-drive row dipole-gn2-near-ground-51seg -- identical by construction, not by coincidence.",
       "feedpoint_impedance": {
-        "real_ohm": 86.23781,
-        "imag_ohm": 12.681089
+        "real_ohm": 92.266147,
+        "imag_ohm": 13.61731
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1256,7 +1256,7 @@
         "unsupported buried-wire geometry for active ground model"
       ],
       "expected_warning_counts": {},
-      "status": "FND-114 gate. Pins the current-source drive over lossy ground so the CLI and the GUI cannot diverge on it again: before the fix the GUI reported 6.3372 dBi of pattern gain here against the CLI's 0.5590, because the current source leaves the excitation vector all zeros and the input power the gain correction divides by came out exactly 0. HONEST LIMIT, and a second open finding: this R of 86.24 is 6.5% below the 92.27 the SAME antenna gives under a voltage drive (dipole-gn2-near-ground-51seg), and the two patterns differ by ~0.26 dB. Free-space EX4/EX0 consistency is pinned to the digit; over ground it is not. That inconsistency is FND-118 and is solver work, not this seam -- this row freezes and documents the current behaviour rather than endorsing it.",
+      "status": "FND-118 gate, RE-PINNED. This row was frozen at 86.237810 + j12.681089 to DOCUMENT a defect: the current drive disagreed with the voltage drive by 6.5 percent over ground, and every EX4 fixture was free space so the class was ungated. The defect is now fixed and the row records the corrected answer. The two drives agree to the digit because Z = V/I is a property of the port and not of how it is driven; a current source is the voltage solve scaled by i0/I_feed, exactly, for a linear system. MY FIRST DIAGNOSIS WAS WRONG and the ablation refuted it: I attributed the split to a constraint weight of 1e6 in the bespoke current-source solver, but sweeping that across nine orders of magnitude moves R by 0.28 percent against a 6.5 percent gap, and equalising the weight on both drives leaves the split intact. The real cause is that over finite ground the augmented Hallen system becomes INCONSISTENT -- the free-space homogeneous basis no longer satisfies the ground-modified operator, measured residual rising from 3e-7 to 5.8 percent -- so the port voltage is pinned only to about 4 percent and the two drives minimised slightly different objectives over a nearly flat valley. Which drive to keep was settled by an oracle that is NEITHER: the MPIE solver, a different kernel with a different ground model, answers this geometry R = 91.208. The voltage drive is 1.2 percent away; the old current drive was 5.4 percent away.",
       "last_produced_on": "2026-08-30",
       "last_produced_in": "0.17.0"
     },

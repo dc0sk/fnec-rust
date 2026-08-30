@@ -1,0 +1,14 @@
+CE FND-118 consistency rail: the SAME current-source dipole as
+CE dipole-ex4-gn2-near-ground-51seg.nec, but 2 lambda up (42.2 m at 14.2 MHz)
+CE instead of 0.024 lambda. Far from the ground the drive must converge on its
+CE own free-space answer.
+CE The old bespoke current-source solver's disagreement with the voltage drive
+CE decayed monotonically with height -- 6.5% at 0.024 lambda, 3.8%, 1.8%, 0.64%
+CE at 0.5 lambda, 0.24% at 1 lambda, 0.09% at 2 lambda -- which is the signature
+CE that placed the defect in the ground coupling rather than in the drive.
+GW 1 51 0 0 42.2 0 0 52.764 0.001
+GE
+GN 2 0 0 0 13.0 0.005
+EX 4 1 26 0 1.0 0.0
+FR 0 1 0 0 14.2 0.0
+EN

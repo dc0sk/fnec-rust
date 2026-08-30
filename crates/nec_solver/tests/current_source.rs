@@ -11,8 +11,8 @@
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_current_source_shape, build_geometry, build_hallen_rhs,
-    solve_hallen, solve_hallen_current_source, wire_endpoints_from_segs, GroundModel,
+    assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, solve_current_source_hallen,
+    solve_hallen, wire_endpoints_from_segs, GroundModel,
 };
 use num_complex::Complex64;
 
@@ -77,13 +77,16 @@ fn current_source_impedance(
     }));
     let segs = build_geometry(&d).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
-    let (shape, cos_vec, src_seg) =
-        build_current_source_shape(&d, &segs, FREQ_HZ, feed_tag, feed_seg).expect("shape");
-    let endpoints = wire_endpoints_from_segs(&segs);
-    let sol =
-        solve_hallen_current_source(&z, &shape, &cos_vec, src_seg, i0, &endpoints).expect("solve");
-    let z_in = sol.port_voltage / i0; // Z = V_port / I₀
-    (z_in, sol.currents[src_seg])
+    // Through the production entry point, not a solver called directly: the
+    // bespoke current-source solvers are gone (FND-118), and the routing this
+    // function performs is part of what a caller gets.
+    let fp = solve_current_source_hallen(&d, &segs, &z, FREQ_HZ).expect("solve");
+    let src_seg = segs
+        .iter()
+        .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)
+        .expect("feed segment");
+    let z_in = fp.port_voltage / i0; // Z = V_port / I₀
+    (z_in, fp.currents[src_seg])
 }
 
 #[test]

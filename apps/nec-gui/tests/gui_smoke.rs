@@ -2449,9 +2449,15 @@ fn the_gui_pattern_corrects_a_current_source_drive_as_the_cli_does() {
         .iter()
         .map(|p| p.gain_total_dbi)
         .fold(f64::MIN, f64::max);
+    // Re-pinned 2026-08-30 (FND-118). This was 0.5590, the CLI's EX-4 gain when
+    // the current drive had its own solver and disagreed with the voltage drive
+    // by 6.5% over ground. A current source is now the voltage solve rescaled, so
+    // the CLI answers 0.2997 here — the voltage-drive value — and the GUI must
+    // still match it. What this test gates is unchanged: CLI-GUI parity on a
+    // current-source deck over lossy ground, which is FND-114.
     assert!(
-        (peak - 0.5590).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's 0.5590 for this current-source \
+        (peak - 0.2997).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.2997 for this current-source \
          deck; 6.34 would mean the ground loss is unaccounted for, which is exactly \
          what a current source used to do"
     );
