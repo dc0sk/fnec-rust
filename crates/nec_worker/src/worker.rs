@@ -1,8 +1,16 @@
 use base64::Engine;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 
 use crate::protocol::{ErrorCode, Impedance, TaskMessage, TaskResult};
 use crate::solve::SolveError;
+
+/// The protocol's maximum message size, in bytes — and now actually enforced.
+///
+/// `protocol.rs` has documented "Maximum message size: 4 MiB" since the crate's
+/// first commit, and nothing checked it: the read loop used `reader.lines()`,
+/// which grows a `String` until the line ends. A peer that never sends a newline
+/// takes the process down (FND-096).
+pub const MAX_LINE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Run the worker stdio event loop.
 ///
@@ -10,11 +18,43 @@ use crate::solve::SolveError;
 /// newline-delimited JSON result messages to `writer`.  Blocks until EOF or
 /// until a `{"cmd":"shutdown"}` message is received.
 pub fn run_worker_stdio<R: BufRead, W: Write>(reader: R, mut writer: W) {
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
+    let mut reader = reader;
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        buf.clear();
+        // Bounded, not `reader.lines()`. That grew a String until the line ended
+        // or the machine did, while `protocol.rs` documented a 4 MiB maximum that
+        // nothing enforced — a limit that exists only in prose is not a limit
+        // (FND-096). `take` caps the read itself, so the allocation never happens.
+        let n = match Read::take(&mut reader, MAX_LINE_BYTES + 1).read_until(b'\n', &mut buf) {
+            Ok(0) => break, // EOF
+            Ok(n) => n,
             Err(_) => break,
         };
+        if n as u64 > MAX_LINE_BYTES {
+            // Drain the rest of the over-long line, or its tail would be read as
+            // the next message and answered as if it were one.
+            let mut sink = Vec::new();
+            loop {
+                sink.clear();
+                match Read::take(&mut reader, MAX_LINE_BYTES).read_until(b'\n', &mut sink) {
+                    Ok(0) => break,
+                    Ok(k) => {
+                        if sink.last() == Some(&b'\n') || (k as u64) < MAX_LINE_BYTES {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = writeln!(
+                writer,
+                r#"{{"status":"error","task_id":"unknown","frequency_hz":0.0,"error_code":"resource_exhausted","error_message":"task line exceeds the {MAX_LINE_BYTES}-byte protocol maximum","warnings":[]}}"#
+            );
+            let _ = writer.flush();
+            continue;
+        }
+        let line = String::from_utf8_lossy(&buf).into_owned();
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -321,6 +361,58 @@ mod tests {
                 "solver_config":{{"basis":"hallen","ground_model":"none"}},
                 "frequency_hz":14.2e6}}"#
         )
+    }
+
+    /// FND-096: a line longer than the protocol's documented maximum is refused
+    /// rather than grown.
+    ///
+    /// `protocol.rs` has said "Maximum message size: 4 MiB" since the crate's
+    /// first commit while the read loop used `reader.lines()`, which grows a
+    /// String until the line ends. A peer that never sends a newline took the
+    /// process down. The bound is on the READ, so the allocation never happens —
+    /// this test would otherwise have to build the very string it is guarding
+    /// against, which is the trap the FND-125 cap tests fell into.
+    #[test]
+    fn an_over_long_line_is_refused_and_the_worker_keeps_going() {
+        let deck = "CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 11 0 1.0 0.0\n\
+                    FR 0 1 0 0 14.2 0\nEN\n";
+        let mut input = String::new();
+        // One over-long line, then a perfectly good task after it.
+        input.push_str(&"x".repeat(MAX_LINE_BYTES as usize + 10));
+        input.push('\n');
+        // On ONE line: `task_line` wraps for readability, which is invisible to
+        // the tests that hand it straight to `process_task` and fatal to a
+        // line-based reader.
+        let b64 = base64::engine::general_purpose::STANDARD.encode(deck);
+        input.push_str(&format!(
+            r#"{{"task_id":"t1","deck_hash":"abc","deck_b64":"{b64}","solver_config":{{"basis":"hallen","ground_model":"none"}},"frequency_hz":14.2e6}}"#
+        ));
+        input.push('\n');
+        input.push_str("{\"cmd\":\"shutdown\"}\n");
+
+        let mut out: Vec<u8> = Vec::new();
+        run_worker_stdio(std::io::BufReader::new(input.as_bytes()), &mut out);
+        let text = String::from_utf8_lossy(&out);
+        let lines: Vec<&str> = text.lines().collect();
+
+        assert_eq!(
+            lines.len(),
+            2,
+            "one refusal for the long line, one result for the good task:\n{text}"
+        );
+        assert!(
+            lines[0].contains("resource_exhausted") && lines[0].contains("protocol maximum"),
+            "the over-long line must be refused by name: {}",
+            lines[0]
+        );
+        // The decisive half: the tail of the over-long line must NOT have been
+        // read as a second message, and the worker must still answer the next
+        // real task.
+        assert!(
+            lines[1].contains(r#""status":"ok""#),
+            "the worker must keep going and answer the next task: {}",
+            lines[1]
+        );
     }
 
     /// FND-129: the worker reaches the shared refusal too.

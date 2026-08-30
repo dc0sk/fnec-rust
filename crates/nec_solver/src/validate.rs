@@ -897,6 +897,97 @@ pub fn superseded_frequency_warnings(deck: &NecDeck) -> Vec<String> {
 /// type and discards the rest rather than superposing transmit and receive. A
 /// plane-wave-**only** deck is untouched — the mix is the problem, not receive.
 ///
+/// The largest number of observation points one `RP`, `NE` or `NH` card may ask
+/// for.
+///
+/// These grids are cheap per point — a far-field sample is a sum over segments —
+/// so the cap is about the ALLOCATION, not the arithmetic. `rp_card_points` sizes
+/// its vector with `Vec::with_capacity(n_theta * n_phi)`, which asks the
+/// allocator for the whole thing at once: measured, a single
+/// `RP 0 65535 65535 …` card requests **68 717 379 600 bytes** and aborts the
+/// process (FND-093). `NE 0 500 500 500` asks for 3.2 GB the same way (FND-094).
+///
+/// The largest grid anywhere in this repository is 2 701 points
+/// (`RP 0 37 73 …`, a 5°×5° full sphere), so this clears every real deck by a
+/// factor of about 370.
+pub const MAX_GRID_POINTS: u64 = 1_000_000;
+
+/// The largest number of incidence angles a plane-wave sweep may ask for.
+///
+/// Two orders of magnitude tighter than [`MAX_GRID_POINTS`] because the cost is
+/// not the same kind: an `RP` point is a sum over segments, but each incidence
+/// angle of a receive sweep runs a **complete solve** — `O(N³)` in the segment
+/// count — so a million of them is not a large allocation, it is a machine that
+/// never answers.
+///
+/// The largest sweep anywhere in this repository is 63 angles.
+pub const MAX_INCIDENCE_ANGLES: u64 = 10_000;
+
+/// Refuse a deck whose observation grids are larger than fnec will build.
+///
+/// The fifth appearance of one defect class: a deck-supplied dimension multiplied
+/// into an allocation with nothing checking the product (FND-093, FND-094, and
+/// before them FND-109 and FND-125). The others were fixed at their own call
+/// sites; this one is a deck-level refusal because the products are visible in
+/// the cards, and refusing here reaches all four frontends through the gate they
+/// already share rather than needing four guards.
+///
+/// Every product is computed in `u64`. In `u32` — the type the cards arrive in —
+/// `65536 * 65536` is 0, so the check that was supposed to catch the biggest
+/// request would have waved it through as the smallest. The receive sweep still
+/// has that multiply at `solve_session.rs`, where `n_theta * n_phi <= 1` returns
+/// an empty pattern; it is now unreachable because this gate refuses first, but
+/// unreachable-by-luck is how the next one of these gets written.
+pub fn grid_budget_error(deck: &NecDeck) -> Option<String> {
+    for card in &deck.cards {
+        let (what, dims, cap) = match card {
+            Card::Rp(rp) => (
+                "RP",
+                vec![u64::from(rp.n_theta.max(1)), u64::from(rp.n_phi.max(1))],
+                MAX_GRID_POINTS,
+            ),
+            Card::Ne(ne) => (
+                "NE",
+                vec![
+                    u64::from(ne.nx.max(1)),
+                    u64::from(ne.ny.max(1)),
+                    u64::from(ne.nz.max(1)),
+                ],
+                MAX_GRID_POINTS,
+            ),
+            Card::Nh(nh) => (
+                "NH",
+                vec![
+                    u64::from(nh.nx.max(1)),
+                    u64::from(nh.ny.max(1)),
+                    u64::from(nh.nz.max(1)),
+                ],
+                MAX_GRID_POINTS,
+            ),
+            // A plane-wave EX carries NTHETA and NPHI in its tag and segment
+            // fields, not a driven segment — reading them as one is FND-035.
+            Card::Ex(ex) if ex.kind().is_plane_wave() => (
+                "EX",
+                vec![u64::from(ex.tag.max(1)), u64::from(ex.segment.max(1))],
+                MAX_INCIDENCE_ANGLES,
+            ),
+            _ => continue,
+        };
+        let product: u64 = dims.iter().product();
+        if product > cap {
+            let shape: Vec<String> = dims.iter().map(ToString::to_string).collect();
+            return Some(format!(
+                "{what}: this card asks for {product} points ({}), and the limit \
+                 is {cap}. fnec sizes the grid in one allocation, so a request \
+                 this large aborts the process rather than answering slowly. \
+                 Reduce the grid, or split the deck into several runs",
+                shape.join(" x ")
+            ));
+        }
+    }
+    None
+}
+
 /// Two current sources in one deck: fnec drives the first and silently ignores
 /// the rest.
 ///
@@ -1157,6 +1248,7 @@ pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -
     geometry_error(deck, segs, ground)
         .or_else(|| mixed_excitation_error(deck))
         .or_else(|| multiple_current_sources_error(deck))
+        .or_else(|| grid_budget_error(deck))
         .or_else(|| frequency_error(deck))
 }
 
@@ -1446,6 +1538,82 @@ mod tests {
             swept_low_ground_caveat(&segs, &gn2, &[60.0e6, 80.0e6], false),
             None
         );
+    }
+
+    #[test]
+    fn an_oversized_grid_card_is_refused_by_name() {
+        // Measured before the gate, each aborting the process under `ulimit -v`:
+        // `RP 0 65535 65535` asked the allocator for 68 717 379 600 bytes in ONE
+        // call (`Vec::with_capacity(n_theta * n_phi)`), and `NE 0 500 500 500`
+        // for 3.2 GB (FND-093, FND-094).
+        for (src, want) in [
+            (
+                "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nRP 0 65535 65535 1000 0 0 1 1\nFR 0 1 0 0 14.2 0\nEN\n",
+                "RP",
+            ),
+            (
+                "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nNE 0 500 500 500 0 0 0 1 1 1\nFR 0 1 0 0 14.2 0\nEN\n",
+                "NE",
+            ),
+        ] {
+            let (deck, _segs) = deck_and_segs(src);
+            let msg = grid_budget_error(&deck).unwrap_or_else(|| panic!("{want} must be refused"));
+            assert!(msg.starts_with(want), "{msg}");
+            assert!(msg.contains("the limit is"), "{msg}");
+        }
+    }
+
+    /// The product must be computed in u64, and this is the case that proves it:
+    /// `65536 * 65536` is 4 294 967 296, but in u32 — the type the cards arrive
+    /// in — it is **0**, so a u32 check would wave the largest possible request
+    /// through as the smallest.
+    #[test]
+    fn the_grid_product_does_not_wrap_at_u32() {
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 1 65536 65536 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        let msg = grid_budget_error(&deck).expect("2^32 incidence angles must be refused");
+        assert!(
+            msg.contains("4294967296"),
+            "the product must not wrap: {msg}"
+        );
+    }
+
+    /// A plane-wave sweep is capped two orders tighter than a grid, because each
+    /// incidence angle costs a whole solve rather than a sum over segments.
+    #[test]
+    fn a_plane_wave_sweep_has_a_tighter_cap_than_a_grid() {
+        // The relationship, stated where a future edit to either constant will
+        // trip over it. `const _` rather than `assert!`, because a runtime
+        // assertion on two constants is a compile-time truth wearing a test's
+        // clothes and clippy is right to reject it.
+        const _: () = assert!(MAX_INCIDENCE_ANGLES < MAX_GRID_POINTS / 10);
+        let (deck, _segs) = deck_and_segs(
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 1 500 500 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        // 250 000 angles: comfortably inside MAX_GRID_POINTS, far outside the
+        // incidence cap.
+        let msg = grid_budget_error(&deck).expect("250k solves must be refused");
+        assert!(msg.starts_with("EX"), "{msg}");
+    }
+
+    /// The controls. Every real deck in this repository must pass: the largest
+    /// grid anywhere is 2 701 points and the largest sweep 63 angles, so a cap
+    /// that refused them would be a limit on antennas rather than on allocations.
+    #[test]
+    fn ordinary_grids_are_not_refused() {
+        for src in [
+            // The largest RP in the corpus: a 5x5 degree full sphere.
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nRP 0 37 73 1000 0 0 5 5\nFR 0 1 0 0 14.2 0\nEN\n",
+            // A near-field cube, and a plane-wave sweep.
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nNE 0 10 10 10 0 0 0 1 1 1\nFR 0 1 0 0 14.2 0\nEN\n",
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 1 7 9 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+            // And a deck with no grid card at all.
+            "GW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        ] {
+            let (deck, _segs) = deck_and_segs(src);
+            assert_eq!(grid_budget_error(&deck), None, "{src}");
+        }
     }
 
     #[test]
