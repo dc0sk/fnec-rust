@@ -9,8 +9,7 @@
 //! path — the only difference is that `Command::new(binary)` becomes
 //! `ssh <user>@<host> <binary> worker --stdio`.
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use crate::hosts::HostEntry;
 use crate::protocol::{TaskMessage, TaskResult};
@@ -22,9 +21,9 @@ use crate::Capability;
 /// and communicates over newline-delimited JSON on stdin/stdout.
 #[derive(Debug)]
 pub struct SshWorkerHandle {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    pipe: crate::pipe::WorkerPipe,
+    /// How long this host gets to answer one task; see the local handle.
+    deadline: std::time::Duration,
     hostname: String,
     ssh_user: Option<String>,
     binary_path: Option<String>,
@@ -78,7 +77,7 @@ impl SshWorkerHandle {
         };
         let binary = entry.binary_path.as_deref().unwrap_or("fnec");
 
-        let mut child = Command::new("ssh")
+        let child = Command::new("ssh")
             .arg("-o")
             .arg("BatchMode=yes")
             .arg("-o")
@@ -96,13 +95,9 @@ impl SshWorkerHandle {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        let stdin = child.stdin.take().expect("stdin must be piped");
-        let stdout = BufReader::new(child.stdout.take().expect("stdout must be piped"));
-
         Ok(Self {
-            child,
-            stdin,
-            stdout,
+            pipe: crate::pipe::WorkerPipe::new(child),
+            deadline: crate::pipe::DEFAULT_SOLVE_DEADLINE,
             hostname: entry.hostname.clone(),
             ssh_user: entry.ssh_user.clone(),
             binary_path: entry.binary_path.clone(),
@@ -127,42 +122,44 @@ impl SshWorkerHandle {
     /// If the connection drops mid-task, a single reconnection is attempted
     /// automatically before returning an error.
     pub fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, crate::DispatchError> {
-        let json = serde_json::to_string(task).map_err(|e| e.to_string())?;
+        // A serialisation failure is a TASK fault, as it is on the local path.
+        // This used to be a bare `to_string`, which reached `From<String> for
+        // DispatchError` and came out a WORKER fault — so an unserialisable task
+        // evicted a healthy remote host, and falsified that impl's own doc
+        // comment (FND-136). Both paths now say it once, in `WorkerPipe`.
+        let json =
+            serde_json::to_string(task).map_err(|e| crate::DispatchError::Task(e.to_string()))?;
 
-        let send_ok = writeln!(self.stdin, "{json}")
-            .and_then(|_| self.stdin.flush())
-            .is_ok();
-
-        if !send_ok {
+        if self.pipe.send(&json).is_err() {
             eprintln!(
                 "info: ssh worker '{}' write failed, reconnecting...",
                 self.hostname
             );
             self.reconnect()?;
-            writeln!(self.stdin, "{json}").map_err(|e| e.to_string())?;
-            self.stdin.flush().map_err(|e| e.to_string())?;
+            self.pipe.send(&json)?;
         }
 
-        let mut line = String::new();
-        if self.stdout.read_line(&mut line).is_err() || line.is_empty() {
-            eprintln!(
-                "info: ssh worker '{}' read failed (empty/eof), reconnecting...",
-                self.hostname
-            );
-            self.reconnect()?;
-            writeln!(self.stdin, "{json}").map_err(|e| e.to_string())?;
-            self.stdin.flush().map_err(|e| e.to_string())?;
-            line.clear();
-            self.stdout
-                .read_line(&mut line)
-                .map_err(|e| e.to_string())?;
-            if line.is_empty() {
-                return Err(crate::DispatchError::Worker(format!(
-                    "SSH worker '{}' still disconnected after reconnect",
+        let line = match self.pipe.recv(self.deadline) {
+            Ok(line) => line,
+            Err(e) => {
+                // Reconnect only for a DROPPED connection. A timeout means the
+                // host accepted the task and went quiet, and resending it is how
+                // one wedging task takes down a second process on the same host
+                // before the pool has even moved on (FND-102).
+                let dropped = matches!(&e, crate::DispatchError::Worker(m)
+                    if m.contains("closed stdout"));
+                if !dropped {
+                    return Err(e);
+                }
+                eprintln!(
+                    "info: ssh worker '{}' read failed (eof), reconnecting...",
                     self.hostname
-                )));
+                );
+                self.reconnect()?;
+                self.pipe.send(&json)?;
+                self.pipe.recv(self.deadline)?
             }
-        }
+        };
 
         // A complete line came back, so the connection is in sync whatever it
         // says. The host is healthy; this one result is unusable (FND-117).
@@ -177,13 +174,12 @@ impl SshWorkerHandle {
     /// Kills the existing child process and spawns a new SSH connection
     /// using the same parameters as [`connect`].
     pub fn reconnect(&mut self) -> Result<(), String> {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.pipe.kill();
 
         let user_part = self.user_part();
         let binary = self.binary_path.as_deref().unwrap_or("fnec");
 
-        let mut child = Command::new("ssh")
+        let child = Command::new("ssh")
             .arg("-o")
             .arg("BatchMode=yes")
             .arg("-o")
@@ -202,9 +198,7 @@ impl SshWorkerHandle {
             .spawn()
             .map_err(|e| format!("reconnect failed for '{}': {e}", self.hostname))?;
 
-        self.stdin = child.stdin.take().expect("stdin must be piped");
-        self.stdout = BufReader::new(child.stdout.take().expect("stdout must be piped"));
-        self.child = child;
+        self.pipe = crate::pipe::WorkerPipe::new(child);
 
         Ok(())
     }
@@ -216,6 +210,13 @@ impl SshWorkerHandle {
     /// and GPU availability on the remote host.
     /// Override values in `hosts.toml` take precedence over detected values.
     pub fn probe_capability(&mut self) -> Result<Capability, String> {
+        // `connect_all` probes hosts SERIALLY at startup, before any pool
+        // exists, so one wedged host used to block the run before it began. The
+        // probe solves a one-segment deck, so it earns a far shorter deadline
+        // than a real task (FND-101).
+        let solve_deadline = self.deadline;
+        self.deadline = crate::pipe::PROBE_DEADLINE;
+        let restore = |h: &mut Self| h.deadline = solve_deadline;
         let probe_deck = "CM probe\nGW 0 1 0 0 -0.5 0 0 0.5 0.001\nGE 0\nEX 0 0 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
@@ -231,8 +232,9 @@ impl SshWorkerHandle {
             frequency_hz: 14.2e6,
         };
 
-        let result = self.dispatch(&task)?;
-        match result {
+        let dispatched = self.dispatch(&task);
+        restore(self);
+        match dispatched? {
             TaskResult::Ok { .. } => {
                 let mut cap = self.detect_capability();
                 cap.cpu_threads = cap.cpu_threads.max(1);
@@ -303,9 +305,12 @@ impl SshWorkerHandle {
 
     /// Send the shutdown command and wait for the remote worker to exit.
     pub fn shutdown(mut self) -> std::io::Result<std::process::ExitStatus> {
-        let _ = writeln!(self.stdin, r#"{{"cmd":"shutdown"}}"#);
-        let _ = self.stdin.flush();
-        self.child.wait()
+        self.pipe.shutdown()
+    }
+
+    /// Override the answer deadline; see the local handle.
+    pub fn set_deadline(&mut self, deadline: std::time::Duration) {
+        self.deadline = deadline;
     }
 
     /// The hostname this worker is connected to.
@@ -316,8 +321,7 @@ impl SshWorkerHandle {
 
 impl Drop for SshWorkerHandle {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.pipe.kill();
     }
 }
 

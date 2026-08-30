@@ -8,8 +8,7 @@
 //! is replaced by an SSH invocation.  All message framing, dispatch, and result
 //! collection logic is identical.
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use crate::protocol::{TaskMessage, TaskResult};
 
@@ -19,9 +18,15 @@ use crate::protocol::{TaskMessage, TaskResult};
 /// SSH-backed worker deployment in PH6-CHK-006.
 #[derive(Debug)]
 pub struct LocalWorkerHandle {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    pipe: crate::pipe::WorkerPipe,
+    /// How long this worker gets to answer one task.
+    ///
+    /// A field rather than a constant so a test can set it to milliseconds and
+    /// assert an OUTCOME — evicted, batch returned, other workers' results
+    /// present — instead of waiting on the real deadline or asserting a
+    /// duration. An env var would have been a second way to configure it and a
+    /// way for a test to leak into a neighbour.
+    deadline: std::time::Duration,
 }
 
 /// Why a dispatch failed, and therefore whether the worker survives it.
@@ -80,20 +85,23 @@ impl LocalWorkerHandle {
     /// The worker is started with `fnec worker --stdio`, which runs the
     /// [`crate::worker::run_worker_stdio`] event loop on its stdin/stdout.
     pub fn spawn(binary: &str) -> Result<Self, std::io::Error> {
-        let mut child = Command::new(binary)
+        let child = Command::new(binary)
             .arg("worker")
             .arg("--stdio")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?;
-        let stdin = child.stdin.take().expect("stdin must be piped");
-        let stdout = BufReader::new(child.stdout.take().expect("stdout must be piped"));
         Ok(Self {
-            child,
-            stdin,
-            stdout,
+            pipe: crate::pipe::WorkerPipe::new(child),
+            deadline: crate::pipe::DEFAULT_SOLVE_DEADLINE,
         })
+    }
+
+    /// Override the answer deadline. For tests, and for a future per-host
+    /// setting; the default is [`crate::pipe::DEFAULT_SOLVE_DEADLINE`].
+    pub fn set_deadline(&mut self, deadline: std::time::Duration) {
+        self.deadline = deadline;
     }
 
     /// Send a task to the worker and block until the result is received.
@@ -105,20 +113,8 @@ impl LocalWorkerHandle {
         // Our own request failed to serialise: nothing has been sent, so the
         // worker is untouched and this is the task's problem.
         let json = serde_json::to_string(task).map_err(|e| DispatchError::Task(e.to_string()))?;
-        writeln!(self.stdin, "{json}").map_err(|e| DispatchError::Worker(e.to_string()))?;
-        self.stdin
-            .flush()
-            .map_err(|e| DispatchError::Worker(e.to_string()))?;
-
-        let mut line = String::new();
-        self.stdout
-            .read_line(&mut line)
-            .map_err(|e| DispatchError::Worker(e.to_string()))?;
-        if line.is_empty() {
-            return Err(DispatchError::Worker(
-                "worker closed stdout unexpectedly".to_string(),
-            ));
-        }
+        self.pipe.send(&json)?;
+        let line = self.pipe.recv(self.deadline)?;
         // A COMPLETE line was read, so the stream is in sync whatever the line
         // says. The worker is healthy; this one result is unusable.
         let result: TaskResult = serde_json::from_str(line.trim())
@@ -126,18 +122,19 @@ impl LocalWorkerHandle {
         Ok(result)
     }
 
-    /// Send the shutdown command and wait for the subprocess to exit gracefully.
+    /// Send the shutdown command and give the subprocess a bounded grace period.
     pub fn shutdown(mut self) -> std::io::Result<std::process::ExitStatus> {
-        let _ = writeln!(self.stdin, r#"{{"cmd":"shutdown"}}"#);
-        let _ = self.stdin.flush();
-        self.child.wait()
+        // `Drop` still runs and still kills; killing an already-exited child is
+        // a no-op error we ignore, so the graceful path stays graceful.
+        self.pipe.shutdown()
     }
 }
 
 impl Drop for LocalWorkerHandle {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        // Killing the child closes its stdout, which is what ends the reader
+        // thread — so an evicted worker takes its thread with it.
+        self.pipe.kill();
     }
 }
 

@@ -125,6 +125,20 @@ impl WorkerPool {
         }
     }
 
+    /// Set the answer deadline on every worker in the pool.
+    ///
+    /// Injected rather than read from an environment variable: a test needs
+    /// milliseconds where production wants minutes, and an env var would be a
+    /// second way to configure it and a way for one test to leak into another.
+    pub fn set_deadline(&mut self, deadline: std::time::Duration) {
+        for w in &mut self.workers {
+            match w {
+                WorkerHandle::Local(h) => h.set_deadline(deadline),
+                WorkerHandle::Ssh(h) => h.set_deadline(deadline),
+            }
+        }
+    }
+
     /// Returns the number of workers in the pool.
     pub fn len(&self) -> usize {
         self.workers.len()
