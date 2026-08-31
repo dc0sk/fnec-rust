@@ -996,10 +996,26 @@ FR 0 1 14.2 0
 EN
 ";
 
+/// A deck that is distinguishable from [`EDITOR_DECK`] once rendered, so a test
+/// can tell "the stale load was dropped" from "the load happened to be identical".
+const EDITOR_DECK_ALT: &str = "\
+CM editor test alt
+CE
+GW 1 11 0 0 -4.0 0 0 4.0 0.002
+GE 0
+EX 0 1 6 0 1
+FR 0 1 21.0 0
+EN
+";
+
 fn loaded_editor() -> AppState {
     let mut state = AppState::default();
     let doc = load_model_doc_str(EDITOR_DECK).expect("parse doc");
-    state.apply(&Message::EditDeckLoaded(Ok(doc)));
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+    state.apply(&Message::EditDeckLoaded(run, Ok(doc)));
     state
 }
 
@@ -1078,6 +1094,12 @@ fn editor_invalid_edit_sets_error_keeps_last_preview() {
 }
 
 /// A successful save clears the dirty flag and reports the path.
+///
+/// The edit comes BEFORE the save is armed, which is the only order that
+/// describes a real session: the user edits, then clicks Save. This test used to
+/// edit *after* arming nothing at all and then deliver `DeckSaved(Ok)` — asking
+/// the state machine to mark clean a document containing an edit the write never
+/// saw, which is FND-133's second defect asserted as correct behaviour.
 #[test]
 fn editor_save_marks_clean() {
     let mut state = loaded_editor();
@@ -1087,7 +1109,11 @@ fn editor_save_marks_clean() {
         value: "3.0".into(),
     });
     assert!(state.editor.doc.dirty);
-    state.apply(&Message::DeckSaved(Ok("/tmp/out.nec".into())));
+    state.apply(&Message::SaveDeck);
+    let run = state
+        .current_edit_save_run()
+        .expect("SaveDeck arms the save");
+    state.apply(&Message::DeckSaved(run, Ok("/tmp/out.nec".into())));
     assert!(!state.editor.doc.dirty, "save clears the dirty flag");
     assert!(state.editor.save_status.contains("/tmp/out.nec"));
 }
@@ -1676,14 +1702,21 @@ fn viewport_axes_and_grid_toggles_rebuild_scene() {
 /// The Browse messages are handled by the binary (native dialogs); in the pure
 /// state machine they are no-ops and must not alter or panic the state.
 #[test]
-fn browse_messages_are_noops_in_core_state() {
+fn browse_messages_do_not_change_the_paths() {
     let mut state = AppState::default();
     state.apply(&Message::DeckPathChanged("keep.nec".into()));
     let before = state.deck_path.clone();
     state.apply(&Message::BrowseDeck);
     state.apply(&Message::BrowseVars);
+    // Not a no-op since FND-133: `BrowseSaveDeck` arms a save run, because it
+    // applies `DeckSaved` itself with no preceding `SaveDeck` and the guard would
+    // otherwise swallow that completion. It still must not touch the paths, which
+    // is what this test is actually about — hence the rename.
     state.apply(&Message::BrowseSaveDeck);
-    assert_eq!(state.deck_path, before, "browse must not change core state");
+    assert_eq!(
+        state.deck_path, before,
+        "browse must not change the deck path"
+    );
 }
 
 // ── GUI solver caveats (pre-release fix 1a) ──────────────────────────────────
@@ -1762,7 +1795,11 @@ fn editor_deck_load_error_sets_error_and_clears_save_status() {
     let mut state = AppState::default();
     // Prime a save status, then a failed load must record the error and clear it.
     state.editor.save_status = "Saved to x".into();
-    state.apply(&Message::EditDeckLoaded(Err("bad deck".into())));
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+    state.apply(&Message::EditDeckLoaded(run, Err("bad deck".into())));
     assert_eq!(state.editor.error.as_deref(), Some("bad deck"));
     assert!(state.editor.save_status.is_empty());
     assert!(!state.editor.loaded);
@@ -2791,5 +2828,185 @@ fn a_stale_viewport_pattern_solve_cannot_undo_the_discard() {
     assert!(
         st.viewport.lobe.is_none(),
         "and it must not rebuild the lobe that the discard tore down"
+    );
+}
+
+// ── FND-133: the editor pipelines reject completions an edit has retired ──────
+
+/// A deck load in flight must not clobber edits made while it was loading.
+///
+/// This is the defect FND-133 names, and it is a SINGLE-run race: the user
+/// clicks Load once, then edits. Run identity alone does not reject that
+/// completion — nothing superseded the load, so it arrives carrying the
+/// still-current id. What makes it stale is the edit, which is why the edit is
+/// what retires the id.
+#[test]
+fn an_edit_retires_a_deck_load_still_in_flight() {
+    let mut state = loaded_editor();
+    // A second load is spawned (the user re-clicks Load, or switches deck).
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+
+    // ...and while it is in flight, the user edits.
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "7.5".into(),
+    });
+    assert!(state.editor.doc.dirty, "the edit landed");
+    let edited = state.editor.doc.clone();
+
+    // The load completes. It must be dropped whole.
+    let fresh = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    state.apply(&Message::EditDeckLoaded(run, Ok(fresh)));
+
+    assert!(
+        state.editor.doc.dirty,
+        "a stale load marked the edited document clean by replacing it"
+    );
+    assert_eq!(
+        state.editor.doc.to_deck_string(),
+        edited.to_deck_string(),
+        "a stale load overwrote the edited document — and reset the undo history with it"
+    );
+}
+
+/// A deck write in flight must not mark a document clean that it never saw.
+///
+/// `DeckSaved(Ok)` calls `mark_saved()`. If the user edits during a slow write,
+/// the bytes on disk do not contain that edit, so clearing the dirty flag tells
+/// the user their work is saved when it is not — the one lie in this pipeline
+/// that loses data silently.
+#[test]
+fn an_edit_retires_a_deck_write_still_in_flight() {
+    let mut state = loaded_editor();
+    state.apply(&Message::SaveDeck);
+    let run = state
+        .current_edit_save_run()
+        .expect("SaveDeck arms the save");
+
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "9.5".into(),
+    });
+    assert!(state.editor.doc.dirty, "the edit landed");
+
+    state.apply(&Message::DeckSaved(run, Ok("/tmp/out.nec".into())));
+
+    assert!(
+        state.editor.doc.dirty,
+        "the document was marked clean, but the write that finished did not contain the edit"
+    );
+}
+
+/// Changing the deck path retires a load spawned for the old one.
+///
+/// Not symmetry with the solve pipelines, which deliberately do not do this: a
+/// stale solve result is display-only and the next solve corrects it. A stale
+/// editor document is an *input* to `SaveDeck`, which writes it to whatever
+/// `deck_path` says now — so deck A's contents would overwrite file B.
+#[test]
+fn a_deck_path_change_retires_a_load_spawned_for_the_old_path() {
+    let mut state = loaded_editor();
+    let before = state.editor.doc.to_deck_string();
+
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+    state.apply(&Message::DeckPathChanged("other.nec".into()));
+
+    let other = load_model_doc_str(EDITOR_DECK_ALT).expect("parse alt doc");
+    state.apply(&Message::EditDeckLoaded(run, Ok(other)));
+
+    assert_eq!(
+        state.editor.doc.to_deck_string(),
+        before,
+        "deck A's contents were delivered as the editor document for path B"
+    );
+}
+
+/// Vars are an input to the load too, so a vars change retires it as well.
+#[test]
+fn a_vars_path_change_retires_a_load_spawned_for_the_old_vars() {
+    let mut state = loaded_editor();
+    let before = state.editor.doc.to_deck_string();
+
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+    state.apply(&Message::VarsPathChanged("other.toml".into()));
+
+    let other = load_model_doc_str(EDITOR_DECK_ALT).expect("parse alt doc");
+    state.apply(&Message::EditDeckLoaded(run, Ok(other)));
+
+    assert_eq!(state.editor.doc.to_deck_string(), before);
+}
+
+/// "Save as…" applies `DeckSaved` itself, with no preceding `SaveDeck`.
+///
+/// The guard drops any completion whose run the state does not own, so without
+/// an id minted in the `BrowseSaveDeck` arm this whole path would silently stop
+/// working — no status line, document never marked saved. Nothing else in this
+/// suite drives that arm, which is exactly why the trap is worth a test.
+#[test]
+fn save_as_still_marks_the_document_saved() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "4.5".into(),
+    });
+    assert!(state.editor.doc.dirty);
+
+    // What main.rs does: apply BrowseSaveDeck, write the file, then report.
+    state.apply(&Message::BrowseSaveDeck);
+    let run = state
+        .current_edit_save_run()
+        .expect("BrowseSaveDeck must arm a save run, or Save-as loses its completion");
+    state.apply(&Message::DeckSaved(run, Ok("/tmp/saved-as.nec".into())));
+
+    assert!(
+        !state.editor.doc.dirty,
+        "Save as… must mark the document saved"
+    );
+    assert!(state.editor.save_status.contains("/tmp/saved-as.nec"));
+}
+
+/// An edit that does not even render still retires a pending completion.
+///
+/// `refresh_editor_preview` clears the two editor ids above its `match`, not
+/// inside the Ok/Ok arm where the viewport legs sit (FND-141). Typing passes
+/// through invalid intermediate states constantly — a half-typed coordinate
+/// fails `to_deck_string` — and an edit that cannot render is still an edit a
+/// load would clobber and a save did not contain.
+#[test]
+fn an_invalid_edit_also_retires_a_load_in_flight() {
+    let mut state = loaded_editor();
+    state.apply(&Message::EditDeckLoad);
+    let run = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+
+    state.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "not-a-number".into(),
+    });
+    assert!(
+        state.editor.error.is_some(),
+        "the edit must be the invalid kind for this test to mean anything"
+    );
+
+    let fresh = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    state.apply(&Message::EditDeckLoaded(run, Ok(fresh)));
+
+    assert!(
+        state.editor.error.is_some(),
+        "a stale load landed and cleared the error raised by an edit it did not contain"
     );
 }
