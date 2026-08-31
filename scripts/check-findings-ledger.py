@@ -35,7 +35,17 @@ def main() -> int:
     order: list[int] = []
 
     for lineno, line in enumerate(lines, 1):
-        if not line.startswith("| FND-"):
+        # Tolerant on the way IN, strict once inside. This was
+        # `line.startswith("| FND-")`, which demanded exactly one space after the
+        # leading pipe -- so a row that got the spacing wrong was skipped
+        # ENTIRELY rather than reported, and the gate then announced a green
+        # count that did not include it. Reproduced: `|FND-999| not-a-date |
+        # bogus-state | planted | none |` gave EXIT 0 and "137 finding(s)" with
+        # 138 rows present (FND-090).
+        #
+        # A checker's entry filter must never be stricter than the thing it
+        # checks for, or the malformed cases select themselves out of the audit.
+        if not re.match(r"^\|\s*FND-", line):
             continue
         m = ROW.match(line)
         if not m:
@@ -85,7 +95,12 @@ def main() -> int:
             print(p, file=sys.stderr)
         return 1
 
-    open_n = sum(1 for ln in lines if ln.startswith("| FND-") and "| open |" in ln)
+    # The same filter, second copy -- and it had the same bug. Counting the open
+    # rows with a stricter predicate than the one that validated them would let a
+    # misspaced `open` row pass validation and then vanish from the count, which
+    # is a quieter version of the same lie (FND-090). This runs only after
+    # `problems` is empty, so every row here is already known well-formed.
+    open_n = sum(1 for ln in lines if re.match(r"^\|\s*FND-", ln) and "| open |" in ln)
     print(f"findings ledger OK — {len(seen)} finding(s), {open_n} open")
     return 0
 

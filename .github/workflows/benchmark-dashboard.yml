@@ -46,7 +46,20 @@ jobs:
 
       - name: Compare against CI baseline
         id: compare
+        # `pipefail` is the whole point. Actions runs a `run:` block as
+        # `bash -e {0}` WITHOUT it, so `cmd | tee` reports tee's status and the
+        # `if` tested whether writing the file succeeded. Reproduced: a report
+        # ending "Result: FAILED" took the gate=passed branch, so `gate=failed`
+        # was unreachable and the warning step keyed on it could never fire
+        # (FND-088).
+        #
+        # The step is informational by design and never fails the build -- the
+        # real gate is the separate gate-injection-test job -- but an
+        # informational signal that can only ever say "passed" is not
+        # information.
+        shell: bash
         run: |
+          set -o pipefail
           chmod +x scripts/benchmark-compare-json.sh
           if [[ -f benchmarks/ci-baseline.json ]]; then
             if bash scripts/benchmark-compare-json.sh \
