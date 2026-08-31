@@ -10,9 +10,9 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, RP, EN cards)
 	- **GM** (Geometry Move): rotate and/or translate wire ranges in place, or append one transformed copy when `tag_increment > 0`
 	- **GR** (Geometry Repeat): supported subset repeats existing wires by successive z-axis rotation
-	- **EX types 1 / 2 / 3** (incident plane wave, linear and elliptic): solved on `--solver hallen` as a *receiving* antenna — induced segment currents and a `RECEIVE_PATTERN` table over the NTHETA x NPHI incidence grid, rather than a feedpoint impedance
+	- **EX types 1 / 2 / 3** (incident plane wave: linear, right- and left-elliptic): solved on `--solver hallen` as a *receiving* antenna — induced segment currents rather than a feedpoint impedance. A `RECEIVE_PATTERN` table is emitted only when the card defines more than one incidence direction (NTHETA·NPHI > 1). Straight, non-junctioned wires only; junctioned geometry is refused on this path
 	- **EX type 4** (current source): solved; the feedpoint reports `Z = V_port / i0`, which matches the voltage-source impedance on the same geometry because impedance is a property of the port and not of the drive
-	- **EX type 5** (applied-field voltage source): solved; equals type 0
+	- **EX type 5** (NEC's current-slope-discontinuity voltage source): fnec models it by the applied-field method, so it solves and gives the same answer as type 0. That is a documented approximation of NEC's numerics, not an identity of the two cards
 	- **PT**: print control is applied at runtime — `PT -1` suppresses the `CURRENTS` table, `PT 0` prints all segments
 	- **NT**: two-port network admittance is stamped into the solve. A well-formed `NT` moves the feedpoint (74.24 + j13.90 -> 70.63 + j14.01 on `dipole-nt-tl-equiv-freesp-51seg`); a malformed card is warned about and skipped
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas

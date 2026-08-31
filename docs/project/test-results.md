@@ -32,8 +32,8 @@ exit code 0
 ```
 
 Across **93 reporting binaries**. `cargo test --workspace -- --list` enumerates
-**1086** test functions (565 unit + 521 integration); the two not run are the
-`ignored` ones.
+**1086** test functions (565 unit + 514 integration + 7 doctests); the two not
+run are the `ignored` ones.
 
 **This file had not been appended to since 2026-07-08 — two months and roughly
 470 tests ago — while `test-catalog.md` pointed at it as "the authoritative pass

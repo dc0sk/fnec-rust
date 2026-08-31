@@ -45,8 +45,8 @@ UNIT_ROWS = {
 }
 
 
-def measured() -> tuple[Counter, Counter]:
-    """(unit counts by crate, integration counts by crate), from the harness."""
+def measured() -> tuple[Counter, Counter, int]:
+    """(unit counts by crate, integration counts by test-file, doctest count)."""
     # stderr must be MERGED, not captured separately: cargo prints the
     # "Running <target>" markers on stderr and the test names on stdout, so two
     # separate streams lose the interleaving that attributes a name to a target.
@@ -71,7 +71,9 @@ def measured() -> tuple[Counter, Counter]:
 
     unit: Counter = Counter()
     integration: Counter = Counter()
+    doctests = 0
     current: tuple[bool, str] | None = None
+    in_doctests = False
     ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
     for line in ansi.sub("", proc.stdout).splitlines():
         m = re.search(r"Running (?:unittests )?(\S+) \(([^)]+)\)", line)
@@ -79,18 +81,32 @@ def measured() -> tuple[Counter, Counter]:
             src, binary = m.group(1), m.group(2).split("/")[-1]
             crate = re.sub(r"-[0-9a-f]{16}$", "", binary)
             current = (src.startswith("src/"), crate)
+            in_doctests = False
             continue
-        if line.rstrip().endswith(": test") and current is not None:
-            is_unit, crate = current
-            (unit if is_unit else integration)[crate] += 1
+        # `Doc-tests <crate>` opens a section with NO "Running" line. Without
+        # this branch its entries keep the previous binary's attribution and are
+        # counted as integration tests: the 7 workspace doctests were charged to
+        # whichever `tests/*.rs` was listed last, inflating that row by 7 and the
+        # integration subtotal with it. Caught in review, not by the check —
+        # the check was self-consistent with its own bug and passed.
+        if re.match(r"\s*Doc-tests \S+", line):
+            current = None
+            in_doctests = True
+            continue
+        if line.rstrip().endswith(": test"):
+            if in_doctests:
+                doctests += 1
+            elif current is not None:
+                is_unit, crate = current
+                (unit if is_unit else integration)[crate] += 1
     if not unit:
         sys.exit("no unit tests were enumerated — the parse or the build is wrong")
-    return unit, integration
+    return unit, integration, doctests
 
 
 def main() -> int:
-    unit, integration = measured()
-    total = sum(unit.values()) + sum(integration.values())
+    unit, integration, doctests = measured()
+    total = sum(unit.values()) + sum(integration.values()) + doctests
 
     if "--list-only" in sys.argv:
         # Unit keys are crate names (the lib target's binary is named for its
@@ -103,8 +119,8 @@ def main() -> int:
         print("integration tests (tests/), by test file:")
         for f in sorted(integration):
             print(f"  {f:24s} {integration[f]:4d}")
-        print(f"\nunit {sum(unit.values())} + integration "
-              f"{sum(integration.values())} = {total}")
+        print(f"\nunit {sum(unit.values())} + integration {sum(integration.values())} "
+              f"+ doctests {doctests} = {total}")
         return 0
 
     text = CATALOG.read_text(encoding="utf-8")
@@ -133,9 +149,27 @@ def main() -> int:
         if marker not in text:
             problems.append(f"missing `{marker}{want} -->` marker in the catalog")
             continue
-        stated = text.split(marker, 1)[1].split("-->", 1)[0].strip()
+        after = text.split(marker, 1)[1]
+        stated = after.split("-->", 1)[0].strip()
         if stated != str(want):
             problems.append(f"{name}: doc says {stated}, harness reports {want}")
+            continue
+        # The marker is machine-read; the number a HUMAN reads is the bold one
+        # printed next to it. Checking only the marker lets the visible text say
+        # anything — `**999**` beside `=565` passed until this was added.
+        # The FIRST bold number after the marker, not "the number appears
+        # somewhere nearby": a loose search matched the same digits reused in a
+        # neighbouring sentence, and the sabotage (`**999**` beside `=565`)
+        # passed anyway. The check has to name the exact token a reader sees.
+        visible = after.split("-->", 1)[1][:200]
+        first_bold = re.search(r"\*\*(\d+)\*\*", visible)
+        if first_bold is None:
+            problems.append(f"{name}: no bold number follows the marker to check")
+        elif first_bold.group(1) != str(want):
+            problems.append(
+                f"{name}: the marker says {want} but the text a reader sees says "
+                f"**{first_bold.group(1)}** — the visible claim and the checked value disagree"
+            )
 
     # LIMIT, stated rather than implied: this checks the per-crate UNIT rows and
     # the three totals. The per-file integration table is NOT checked, because a

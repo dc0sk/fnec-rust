@@ -46,19 +46,26 @@
 //! # Dispatch policy
 //!
 //! [`dispatch_frequency_point`] is the per-frequency scheduling seam used by the
-//! CLI hybrid sweep lane.  It always returns
-//! [`DispatchDecision::FallbackToCpu`], and **not because the work is pending**:
-//! PH7-CHK-003 measured the GPU-resident dense solve at **0.04x-0.48x of the CPU
-//! at every size tested, with no crossover**
-//! (`docs/ph7-chk-003-gpu-resident-solve.md`), so routing a frequency point
-//! through it would be slower.  [`DispatchDecision::RunOnGpu`] is the seam's
-//! other arm, kept so the decision stays expressible.
+//! CLI hybrid sweep lane.  It always returns [`DispatchDecision::FallbackToCpu`].
 //!
-//! This used to read "not yet wired (tracked as PH7-CHK-004)". PH7-CHK-004 is
-//! Done and delivered the *distributed* path — `--exec gpu` through the SSH
-//! worker pool — which is different work; the local seam it was cited for was
-//! never in its scope (FND-064). No live checklist item tracks wiring this seam,
-//! deliberately: see FND-143.
+//! **Two different routes could be sent through it, and they do not have the same
+//! evidence.** Saying flatly "not wired, because it is slower" over-claims, and
+//! saying "not YET wired" under-claims:
+//!
+//! - A **fully GPU-resident per-point** route is declined on measurement:
+//!   PH7-CHK-003 measured that solve at **0.04x-0.48x of the CPU at every size
+//!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). That
+//!   is a decision, not a backlog item.
+//! - A **fill-on-GPU, solve-on-CPU per-point** route is neither wired nor
+//!   measured through this lane. That recipe does win elsewhere — the Z-fill
+//!   kernel beats the CPU from N~32-64 and `--exec gpu` already uses it locally
+//!   at >= 128 segments — so its absence here is an open question, not a settled
+//!   one. What is unmeasured is a single shared device against the CPU-parallel
+//!   lane.
+//!
+//! Either way PH7-CHK-004 is not the tracker: it is Done and delivered the
+//! *distributed* path — `--exec gpu` through the SSH worker pool — which is
+//! different work, and the local seam was never in its scope (FND-064).
 //!
 //! The real wgpu RP / Z-matrix-fill paths are dispatched directly from the
 //! solver/CLI, not through this seam.
@@ -104,8 +111,9 @@ pub enum DispatchDecision {
 
 /// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
 pub const GPU_DISPATCH_NOT_WIRED: &str =
-    "per-frequency GPU dispatch is not wired: the GPU-resident dense solve measures \
-     0.04x-0.48x of the CPU at every size tested, with no crossover";
+    "per-frequency GPU dispatch is not wired: the fully-resident per-point route is \
+     declined on measurement (0.04x-0.48x of the CPU, no crossover), and the \
+     fill-on-GPU/solve-on-CPU route has not been measured through this lane";
 
 /// Decide whether a single frequency point should run on the GPU.
 ///

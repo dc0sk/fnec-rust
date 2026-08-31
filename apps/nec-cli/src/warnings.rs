@@ -11,15 +11,23 @@ pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
         ExecutionMode::Cpu => {}
         ExecutionMode::Hybrid => {}
         ExecutionMode::Gpu => {
-            // The RP and Z-matrix-fill kernels run on the GPU via wgpu; the dense
-            // linear solve still runs on CPU, because PH7-CHK-003 measured the
-            // GPU-resident solve at 0.04x-0.48x of the CPU with no crossover.
-            // `dispatch_frequency_point` is the per-frequency scheduling seam and
-            // is CPU-only for that same measured reason — not pending work, and
-            // not PH7-CHK-004, which delivered the distributed path (FND-064).
+            // What this reports is the per-frequency SCHEDULING SEAM, which is a
+            // hybrid-lane concern and takes no work. It is NOT a claim that the
+            // solve ran on the CPU: on this flag a free-space, stamp-free deck of
+            // >= 16 segments does take the GPU-resident solve
+            // (`maybe_gpu_resident_hallen`), and `warn_gpu_resident_solve_is_slower`
+            // reports that separately. Saying "using CPU solve path" here while
+            // the next line describes the resident solve losing on time was two
+            // adjacent contradictory sentences, and the first one was false for
+            // exactly the deck class this flag exists for.
             match nec_accel::dispatch_frequency_point(nec_accel::AccelRequestKind::GpuOnly, 0.0) {
                 nec_accel::DispatchDecision::FallbackToCpu { reason } => {
-                    eprintln!("warning: --exec gpu requested, but {reason}; using CPU solve path");
+                    eprintln!(
+                        "warning: --exec gpu requested; the per-frequency scheduling seam takes \
+                         no work ({reason}). The wgpu Z-fill and far-field kernels still run on \
+                         the GPU, and a free-space deck with no LD/TL/NT stamps and >= 16 \
+                         segments also takes the GPU-resident solve"
+                    );
                 }
                 // The seam's other arm: real per-frequency GPU dispatch would
                 // need no fallback warning.

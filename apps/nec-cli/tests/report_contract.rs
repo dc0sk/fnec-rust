@@ -331,14 +331,44 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
         "corpus/dipole-freesp-rp-51seg.nec",
         "corpus/dipole-ex1-freesp-51seg.nec",
     ];
+    // No corpus deck emits NEAR_FIELD, NEAR_H_FIELD or NORMALIZED_PATTERN — there
+    // is no NE/NH deck, and every corpus RP card has XNDA = 0 — so the corpus
+    // list alone covers 7 of the 10 sections `nec_report` can emit, and the floor
+    // below would have encoded that blindness as if it were completeness. These
+    // three are built inline instead.
+    const BASE: &str =
+        "CM contract\nCE\nGW 1 21 0 0 -5.28 0 0 5.28 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEX 0 1 11 0 1.0 0.0\n";
+    let inline = [
+        ("near-e", format!("{BASE}NE 1 1 1 1 10 30 45 0 0 0\nEN\n")),
+        ("near-h", format!("{BASE}NH 1 1 1 1 10 30 45 0 0 0\nEN\n")),
+        (
+            "normalized",
+            format!("{BASE}RP 0 19 1 5000 0.0 0.0 5.0 0.0\nEN\n"),
+        ),
+    ];
+    let mut inline_paths: Vec<PathBuf> = Vec::new();
+    for (name, body) in &inline {
+        inline_paths.push(write_temp_deck(&format!("contract-{name}"), body));
+    }
+
     let mut emitted: Vec<String> = Vec::new();
-    for deck in decks {
+    let all: Vec<PathBuf> = decks
+        .iter()
+        .map(|d| workspace_root.join(d))
+        .chain(inline_paths.iter().cloned())
+        .collect();
+    for deck in &all {
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-            .arg(workspace_root.join(deck))
+            .arg(deck)
             .current_dir(&workspace_root)
             .output()
             .expect("failed to run fnec");
-        assert!(out.status.success(), "fixture deck {deck} must solve");
+        assert!(
+            out.status.success(),
+            "fixture deck {} must solve:\n{}",
+            deck.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
         // Section headers are the bare ALL-CAPS lines; data rows and column
         // headers carry spaces, and the banner is three words.
         for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -352,9 +382,12 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
             }
         }
     }
+    for p in &inline_paths {
+        let _ = std::fs::remove_file(p);
+    }
     assert!(
-        emitted.len() >= 7,
-        "expected every report section across these four decks, found {emitted:?} — \
+        emitted.len() >= 10,
+        "expected every report section across these decks, found {emitted:?} — \
          the extraction is wrong, not the guide"
     );
 
@@ -362,11 +395,38 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
         .expect("docs/cli-guide.md is readable");
     for section in &emitted {
         assert!(
-            guide.contains(section),
+            mentions_token(&guide, section),
             "the binary emits a `{section}` section that docs/cli-guide.md never mentions. \
              Either document it in the Output format section or stop emitting it."
         );
     }
+}
+
+/// Whether `haystack` contains `token` as a whole word.
+///
+/// `contains` is not enough and the difference is not theoretical: renaming
+/// `NEAR_H_FIELD` to `NEAR_H_FIELD_X` in the guide left the original as a prefix,
+/// so a `contains` check passed while the section had in fact stopped being
+/// documented. Both sabotages of this gate passed until this existed.
+fn mentions_token(haystack: &str, token: &str) -> bool {
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut from = 0usize;
+    while let Some(rel) = haystack[from..].find(token) {
+        let start = from + rel;
+        let end = start + token.len();
+        // `map_or(true, ..)` rather than `is_none_or`: the latter is stable only
+        // from 1.82 and this workspace pins MSRV 1.75, which clippy enforces.
+        let before_ok = haystack[..start]
+            .chars()
+            .next_back()
+            .map_or(true, |c| !is_word(c));
+        let after_ok = haystack[end..].chars().next().map_or(true, |c| !is_word(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
 }
 
 /// Every subcommand in the binary's own usage must be documented (FND-086).

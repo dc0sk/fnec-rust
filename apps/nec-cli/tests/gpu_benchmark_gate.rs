@@ -83,15 +83,25 @@ fn gpu_exec_not_more_than_50_percent_slower_than_cpu() {
         let gpu = run_timed("gpu");
         cpu_us[i] = cpu.elapsed.as_micros() as u64;
         gpu_us[i] = gpu.elapsed.as_micros() as u64;
-        // The GPU path is meaningless to time whenever it does not actually run
-        // the solve on hardware: no adapter at all (CI), or a fallback to the CPU
-        // solve. The latter is currently *always* the case — per-frequency GPU
-        // dispatch is not wired, by measurement — and also covers software
-        // adapters (e.g. lavapipe) where wgpu-init cost dwarfs the solve. Detect
-        // any of these fallback signals and skip the timing comparison.
+        // The GPU path is meaningless to time whenever the GPU is not what
+        // decides the wall clock: no adapter at all (CI), a fallback to the CPU
+        // solve, a software adapter (e.g. lavapipe) where wgpu-init dwarfs the
+        // solve — or the GPU-resident solve running and being slower by design,
+        // which PH7-CHK-003 measured at 0.04x-0.48x with no crossover.
+        //
+        // That last signal used to be caught by the string "using CPU solve
+        // path", which was FALSE for this deck class: a free-space, stamp-free
+        // deck of >= 16 segments does take the resident solve. Keying the skip on
+        // an untrue message worked by accident; it now keys on the warning that
+        // is actually true.
         if gpu.stderr.contains("no wgpu adapter available")
             || gpu.stderr.contains("cpu-fallback")
-            || gpu.stderr.contains("using CPU solve path")
+            || gpu
+                .stderr
+                .contains("the per-frequency scheduling seam takes no work")
+            || gpu
+                .stderr
+                .contains("GPU-resident dense solve was measured at")
         {
             gpu_fallback = true;
         }
