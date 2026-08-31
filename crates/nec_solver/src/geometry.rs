@@ -235,6 +235,31 @@ pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
     out
 }
 
+/// How close two wire ends must be for [`merge_collinear_wire_endpoints`] to
+/// treat them as one conductor, in metres.
+///
+/// Named, and not a local, because a safety property depends on its *relation*
+/// to [`crate::hallen_session::JUNCTION_TOL_M`] rather than on its value: the
+/// merged and raw endpoint lists may differ only on geometry the plane-wave
+/// builder refuses, and that holds precisely because every merge event is also
+/// a detected junction. Widen this past the junction tolerance and the two
+/// endpoint lists diverge on geometry that still solves.
+/// The `const _: () = assert!(..)` below is the check, and it is a compile error
+/// rather than a test so that it cannot be filtered out of a run.
+pub const MERGE_POS_TOL_M: f64 = 1e-6;
+
+// Checked where it cannot be skipped: a test can be filtered out, a const
+// assertion cannot — widen the merge tolerance past the junction tolerance and
+// the crate stops compiling. `merged_and_raw_endpoints_differ_only_on_junctioned_geometry`
+// gates the same invariant over real geometry, but it can only see geometry that
+// exists, and no corpus deck has an endpoint gap between the two tolerances.
+const _: () = assert!(
+    MERGE_POS_TOL_M <= crate::hallen_session::JUNCTION_TOL_M,
+    "merge tolerance exceeds the junction tolerance: two wire ends could then be merged \
+     into one conductor without being detected as a junction, so the merged and raw \
+     endpoint lists would differ on geometry the plane-wave builder still accepts"
+);
+
 /// Merge tag-based wire chains that are **collinear continuations** of one another
 /// into single logical wires, for the Hallén homogeneous solution (PH9-CHK-002).
 ///
@@ -253,7 +278,6 @@ pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
     if base.len() < 2 {
         return base;
     }
-    const POS_TOL: f64 = 1e-6; // metres
     const DIR_TOL: f64 = 1e-6;
     let mut merged: Vec<(usize, usize)> = Vec::new();
     let mut cur = base[0];
@@ -261,9 +285,9 @@ pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
         let a = &segs[cur.1]; // last segment of the current (possibly merged) block
         let b = &segs[next.0]; // first segment of the candidate block
         let contiguous = cur.1 + 1 == next.0;
-        let connects = dist2(a.end, b.start) < POS_TOL * POS_TOL;
+        let connects = dist2(a.end, b.start) < MERGE_POS_TOL_M * MERGE_POS_TOL_M;
         let collinear = dir_aligned(a.direction, b.direction, DIR_TOL);
-        let same_radius = (a.radius - b.radius).abs() < POS_TOL;
+        let same_radius = (a.radius - b.radius).abs() < MERGE_POS_TOL_M;
         if contiguous && connects && collinear && same_radius {
             cur = (cur.0, next.1); // extend the merged chain
         } else {

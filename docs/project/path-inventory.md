@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/path-inventory.md
 status: living
-last_updated: 2026-08-24
+last_updated: 2026-08-31
 ---
 
 # Path inventory for cross-cutting concerns
@@ -199,6 +199,42 @@ unknown type before any current exists to report.
 Rows 8 and 4 are the same call by construction now. That parity used to be a
 comment asking two files to be kept in step, and they diverged twice inside a
 single review.
+
+---
+
+## C7 — Which Hallén basis a deck gets
+
+Plain per-wire, or continuous conductor paths. FND-121 was this decision made in
+four places with one diverged: a split inverted-V came back 264.88 + j410.86 from
+the CLI and 9.15 - j767.60 from the worker, `status: ok`, `warnings: []`.
+
+The decision itself is one function — `hallen_session::classify_paths` — and the
+solves that consume it are two entry points, not one, because two callers cannot
+use `solve_hallen_routed`:
+
+- the receive sweep solves the same geometry once per incidence direction, and
+  `solve_hallen_routed` takes `&mut ZMatrix` and adds the load columns as one-shot
+  deltas, so a per-direction call would stamp them N times;
+- `solve_current_source_hallen` must distinguish *reducible* from *unsupported*
+  topology, which the routed entry point's `Option` deliberately does not.
+
+Both now go through named exports of the same decision rather than re-deriving it.
+
+| # | Path | Entry point | Covered | Evidence |
+|:--|:-----|:------------|:--------|:---------|
+| 1 | CLI, local solve | `nec-cli/src/solve_session.rs` `solve_hallen_routed` | yes | `apps/nec-cli/tests/receive_junction.rs` |
+| 2 | CLI, receive-pattern sweep | `nec_solver::solve_hallen_planewave_routed` | yes | `apps/nec-cli/tests/receive_junction.rs` |
+| 3 | GUI | `nec-gui/src/solve.rs` `solve_hallen_routed` | yes | `apps/nec-gui/tests/gui_smoke.rs` |
+| 4 | Python bindings | `bindings/fnec_py/src/lib.rs` `solve_hallen_routed` | yes | `bindings/fnec_py/tests/test_smoke.py` |
+| 5 | Remote worker | `nec_worker/src/solve.rs` `solve_hallen_routed` | yes | `apps/nec-cli/tests/worker_integration.rs` |
+| 6 | Current-source drive, any frontend | `nec_solver::solve_current_source_hallen` | yes | `apps/nec-cli/tests/ex_cards.rs` |
+| 7 | Caveat suppression | `nec_solver::validate` `feedpoint_at_junction_warnings` | yes | `apps/nec-cli/tests/junction_feedpoint.rs` (`split_dipole_fed_away_does_not_warn`, `degree3_tee_junction_still_guarded`) |
+
+Row 6 is the one that reads as redundant and is not. Its arm must tell
+`Reducible` from `Unsupported`: a collinear chain is reducible *and* carries a
+junction, so the two-way reading refuses `dipole-ex4-collinear-split-51seg.nec`,
+which solves today. `reducible_collinear_split_current_source_keeps_the_per_wire_basis`
+is that gate, and it fails when the arms are merged.
 
 ---
 

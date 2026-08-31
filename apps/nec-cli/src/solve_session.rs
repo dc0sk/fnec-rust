@@ -83,13 +83,17 @@ pub(super) struct BenchRecord {
 use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
 };
+// The plane-wave builders and path solvers are deliberately absent: the CLI no
+// longer assembles a plane-wave system itself, it asks
+// `nec_solver::solve_hallen_planewave_routed`. Re-adding any of them here is how
+// a sixth copy of the routing decision would start, so it should be visible in a
+// diff (FND-128).
 use nec_solver::{
-    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_conductor_paths,
-    build_hallen_rhs, build_planewave_hallen, build_planewave_hallen_paths,
+    assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs,
     compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
     merge_collinear_wire_endpoints, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis_per_wire, FarFieldPoint, GroundModel, Segment, ZMatrix,
+    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
+    GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -263,62 +267,6 @@ pub(super) fn deck_has_plane_wave(deck: &nec_model::deck::NecDeck) -> bool {
     })
 }
 
-/// Solve a receiving antenna illuminated by an incident plane wave (PH8-CHK-002,
-/// PH9-CHK-002).
-///
-/// Straight, non-junctioned wires (one or more) solve on the per-wire two-DOF
-/// Hallén path. **Junctioned degree-2 geometry** (bends, start-to-start /
-/// end-to-end splits, inverted-V) solves on continuous *conductor paths*
-/// (PH9-CHK-002 receive side): `build_conductor_paths` walks the wire graph and
-/// `solve_hallen_planewave_paths` carries two homogeneous constants (`cos`/`sin`)
-/// per path with the signed-arc-length convention, so the induced current stays
-/// continuous across the junction. Out-of-scope topologies (degree-3+ T/Y,
-/// closed loops) return `None` from `build_conductor_paths` and fall back to the
-/// per-wire builder, which fails fast with an accurate diagnostic. `z_mat` is the
-/// assembled Hallén matrix (including any load / TL stamps); the plane-wave solve
-/// adds its own cos/sin homogeneous columns.
-fn solve_plane_wave_hallen(
-    deck: &nec_model::deck::NecDeck,
-    segs: &[Segment],
-    z_mat: &ZMatrix,
-    wire_endpoints: &[(usize, usize)],
-    freq_hz: f64,
-) -> Result<Vec<Complex64>, String> {
-    // Route junctioned degree-2 geometry through the conductor-path receive solver.
-    // Reducible decks (single wires, collinear chains, parallel arrays) keep the
-    // validated per-wire path; only a non-trivial (bent / reversed) path diverts.
-    if let Some(paths) = build_conductor_paths(segs) {
-        if paths.iter().any(|p| !p.is_trivial()) {
-            let pw = build_planewave_hallen_paths(deck, segs, freq_hz, &paths)
-                .map_err(|e| e.to_string())?;
-            let mut path_of = vec![0usize; segs.len()];
-            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
-            for (pi, p) in paths.iter().enumerate() {
-                for &m in &p.segs {
-                    path_of[m] = pi;
-                }
-                free_ends.push(p.free_ends.0);
-                free_ends.push(p.free_ends.1);
-            }
-            return solve_hallen_planewave_paths(
-                z_mat,
-                &pw.rhs,
-                &pw.cos_vec,
-                &pw.sin_vec,
-                &path_of,
-                &free_ends,
-            )
-            .map_err(|e| e.to_string());
-        }
-    }
-
-    // Linear (type 1) and elliptic (types 2/3) plane waves are all handled by
-    // build_planewave_hallen via the complex polarization vector.
-    let pw = build_planewave_hallen(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-    solve_hallen_planewave(z_mat, &pw.rhs, &pw.cos_vec, &pw.sin_vec, wire_endpoints)
-        .map_err(|e| e.to_string())
-}
-
 /// Incident-plane-wave receive-pattern sweep (PH9-CHK-001).
 ///
 /// The plane-wave EX card's `tag` = NTHETA, `segment` = NPHI, `voltage_real`/
@@ -332,7 +280,6 @@ fn plane_wave_receive_sweep(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
     z_mat: &ZMatrix,
-    wire_endpoints: &[(usize, usize)],
     freq_hz: f64,
 ) -> Result<Vec<nec_report::ReceivePatternRow>, String> {
     let ex = deck
@@ -368,7 +315,11 @@ fn plane_wave_receive_sweep(
                     }
                 }
             }
-            let currents = solve_plane_wave_hallen(&d, segs, z_mat, wire_endpoints, freq_hz)?;
+            // The one copy of the plane-wave routing decision, shared with
+            // `solve_hallen_routed`'s own arm. It borrows the matrix, so calling
+            // it once per direction cannot re-stamp the load columns (FND-128).
+            let currents = nec_solver::solve_hallen_planewave_routed(&d, segs, z_mat, freq_hz)
+                .map_err(|e| e.to_string())?;
             // Before the reduction, not after. `f64::max` returns the OTHER
             // operand when one side is NaN, so `fold(0.0, f64::max)` turns a
             // fully diverged solve into exactly 0.0 — printed as a -999.99 dB
@@ -1539,7 +1490,7 @@ pub(super) fn solve_frequency_point(
 
     // PH9-CHK-001: incident-plane-wave receive-pattern sweep (NTHETA·NPHI > 1).
     let receive_pattern_table = if deck_has_plane_wave(deck) {
-        plane_wave_receive_sweep(deck, segs, &z_mat, wire_endpoints, freq_hz)?
+        plane_wave_receive_sweep(deck, segs, &z_mat, freq_hz)?
     } else {
         Vec::new()
     };

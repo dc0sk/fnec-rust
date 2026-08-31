@@ -399,3 +399,74 @@ fn two_gaps_on_one_wire_report_the_same_impedance_at_both() {
         "the feeds must actually be driven, got R = {z1_re}"
     );
 }
+
+/// The `(tag, seg, V_re, V_im, I_re, I_im, Z_re, Z_im)` feedpoint row, whole.
+fn first_feedpoint_row(stdout: &str) -> (f64, f64, f64, f64) {
+    for line in stdout.lines() {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.len() != 8 || cols[0] == "TAG" {
+            continue;
+        }
+        if cols[0].parse::<usize>().is_err() || cols[1].parse::<usize>().is_err() {
+            continue;
+        }
+        let f = |i: usize| {
+            cols[i]
+                .parse::<f64>()
+                .unwrap_or_else(|e| panic!("failed to parse column {i} from '{line}': {e}"))
+        };
+        return (f(4), f(5), f(6), f(7));
+    }
+    panic!("no feedpoint rows found in stdout:\n{stdout}");
+}
+
+/// A *reducible* current-source deck must keep the per-wire basis (FND-140).
+///
+/// `dipole-ex4-collinear-split-51seg.nec` is a collinear chain: the conductor
+/// decomposition succeeds and every path is trivial, so it belongs on the plain
+/// basis — but it also carries a junction, so any code that treats "no
+/// non-trivial path" as "unsupported topology" refuses it. That is precisely the
+/// regression the two-way collapse of `PathRoute` would introduce, and it is
+/// silent in every other current-source test because no other EX 4 fixture is
+/// split.
+///
+/// The deck asserts its own contract in its CM block: physically identical to
+/// `dipole-ex4-freesp-51seg.nec`, so it must reach the same impedance and must
+/// deliver the 1 A the EX card asks for. Until now nothing checked it — the deck
+/// sat in `corpus/` with no case and no test (FND-139).
+#[test]
+fn reducible_collinear_split_current_source_keeps_the_per_wire_basis() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    let split = workspace_root.join("corpus/dipole-ex4-collinear-split-51seg.nec");
+    let whole = workspace_root.join("corpus/dipole-ex4-freesp-51seg.nec");
+
+    let split_out = run_fnec_output(&split, &workspace_root, &[]);
+    assert!(
+        split_out.status.success(),
+        "the collinear-split EX 4 deck must solve, not be refused as an unsupported \
+         topology.\nstderr:\n{}",
+        String::from_utf8_lossy(&split_out.stderr)
+    );
+    let (i_re, i_im, zr_s, zi_s) = first_feedpoint_row(&String::from_utf8_lossy(&split_out.stdout));
+
+    let whole_out = run_fnec_output(&whole, &workspace_root, &[]);
+    assert!(
+        whole_out.status.success(),
+        "the unsplit EX 4 deck must solve"
+    );
+    let (_, _, zr_w, zi_w) = first_feedpoint_row(&String::from_utf8_lossy(&whole_out.stdout));
+
+    // The EX card asks for 1 A at the join. Splitting the wire there is what
+    // made the solver deliver 0.5 A once (FND-048).
+    assert!(
+        (i_re - 1.0).abs() < 1e-6 && i_im.abs() < 1e-6,
+        "the split deck must deliver the 1 A the EX card asks for, got {i_re:.6}+j{i_im:.6}"
+    );
+    // Same antenna, so the same port impedance. The segment boundaries differ
+    // (26+25 against 51), which is worth a few hundredths of an ohm.
+    assert!(
+        (zr_s - zr_w).abs() < 0.5 && (zi_s - zi_w).abs() < 0.5,
+        "split Z ({zr_s:.6}+j{zi_s:.6}) != unsplit Z ({zr_w:.6}+j{zi_w:.6})"
+    );
+}

@@ -123,12 +123,126 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
     }
 }
 
-/// The conductor paths, but only when at least one is non-trivial — a single
-/// straight wire decomposes into trivial paths that the plain basis already
-/// handles exactly, and routing it through the path solver would change a
-/// settled answer for no reason.
+/// What the conductor-path decomposition says about a geometry.
+///
+/// Three outcomes, kept apart on purpose. [`nontrivial_paths`] collapses the
+/// last two into `None`, which is right for the arms that only need to know
+/// whether to use the path basis — and wrong for anyone who must also refuse an
+/// out-of-scope topology, because "every path is trivial" and "there is no valid
+/// decomposition" are opposite answers to that question. `current_source.rs`
+/// distinguished them with a nested `if`/`else if` on `build_conductor_paths`;
+/// this type is that distinction with a name, so the next caller cannot flatten
+/// it by accident.
+#[derive(Debug)]
+pub(crate) enum PathRoute {
+    /// At least one path is non-trivial (bent, or a reversed split): the path
+    /// basis is required.
+    NonTrivial(Vec<ConductorPath>),
+    /// The decomposition succeeded and every path is trivial — a single straight
+    /// wire, a collinear chain, a parallel array. The plain basis handles these
+    /// exactly, and routing them through the path solver would change a settled
+    /// answer for no reason.
+    Reducible,
+    /// `build_conductor_paths` refused: degree-3+ T/Y, or a closed loop.
+    Unsupported,
+}
+
+/// Classify a geometry for routing. The one copy of that decision.
+pub(crate) fn classify_paths(segs: &[Segment]) -> PathRoute {
+    match build_conductor_paths(segs) {
+        Some(ps) if ps.iter().any(|p| !p.is_trivial()) => PathRoute::NonTrivial(ps),
+        Some(_) => PathRoute::Reducible,
+        None => PathRoute::Unsupported,
+    }
+}
+
+/// The conductor paths, but only when at least one is non-trivial.
+///
+/// A `None` here means "the plain basis will do", and deliberately does not say
+/// why — see [`PathRoute`] for the caller that must know.
 fn nontrivial_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
-    build_conductor_paths(segs).filter(|ps| ps.iter().any(|p| !p.is_trivial()))
+    match classify_paths(segs) {
+        PathRoute::NonTrivial(ps) => Some(ps),
+        PathRoute::Reducible | PathRoute::Unsupported => None,
+    }
+}
+
+/// The per-segment path index and the free-end list every path arm needs.
+///
+/// Three copies of this loop existed — here, in the CLI's receive sweep, and in
+/// `current_source.rs` — guarding a convention (which end of a path is free, in
+/// what order) that only agrees while nobody edits it.
+pub(crate) fn group_paths(segs: &[Segment], paths: &[ConductorPath]) -> (Vec<usize>, Vec<usize>) {
+    let mut path_of = vec![0usize; segs.len()];
+    let mut free_ends = Vec::with_capacity(paths.len() * 2);
+    for (pi, p) in paths.iter().enumerate() {
+        for &m in &p.segs {
+            path_of[m] = pi;
+        }
+        free_ends.push(p.free_ends.0);
+        free_ends.push(p.free_ends.1);
+    }
+    (path_of, free_ends)
+}
+
+/// Solve an incident plane wave on a matrix that is **already stamped**.
+///
+/// Split out of [`solve_hallen_routed`] because the receive-pattern sweep solves
+/// the same geometry once per incidence direction and cannot use that entry
+/// point: it takes `&mut ZMatrix` and adds the load columns as one-shot deltas,
+/// so a per-direction call would stamp them N times. This one borrows the matrix
+/// and never touches it, which is exactly what a sweep needs.
+///
+/// Before this existed the sweep carried its own copy of the arm below —
+/// predicate, grouping, builder choice and solver dispatch — which is how
+/// FND-121 was built the first time: not by anyone writing a different rule, but
+/// by two copies of the same rule drifting apart later (FND-128).
+///
+/// The returned currents are checked finite here, so a caller needs no guard of
+/// its own — see the body for why that is the seam's job and not the caller's.
+pub fn solve_hallen_planewave_routed(
+    deck: &NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    freq_hz: f64,
+) -> Result<Vec<Complex64>, HallenSessionError> {
+    let paths = nontrivial_paths(segs);
+    let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
+
+    let pw = match &paths {
+        Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps),
+        None => build_planewave_hallen(deck, segs, freq_hz),
+    }
+    .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
+
+    match &grouped {
+        Some((path_of, free_ends)) => solve_hallen_planewave_paths(
+            z_mat,
+            &pw.rhs,
+            &pw.cos_vec,
+            &pw.sin_vec,
+            path_of,
+            free_ends,
+        ),
+        None => solve_hallen_planewave(
+            z_mat,
+            &pw.rhs,
+            &pw.cos_vec,
+            &pw.sin_vec,
+            &merge_collinear_wire_endpoints(segs),
+        ),
+    }
+    .map_err(HallenSessionError::Solve)
+    .and_then(|currents| {
+        // The guard belongs to the seam, not to each caller. Both of today's
+        // callers happen to check — `solve_hallen_routed` at its single exit,
+        // the CLI sweep before its peak reduction — and that is exactly the
+        // shape FND-126 was: a per-caller guard is one missing check away from a
+        // silent NaN, and this function is `pub`, so the next caller is not in
+        // this repo. The outer re-check is harmless.
+        crate::check_currents_finite(&currents).map_err(HallenSessionError::NonFiniteCurrents)?;
+        Ok(currents)
+    })
 }
 
 /// Everything the caller needs to compute a residual for a delta-gap solve.
@@ -237,44 +351,13 @@ fn solve_hallen_routed_inner(
     }
 
     // Path grouping, built once and shared by every arm below.
-    let grouped = paths.as_ref().map(|ps| {
-        let mut path_of = vec![0usize; segs.len()];
-        let mut free_ends = Vec::with_capacity(ps.len() * 2);
-        for (pi, p) in ps.iter().enumerate() {
-            for &m in &p.segs {
-                path_of[m] = pi;
-            }
-            free_ends.push(p.free_ends.0);
-            free_ends.push(p.free_ends.1);
-        }
-        (path_of, free_ends)
-    });
+    let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
 
     match route.drive {
         HallenDrive::PlaneWave => {
-            let pw = match (&paths, &grouped) {
-                (Some(ps), Some(_)) => build_planewave_hallen_paths(deck, segs, freq_hz, ps),
-                _ => build_planewave_hallen(deck, segs, freq_hz),
-            }
-            .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
-            let currents = match &grouped {
-                Some((path_of, free_ends)) => solve_hallen_planewave_paths(
-                    z_mat,
-                    &pw.rhs,
-                    &pw.cos_vec,
-                    &pw.sin_vec,
-                    path_of,
-                    free_ends,
-                ),
-                None => solve_hallen_planewave(
-                    z_mat,
-                    &pw.rhs,
-                    &pw.cos_vec,
-                    &pw.sin_vec,
-                    &merge_collinear_wire_endpoints(segs),
-                ),
-            }
-            .map_err(HallenSessionError::Solve)?;
+            // The arm itself lives in `solve_hallen_planewave_routed`, because
+            // the receive sweep needs it without the load stamping above.
+            let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz)?;
             Ok(HallenRouted {
                 currents,
                 port_voltage: None,
