@@ -1901,3 +1901,72 @@ fn every_external_gate_is_backed_by_a_readable_external_reference() {
          the check would pass vacuously if the gates were renamed away"
     );
 }
+
+/// The README's tier counts must match the data (FND-110).
+///
+/// `corpus/README.md` claimed for months that "every NEC deck in this corpus is
+/// validated against a reference engine" and named xnec2c as the primary
+/// reference. Neither was true: the recorded `reference_engine` is fnec itself,
+/// and xnec2c is used by nothing. A prose claim about a data file rots the moment
+/// the data changes, and nothing was watching.
+///
+/// So the replacement states counts rather than adjectives, and the counts are
+/// checked here. Add a case with an external reference and this test fails until
+/// the README says so.
+#[test]
+fn the_readme_tier_counts_match_the_reference_data() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let reference_path = workspace_root.join("corpus/reference-results.json");
+    let readme_path = workspace_root.join("corpus/README.md");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    let total = cases.len();
+    let external = cases
+        .values()
+        .filter(|c| {
+            c.get("external_reference_candidate")
+                .and_then(Value::as_object)
+                .is_some()
+        })
+        .count();
+    let self_pinned = total - external;
+
+    let readme = std::fs::read_to_string(&readme_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", readme_path.display()));
+
+    // The marker keeps this anchored to the tier table rather than to any number
+    // that happens to appear elsewhere in a long document.
+    let table = readme
+        .split_once("<!-- CORPUS-TIER-COUNTS:")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once("\n\n## "))
+        .map(|(t, _)| t)
+        .unwrap_or_else(|| panic!("corpus/README.md is missing the CORPUS-TIER-COUNTS marker"));
+
+    for (label, want) in [
+        ("Self-pinned regression only", self_pinned),
+        ("Additionally gated against an external engine", external),
+        ("**Total**", total),
+    ] {
+        let row = table
+            .lines()
+            .find(|l| l.contains(label))
+            .unwrap_or_else(|| panic!("corpus/README.md tier table has no '{label}' row"));
+        let found = row
+            .split('|')
+            .any(|cell| cell.trim().trim_matches('*').parse::<usize>() == Ok(want));
+        assert!(
+            found,
+            "corpus/README.md row '{label}' does not state {want}, which is what \
+             reference-results.json actually contains. Row was: {row}"
+        );
+    }
+}

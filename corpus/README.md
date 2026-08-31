@@ -2,14 +2,38 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-04-25
+last_updated: 2026-08-31
 ---
 
 # Golden Reference Corpus
 
-This directory contains the golden reference test corpus used to validate fnec-rust's numerical accuracy against NEC reference engines (primary: xnec2c, fallback: 4nec2).
+**This corpus is primarily a regression gate, not an external-validation gate.** Most cases pin fnec's own output so it cannot change silently; a minority are additionally gated against an independent NEC engine. The distinction matters, so it is stated first and the numbers are counted rather than described (FND-110).
 
-Every NEC deck in this corpus is validated against a reference engine and the results are recorded in `corpus/reference-results.json`. CI runs `cargo test -p nec-cli --test corpus_validation` to ensure fnec-rust results remain within the tolerance matrix defined in `docs/requirements.md`.
+Of the 50 cases in `corpus/reference-results.json`:
+
+<!-- CORPUS-TIER-COUNTS: checked by `the_readme_tier_counts_match_the_reference_data` -->
+
+| Tier | Cases | What the gate proves |
+|:-----|------:|:---------------------|
+| Self-pinned regression only | 41 | the answer has not changed since it was pinned |
+| Additionally gated against an external engine | 9 | the answer also agrees with an independent solver, within a stated absolute tolerance |
+| **Total** | **50** | |
+
+Of the 41 self-pinned rows, four are pinned to a value derived independently of fnec rather than to fnec's own output: `dipole-freesp-51seg` against a Python MoM script, and three `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced.
+
+These three counts are **derived from `reference-results.json` and checked**, not maintained by hand — a stale count here is the same failure as the stale claim this section replaced.
+
+The external engines actually used are **nec2c 1.3.1** and **NEC2DXS500 via Wine** — not xnec2c, which an earlier version of this file named as the primary reference. xnec2c is not used by anything: it hangs headless in CI. 4nec2 is not used either.
+
+The external tolerances are wide on purpose and are not a defect being hidden: fnec's Hallén formulation differs from nec2c systematically — a documented ~32 Ω reactance offset is present in free space too — so an absolute-X gate must exceed it. The tight gates are the self-pinned regression; the external numbers say the answer is the right *shape*.
+
+**What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 40 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
+
+`external_reference_candidate` is the key the validator reads. A case that declares an `External*` tolerance gate must carry one, and `every_external_gate_is_backed_by_a_readable_external_reference` fails the build otherwise — a gate stored under any other key is never evaluated, which is how one row advertised a nec2c parity check that had never run (FND-138).
+
+CI runs `cargo test -p nec-cli --test corpus_validation` to hold every case to the tolerance matrix defined in `docs/requirements.md`.
+
+**Not every `.nec` file here is a corpus case.** 56 decks are on disk against 46 named in `reference-results.json`; the rest are fixtures owned by named tests, and two are gated by nothing at all (FND-139). `corpus_deck_sanity.rs` checks that every deck in the directory at least carries a `GE` card, which is a syntax check and not a numerical one.
 
 ## Validation Framework
 
@@ -74,8 +98,8 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Feed: Center segment (tag=1, seg=26), 1.0 V excitation
 - Ground: None (free space)
 
-**Expected results** (from xnec2c reference):
-- Z_in ≈ 74.24 + j13.90 Ω (validated against Python MoM script)
+**Expected results** (from a Python MoM script, not from xnec2c — see this case's `reference_source`):
+- Z_in ≈ 74.24 + j13.90 Ω
 - Current distribution: symmetric cosine envelope
 
 **Tolerance gates**:
@@ -180,7 +204,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Current distribution: distorted from free-space case due to image interaction
 
 **External parity status**:
-- External reference candidate for this case is tracked in `corpus/reference-results.json` and remains pending capture from xnec2c/4nec2.
+- This case IS externally gated: `external_reference_candidate` carries nec2c 1.3.1 values and CI enforces `ExternalR_absolute_ohm` / `ExternalX_absolute_ohm` against them. (This line previously said capture was pending from xnec2c/4nec2, which had not been true since the nec2c values were captured.)
 - CI currently gates the GN=1 regression value and prints external deltas when candidate values are present.
 
 **Tolerance gates**: Same as dipole-freesp (R, X, current).
@@ -219,7 +243,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Feed: Driven element center, 1.0 V
 - Ground: None
 
-**Expected results** (from xnec2c):
+**Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in ≈ [TBD — expected ≈ 25–40 Ω real, ±5 Ω imag]
 - Forward gain ≈ [TBD — expected ≈ 10–12 dBi]
 - Takeoff angle: ≈ 12–18° (elevation)
@@ -242,7 +266,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Feed: Center of main dipole, 1.0 V
 - Ground: None
 
-**Expected results** (from xnec2c):
+**Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in ≈ [TBD — loaded impedance at 7.1 MHz expected near 50 Ω]
 - Current distribution: distorted by coupling to coil
 
@@ -260,7 +284,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Feed: Center segment, 1.0 V per frequency step
 - Ground: None
 
-**Expected results** (from xnec2c):
+**Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in trajectory must match known dipole impedance curve: minimum R around λ/2 (14.2 MHz), resistance increases off-resonance, reactance crosses zero near resonance
 - Impedance at 10 MHz ≈ [TBD]
 - Impedance at 14.2 MHz ≈ 74.24 + j13.90 Ω
@@ -284,7 +308,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Dipole 2: center at x=1 m, feed at center segment, 1.0 V (independent source)
 - Ground: None
 
-**Expected results** (from xnec2c):
+**Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in (both dipoles, with mutual coupling): ≈ [TBD — both around 74 Ω, with mutual impedance affecting phase slightly]
 - Coupling factor: ≈ [TBD — expected small but nonzero]
 
@@ -352,13 +376,19 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 ## Reference workflow
 
-Preferred (xnec2c, when stable on the host):
+What was actually used for the nine externally gated cases: **nec2c 1.3.1** on Arch Linux, on a copy of the deck with `XQ` inserted, and **NEC2DXS500** under Wine.
+
+```bash
+nec2c -i /tmp/deck-with-xq.nec -o /tmp/deck.out
+```
+
+xnec2c is listed below for completeness and is **not** the route to use — it hangs in headless CI, which is why nothing in this repo depends on it:
 
 ```bash
 xnec2c --batch -j0 -i corpus/dipole-freesp-51seg.nec --write-csv .tmp-work/dipole-freesp.csv
 ```
 
-Fallback (4nec2 under Wine or Windows VM):
+4nec2 (under Wine or a Windows VM) is not used by any current case:
 
 1. Open the deck in 4nec2.
 2. Run the frequency loop.
