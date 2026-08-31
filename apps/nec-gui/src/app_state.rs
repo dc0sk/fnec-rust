@@ -173,6 +173,13 @@ pub struct AppState {
     /// handed, so two refreshes in flight resolved by arrival order and a stale
     /// one could repopulate a strip that a deck change had just cleared.
     deck_warnings_run: Option<RunId>,
+    /// The editor load this state is willing to hear from. Cleared by an edit,
+    /// and by a change of deck or vars path — see `refresh_editor_preview`.
+    editor_load_run: Option<RunId>,
+    /// The deck write this state is willing to hear from. Cleared by an edit,
+    /// because `DeckSaved(Ok)` marks the document clean and the write never saw
+    /// that edit.
+    editor_save_run: Option<RunId>,
     // ── Wire-editor state (GUI-CHK-007) ────────────────────────────────────
     /// Editable deck document + editor UI status.
     pub editor: EditorState,
@@ -304,6 +311,8 @@ impl Default for AppState {
             active_tab: ActiveTab::default(),
             next_run: 0,
             deck_warnings_run: None,
+            editor_load_run: None,
+            editor_save_run: None,
             phase: SolvePhase::default(),
             deck_warnings: Vec::new(),
             solver: crate::solve::SolverKind::Hallen,
@@ -435,7 +444,7 @@ pub enum Message {
     /// User clicked "Load deck into editor".
     EditDeckLoad,
     /// Background parse of the deck into an editable document completed.
-    EditDeckLoaded(Result<crate::model_doc::ModelDoc, String>),
+    EditDeckLoaded(RunId, Result<crate::model_doc::ModelDoc, String>),
     /// User edited one field of one wire row.
     EditWireField {
         row: usize,
@@ -449,7 +458,7 @@ pub enum Message {
     /// User clicked "Save deck" (the binary performs the file write).
     SaveDeck,
     /// Background deck write completed (`Ok(path)` or an error message).
-    DeckSaved(Result<String, String>),
+    DeckSaved(RunId, Result<String, String>),
     /// Undo the last wire-table change (button or Ctrl+Z).
     EditUndo,
     /// Redo the last undone wire-table change (button or Ctrl+Shift+Z / Ctrl+Y).
@@ -543,7 +552,9 @@ impl AppState {
             | Message::CurrentsComplete(id, _)
             | Message::GeometryLoaded(id, _)
             | Message::CurrentsSolved(id, _)
-            | Message::Pattern3dComplete(id, _) => Some(*id),
+            | Message::Pattern3dComplete(id, _)
+            | Message::EditDeckLoaded(id, _)
+            | Message::DeckSaved(id, _) => Some(*id),
             _ => None,
         }
     }
@@ -576,6 +587,8 @@ impl AppState {
                 CurrentsPhase::Running(id) => Some(id),
                 _ => None,
             },
+            Message::EditDeckLoaded(..) => self.editor_load_run,
+            Message::DeckSaved(..) => self.editor_save_run,
             Message::GeometryLoaded(..) => self.viewport.pending_geometry,
             Message::CurrentsSolved(..) => self.viewport.pending_currents,
             Message::Pattern3dComplete(..) => self.viewport.pending_pattern,
@@ -621,6 +634,16 @@ impl AppState {
         self.deck_warnings_run
     }
 
+    /// As [`AppState::current_solve_run`], for the editor's deck load.
+    pub fn current_edit_load_run(&self) -> Option<RunId> {
+        self.editor_load_run
+    }
+
+    /// As [`AppState::current_solve_run`], for the editor's deck write.
+    pub fn current_edit_save_run(&self) -> Option<RunId> {
+        self.editor_save_run
+    }
+
     /// As [`AppState::current_solve_run`], for the viewport's geometry leg.
     pub fn current_geometry_run(&self) -> Option<RunId> {
         self.viewport.pending_geometry
@@ -659,6 +682,16 @@ impl AppState {
         match msg {
             Message::DeckPathChanged(p) => {
                 self.deck_path = p.clone();
+                // A load in flight for the old path would land as the editor
+                // document for the new one — and `SaveDeck` writes that document
+                // to whatever `deck_path` says now, so deck A's contents would
+                // overwrite file B. The solve pipelines do not do this on a path
+                // change, and are right not to: a stale solve result is display
+                // only. A stale editor document is an input to a file write.
+                //
+                // A pending SAVE is left alone deliberately: it targets the path
+                // captured when it was spawned, so its completion is truthful.
+                self.editor_load_run = None;
                 // Stale caveats describing the previous deck would be worse than none.
                 self.deck_warnings.clear();
                 if matches!(self.phase, SolvePhase::Failed(_)) {
@@ -667,6 +700,9 @@ impl AppState {
             }
             Message::VarsPathChanged(p) => {
                 self.vars_path = p.clone();
+                // The editor load substitutes vars, so it is keyed on this path
+                // too (see the binary's `spawn_edit_load`).
+                self.editor_load_run = None;
             }
             Message::TabSelected(tab) => {
                 self.active_tab = tab.clone();
@@ -866,8 +902,11 @@ impl AppState {
             Message::PaneResized(_) => {}
             Message::EditDeckLoad => {
                 self.editor.save_status = "Loading deck into editor…".into();
+                let id = self.mint_run();
+                self.editor_load_run = Some(id);
             }
-            Message::EditDeckLoaded(Ok(doc)) => {
+            Message::EditDeckLoaded(_, Ok(doc)) => {
+                self.editor_load_run = None;
                 self.editor.doc = doc.clone();
                 self.editor.history.reset();
                 self.editor.loaded = true;
@@ -879,7 +918,8 @@ impl AppState {
                     self.viewport.camera.fit(c, r);
                 }
             }
-            Message::EditDeckLoaded(Err(e)) => {
+            Message::EditDeckLoaded(_, Err(e)) => {
+                self.editor_load_run = None;
                 self.editor.error = Some(e.clone());
                 self.editor.save_status.clear();
             }
@@ -922,8 +962,21 @@ impl AppState {
             }
             // Native file dialogs are opened in the binary's update(); the
             // resulting path change arrives as DeckPathChanged/VarsPathChanged/
-            // DeckSaved, so these are no-ops in the pure state machine.
-            Message::BrowseDeck | Message::BrowseVars | Message::BrowseSaveDeck => {}
+            // DeckSaved, so these two carry no core state.
+            Message::BrowseDeck | Message::BrowseVars => {}
+            // "Save as…" is the exception, and the trap in this fix: it writes the
+            // file inline and applies `DeckSaved` itself, with no preceding
+            // `SaveDeck`. Without an id minted here the guard would swallow that
+            // completion and Save-as would silently lose its status line and never
+            // mark the document saved — a regression invisible to any test that
+            // only drives `SaveDeck`.
+            //
+            // The id can outlive a cancelled dialog (no `DeckSaved` follows), which
+            // is harmless: it is retired by the next edit or the next save.
+            Message::BrowseSaveDeck => {
+                let id = self.mint_run();
+                self.editor_save_run = Some(id);
+            }
             // The SECOND solve-arming site. Its button is ungated, so two clicks
             // put two same-solver tasks in flight — which is why the guard keys
             // on run identity and not on the solver: a solver-keyed fix would
@@ -950,12 +1003,16 @@ impl AppState {
             }
             Message::SaveDeck => {
                 self.editor.save_status = "Saving…".into();
+                let id = self.mint_run();
+                self.editor_save_run = Some(id);
             }
-            Message::DeckSaved(Ok(path)) => {
+            Message::DeckSaved(_, Ok(path)) => {
+                self.editor_save_run = None;
                 self.editor.doc.mark_saved();
                 self.editor.save_status = format!("Saved to {path}");
             }
-            Message::DeckSaved(Err(e)) => {
+            Message::DeckSaved(_, Err(e)) => {
+                self.editor_save_run = None;
                 self.editor.save_status = format!("Save failed: {e}");
             }
             Message::Viewport(vp) => {
@@ -985,6 +1042,21 @@ impl AppState {
     /// left on screen. The camera is **not** refitted here — edits keep the view
     /// steady; only [`Message::EditDeckLoaded`] frames the geometry.
     fn refresh_editor_preview(&mut self) {
+        // FIRST, and unconditionally. Run identity alone does not fix FND-133:
+        // both defects in that row are SINGLE-run races — the user loads once, or
+        // saves once, then edits while the task is in flight — so the completion
+        // arrives carrying the still-current id and the guard accepts it. What
+        // makes it stale is the edit, not a newer run, so the edit is what must
+        // retire the id.
+        //
+        // Above the match, not inside its Ok/Ok arm where the viewport legs sit,
+        // because typing passes through invalid intermediate states routinely: a
+        // half-typed coordinate fails `to_deck_string`, and an edit that cannot
+        // render is still an edit that a load would clobber and that a save did
+        // not contain. (The viewport legs have the same asymmetry; it predates
+        // this change and is FND-141.)
+        self.editor_load_run = None;
+        self.editor_save_run = None;
         match self.editor.doc.to_deck_string() {
             Ok(text) => match crate::solve::load_geometry_str(&text) {
                 Ok(geo) => {

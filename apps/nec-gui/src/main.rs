@@ -305,13 +305,21 @@ impl FnecGui {
             } else {
                 Some(self.state.vars_path.clone())
             };
+            let run = self
+                .state
+                .current_edit_load_run()
+                .expect("the editor load was just armed");
             Task::perform(
                 async move { load_model_doc_path(&path, vars.as_deref()) },
-                Message::EditDeckLoaded,
+                move |r| Message::EditDeckLoaded(run, r),
             )
         } else if spawn_save {
             // Render the edited deck and write it back over the loaded path.
             let path = self.state.deck_path.clone();
+            let run = self
+                .state
+                .current_edit_save_run()
+                .expect("the save was just armed");
             match self.state.editor.doc.to_deck_string() {
                 Ok(text) => Task::perform(
                     async move {
@@ -320,10 +328,10 @@ impl FnecGui {
                             Err(e) => Err(e.to_string()),
                         }
                     },
-                    Message::DeckSaved,
+                    move |r| Message::DeckSaved(run, r),
                 ),
                 Err(msg) => {
-                    self.state.apply(&Message::DeckSaved(Err(msg)));
+                    self.state.apply(&Message::DeckSaved(run, Err(msg)));
                     Task::none()
                 }
             }
@@ -375,7 +383,11 @@ impl FnecGui {
                         .map_err(|e| e.to_string()),
                     Err(e) => Err(e),
                 };
-                self.state.apply(&Message::DeckSaved(saved));
+                let run = self
+                    .state
+                    .current_edit_save_run()
+                    .expect("Save as… armed a save run in apply()");
+                self.state.apply(&Message::DeckSaved(run, saved));
             }
             Task::none()
         } else {
