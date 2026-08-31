@@ -1781,7 +1781,8 @@
         "real_ohm": 264.882179,
         "imag_ohm": 410.856326
       },
-      "external_reference": {
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux, captured 2026-08-30",
         "engine": "nec2c",
         "real_ohm": 268.56,
         "imag_ohm": 452.26,
