@@ -1808,3 +1808,96 @@ fn par001_card_status_table_complete() {
         );
     }
 }
+
+/// Every `External*` tolerance gate must be backed by an external reference the
+/// validator can actually read (FND-138).
+///
+/// The gate is declared in `tolerance_gates` but evaluated only inside
+/// `if let Some(ext_obj) = case_obj.get("external_reference_candidate")`. A case
+/// that stores its external numbers under any other key therefore advertises a
+/// parity gate that never runs, and can drift arbitrarily far from the external
+/// engine while staying green — which is what `split-v-conductor-path-freesp`
+/// did from the day it was added, under the key `external_reference`.
+///
+/// The corpus already asserts the other direction for RP cases (a candidate
+/// implies a gate). That direction cannot catch this: the typo removes the
+/// candidate, so the implication is vacuously true.
+#[test]
+fn every_external_gate_is_backed_by_a_readable_external_reference() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let reference_path = workspace_root.join("corpus/reference-results.json");
+
+    let json_text = std::fs::read_to_string(&reference_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", reference_path.display()));
+    let root: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", reference_path.display()));
+
+    let cases = root
+        .get("cases")
+        .and_then(Value::as_object)
+        .expect("reference-results.json missing 'cases' object");
+
+    let mut checked = 0usize;
+    for (case_name, case_obj) in cases {
+        let Some(gates) = case_obj.get("tolerance_gates").and_then(Value::as_object) else {
+            continue;
+        };
+        let external_gates: Vec<&String> =
+            gates.keys().filter(|k| k.starts_with("External")).collect();
+        if external_gates.is_empty() {
+            continue;
+        }
+        checked += 1;
+
+        let candidate = case_obj
+            .get("external_reference_candidate")
+            .and_then(Value::as_object);
+        assert!(
+            candidate.is_some(),
+            "Case '{case_name}' declares external tolerance gate(s) {external_gates:?} but has no \
+             'external_reference_candidate' object, so those gates are never evaluated. Store the \
+             external numbers under 'external_reference_candidate' or drop the gates."
+        );
+
+        // A candidate the impedance path cannot read is the same silent pass:
+        // it must carry real_ohm/imag_ohm, per-source entries, or per-frequency
+        // entries. RP-only candidates (pattern_samples) back the Gain/AxialRatio
+        // gates instead.
+        let candidate = candidate.expect("checked above");
+        let impedance_gate = external_gates
+            .iter()
+            .any(|k| k.starts_with("ExternalR") || k.starts_with("ExternalX"));
+        if impedance_gate {
+            let scalar = candidate.get("real_ohm").and_then(Value::as_f64).is_some()
+                && candidate.get("imag_ohm").and_then(Value::as_f64).is_some();
+            let nested = candidate.values().any(|v| {
+                v.as_object().is_some_and(|o| {
+                    o.get("real_ohm").and_then(Value::as_f64).is_some()
+                        && o.get("imag_ohm").and_then(Value::as_f64).is_some()
+                })
+            });
+            assert!(
+                scalar || nested,
+                "Case '{case_name}' declares an External R/X gate but its \
+                 'external_reference_candidate' carries no readable real_ohm/imag_ohm pair \
+                 (neither at the top level nor per source/frequency)"
+            );
+        }
+        if external_gates.iter().any(|k| k.starts_with("ExternalGain")) {
+            assert!(
+                candidate
+                    .get("pattern_samples")
+                    .and_then(Value::as_array)
+                    .is_some_and(|a| !a.is_empty()),
+                "Case '{case_name}' declares an ExternalGain gate but its \
+                 'external_reference_candidate' carries no non-empty 'pattern_samples' array"
+            );
+        }
+    }
+
+    assert!(
+        checked >= 8,
+        "expected at least 8 corpus cases with external tolerance gates, found {checked} — \
+         the check would pass vacuously if the gates were renamed away"
+    );
+}
