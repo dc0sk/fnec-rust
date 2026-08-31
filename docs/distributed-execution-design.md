@@ -208,12 +208,29 @@ draining its pool.
 
 - **Hard failure** (`status: "error"`): The worker emits the error result and
   then continues waiting for the next task.  It does **not** exit.  The
-  controller logs the failure, does not cache the result, and optionally retries
-  the task once on a different node (configurable; default: retry once).
+  controller logs the failure, does not cache the result, and **does not retry**.
+  This paragraph said "default: retry once" until 2026-08-31, and the code has
+  never retried it: a `status: "error"` line is a statement about the *task*, so
+  the worker is healthy and a retry would fail identically.  The doc is corrected
+  to the behaviour rather than the behaviour to the doc, because the behaviour is
+  the right one (FND-102).
 
-- **Worker crash** (SSH channel closes unexpectedly): The controller treats all
-  in-flight tasks for that node as failed.  They are redistributed.  The node is
-  removed from the pool; reconnect is attempted once per §1.
+- **Worker crash** (SSH channel closes unexpectedly, or the worker accepts a task
+  and does not answer within its deadline): The controller treats the in-flight
+  task for that node as failed and the node is removed from the pool.  The task
+  is redistributed, but only **twice**: a task that two workers have died holding
+  is blamed by name and the remaining pool is kept.  Without that budget one
+  deterministic crash walks a task across every node and ends the run with "all
+  workers in pool failed" — which is what happened before 2026-08-31.
+
+  A worker that was **unreachable** — connect or write failed, so it never
+  received the task — does not count against the task, which may keep looking for
+  a live node.
+
+- **Worker panic**: An unwinding panic is caught and emitted as
+  `error_code: "internal"`, so it takes the hard-failure path above rather than
+  closing the channel.  An abort, an OOM kill or a hung GPU device still closes
+  it, and those are what the deadline and the retry budget cover.
 
 - **Controller abort** (`Ctrl-C` / `SIGTERM` to the controller): The controller
   sends a `{"cmd": "shutdown"}` message to each worker over the SSH channel,

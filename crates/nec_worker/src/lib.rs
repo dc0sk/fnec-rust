@@ -8,6 +8,7 @@
 pub mod capability;
 pub mod controller;
 pub mod hosts;
+pub mod pipe;
 pub mod pool;
 pub mod protocol;
 pub mod result_cache;

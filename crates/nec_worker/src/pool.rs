@@ -125,6 +125,36 @@ impl WorkerPool {
         }
     }
 
+    /// Set the answer deadline on every worker in the pool.
+    ///
+    /// Injected rather than read from an environment variable: a test needs
+    /// milliseconds where production wants minutes, and an env var would be a
+    /// second way to configure it and a way for one test to leak into another.
+    pub fn set_deadline(&mut self, deadline: std::time::Duration) {
+        for w in &mut self.workers {
+            match w {
+                WorkerHandle::Local(h) => h.set_deadline(deadline),
+                WorkerHandle::Ssh(h) => h.set_deadline(deadline),
+            }
+        }
+    }
+
+    /// Kill the first `n` workers' subprocesses without removing their handles.
+    ///
+    /// For tests only, and it exists to make ONE distinction testable: a worker
+    /// killed this way is gone before a task reaches it, so the write fails and
+    /// the fault is `Unreachable` rather than "died holding". That is the
+    /// difference the retry budget turns on, and without a way to produce it
+    /// deliberately the control test could not be written.
+    pub fn kill_for_test(&mut self, n: usize) {
+        for w in self.workers.iter_mut().take(n) {
+            match w {
+                WorkerHandle::Local(h) => h.kill_for_test(),
+                WorkerHandle::Ssh(_) => {}
+            }
+        }
+    }
+
     /// Returns the number of workers in the pool.
     pub fn len(&self) -> usize {
         self.workers.len()
@@ -140,6 +170,23 @@ impl WorkerPool {
     /// Returns the worker's label on success, or an error description on failure.
     /// If a worker fails, subsequent calls skip it (the pool removes failed workers).
     pub fn dispatch(&mut self, task: &TaskMessage) -> DispatchOutcome {
+        self.dispatch_with_strikes(task, 0)
+    }
+
+    /// How many workers may die HOLDING one task before the task is blamed.
+    ///
+    /// Not zero, because a genuinely transient disconnect should not lose work;
+    /// not unlimited, because a task that kills workers deterministically would
+    /// walk the whole pool and end it. The design doc has specified "retries the
+    /// task once on a different node" all along — this makes that true rather
+    /// than prose (FND-102).
+    ///
+    /// Only `Worker` faults count. An `Unreachable` worker never received the
+    /// task, so the task is not implicated and may keep looking for a live one —
+    /// which is what lets a healthy task get past three dead hosts.
+    pub const MAX_DIED_HOLDING: u32 = 2;
+
+    fn dispatch_with_strikes(&mut self, task: &TaskMessage, mut strikes: u32) -> DispatchOutcome {
         if self.workers.is_empty() {
             return Err("worker pool is empty — no workers available".to_string());
         }
@@ -170,10 +217,26 @@ impl WorkerPool {
                     self.next_worker = (idx + 1) % self.workers.len();
                     return Err(format!("worker '{label}' returned an unusable result: {e}"));
                 }
+                // Never received the task, so the task is not implicated: evict
+                // and keep looking, without spending a strike.
+                Err(crate::DispatchError::Unreachable(e)) => {
+                    eprintln!("warning: worker '{label}' unreachable, removing from pool: {e}");
+                    self.workers.remove(idx);
+                }
+                // Died holding it. The task may be why, so it gets a strike, and
+                // when it runs out the POOL is kept and the task is blamed.
                 Err(crate::DispatchError::Worker(e)) => {
                     eprintln!("warning: worker '{label}' failed, removing from pool: {e}");
                     self.workers.remove(idx);
-                    // idx now points to the next worker (shifted down by one after removal).
+                    strikes += 1;
+                    if strikes >= Self::MAX_DIED_HOLDING {
+                        self.next_worker = 0;
+                        return Err(format!(
+                            "task '{}' has now killed {strikes} workers; refusing to \
+                             hand it to any more. The last said: {e}",
+                            task.task_id
+                        ));
+                    }
                 }
             }
         }
@@ -214,7 +277,8 @@ impl WorkerPool {
         let cursor = AtomicUsize::new(0);
         let slots: Mutex<Vec<Option<DispatchOutcome>>> = Mutex::new((0..n).map(|_| None).collect());
         // Tasks whose worker died mid-flight; retried on a survivor below.
-        let orphaned: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+        // `(task index, strikes already against it)`.
+        let orphaned: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
         let survivors: Mutex<Vec<WorkerHandle>> = Mutex::new(Vec::new());
 
         let workers = std::mem::take(&mut self.workers);
@@ -244,12 +308,24 @@ impl WorkerPool {
                                     "worker '{label}' returned an unusable result: {e}"
                                 )));
                             }
+                            // Never received it: this worker is gone but the
+                            // task is not implicated, so it goes back in the
+                            // queue with no strike against it.
+                            Err(crate::DispatchError::Unreachable(e)) => {
+                                eprintln!(
+                                    "warning: worker '{label}' unreachable, removing from pool: {e}"
+                                );
+                                orphaned.lock().expect("orphaned lock").push((i, 0));
+                                return;
+                            }
+                            // Died holding it: the task carries a strike into
+                            // the retry below, so a task that kills a worker
+                            // here gets ONE more chance, not one per survivor.
                             Err(crate::DispatchError::Worker(e)) => {
                                 eprintln!(
                                     "warning: worker '{label}' failed, removing from pool: {e}"
                                 );
-                                // Drop this worker, but not the task it was holding.
-                                orphaned.lock().expect("orphaned lock").push(i);
+                                orphaned.lock().expect("orphaned lock").push((i, 1));
                                 return;
                             }
                         }
@@ -265,14 +341,24 @@ impl WorkerPool {
         // Retry whatever the dead workers were holding, plus anything they never
         // reached, on the survivors. Sequential: by this point the pool is smaller
         // and this is the exceptional path.
-        let orphaned: Vec<usize> = orphaned.into_inner().expect("orphaned lock");
+        let orphaned: Vec<(usize, u32)> = orphaned.into_inner().expect("orphaned lock");
+        // Carry each task's strikes into the retry. Without this the budget
+        // resets here, so a task that killed a worker in the batch phase would
+        // get a full fresh allowance in the sequential one -- which is the whole
+        // drain, just spread over two loops (FND-102).
+        let mut strikes: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+        for (i, s) in &orphaned {
+            let e = strikes.entry(*i).or_insert(0);
+            *e = (*e).max(*s);
+        }
         let mut retry: Vec<usize> = (0..n)
-            .filter(|i| slots[*i].is_none() || orphaned.contains(i))
+            .filter(|i| slots[*i].is_none() || strikes.contains_key(i))
             .collect();
         retry.sort_unstable();
         retry.dedup();
         for i in retry {
-            slots[i] = Some(self.dispatch(&tasks[i]));
+            let already = strikes.get(&i).copied().unwrap_or(0);
+            slots[i] = Some(self.dispatch_with_strikes(&tasks[i], already));
         }
 
         slots
