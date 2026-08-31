@@ -175,7 +175,13 @@ pub fn build_planewave_hallen(
 
     let n = segs.len();
     let wire_endpoints = crate::geometry::wire_endpoints_from_segs(segs);
-    if !crate::geometry::detect_wire_junctions(segs, &wire_endpoints, 1e-6).is_empty() {
+    if !crate::geometry::detect_wire_junctions(
+        segs,
+        &wire_endpoints,
+        crate::hallen_session::JUNCTION_TOL_M,
+    )
+    .is_empty()
+    {
         return Err(PlaneWaveError::JunctionedGeometryNotSupported);
     }
 

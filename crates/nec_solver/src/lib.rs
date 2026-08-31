@@ -46,12 +46,15 @@ pub use geometry::{
     build_conductor_paths, build_geometry, classify_unsupported_topology, detect_wire_junctions,
     ground_model_from_deck, merge_collinear_wire_endpoints, wire_endpoints_from_segs,
     ConductorPath, GeometryError, GroundModel, Segment, UnsupportedTopology, WireJunction,
-    MAX_SEGMENTS,
+    MAX_SEGMENTS, MERGE_POS_TOL_M,
 };
+// `classify_paths`, `group_paths` and `PathRoute` are deliberately NOT re-exported:
+// they are `pub(crate)`, because nothing outside this crate consumes them and a
+// public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    classify_paths, deck_has_current_source, deck_has_plane_wave, group_paths, hallen_route,
-    solve_hallen_planewave_routed, solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted,
-    HallenSessionError, PathRoute, ResidualInputs, JUNCTION_TOL_M,
+    deck_has_current_source, deck_has_plane_wave, hallen_route, solve_hallen_planewave_routed,
+    solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted, HallenSessionError,
+    ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,

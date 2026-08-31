@@ -134,7 +134,7 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
 /// this type is that distinction with a name, so the next caller cannot flatten
 /// it by accident.
 #[derive(Debug)]
-pub enum PathRoute {
+pub(crate) enum PathRoute {
     /// At least one path is non-trivial (bent, or a reversed split): the path
     /// basis is required.
     NonTrivial(Vec<ConductorPath>),
@@ -148,7 +148,7 @@ pub enum PathRoute {
 }
 
 /// Classify a geometry for routing. The one copy of that decision.
-pub fn classify_paths(segs: &[Segment]) -> PathRoute {
+pub(crate) fn classify_paths(segs: &[Segment]) -> PathRoute {
     match build_conductor_paths(segs) {
         Some(ps) if ps.iter().any(|p| !p.is_trivial()) => PathRoute::NonTrivial(ps),
         Some(_) => PathRoute::Reducible,
@@ -172,7 +172,7 @@ fn nontrivial_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
 /// Three copies of this loop existed — here, in the CLI's receive sweep, and in
 /// `current_source.rs` — guarding a convention (which end of a path is free, in
 /// what order) that only agrees while nobody edits it.
-pub fn group_paths(segs: &[Segment], paths: &[ConductorPath]) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn group_paths(segs: &[Segment], paths: &[ConductorPath]) -> (Vec<usize>, Vec<usize>) {
     let mut path_of = vec![0usize; segs.len()];
     let mut free_ends = Vec::with_capacity(paths.len() * 2);
     for (pi, p) in paths.iter().enumerate() {
@@ -197,6 +197,9 @@ pub fn group_paths(segs: &[Segment], paths: &[ConductorPath]) -> (Vec<usize>, Ve
 /// predicate, grouping, builder choice and solver dispatch — which is how
 /// FND-121 was built the first time: not by anyone writing a different rule, but
 /// by two copies of the same rule drifting apart later (FND-128).
+///
+/// The returned currents are checked finite here, so a caller needs no guard of
+/// its own — see the body for why that is the seam's job and not the caller's.
 pub fn solve_hallen_planewave_routed(
     deck: &NecDeck,
     segs: &[Segment],
@@ -230,6 +233,16 @@ pub fn solve_hallen_planewave_routed(
         ),
     }
     .map_err(HallenSessionError::Solve)
+    .and_then(|currents| {
+        // The guard belongs to the seam, not to each caller. Both of today's
+        // callers happen to check — `solve_hallen_routed` at its single exit,
+        // the CLI sweep before its peak reduction — and that is exactly the
+        // shape FND-126 was: a per-caller guard is one missing check away from a
+        // silent NaN, and this function is `pub`, so the next caller is not in
+        // this repo. The outer re-check is harmless.
+        crate::check_currents_finite(&currents).map_err(HallenSessionError::NonFiniteCurrents)?;
+        Ok(currents)
+    })
 }
 
 /// Everything the caller needs to compute a residual for a delta-gap solve.
