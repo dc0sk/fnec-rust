@@ -64,7 +64,7 @@ pub fn run_worker_stdio<R: BufRead, W: Write>(reader: R, mut writer: W) {
             break;
         }
 
-        let result = process_task(trimmed);
+        let result = process_task_caught(trimmed);
         let json = match serde_json::to_string(&result) {
             Ok(s) => s,
             Err(e) => format!(
@@ -83,7 +83,56 @@ fn is_shutdown(line: &str) -> bool {
     false
 }
 
+/// [`process_task`], with an unwinding panic turned into a result line.
+///
+/// A panic used to unwind out of `main` with nothing written, so the controller
+/// saw EOF — which is a dropped connection, which triggers reconnect-and-resend,
+/// which walks the task across the pool. Emitting a COMPLETE line instead keeps
+/// the whole chain on the already-tested `TaskResult::Error` lane: no EOF, no
+/// reconnect, no resend, no eviction (FND-102). The design doc has defined
+/// `internal` as "catch-all for unexpected panics" the entire time.
+///
+/// Safe to resume after: `process_task` takes a `&str` and returns a value,
+/// holding no state across calls, and no `[profile]` section anywhere sets
+/// `panic = "abort"`, so unwinding is live.
+///
+/// **What it does not cover, stated because a half-covered guarantee is worse
+/// than a named gap:** only unwinding panics on this thread. An OOM kill, a
+/// stack overflow or an explicit abort still ends the process with no line — and
+/// the GPU lane can panic on a wgpu-internal thread or simply hang the device,
+/// which is FND-101's bucket, not this one. The deadline and the retry budget
+/// are what cover those; this covers the case the protocol already promised to.
+fn process_task_caught(line: &str) -> TaskResult {
+    let task_id = serde_json::from_str::<TaskMessage>(line)
+        .map(|t| t.task_id)
+        .unwrap_or_else(|_| "unknown".to_string());
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| process_task(line))) {
+        Ok(result) => result,
+        Err(payload) => {
+            let what = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic with a non-string payload".to_string());
+            TaskResult::Error {
+                task_id,
+                frequency_hz: 0.0,
+                error_code: ErrorCode::Internal,
+                error_message: format!("worker panicked: {what}"),
+                warnings: Vec::new(),
+            }
+        }
+    }
+}
+
 fn process_task(line: &str) -> TaskResult {
+    // Test-only, and the only way to exercise the loop's panic path: nothing a
+    // deck can contain panics the solver today, which is the point of the eight
+    // hostile decks the audit drove through it.
+    #[cfg(test)]
+    if line.contains("PANIC_FOR_TEST") {
+        panic!("deliberate test panic");
+    }
     let task: TaskMessage = match serde_json::from_str(line) {
         Ok(t) => t,
         Err(e) => {
@@ -361,6 +410,56 @@ mod tests {
                 "solver_config":{{"basis":"hallen","ground_model":"none"}},
                 "frequency_hz":14.2e6}}"#
         )
+    }
+
+    /// FND-102: a panic becomes a result line, not an EOF.
+    ///
+    /// Unwinding out of `main` left the controller looking at a dropped
+    /// connection, which is what triggers reconnect-and-resend and walks the
+    /// task across the pool. A complete `internal` line keeps it on the
+    /// `TaskResult::Error` lane, where nothing is retried and nothing is evicted.
+    ///
+    /// The second assertion is the load-bearing one: the worker must still be
+    /// there afterwards. A catch that answered once and then wedged or exited
+    /// would satisfy the first assertion and none of the point.
+    #[test]
+    fn a_panic_becomes_an_internal_result_and_the_worker_carries_on() {
+        let deck = "CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 11 0 1.0 0.0\n\
+                    FR 0 1 0 0 14.2 0\nEN\n";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(deck);
+        let mut input = String::new();
+        input.push_str(
+            r#"{"task_id":"PANIC_FOR_TEST","deck_hash":"h","deck_b64":"","solver_config":{"basis":"hallen","ground_model":"none"},"frequency_hz":14.2e6}"#,
+        );
+        input.push('\n');
+        input.push_str(&format!(
+            r#"{{"task_id":"after","deck_hash":"h","deck_b64":"{b64}","solver_config":{{"basis":"hallen","ground_model":"none"}},"frequency_hz":14.2e6}}"#
+        ));
+        input.push('\n');
+        input.push_str("{\"cmd\":\"shutdown\"}\n");
+
+        let mut out: Vec<u8> = Vec::new();
+        // The panic hook prints to stderr during this; that is diagnostics, not
+        // protocol, and the assertions are on the protocol stream.
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        run_worker_stdio(std::io::BufReader::new(input.as_bytes()), &mut out);
+        std::panic::set_hook(prev);
+
+        let text = String::from_utf8_lossy(&out);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2, "one line per task, panic included:\n{text}");
+        assert!(
+            lines[0].contains(r#""error_code":"internal""#) && lines[0].contains("worker panicked"),
+            "a panic must cross the wire as the code the design doc reserves for \
+             it: {}",
+            lines[0]
+        );
+        assert!(
+            lines[1].contains(r#""status":"ok""#),
+            "the worker must answer the next task after a panic: {}",
+            lines[1]
+        );
     }
 
     /// FND-096: a line longer than the protocol's documented maximum is refused
