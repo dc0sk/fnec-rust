@@ -81,7 +81,46 @@ fn collect_dir(dir: &Path, root: &Path, out: &mut BTreeMap<String, Vec<String>>)
             let Ok(text) = fs::read_to_string(&path) else {
                 continue;
             };
+            // Only citations that are actually IN A TEST count.
+            //
+            // `requirements.toml` says `verification = "test"` means the
+            // requirement is cited by a `// VERIFIES:` in a test, and this
+            // collector used to accept the marker on any line of any `.rs` file
+            // -- including production code, and including a string literal that
+            // merely contained the text. So a requirement could read as verified
+            // by a citation that no test ever ran (FND-091).
+            //
+            // A gate weaker than its own stated contract is worse than no gate,
+            // because the contract is what people read.
+            let in_tests_dir = path
+                .components()
+                .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "benches");
+            let mut in_test_mod = false;
+            let mut pending = false;
+            let mut depth: i32 = 0;
             for (i, line) in text.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("#[cfg(test)]") {
+                    pending = true;
+                }
+                if pending && line.contains('{') {
+                    in_test_mod = true;
+                    pending = false;
+                    depth = line.matches('{').count() as i32 - line.matches('}').count() as i32;
+                } else if in_test_mod {
+                    depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+                    if depth <= 0 {
+                        in_test_mod = false;
+                    }
+                }
+                if !(in_tests_dir || in_test_mod) {
+                    continue;
+                }
+                // And in a COMMENT, not a string literal that happens to contain
+                // the marker.
+                if !trimmed.starts_with("//") {
+                    continue;
+                }
                 if let Some(id) = parse_verifies(line) {
                     let rel = path.strip_prefix(root).unwrap_or(&path);
                     out.entry(id)

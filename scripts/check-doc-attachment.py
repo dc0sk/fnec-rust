@@ -48,13 +48,36 @@ def documented_items(text):
     lines = text.split("\n")
     out = {}
     in_test = False
+    pending_test = False
+    depth = 0
     for i, line in enumerate(lines):
         stripped = line.strip()
         # Test modules are excluded: their helpers are deliberately terse, and
         # including them would make the doc-regression half noisy enough to ignore.
+        #
+        # EXCLUDED, not "everything after the first one". `in_test` used to be set
+        # here and never cleared, so the scan went blind at the first test module
+        # and stayed blind: production items below it were skipped, and in files
+        # that OPEN with a test module -- nec_worker's protocol.rs, capability.rs
+        # and solve.rs -- every production item was. 49 items, and the "1406 items,
+        # zero detached" that FND-061 reported was inflated by exactly that
+        # (FND-089).
+        #
+        # Now the module's braces are tracked so the scan resumes after it. Brace
+        # counting is textual and a brace inside a string literal would confuse
+        # it; that is the same assumption the rest of this script already makes,
+        # and it fails toward scanning MORE rather than less.
         if stripped.startswith("#[cfg(test)]"):
+            pending_test = True
+        if pending_test and "{" in line:
             in_test = True
+            pending_test = False
+            depth = line.count("{") - line.count("}")
+            continue
         if in_test:
+            depth += line.count("{") - line.count("}")
+            if depth <= 0:
+                in_test = False
             continue
         m = ITEM.match(stripped)
         if not m:
@@ -70,7 +93,13 @@ def documented_items(text):
             while k >= 0 and lines[k].strip() == "":
                 k -= 1
             detached = k >= 0 and lines[k].strip().startswith("///")
-        out[name] = {"line": i + 1, "documented": attached, "detached": detached}
+        # A LIST per name, not one entry. Keying by name alone meant a repeated
+        # name -- 13 of them across 7 files -- kept only its last occurrence, so
+        # the others were neither checked for detachment nor counted, and the
+        # base diff silently skipped them (FND-089).
+        out.setdefault(name, []).append(
+            {"line": i + 1, "documented": attached, "detached": detached}
+        )
     return out
 
 
@@ -96,23 +125,34 @@ def main():
 
     failures = []
     checked = 0
+    ambiguous = 0
     for path in rust_files("."):
         text = path.read_text()
         items = documented_items(text)
-        checked += len(items)
-        for name, info in items.items():
-            if info["detached"]:
-                failures.append(
-                    f"{path}:{info['line']}: doc comment is separated from `{name}` "
-                    f"by a blank line, so it documents nothing"
-                )
+        checked += sum(len(v) for v in items.values())
+        for name, occurrences in items.items():
+            for info in occurrences:
+                if info["detached"]:
+                    failures.append(
+                        f"{path}:{info['line']}: doc comment is separated from `{name}` "
+                        f"by a blank line, so it documents nothing"
+                    )
         if base:
             old = file_at(base, str(path))
             if old is None:
                 continue
-            for name, was in documented_items(old).items():
-                now = items.get(name)
-                if was["documented"] and now and not now["documented"]:
+            for name, old_occ in documented_items(old).items():
+                now_occ = items.get(name)
+                # Only a name that is unique on BOTH sides can be diffed by name.
+                # An ambiguous one is counted and reported rather than quietly
+                # skipped, so the gate's coverage claim stays honest.
+                if not now_occ:
+                    continue
+                if len(old_occ) != 1 or len(now_occ) != 1:
+                    ambiguous += 1
+                    continue
+                was, now = old_occ[0], now_occ[0]
+                if was["documented"] and not now["documented"]:
                     failures.append(
                         f"{path}:{now['line']}: `{name}` had a doc comment at {base} "
                         f"and does not now — did an insert land between them?"
@@ -124,7 +164,10 @@ def main():
         print(f"\ndoc attachment: {len(failures)} problem(s) across {checked} items")
         return 1
     scope = f" (and doc regressions vs {base})" if base else ""
-    print(f"doc attachment OK — {checked} item(s) checked{scope}")
+    note = (
+        f"; {ambiguous} repeated name(s) not diffable by name" if ambiguous else ""
+    )
+    print(f"doc attachment OK — {checked} item(s) checked{scope}{note}")
     return 0
 
 
