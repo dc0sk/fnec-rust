@@ -83,3 +83,76 @@ fn the_corpus_still_reaches_the_conductor_path_basis() {
          CRITICAL finding (FND-121) about that basis went uncaught by the corpus"
     );
 }
+
+/// The endpoint claim FND-128's consolidation rests on.
+///
+/// The CLI's receive sweep used to pass the caller's raw
+/// `wire_endpoints_from_segs` into the non-path plane-wave solve, where
+/// `solve_hallen_routed` has always used `merge_collinear_wire_endpoints`.
+/// Folding the sweep onto the shared seam adopts the merged list, so the two
+/// must be indistinguishable *wherever the non-path branch can actually run*.
+///
+/// They are, and not by luck: the two lists differ only when consecutive wires
+/// meet end-to-start, collinearly, at the same radius — and that connection is a
+/// junction, which `build_planewave_hallen` refuses outright
+/// (`planewave.rs`: `JunctionedGeometryNotSupported`). So a geometry that could
+/// tell the two lists apart never reaches the code that would use either.
+///
+/// This is the implication, gated: merged != raw implies a junction exists.
+#[test]
+fn merged_and_raw_endpoints_differ_only_on_junctioned_geometry() {
+    let mut differing = 0usize;
+    let mut checked = 0usize;
+
+    let mut check = |segs: &[nec_solver::Segment], name: &str| {
+        let raw = nec_solver::wire_endpoints_from_segs(segs);
+        let merged = nec_solver::merge_collinear_wire_endpoints(segs);
+        checked += 1;
+        if raw != merged {
+            differing += 1;
+            assert!(
+                !nec_solver::detect_wire_junctions(segs, &raw, 1e-6).is_empty(),
+                "{name}: merged endpoints differ from raw, but no junction was detected — \
+                 the non-path plane-wave branch would then see two different endpoint lists \
+                 depending on which caller reached it"
+            );
+        }
+    };
+
+    for entry in std::fs::read_dir(corpus_dir()).expect("corpus/ is readable") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|s| s.to_str()) != Some("nec") {
+            continue;
+        }
+        let Ok(src) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        // Decks that do not parse or build are other fixtures' business.
+        let Some(segs) = parse(&src).ok().and_then(|p| build_geometry(&p.deck).ok()) else {
+            continue;
+        };
+        check(&segs, &path.file_name().expect("name").to_string_lossy());
+    }
+
+    // A corpus that happened to contain no such geometry would make the loop
+    // above vacuous, so pin the discriminating case explicitly: two collinear
+    // wires meeting end-to-start is exactly where the two lists diverge.
+    let collinear = parse(
+        "GW 1 4 0 0 -1 0 0 0 0.001\nGW 2 4 0 0 0 0 0 1 0.001\nGE\nEX 0 1 2 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+    )
+    .expect("collinear deck parses");
+    let segs = build_geometry(&collinear.deck).expect("collinear deck builds");
+    assert_ne!(
+        nec_solver::wire_endpoints_from_segs(&segs),
+        nec_solver::merge_collinear_wire_endpoints(&segs),
+        "the constructed collinear split must be a case where the two lists differ, \
+         or this test proves nothing"
+    );
+    check(&segs, "constructed collinear split");
+
+    assert!(
+        checked > 10 && differing > 0,
+        "expected to have checked many decks ({checked}) and found at least one differing \
+         geometry ({differing})"
+    );
+}

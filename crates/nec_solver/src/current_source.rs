@@ -12,8 +12,7 @@ use num_complex::Complex64;
 
 use crate::excitation::{build_current_source_shape, build_current_source_shape_paths};
 use crate::geometry::{
-    build_conductor_paths, detect_wire_junctions, merge_collinear_wire_endpoints,
-    wire_endpoints_from_segs, Segment,
+    detect_wire_junctions, merge_collinear_wire_endpoints, wire_endpoints_from_segs, Segment,
 };
 use crate::linear::{solve_hallen, solve_hallen_paths};
 use crate::matrix::ZMatrix;
@@ -118,20 +117,18 @@ pub fn solve_current_source_hallen(
     // Route junctioned degree-2 geometry through the conductor-path current-source
     // solver. Reducible decks (single wires, collinear chains, parallel arrays) keep
     // the validated per-wire path; only a non-trivial (bent / reversed) path diverts.
-    if let Some(paths) = build_conductor_paths(segs) {
-        if paths.iter().any(|p| !p.is_trivial()) {
+    //
+    // The three-way match is load-bearing, and a two-way one is a live regression:
+    // `Reducible` and `Unsupported` must NOT share an arm. A collinear chain is
+    // reducible *and* carries junctions, so folding them together would send
+    // `dipole-ex4-collinear-split-51seg.nec` — which solves today — down the
+    // `UnsupportedTopology` path (FND-140).
+    match crate::hallen_session::classify_paths(segs) {
+        crate::hallen_session::PathRoute::NonTrivial(paths) => {
             let (shape, cos_vec, src_seg) =
                 build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
                     .map_err(CurrentSourceError::Excitation)?;
-            let mut path_of = vec![0usize; segs.len()];
-            let mut free_ends: Vec<usize> = Vec::with_capacity(paths.len() * 2);
-            for (pi, p) in paths.iter().enumerate() {
-                for &m in &p.segs {
-                    path_of[m] = pi;
-                }
-                free_ends.push(p.free_ends.0);
-                free_ends.push(p.free_ends.1);
-            }
+            let (path_of, free_ends) = crate::hallen_session::group_paths(segs, &paths);
             let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &path_of, &free_ends)
                 .map_err(CurrentSourceError::Solve)?;
             let (currents, port_voltage) =
@@ -143,9 +140,13 @@ pub fn solve_current_source_hallen(
                 source_segment: cs.segment,
             });
         }
-    } else if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs), 1e-6).is_empty() {
-        // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
-        return Err(CurrentSourceError::UnsupportedTopology);
+        crate::hallen_session::PathRoute::Reducible => {}
+        crate::hallen_session::PathRoute::Unsupported => {
+            if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs), 1e-6).is_empty() {
+                // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
+                return Err(CurrentSourceError::UnsupportedTopology);
+            }
+        }
     }
 
     // Merged, not raw, endpoints — the defect this fixes (FND-048).

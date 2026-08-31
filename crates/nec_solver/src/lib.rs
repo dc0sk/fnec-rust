@@ -49,8 +49,9 @@ pub use geometry::{
     MAX_SEGMENTS,
 };
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, hallen_route, solve_hallen_routed, HallenDrive,
-    HallenRoute, HallenRouted, HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
+    classify_paths, deck_has_current_source, deck_has_plane_wave, group_paths, hallen_route,
+    solve_hallen_planewave_routed, solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted,
+    HallenSessionError, PathRoute, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
     solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
