@@ -54,6 +54,32 @@ fn poison_stub() -> std::path::PathBuf {
     path
 }
 
+/// Spawn a pool, retrying while the stub reads as "Text file busy".
+///
+/// `ETXTBSY` is a *transient* consequence of a fork elsewhere in this process:
+/// `cargo test` runs a binary's tests as threads, and a sibling that forks while
+/// our stub's descriptor is open for writing hands the child a writable
+/// reference to it, which Linux refuses to exec until that child reaches its own
+/// exec. It clears within milliseconds and cannot be closed by ordering our own
+/// writes, because the offending descriptor belongs to somebody else's fork.
+///
+/// The alternative is one exec'ing test per test binary, which is what
+/// `worker_task_fault.rs` does. That works but does not scale: this file has two
+/// tests that must both exec, and splitting every such pair is a lot of binaries
+/// to protect against a race that a bounded retry answers directly.
+fn spawn_pool_retrying(count: usize, binary: &str) -> WorkerPool {
+    for _ in 0..200 {
+        match WorkerPool::new_local(count, binary) {
+            Ok(pool) => return pool,
+            Err(e) if e.contains("Text file busy") => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("spawn stubs: {e}"),
+        }
+    }
+    panic!("stub stayed 'Text file busy' for 2s, which is no longer a fork race");
+}
+
 fn task(id: &str) -> nec_worker::TaskMessage {
     nec_worker::TaskMessage {
         task_id: id.to_string(),
@@ -72,8 +98,7 @@ fn task(id: &str) -> nec_worker::TaskMessage {
 #[test]
 fn a_poison_task_is_blamed_before_it_empties_the_pool() {
     let stub = poison_stub();
-    let mut pool =
-        WorkerPool::new_local(4, stub.to_str().expect("path")).expect("spawn 4 poison stubs");
+    let mut pool = spawn_pool_retrying(4, stub.to_str().expect("path"));
     assert_eq!(pool.len(), 4, "setup");
 
     let out = pool.dispatch(&task("poison-1"));
@@ -106,7 +131,7 @@ fn a_poison_task_is_blamed_before_it_empties_the_pool() {
 #[test]
 fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
     let stub = poison_stub();
-    let mut pool = WorkerPool::new_local(3, stub.to_str().expect("path")).expect("spawn stubs");
+    let mut pool = spawn_pool_retrying(3, stub.to_str().expect("path"));
     // Kill two workers outright, so they are gone before the task arrives: the
     // write fails, which is `Unreachable`, not `died holding`.
     pool.kill_for_test(2);

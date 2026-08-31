@@ -65,6 +65,24 @@ fn clean_up(stub: &std::path::Path) {
     }
 }
 
+/// Spawn a pool, retrying while the stub reads as "Text file busy".
+///
+/// See `worker_poison_budget.rs` for why: `ETXTBSY` here is a transient
+/// consequence of a sibling test's fork, not of our own writes, so it cannot be
+/// ordered away and a bounded retry is the direct answer.
+fn spawn_pool_retrying(count: usize, binary: &str) -> WorkerPool {
+    for _ in 0..200 {
+        match WorkerPool::new_local(count, binary) {
+            Ok(pool) => return pool,
+            Err(e) if e.contains("Text file busy") => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("spawn stub: {e}"),
+        }
+    }
+    panic!("stub stayed 'Text file busy' for 2s, which is no longer a fork race");
+}
+
 fn task(id: &str) -> nec_worker::TaskMessage {
     use base64::Engine;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -103,8 +121,7 @@ fn a_worker_that_ignores_shutdown_is_killed_rather_than_waited_on() {
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
-        let pool =
-            WorkerPool::new_local(1, stub.to_str().expect("path")).expect("spawn wedging stub");
+        let pool = spawn_pool_retrying(1, stub.to_str().expect("path"));
         pool.shutdown_all();
         let _ = tx.send(());
     });
@@ -122,8 +139,7 @@ fn a_worker_that_never_answers_is_evicted_rather_than_waited_on() {
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
-        let mut pool =
-            WorkerPool::new_local(1, stub.to_str().expect("path")).expect("spawn wedging stub");
+        let mut pool = spawn_pool_retrying(1, stub.to_str().expect("path"));
         pool.set_deadline(Duration::from_millis(200));
         let out = pool.dispatch(&task("t-1"));
         let remaining = pool.len();
