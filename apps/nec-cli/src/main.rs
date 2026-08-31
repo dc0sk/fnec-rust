@@ -351,11 +351,11 @@ fn main() -> ExitCode {
         let probe = startup_execution_probe(freqs_hz.len());
         let auto_mode = auto_select_execution_mode(execution_mode, probe);
         eprintln!(
-            "info: startup exec probe: cpu_threads={} freq_points={} gpu_available={} hybrid_gpu_lane_available={} selected_exec={}",
+            "info: startup exec probe: cpu_threads={} freq_points={} per_freq_gpu_dispatch={} hybrid_gpu_lane_dispatch={} selected_exec={}",
             probe.cpu_threads,
             probe.freq_points,
-            probe.gpu_available,
-            probe.hybrid_gpu_lane_available,
+            probe.per_freq_gpu_dispatch,
+            probe.hybrid_gpu_lane_dispatch,
             auto_mode.as_cli_str(),
         );
         execution_mode = auto_mode;
@@ -1727,8 +1727,8 @@ mod tests {
         let probe = StartupExecutionProbe {
             cpu_threads: 16,
             freq_points: 1,
-            gpu_available: false,
-            hybrid_gpu_lane_available: false,
+            per_freq_gpu_dispatch: false,
+            hybrid_gpu_lane_dispatch: false,
         };
         assert_eq!(
             auto_select_execution_mode(ExecutionMode::Cpu, probe),
@@ -1741,8 +1741,8 @@ mod tests {
         let probe = StartupExecutionProbe {
             cpu_threads: 8,
             freq_points: 5,
-            gpu_available: false,
-            hybrid_gpu_lane_available: false,
+            per_freq_gpu_dispatch: false,
+            hybrid_gpu_lane_dispatch: false,
         };
         assert_eq!(
             auto_select_execution_mode(ExecutionMode::Cpu, probe),
@@ -1755,8 +1755,8 @@ mod tests {
         let probe = StartupExecutionProbe {
             cpu_threads: 1,
             freq_points: 1,
-            gpu_available: true,
-            hybrid_gpu_lane_available: true,
+            per_freq_gpu_dispatch: true,
+            hybrid_gpu_lane_dispatch: true,
         };
         assert_eq!(
             auto_select_execution_mode(ExecutionMode::Cpu, probe),
@@ -1769,8 +1769,8 @@ mod tests {
         let probe = StartupExecutionProbe {
             cpu_threads: 8,
             freq_points: 9,
-            gpu_available: true,
-            hybrid_gpu_lane_available: true,
+            per_freq_gpu_dispatch: true,
+            hybrid_gpu_lane_dispatch: true,
         };
         assert_eq!(
             auto_select_execution_mode(ExecutionMode::Cpu, probe),

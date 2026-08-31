@@ -2419,7 +2419,6 @@ dependencies = [
 name = "nec_solver"
 version = "0.17.0"
 dependencies = [
- "nec_accel",
  "nec_model",
  "nec_parser",
  "num-complex",

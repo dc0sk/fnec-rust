@@ -22,7 +22,6 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
-        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for {solver} topology fallback test: {e}"));
@@ -52,7 +51,6 @@ fn run_solver_on_reference_dipole(solver: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
-        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for solver '{solver}': {e}"))
@@ -70,7 +68,6 @@ fn run_solver_on_reference_dipole_with_pulse_rhs(
         .arg(solver)
         .arg("--pulse-rhs")
         .arg(pulse_rhs)
-        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -87,7 +84,6 @@ fn run_solver_on_reference_dipole_with_exec(solver: &str, exec_mode: &str) -> st
         .arg(solver)
         .arg("--exec")
         .arg(exec_mode)
-        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| {
@@ -115,7 +111,6 @@ fn run_sinusoidal_with_threshold(
             cmd.env_remove("FNEC_SIN_FALLBACK_REL_MAX");
         }
     }
-    cmd.env_remove("FNEC_ACCEL_STUB_GPU");
     cmd.arg(&deck_path);
     cmd.output()
         .unwrap_or_else(|e| panic!("Failed to run sinusoidal solver with threshold override: {e}"))
@@ -127,7 +122,6 @@ fn run_hallen_on_loaded_case(allow_noncollinear_hallen: bool) -> std::process::O
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.arg("--solver").arg("hallen");
-    cmd.env_remove("FNEC_ACCEL_STUB_GPU");
     if allow_noncollinear_hallen {
         cmd.arg("--allow-noncollinear-hallen");
     }

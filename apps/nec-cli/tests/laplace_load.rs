@@ -38,7 +38,6 @@ fn run(extra: &[&str], deck: &common::TempDeck) -> std::process::Output {
         .args(["--solver", "hallen", "--exec", "cpu"])
         .args(extra)
         .arg(deck)
-        .env("FNEC_ACCEL_STUB_GPU", "0")
         .output()
         .expect("run fnec")
 }

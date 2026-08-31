@@ -39,7 +39,6 @@ fn run_timed(exec_mode: &str) -> RunResult {
     let deck = deck_path();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
     cmd.args(["--solver", "hallen", "--exec", exec_mode])
-        .env_remove("FNEC_ACCEL_STUB_GPU")
         .arg(&deck);
 
     let start = Instant::now();

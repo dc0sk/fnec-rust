@@ -9,7 +9,6 @@ fn run_fnec(deck_path: &Path, workspace_root: &Path) -> (String, String) {
         .arg("hallen")
         .arg("--exec")
         .arg("cpu")
-        .env("FNEC_ACCEL_STUB_GPU", "0")
         .arg(deck_path)
         .current_dir(workspace_root)
         .output()

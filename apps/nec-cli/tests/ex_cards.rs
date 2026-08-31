@@ -5,11 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 fn run_fnec_output(deck_path: &Path, workspace_root: &Path, extra_args: &[&str]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
-    cmd.arg("--solver")
-        .arg("hallen")
-        .arg("--exec")
-        .arg("cpu")
-        .env("FNEC_ACCEL_STUB_GPU", "0");
+    cmd.arg("--solver").arg("hallen").arg("--exec").arg("cpu");
 
     for arg in extra_args {
         cmd.arg(arg);

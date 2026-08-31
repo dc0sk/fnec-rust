@@ -22,7 +22,6 @@ fn run(deck: &str, name: &str) -> (String, bool) {
     fs::write(&path, deck).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .args(["--solver", "hallen", "--exec", "cpu"])
-        .env("FNEC_ACCEL_STUB_GPU", "0")
         .arg(&path)
         .current_dir(&root)
         .output()

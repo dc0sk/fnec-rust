@@ -56,8 +56,22 @@ pub(super) enum CompatibilityProfile {
 pub(super) struct StartupExecutionProbe {
     pub(super) cpu_threads: usize,
     pub(super) freq_points: usize,
-    pub(super) gpu_available: bool,
-    pub(super) hybrid_gpu_lane_available: bool,
+    /// Whether the PER-FREQUENCY GPU dispatch seam will take work.
+    ///
+    /// Named for what it measures. It was `gpu_available`, which read as "this
+    /// machine has no GPU" — false on a host whose GPU fnec's wgpu far-field
+    /// kernels do use. What it actually reports is
+    /// `nec_accel::dispatch_frequency_point`, which is an unconditional
+    /// `FallbackToCpu` because PH7-CHK-004 is not wired, so the value is a
+    /// compile-time constant presented as a probe result (FND-105).
+    ///
+    /// Renaming rather than wiring is deliberate: `warnings.rs` records the
+    /// GPU-resident solve at 0.04x–0.48x of the CPU at every tested size, so
+    /// declining it costs nothing. The defect here was the claim, not the
+    /// routing.
+    pub(super) per_freq_gpu_dispatch: bool,
+    /// As above, for the hybrid lane's GPU candidate.
+    pub(super) hybrid_gpu_lane_dispatch: bool,
 }
 
 pub(super) fn detect_compatibility_profile(argv0: &str) -> CompatibilityProfile {
@@ -120,11 +134,11 @@ pub(super) fn startup_execution_probe(freq_points: usize) -> StartupExecutionPro
     let cpu_threads = std::thread::available_parallelism()
         .map(std::num::NonZeroUsize::get)
         .unwrap_or(1);
-    let gpu_available = matches!(
+    let per_freq_gpu_dispatch = matches!(
         dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6),
         DispatchDecision::RunOnGpu
     );
-    let hybrid_gpu_lane_available = matches!(
+    let hybrid_gpu_lane_dispatch = matches!(
         dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6),
         DispatchDecision::RunOnGpu
     );
@@ -132,8 +146,8 @@ pub(super) fn startup_execution_probe(freq_points: usize) -> StartupExecutionPro
     StartupExecutionProbe {
         cpu_threads,
         freq_points,
-        gpu_available,
-        hybrid_gpu_lane_available,
+        per_freq_gpu_dispatch,
+        hybrid_gpu_lane_dispatch,
     }
 }
 
@@ -144,10 +158,10 @@ pub(super) fn auto_select_execution_mode(
     // For single-point solves CPU is typically best today due scheduling overhead.
     let cpu_multithread_viable = probe.cpu_threads > 1 && probe.freq_points > 1;
 
-    if probe.gpu_available && probe.hybrid_gpu_lane_available && cpu_multithread_viable {
+    if probe.per_freq_gpu_dispatch && probe.hybrid_gpu_lane_dispatch && cpu_multithread_viable {
         return ExecutionMode::Hybrid;
     }
-    if probe.gpu_available {
+    if probe.per_freq_gpu_dispatch {
         return ExecutionMode::Gpu;
     }
     if cpu_multithread_viable {
