@@ -86,7 +86,7 @@ fn gpu_exec_not_more_than_50_percent_slower_than_cpu() {
         // The GPU path is meaningless to time whenever it does not actually run
         // the solve on hardware: no adapter at all (CI), or a fallback to the CPU
         // solve. The latter is currently *always* the case — per-frequency GPU
-        // dispatch is not yet wired (PH7-CHK-004) — and also covers software
+        // dispatch is not wired, by measurement — and also covers software
         // adapters (e.g. lavapipe) where wgpu-init cost dwarfs the solve. Detect
         // any of these fallback signals and skip the timing comparison.
         if gpu.stderr.contains("no wgpu adapter available")

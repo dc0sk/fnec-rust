@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-08-31
 ---
 
 # CLI Guide — fnec (v0.17.0)
@@ -18,6 +18,8 @@ Diagnostics are written to stderr.
 fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
+fnec project convert <in.toml|in.md> [out.md|out.toml]
+fnec worker --stdio
 ```
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
@@ -38,7 +40,7 @@ Compatibility profile note:
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
 | `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of any **straight** wire — horizontal, vertical or tilted; bent or mixed geometry is declined with a warning and keeps the `rcm` result. Currents and patterns are unaffected either way — for those, use `--solver mpie` |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; the GPU-candidate lane's per-frequency routing seam is not yet wired (PH7-CHK-004), so those points run on CPU with an explicit diagnostic. `gpu` runs real wgpu kernels for the RP far-field and — on free-space Hallén decks of ≥ 128 segments — the Z-matrix fill and GPU-resident dense solve, falling back to CPU with a diagnostic when no wgpu adapter is present. See **GPU far-field acceleration** below |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; the GPU-candidate lane's per-frequency routing seam is not wired — a measured decision, not pending work (see the Execution modes notes) — so those points run on CPU with an explicit diagnostic. `gpu` runs real wgpu kernels for the RP far-field and — on free-space Hallén decks of ≥ 128 segments — the Z-matrix fill and GPU-resident dense solve, falling back to CPU with a diagnostic when no wgpu adapter is present. See **GPU far-field acceleration** below |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | — | **Obsolete no-op.** Accepted for backward compatibility and silently ignored; `EX` type 3 now solves as a left-hand elliptic incident plane wave regardless (PH8-CHK-002). Neither value changes any result |
@@ -158,6 +160,26 @@ Z0 607.789
 Build the antenna's `GW` as a **uniform** wire of full length `EQUIV_FULL_LENGTH`
 and radius `EQUIV_RADIUS`. Scope: linear, essentially unloaded elements within
 ~±15 % of self-resonance (a no-op for uniform-diameter antennas).
+
+### `fnec project convert <in.toml|in.md> [out.md|out.toml]`
+
+Convert a project file between TOML and Markdown. The direction is taken from
+each path's extension (`.md` = Markdown, anything else = TOML); with no output
+path the converted document goes to stdout.
+
+```sh
+fnec project convert antenna.nec.toml antenna.md
+fnec project convert antenna.md            # → stdout
+```
+
+### `fnec worker --stdio`
+
+The remote solver behind `--hosts`. It reads length-prefixed task frames on
+stdin and writes results on stdout, so it is **not** meant to be run by hand —
+the controller spawns it over SSH on each worker node. It is documented here
+because it is one of this project's four shipped artifacts and was previously
+absent from both this guide and the binary's own usage text (FND-086); see
+[worker-deployment.md](worker-deployment.md) for deploying it.
 
 ## Solver modes
 
@@ -291,6 +313,11 @@ RECEIVE_PATTERN
 N_POINTS <n>
 THETA PHI RESPONSE_DB
 ...
+
+SWEEP_POINTS
+N_POINTS <n>
+FREQ_MHZ TAG SEG Z_RE Z_IM
+...
 ```
 
 Feedpoint table columns:
@@ -313,6 +340,7 @@ Formatting and ordering rules:
 - One data row per driven segment (zero-excitation segments skipped)
 - `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
+- `SWEEP_POINTS` is emitted once, after the last per-frequency report block, on every multi-frequency text run — one row per solved point, so a sweep can be read without parsing each block. It is pinned by `apps/nec-cli/tests/report_contract.rs`; this guide simply never mentioned it (FND-086).
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 - `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `X` digit); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
 - `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
@@ -743,5 +771,5 @@ The TL card connects two segments with a transmission line. Both the lossless (`
 - The Hallén solver handles collinear, bent, and degree-2 junctioned geometry. Degree-3 (T/Y) junctions and closed loops are *warned about*, not blocked — the warning names `--solver mpie`, which solves both correctly. `--allow-noncollinear-hallen` and `--ex3-i4-mode` are obsolete no-ops kept for backward compatibility.
 - `EX` type 0 is implemented on every solver path. Types 1–5 solve on `--solver hallen`; the plane-wave types (1, 2, 3) produce induced currents for a receiving antenna rather than a feedpoint impedance. See the card table above for the per-type geometry limits.
 - `--exec hybrid` runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
-- The per-frequency GPU *routing seam* (`nec_accel::dispatch_frequency_point`) is not yet wired (PH7-CHK-004), so GPU-candidate lane points print an explicit warning and run on CPU. This is separate from the real wgpu kernels, which `--exec gpu` does use — see **GPU far-field acceleration** above.
-- When `--exec` is omitted in the native profile, startup emits an informational probe line to stderr: the CPU thread count, the frequency-point count, whether the **per-frequency GPU dispatch seam** will take work (it will not — PH7-CHK-004 is unwired, see above), and the selected execution mode. It reports that seam specifically and not GPU presence: fnec's wgpu far-field kernels do use the GPU on a machine where this line says `per_freq_gpu_dispatch=false`.
+- The per-frequency GPU *routing seam* (`nec_accel::dispatch_frequency_point`) is not wired, and deliberately so: PH7-CHK-003 measured the GPU-resident dense solve at 0.04x-0.48x of the CPU at every size tested with no crossover, so routing a frequency point to it would be slower. GPU-candidate lane points print an explicit warning and run on CPU. This is separate from the real wgpu kernels, which `--exec gpu` does use — see **GPU far-field acceleration** above.
+- When `--exec` is omitted in the native profile, startup emits an informational probe line to stderr: the CPU thread count, the frequency-point count, whether the **per-frequency GPU dispatch seam** will take work (it will not — see the previous bullet), and the selected execution mode. It reports that seam specifically and not GPU presence: fnec's wgpu far-field kernels do use the GPU on a machine where this line says `per_freq_gpu_dispatch=false`.

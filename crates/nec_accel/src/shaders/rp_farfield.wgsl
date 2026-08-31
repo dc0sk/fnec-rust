@@ -8,7 +8,7 @@
 // segments.  Results are written as radiation intensity components
 // (|F_theta|^2, |F_phi|^2) into the output buffer.
 //
-// Algorithm (matches nec_accel::gpu_kernels::far_field_components exactly):
+// Algorithm (matches nec_accel::kernel_reference::far_field_components exactly):
 //
 //   r_hat     = (sin θ cos φ,  sin θ sin φ,  cos θ)
 //   theta_hat = (cos θ cos φ,  cos θ sin φ, -sin θ)

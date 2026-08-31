@@ -76,6 +76,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo test --workspace
+      # Lives in this job, not in `docs contract`, because it needs the compiled
+      # test binaries: the counts come from what the harness will actually run,
+      # not from grepping for `#[test]`. The build is already warm here.
+      - name: Test-catalog counts match the test binaries
+        run: python3 scripts/check-test-catalog-counts.py
 
   audit:
     name: cargo-audit

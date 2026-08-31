@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-08-31
 ---
 
 # Test results
@@ -15,6 +15,35 @@ Update this file before each push whenever code or tests changed (see the pre-pu
 rule in [README.md](README.md)).
 
 ## Latest recorded run
+
+| Field | Value |
+|:------|:------|
+| Date | 2026-08-31 |
+| Commit | branch `docs/fnd-083-086-drift` (base `b752f9a`) |
+| Version | fnec-rust 0.17.0 |
+| Toolchain | rustc 1.97.1 (8bab26f4f 2026-07-14) |
+| Host | Linux 7.1.8 x86_64 |
+
+### `cargo test --workspace` (default features)
+
+```
+1084 passed; 0 failed; 2 ignored
+exit code 0
+```
+
+Across **93 reporting binaries**. `cargo test --workspace -- --list` enumerates
+**1086** test functions (565 unit + 521 integration); the two not run are the
+`ignored` ones.
+
+**This file had not been appended to since 2026-07-08 — two months and roughly
+470 tests ago — while `test-catalog.md` pointed at it as "the authoritative pass
+count" (FND-143).** An append-only log that stops being appended does not look
+stale: every entry in it is still true, and the most recent one still reads as
+current. The `#[test]` counts in `test-catalog.md` are now derived and gated by
+`scripts/check-test-catalog-counts.py`; this run count is still recorded by hand,
+because it is a *result*, not a property of the tree.
+
+### Prior run — 2026-07-08, branch `feat/ph9-chk-006-near-ground-boundary`
 
 | Field | Value |
 |:------|:------|

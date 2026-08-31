@@ -46,11 +46,22 @@
 //! # Dispatch policy
 //!
 //! [`dispatch_frequency_point`] is the per-frequency scheduling seam used by the
-//! CLI hybrid sweep lane.  It currently always returns
-//! [`DispatchDecision::FallbackToCpu`]: real per-frequency GPU dispatch is not
-//! yet wired (tracked as PH7-CHK-004).  [`DispatchDecision::RunOnGpu`] is
-//! reserved for that work.  The real wgpu RP / Z-matrix-fill paths are dispatched
-//! directly from the solver/CLI, not through this seam.
+//! CLI hybrid sweep lane.  It always returns
+//! [`DispatchDecision::FallbackToCpu`], and **not because the work is pending**:
+//! PH7-CHK-003 measured the GPU-resident dense solve at **0.04x-0.48x of the CPU
+//! at every size tested, with no crossover**
+//! (`docs/ph7-chk-003-gpu-resident-solve.md`), so routing a frequency point
+//! through it would be slower.  [`DispatchDecision::RunOnGpu`] is the seam's
+//! other arm, kept so the decision stays expressible.
+//!
+//! This used to read "not yet wired (tracked as PH7-CHK-004)". PH7-CHK-004 is
+//! Done and delivered the *distributed* path — `--exec gpu` through the SSH
+//! worker pool — which is different work; the local seam it was cited for was
+//! never in its scope (FND-064). No live checklist item tracks wiring this seam,
+//! deliberately: see FND-143.
+//!
+//! The real wgpu RP / Z-matrix-fill paths are dispatched directly from the
+//! solver/CLI, not through this seam.
 //!
 //! # Roadmap
 //!
@@ -81,8 +92,10 @@ pub enum AccelRequestKind {
 
 /// Per-frequency scheduling decision for the CLI hybrid sweep lane.
 ///
-/// `RunOnGpu` is reserved for PH7-CHK-004 (per-frequency GPU dispatch); until
-/// that lands, [`dispatch_frequency_point`] always returns `FallbackToCpu`.
+/// `RunOnGpu` is the arm this seam does not currently take:
+/// [`dispatch_frequency_point`] always returns `FallbackToCpu`, for the measured
+/// reason in the crate docs. It is kept so the decision stays expressible rather
+/// than assumed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchDecision {
     RunOnGpu,
@@ -90,13 +103,15 @@ pub enum DispatchDecision {
 }
 
 /// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
-pub const GPU_DISPATCH_NOT_WIRED: &str = "per-frequency GPU dispatch not yet wired (PH7-CHK-004)";
+pub const GPU_DISPATCH_NOT_WIRED: &str =
+    "per-frequency GPU dispatch is not wired: the GPU-resident dense solve measures \
+     0.04x-0.48x of the CPU at every size tested, with no crossover";
 
 /// Decide whether a single frequency point should run on the GPU.
 ///
-/// Currently always [`DispatchDecision::FallbackToCpu`] — per-frequency GPU
-/// dispatch is not yet wired (PH7-CHK-004). This is an honest seam: it never
-/// reports CPU work as GPU work.
+/// Always [`DispatchDecision::FallbackToCpu`], for a measured reason rather than
+/// a pending one — see the crate docs. This is an honest seam: it never reports
+/// CPU work as GPU work.
 pub fn dispatch_frequency_point(_request: AccelRequestKind, _freq_hz: f64) -> DispatchDecision {
     DispatchDecision::FallbackToCpu {
         reason: GPU_DISPATCH_NOT_WIRED,

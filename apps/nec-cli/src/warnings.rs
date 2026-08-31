@@ -12,15 +12,17 @@ pub(super) fn warn_execution_mode_fallback(execution_mode: ExecutionMode) {
         ExecutionMode::Hybrid => {}
         ExecutionMode::Gpu => {
             // The RP and Z-matrix-fill kernels run on the GPU via wgpu; the dense
-            // linear solve still runs on CPU (GPU-resident solve tracked as
-            // PH7-CHK-003). `dispatch_frequency_point` is the per-frequency
-            // scheduling seam, which is CPU-only until PH7-CHK-004.
+            // linear solve still runs on CPU, because PH7-CHK-003 measured the
+            // GPU-resident solve at 0.04x-0.48x of the CPU with no crossover.
+            // `dispatch_frequency_point` is the per-frequency scheduling seam and
+            // is CPU-only for that same measured reason — not pending work, and
+            // not PH7-CHK-004, which delivered the distributed path (FND-064).
             match nec_accel::dispatch_frequency_point(nec_accel::AccelRequestKind::GpuOnly, 0.0) {
                 nec_accel::DispatchDecision::FallbackToCpu { reason } => {
                     eprintln!("warning: --exec gpu requested, but {reason}; using CPU solve path");
                 }
-                // Reserved for PH7-CHK-004; real per-frequency GPU dispatch needs
-                // no fallback warning.
+                // The seam's other arm: real per-frequency GPU dispatch would
+                // need no fallback warning.
                 nec_accel::DispatchDecision::RunOnGpu => {}
             }
         }

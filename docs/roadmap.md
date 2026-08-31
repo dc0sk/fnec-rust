@@ -251,7 +251,7 @@ Required benchmark outputs per target/mode:
 
 **Actual completion**: 2026-05-04 (v0.5.0; gates G1–G7 all merged).
 
-## Phase 6: Scale-out, multi-vendor GPU, and NEC-5 frontier
+## Phase 6 (complete): Scale-out, multi-vendor GPU, and NEC-5 frontier
 
 **Goals**: Authenticated distributed execution, cross-vendor GPU expansion, NEC-5-class accuracy architecture decision, and closure of the experimental solver modes.
 
@@ -280,7 +280,7 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 | PH6-CHK-006 | A | PRT-011, CP-011 | Implement SSH-backed worker deployment: node discovery via a hosts config file, per-node capability inventory cache (CPU thread count, GPU availability, wgpu backend), and a first end-to-end distributed single-frequency solve across two nodes using the design from PH6-CHK-005. Add ≥4 integration tests covering discovery, capability caching, and a round-trip solve. | Existing: `crates/nec_solver`, design doc from PH6-CHK-005. New: `crates/nec_worker/` or equivalent; worker CLI mode; `docs/worker-deployment.md`; integration tests. | Two-node distributed solve produces identical impedance to local solve within tolerance; integration tests pass; deployment doc exists. | ✓ Done (2026-06-23) — SSH transport via system `ssh` binary (`ssh_worker.rs`), hosts config, capability cache, local+SSH pool dispatch, 7 integration tests (config, cache, local round-trip, two-local-node match, SSH failure, localhost SSH round-trip, reconnect). Capability probe detects real CPU/GPU via remote `nproc`/`lspci` instead of hardcoded values. |
 | PH6-CHK-007 | A | PRT-011, CP-011 | Add a deterministic work-content/result cache layer for distributed sweep runs: SHA-256 keyed cache keyed on (deck hash + solver config + frequency point); cache hit skips remote solve and replays stored result; cache invalidation on deck or config change. Add ≥3 contract tests (hit, miss, invalidation). | Existing: worker infrastructure from PH6-CHK-006. New: cache module in `nec_worker` or `nec_project`; contract tests; cache eviction policy documented. | Cache hit/miss/invalidation contract tests pass; a 5-point sweep with one changed deck is shown to reuse 4 cached results and re-solve 1 changed point; `cargo test` clean. | ✓ Done (2026-05-05) |
 
-**Estimated completion**: Q4 2027 (end of December).
+**Actual completion**: 2026-06-23 — all seven PH6-CHK items are Done, the latest on that date. (This line read "Estimated completion: Q4 2027" for two months after the phase finished; the checklist below always said otherwise.)
 
 ## Phase 7 (complete): GPU productionization and multi-vendor scale-out
 
@@ -291,10 +291,10 @@ Execution order recommendation: PH6-CHK-001 → PH6-CHK-002 → PH6-CHK-003 → 
 This phase is gated on Phase 6 (worker pool + capability cache) being complete, which it is.
 
 **Key deliverables**:
-- [ ] GPU-resident dense solve: keep the filled Z-matrix on the device and run the LU/triangular solve in WGSL, eliminating the fill→copy-back→CPU-solve round trip on the supported corpus.
-- [ ] Retire or realize the `gpu_kernels` CPU-emulation scaffold so no path reports CPU time as GPU time.
+- [x] GPU-resident dense solve: keep the filled Z-matrix on the device and run the LU/triangular solve in WGSL, eliminating the fill→copy-back→CPU-solve round trip on the supported corpus.
+- [x] Retire or realize the `gpu_kernels` CPU-emulation scaffold so no path reports CPU time as GPU time.
 - [ ] Real-hardware benchmark evidence (not software rasterizer) published to the Phase 6 dashboard for at least one discrete GPU, with the crossover problem size where GPU beats CPU documented. **Partial (2026-08-23):** real-hardware evidence exists in `benchmarks/real-gpu-crossover.json` and is refreshed, but on an **integrated** adapter (RADV RENOIR), so the "discrete" requirement is still unmet. Crossovers documented: Z-fill kernel beats CPU from N≈32–64; the **dense solve never does** (see `docs/ph7-chk-003-gpu-resident-solve.md` § Performance).
-- [ ] Native multi-vendor expansion: a recorded ROCm or SYCL backend validation (or an explicit, dated "not yet" with rationale) beyond the wgpu Vulkan path.
+- [x] Native multi-vendor expansion: a recorded ROCm or SYCL backend validation (or an explicit, dated "not yet" with rationale) beyond the wgpu Vulkan path.
 - [ ] Distributed GPU execution: `--exec gpu` dispatched through the SSH worker pool so GPU-capable nodes solve on their GPU.
 - [x] Honest GPU microbenchmark: an in-process benchmark that isolates kernel dispatch cost from per-process wgpu device-init, complementing the across-process G5 wall-clock gate. **Done:** `microbench_zmatrix_dispatch` reports device-init separately from dispatch, and `examples/gpu_crossover.rs` uses it; since #372 the device is built once per process, so the production wall-clock no longer carries a ~23 ms init per call (RP far-field 42 000 µs → ~1 000 µs).
 
@@ -313,7 +313,7 @@ Execution order recommendation: PH7-CHK-001 → PH7-CHK-002 → PH7-CHK-003 → 
 
 **Actual completion**: 2026-06-27 (v0.7.0; all six PH7-CHK items merged). Real GPU evidence on AMD Renoir/RADV: GPU-resident Hallén solve (~0.01 Ω vs f64 CPU), distributed GPU execution through the SSH pool, in-process microbenchmark, and the measured Z-fill crossover (~240× by 1536 segments). Native ROCm/SYCL deferred with a dated rationale.
 
-## Phase 8 (planned): mainstream deck-portability — sources, networks, ground
+## Phase 8 (complete): mainstream deck-portability — sources, networks, ground
 
 **Goals**: Close the remaining *deck-portability* gaps that still force users to hand-simplify mainstream NEC-2/4nec2 decks. The NEC-5 surface frontier is explicitly **out of scope** (the wire-only continuation decision stands — see `docs/nec5-frontier.md`); Phase 8 instead finishes the source/network/ground card semantics that today are accepted as *staged portability* (run with a warning + EX-type-0 behaviour) rather than truly solved.
 
@@ -354,7 +354,7 @@ with accuracy trade-offs documented where fnec's Hallén model diverges from NEC
 blocker): junctioned-multi-wire plane wave (DOF-count reformulation); NTHETA/NPHI
 plane-wave angle sweeps; buried-wire / Sommerfeld ground; and non-reciprocal NT. (The `RP`-card `XNDA` parser field was fixed 2026-07-04.)
 
-## Phase 9 (planned): accuracy frontier & scattering breadth
+## Phase 9 (complete): accuracy frontier & scattering breadth
 
 **v0.9.0 shipped (2026-07-05)** — first wave: receive-pattern sweep (PH9-CHK-001), absolute gain over finite ground (PH9-CHK-003), collinear junction fix + guardrails + diagnosis (PH9-CHK-002/005), RP XNDA parser fix.
 

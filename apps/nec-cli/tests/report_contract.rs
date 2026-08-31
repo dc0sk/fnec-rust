@@ -309,3 +309,102 @@ fn report_contract_keeps_operator_tables_ordered_before_sweep_summary() {
         );
     }
 }
+
+/// Every report section the binary emits must appear in the CLI guide (FND-086).
+///
+/// The guide calls the report contract "stable, versioned" and enumerates its
+/// sections — but `SWEEP_POINTS` was emitted on every multi-frequency text run
+/// and appeared in the guide zero times, so the guide was the one diverged copy
+/// of a contract three other places agreed on. A prose enumeration only stays
+/// complete while someone remembers to extend it; this makes forgetting fail.
+#[test]
+fn the_cli_guide_documents_every_report_section_the_binary_emits() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // No single deck emits every section, so union across the classes: a sweep
+    // (SWEEP_POINTS), a loaded deck (LOADS), an RP deck (RADIATION_PATTERN) and a
+    // plane-wave deck (RECEIVE_PATTERN). Picking one deck and hoping is how the
+    // first draft of this test asserted three sections and thought that was all
+    // of them.
+    let decks = [
+        "corpus/frequency-sweep-dipole.nec",
+        "corpus/dipole-ld-loaded-51seg.nec",
+        "corpus/dipole-freesp-rp-51seg.nec",
+        "corpus/dipole-ex1-freesp-51seg.nec",
+    ];
+    let mut emitted: Vec<String> = Vec::new();
+    for deck in decks {
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .arg(workspace_root.join(deck))
+            .current_dir(&workspace_root)
+            .output()
+            .expect("failed to run fnec");
+        assert!(out.status.success(), "fixture deck {deck} must solve");
+        // Section headers are the bare ALL-CAPS lines; data rows and column
+        // headers carry spaces, and the banner is three words.
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let l = line.trim_end();
+            if !l.is_empty()
+                && !l.contains(' ')
+                && l.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+                && !emitted.iter().any(|e| e == l)
+            {
+                emitted.push(l.to_string());
+            }
+        }
+    }
+    assert!(
+        emitted.len() >= 7,
+        "expected every report section across these four decks, found {emitted:?} — \
+         the extraction is wrong, not the guide"
+    );
+
+    let guide = std::fs::read_to_string(workspace_root.join("docs/cli-guide.md"))
+        .expect("docs/cli-guide.md is readable");
+    for section in &emitted {
+        assert!(
+            guide.contains(section),
+            "the binary emits a `{section}` section that docs/cli-guide.md never mentions. \
+             Either document it in the Output format section or stop emitting it."
+        );
+    }
+}
+
+/// Every subcommand in the binary's own usage must be documented (FND-086).
+///
+/// `fnec worker --stdio` was in neither the guide nor the usage text, despite
+/// being one of the project's four shipped artifacts; `fnec project convert` was
+/// in the usage and printed by the binary, but appeared in the guide zero times.
+#[test]
+fn the_cli_guide_documents_every_subcommand_the_usage_advertises() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .current_dir(&workspace_root)
+        .output()
+        .expect("failed to run fnec");
+    let usage =
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
+
+    // Continuation lines of the usage block name a subcommand: "fnec <word> ...".
+    let subcommands: Vec<String> = usage
+        .lines()
+        .map(str::trim)
+        .filter_map(|l| l.strip_prefix("fnec "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .filter(|w| w.chars().all(|c| c.is_ascii_lowercase()))
+        .map(str::to_string)
+        .collect();
+    assert!(
+        subcommands.len() >= 3,
+        "expected the usage text to advertise several subcommands, found {subcommands:?}"
+    );
+
+    let guide = std::fs::read_to_string(workspace_root.join("docs/cli-guide.md"))
+        .expect("docs/cli-guide.md is readable");
+    for sub in &subcommands {
+        assert!(
+            guide.contains(&format!("fnec {sub}")),
+            "the binary advertises `fnec {sub}` in its usage, but docs/cli-guide.md \
+             never mentions it"
+        );
+    }
+}
