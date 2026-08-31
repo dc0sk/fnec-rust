@@ -49,7 +49,7 @@ Serves **DEC-003/008, NFR-003, PRT-011, Gates G3–G7, PH7-CHK-001..006**. wgpu 
 feature-gated (`--features wgpu`).
 
 - `src/lib.rs` — crate overview + `dispatch_frequency_point` scheduling seam (returns CPU fallback when GPU not wired); documents kernel status.
-- `src/gpu_kernels.rs` — CPU-reference Hallén far-field kernel (`compute_hallen_fr_point_cpu`/`_batch_cpu`), GPU-ready layouts (`GpuSegment`, `GpuFarFieldPoint`), `KernelTiming`. The parity baseline for shaders (PH7-CHK-001 renamed `*_stub` → `*_cpu`).
+- `src/kernel_reference.rs` — CPU-reference Hallén far-field kernel (`compute_hallen_fr_point_cpu`/`_batch_cpu`), GPU-ready layouts (`GpuSegment`, `GpuFarFieldPoint`), `KernelTiming`. The parity baseline for shaders (PH7-CHK-001 renamed `*_stub` → `*_cpu`).
 - `src/wgpu_device.rs` — real wgpu dispatch: adapter enumeration, no-op gate, WGSL shaders for RP far-field, Z-matrix fill, and GPU-resident Hallén solve; `microbench_zmatrix_dispatch` (PH7-CHK-002); `solve_hallen_gpu_resident` (PH7-CHK-003).
 - `src/shaders/*.wgsl` — `zmatrix_fill.wgsl`, RP far-field, `hallen_normal_solve.wgsl` (GPU-resident solve: Jacobi equilibration + complex LU + Björck refinement).
 

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/python-bindings.md
 status: living
-last_updated: 2026-05-03
+last_updated: 2026-08-31
 ---
 
 # fnec Python Bindings (`fnec_py`)
@@ -40,7 +40,7 @@ environment in editable mode.
 
 ## API reference
 
-### `solve_deck_str(deck: str) -> dict`
+### `solve_deck_str(deck: str, solver: str = "hallen") -> dict`
 
 Parse a NEC deck string, solve at the **first frequency** defined by the
 deck's `FR` card, and return a dictionary with the feedpoint impedance.
@@ -59,6 +59,8 @@ EN
 """
 
 result = fnec_py.solve_deck_str(deck)
+# ...or, for a geometry the Hallen formulation handles poorly:
+# result = fnec_py.solve_deck_str(deck, solver="mpie")
 print(result)
 # {'freq_mhz': 14.0, 'tag': 1.0, 'seg': 26.0, 'z_re': 73.1, 'z_im': 42.5,
 #  'z_abs': 84.5, 'z_arg_deg': 30.2}
@@ -76,9 +78,15 @@ print(result)
 | `z_abs` | float | Ω | Impedance magnitude. |
 | `z_arg_deg` | float | ° | Impedance phase angle. |
 
+`solver` selects the integral-equation formulation: `"hallen"` (default) or
+`"mpie"`. Any other value raises `ValueError`. The MPIE solver is the one to
+reach for on degree-3 junctions, closed loops, and near-ground geometry, where
+the Hallén formulation is documented as unreliable — see
+[mpie-solver-scope.md](mpie-solver-scope.md).
+
 Raises `RuntimeError` on parse or solver failure.
 
-### `sweep_deck_str(deck: str) -> list[dict]`
+### `sweep_deck_str(deck: str, solver: str = "hallen") -> list[dict]`
 
 Solve all frequency points defined by the deck's `FR` card(s) and return a
 list of dicts (one per frequency point), each with the same fields as
@@ -111,7 +119,7 @@ Adjust the `PYTHONPATH` Python version component to match your environment.
 
 ## Solver details
 
-- Uses the **Hallen integral-equation solver** (same default as `fnec --solver hallen`).
+- Defaults to the **Hallen integral-equation solver** (same default as `fnec --solver hallen`), and accepts `solver="mpie"` for the MPIE formulation.
 - Ground model, loads (`LD`), and transmission lines (`TL`) are applied.
 - Only the first EX card feedpoint is returned. Multi-source support is
   tracked in the Phase 4 backlog.
@@ -120,5 +128,8 @@ Adjust the `PYTHONPATH` Python version component to match your environment.
 
 - Single feedpoint per record (first EX card).
 - No radiation-pattern output.
-- Hallen solver only (no pulse/continuity/sinusoidal selection from Python yet).
+- Hallen and MPIE only: the pulse, continuity and sinusoidal *bases* that
+  `fnec --solver` offers are not selectable from Python. (This line previously
+  said "Hallen solver only"; `solver="mpie"` has been accepted since #413 /
+  FND-055, so the leading clause was false while the parenthetical was true.)
 - `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` required for Python 3.14+.

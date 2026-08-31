@@ -525,7 +525,7 @@ fn main() -> ExitCode {
 
     if gpu_fallback_count > 0 {
         eprintln!(
-            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not yet wired (PH7-CHK-004); running those points on CPU fallback"
+            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not wired (the GPU-resident dense solve measures slower than the CPU at every size tested); running those points on CPU fallback"
         );
     }
 

@@ -178,7 +178,8 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
 }
 
 // PH7-CHK-001: the GPU-candidate lane has no CPU-emulation "stub backend".
-// Until per-frequency GPU dispatch lands (PH7-CHK-004), a hybrid sweep routes
+// While per-frequency GPU dispatch stays unwired (a measured decision, not a
+// pending item — see `nec_accel` crate docs), a hybrid sweep routes
 // its GPU-candidate points to CPU fallback and says so honestly — it never
 // reports CPU work as GPU emulation.
 #[test]

@@ -1621,7 +1621,7 @@ where
         solved.extend(cpu_results);
 
         // The GPU-candidate lane consults the scheduling seam. Until per-frequency
-        // GPU dispatch is wired (PH7-CHK-004) every point falls back to CPU; we
+        // GPU dispatch is wired every point falls back to CPU; we
         // count those so the CLI can warn honestly that no GPU work occurred.
         let mut gpu_fallback_count = 0usize;
         for idx in lane_plan.gpu_candidate_indices.iter().copied() {

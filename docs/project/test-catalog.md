@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-07-08
+last_updated: 2026-08-31
 ---
 
 # Test catalog
@@ -57,32 +57,50 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: **266** test functions (nec-cli 192, nec-gui 47,
-nec_accel 4, nec_project 20, nec_solver 1, nec_worker 2).
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=514 --> **514** test
+functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
 
+<!-- Counts below are CHECKED, not typed: `scripts/check-test-catalog-counts.py`
+     re-derives every number in this section from `cargo test --workspace -- --list`
+     and fails the build on drift. Re-measure with `--list-only`. -->
+
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 100 | loads 18, geometry 20, excitation 15, linear 14, matrix 12, farfield 9, basis 6, tl 6 |
-| `nec_worker` | 66 | worker 17, result_cache 13, solve 7, capability 7, protocol 6, hosts 6, pool 5, controller 3, ssh_worker 2 |
+| `nec_solver` | 232 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_worker` | 103 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
+| `nec-gui` | 91 | app_state, model_doc, mesh, camera, solve |
+| `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
+| `nec_parser` | 27 | lib, template |
+| `nec_accel` | 26 | kernel_reference 20, lib 6 |
 | `nec_report` | 25 | lib 25 |
-| `nec_accel` | 25 | gpu_kernels 20, lib 5 |
-| `nec_parser` | 21 | lib 14, template 7 |
-| `nec_project` | 12 | lib 12 |
-| `apps/nec-cli` | 10 | main 10 |
+| `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: **266** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=565 --> **565** `#[test]` functions.
 
 ## Totals
 
-- **`#[test]` functions**: ~532 (266 integration + 266 unit).
-- **`cargo test --workspace` aggregate** (includes doctests): **539 passing** across
-  53 test binaries — the authoritative pass count in [test-results.md](test-results.md).
-- **wgpu-gated GPU tests** (`cargo test -p nec_accel --features wgpu`): **29 passing**
-  across 6 binaries (real device dispatch, not the software rasterizer).
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1086 --> **1086** = 565 unit + 514 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1084 passing, 0 failed, 2 ignored**,
+  measured 2026-08-31 — the authoritative pass count in [test-results.md](test-results.md).
 
-The small gap between the `#[test]` grep count (532) and the `cargo test` aggregate
-(539) is doctests and feature-gated variants, which `cargo test` runs but the grep
-does not count.
+Doctests are counted separately on purpose. `cargo test --workspace -- --list`
+prints them under `Doc-tests <crate>` headers that carry no `Running` line, so a
+parser that only tracks `Running` charges all seven to whichever `tests/*.rs`
+binary happened to be listed last. The first version of the checker did exactly
+that, inflating one row by 7 and the integration subtotal with it, and **passed**
+— it was self-consistent with its own bug. Caught in review.
+
+**The configuration matters, so it is stated rather than implied.** These numbers are
+from a `--workspace` run. Feature unification turns on `nec_accel/wgpu` there, which
+adds four `nec_accel` lib tests (26 rather than 22) *and* is the only reason that
+crate's four `tests/*.rs` binaries compile at all — `cargo test -p nec_accel` alone
+fails to build them (FND-144). A count is not a property of the tree by itself; it is
+a property of the tree and the build configuration together.
+
+These counts are derived, not typed: `scripts/check-test-catalog-counts.py` enumerates
+what the harness will actually run and fails on drift. The previous figures — "~532
+across 53 test binaries" — were hand-maintained and had drifted by more than a factor
+of two while every one of them looked precise (FND-143).

@@ -10,12 +10,11 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, RP, EN cards)
 	- **GM** (Geometry Move): rotate and/or translate wire ranges in place, or append one transformed copy when `tag_increment > 0`
 	- **GR** (Geometry Repeat): supported subset repeats existing wires by successive z-axis rotation
-	- **EX type 1**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while current-source semantics remain pending
-	- **EX type 2**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while incident-plane-wave semantics remain pending
-	- **EX type 4**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while segment-current semantics remain pending
-	- **EX type 5**: staged portability support is accepted in the parser/solver path and currently runs with EX type 0 behavior plus an explicit warning while qdsrc semantics remain pending
-	- **PT**: staged portability parsing is supported; current runtime emits an explicit deferred-support warning and ignores PT electrical semantics
-	- **NT**: staged portability parsing is supported; current runtime emits an explicit deferred-support warning and ignores NT electrical semantics
+	- **EX types 1 / 2 / 3** (incident plane wave: linear, right- and left-elliptic): solved on `--solver hallen` as a *receiving* antenna — induced segment currents rather than a feedpoint impedance. A `RECEIVE_PATTERN` table is emitted only when the card defines more than one incidence direction (NTHETA·NPHI > 1). Straight, non-junctioned wires only; junctioned geometry is refused on this path
+	- **EX type 4** (current source): solved; the feedpoint reports `Z = V_port / i0`, which matches the voltage-source impedance on the same geometry because impedance is a property of the port and not of the drive
+	- **EX type 5** (NEC's current-slope-discontinuity voltage source): fnec models it by the applied-field method, so it solves and gives the same answer as type 0. That is a documented approximation of NEC's numerics, not an identity of the two cards
+	- **PT**: print control is applied at runtime — `PT -1` suppresses the `CURRENTS` table, `PT 0` prints all segments
+	- **NT**: two-port network admittance is stamped into the solve. A well-formed `NT` moves the feedpoint (74.24 + j13.90 -> 70.63 + j14.01 on `dipole-nt-tl-equiv-freesp-51seg`); a malformed card is warned about and skipped
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
   - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
@@ -34,6 +33,8 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 - CLI binary `fnec` with selectable solver and RHS modes
 - FR sweep support in CLI output and corpus validation gating
 - Residual diagnostics printed to stderr on every run
+- **Second solver: `--solver mpie`** (subsectional mixed-potential EFIE) — handles the three geometry classes the Hallen formulation does not: degree-3 (T/Y) junctions, closed loops, and near-ground currents and patterns. Opt-in and additive; the Hallen corpus is untouched. See [`docs/mpie-solver-scope.md`](docs/mpie-solver-scope.md)
+- **Sommerfeld surface-wave ground: `--ground-solver sommerfeld`** — a rigorous near-ground model in place of the reflection-coefficient approximation
 - Modular crate workspace: parser, model, solver, accel, report, project, CLI, GUI
 
 ## Quick start

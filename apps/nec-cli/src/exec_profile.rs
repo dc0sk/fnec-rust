@@ -62,8 +62,11 @@ pub(super) struct StartupExecutionProbe {
     /// machine has no GPU" — false on a host whose GPU fnec's wgpu far-field
     /// kernels do use. What it actually reports is
     /// `nec_accel::dispatch_frequency_point`, which is an unconditional
-    /// `FallbackToCpu` because PH7-CHK-004 is not wired, so the value is a
-    /// compile-time constant presented as a probe result (FND-105).
+    /// `FallbackToCpu` because that seam is deliberately not wired (the
+    /// GPU-resident solve measures slower than the CPU at every size), so the
+    /// value is a compile-time constant presented as a probe result (FND-105).
+    /// It previously blamed PH7-CHK-004, which delivered different work
+    /// (FND-064).
     ///
     /// Renaming rather than wiring is deliberate: `warnings.rs` records the
     /// GPU-resident solve at 0.04x–0.48x of the CPU at every tested size, so
