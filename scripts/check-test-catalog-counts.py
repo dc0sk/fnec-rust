@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -51,12 +52,19 @@ def measured() -> tuple[Counter, Counter]:
     # separate streams lose the interleaving that attributes a name to a target.
     # Concatenating them afterwards puts every marker after every name and the
     # parse silently attributes nothing — which is what the guard below caught.
+    # CARGO_TERM_COLOR=never, because CI sets it to `always` and the ANSI reset
+    # lands between "Running" and the target path — `Running\x1b[0m unittests
+    # src/lib.rs` matches no regex that expects a space there. The `--list-only`
+    # run is clean locally and failed in CI for exactly this reason; the floor
+    # below is what turned a silent zero into a loud one. The strip is kept as
+    # well, so the parse does not depend on the env var being honoured.
     proc = subprocess.run(
         ["cargo", "test", "--workspace", "--", "--list"],
         cwd=ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        env={**os.environ, "CARGO_TERM_COLOR": "never"},
     )
     if proc.returncode != 0:
         sys.exit(f"cargo test --list failed (exit {proc.returncode}):\n{proc.stdout[-2000:]}")
@@ -64,7 +72,8 @@ def measured() -> tuple[Counter, Counter]:
     unit: Counter = Counter()
     integration: Counter = Counter()
     current: tuple[bool, str] | None = None
-    for line in proc.stdout.splitlines():
+    ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    for line in ansi.sub("", proc.stdout).splitlines():
         m = re.search(r"Running (?:unittests )?(\S+) \(([^)]+)\)", line)
         if m:
             src, binary = m.group(1), m.group(2).split("/")[-1]
