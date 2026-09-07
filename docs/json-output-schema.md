@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-05-03
+last_updated: 2026-09-07
 ---
 
 # fnec JSON Output Schema (v1)
@@ -21,8 +21,13 @@ fnec --output-format json --sweep-config sweep.toml <deck.nec>
 ## Top-level structure
 
 The output is a JSON **array** — one element per frequency point solved, in
-the same order as the deck's FR card defines them.  If the deck has no FR
-card the array is empty (`[]`).
+the same order as the deck's FR card defines them.
+
+A deck with no FR card is documented here as producing `[]`, and **does not**:
+it produces zero bytes, so `json.loads(...)` on the output raises. That is
+FND-084 in `docs/project/findings-ledger.md`, open and deliberately not fixed
+in the change that rewrote the section below — the two cases were separated on
+purpose, and re-measured on 2026-09-07 to confirm the no-FR one is unchanged.
 
 ```json
 [
@@ -62,9 +67,35 @@ tracked under EP-4/EP-5.
 
 ### Absence of feedpoint data
 
-If a deck produces no sweep summary (e.g. a pattern-only deck with no EX
-card) the JSON array will be empty (`[]`).  No error is raised; the exit
-code is 0.
+A deck whose `EX` card names a drive that yields no priceable feedpoint — an
+incident plane wave, for instance — solves and reports no feedpoint record: the
+JSON array is empty (`[]`), no error is raised, and the exit code is 0.
+Measured 2026-09-07 on `corpus/dipole-ex1-freesp-51seg.nec`.
+
+(This paragraph used to open with the general claim that *any* deck producing
+no sweep summary yields `[]` and exit 0. It does not hold for a deck with no FR
+card — see the note under "Top-level structure" — so it is stated for the case
+that was actually measured rather than for the class.)
+
+**A deck with no `EX` card at all is not such a deck, and no longer reaches
+this case.**  Until the change recorded in the changelog's next release it did:
+`fnec` printed `[]` and exited 0, and in text mode printed a full `CURRENTS`
+table of exact zeros, a `RADIATION_PATTERN` of `-999.9900`, and a `diag` line
+reading `rel_res=0` — a structure that nothing drives, reported as a converged
+solve.  It is now refused before the solve, on every frontend and every
+`--solver` mode:
+
+```console
+$ fnec no-ex.nec
+error: [validator] EX: this deck has no EX card, so nothing drives it and there is no solve — an undriven structure carries zero current everywhere. Add a driven source (`EX 0` or `EX 5`) to transmit, or an incident plane wave (`EX 1`, `2` or `3`) to receive
+$ echo $?
+1
+```
+
+Exit code 1, and **stdout carries nothing at all — not `[]`**.  An optimizer
+loop that fed such a deck in and parsed the empty array back out now sees a
+non-zero exit; it should report the error rather than record a null result,
+which is what an empty array had been silently standing for.
 
 ## Stability guarantee
 

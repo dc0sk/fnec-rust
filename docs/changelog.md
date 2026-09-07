@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-08-25
+last_updated: 2026-09-07
 ---
 
 # Changelog
@@ -14,6 +14,49 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+### Changed
+
+- **A deck with no `EX` card is now refused instead of solved.** BREAKING for
+  JSON consumers: `fnec` printed `[]` and exited 0 for such a deck, a behaviour
+  `docs/json-output-schema.md` documented under "Absence of feedpoint data".
+  (Not under that file's "Stability guarantee" section, which covers the field
+  set — the behaviour was documented rather than guaranteed, but consumers
+  relied on it either way.) In text mode it also printed a full `CURRENTS` table
+  of exact zeros, a `RADIATION_PATTERN` of `-999.9900`, and a `diag` line
+  reading `abs_res=0 rel_res=0` — a structure nothing drives, reported as a
+  converged solve. It now exits 1 with a named reason and writes nothing to
+  stdout. The check lives in `nec_solver::validate::pre_solve_error`, so it
+  reaches all four frontends and all five `--solver` modes; a guard in the
+  Hallén RHS builders would have left `--solver pulse` and `--solver
+  continuity` printing zeros, since those drive off `build_excitation`.
+- Consequence worth knowing before you upgrade: a deck with **neither** `EX` nor
+  `FR` also changes, from exit 0 to exit 1, because the validator runs ahead of
+  the `FR` check. A deck with an `EX` but no `FR` is unchanged (it still exits 0
+  writing zero bytes — that is FND-084, still open).
+- This deliberately diverges from nec2c, conditionally. Measured 2026-09-07 on a
+  21-segment dipole with `FR` and no `EX`: with an `XQ`, nec2c exits 0 and prints
+  a `CURRENTS AND LOCATION` table of `0.0000E+00`; with an `RP`, exit 0 with
+  `-nan` gains and `EFFICIENCY = -nan` rather than a floor value; with neither,
+  exit 0 and no currents or radiation section at all — it never executes. So the
+  zeros are an artefact of printing unconditionally, and fnec went further than
+  the oracle in two ways nec2c does not: stamping a convergence figure on the
+  result, and feeding a JSON API from it.
+- The GUI, `fnec_py` and the worker had **no** no-`EX` check at all before this:
+  the only one in the tree was a validator declared inside the CLI's own `main`.
+  The GUI's currents and pattern views therefore drew an all-zero overlay with
+  no caveat whatsoever; the worker and `fnec_py` did refuse, but only after the
+  wasted solve and with the wrong reason ("no driven feedpoint"), which is the
+  sentence a plane-wave receive deck gets. All four now refuse through the one
+  shared predicate, before any solve.
+
+### Fixed
+
+- A straight wire written as two collinear `GW` cards can now be lit by an
+  incident plane wave. `build_planewave_hallen` grouped segments by raw `GW`
+  card while its delta-gap sibling grouped by merged conductor, so the join read
+  as a junction and the deck was refused — though the same geometry driven by
+  `EX 0` or `EX 4` solved (FND-142).
 
 ## [0.17.0] — 2026-08-28 — Nothing left open
 

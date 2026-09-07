@@ -19,7 +19,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/core_flags_contract.rs` | 15 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors | NFR-005, PH2-CHK-008 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 8 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
-| `apps/nec-cli/tests/deck_validator.rs` | 4 | Deck validator warns on missing `EX`; silent on well-formed decks | FR-009, EP-4 |
+| `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
 | `apps/nec-cli/tests/ex_cards.rs` | 9 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
 | `apps/nec-cli/tests/exec_modes.rs` | 24 | `--exec` selection, drop-in alias resolution, sandbox paths | DEC-003, CP-012 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 3 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
@@ -57,7 +57,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=516 --> **516** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=519 --> **519** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -68,7 +68,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 232 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_solver` | 234 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
 | `nec_worker` | 103 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 91 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
@@ -78,12 +78,12 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=565 --> **565** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1088 --> **1088** = 565 unit + 516 integration + **7 doctests**.
-- **`cargo test --workspace` aggregate**: **1086 passing, 0 failed, 2 ignored**,
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1093 --> **1093** = 567 unit + 519 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1091 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
 Doctests are counted separately on purpose. `cargo test --workspace -- --list`

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-09-07
 ---
 
 # Test results
@@ -27,13 +27,18 @@ rule in [README.md](README.md)).
 ### `cargo test --workspace` (default features)
 
 ```
-1084 passed; 0 failed; 2 ignored
+1091 passed; 0 failed; 2 ignored
 exit code 0
 ```
 
 Across **93 reporting binaries**. `cargo test --workspace -- --list` enumerates
-**1086** test functions (565 unit + 514 integration + 7 doctests); the two not
-run are the `ignored` ones.
+**1093** test functions (567 unit + 519 integration + 7 doctests); the two not
+run are the `ignored` ones. Re-measured 2026-09-07 after #448 (+2 integration:
+the plane-wave collinear-split invariance and its bent-junction control) and
+#449 (+2 unit in `nec_solver::validate`, +2 integration in `gui_smoke.rs`, +1 in
+`deck_validator.rs`). The counts come from
+`scripts/check-test-catalog-counts.py`, which derives them from `--list` and
+fails the build on drift, rather than from a hand tally.
 
 **This file had not been appended to since 2026-07-08 — two months and roughly
 470 tests ago — while `test-catalog.md` pointed at it as "the authoritative pass

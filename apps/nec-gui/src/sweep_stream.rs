@@ -255,8 +255,20 @@ mod tests {
         // The mid-sweep failure path used to `return` without sending the
         // aggregate, so points already on screen were never qualified (FND-014).
         // A deck whose geometry prepares but whose solve fails exercises it.
-        const NO_EX: &str = "CM no excitation\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEN\n";
-        let msgs = run(NO_EX, 14.0, 14.2, 0.1);
+        //
+        // That fixture used to be a deck with no `EX` card at all. Such a deck is
+        // now refused by `pre_solve_error` inside `prepare`, so it never reaches
+        // the loop this test exists to pin: the stream emits one
+        // `SweepComplete(Err)` and no `SweepCaveats` at all, and the `assert_eq!`
+        // below fails. The fixture was replaced because the test broke loudly,
+        // not to head off a silent pass. A plane-wave receive deck is the honest
+        // replacement, and a better one: it is a real class rather than a
+        // degenerate one, and it still exercises the failure path this pins —
+        // it prepares, then fails per point at the pricing step. It prepares (geometry builds, the excitation vector
+        // builds, nothing refuses it) and then fails per point at the pricing
+        // step, because a receive deck has no driven port to price.
+        const RECEIVE_ONLY: &str = "CM incident plane wave, no driven port\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 11 0 90.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let msgs = run(RECEIVE_ONLY, 14.0, 14.2, 0.1);
         assert!(
             matches!(msgs.last(), Some(Message::SweepComplete(_, Err(_)))),
             "{msgs:?}"

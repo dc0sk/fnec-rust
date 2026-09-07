@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/plugin-api-design.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-09-07
 ---
 
 # Plugin API Design
@@ -163,15 +163,18 @@ it never short-circuits, so callers receive the complete picture in one pass.
 - Emitting structured feedback to automation pipelines without parsing CLI
   stderr heuristically.
 
-**CLI integration**: `fnec` runs `NoExCardValidator` (warning-level) as a
-built-in validator on every solve path, emitting `warning: [validator] …`
-to stderr.  Error-level diagnostics cause a non-zero exit code without
-starting the solver.
+**CLI integration**: `fnec` runs `NoExCardValidator` as a built-in validator on
+every solve path.  It is **error-level** since the change that made an undriven
+deck a refusal (FND-145), so it emits `error: [validator] …` to stderr and
+exits non-zero without starting the solver; it was warning-level before that.
+The `DiagnosticLevel::Warning` arm remains in the CLI for future validators and
+is currently reached by none.
 
 **Exercised by**: the doctest in `crates/nec_model/src/lib.rs`
-(`RequireExCard` example) plus 7 unit tests in the `tests` module.  Four
-integration tests in `apps/nec-cli/tests/deck_validator.rs` verify the
-CLI warning/error emission path.
+(`RequireExCard` example) plus 7 unit tests in the `tests` module.  Five
+integration tests in `apps/nec-cli/tests/deck_validator.rs` verify the CLI's
+error emission path — the *warning* half of that path is no longer covered by
+any of them, since the CLI's only validator is error-level now (FND-145).
 
 ```
 NEC deck file

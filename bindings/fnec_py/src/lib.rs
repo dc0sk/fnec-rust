@@ -372,6 +372,30 @@ fn fnec_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use super::*;
 
+    /// The undriven-deck refusal, at the bindings' own entry point.
+    ///
+    /// Same reasoning as the test below: `solve_at_freq` reaches the shared gate
+    /// through `validate::diagnose`, not by calling `pre_solve_error` directly,
+    /// so the wiring is a second thing that can be missing here.
+    ///
+    /// Note what this test does NOT get you: `bindings/fnec_py` is excluded from
+    /// the cargo workspace (`Cargo.toml`), and CI's bindings job runs fmt,
+    /// clippy, maturin and pytest — never `cargo test`. So this and its two
+    /// neighbours are CI-dormant; they run only in the local `check-all.sh` gate.
+    /// The pytest twin is what actually guards this in CI.
+    #[test]
+    fn an_undriven_deck_is_refused() {
+        let deck_src = "CE\nGW 1 21 0 0 -5.0 0 0 5.0 0.001\nGE\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let err = solve_at_freq(
+            &parsed.deck,
+            14.2e6,
+            nec_solver::validate::SolverKind::Hallen,
+        )
+        .expect_err("a deck nothing drives must be refused");
+        assert!(err.contains("no EX card"), "{err}");
+    }
+
     /// FND-129, at the bindings' own entry point.
     ///
     /// Every Python call funnels through [`solve_at_freq`], and it reaches the

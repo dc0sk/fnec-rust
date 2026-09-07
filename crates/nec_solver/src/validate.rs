@@ -1233,6 +1233,59 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
         .or_else(|| buried_wire_geometry_error(segs, ground))
 }
 
+/// A deck that nothing drives at all, if that is the case.
+///
+/// Without an `EX` card there is no forcing term, so the Hallén system is
+/// homogeneous and its solution is the zero vector. All four frontends *solved*
+/// it; they then split on what they did with the answer, and the split is the
+/// reason this check is here rather than in any one of them:
+///
+/// - the CLI printed 51 `CURRENTS` rows of exactly `0.000000e0`, a
+///   `RADIATION_PATTERN` of `-999.9900`, and a `diag` line reading
+///   `abs_res=0 rel_res=0` — a flat response advertised as perfect convergence —
+///   and exited 0;
+/// - the GUI's currents and pattern views drew the same zeros with no caveat at
+///   all;
+/// - the worker and `fnec_py` refused, but only after the wasted solve and with
+///   the wrong reason: "no driven feedpoint (EX voltage source) found in deck",
+///   the same sentence a plane-wave receive deck gets, which has a feedpoint
+///   problem and not a missing-card problem.
+///
+/// The GUI had nothing to check with: the only no-`EX` test in the tree was a
+/// validator declared *inside* the CLI's own `main`.
+///
+/// This lives here, in the gate every frontend calls, for two reasons. It reaches
+/// all four frontends rather than one; and it reaches all five `--solver` modes,
+/// which a guard in the Hallén RHS builders would not — `pulse` and `continuity`
+/// drive off `build_excitation`, so they would have gone on printing zeros while
+/// the fix looked complete.
+///
+/// fnec deliberately diverges from nec2c here, though less starkly than a short
+/// version of that sentence suggests. Given an undriven deck **with an execute
+/// card** (`XQ`), nec2c exits 0 and prints a zero `CURRENTS AND LOCATION` table;
+/// with an `RP` it prints zero currents and `-nan` gains rather than a floor
+/// value; with neither it never executes and prints no currents at all. So the
+/// zeros are an artefact of printing unconditionally rather than a workflow, and
+/// fnec went further than the oracle in two ways nec2c does not — stamping a
+/// convergence figure on the result, and feeding a JSON API from it.
+///
+/// (Measured against this host's `nec2c` 2026-09-07 on a 21-segment dipole with
+/// `FR` and no `EX`: with `XQ`, exit 0 and every current row `0.0000E+00`; with
+/// `RP`, exit 0 with `-nan` gains and `EFFICIENCY = -nan`; with neither, exit 0
+/// and no `CURRENTS` or `RADIATION` section at all.)
+pub fn undriven_deck_error(deck: &NecDeck) -> Option<String> {
+    if deck.cards.iter().any(|c| matches!(c, Card::Ex(_))) {
+        return None;
+    }
+    Some(
+        "EX: this deck has no EX card, so nothing drives it and there is no solve \
+         — an undriven structure carries zero current everywhere. Add a driven \
+         source (`EX 0` or `EX 5`) to transmit, or an incident plane wave \
+         (`EX 1`, `2` or `3`) to receive"
+            .to_string(),
+    )
+}
+
 /// Every reason a deck must not be solved at all, geometry or otherwise.
 ///
 /// This is the gate a frontend calls before solving; [`geometry_error`] is one
@@ -1246,6 +1299,7 @@ pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) ->
 /// deck whose wires cross has a problem no excitation change will fix.
 pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
     geometry_error(deck, segs, ground)
+        .or_else(|| undriven_deck_error(deck))
         .or_else(|| mixed_excitation_error(deck))
         .or_else(|| multiple_current_sources_error(deck))
         .or_else(|| grid_budget_error(deck))
@@ -1716,6 +1770,75 @@ mod tests {
             "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 3 0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert_eq!(mixed_excitation_error(&deck), None);
+    }
+
+    /// An undriven deck is refused, and the refusal reaches every frontend
+    /// because it lives in `pre_solve_error` rather than in one of them.
+    #[test]
+    fn a_deck_with_no_ex_card_is_refused() {
+        let mut deck = NecDeck::new();
+        deck.cards.push(Card::Gw(nec_model::card::GwCard {
+            tag: 1,
+            segments: 11,
+            start: [0.0, 0.0, -5.0],
+            end: [0.0, 0.0, 5.0],
+            radius: 0.001,
+        }));
+        let msg = undriven_deck_error(&deck).expect("a deck nothing drives has no solve");
+        assert!(msg.contains("no EX card"), "{msg}");
+        // The remedy names both directions, because "add an EX card" leaves a
+        // reader who wanted a receive deck no better off.
+        assert!(
+            msg.contains("EX 0"),
+            "the transmit remedy must be named: {msg}"
+        );
+        assert!(
+            msg.contains("EX 1"),
+            "the receive remedy must be named: {msg}"
+        );
+
+        // Reached through the shared gate, not merely present as a function. A
+        // check no frontend calls is the shape FND-036 had.
+        let segs = crate::build_geometry(&deck).expect("geometry builds");
+        assert_eq!(
+            pre_solve_error(&deck, &segs, &GroundModel::FreeSpace).as_deref(),
+            Some(msg.as_str()),
+            "pre_solve_error must carry the undriven refusal"
+        );
+    }
+
+    /// The control: one `EX` card is enough to clear it, whichever direction it
+    /// drives. Without this the check above passes for a predicate that refuses
+    /// everything.
+    #[test]
+    fn any_ex_card_clears_the_undriven_check() {
+        for ex_type in [0u32, 1, 4, 5] {
+            let mut deck = NecDeck::new();
+            deck.cards.push(Card::Gw(nec_model::card::GwCard {
+                tag: 1,
+                segments: 11,
+                start: [0.0, 0.0, -5.0],
+                end: [0.0, 0.0, 5.0],
+                radius: 0.001,
+            }));
+            deck.cards.push(Card::Ex(nec_model::card::ExCard {
+                excitation_type: ex_type,
+                tag: 1,
+                segment: 6,
+                i4: 0,
+                voltage_real: 1.0,
+                voltage_imag: 0.0,
+                polarization_deg: 0.0,
+                polarization_ratio: 0.0,
+                theta_inc: 0.0,
+                phi_inc: 0.0,
+            }));
+            assert_eq!(
+                undriven_deck_error(&deck),
+                None,
+                "EX type {ex_type} drives the deck"
+            );
+        }
     }
 
     #[test]
