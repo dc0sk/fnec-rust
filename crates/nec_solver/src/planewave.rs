@@ -153,12 +153,16 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// Build the Hallén forcing + homogeneous columns for the first incident
 /// plane-wave EX card in `deck`.
 ///
-/// Supports one or more **straight, non-junctioned** wires (e.g. a parallel
-/// dipole array). Each wire carries its own Hallén particular solution: the
-/// tangential field uses that wire's axis, the along-wire coordinate is measured
-/// from that wire's midpoint, and the `sin(k|sₘ−s_p|)` kernel sums only over
-/// segments on the same wire. Junctioned geometry is rejected (its continuity
+/// Supports one or more **straight, non-junctioned** conductors (e.g. a parallel
+/// dipole array). Each conductor carries its own Hallén particular solution: the
+/// tangential field uses that conductor's axis, the along-wire coordinate is
+/// measured from its midpoint, and the `sin(k|sₘ−s_p|)` kernel sums only over
+/// segments on the same conductor. Junctioned geometry is rejected (its continuity
 /// constraints are not modelled by [`crate::solve_hallen_planewave`]).
+///
+/// "Conductor" rather than "`GW` card": a straight wire split across several
+/// collinear `GW` cards is one conductor here, via
+/// [`crate::geometry::merge_collinear_wire_endpoints`].
 pub fn build_planewave_hallen(
     deck: &NecDeck,
     segs: &[Segment],
@@ -174,7 +178,20 @@ pub fn build_planewave_hallen(
         .ok_or(PlaneWaveError::NoPlaneWaveCard)?;
 
     let n = segs.len();
-    let wire_endpoints = crate::geometry::wire_endpoints_from_segs(segs);
+    // Collinear `GW` splits are merged into one logical conductor, exactly as the
+    // delta-gap sibling `crate::build_hallen_rhs` does — and as
+    // `crate::solve_hallen_planewave`, which consumes what this builds, already
+    // assumed: its caller hands it `merge_collinear_wire_endpoints`, so a raw
+    // per-`GW` list here meant the builder and the solver disagreed about what a
+    // wire is. All three uses below need the merged list, not just the junction
+    // test: the `sin(k|s_m - s_p|)` sum must run over the whole conductor, and `s`
+    // must be measured from the conductor's midpoint rather than reset at a split.
+    //
+    // On geometry with no collinear split this is a strict no-op — the merge
+    // returns exactly `wire_endpoints_from_segs` there — so no deck that solved
+    // before changes, and a genuine T/Y junction is still detected and refused
+    // (FND-142).
+    let wire_endpoints = crate::geometry::merge_collinear_wire_endpoints(segs);
     if !crate::geometry::detect_wire_junctions(
         segs,
         &wire_endpoints,
