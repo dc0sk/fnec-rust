@@ -413,3 +413,38 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
     )
     if negative:
         assert "sweep points report negative" in str(negative[0].message)
+
+
+NO_EX = """CM nothing drives this
+CE
+GW 1 21 0 0 -5.282 0 0 5.282 0.001
+GE 0
+FR 0 1 0 0 14.2 0.0
+EN
+"""
+
+
+def test_an_undriven_deck_is_refused():
+    """A deck with no EX card has no solve, and must not answer with one.
+
+    These bindings had no no-EX check of their own; they reached a refusal only
+    by failing to find a feedpoint after the solve had already run. The check is
+    in `pre_solve_error` now, which is the gate all four frontends call, so this
+    fails before any matrix is filled.
+    """
+    with pytest.raises(RuntimeError, match="no EX card"):
+        fnec_py.solve_deck_str(NO_EX)
+
+
+def test_the_sweep_entry_point_refuses_it_too():
+    """Two entry points, one predicate.
+
+    Both funnel through `solve_at_freq`, so this is a wiring check rather than
+    two independent validations — an earlier version of this docstring claimed
+    the latter, which the module's own comment on `solve_at_freq` contradicts.
+    It still earns its place: `sweep_deck_str` returns an empty list without
+    solving when the deck has no `FR`, so the order of its early exits is a real
+    thing to pin.
+    """
+    with pytest.raises(RuntimeError, match="no EX card"):
+        fnec_py.sweep_deck_str(NO_EX)

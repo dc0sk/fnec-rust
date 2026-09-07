@@ -212,12 +212,31 @@ mod tests {
         );
     }
 
+    /// An undriven deck is refused for the reason it is undriven, not with the
+    /// generic "no driven feedpoint".
+    ///
+    /// This used to expect `NoFeedpoint`, which the worker reached by solving the
+    /// deck (to all zeros) and then failing to find a feedpoint to price. Both
+    /// this deck and a plane-wave receive deck landed on that one variant, so the
+    /// wire could not tell "nothing drives this structure" from "the drive is
+    /// receive-only, which this API cannot price". `pre_solve_error` now refuses
+    /// the first before any matrix is filled.
+    ///
+    /// `UnsupportedConfig` is an existing wire variant, so no controller breaks:
+    /// adding an `ErrorCode` variant would have, since older controllers fail the
+    /// whole result line on an unknown one.
     #[test]
-    fn solve_no_feedpoint_returns_error() {
+    fn solve_undriven_deck_is_refused_by_reason() {
         // Deck with geometry but no EX card.
         let deck = "CM test\nGW 0 1 0 0 0 0 0 1 0.001\nGE 0\nFR 0 1 0 0 14.175 0\nEN\n";
         let err = solve_deck_at_frequency(deck, 14.175e6, "hallen").unwrap_err();
-        assert!(matches!(err, SolveError::NoFeedpoint));
+        match &err {
+            SolveError::UnsupportedConfig(m) => assert!(
+                m.contains("no EX card"),
+                "the refusal must name the missing drive: {m}"
+            ),
+            other => panic!("expected UnsupportedConfig naming the missing EX, got {other:?}"),
+        }
     }
 
     #[test]

@@ -3010,3 +3010,80 @@ fn an_invalid_edit_also_retires_a_load_in_flight() {
         "a stale load landed and cleared the error raised by an edit it did not contain"
     );
 }
+
+/// An undriven deck must not render as an all-zero current overlay.
+///
+/// The GUI had **no** no-`EX` check at all: the only one in the tree was a
+/// validator declared inside the CLI's own `main`, so this frontend solved the
+/// homogeneous system, got the zero vector, and drew it — coloured, with no
+/// error and no caveat. Measured before the fix, on this deck:
+/// `load_currents_str(NO_EX, Hallen) -> Ok, max_ma = 0e0`.
+///
+/// Only the currents view was measured that way. The pattern view is asserted
+/// here because it shares `solve_for_currents`, not because a floor-value
+/// reading was recorded for *this* deck — the `-999.99 dBi` figure in the
+/// findings ledger belongs to FND-112's plane-wave deck, and transposing it to
+/// this one would be inventing a measurement.
+///
+/// Three entry points, two seams: `load_currents_str` and `pattern_grid_str`
+/// both go through `solve_for_currents`, `solve_deck_str` validates separately.
+/// The GUI has further public entry points (`*_path` wrappers, `SweepJob`) that
+/// this does not cover; a guard wired into only the one a test happened to call
+/// is the FND-038 shape, which is why more than one is checked here rather than
+/// a claim that all of them are.
+#[test]
+fn an_undriven_deck_is_refused_by_the_gui_currents_pattern_and_solve_paths() {
+    const NO_EX: &str =
+        "CM nothing drives this\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    use nec_gui::solve::SolverKind;
+
+    let currents = nec_gui::solve::load_currents_str(NO_EX, SolverKind::Hallen);
+    let pattern = nec_gui::solve::pattern_grid_str(NO_EX, SolverKind::Hallen);
+    let impedance = nec_gui::solve::solve_deck_str(NO_EX, SolverKind::Hallen);
+
+    for (name, err) in [
+        ("currents", currents.err()),
+        ("pattern", pattern.err()),
+        ("impedance", impedance.err()),
+    ] {
+        let msg = err.unwrap_or_else(|| {
+            panic!("{name}: a deck nothing drives must be refused, not rendered as zeros")
+        });
+        assert!(
+            msg.contains("no EX card"),
+            "{name}: the refusal must name the missing drive, got: {msg}"
+        );
+    }
+}
+
+/// The control for the test above, and the reason it cannot be satisfied by a
+/// predicate that refuses everything: the same geometry with a drive still
+/// solves, and a **receive** deck still solves too.
+///
+/// The second half matters more than it looks. "Refuse a deck with no driven
+/// port" and "refuse a deck with no `EX` card" are easy to conflate, and the
+/// first would silently un-ship the plane-wave receive capability these tabs
+/// gained — currents and a pattern for an `EX 1` deck, which is what a receive
+/// model is for.
+#[test]
+fn a_driven_deck_and_a_receive_deck_both_still_solve() {
+    use nec_gui::solve::SolverKind;
+    const DRIVEN: &str =
+        "CM driven\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const RECEIVE: &str =
+        "CM receive\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 11 0 90.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    let driven = nec_gui::solve::load_currents_str(DRIVEN, SolverKind::Hallen)
+        .expect("a driven deck still solves");
+    assert!(
+        driven.currents_ma.iter().any(|c| *c > 1e-6),
+        "driven deck produced no current"
+    );
+
+    let receive = nec_gui::solve::load_currents_str(RECEIVE, SolverKind::Hallen)
+        .expect("a receive deck still solves for induced currents");
+    assert!(
+        receive.currents_ma.iter().any(|c| *c > 1e-6),
+        "receive deck produced no induced current — the plane-wave capability regressed"
+    );
+}

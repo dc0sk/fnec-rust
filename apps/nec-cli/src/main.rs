@@ -303,14 +303,30 @@ fn main() -> ExitCode {
     struct NoExCardValidator;
     impl DeckValidator for NoExCardValidator {
         fn validate(&self, deck: &nec_model::deck::NecDeck) -> Vec<ValidationDiagnostic> {
-            let has_ex = deck.cards.iter().any(|c| matches!(c, Card::Ex(_)));
-            if has_ex {
-                vec![]
-            } else {
-                vec![ValidationDiagnostic::warning(
-                    "deck has no EX card — no feedpoint impedance will be computed",
-                )]
-            }
+            // The sentence is `nec_solver`'s, not this file's. It used to be a
+            // local `ValidationDiagnostic::warning("deck has no EX card — no
+            // feedpoint impedance will be computed")`, and it was the ONLY
+            // no-`EX` check in the tree — so the GUI, `fnec_py` and the worker
+            // had none, and the GUI drew an all-zero current overlay with no
+            // caveat whatsoever.
+            //
+            // Now an ERROR, and the same predicate the other three frontends
+            // reach through `pre_solve_error`. This validator still earns its
+            // place, though for less than an earlier version of this comment
+            // claimed: running before the geometry build skips the FR and
+            // sweep-config parsing, the exec probe, `build_geometry`, and
+            // `geometry_error`'s pairwise crossing scan. It does NOT save an
+            // O(N²) matrix fill — `pre_solve_error` below already refuses ahead
+            // of any assembly. It also keeps EP-4's `DeckValidator` integration
+            // demonstrated (PH4-CHK-005).
+            //
+            // The cost of keeping it is real, and is recorded where it bites:
+            // the CLI now reaches this refusal by two independent routes, so the
+            // CLI's own tests cannot discriminate a regression in the shared one.
+            // See the note on the sweep test in `tests/deck_validator.rs`.
+            nec_solver::validate::undriven_deck_error(deck)
+                .map(|m| vec![ValidationDiagnostic::error(m)])
+                .unwrap_or_default()
         }
     }
     let validators: Vec<&dyn DeckValidator> = vec![&NoExCardValidator];
