@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-09-07
 ---
 
 # Test catalog
@@ -57,7 +57,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=514 --> **514** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=516 --> **516** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -82,9 +82,9 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=565 --> **565** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1086 --> **1086** = 565 unit + 514 integration + **7 doctests**.
-- **`cargo test --workspace` aggregate**: **1084 passing, 0 failed, 2 ignored**,
-  measured 2026-08-31 — the authoritative pass count in [test-results.md](test-results.md).
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1088 --> **1088** = 565 unit + 516 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1086 passing, 0 failed, 2 ignored**,
+  measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
 Doctests are counted separately on purpose. `cargo test --workspace -- --list`
 prints them under `Doc-tests <crate>` headers that carry no `Running` line, so a
