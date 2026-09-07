@@ -192,14 +192,13 @@ pub(super) fn residual_hallen(
     let n = z.n;
     let mut r = vec![Complex64::new(0.0, 0.0); n];
 
-    let endpoints: &[(usize, usize)];
     let fallback_endpoints;
-    if wire_endpoints.is_empty() || n == 0 {
+    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() || n == 0 {
         fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
-        endpoints = &fallback_endpoints;
+        &fallback_endpoints
     } else {
-        endpoints = wire_endpoints;
-    }
+        wire_endpoints
+    };
 
     let mut row_wire = vec![0usize; n];
     for (wi, &(first, last)) in endpoints.iter().enumerate() {

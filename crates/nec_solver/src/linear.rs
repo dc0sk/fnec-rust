@@ -421,14 +421,13 @@ pub fn solve_hallen_sinusoidal_basis(
     }
 
     // Resolve effective wire endpoint list.
-    let endpoints: &[(usize, usize)];
     let fallback_endpoints;
-    if wire_endpoints.is_empty() || n == 0 {
+    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() || n == 0 {
         fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
-        endpoints = &fallback_endpoints;
+        &fallback_endpoints
     } else {
-        endpoints = wire_endpoints;
-    }
+        wire_endpoints
+    };
 
     // If any wire has fewer than 2 segments, fall back to standard Hallén.
     if endpoints.iter().any(|&(first, last)| last <= first) {
@@ -686,14 +685,13 @@ pub fn solve_hallen(
     }
 
     // Build the endpoint constraint list: per-wire if supplied, else global endpoints.
-    let endpoints: &[(usize, usize)];
     let fallback_endpoints;
-    if wire_endpoints.is_empty() || n == 0 {
+    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() || n == 0 {
         fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
-        endpoints = &fallback_endpoints;
+        &fallback_endpoints
     } else {
-        endpoints = wire_endpoints;
-    }
+        wire_endpoints
+    };
 
     // Build the set of endpoint segment indices that participate in at least one
     // junction constraint. These will receive a continuity constraint rather than
@@ -921,14 +919,13 @@ pub fn solve_hallen_planewave(
         });
     }
 
-    let endpoints: &[(usize, usize)];
     let fallback_endpoints;
-    if wire_endpoints.is_empty() || n == 0 {
+    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() || n == 0 {
         fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
-        endpoints = &fallback_endpoints;
+        &fallback_endpoints
     } else {
-        endpoints = wire_endpoints;
-    }
+        wire_endpoints
+    };
 
     let w = endpoints.len();
     // Two endpoint constraints (I=0 at first and last) per wire.
