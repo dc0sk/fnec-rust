@@ -359,8 +359,26 @@ fn main() -> ExitCode {
     } else {
         frequencies_from_fr(deck)
     };
-    if freqs_hz.is_empty() {
-        return ExitCode::SUCCESS;
+    // This used to be `return ExitCode::SUCCESS` — a deck with no `FR` and no
+    // `--sweep-config` exited 0 having written zero bytes to stdout AND stderr,
+    // while the GUI and `fnec_py` refused the same deck (FND-070). A silent
+    // success is the worst of the three answers: it is indistinguishable from a
+    // run that worked.
+    //
+    // The check is over the RESOLVED list, so `--sweep-config` on a deck with no
+    // `FR` still solves — frequencies do not have to come from the deck, which is
+    // exactly why this cannot live in `pre_solve_error`.
+    //
+    // Reached only when both sources are absent: a `--sweep-config` that parsed
+    // but yielded nothing is already refused by `SweepConfig::from_file`, and a
+    // file that failed to parse exits above.
+    if let Some(err) = nec_solver::validate::no_frequency_error(
+        &freqs_hz,
+        "Add an `FR` card to the deck, or pass `--sweep-config <file.toml>` to \
+         supply the frequencies yourself.",
+    ) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
     }
 
     if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
@@ -1211,10 +1229,16 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 
         // Find the single FR frequency from the deck.
         let freqs = frequencies_from_fr(deck);
-        let freq_hz = freqs
-            .first()
-            .copied()
-            .ok_or_else(|| "resonance search: deck must have an FR card".to_string())?;
+        let freq_hz = freqs.first().copied().ok_or_else(|| {
+            // Same sentence as every other frontend (FND-070). The remedy is
+            // narrower here: a resonance search substitutes into a template
+            // deck, so `--sweep-config` is not the answer.
+            nec_solver::validate::no_frequency_error(
+                &freqs,
+                "Add an `FR` card to the template deck.",
+            )
+            .unwrap_or_else(|| "resonance search: no frequency".to_string())
+        })?;
 
         let solve_result = solve_frequency_point(
             deck,

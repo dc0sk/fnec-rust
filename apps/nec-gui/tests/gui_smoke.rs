@@ -3087,3 +3087,42 @@ fn a_driven_deck_and_a_receive_deck_both_still_solve() {
         "receive deck produced no induced current — the plane-wave capability regressed"
     );
 }
+
+/// A deck with no `FR` card is refused by both GUI solve seams, with the shared
+/// sentence.
+///
+/// The GUI already refused it — that is not what changed. What changed is that
+/// all four frontends now say the same thing: the CLI used to exit 0 in silence
+/// on this deck, `fnec_py`'s `sweep_deck_str` returned `[]`, and the three that
+/// did refuse used three different wordings (FND-070).
+///
+/// Both seams, because `solve_deck_str` and `solve_for_currents` read the
+/// frequency independently — a fix wired into one is the FND-038 shape.
+#[test]
+fn a_deck_with_no_frequency_is_refused_by_both_gui_seams() {
+    const NO_FR: &str =
+        "CM no FR card\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nEN\n";
+    use nec_gui::solve::SolverKind;
+
+    for (name, err) in [
+        (
+            "impedance",
+            nec_gui::solve::solve_deck_str(NO_FR, SolverKind::Hallen).err(),
+        ),
+        (
+            "currents",
+            nec_gui::solve::load_currents_str(NO_FR, SolverKind::Hallen).err(),
+        ),
+    ] {
+        let msg = err.unwrap_or_else(|| panic!("{name}: a deck with no frequency must be refused"));
+        assert!(
+            msg.contains("no frequency to solve at"),
+            "{name}: must use the shared sentence, got: {msg}"
+        );
+        // The GUI has no `--sweep-config`, so it must not advertise one.
+        assert!(
+            !msg.contains("--sweep-config"),
+            "{name}: the GUI must not offer a remedy it does not have: {msg}"
+        );
+    }
+}

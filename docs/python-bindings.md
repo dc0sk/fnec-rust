@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/python-bindings.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-09-08
 ---
 
 # fnec Python Bindings (`fnec_py`)
@@ -91,6 +91,12 @@ Raises `RuntimeError` on parse or solver failure.
 Solve all frequency points defined by the deck's `FR` card(s) and return a
 list of dicts (one per frequency point), each with the same fields as
 `solve_deck_str`.
+
+Raises `RuntimeError` for a deck with no `FR` card. It used to return an empty
+list for that deck, at success, while `solve_deck_str` raised — one module
+disagreeing with itself, and an empty result standing in for an error (FND-070).
+These bindings read frequencies from the deck only; there is no `--sweep-config`
+equivalent here.
 
 ```python
 sweep_deck = """

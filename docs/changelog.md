@@ -15,6 +15,35 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **A deck with no frequency at all is refused instead of silently succeeding.**
+  `fnec deck.nec` on a deck with no `FR` card exited **0 having written zero
+  bytes to stdout *and* stderr** — a silent success, indistinguishable from a run
+  that worked — while the GUI and `fnec_py`'s `solve_deck_str` refused the same
+  deck and `fnec_py`'s `sweep_deck_str` returned `[]` (FND-070). Four frontends,
+  three wordings and one silence; now one sentence, via
+  `validate::no_frequency_error`.
+
+  The check is typed on the **resolved** frequency list, not on the deck, which
+  is what keeps `--sweep-config` working: that flag *supplies* frequencies for a
+  deck that has no `FR` card, so a deck-typed check in `pre_solve_error` — the
+  gate every frontend already calls — would have refused a working, documented
+  capability. That capability was gated by no test until now.
+
+  BREAKING for anyone scripting `fnec` on a frequency-less deck and reading exit
+  0. `docs/json-output-schema.md`'s claim that such a deck yields `[]` was never
+  true (it yielded zero bytes, so `json.loads` raised) and is now withdrawn
+  rather than honoured — FND-084's proposed one-line fix, "emit `[]` before the
+  early return", was **not** taken: it applies only to JSON mode and would have
+  spent `[]`, which already means *solved, with no feedpoint to price*, on a deck
+  that was never solved at all.
+
+  Deliberately divergent from nec2c, which defaults an `FR`-less deck to
+  299.8 MHz (λ = 1 m) and answers it — measured on a 10.5 m dipole it reports
+  133.18 + j280.36 Ω, pricing the wire as 10.5 λ. A plausible number for a deck
+  the user did not write.
+
 ## [0.18.0] — 2026-09-08 — Nothing drives it, so there is no solve
 
 Eighteen changes since v0.17.0, in three clusters. **Remediation of the
