@@ -272,3 +272,89 @@ fn sweep_output_is_machine_parseable() {
         "expected 2 FEEDPOINTS sections (one per frequency), got:\n{stdout}"
     );
 }
+
+/// The deck-free half of the flag: `--sweep-config` does not merely *override* an
+/// `FR` card, it **supplies** the frequencies when the deck has none.
+///
+/// That capability was gated by nothing until now, which mattered the moment a
+/// refusal for frequency-less decks was added (FND-070): the obvious placement
+/// for that refusal — `validate::pre_solve_error`, which every frontend already
+/// calls — sees only the deck and would have refused this working case. The
+/// refusal is typed on the *resolved* frequency list instead, and this test is
+/// what stops a future author from "simplifying" it back onto the deck.
+///
+/// `docs/cli-guide.md` said "overrides the `FR` card frequency list", which is
+/// true and incomplete; it now says it also supplies one.
+#[test]
+fn sweep_config_supplies_the_frequencies_for_a_deck_with_no_fr_card() {
+    const NO_FR_DECK: &str = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nEN\n";
+    assert!(
+        !NO_FR_DECK.contains("FR"),
+        "the fixture must have no FR card, or this test proves nothing"
+    );
+
+    let deck = write_temp("no-fr-deck", NO_FR_DECK);
+    let cfg = write_temp("no-fr-cfg", "[frequency]\npoints_mhz = [14.0, 14.2]\n");
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--sweep-config")
+        .arg(&cfg)
+        .arg(&deck)
+        .output()
+        .expect("failed to run fnec");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "a deck with no FR must still solve when --sweep-config supplies the \
+         frequencies: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        freq_values_mhz(&stdout),
+        vec![14.0, 14.2],
+        "both configured points must be solved: {stdout}"
+    );
+}
+
+/// The other half: with neither source, the run is refused rather than silently
+/// succeeding.
+///
+/// It used to exit **0 having written zero bytes to stdout AND stderr** — a
+/// silent success, indistinguishable from a run that worked — while the GUI and
+/// `fnec_py` refused the same deck (FND-070). Both output formats are checked
+/// because the `[]` that JSON mode prints for a *solved* deck with no priceable
+/// feedpoint must not be reused for a deck that was never solved at all.
+#[test]
+fn a_deck_with_no_frequency_at_all_is_refused_in_both_output_formats() {
+    const NO_FR_DECK: &str = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nEN\n";
+    let deck = write_temp("no-freq-deck", NO_FR_DECK);
+
+    for format in ["text", "json"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--output-format", format])
+            .arg(&deck)
+            .output()
+            .expect("failed to run fnec");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "a deck with no frequency must not report success (--output-format \
+             {format}): {stderr}"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "the refusal must not also emit a report (--output-format {format}): \
+             {} byte(s)",
+            output.stdout.len()
+        );
+        assert!(
+            stderr.contains("no frequency to solve at"),
+            "the refusal must name its reason (--output-format {format}): {stderr}"
+        );
+        assert!(
+            stderr.contains("--sweep-config"),
+            "the CLI's remedy must name the second frequency source \
+             (--output-format {format}): {stderr}"
+        );
+    }
+}

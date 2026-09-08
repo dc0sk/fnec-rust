@@ -415,7 +415,15 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let freq_hz = nec_solver::frequencies_hz(deck)
         .first()
         .copied()
-        .ok_or_else(|| "deck has no FR card".to_string())?;
+        .ok_or_else(|| {
+            // One sentence for all four frontends (FND-070). No `--sweep-config`
+            // remedy here: this path takes its frequency from the deck only.
+            nec_solver::validate::no_frequency_error(
+                &nec_solver::frequencies_hz(deck),
+                "Add an `FR` card to the deck.",
+            )
+            .unwrap_or_else(|| "deck has no FR card".to_string())
+        })?;
 
     // --- validation (before any solve) -----------------------------------
     let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver)?;
@@ -1052,7 +1060,15 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     let freq_hz = nec_solver::frequencies_hz(deck)
         .first()
         .copied()
-        .ok_or_else(|| "deck has no FR card".to_string())?;
+        .ok_or_else(|| {
+            // One sentence for all four frontends (FND-070). No `--sweep-config`
+            // remedy here: this path takes its frequency from the deck only.
+            nec_solver::validate::no_frequency_error(
+                &nec_solver::frequencies_hz(deck),
+                "Add an `FR` card to the deck.",
+            )
+            .unwrap_or_else(|| "deck has no FR card".to_string())
+        })?;
 
     let mut z_mat = hallen_z_matrix(deck, &segs, freq_hz, &ground, solver);
 

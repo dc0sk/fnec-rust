@@ -448,3 +448,40 @@ def test_the_sweep_entry_point_refuses_it_too():
     """
     with pytest.raises(RuntimeError, match="no EX card"):
         fnec_py.sweep_deck_str(NO_EX)
+
+
+NO_FR = """CM no FR card
+CE
+GW 1 21 0 0 -5.282 0 0 5.282 0.001
+GE 0
+EX 0 1 11 0 1.0 0.0
+EN
+"""
+
+
+def test_both_entry_points_refuse_a_deck_with_no_frequency():
+    """`sweep_deck_str` returned `[]` here while `solve_deck_str` raised.
+
+    Two functions in one module disagreeing about the same deck, and the sweep
+    half returning the empty-list-standing-for-an-error shape that
+    `docs/json-output-schema.md` now tells consumers not to read that way
+    (FND-070). Both raise now, with the sentence all four frontends share.
+
+    Parametrised over both entry points rather than written twice: the defect
+    was precisely that one of them was fixed and the other was not.
+    """
+    for name, fn in [
+        ("solve_deck_str", fnec_py.solve_deck_str),
+        ("sweep_deck_str", fnec_py.sweep_deck_str),
+    ]:
+        with pytest.raises(RuntimeError, match="no frequency to solve at") as exc:
+            fn(NO_FR)
+        # The bindings have no --sweep-config, so they must not advertise one.
+        assert "--sweep-config" not in str(exc.value), name
+
+
+def test_a_deck_with_an_fr_card_still_sweeps():
+    """The control: the refusal must key on the missing frequency, nothing else."""
+    deck = NO_FR.replace("EN\n", "FR 0 2 0 0 14.0 0.1\nEN\n")
+    rows = fnec_py.sweep_deck_str(deck)
+    assert len(rows) == 2, rows

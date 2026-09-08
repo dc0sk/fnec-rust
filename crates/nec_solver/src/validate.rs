@@ -1286,6 +1286,45 @@ pub fn undriven_deck_error(deck: &NecDeck) -> Option<String> {
     )
 }
 
+/// A solve with no frequencies to run, if that is the case.
+///
+/// **Typed on the resolved list, not on the deck**, and that is the whole point.
+/// A frequency does not have to come from an `FR` card: the CLI takes one from
+/// `--sweep-config`, the GUI's sweep tab from its own range widgets, and the
+/// worker from the wire. A deck-typed predicate would refuse all three — so this
+/// cannot live in [`pre_solve_error`], which sees only the deck, and it is why
+/// [`frequency_error`] (which validates the values of an `FR` card that exists)
+/// does not cover the case where none does.
+///
+/// Sharing only the *sentence* would have left the predicate written out at every
+/// call site, where the next one is one missing `is_empty()` away from the defect
+/// this closes. Sharing the predicate means deleting this check fails every
+/// frontend at once.
+///
+/// `remedy` is the caller's, because the honest advice differs: the CLI has a
+/// second way to supply frequencies and the other frontends do not, so only the
+/// CLI may mention `--sweep-config`.
+///
+/// The defect it closes (FND-070): `fnec deck.nec` on a deck with no `FR` exited
+/// **0 with zero bytes on stdout and stderr** — a silent success — while the GUI
+/// and `fnec_py`'s `solve_deck_str` refused the same deck, and `fnec_py`'s
+/// `sweep_deck_str` returned `[]`.
+///
+/// Deliberately divergent from nec2c, which defaults an `FR`-less deck to
+/// 299.8 MHz (λ = 1 m) and answers it: measured on a 10.5 m dipole it reports
+/// 133.18 + j280.36 Ω, pricing the wire as 10.5 λ. That is a plausible number for
+/// a deck the user did not write.
+pub fn no_frequency_error(freqs_hz: &[f64], remedy: &str) -> Option<String> {
+    if !freqs_hz.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "FR: this deck has no frequency to solve at, so there is nothing to \
+         compute — an antenna's impedance and pattern are properties at a \
+         frequency, not of the geometry alone. {remedy}"
+    ))
+}
+
 /// Every reason a deck must not be solved at all, geometry or otherwise.
 ///
 /// This is the gate a frontend calls before solving; [`geometry_error`] is one

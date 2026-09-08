@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-09-07
+last_updated: 2026-09-08
 ---
 
 # fnec JSON Output Schema (v1)
@@ -21,13 +21,23 @@ fnec --output-format json --sweep-config sweep.toml <deck.nec>
 ## Top-level structure
 
 The output is a JSON **array** — one element per frequency point solved, in
-the same order as the deck's FR card defines them.
+the same order the frequencies were resolved in — from the deck's `FR` card, or
+from `--sweep-config` when that flag is given.
 
-A deck with no FR card is documented here as producing `[]`, and **does not**:
-it produces zero bytes, so `json.loads(...)` on the output raises. That is
-FND-084 in `docs/project/findings-ledger.md`, open and deliberately not fixed
-in the change that rewrote the section below — the two cases were separated on
-purpose, and re-measured on 2026-09-07 to confirm the no-FR one is unchanged.
+A deck with **no frequency at all** — no `FR` card and no `--sweep-config` — is
+refused with exit 1 and writes nothing to stdout. It is not an empty array: `[]`
+means *solved, and there was no feedpoint to price*, which is a different
+outcome and must stay distinguishable from *never solved*.
+
+Until v0.18.0 such a deck exited 0 with zero bytes, which `json.loads('')` turns
+into an exception rather than an empty list (FND-084). The ledger's proposed
+one-line fix — emit `[]` before the early return — was **not** taken: it applies
+only to JSON mode, leaving text mode silent, and it would have spent the one
+signal that already means something else.
+
+Note that `--sweep-config` **supplies** the frequency list, so a deck with no
+`FR` card solves normally when that flag is given; the refusal is over the
+resolved list, not over the deck.
 
 ```json
 [

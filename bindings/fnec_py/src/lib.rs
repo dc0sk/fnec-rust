@@ -281,10 +281,14 @@ fn solve_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     let result = parse(deck)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
     let freqs = frequencies_from_deck(&result.deck);
-    let freq_hz = freqs
-        .first()
-        .copied()
-        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("deck has no FR card"))?;
+    let freq_hz = freqs.first().copied().ok_or_else(|| {
+        // The shared sentence (FND-070). No `--sweep-config` remedy: these
+        // bindings take their frequencies from the deck only.
+        pyo3::exceptions::PyRuntimeError::new_err(
+            nec_solver::validate::no_frequency_error(&freqs, "Add an `FR` card to the deck.")
+                .unwrap_or_else(|| "deck has no FR card".to_string()),
+        )
+    })?;
     let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz, solver)
         .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
     let mut seen = Vec::new();
@@ -313,8 +317,15 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     let result = parse(deck)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
     let freqs = frequencies_from_deck(&result.deck);
-    if freqs.is_empty() {
-        return Ok(pyo3::types::PyList::empty(py).into());
+    // This returned an empty list, at success, for a deck with no `FR` — while
+    // `solve_deck_str` two functions up refused the same deck. So this module
+    // disagreed with itself, and the sweep half returned the null-standing-for-an
+    // -error shape that `docs/json-output-schema.md` now tells consumers not to
+    // read that way (FND-070). Both raise now, with one sentence.
+    if let Some(err) =
+        nec_solver::validate::no_frequency_error(&freqs, "Add an `FR` card to the deck.")
+    {
+        return Err(pyo3::exceptions::PyRuntimeError::new_err(err));
     }
 
     let mut seen = Vec::new();

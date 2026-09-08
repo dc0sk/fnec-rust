@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-07
+last_updated: 2026-09-08
 ---
 
 # Test catalog
@@ -37,7 +37,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/result_cache_contract.rs` | 5 | Distributed result cache hit/miss/invalidation + sweep reuse | PH6-CHK-007 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
-| `apps/nec-cli/tests/sweep_contract.rs` | 5 | Sweep point/list/linear produce correct frequency blocks | FR-007, PH3-CHK-006 |
+| `apps/nec-cli/tests/sweep_contract.rs` | 7 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
 | `apps/nec-cli/tests/template_contract.rs` | 5 | TOML/JSON var substitution; undefined-token error | PH3-CHK-007 |
 | `apps/nec-cli/tests/tl_cards.rs` | 3 | `TL` card changes feedpoint Z across nseg | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/topology_fallback.rs` | 13 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
@@ -57,7 +57,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=519 --> **519** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=522 --> **522** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -82,8 +82,8 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1093 --> **1093** = 567 unit + 519 integration + **7 doctests**.
-- **`cargo test --workspace` aggregate**: **1091 passing, 0 failed, 2 ignored**,
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1096 --> **1096** = 567 unit + 522 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1094 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
 Doctests are counted separately on purpose. `cargo test --workspace -- --list`
