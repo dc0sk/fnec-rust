@@ -2,10 +2,135 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-08-28
+last_updated: 2026-09-08
 ---
 
 # Release Notes
+
+## 0.18.0 — Nothing drives it, so there is no solve
+
+Eighteen changes since 0.17.0: remediation of the 2026-08-28 whole-project audit
+(#432–#442), a documentation-honesty cluster (#443–#447), and two solver fixes
+(#448, #449). Both criticals and every high from that audit are closed. The
+ledger went from 137 findings / 35 open to **149 / 33 open — zero critical, zero
+high**; it grew because fixing things found things.
+
+Every value quoted below was re-measured at the release commit.
+
+### Answers that change
+
+Read this before upgrading if you have recorded results or scripted `fnec`.
+
+**A deck with no `EX` card is now refused.** It used to be *solved* — to the zero
+vector, which is the correct answer to "what current flows in a structure nothing
+drives" — and then reported as though that were a result: a full `CURRENTS` table
+of `0.000000e0`, a `RADIATION_PATTERN` of `-999.9900`, and a `diag` line reading
+`abs_res=0 rel_res=0`, which advertises a flat response as perfect convergence.
+
+```console
+$ fnec no-ex.nec ; echo "exit=$?"      # 0.17.0
+...2469 bytes of zeros...
+exit=0
+$ fnec no-ex.nec ; echo "exit=$?"      # 0.18.0
+error: [validator] EX: this deck has no EX card, so nothing drives it and there is no solve — ...
+exit=1
+```
+
+*Migration.* If you consume `--output-format json`, note that **stdout now
+carries nothing at all for this deck — not `[]`** — and the exit code is 1. An
+optimizer loop that fed such a deck in and parsed an empty array back out was
+recording a null result where it should have reported an error; it must now
+branch on the exit code. `docs/json-output-schema.md` documented the old
+behaviour under "Absence of feedpoint data" (not under its "Stability guarantee"
+section, which covers the field set) and is rewritten to match.
+
+A deck with **neither** `EX` nor `FR` also moves from exit 0 to exit 1, because
+validators run ahead of the `FR` check. A deck with an `EX` but no `FR` is
+**unchanged** — it still exits 0 writing zero bytes, which is a separate known
+defect (FND-084, open).
+
+This diverges from nec2c deliberately, and conditionally. Measured against this
+host's nec2c on a 21-segment dipole with `FR` and no `EX`: with an `XQ` it exits
+0 and prints a `CURRENTS AND LOCATION` table of `0.0000E+00`; with an `RP`, exit
+0 with `-nan` gains and `EFFICIENCY = -nan`; with neither, exit 0 and no currents
+section at all — it never executes. The zeros are an artefact of printing
+unconditionally rather than a workflow, and fnec had gone further than the oracle
+in two ways nec2c does not: stamping a convergence figure on the result, and
+feeding a JSON API from it.
+
+**`GM` decks change geometry, and this is the change most likely to move your
+numbers.** fnec read `I2` as a last tag and `F7` as a first tag, and had no
+`NRPT` concept at all, so a standard NEC-2 deck **lost wires in silence**. All
+five rules were wrong and all five are now pinned against nec2c.
+
+*Migration.* Re-run any deck containing a `GM` card and compare the segment
+count before trusting a stored result. A deck that was quietly losing wires will
+now build the geometry its author wrote, so its impedance and pattern will
+differ — that is the fix, not a regression.
+
+**Current-source (`EX 4`) impedances shift slightly.** `Z = V/I` is a property of
+the port, not of the drive, so a current source is now the unit-voltage solve
+rescaled by `i0/I_feed` — exact for a linear system — rather than a separately
+driven solve. Over finite ground the augmented Hallén system is inconsistent
+(residual 3e-7 in free space against 5.8% over ground), so the two drives had
+been minimising different objectives over a flat valley, pinning the port voltage
+to only ~4%.
+
+**A collinear `GW` split can now be lit by an incident plane wave**, where it was
+refused outright. The plane-wave builder grouped segments by raw `GW` card while
+its delta-gap sibling — and the solver it feeds — grouped by merged conductor.
+Gated by an equality on an identically-segmented pair (25 + 25 against 50 over
+the same span, so every segment midpoint coincides): **relative agreement
+1.1e-12** re-measured at this commit, against a gate of 1e-9.
+
+The refusal had been protecting against something real. Measured during that
+fix's sabotage verification: with the conductor merge applied to the junction
+test but *not* to the along-wire coordinate, the deck stops being refused and
+**solves — at relative error 1.0004**. Accepting the geometry without also
+sharing the coordinate would have been the worse bug, so the two halves were
+sabotaged separately.
+
+### Refusals that are new
+
+Three classes of deck that used to be accepted are now refused, all of them for
+answers that could not have been right:
+
+- an oversized `RP`/`NE` grid, before it is allocated rather than after
+  (`RP 0 65535 65535` asked for 68,717,379,600 bytes in one call and aborted);
+- a deck nothing drives, above;
+- a `GM` card with a negative `ITGI`, refused by name.
+
+### Under the hood
+
+The worker gained deadlines — there had been **no timeout of any kind** in that
+crate. Solve 15 min (matched to the kernel TCP retransmission bound), probe 30 s,
+shutdown 2 s then kill.
+
+The GUI's background runs each carry an identity, so a stale completion cannot
+overwrite a newer one, and an edit now retires a deck load or save still in
+flight.
+
+`nec_solver`'s `gpu` feature and the `FNEC_ACCEL_STUB_GPU` control are
+**removed**: the first pulled `nec_accel` into the dependency graph with no
+source-level consumer, and the second was documented as a live control that zero
+shipped code read.
+
+### On the evidence behind these notes
+
+The gates that verify everything else were themselves unverified until #441, and
+they came last in the cycle — so every green reported earlier in it rested on
+checkers that had not been checked. Two examples of what that was hiding: the
+ledger checker skipped any row misspaced at its leading pipe and then announced a
+green count excluding it, and the doc-attachment gate went blind at the first
+`cfg(test)` and stayed blind, losing every production item in files that open
+with a test module — 1576 items checked before that fix, 1655 immediately after
+it, and 1681 at this release.
+
+The corpus is a **regression gate, not an external-validation gate**: of 50
+cases, 9 are externally gated and the rest are pinned against fnec's own earlier
+output. `corpus/README.md` now says so as a count, and a checker enforces the
+count. Treat "matches the corpus" as "has not changed", not as "agrees with
+NEC-2".
 
 ## 0.17.0 — Nothing left open
 
