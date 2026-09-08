@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-08-27
+last_updated: 2026-09-08
 ---
 
 # fnec-gui user guide
@@ -124,8 +124,15 @@ have yet, and each row's **Del** to remove one.
 
 - **Undo / Redo** (or `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`) — full edit history;
   typing a value coalesces into one undo step.
-- **Save deck** writes back over the loaded path; **Save as…** opens a native
-  save dialog.
+- **Save deck** writes back over the file the document belongs to — the one it
+  was loaded from, or the one the last **Save as…** wrote. That file is shown on
+  the *Editing:* line under the editor, and it is **not** necessarily the deck
+  path in the box at the top: retyping that box points the Load/Solve chrome
+  somewhere else without moving the document. Until v0.18.0 `Save deck` used the
+  box, so loading deck A, retyping the box to B and clicking Save truncated B
+  with A's text (FND-103).
+- **Save as…** opens a native save dialog and rebinds the document to the file it
+  writes, so a later **Save deck** goes there too.
 - **Apply + Solve** solves the edited in-memory deck and shows the impedance,
   without saving first.
 

@@ -314,12 +314,21 @@ impl FnecGui {
                 move |r| Message::EditDeckLoaded(run, r),
             )
         } else if spawn_save {
-            // Render the edited deck and write it back over the loaded path.
-            let path = self.state.deck_path.clone();
-            let run = self
-                .state
-                .current_edit_save_run()
-                .expect("the save was just armed");
+            // Render the edited deck and write it back over the file this
+            // document belongs to — which is NOT `deck_path`. That field is
+            // chrome the user can retype without loading, and cloning it live
+            // meant "load A, retype B, Save" truncated B with A's text (FND-103).
+            //
+            // Both values come from the reducer now: it decides whether a save
+            // happens at all (a document with no file refuses and arms nothing)
+            // and which file it targets. This branch follows, and can no longer
+            // pick a path of its own.
+            let (Some(run), Some(path)) = (
+                self.state.current_edit_save_run(),
+                self.state.save_target().map(str::to_owned),
+            ) else {
+                return Task::none();
+            };
             match self.state.editor.doc.to_deck_string() {
                 Ok(text) => Task::perform(
                     async move {
@@ -1197,6 +1206,21 @@ impl FnecGui {
         };
         let save_status = text(self.state.editor.save_status.clone()).width(Length::Fill);
 
+        // Which file `Save` will write to, stated rather than implied.
+        //
+        // Not decoration. `Save` targets the document's own file, which can
+        // differ from the deck path in the chrome above — retype that box, or
+        // use "Save as…", and the two diverge. Before FND-103 they could not
+        // diverge because Save simply used the chrome, which is exactly how it
+        // came to truncate an unrelated file. Fixing the target without showing
+        // it would leave the user unable to tell where Save goes except by
+        // clicking it.
+        let editing_line = text(match self.state.save_target() {
+            Some(p) => format!("Editing: {p}"),
+            None => "Editing: (no file yet — use Save as…)".to_string(),
+        })
+        .width(Length::Fill);
+
         // ── Sources & environment (EX/GN/LD/FR editors) ──────────────────────
         let add_bar = row![
             text("Sources & environment"),
@@ -1241,6 +1265,7 @@ impl FnecGui {
             status,
             controls,
             solve_line,
+            editing_line,
             save_status,
         ]
         .spacing(8)
