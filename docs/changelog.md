@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-07
+last_updated: 2026-09-08
 ---
 
 # Changelog
@@ -15,9 +15,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-09-08 — Nothing drives it, so there is no solve
+
+Eighteen changes since v0.17.0, in three clusters. **Remediation of the
+2026-08-28 whole-project audit** (#432–#442) closed both criticals and every
+high, and finished with the checkers themselves — so every green reported
+earlier in that cycle had rested on gates that were not yet verified. **A
+documentation-honesty cluster** (#443–#447) replaced adjectives with counts and
+gated the counts. **Two solver fixes** (#448, #449) close the cycle, one of them
+breaking.
+
+The findings ledger went from 137 findings / 35 open to **149 / 33 open — zero
+critical, zero high**. It grew because fixing things found things: three of this
+cycle's remediation diagnoses were wrong and were refuted by measurement before
+any code was written.
+
 ### Changed
 
-- **A deck with no `EX` card is now refused instead of solved.** BREAKING for
+
+- **A deck with no `EX` card is now refused instead of solved** (FND-145, #449).
+  BREAKING for
   JSON consumers: `fnec` printed `[]` and exited 0 for such a deck, a behaviour
   `docs/json-output-schema.md` documented under "Absence of feedpoint data".
   (Not under that file's "Stability guarantee" section, which covers the field
@@ -50,13 +67,119 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   sentence a plane-wave receive deck gets. All four now refuse through the one
   shared predicate, before any solve.
 
+- **`GM` is now the NEC-2 card, not a card with the same name** (FND-119, #435).
+  BREAKING for decks written against fnec's previous reading: fnec took `I2` as
+  a last tag and `F7` as a first tag, and had no `NRPT` concept at all, so
+  standard decks lost wires **in silence**. Five rules, all previously wrong,
+  each pinned against nec2c and each sabotage-verified separately — `NRPT`
+  decides copy-versus-in-place, copies are cumulative and tagged `tag + k*ITGI`,
+  an in-place move retags too, tag-0 segments never retag, and `ITS` selects a
+  suffix in definition order.
+- **A current source is now the unit-voltage solve rescaled by `i0/I_feed`**,
+  exactly, rather than a separately-driven solve (FND-118, #437). `Z = V/I` is a
+  property of the port, not of the drive. The original diagnosis was wrong and
+  the ablation refuted it: sweeping the constraint weight across nine orders of
+  magnitude moved `R` by 0.28% against a 6.5% gap. The real cause was that over
+  finite ground the augmented Hallén system becomes inconsistent (residual 3e-7
+  in free space, 5.8% over ground), so the two drives were minimising different
+  objectives over a flat valley.
+- **The worker bounds every wait and budgets every retry** (FND-101, FND-102,
+  FND-136, FND-137, #439). There had been **no timeout of any kind** in the
+  worker crate. Three deadlines now: solve 15 min (matched to the kernel TCP
+  retransmission bound), probe 30 s, shutdown 2 s then kill. One reader thread
+  per *worker* rather than per dispatch, so nothing leaks, and `DispatchError`
+  splits on *when* the worker died.
+- **`corpus/README.md` states its evidence tier as a count, and a checker
+  enforces it** (#446). It had claimed the corpus validates against "NEC
+  reference engines (primary: xnec2c, fallback: 4nec2)" and that "every NEC deck
+  in this corpus is validated against a reference engine". The recorded
+  reference engine is fnec itself for most rows; xnec2c is used by nothing (it
+  hangs headless in CI) and 4nec2 by nothing either. Now: 50 cases, 9 externally
+  gated, checked rather than asserted.
+
+### Removed
+
+- **`nec_solver`'s `gpu` feature**, which pulled `nec_accel` into the dependency
+  graph with no source-level consumer, and the **`FNEC_ACCEL_STUB_GPU`
+  documented control**, which zero shipped code read while 53 inert
+  manipulations of it sat across 14 test files (FND-105, FND-106, FND-107,
+  #440). Neither produced a wrong number; both told a reader something untrue.
+  The startup probe also printed `gpu_available=false` on a machine whose GPU
+  fnec's wgpu far-field kernels do in fact use.
+
 ### Fixed
 
-- A straight wire written as two collinear `GW` cards can now be lit by an
-  incident plane wave. `build_planewave_hallen` grouped segments by raw `GW`
+
+- **A straight wire written as two collinear `GW` cards can now be lit by an
+  incident plane wave** (FND-142, #448). `build_planewave_hallen` grouped segments by raw `GW`
   card while its delta-gap sibling grouped by merged conductor, so the join read
   as a junction and the deck was refused — though the same geometry driven by
   `EX 0` or `EX 4` solved (FND-142).
+
+- **The GUI's background runs each carry an identity, so a stale one cannot win**
+  (FND-115, FND-116, #433). One defect seen twice: a completion message carried
+  no identity, so the reducer could not tell a run it launched from one it had
+  disowned. `RunId` is minted in one place with a private inner value, so neither
+  the binary nor a test can fabricate a stamp, and the id lives *in* the phase so
+  a discard orphans in-flight work structurally. One guard before the match, not
+  eleven per-arm `if`s — deleting it fails all eight stale-rejection tests at
+  once.
+- **An edit retires a deck load or save that is still in flight** (FND-133,
+  #445). The two editor-pipeline completions that applied unconditionally —
+  `EditDeckLoaded(Ok)`, which resets the undo history, and `DeckSaved(Ok)`, which
+  calls `mark_saved()`. The obvious fix (give them run ids like the other eleven
+  completions) is **inert**, and the design review caught that before any code
+  was written: run identity rejects a *superseded* run, and neither defect
+  involves one.
+- **An oversized grid is refused before it is allocated** (FND-093, FND-094,
+  FND-096, #438). One defect class in three places: a deck-supplied dimension
+  multiplied into an allocation with nothing checking the product. `RP 0 65535
+  65535` asked for 68,717,379,600 bytes in a single call and aborted; `NE 0 500
+  500 500` for 3.2 GB. Refused in the `pre_solve_error` chain, so one refusal
+  reaches all four frontends, and every product is computed in `u64` — `65536 *
+  65536` is 0 in `u32`, so a `u32` check would have waved the largest request
+  through as the smallest.
+- **The plane-wave routing decision has one home, not three** (FND-128, FND-140,
+  #444). Reviewing the design first turned up a fifth copy nobody had logged, and
+  showed that sharing the predicate alone would have left the part that actually
+  diverges — the CLI sweep duplicated the *whole* `PlaneWave` arm: predicate,
+  `path_of`/`free_ends` grouping, builder choice and solver dispatch.
+- **Four checkers are now as strict as the claims they publish** (FND-088,
+  FND-089, FND-090, FND-091, #441). The gates that verify everything else were
+  themselves unverified. The ledger checker skipped any row misspaced at its
+  leading pipe and then announced a green count excluding it — a planted row gave
+  exit 0 and "137 finding(s)" against 138 present. The doc-attachment gate went
+  blind at the first `cfg(test)` and stayed blind, losing every production item
+  in files that open with a test module — 1576 items checked before that fix, 1655
+  immediately after it, 1681 at this release.
+- **An advertised external corpus gate can actually fail** (#443).
+  `split-v-conductor-path-freesp` declared `ExternalR_absolute_ohm: 4.0` and
+  `ExternalX_absolute_ohm: 42.0` but stored its nec2c numbers under
+  `external_reference`, while the validator reads only
+  `external_reference_candidate` — so both gates were never evaluated and the row
+  could drift arbitrarily far from nec2c while staying green on a parity gate it
+  advertised.
+- **The corpus reaches the conductor-path basis** (FND-132, #436). Probing every
+  deck found **zero** that routed to the PH9-CHK-002 conductor-path basis, so it
+  was exercised only by in-source unit tests — the state in which FND-121, a
+  critical finding about that same basis being wired to one frontend of four,
+  went uncaught by the corpus. Two gates: the fixture asserts it takes the path
+  basis, and a standing check asserts the corpus still contains something that
+  does, so the gap cannot be re-opened by deleting one deck.
+- **The docs describe the binary that shipped** (FND-063, FND-064, FND-065,
+  FND-083, FND-085, FND-086, #447). Seven audit rows of "a doc describes a
+  version of fnec that is not the one installed", each verified by *running* the
+  binary rather than reading it — because three of the seven turned out to say
+  something different from what the row claimed. The README had described six
+  cards as staged or ignored at runtime; all six solve. The test catalog's counts
+  were not off by one but by more than a factor of two, and are now derived by a
+  CI checker rather than typed.
+- **Ledger citations name the PR, not a branch hash squash-merge discards**
+  (FND-134, #434). All 22 fixed-row citations from the previous cycle were bare
+  commit hashes unresolvable from `main`.
+- The audit's closing state is recorded in `docs/dev/reviews/review-260828.md`
+  (#442), including that six rows needed no fix, being duplicates that survived
+  verification.
 
 ## [0.17.0] — 2026-08-28 — Nothing left open
 
@@ -2105,6 +2228,7 @@ Hallén path is unchanged, so the validated corpus is untouched.
      against and inventing one would be worse than the gap (FND-043). -->
 
 [Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...HEAD
+[0.18.0]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/dc0sk/fnec-rust/compare/v0.14.0...v0.15.0
