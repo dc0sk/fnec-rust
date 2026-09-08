@@ -1008,9 +1008,17 @@ FR 0 1 21.0 0
 EN
 ";
 
+/// The path `loaded_editor()` pretends the document came from.
+const LOADED_FROM: &str = "/tmp/fnec-loaded-from.nec";
+
 fn loaded_editor() -> AppState {
     let mut state = AppState::default();
     let doc = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    // A path, because a load binds the document to whatever `deck_path` said
+    // when it was armed (FND-103). Without one every `Save` in this suite would
+    // exercise the has-no-file refusal instead of the save it means to test —
+    // passing for the wrong reason.
+    state.apply(&Message::DeckPathChanged(LOADED_FROM.into()));
     state.apply(&Message::EditDeckLoad);
     let run = state
         .current_edit_load_run()
@@ -3125,4 +3133,149 @@ fn a_deck_with_no_frequency_is_refused_by_both_gui_seams() {
             "{name}: the GUI must not offer a remedy it does not have: {msg}"
         );
     }
+}
+
+/// `Save` writes to the file the document was loaded from, not to whatever the
+/// deck-path box currently says.
+///
+/// The defect (FND-103): the path box is global chrome, editable on the Editor
+/// tab itself, and `spawn_save` cloned it live. Load deck A, retype the box to B
+/// without loading it, click Save — and A's text truncated B. Ordinary click
+/// sequence, default config, an unrelated file destroyed.
+///
+/// The assertion is on `save_target()` rather than on a written file because the
+/// write happens in the binary's `Task`. Extracting that decision into the
+/// reducer is half the fix: the defect lived in the one place the suite could
+/// not look, under a comment claiming it wrote "back over the loaded path".
+#[test]
+fn save_targets_the_loaded_file_not_the_retyped_path() {
+    let mut state = loaded_editor();
+    assert_eq!(
+        state.save_target(),
+        Some(LOADED_FROM),
+        "a load must bind the document to the file it came from"
+    );
+
+    state.apply(&Message::DeckPathChanged(
+        "/tmp/fnec-unrelated-B.nec".into(),
+    ));
+    assert_eq!(
+        state.deck_path, "/tmp/fnec-unrelated-B.nec",
+        "the chrome follows the user's typing"
+    );
+    assert_eq!(
+        state.save_target(),
+        Some(LOADED_FROM),
+        "but the document still belongs to the file it was loaded from — this is \
+         the truncation FND-103 caused"
+    );
+}
+
+/// "Save as…" rebinds the document, so the next plain `Save` goes to the new
+/// file.
+///
+/// Not in the FND-103 row; found by measuring it. `BrowseSaveDeck` wrote the
+/// file and marked the document clean but bound nothing, so after saving as C a
+/// later `Save` went back to the previous file — which no editor does.
+#[test]
+fn save_as_rebinds_the_document_to_the_new_file() {
+    let mut state = loaded_editor();
+    state.apply(&Message::BrowseSaveDeck);
+    let run = state
+        .current_edit_save_run()
+        .expect("Save as… arms a save run");
+    state.apply(&Message::DeckSaved(
+        run,
+        Ok("/tmp/fnec-saved-as-C.nec".into()),
+    ));
+
+    assert_eq!(
+        state.save_target(),
+        Some("/tmp/fnec-saved-as-C.nec"),
+        "after Save as… the document belongs to the new file"
+    );
+    assert!(
+        !state.editor.doc.dirty,
+        "and is clean, as it already was before this change"
+    );
+}
+
+/// A load retires a save still in flight, so a completed save cannot rebind a
+/// document it was not written from.
+///
+/// The risk is real: run identity rejects a *superseded* run, and a save spawned
+/// for file A is not superseded by a **load**. Save A is armed, the user loads
+/// deck B, the load lands and binds the document to B, and then the older
+/// `DeckSaved(Ok(A))` arrives — if it were accepted it would rebind B's document
+/// to A, putting B's text one click of Save away from overwriting A. FND-103
+/// again, one load later.
+///
+/// **It is already prevented, and not by this change.** The design review
+/// predicted this hole; sabotage showed it does not exist. An accepted load ends
+/// by calling `refresh_editor_preview()`, which clears both run ids
+/// unconditionally (FND-133/#445) — so an explicit clear added to the load arm
+/// changed nothing and was removed. What this test adds is coverage of the
+/// **load** path for that mechanism, where
+/// `an_edit_retires_a_deck_write_still_in_flight` covers the edit path: removing
+/// the clear from `refresh_editor_preview` fails both.
+#[test]
+fn a_completed_load_retires_a_save_still_in_flight() {
+    let mut state = loaded_editor();
+    state.apply(&Message::SaveDeck);
+    let stale_save = state
+        .current_edit_save_run()
+        .expect("SaveDeck arms the save");
+
+    // The user points at another deck and loads it before the write finishes.
+    state.apply(&Message::DeckPathChanged("/tmp/fnec-deck-B.nec".into()));
+    state.apply(&Message::EditDeckLoad);
+    let load = state
+        .current_edit_load_run()
+        .expect("EditDeckLoad arms the load");
+    let doc_b = load_model_doc_str(EDITOR_DECK_ALT).expect("parse alt doc");
+    state.apply(&Message::EditDeckLoaded(load, Ok(doc_b)));
+    assert_eq!(
+        state.save_target(),
+        Some("/tmp/fnec-deck-B.nec"),
+        "the load binds the document to its own file"
+    );
+
+    // The write for the PREVIOUS document now completes.
+    state.apply(&Message::DeckSaved(stale_save, Ok(LOADED_FROM.into())));
+    assert_eq!(
+        state.save_target(),
+        Some("/tmp/fnec-deck-B.nec"),
+        "a save that completed for the previous document must not rebind this one"
+    );
+}
+
+/// A document with no file refuses to plain-`Save` rather than guessing.
+///
+/// Unreachable in the shipped UI today — Save exists only once a deck is loaded,
+/// and only an accepted load sets that — so this is a guard for the future "New
+/// deck" button. It matters because the tempting fallback, "use `deck_path`", is
+/// the defect: `to_deck_string()` succeeds on an empty document, so the fallback
+/// would truncate whatever path was typed to an empty deck.
+#[test]
+fn a_document_with_no_file_refuses_to_save() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged(
+        "/tmp/fnec-typed-but-never-loaded.nec".into(),
+    ));
+    assert_eq!(
+        state.save_target(),
+        None,
+        "nothing was ever loaded or saved"
+    );
+
+    state.apply(&Message::SaveDeck);
+    assert!(
+        state.current_edit_save_run().is_none(),
+        "no save may be armed for a document with no file"
+    );
+    assert!(
+        state.editor.save_status.contains("Save as"),
+        "and the user is told what to do instead: {}",
+        state.editor.save_status
+    );
 }

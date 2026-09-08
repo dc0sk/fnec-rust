@@ -43,7 +43,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/topology_fallback.rs` | 13 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
 | `apps/nec-cli/tests/worker_gpu_exec.rs` | 1 | Distributed GPU dispatch through worker pool (mixed gpu/cpu) | PH7-CHK-004 |
 | `apps/nec-cli/tests/worker_integration.rs` | 7 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
-| `apps/nec-gui/tests/gui_smoke.rs` | 47 | Headless GUI state machine + solve pipeline | PRT-004, PH3-CHK-009/010/011 |
+| `apps/nec-gui/tests/gui_smoke.rs` | 127 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 1 | Fully GPU-resident Hallén fill+solve parity | PH7-CHK-003 |
@@ -57,7 +57,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=522 --> **522** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=526 --> **526** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -82,8 +82,8 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1096 --> **1096** = 567 unit + 522 integration + **7 doctests**.
-- **`cargo test --workspace` aggregate**: **1094 passing, 0 failed, 2 ignored**,
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1100 --> **1100** = 567 unit + 526 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
 Doctests are counted separately on purpose. `cargo test --workspace -- --list`

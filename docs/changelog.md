@@ -15,6 +15,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GUI's `Save deck` writes to the file the document belongs to, not to
+  whatever the deck-path box says.** That box is global chrome, editable on the
+  Editor tab itself, and `Save` cloned it live — so loading deck A, retyping the
+  box to B without loading it, and clicking Save truncated B with A's text
+  (FND-103). Ordinary click sequence, default config, an unrelated file
+  destroyed.
+- **`Save as…` now rebinds the document**, so a later `Save deck` goes to the
+  file just written rather than back to the previous one. Not recorded in the
+  ledger row; found by measuring it.
+- The editor shows an **`Editing:`** line naming the file `Save` will write to.
+  The document's file and the chrome's deck path are two different facts and can
+  legitimately differ; before this they could not, because Save simply used the
+  chrome, which is how it came to truncate an unrelated file.
+
 ### Changed
 
 - **A deck with no frequency at all is refused instead of silently succeeding.**

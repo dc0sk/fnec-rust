@@ -200,6 +200,20 @@ pub struct EditorState {
     pub error: Option<String>,
     /// Result of the most recent Save, shown to the user.
     pub save_status: String,
+    /// **The file this document belongs to** — the path a plain `Save` writes to.
+    ///
+    /// Deliberately *not* `deck_path`. That field is global chrome, editable on
+    /// the Editor tab itself, and `Save` used to clone it live: load deck A,
+    /// retype the path to B without loading it, click Save, and A's text
+    /// truncated B (FND-103). The document's file is a different fact from the
+    /// path the chrome is pointing at, and conflating them cost an unrelated
+    /// file.
+    ///
+    /// `None` means the document has no file yet. Unreachable in the shipped UI
+    /// today — Save exists only once `loaded` is true, and only an accepted load
+    /// sets that — but `Save` refuses rather than guessing, so a future "New
+    /// deck" button cannot inherit the truncation.
+    pub file_path: Option<String>,
 }
 
 /// State of the GPU 3-D viewport. The camera and mesh are pure data (rendered by
@@ -644,6 +658,17 @@ impl AppState {
         self.editor_save_run
     }
 
+    /// The file a plain `Save` writes to, or `None` if this document has none.
+    ///
+    /// Exists so the decision is reachable by a test. It used to be one inline
+    /// `self.state.deck_path.clone()` in the binary's `spawn_save`, which no test
+    /// could see — which is why FND-103 shipped: the defect lived in the one
+    /// place the suite could not look, under a comment that said it did the right
+    /// thing ("write it back over the loaded path").
+    pub fn save_target(&self) -> Option<&str> {
+        self.editor.file_path.as_deref()
+    }
+
     /// As [`AppState::current_solve_run`], for the viewport's geometry leg.
     pub fn current_geometry_run(&self) -> Option<RunId> {
         self.viewport.pending_geometry
@@ -907,6 +932,23 @@ impl AppState {
             }
             Message::EditDeckLoaded(_, Ok(doc)) => {
                 self.editor_load_run = None;
+                // A save still in flight is retired here too — but NOT by this
+                // arm. `refresh_editor_preview()`, called at the end of it,
+                // already clears both run ids unconditionally (FND-133/#445), so
+                // the sequence "Save A, load B, save completes" cannot rebind
+                // this document to A. The design review of this change predicted
+                // that hole and it does not exist; an explicit clear added here
+                // was removed after a sabotage showed it changed nothing. Pinned
+                // by `a_completed_load_retires_a_save_still_in_flight`.
+                //
+                // The path this document now belongs to. Not carried in the
+                // message: an ACCEPTED load implies `deck_path` is unchanged
+                // since the load was armed, because `DeckPathChanged` retires the
+                // load run — pinned by
+                // `a_deck_path_change_retires_a_load_spawned_for_the_old_path`.
+                // Empty is normalised to `None` so a state that never had a path
+                // does not acquire an empty one.
+                self.editor.file_path = Some(self.deck_path.clone()).filter(|p| !p.is_empty());
                 self.editor.doc = doc.clone();
                 self.editor.history.reset();
                 self.editor.loaded = true;
@@ -1002,12 +1044,29 @@ impl AppState {
                 self.refresh_editor_preview();
             }
             Message::SaveDeck => {
+                // Decided here rather than in the binary, so it is reachable by a
+                // test: `spawn_save` follows the armed id and no longer chooses a
+                // path of its own. Falling back to `deck_path` would BE the
+                // defect — `to_deck_string()` succeeds on an empty document, so
+                // the fallback would truncate whatever path was typed to an empty
+                // deck.
+                if self.editor.file_path.is_none() {
+                    self.editor.save_status = "This document has no file yet — use Save as…".into();
+                    return;
+                }
                 self.editor.save_status = "Saving…".into();
                 let id = self.mint_run();
                 self.editor_save_run = Some(id);
             }
             Message::DeckSaved(_, Ok(path)) => {
                 self.editor_save_run = None;
+                // Both save routes end here — the async task from `SaveDeck` and
+                // the inline write from "Save as…" — so binding the document to
+                // the file it was just written to fixes the second half of
+                // FND-103 for free: Save-as to C used to leave the document bound
+                // to whatever it was before, so the NEXT plain Save went back to
+                // the old file rather than to C.
+                self.editor.file_path = Some(path.clone());
                 self.editor.doc.mark_saved();
                 self.editor.save_status = format!("Saved to {path}");
             }
