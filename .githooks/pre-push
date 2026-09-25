@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Queue behind any other heavy build on this machine, in any project — this hook
+# runs the whole suite, and a second suite running alongside it OOM-killed the
+# gate three times on 2026-09-25. See scripts/host-build-lock.sh.
+ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=scripts/host-build-lock.sh
+source "$ROOT/scripts/host-build-lock.sh" "pre-push"
+
 cargo test --workspace
 cargo audit
 # License / bans / sources policy (advisories are already covered by cargo audit
