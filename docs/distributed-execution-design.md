@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/distributed-execution-design.md
 status: living
-last_updated: 2026-08-28
+last_updated: 2026-09-25
 ---
 
 # Distributed Execution Design
@@ -245,8 +245,16 @@ draining its pool.
 ## 4. Work-Split Strategy
 
 **Decision: frequency-point-parallel decomposition.  Each frequency point is
-one independent unit of work.  The controller uses a weighted round-robin
-assignment based on node capacity.**
+one independent unit of work.  Workers pull tasks from a shared queue, one at a
+time.**
+
+> **As built, not as designed.** This section specified a capacity-weighted
+> round-robin, a pipeline depth of 2, and a local fallback. None of the three
+> was built. What shipped is the pull loop described below, and the
+> `hosts.toml` keys that were meant to feed the weighting are accepted and
+> ignored with a warning (FND-104). The original design text was removed rather
+> than kept beside the real one, because a reader of a `living` doc takes it as
+> a description of the code.
 
 ### Decomposition unit
 
@@ -265,34 +273,36 @@ architecturally possible but deferred: it is only beneficial above ~5000
 segments and adds complex aggregation logic.  It is tracked as a future
 extension (not a Phase 6 target).
 
-### Assignment algorithm
+### Assignment: a pull loop
 
-The controller maintains a capacity-weighted task queue:
+`WorkerPool::dispatch_batch` gives each worker one thread. Each thread takes the
+next unclaimed task index from a shared atomic counter, sends that task to its
+worker and **blocks** until the answer comes back, then takes the next. There is
+no weight and no scheduler decision: a faster node finishes sooner and so
+claims more tasks. The effect is the same one a capacity weight was meant to
+produce, and it works from observed speed rather than from a configured number.
 
-```
-weight(node) = cpu_threads(node) + 4 × gpu_available(node)
-```
+### Chunk size and pipeline depth
 
-(The GPU multiplier of 4 reflects expected speedup over a single CPU thread for
-the RP far-field kernel; this constant is configurable in `hosts.toml`.)
+One task per message, and **one task in flight per worker**. There is no
+pre-loaded second task, so a worker sits idle for one round-trip between tasks.
+On a LAN with solves above ~50 segments that round-trip is small compared to the
+solve itself.
 
-Task assignment proceeds as a weighted round-robin: the node with the lowest
-ratio of `in_flight_tasks / weight` receives the next task.  This is computed
-locally on the controller; no distributed coordination is required.
+The worker process and the solve are both single-threaded, so a multi-core host
+runs one solve at a time. A per-host concurrency setting (several connections to
+the same host) would be a real lever, and cheap to add to the pool. It would
+need an honestly named key of its own, though. Reusing `cpu_threads_override`
+for it would give a field named "CPU threads" the meaning "SSH connections".
 
-### Chunk size
+### Failure handling, and no local fallback
 
-The controller sends tasks one at a time (chunk size = 1).  A small pipeline
-depth of 2 tasks per node is maintained (send the next task as soon as a result
-arrives, keeping one task in flight and one pre-loaded).  This avoids head-of-
-line blocking on slow nodes without over-committing work.
-
-### Local fallback
-
-If all SSH connections fail before a run completes, the remaining tasks are
-executed locally using the standard `rayon`-parallel CPU path.  The distributed
-and local paths share the same `dispatch_frequency_point` API; the controller
-simply uses the local dispatcher for those tasks.
+A worker that cannot be reached is removed from the pool, and its task goes back
+on the queue for a survivor. A worker that answers with an unusable result keeps
+its place; that task is reported as failed and not retried, since the fault lies
+with the task and a retry would fail the same way. If **every** worker is gone
+the run fails. There is **no** fallback to a local solve: `--hosts` is
+all-or-nothing, as `docs/cli-guide.md` states.
 
 ---
 
@@ -380,9 +390,10 @@ failures (singular matrices from slightly bad geometry that the user then fixes)
 | AuthZ | Connection-level; per-job ACLs deferred |
 | Worker lifecycle | Long-lived subprocess; stateless between tasks |
 | Work decomposition | Frequency-point parallel; one point per task |
-| Assignment | Capacity-weighted round-robin (CPU threads + 4×GPU) |
-| Pipeline depth | 2 tasks per node (one in-flight, one pre-loaded) |
-| Local fallback | `rayon` CPU path if all SSH connections fail |
+| Assignment | Pull loop: each worker claims the next task when it finishes one (as built; the weighted round-robin was never implemented — FND-104) |
+| Pipeline depth | 1 task per worker |
+| Local fallback | None — `--hosts` is all-or-nothing |
+| Cache (the next four rows) | **Designed, not built, and not used.** `ResultCache` is an in-memory FIFO that nothing calls — FND-155 |
 | Cache key | SHA-256(deck bytes ‖ solver config ‖ frequency f64 LE) |
 | Cache storage | Flat JSON files under `~/.cache/fnec-rust/result-cache/` |
 | Cache invalidation | Key-based (natural on any change); no TTL |
@@ -395,5 +406,5 @@ failures (singular matrices from slightly bad geometry that the user then fixes)
 
 - [docs/architecture.md](architecture.md) — system-level architecture
 - [docs/roadmap.md](roadmap.md) — PH6-CHK-005/006/007 checklist entries
-- `docs/worker-deployment.md` — per-node setup guide (PH6-CHK-006 artifact, not yet written)
+- `docs/worker-deployment.md` — per-node setup guide (PH6-CHK-006 artifact)
 - `crates/nec_accel/src/wgpu_device.rs` — GPU dispatch reference for capacity weight rationale
