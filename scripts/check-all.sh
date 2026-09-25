@@ -28,6 +28,11 @@ ROOT="$PWD"
 FAST=0
 [[ "${1:-}" == "--fast" ]] && FAST=1
 
+# Queue behind any other heavy build on this machine, in any project, rather
+# than race it for RAM. See the helper for why this is host-wide.
+# shellcheck source=scripts/host-build-lock.sh
+source "$ROOT/scripts/host-build-lock.sh" "check-all"
+
 FAILED=()
 run() {
     local name="$1"; shift
