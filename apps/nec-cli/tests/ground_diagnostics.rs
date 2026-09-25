@@ -58,8 +58,8 @@ fn gn0_is_active_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.23).abs() > 0.5,
-        "GN0 should alter impedance vs free-space (~74.23 Ω), got Z_RE={z_re}"
+        (z_re - 78.83).abs() > 0.5,
+        "GN0 should alter impedance vs free-space (~78.83 Ω), got Z_RE={z_re}"
     );
 }
 
@@ -124,14 +124,15 @@ fn ge1_without_gn_infers_pec_ground() {
         .expect("no feedpoint row in output");
 
     // PH9-CHK-006: values corrected after the ground-image current-direction sign
-    // fix (was 81.91 + j16.42, the wrong-sign ground effect).
+    // fix (was 81.91 + j16.42, the wrong-sign ground effect). FND-156 moved them
+    // again (was 73.86 + j12.23): the free-end rows no longer shorten the wire.
     assert!(
-        (z_re - 73.861164).abs() < 0.05,
-        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~73.86"
+        (z_re - 77.405597).abs() < 0.05,
+        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~77.41"
     );
     assert!(
-        (z_im - 12.226487).abs() < 0.05,
-        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~12.23"
+        (z_im - 41.673605).abs() < 0.05,
+        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~41.67"
     );
 }
 
@@ -222,10 +223,11 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         })
         .expect("no feedpoint row in output");
 
-    // PH9-CHK-006: corrected after the ground-image sign fix (was 78.17).
+    // PH9-CHK-006: corrected after the ground-image sign fix (was 78.17);
+    // FND-156 end-row fix (was 72.86).
     assert!(
-        (z_re - 72.859147).abs() < 0.05,
-        "GN2 regression mismatch: got Z_RE={z_re}, expected ~72.86"
+        (z_re - 77.037412).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~77.04"
     );
 }
 
@@ -357,8 +359,8 @@ fn gn_negative1_null_ground_is_silent_free_space() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 74.23).abs() < 0.1,
-        "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~74.23 (free-space)"
+        (z_re - 78.83).abs() < 0.1,
+        "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~78.83 (free-space)"
     );
 }
 
@@ -499,11 +501,12 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     // PH9-CHK-006: corrected after the ground-image sign fix (was 69.44). This
-    // near-ground vertical dipole gains a large +18 Ω from ground — the fixed
-    // fnec now matches nec2c's ground-resistance delta (+18.0 vs +18.0 Ω).
+    // near-ground vertical dipole gains a large +18 Ω from ground — fnec's
+    // ground-resistance delta tracks nec2c's (+18.3 vs +18.0 Ω since the FND-156
+    // end-row fix, which moved this pin from 92.27).
     assert!(
-        (z_re - 92.266147).abs() < 0.05,
-        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~92.27"
+        (z_re - 97.15776).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~97.16"
     );
 }
 

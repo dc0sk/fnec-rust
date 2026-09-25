@@ -44,8 +44,8 @@
     {
       "case": "frequency-sweep-dipole",
       "point": "14.2",
-      "real": 74.24,
-      "imag": 13.90,
+      "real": 79.35,
+      "imag": 46.22,
       "source": "4nec2 (Wine 9.x)",
       "status": "Reference captured via 4nec2/Wine"
     },

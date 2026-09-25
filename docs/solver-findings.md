@@ -2,10 +2,22 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-09-25
 ---
 
 # Solver Findings
+
+> **Correction (2026-09-25, FND-156):** the Hallén-vs-NEC2 reactance difference
+> described below (74.24 + j13.90 Ω vs 79.35 + j46.22 Ω at N=51, explained here as
+> a "different physical models" / delta-gap frequency offset) was **not** a
+> formulation difference. It was a defect in the Hallén free-end rows: `I[end] = 0`
+> was imposed at the end segment's *midpoint*, half a segment inside each wire tip,
+> so every wire was modelled one segment short (which is also why the sweep below
+> creeps toward NEC2 as N grows). The Python reference `hallen_reference.py` shared
+> the same step, so its to-the-digit agreement proved nothing. The fix extrapolates
+> the current linearly to the physical tip; fixed, the N=51 dipole gives
+> **78.83 + j42.44 Ω** (Python reference 78.825 + j42.435; nec2c 79.35 + j46.22).
+> The numbers and the explanation below are kept as the historical record.
 
 ## Scope
 
@@ -40,7 +52,7 @@ Validation results against the independent Python reference (`studies/mom-kernel
 
 | Mode | N=51 | Python reference |
 |:-----|:-----|:----------------|
-| hallen | **74.242874 + j13.899516 Ω** | 74.23 + j13.90 Ω ✓ |
+| hallen | **74.242874 + j13.899516 Ω** | 74.23 + j13.90 Ω ✓ (both carried the FND-156 free-end defect; fixed: 78.834228 + j42.439515 vs 78.825 + j42.435) |
 
 $$Z_{\mathrm{hallen}}(N=51) \approx 74.242874 + j\,13.899516\,\Omega$$
 
@@ -70,7 +82,7 @@ Both tools agree to four significant figures. A segment-count convergence sweep
 | 51 | 74.24 + j13.9  | 74.27 + j13.3  | 79.35 + j46.2 |
 | 101 | 76.85 + j29.8 | 76.78 + j29.6  | 79.49 + j46.4 |
 
-**Root cause — NOT a bug; different physical models.** The Hallén and NEC2 solvers
+**Root cause — NOT a bug; different physical models.** *(Superseded 2026-09-25: it was a bug — FND-156, see the correction at the top.)* The Hallén and NEC2 solvers
 implement fundamentally different integral equations:
 
 - **Hallén (fnec):** Uses the reduced thin-wire kernel (`e^{-jkr}/r`) with the

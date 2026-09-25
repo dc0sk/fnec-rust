@@ -8,7 +8,8 @@
 # currents/patterns, not just feedpoint Z), cheaply, by reusing the validated Level-1
 # E-field reflected dyadic? Two routes tested on a low horizontal dipole (0.05 lambda,
 # nec2c GN2 = 67.26 + j52.61; fnec Hallen carries a large reactance offset so compare
-# ground-induced DELTAs, not absolute X):
+# ground-induced DELTAs, not absolute X) [2026-09-25: that "offset" was a defect in
+# the Hallen free-end rows (FND-156), fixed since; this probe predates the fix]:
 #
 #   (1) Born iteration (feed the extra Sommerfeld field back as a distributed Hallen
 #       source, re-solve, iterate): DIVERGES. At 0.05 lambda the surface wave is a

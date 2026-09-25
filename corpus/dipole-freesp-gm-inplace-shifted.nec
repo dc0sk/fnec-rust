@@ -5,7 +5,8 @@ CE test in-place translation INVARIANCE (corpus README 1b), so the card is now
 CE `GM 0 0 ... 0`: NRPT=0 is NEC's in-place move, over the whole structure.
 CE The deck now means what its entry always claimed, and its pinned impedance
 CE 74.242874 + j13.899516 is unchanged -- verified before and after the semantic
-CE change.
+CE change. (Re-pinned 2026-09-25 by FND-156, the Hallen free-end fix, to
+CE 78.834228 + j42.439515 -- still identical to dipole-freesp-51seg.)
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
 GM 0 0 0 0 0 1.0 0 0 0
 GE

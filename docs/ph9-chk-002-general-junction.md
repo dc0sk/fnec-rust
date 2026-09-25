@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-07-06
+last_updated: 2026-09-25
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -91,6 +91,13 @@ out-of-scope topologies keep the exact previous code path.
 References from nec2c (`XQ` execute). fnec's Hallén carries a known systematic
 reactance offset vs nec2c (see the `fnec-validation-strategy` note), so the strong
 physical gate is **radiation resistance** plus the exact split-dipole identity.
+
+> **Correction (2026-09-25, FND-156):** that "systematic reactance offset" was a
+> defect in the Hallén free-end rows (`I[end] = 0` at the end segment's midpoint,
+> shortening every wire by one segment), not a formulation difference. Fixed, the
+> straight dipole gives 78.83 + j42.44 Ω vs nec2c 79.35 + j46.22. The fnec column
+> below was measured before the fix and is kept as recorded; the other rows were not
+> re-measured here.
 
 | deck | topology | nec2c Z (Ω) | fnec Z (Ω) | check |
 |:-----|:---------|:------------|:-----------|:------|

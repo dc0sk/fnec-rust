@@ -59,7 +59,7 @@ fn feedpoint_r(stdout: &str) -> f64 {
 }
 
 // A straight half-wave dipole split into two wires that both START at the origin
-// (start-to-start), fed at that junction. Physically the 74.24+j13.9 Ω single-wire
+// (start-to-start), fed at that junction. Physically the ~78.8 Ω single-wire
 // dipole; PH9-CHK-002 now recovers it on a continuous conductor path.
 const SPLIT_DIPOLE_JUNCTION_FED: &str =
     "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
@@ -97,8 +97,8 @@ fn start_to_start_junction_fed_now_solves() {
     );
     let r = feedpoint_r(&stdout);
     assert!(
-        (r - 74.24).abs() < 2.0,
-        "junction-fed split dipole must recover the single-wire ~74.2 Ω; got {r:.3}"
+        (r - 78.83).abs() < 2.0,
+        "junction-fed split dipole must recover the single-wire ~78.8 Ω; got {r:.3}"
     );
 }
 

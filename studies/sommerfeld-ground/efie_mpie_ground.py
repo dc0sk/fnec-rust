@@ -9,7 +9,8 @@
 # mixed-potential EFIE (MPIE) with a triangle (piecewise-linear) basis, Galerkin
 # tested, with the Sommerfeld reflected VECTOR-potential and SCALAR-potential kernels
 # in the impedance matrix — reproduces nec2c GN2 to ~5% (R and X), including the
-# absolute reactance (no Hallen offset), the PEC image cancellation, and the surface
+# absolute reactance (no Hallen offset -- later shown to be a Hallen free-end defect,
+# FND-156, not a formulation effect), the PEC image cancellation, and the surface
 # wave. The current comes out correct too (not just the feedpoint Z).
 #
 # Results (14.2 MHz, horizontal lambda/2 dipole, eps_r=13, sigma=0.005, N=40):

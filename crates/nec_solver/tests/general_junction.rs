@@ -40,14 +40,12 @@ fn solve_z_paths(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Complex64 {
     let h = build_hallen_rhs_paths(deck, &segs, FREQ, &paths).unwrap();
 
     let mut path_of = vec![0usize; segs.len()];
-    let mut free_ends = Vec::new();
     for (pi, p) in paths.iter().enumerate() {
         for &m in &p.segs {
             path_of[m] = pi;
         }
-        free_ends.push(p.free_ends.0);
-        free_ends.push(p.free_ends.1);
     }
+    let free_ends = path_end_rows(&segs, &paths);
     let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
     let idx = segs
         .iter()
@@ -112,9 +110,10 @@ fn bent_inverted_v_matches_nec2c_resistance() {
     // A near-resonant 30° inverted-V fed at the apex (both arms start at the top,
     // ~5.15 m each). nec2c: 57.7 - j4.3 Ω. Radiation resistance is the direction-
     // independent physical quantity, so we gate resistance tightly against nec2c
-    // (within ~15%); fnec's Hallén carries a known systematic reactance offset vs
-    // nec2c (see the fnec-validation-strategy note), so reactance is gated only for
-    // sanity (bounded, not the -17 - j1283 Ω garbage produced before the fix).
+    // (within ~15%). Reactance is gated only for sanity (bounded, not the
+    // -17 - j1283 Ω garbage produced before the fix): on this bent path fnec reads
+    // +j12.86 against nec2c's -j4.29, a +17 Ω overshoot tracked as FND-158. (Before
+    // FND-156 it read -j11.94 and the gap was blamed on a "systematic offset".)
     let mut vee = NecDeck::new();
     vee.cards.push(Card::Gw(GwCard {
         tag: 1,
@@ -133,7 +132,7 @@ fn bent_inverted_v_matches_nec2c_resistance() {
     vee.cards.push(Card::Ex(ex0(1, 1)));
     let z = solve_z_paths(&vee, 1, 1);
 
-    // nec2c radiation resistance is 57.7 Ω; fnec gives 55.5 Ω (~4%).
+    // nec2c radiation resistance is 57.7 Ω; fnec gives 58.7 Ω (~2%; 55.5 before FND-156).
     assert!(
         (z.re - 57.7).abs() < 9.0,
         "inverted-V resistance must match nec2c 57.7 Ω within ~15%; got {z:.3}"

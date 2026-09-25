@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-004-nt-network.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-09-25
 ---
 
 # PH8-CHK-004: NT two-port network stamping
@@ -74,7 +74,7 @@ NT cards now stamp the Z matrix end to end.
 
 **Corpus / test updates**: the pre-existing `dipole-nt-*` decks use a **malformed**
 NT card (`NT 1 1 26 1 1 26 50.0 0.0` — 8 fields, tag 26 absent), so they now warn
-`NT card ignored` and solve as free-space (impedance unchanged, 74.23+j13.9); the
+`NT card ignored` and solve as free-space (impedance unchanged, 74.23+j13.9 — 78.83+j42.44 since FND-156); the
 `parser_warnings` NT tests and those corpus contracts were updated from the
 "deferred" substring to `NT card ignored`.
 

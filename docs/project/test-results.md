@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-09-07
+last_updated: 2026-09-25
 ---
 
 # Test results
@@ -79,7 +79,10 @@ sign and magnitude for a horizontal dipole low over ground and a vertical dipole
 ground, gating the ground-image current-direction sign fix). Corpus + `ground_diagnostics`
 ground references refreshed to the corrected impedances; `dipole-ground-51seg`
 external-X gate widened 30→35 Ω for fnec's ~32 Ω systematic reactance offset
-(external-R improved ≈7 → 0.93 Ω under the fix). Note: `scriptability_contract.rs`'s
+(external-R improved ≈7 → 0.93 Ω under the fix). *Correction (2026-09-25, FND-156):
+the "offset" was a defect in the Hallén free-end rows, not a formulation difference;
+fixed, this case gives 77.41 + j41.67 Ω vs nec2c 74.79 + j43.94, and the external
+X gates were tightened to 5–10 Ω.* Note: `scriptability_contract.rs`'s
 drop-in-alias test is occasionally flaky under a concurrent rebuild (the alias
 symlink/copy of the freshly-built binary races the build); it passes in isolation
 and is unrelated to this change.
@@ -201,7 +204,7 @@ tests above on every run.
 | PH7-CHK-003 (GPU-resident solve) | ΔR=0.012 Ω, ΔX=0.002 Ω vs f64 CPU; 3 corpus decks ≤0.01 Ω |
 | PH7-CHK-002 (microbench) | 61 ms device-init vs 268 µs dispatch (~227× isolation); 10/10 non-flaky |
 | PH7-CHK-005 (real GPU crossover) | Z-fill: GPU beats CPU <32 seg, up to ~240× at 1536 seg; RP 1.5–1.8× faster |
-| Reference dipole (Phase 0 baseline) | 51-seg λ/2 dipole → 74.24 + j13.90 Ω (matches Python reference) |
+| Reference dipole (Phase 0 baseline) | 51-seg λ/2 dipole → 78.83 + j42.44 Ω since FND-156 (2026-09-25; was 74.24 + j13.90 with the free-end defect); Python reference 78.825 + j42.435, nec2c 79.35 + j46.22 |
 
 ## How to reproduce
 

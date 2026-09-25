@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-003-ex-type5.md
 status: living
-last_updated: 2026-07-03
+last_updated: 2026-09-25
 ---
 
 # PH8-CHK-003: EX type 5 (voltage source, current-slope discontinuity)
@@ -49,7 +49,7 @@ refinement is a documented limitation.
 - **`ex_cards.rs`** — EX type 5 feedpoint impedance equals type 0's to < 1e-3 Ω
   on the reference dipole (`--solver hallen`); type 5 also solves under
   `--solver pulse`.
-- **Corpus** — `dipole-ex5-freesp-51seg` now solves (74.23 + j13.9, == type 0);
+- **Corpus** — `dipole-ex5-freesp-51seg` now solves (74.23 + j13.9, == type 0; 78.83 + j42.44 since FND-156);
   `dipole-ex5-pulse-current-freesp-51seg` solves under pulse (−345.6 − j988.0,
   == type 0 pulse). Both had their "is not yet supported" contracts removed.
 - The PAR-003 checklist no longer lists the EX5 pulse case as a must-error case

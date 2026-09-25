@@ -206,7 +206,7 @@ accepted for backward compatibility and silently ignored.
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
 ```
-74.242874 + j13.899516 Ω  (Python MoM reference: 74.23 + j13.90 Ω)
+78.834228 + j42.439515 Ω  (Python MoM reference: 78.825 + j42.435 Ω; nec2c: 79.35 + j46.22 Ω)
 ```
 
 ### `pulse` (EXPERIMENTAL)
@@ -255,9 +255,9 @@ classes the Hallen path cannot:
   bent geometry via the per-segment-pair reflected reaction. Only a wire that
   reaches or crosses the `z = 0` plane is rejected.
 
-Because it keeps the scalar potential, the MPIE's absolute reactance matches
-nec2c without the Hallen ~32 Ω offset (a λ/2 dipole gives ≈ 74 + j42 Ω vs
-Hallen's 74 + j5 Ω).
+On the 51-segment λ/2 dipole the MPIE gives 74.89 + j45.78 Ω, against
+Hallen's 78.83 + j42.44 Ω and nec2c's 79.35 + j46.22 Ω. Its reactance tracks
+nec2c closely; its resistance runs about 6% low (FND-157).
 
 The MPIE feeds a delta-gap at the graph node nearest the `EX`-driven segment (a
 half-segment offset from NEC's segment-gap feed, vanishing under refinement). It

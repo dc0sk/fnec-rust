@@ -14,6 +14,12 @@ estimators:
 Finding: all estimators cluster at 74.1–74.2 + j13.9–14.4 Ω.
 The feedpoint measurement is NOT the source of the pulse-mode error.
 
+Note (2026-09-25, FND-156): this script had its own copy of the Hallén
+free-end rows (I = 0 imposed at the end segment's midpoint, modelling the wire
+one segment short), so the numbers above are pre-fix. With the rows fixed the
+estimators span 78.3–78.8 + j42.4–42.9 Ω (midpoint 78.825 + j42.435, matching
+hallen_reference.py); the finding — they agree to within ~0.5 Ω — still holds.
+
 Usage
 -----
   python3 feedpoint_measurement.py
@@ -79,8 +85,9 @@ def hallen_solve():
     M[:N, :N] = A_mat
     M[:N, N]  = -cos_vec
     y[:N]     = rhs
-    M[N,   0]   = 1.0
-    M[N+1, N-1] = 1.0
+    # Current extrapolated to each physical tip = 0 (FND-156; was I[0] = I[N-1] = 0).
+    M[N,   0],   M[N,   1]   = 1.5, -0.5
+    M[N+1, N-1], M[N+1, N-2] = 1.5, -0.5
 
     x = np.linalg.lstsq(M, y, rcond=None)[0]
     return x[:N]
@@ -110,7 +117,7 @@ def main():
         print(f"  {label:<22}  {z.real:+.4f} + j{z.imag:+.4f}")
 
     print()
-    print("  All estimators within ≈ 0.1 Ω real, ≈ 0.5 Ω imag of each other.")
+    print("  All estimators within ≈ 0.5 Ω of each other.")
     print("  Conclusion: feedpoint measurement is NOT the cause of pulse-mode error.")
 
 

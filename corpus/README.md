@@ -15,17 +15,17 @@ Of the 50 cases in `corpus/reference-results.json`:
 
 | Tier | Cases | What the gate proves |
 |:-----|------:|:---------------------|
-| Self-pinned regression only | 41 | the answer has not changed since it was pinned |
-| Additionally gated against an external engine | 9 | the answer also agrees with an independent solver, within a stated absolute tolerance |
+| Self-pinned regression only | 40 | the answer has not changed since it was pinned |
+| Additionally gated against an external engine | 10 | the answer also agrees with an independent solver, within a stated absolute tolerance |
 | **Total** | **50** | |
 
-Of the 41 self-pinned rows, four are pinned to a value derived independently of fnec rather than to fnec's own output: `dipole-freesp-51seg` against a Python MoM script, and three `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced.
+Of the 40 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
 
 These three counts are **derived from `reference-results.json` and checked**, not maintained by hand — a stale count here is the same failure as the stale claim this section replaced.
 
 The external engines actually used are **nec2c 1.3.1** and **NEC2DXS500 via Wine** — not xnec2c, which an earlier version of this file named as the primary reference. xnec2c is not used by anything: it hangs headless in CI. 4nec2 is not used either.
 
-The external tolerances are wide on purpose and are not a defect being hidden: fnec's Hallén formulation differs from nec2c systematically — a documented ~32 Ω reactance offset is present in free space too — so an absolute-X gate must exceed it. The tight gates are the self-pinned regression; the external numbers say the answer is the right *shape*.
+Until FND-156 the external X tolerances were 35–47 Ω, to absorb a "systematic" ~32 Ω reactance offset from nec2c that was in fact a defect: the Hallén free-end rows zeroed the current half a segment inside every wire tip, shortening each wire by one segment. With that fixed, the external rows agree with nec2c to within 3.6 Ω in R and 4.9 Ω in X, and the gates were tightened to about twice the remaining difference. One row keeps a wide, relative gate: `split-v-conductor-path-freesp`, an off-centre feed near antiresonance, sits about 11 % / 13 % from nec2c at convergence (FND-158). The tight gates are still the self-pinned regression.
 
 **What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 40 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
 
@@ -98,8 +98,8 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Feed: Center segment (tag=1, seg=26), 1.0 V excitation
 - Ground: None (free space)
 
-**Expected results** (from a Python MoM script, not from xnec2c — see this case's `reference_source`):
-- Z_in ≈ 74.24 + j13.90 Ω
+**Expected results** (self-pinned; gated against nec2c 79.348 + j46.223 Ω within 2 / 8 Ω since FND-156):
+- Z_in ≈ 78.83 + j42.44 Ω
 - Current distribution: symmetric cosine envelope
 
 **Tolerance gates**:
@@ -122,7 +122,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 74.242874 + j13.899516 Ω
+- Z_in = 78.834228 + j42.439515 Ω
 
 **Tolerance gates**: Same as `dipole-freesp-51seg`.
 
@@ -141,7 +141,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 74.242874 + j13.899516 Ω
+- Z_in = 78.834228 + j42.439515 Ω
 - Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
 - Numeric pattern samples locked in corpus validation across 7 theta points (`0°, 30°, 60°, 90°, 120°, 150°, 180°` at `φ=0°`):
   - θ = 0°, φ = 0° → `GAIN_DB=-999.99`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
@@ -173,7 +173,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 74.242874 + j13.899516 Ω
+- Z_in = 78.834228 + j42.439515 Ω
 - Pattern table present with 20 points (`RADIATION_PATTERN`, `N_POINTS 20`)
 - Numeric pattern samples locked in corpus validation across representative theta/phi combinations, including:
   - `θ=0°, φ=0°` → `GAIN_DB=2.1485`, `GAIN_V_DB=2.1485`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
@@ -287,7 +287,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 **Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in trajectory must match known dipole impedance curve: minimum R around λ/2 (14.2 MHz), resistance increases off-resonance, reactance crosses zero near resonance
 - Impedance at 10 MHz ≈ [TBD]
-- Impedance at 14.2 MHz ≈ 74.24 + j13.90 Ω
+- Impedance at 14.2 MHz ≈ 78.83 + j42.44 Ω
 - Impedance at 18 MHz ≈ [TBD]
 
 **Tolerance gates**:
@@ -360,11 +360,11 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
 |:-----|:----------|:---------|:------|:--------|:-------|:------------------|
-| 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
-| 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
-| 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
-| 1d | dipole-xaxis-rp-grid-51seg.nec | 51 | 1 | 1 | None | 74.24 + j13.90 |
-| 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 81.91 + j16.42 |
+| 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
+| 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
+| 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
+| 1d | dipole-xaxis-rp-grid-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
+| 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 77.41 + j41.67 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |

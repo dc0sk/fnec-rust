@@ -1087,7 +1087,7 @@ pub fn mixed_excitation_error(deck: &NecDeck) -> Option<String> {
     // came out zero and `V/I` printed the source voltage — 1.000 + j0.000 for
     // `corpus/dipole-planewave-then-source-51seg.nec` — while the GUI and the
     // bindings, having no receive route, skipped the plane wave and answered
-    // ~74.24 + j13.9. Three frontends, three answers, none flagged.
+    // the plain dipole's Z. Three frontends, three answers, none flagged.
     //
     // Refusing loses nothing the reference offers. Measured: nec2c on that deck
     // with an `XQ` reports 79.348 + j46.223, **bit-identical** to the same deck

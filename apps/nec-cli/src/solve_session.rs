@@ -728,7 +728,7 @@ pub(super) fn build_feedpoint_rows(
     // Through the shared seam (FND-031), which excludes plane waves — their
     // tag/segment fields carry NTHETA/NPHI, not a driven segment — while keeping
     // current sources, which ARE feedpoints here: the CLI prices one from the
-    // solved port voltage, corpus-pinned at 74.23 + j13.9 Ω under PH8-CHK-001.
+    // solved port voltage, corpus-pinned under PH8-CHK-001 (`dipole-ex4-freesp-51seg`).
     // A seam that filtered on "voltage source" would have deleted that row.
     for (ex, role) in nec_solver::feedpoints(deck) {
         let Some((idx, seg)) = segs
@@ -934,7 +934,7 @@ fn maybe_gpu_resident_hallen(
         &hallen_rhs.rhs,
         &hallen_rhs.cos_vec,
         wire_endpoints,
-        junctions,
+        &nec_solver::hallen_constraint_rows(wire_endpoints, junctions),
         freq_hz,
     ))?;
 

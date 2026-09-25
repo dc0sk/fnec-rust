@@ -4,6 +4,7 @@ CM fnec solves one drive kind at a time: the current-source path replaces the
 CM right-hand side, so the voltage source's feedpoint was priced over currents its
 CM own drive never produced. This deck reported 0.678 + j0.086 ohm for the EX 0
 CM row where the same deck without the EX 4 gives 74.243 + j13.900 — a hundredfold
+CM (78.834 + j42.440 since the FND-156 Hallen free-end fix, 2026-09-25)
 CM error, exit 0, no warning (FND-036).
 CM
 CM Kept as a refusal fixture: it must NOT solve.

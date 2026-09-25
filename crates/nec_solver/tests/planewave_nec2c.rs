@@ -10,13 +10,15 @@
 //      short-circuit terminal current tracks the *transmit* far-field pattern
 //      (uses the already-validated farfield path — no external reference).
 //
-// Note on absolute parity: fnec's Hallén operator and nec2c differ
-// systematically in reactance/current-phase even for the *driven* dipole on
-// this geometry (fnec's corpus impedance gates are regression gates against
-// fnec's own golden values, not tight nec2c parity). That difference is a
-// constant complex factor shared by the driven and plane-wave solves, so it is
-// removed by peak-alignment before the shape comparison — it is not a
-// plane-wave-specific error. See docs/ph8-chk-002-plane-wave-excitation.md.
+// Absolute parity is gated too (`planewave_currents_match_nec2c_absolutely`).
+// This header used to explain it away: "fnec's Hallén operator and nec2c differ
+// systematically in reactance/current-phase even for the *driven* dipole ...
+// a constant complex factor ... removed by peak-alignment". That factor was
+// FND-156 — the free-end rows zeroed the current half a segment inside each tip,
+// modelling the wire one segment short — and peak alignment is exactly the step
+// that hid it here. With the rows fixed the induced current matches nec2c in
+// amplitude and phase without any alignment. The shape test keeps its alignment
+// because it gates something else: the distribution, independent of scale.
 
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
@@ -148,6 +150,35 @@ fn planewave_currents_match_nec2c_shape() {
         "plane-wave induced-current shape deviates from nec2c by {max_rel:.4} (>5% of peak)"
     );
 }
+
+/// FND-156: the induced current, compared with nec2c AS IS — no alignment.
+///
+/// Peak alignment divides out any complex factor, so the shape test above could
+/// not see a receive solve that got the magnitude and phase wrong everywhere.
+/// That is what the old free-end rows did: the one-segment-short wire is
+/// detuned, so it picks up the wrong current with the wrong phase.
+#[test]
+fn planewave_currents_match_nec2c_absolutely() {
+    let currents = solve_plane_wave(30.0, 0.0, 0.0);
+    let ref_peak = Complex64::new(NEC2C_CURRENTS[25].0, NEC2C_CURRENTS[25].1).norm();
+    let max_rel = NEC2C_CURRENTS
+        .iter()
+        .zip(&currents)
+        .map(|(&(re, im), ours)| (ours - Complex64::new(re, im)).norm() / ref_peak)
+        .fold(0.0f64, f64::max);
+    println!("absolute max rel (vs peak) = {max_rel:.4}");
+    assert!(
+        max_rel < ABSOLUTE_BAND,
+        "plane-wave induced current deviates from nec2c by {max_rel:.4} of the peak, \
+         with no alignment (band {ABSOLUTE_BAND})"
+    );
+}
+
+/// Measured 0.0398 with the fixed rows (the residual is the same first-order
+/// pulse-basis error as the driven dipole's ~4 Ω). With the old rows restored at
+/// the plane-wave site it is 0.4146, while the aligned shape test above still
+/// passes: this gate is the only one that sees it.
+const ABSOLUTE_BAND: f64 = 0.06;
 
 #[test]
 fn planewave_broadside_current_is_symmetric() {

@@ -35,7 +35,7 @@ use crate::geometry::{
 };
 use crate::linear::{
     solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    SolveError,
+    ConstraintRow, SolveError,
 };
 use crate::matrix::ZMatrix;
 use crate::planewave::{build_planewave_hallen, build_planewave_hallen_paths};
@@ -167,22 +167,56 @@ fn nontrivial_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
     }
 }
 
-/// The per-segment path index and the free-end list every path arm needs.
+/// The free-end boundary rows of every conductor path, two per path, in path order
+/// and then start-before-end — the order the path solvers impose them in.
+///
+/// Each row extrapolates the PATH current to the physical end of the chain
+/// ([`crate::linear::free_end_row`]), so it needs three things only this function
+/// has together: the inner neighbour along the traversal (`segs[1]` and
+/// `segs[len−2]`, which are adjacent even where a wire is walked in reverse — the
+/// walk pushes that wire's segments reversed), the relative sign of end and
+/// neighbour, and both segment lengths, since the neighbour may lie on a different
+/// `GW` card from the end.
+///
+/// Public so the tests that drive the path solvers directly build their rows here
+/// rather than by hand. A hand-built list was the one thing standing between those
+/// tests and the old `I = 0` rows.
+pub fn path_end_rows(segs: &[Segment], paths: &[ConductorPath]) -> Vec<ConstraintRow> {
+    let mut rows = Vec::with_capacity(paths.len() * 2);
+    for p in paths {
+        let k = p.segs.len();
+        debug_assert_eq!(p.free_ends, (p.segs[0], p.segs[k - 1]));
+        for (e, nb) in [(0, 1), (k - 1, k.wrapping_sub(2))] {
+            let end = p.segs[e];
+            let inner = (k > 1).then(|| (p.segs[nb], p.signs[e] * p.signs[nb]));
+            let h_inner = inner.map_or(segs[end].length, |(nb, _)| segs[nb].length);
+            rows.push(crate::linear::free_end_row(
+                end,
+                inner,
+                segs[end].length,
+                h_inner,
+            ));
+        }
+    }
+    rows
+}
+
+/// The per-segment path index and the free-end rows every path arm needs.
 ///
 /// Three copies of this loop existed — here, in the CLI's receive sweep, and in
 /// `current_source.rs` — guarding a convention (which end of a path is free, in
 /// what order) that only agrees while nobody edits it.
-pub(crate) fn group_paths(segs: &[Segment], paths: &[ConductorPath]) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn group_paths(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+) -> (Vec<usize>, Vec<ConstraintRow>) {
     let mut path_of = vec![0usize; segs.len()];
-    let mut free_ends = Vec::with_capacity(paths.len() * 2);
     for (pi, p) in paths.iter().enumerate() {
         for &m in &p.segs {
             path_of[m] = pi;
         }
-        free_ends.push(p.free_ends.0);
-        free_ends.push(p.free_ends.1);
     }
-    (path_of, free_ends)
+    (path_of, path_end_rows(segs, paths))
 }
 
 /// Solve an incident plane wave on a matrix that is **already stamped**.
@@ -381,7 +415,7 @@ fn solve_delta_gap(
     freq_hz: f64,
     route: HallenRoute,
     paths: &Option<Vec<ConductorPath>>,
-    grouped: &Option<(Vec<usize>, Vec<usize>)>,
+    grouped: &Option<(Vec<usize>, Vec<ConstraintRow>)>,
 ) -> Result<HallenRouted, HallenSessionError> {
     let rhs = match paths {
         Some(ps) => build_hallen_rhs_paths(deck, segs, freq_hz, ps),
@@ -434,7 +468,7 @@ fn solve_current_source(
     z_mat: &ZMatrix,
     freq_hz: f64,
     route: HallenRoute,
-    grouped: &Option<(Vec<usize>, Vec<usize>)>,
+    grouped: &Option<(Vec<usize>, Vec<ConstraintRow>)>,
 ) -> Result<HallenRouted, HallenSessionError> {
     // The plain case keeps the existing pricing helper, which finds the source
     // card, builds the shape and prices the port in one step.
@@ -555,10 +589,18 @@ mod routing_tests {
         let plain = solve_hallen(&z, &rhs.rhs, &rhs.cos_vec, &endpoints, &[]).expect("plain solve");
         let z_plain = Complex64::new(1.0, 0.0) / feed_current(&deck, &segs, &plain.currents);
 
-        // nec2c answers this deck 268.56 + j452.26.
+        // nec2c answers this deck 268.56 + j452.26. Until FND-156 the path basis
+        // gave 264.88 + j410.86, which looked like tracking the oracle and was not:
+        // the free-end rows sat half a segment inside each tip, and that 1/N
+        // shortening happened to cancel a real offset at 21 segments per arm. Both
+        // end conditions converge to the same limit (old 295.26 + j495.96, new
+        // 304.40 + j522.25 at 81 per arm, heading for ~306 + j526), while nec2c
+        // converges to ~279 + j459. The remaining ~10% is a Hallén-vs-nec2c
+        // offset on this off-centre, near-antiresonant feed, present on a straight
+        // wire too, not a discretisation error. Pin the value, not the oracle.
         assert!(
-            (z_paths.re - 264.88).abs() < 1.0 && (z_paths.im - 410.86).abs() < 1.0,
-            "path basis should track the oracle, got {z_paths}"
+            (z_paths.re - 297.81).abs() < 1.0 && (z_paths.im - 511.45).abs() < 1.0,
+            "path basis moved, got {z_paths}"
         );
         assert!(
             (z_plain.re - z_paths.re).abs() > 100.0,
@@ -666,6 +708,70 @@ mod load_stamp_tests {
         assert!(
             (copper.re - 0.939).abs() / 0.939 < 0.10,
             "copper loss: nec2c gives +0.939 Ω, got {copper}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod end_row_tests {
+    use super::*;
+    use crate::geometry::{build_conductor_paths, build_geometry};
+
+    /// FND-156, the case the path rows exist for: the path ENDS on a one-segment
+    /// wire walked in reverse, and its inner neighbour is on another wire walked
+    /// forward, with a different segment length. Every sign and length the row
+    /// needs comes from a different place here, so a mix-up in any of them shows.
+    ///
+    /// Wire 1 is one 0.3 m segment from the junction down to a free tip; wire 2
+    /// is ten 0.5 m segments up from the same junction (start-to-start).
+    #[test]
+    fn a_reversed_one_segment_end_wire_extrapolates_the_path_current() {
+        let deck = nec_parser::parse(
+            "CE\nGW 1 1 0 0 0 0 0 -0.3 .001\nGW 2 10 0 0 0 0 0 5 .001\nGE\n\
+             EX 0 2 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        )
+        .expect("deck parses")
+        .deck;
+        let segs = build_geometry(&deck).expect("geometry builds");
+        let paths = build_conductor_paths(&segs).expect("a degree-2 path");
+        assert_eq!(paths.len(), 1);
+        let p = &paths[0];
+        let rows = path_end_rows(&segs, &paths);
+        assert_eq!(rows.len(), 2);
+
+        // The end on wire 1 (segment 0) and its neighbour on wire 2.
+        let (pos, row) = rows
+            .iter()
+            .map(|r| (p.segs.iter().position(|&m| m == r.0).unwrap(), *r))
+            .find(|(_, r)| r.0 == 0)
+            .expect("a row at the one-segment wire's tip");
+        let nb = row.1.expect("an inner neighbour to extrapolate through");
+        assert_eq!(segs[nb].tag, 2, "the neighbour is across the junction");
+        assert_ne!(
+            p.signs[pos],
+            p.signs[p.segs.iter().position(|&m| m == nb).unwrap()],
+            "this geometry must reverse one wire relative to the other"
+        );
+
+        // A PATH current zero at the tip and linear in arc length, turned into
+        // the per-segment currents the solver's unknowns are (I_seg = sign·I_path).
+        let mut i_seg = vec![0.0; segs.len()];
+        let mut s = 0.0;
+        let order: Vec<usize> = if pos == 0 {
+            (0..p.segs.len()).collect()
+        } else {
+            (0..p.segs.len()).rev().collect()
+        };
+        for k in order {
+            let m = p.segs[k];
+            i_seg[m] = p.signs[k] * (s + segs[m].length / 2.0);
+            s += segs[m].length;
+        }
+        let (a, b, va, vb) = row;
+        let residual = va * i_seg[a] + vb * i_seg[b.unwrap()];
+        assert!(
+            residual.abs() < 1e-12,
+            "row {row:?} leaves {residual} on a path current that is zero at the tip"
         );
     }
 }

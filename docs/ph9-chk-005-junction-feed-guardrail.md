@@ -26,7 +26,7 @@ EX 0 1 1 0 1.0 0.0        ← feed at the junction segment
 ```
 
 This is **physically identical** to the reference single-wire dipole
-(74.24 + j13.90 Ω), yet fnec reports **−34.49 − j1447 Ω** — a *negative* resistance,
+(74.24 + j13.90 Ω at the time; 78.83 + j42.44 since FND-156), yet fnec reports **−34.49 − j1447 Ω** — a *negative* resistance,
 which is impossible for a passive antenna.
 
 ### Why

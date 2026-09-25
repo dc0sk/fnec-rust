@@ -4,9 +4,10 @@
 // PH9-CHK-006: near-ground feedpoint impedance — the ground-image current-direction
 // sign gate.
 //
-// fnec's Hallén operator carries a documented systematic reactance offset vs nec2c,
-// so absolute impedance parity is not the gate (see fnec-validation-strategy). The
-// physical, offset-cancelling quantity is the *ground-induced delta*
+// When this was written fnec's Hallén read ~30 Ω low in reactance against nec2c,
+// explained as a systematic formulation offset; it was FND-156, a free-end-row
+// defect, since fixed. The gate stays on the *ground-induced delta*, which is
+// still the right quantity: it isolates the ground term from everything else. The
 // ΔZ = Z(over ground) − Z(free space): the reflected image adds a well-defined,
 // sign-definite contribution that must match nec2c. A prior sign inversion in the
 // Z-matrix image gave ΔZ the wrong sign (a horizontal dipole's radiation resistance

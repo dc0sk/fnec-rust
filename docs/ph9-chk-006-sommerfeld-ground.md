@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-006-sommerfeld-ground.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-09-25
 ---
 
 # PH9-CHK-006: accurate near-ground impedance
@@ -42,7 +42,8 @@ impedance with the wrong sign. Because the two paths are separate, the *pattern*
 ground validated (PH8-CHK-006 / PH9-CHK-003, gain to 0.06 dB) while the *impedance*
 was silently wrong. No prior test caught it: the ground-impedance references were fnec
 self-regressions that had pinned the buggy values, and the one external (nec2c) gate
-sat just below fnec's systematic reactance offset and passed by luck.
+sat just below fnec's systematic reactance offset and passed by luck. (That "offset"
+was itself a defect — FND-156; see the correction under Validation.)
 
 Symptom: a horizontal λ/2 dipole 0.1 λ over average ground reported 92 − j48 Ω where
 nec2c gives ≈52 + j63 Ω — the radiation resistance *rose* over ground instead of
@@ -50,6 +51,15 @@ dropping. The fix makes `image_segment` return `(−Jx, −Jy, +Jz)`, matching t
 far-field image.
 
 ## Validation (nec2c, 14.2 MHz, avg ground εr = 13, σ = 0.005)
+
+> **Correction (2026-09-25, FND-156):** the "~32 Ω systematic reactance offset"
+> below was not a property of the Hallén operator. It was a defect in the free-end
+> rows (`I[end] = 0` imposed at the end segment's midpoint, shortening every wire by
+> one segment). Fixed, the free-space dipole gives 78.83 + j42.44 Ω (nec2c
+> 79.35 + j46.22), `dipole-gn2-near-ground-51seg` moves 92.27 + j13.62 →
+> 97.16 + j44.13 Ω (nec2c 97.32 + j44.15), and `dipole-ground-51seg` (PEC) gives
+> 77.41 + j41.67 (nec2c 74.79 + j43.94). The reactance difference attributed to the
+> ground model was this defect too. The ΔZ analysis below is kept as recorded.
 
 fnec's Hallén operator carries a documented ~32 Ω systematic reactance offset vs
 nec2c (present in free space: fs X 13.9 vs 46.2), so absolute parity is not the gate.
@@ -345,7 +355,7 @@ surface wave lives — so it captures what the Hallén hybrid cannot. Measured
 | GN2 0.025 λ | 83.5 + j66.3 | 87.81 + j68.64 |
 
 **~5 % on both R and X at both heights** — including the correct *absolute* reactance
-(no Hallén offset), the PEC image cancellation, the surface wave, **and the current
+(no Hallén offset — which FND-156 later showed was a Hallén defect, not a formulation effect), the PEC image cancellation, the surface wave, **and the current
 distribution** (not just the feed Z). The residual is `N = 40` discretization. Key
 formulation points: reflected kernels `G_A = −j·S{R_TE}` and
 `G_Φ = −j·S{(k0²R_TE + kz0²R_TM)/λ²}` with `S{f}(ρ,d) = ∫(λ/kz0) f J0(λρ) e^{-jkz0 d} dλ`

@@ -52,15 +52,16 @@ pub use geometry::{
 // they are `pub(crate)`, because nothing outside this crate consumes them and a
 // public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, hallen_route, solve_hallen_planewave_routed,
-    solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted, HallenSessionError,
-    ResidualInputs, JUNCTION_TOL_M,
+    deck_has_current_source, deck_has_plane_wave, hallen_route, path_end_rows,
+    solve_hallen_planewave_routed, solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted,
+    HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
-    solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
-    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
-    solve_with_sinusoidal_basis_per_wire, CurrentSourceSolution, HallenSolution, SolveError,
+    free_end_row, hallen_constraint_rows, solve, solve_hallen, solve_hallen_paths,
+    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
+    solve_with_continuity_basis, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
+    solve_with_sinusoidal_basis_per_wire, ConstraintRow, CurrentSourceSolution, HallenSolution,
+    SolveError,
 };
 pub use loads::{add_laplace_loads, build_loads, laplace_impedance, LaplaceLoad, LoadWarning};
 pub use matrix::{

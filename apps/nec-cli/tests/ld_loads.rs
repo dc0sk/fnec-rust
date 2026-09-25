@@ -52,6 +52,25 @@ fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
     panic!("no feedpoint rows found in stdout:\n{stdout}");
 }
 
+/// Feedpoint Z of the same dipole with no load, SOLVED rather than pinned.
+///
+/// The load identities below are shifts from this baseline. They used to write
+/// the baseline down as 74.242874 + j13.899516, which tied every analytic load
+/// check to one solver revision: FND-156 moved the unloaded dipole by +29 Ω of
+/// reactance and all three failed, though no load stamp had changed.
+fn unloaded_dipole_z(workspace_root: &Path) -> (f64, f64) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("fnec-ld-unloaded-{now}.nec"));
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&path, deck).expect("failed to write unloaded deck");
+    let (out, _) = run_fnec(&path, workspace_root);
+    let _ = fs::remove_file(&path);
+    first_feedpoint_impedance(&out)
+}
+
 #[test]
 fn ld_type4_changes_feedpoint_impedance() {
     // Phase-2: LD is parsed and applied.  LD type 4 (series impedance R=100, X=50)
@@ -82,7 +101,7 @@ fn ld_type4_changes_feedpoint_impedance() {
     // over-applied it 7.0x (FND-122). A pinned number cannot tell a right answer
     // from a wrong one it was measured from, so the assertion is now the physics.
     let (loaded_r, loaded_x) = first_feedpoint_impedance(&loaded_out);
-    let (base_r, base_x) = (74.242874_f64, 13.899516_f64);
+    let (base_r, base_x) = unloaded_dipole_z(&workspace_root);
     assert!(
         (loaded_r - base_r - 100.0).abs() < 0.2,
         "LD4 R=100 must shift Z_RE by +100 from {base_r}, got {loaded_r}"
@@ -126,7 +145,7 @@ fn unsupported_ld_type_emits_warning_and_continues() {
 #[test]
 fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
     // Phase-2: LD type 1 (parallel RLC) is parsed and applied.
-    // R=1000 Ω parallel raises Z_RE to ~7072 Ω (vs free-space ~74.2 Ω).
+    // A 1000 Ω load at the feed raises Z_RE by exactly 1000 Ω.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -148,9 +167,10 @@ fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
     // exactly 1000 Ω. Was pinned at 7072.840 — fnec's own output through the
     // broken stamp, 7.0x over-applied (FND-122).
     let (loaded_r, _) = first_feedpoint_impedance(&loaded_out);
+    let (base_r, _) = unloaded_dipole_z(&workspace_root);
     assert!(
-        (loaded_r - 74.242874 - 1000.0).abs() < 1.0,
-        "LD1 R=1000 must shift Z_RE by +1000 from 74.242874, got {loaded_r}"
+        (loaded_r - base_r - 1000.0).abs() < 1.0,
+        "LD1 R=1000 must shift Z_RE by +1000 from {base_r}, got {loaded_r}"
     );
 }
 
@@ -159,7 +179,7 @@ fn ld_type2_series_rl_is_supported_and_changes_impedance() {
     // Phase-2: LD type 2 (series RL) is parsed and applied.
     // R=10 Ω, L=1 µH at 14.2 MHz: X_L = ωL = 2π·14.2e6·1e-6 = 89.2212 Ω.
     // The load sits at the feed, so the port identity gives the whole answer:
-    // Z_IM shifts from 13.899516 Ω by +89.2212, and Z_RE by +10.
+    // Z_IM shifts from the unloaded dipole's by +89.2212, and Z_RE by +10.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -182,9 +202,10 @@ fn ld_type2_series_rl_is_supported_and_changes_impedance() {
     // shift exactly. The old assertion was fnec's own 651.8 Ω from the broken
     // stamp — a self-consistent checker that could not fail (FND-122).
     let omega_l = 2.0 * std::f64::consts::PI * 14.2e6 * 1e-6;
+    let (_, base_x) = unloaded_dipole_z(&workspace_root);
     assert!(
-        (loaded_x - 13.899516 - omega_l).abs() < 0.2,
-        "LD2 series RL must shift Z_IM by +ωL = {omega_l:.4} from 13.899516, got {loaded_x}"
+        (loaded_x - base_x - omega_l).abs() < 0.2,
+        "LD2 series RL must shift Z_IM by +ωL = {omega_l:.4} from {base_x}, got {loaded_x}"
     );
 }
 
