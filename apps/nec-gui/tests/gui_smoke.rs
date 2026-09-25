@@ -3279,3 +3279,57 @@ fn a_document_with_no_file_refuses_to_save() {
         state.editor.save_status
     );
 }
+
+/// A sweep that fails partway shows its kept points in the table, not just in
+/// the chart.
+///
+/// `sweep_points()` matches `Streaming | Done | Failed`; `sorted_sweep_rows()`
+/// matched only `Streaming | Done`. Two phase matches over one phase enum, one
+/// of them missing an arm — so on a mid-sweep failure the chart, the cursor
+/// readout and the status line all showed the points that had been computed
+/// while the table below them showed headers and nothing (FND-099).
+///
+/// The points are deliberately preserved into `Failed(e, kept)` — that was
+/// FND-033's fix — so the table was discarding data the state had kept on
+/// purpose.
+#[test]
+fn a_failed_sweep_still_lists_the_points_it_computed() {
+    let mut state = AppState::default();
+    state.apply(&Message::DeckPathChanged("/tmp/fnec-sweep.nec".into()));
+    state.apply(&Message::RunSweep);
+
+    for (freq_mhz, z_re, z_im) in [(14.0, 70.0, -2.0), (14.5, 72.0, 1.0)] {
+        deliver_sweep_point(
+            &mut state,
+            SweepPoint {
+                freq_mhz,
+                z_re,
+                z_im,
+            },
+        );
+    }
+    deliver_sweep(&mut state, Err("solver gave up at 15.0 MHz".into()));
+
+    assert!(
+        matches!(state.sweep_phase, SweepPhase::Failed(_, _)),
+        "fixture must reach the Failed phase: {:?}",
+        state.sweep_phase
+    );
+    assert_eq!(
+        state.sweep_points().len(),
+        2,
+        "the phase keeps the points it computed"
+    );
+    assert_eq!(
+        state.sorted_sweep_rows().len(),
+        2,
+        "and the table must show them — a chart with points above an empty table \
+         is the defect"
+    );
+    // The two views cannot disagree about which points exist.
+    assert_eq!(
+        state.sorted_sweep_rows().len(),
+        state.sweep_points().len(),
+        "the table and the chart must draw from the same set"
+    );
+}

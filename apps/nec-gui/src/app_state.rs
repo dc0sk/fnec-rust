@@ -1224,10 +1224,17 @@ impl AppState {
 
     /// Returns sorted rows for the sweep result table (streaming or done).
     pub fn sorted_sweep_rows(&self) -> Vec<SweepPoint> {
-        let (SweepPhase::Streaming(_, rows) | SweepPhase::Done(rows)) = &self.sweep_phase else {
-            return Vec::new();
-        };
-        let mut v = rows.clone();
+        // Derived from `sweep_points()` rather than matching the phase again.
+        // This used to be its own `let-else` over `Streaming | Done`, which is
+        // `sweep_points()`'s match minus the `Failed` arm — so a sweep that died
+        // partway drew its kept points on the chart, the cursor readout and the
+        // status line, above a table showing headers and nothing (FND-099). The
+        // points are preserved into `Failed(e, kept)` deliberately (FND-033), so
+        // the table was discarding data the state had kept on purpose.
+        //
+        // One phase match, not two: a future phase is now visible to both views
+        // or to neither, and cannot be added to one and forgotten in the other.
+        let mut v = self.sweep_points().to_vec();
         let asc = self.sweep_sort_asc;
         match self.sweep_sort_col {
             SweepSortCol::FreqMhz => v.sort_by(|a, b| cmp_f64(a.freq_mhz, b.freq_mhz, asc)),

@@ -63,10 +63,13 @@ pub async fn run_sweep_stream(
                 let _ = output.send(Message::SweepPointComputed(run, pt)).await;
             }
             Err(e) => {
-                // The `Failed` phase currently hides the points themselves, so
-                // this caveat stands alone next to the error (FND-033). Whoever
-                // fixes that — by keeping the streamed points on `Failed` — will
-                // be editing this seam.
+                // `Failed(e, kept)` preserves the streamed points, so this
+                // caveat sits alongside them rather than alone (FND-033). The
+                // comment here claimed the opposite long after that changed, and
+                // the table still behaved as though it were true — it matched the
+                // phase separately and omitted the `Failed` arm, so the points
+                // reached the chart and not the list (FND-099). Both views derive
+                // from `sweep_points()` now.
                 let _ = output
                     .send(Message::SweepCaveats(
                         run,

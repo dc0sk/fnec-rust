@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A sweep that fails partway now lists the points it computed**, instead of
+  drawing them on the chart above an empty table. `sweep_points()` matched
+  `Streaming | Done | Failed` while `sorted_sweep_rows()` matched only the first
+  two — one phase enum, two matches, one of them missing an arm — so the chart,
+  the cursor readout and the status line showed data the table discarded
+  (FND-099). The points are preserved into `Failed` deliberately; the table now
+  derives from the same function as the chart rather than re-matching the phase.
+
 - **The GUI's `Save deck` writes to the file the document belongs to, not to
   whatever the deck-path box says.** That box is global chrome, editable on the
   Editor tab itself, and `Save` cloned it live — so loading deck A, retyping the
