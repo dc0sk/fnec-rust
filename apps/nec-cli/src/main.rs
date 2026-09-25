@@ -827,6 +827,11 @@ fn run_distributed_solve(
             return ExitCode::FAILURE;
         }
     };
+    // Before any connection, so a user who set a field that does nothing hears
+    // about it even when the run then fails to reach a worker (FND-104).
+    for line in cfg.ignored_field_warnings() {
+        eprintln!("{line}");
+    }
     if cfg.worker.is_empty() {
         eprintln!(
             "error: --hosts file '{}' contains no [[worker]] entries",

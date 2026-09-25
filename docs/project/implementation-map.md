@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/implementation-map.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-09-25
 ---
 
 # Implementation map
@@ -71,11 +71,11 @@ result cache. Serves **PRT-011, CP-011, PH6-CHK-005/006/007, PH7-CHK-004**.
 
 - `src/lib.rs` — facade + `encode_deck` base64 helper.
 - `src/protocol.rs` — NDJSON wire types (`TaskMessage`, `TaskResult`, `Impedance`, `WorkerSolverConfig` incl. `exec`, `ErrorCode`); serde-default for wire back-compat.
-- `src/capability.rs` — `Capability` (CPU threads, GPU/wgpu backend), `assignment_weight`, `CapabilityCache`.
-- `src/hosts.rs` — `HostsConfig`/`HostEntry` from `hosts.toml`; `HostsConfigError`.
+- `src/capability.rs` — `Capability` (CPU threads, GPU/wgpu backend), `CapabilityCache`. Not consulted by the CLI's `--hosts` path (FND-104); `assignment_weight` was removed as the code form of a weighting scheme that was never built.
+- `src/hosts.rs` — `HostsConfig`/`HostEntry` from `hosts.toml`; `HostsConfigError`; `ignored_field_warnings` for the two accepted-but-ignored override keys.
 - `src/controller.rs` — `LocalWorkerHandle`: local `fnec worker --stdio` subprocess.
-- `src/ssh_worker.rs` — `SshWorkerHandle`: remote worker over `ssh`; `connect_all`.
-- `src/pool.rs` — `WorkerPool`/`WorkerHandle` (Local/Ssh); round-robin dispatch.
+- `src/ssh_worker.rs` — `SshWorkerHandle`: remote worker over `ssh`; `connect_all` (probes; unused by the CLI).
+- `src/pool.rs` — `WorkerPool`/`WorkerHandle` (Local/Ssh); `dispatch` (sequential, unused by the CLI) and `dispatch_batch` (the pull loop `--hosts` runs).
 - `src/solve.rs` — in-worker Hallén solve (`solve_deck_at_frequency`/`_with_exec`); GPU-resident dispatch for supported class (PH7-CHK-004).
 - `src/worker.rs` — `run_worker_stdio` event loop (stdin tasks → stdout results).
 - `src/result_cache.rs` — SHA-256 `cache_key(deck, config, freq)`; FIFO `ResultCache`.

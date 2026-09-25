@@ -15,6 +15,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Removed
+
+- **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
+  weighting scheme that was designed and never built (FND-104). It had no caller
+  outside its own tests.
+
+### Security
+
+- **`docs/worker-deployment.md` now states that `--hosts` connects with SSH
+  host-key verification disabled** (`StrictHostKeyChecking=no`,
+  `UserKnownHostsFile=/dev/null`). Before, its SSH-options table left both options
+  out, and its Security Notes did not mention host keys. The behaviour itself is
+  unchanged and recorded as FND-154: turning verification on would change how
+  every existing cluster first connects. Run `--hosts` only on a network you
+  control.
+
 ### Fixed
 
 - **A sweep that fails partway now lists the points it computed**, instead of
@@ -40,6 +56,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   chrome, which is how it came to truncate an unrelated file.
 
 ### Changed
+
+- **`hosts.toml`'s `cpu_threads_override` and `gpu_weight_override` are accepted
+  and now warned about, not silently ignored** (FND-104). They were documented as
+  ways to cap assignment to a shared node and to make a node attract more tasks,
+  and nothing ever read them. Under the scheduler that shipped they cannot mean
+  either thing: each worker runs one task at a time, pulled from a shared queue,
+  so there is nothing to cap and a faster node already takes more work by
+  finishing sooner. Setting either key prints a `warning: [hosts]` line naming
+  the host, before any connection is made. Existing files still parse.
+- `docs/distributed-execution-design.md` §4 now describes the scheduler that
+  shipped (a pull loop, one task in flight per worker, no local fallback) in
+  place of the weighted round-robin, pipeline depth 2 and local fallback it had
+  specified. None of those three was built.
 
 - **A deck with no frequency at all is refused instead of silently succeeding.**
   `fnec deck.nec` on a deck with no `FR` card exited **0 having written zero

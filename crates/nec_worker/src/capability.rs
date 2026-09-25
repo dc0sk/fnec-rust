@@ -8,37 +8,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn assignment_weight_cpu_only() {
-        let cap = Capability {
-            cpu_threads: 8,
-            gpu_available: false,
-            wgpu_backend: None,
-        };
-        assert!((cap.assignment_weight(None) - 8.0).abs() < 1e-9);
-        assert!((cap.assignment_weight(Some(2.0)) - 8.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn assignment_weight_gpu_default_weight() {
-        let cap = Capability {
-            cpu_threads: 4,
-            gpu_available: true,
-            wgpu_backend: Some("Vulkan".into()),
-        };
-        assert!((cap.assignment_weight(None) - 8.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn assignment_weight_gpu_with_override() {
-        let cap = Capability {
-            cpu_threads: 16,
-            gpu_available: true,
-            wgpu_backend: Some("Metal".into()),
-        };
-        assert!((cap.assignment_weight(Some(10.0)) - 26.0).abs() < 1e-9);
-    }
-
-    #[test]
     fn capability_cache_insert_get_invalidate() {
         let mut cache = CapabilityCache::new();
         assert!(cache.is_empty());
@@ -114,7 +83,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-/// Capabilities of a single worker node, as detected or overridden in `hosts.toml`.
+/// Capabilities of a single worker node, as detected by probing it.
+///
+/// Not "or overridden in `hosts.toml`", which this used to say: nothing applies
+/// the overrides (FND-104). Note also that the CLI's `--hosts` path never probes
+/// or caches capabilities at all — it hands every worker the same task queue and
+/// lets them pull. This type and [`CapabilityCache`] serve the probe helpers and
+/// their tests, not the scheduler.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Capability {
     /// Number of logical CPU threads available for compute.
@@ -125,21 +100,6 @@ pub struct Capability {
     /// Examples: `"Vulkan"`, `"Metal"`, `"Dx12"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wgpu_backend: Option<String>,
-}
-
-impl Capability {
-    /// Capacity weight for round-robin task assignment.
-    ///
-    /// `weight = cpu_threads + gpu_weight` where `gpu_weight` is
-    /// `gpu_weight_override` when present, else `4.0` if GPU is available, else `0.0`.
-    pub fn assignment_weight(&self, gpu_weight_override: Option<f64>) -> f64 {
-        let gpu_w = if self.gpu_available {
-            gpu_weight_override.unwrap_or(4.0)
-        } else {
-            0.0
-        };
-        self.cpu_threads as f64 + gpu_w
-    }
 }
 
 struct CachedEntry {

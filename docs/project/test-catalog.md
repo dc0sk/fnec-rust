@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-25
 ---
 
 # Test catalog
@@ -69,7 +69,7 @@ functions across the `tests/` binaries listed above.
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
 | `nec_solver` | 234 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
-| `nec_worker` | 103 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
+| `nec_worker` | 102 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 91 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
 | `nec_parser` | 27 | lib, template |
@@ -78,12 +78,12 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=566 --> **566** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1101 --> **1101** = 567 unit + 527 integration + **7 doctests**.
-- **`cargo test --workspace` aggregate**: **1099 passing, 0 failed, 2 ignored**,
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1100 --> **1100** = 566 unit + 527 integration + **7 doctests**.
+- **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
 Doctests are counted separately on purpose. `cargo test --workspace -- --list`

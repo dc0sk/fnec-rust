@@ -208,10 +208,17 @@ impl SshWorkerHandle {
     /// First sends a lightweight solve task to verify the worker is
     /// responsive, then runs a quick SSH command to detect CPU thread count
     /// and GPU availability on the remote host.
-    /// Override values in `hosts.toml` take precedence over detected values.
+    ///
+    /// Returns what was detected, and nothing else. This used to claim that
+    /// "override values in `hosts.toml` take precedence over detected values";
+    /// they cannot, because this handle never stores them — `connect` copies
+    /// only the hostname, user and binary path (FND-104). Note too that the
+    /// CLI's `--hosts` path does not call this: it builds its pool with
+    /// `WorkerPool::new_ssh_skip_failures` and never probes.
     pub fn probe_capability(&mut self) -> Result<Capability, String> {
-        // `connect_all` probes hosts SERIALLY at startup, before any pool
-        // exists, so one wedged host used to block the run before it began. The
+        // `connect_all` probes hosts SERIALLY, before any pool exists, so one
+        // wedged host would block every probe after it. (Nothing in the CLI calls
+        // `connect_all`; see its doc comment.) The
         // probe solves a one-segment deck, so it earns a far shorter deadline
         // than a real task (FND-101).
         let solve_deadline = self.deadline;
@@ -327,6 +334,14 @@ impl Drop for SshWorkerHandle {
 
 /// Connect to all workers listed in a [`crate::HostsConfig`] and return
 /// their handles along with probed capabilities.
+///
+/// **Not used by the CLI.** `fnec --hosts` builds its pool with
+/// `WorkerPool::new_ssh_skip_failures`, which connects without probing, and
+/// schedules by letting each worker pull the next task. This helper and the
+/// [`crate::CapabilityCache`] it fills are kept as `pub` API of `nec_worker`
+/// (PH6-CHK-006 shipped them), but nothing downstream consumes the capabilities
+/// they gather — which is how documented scheduling controls built on top of
+/// them came to be read by nothing (FND-104).
 ///
 /// Workers that fail to connect or probe are skipped with a warning printed
 /// to stderr.

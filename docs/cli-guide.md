@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-09-25
 ---
 
 # CLI Guide — fnec (v0.18.0)
@@ -174,8 +174,8 @@ fnec project convert antenna.md            # → stdout
 
 ### `fnec worker --stdio`
 
-The remote solver behind `--hosts`. It reads length-prefixed task frames on
-stdin and writes results on stdout, so it is **not** meant to be run by hand —
+The remote solver behind `--hosts`. It reads newline-delimited JSON tasks on
+stdin, one object per line, and writes results the same way on stdout, so it is **not** meant to be run by hand —
 the controller spawns it over SSH on each worker node. It is documented here
 because it is one of this project's four shipped artifacts and was previously
 absent from both this guide and the binary's own usage text (FND-086); see

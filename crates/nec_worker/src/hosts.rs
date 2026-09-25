@@ -68,6 +68,38 @@ hostname = "minimal"
         }
     }
 
+    /// A field that does nothing is named, per host, rather than ignored in
+    /// silence (FND-104). Both fields, each on its own host, so a producer that
+    /// checked only one field or only the first host would fail here.
+    #[test]
+    fn ignored_fields_are_named_per_host() {
+        let cfg = HostsConfig::from_str(
+            "[[worker]]\nhostname = \"shared-box\"\ncpu_threads_override = 4\n\n\
+             [[worker]]\nhostname = \"gpu-box\"\ngpu_weight_override = 6.0\n",
+        )
+        .expect("parses");
+        let w = cfg.ignored_field_warnings();
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(
+            w[0].contains("'shared-box'") && w[0].contains("cpu_threads_override"),
+            "{w:?}"
+        );
+        assert!(
+            w[1].contains("'gpu-box'") && w[1].contains("gpu_weight_override"),
+            "{w:?}"
+        );
+        assert!(w.iter().all(|l| l.contains("no effect")), "{w:?}");
+    }
+
+    /// The negative control: an ordinary config produces no warning, so the test
+    /// above cannot be satisfied by a producer that warns about everything.
+    #[test]
+    fn a_config_without_the_fields_warns_about_nothing() {
+        let cfg = HostsConfig::from_str("[[worker]]\nhostname = \"plain\"\nssh_user = \"u\"\n")
+            .expect("parses");
+        assert!(cfg.ignored_field_warnings().is_empty());
+    }
+
     #[test]
     fn display_error_roundtrip() {
         let io_err =
@@ -92,7 +124,6 @@ use std::path::Path;
 /// [[worker]]
 /// hostname = "dc0sk-rpi51"
 /// ssh_user = "dc0sk"
-/// cpu_threads_override = 4
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HostEntry {
@@ -104,10 +135,19 @@ pub struct HostEntry {
     /// Path to the `fnec` binary on the remote.  Defaults to `fnec` (PATH lookup).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binary_path: Option<String>,
-    /// Override the CPU thread count used for capacity-weighted assignment.
+    /// **Accepted and ignored.** Documented until v0.18.0 as a cap on task
+    /// assignment for a shared node, but nothing ever read it (FND-104) — and
+    /// under the scheduler that shipped it could not mean that: the pool runs one
+    /// blocking thread per worker, so each worker already has at most one task in
+    /// flight, and there is nothing lower to cap to. Kept so existing
+    /// `hosts.toml` files still parse; setting it earns a warning from
+    /// [`HostsConfig::ignored_field_warnings`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_threads_override: Option<usize>,
-    /// Override the GPU weight added to the assignment score (default 4.0 when GPU present).
+    /// **Accepted and ignored**, for the same reason. Documented as a weight that
+    /// makes a node "attract more tasks", which only means something to a push
+    /// scheduler; the shipped pool is a pull loop in which a faster node already
+    /// takes more work by finishing sooner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_weight_override: Option<f64>,
 }
@@ -149,5 +189,39 @@ impl HostsConfig {
     pub fn from_file(path: &Path) -> Result<Self, HostsConfigError> {
         let s = std::fs::read_to_string(path).map_err(HostsConfigError::Io)?;
         toml::from_str(&s).map_err(HostsConfigError::Toml)
+    }
+
+    /// One warning line per field a user set that has no effect, naming the host.
+    ///
+    /// Returned rather than printed, following `worker_warning_lines` in the CLI:
+    /// a loader that prints fires inside every test that parses a config with the
+    /// field set, and is testable only by capturing stderr. The caller prints
+    /// these before connecting to any worker, so the user sees them even when the
+    /// run then fails for an unrelated reason.
+    ///
+    /// Silence was the defect here, not the fields. A user who set
+    /// `cpu_threads_override = 4` to spare a shared node was told nothing and got
+    /// nothing (FND-104).
+    pub fn ignored_field_warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for w in &self.worker {
+            if w.cpu_threads_override.is_some() {
+                out.push(format!(
+                    "warning: [hosts] worker '{}': cpu_threads_override is accepted but has \
+                     no effect — each worker already runs one task at a time, so there is \
+                     nothing to cap. Remove it.",
+                    w.hostname
+                ));
+            }
+            if w.gpu_weight_override.is_some() {
+                out.push(format!(
+                    "warning: [hosts] worker '{}': gpu_weight_override is accepted but has \
+                     no effect — workers pull tasks, so a faster node already takes more \
+                     work without a weight. Remove it.",
+                    w.hostname
+                ));
+            }
+        }
+        out
     }
 }
