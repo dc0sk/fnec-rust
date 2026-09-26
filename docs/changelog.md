@@ -112,6 +112,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **`--solver pulse` and `--solver continuity` run only with the new
+  `--experimental-solver` flag (FND-080).** These modes have never produced a
+  correct dipole impedance: 16+j47 Ω (raw RHS) or −346−j988 Ω (default), against
+  nec2c's 79+j46. They are kept for experiment, and their caveat now travels with
+  every result: a `CAVEAT UNVALIDATED SOLVER` header line in the text report, and
+  a `caveat` field in each JSON record. Output from validated solvers is
+  unchanged.
+- **A negative feedpoint resistance is reported on every solver (FND-081).**
+  Pulse, continuity and sinusoidal were silent. Sinusoidal is as accurate as
+  Hallén, and a negative resistance is physically impossible whatever produced
+  it.
 - **An `LD` card fnec cannot apply is refused (FND-161).** This covers an
   unsupported load type, a type-5 load with σ ≤ 0, and a card naming no segment.
   Each is now an error naming the card. Before, it was skipped with a warning,

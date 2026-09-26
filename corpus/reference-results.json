@@ -135,7 +135,8 @@
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 (incident plane wave) requested on the pulse solver path. NEC2 plane waves solve only on --solver hallen, so pulse fails fast with an actionable error.",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,
@@ -159,8 +160,8 @@
       },
       "status": "PH8-CHK-002: EX type 1 = incident plane wave; --solver pulse fails fast (plane wave requires --solver hallen).",
       "expected_hallen_error_contains": "requires --solver hallen",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "last_produced_on": "2026-09-26",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex2-freesp-51seg": {
       "deck_file": "dipole-ex2-freesp-51seg.nec",
@@ -214,7 +215,8 @@
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 4 source on the pulse solver path with the first implemented segment-current semantics slice.",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,
@@ -238,8 +240,8 @@
       },
       "status": "PH8-CHK-001: EX type 4 = current source; --solver pulse fails fast (current source requires --solver hallen).",
       "expected_hallen_error_contains": "requires --solver hallen",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "last_produced_on": "2026-09-26",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex5-freesp-51seg": {
       "deck_file": "dipole-ex5-freesp-51seg.nec",
@@ -271,7 +273,8 @@
       "description": "Half-wave dipole, 51 seg, 14.2 MHz, EX type 5 voltage source on the pulse solver path. PH8-CHK-003: type 5 is a voltage source and solves under --solver pulse (same value as type 0).",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,
@@ -294,8 +297,8 @@
         "X_absolute_ohm": 0.05
       },
       "status": "PH8-CHK-003: EX type 5 = voltage source; solves under --solver pulse.",
-      "last_produced_on": "2026-07-03",
-      "last_produced_in": "0.7.0"
+      "last_produced_on": "2026-09-26",
+      "last_produced_in": "0.18.0"
     },
     "dipole-pt-freesp-51seg": {
       "deck_file": "dipole-pt-freesp-51seg.nec",

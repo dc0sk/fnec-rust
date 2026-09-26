@@ -22,6 +22,8 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        // Harmless for validated solvers; the opt-in for pulse/continuity (FND-080).
+        .arg("--experimental-solver")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for {solver} topology fallback test: {e}"));
@@ -51,6 +53,8 @@ fn run_solver_on_reference_dipole(solver: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        // Harmless for validated solvers; the opt-in for pulse/continuity (FND-080).
+        .arg("--experimental-solver")
         .arg(&deck_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to run fnec for solver '{solver}': {e}"))
@@ -66,6 +70,8 @@ fn run_solver_on_reference_dipole_with_pulse_rhs(
     Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        // Harmless for validated solvers; the opt-in for pulse/continuity (FND-080).
+        .arg("--experimental-solver")
         .arg("--pulse-rhs")
         .arg(pulse_rhs)
         .arg(&deck_path)
@@ -82,6 +88,8 @@ fn run_solver_on_reference_dipole_with_exec(solver: &str, exec_mode: &str) -> st
     Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg(solver)
+        // Harmless for validated solvers; the opt-in for pulse/continuity (FND-080).
+        .arg("--experimental-solver")
         .arg("--exec")
         .arg(exec_mode)
         .arg(&deck_path)

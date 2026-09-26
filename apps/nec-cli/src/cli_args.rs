@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio";
+pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -29,6 +29,9 @@ pub struct ParsedArgs {
     pub path: PathBuf,
 }
 
+/// Why `--solver pulse|continuity` needs `--experimental-solver` (FND-080).
+pub const UNVALIDATED_SOLVER_CAVEAT: &str = "UNVALIDATED SOLVER: the pulse and continuity bases have never produced a correct dipole impedance (16+j47 ohm with --pulse-rhs raw, -346-j988 ohm with the default nec2 scaling, against nec2c's 79+j46); treat these numbers as experimental output, not a result. Use --solver hallen, sinusoidal or mpie for results (FND-080)";
+
 pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut solver_mode = SolverMode::Hallen;
     let mut ground_solver = GroundSolver::Rcm;
@@ -43,6 +46,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut sin_fallback_rel_max_cli: Option<f64> = None;
     let mut hosts_path: Option<PathBuf> = None;
     let mut deck_path: Option<PathBuf> = None;
+    let mut experimental_solver = false;
 
     let mut i = 1usize;
     while i < args.len() {
@@ -126,6 +130,9 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             }
             "--bench" => {
                 enable_benchmarking = true;
+            }
+            "--experimental-solver" => {
+                experimental_solver = true;
             }
             "--bench-format" => {
                 i += 1;
@@ -240,6 +247,19 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     }
 
     let path = deck_path.ok_or_else(|| "missing deck path".to_string())?;
+    // FND-080: the pulse bases run only on explicit request. They are kept for
+    // experiment, and nothing about their output may read as a validated result.
+    if matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity) && !experimental_solver {
+        return Err(format!(
+            "--solver {} is not a validated solver and runs only with --experimental-solver. \
+             {UNVALIDATED_SOLVER_CAVEAT}",
+            if solver_mode == SolverMode::Pulse {
+                "pulse"
+            } else {
+                "continuity"
+            }
+        ));
+    }
     Ok(ParsedArgs {
         solver_mode,
         ground_solver,

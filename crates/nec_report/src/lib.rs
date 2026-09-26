@@ -114,6 +114,10 @@ pub struct NearHFieldRow {
 pub struct ReportInput<'a> {
     pub solver_mode: &'a str,
     pub pulse_rhs: &'a str,
+    /// A caveat that must travel with the result itself, not only on stderr —
+    /// printed as a `CAVEAT` header line. `None` for validated solvers, so their
+    /// output is unchanged.
+    pub caveat: Option<&'a str>,
     pub frequency_hz: f64,
     pub rows: &'a [FeedpointRow],
     /// Source-definition table captured from EX cards.
@@ -235,6 +239,7 @@ pub trait ResultFilter {
 /// let input = ReportInput {
 ///     solver_mode: "hallen",
 ///     pulse_rhs: "Nec2",
+///     caveat: None,
 ///     frequency_hz: 14_200_000.0,
 ///     rows: &[row],
 ///     source_table: &[],
@@ -283,7 +288,7 @@ pub trait ReportSection {
 ///     z_in: Complex64::new(50.0, 0.0),
 /// };
 /// let input = ReportInput {
-///     solver_mode: "hallen", pulse_rhs: "Nec2",
+///     solver_mode: "hallen", pulse_rhs: "Nec2", caveat: None,
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
@@ -312,6 +317,9 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
     out.push_str(&format!("FREQ_MHZ {:.6}\n", input.frequency_hz / 1e6));
     out.push_str(&format!("SOLVER_MODE {}\n", input.solver_mode));
     out.push_str(&format!("PULSE_RHS {}\n", input.pulse_rhs));
+    if let Some(caveat) = input.caveat {
+        out.push_str(&format!("CAVEAT {caveat}\n"));
+    }
     out.push('\n');
     out.push_str("FEEDPOINTS\n");
     out.push_str("TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM\n");
@@ -516,6 +524,7 @@ mod tests {
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -564,6 +573,7 @@ mod tests {
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -652,6 +662,7 @@ mod tests {
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -698,6 +709,7 @@ mod tests {
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &source_table,
@@ -735,6 +747,7 @@ mod tests {
         ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows,
             source_table: &[],
@@ -848,6 +861,7 @@ mod tests {
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
+            caveat: None,
             frequency_hz: 14_200_000.0,
             rows: &[],
             source_table: &[],

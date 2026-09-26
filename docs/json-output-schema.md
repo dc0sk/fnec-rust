@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/json-output-schema.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-26
 ---
 
 # fnec JSON Output Schema (v1)
@@ -64,6 +64,7 @@ resolved list, not over the deck.
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |
+| `caveat` | `string` | — | **Present only** when the point came from an unvalidated solver (`--solver pulse`/`continuity`, which need `--experimental-solver`; FND-080). Says why the numbers are not a result. Absent for every validated solver, so their records are unchanged. |
 
 All numeric fields are IEEE 754 double-precision floating-point values.
 

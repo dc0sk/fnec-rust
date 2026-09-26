@@ -92,8 +92,15 @@ fn emit_sweep_points(
             if output_format == OutputFormat::Json {
                 let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
                 let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
+                // The unvalidated-solver caveat travels in the record itself, so a
+                // consumer that never reads stderr still sees it (FND-080). Absent
+                // for every validated solver: their records are unchanged.
+                let caveat = summary
+                    .caveat
+                    .map(|c| format!(",\"caveat\":\"{c}\""))
+                    .unwrap_or_default();
                 json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}}}",
+                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}{caveat}}}",
                     freq_mhz = summary.freq_mhz,
                     tag = summary.tag,
                     seg = summary.seg,
@@ -979,6 +986,9 @@ fn run_distributed_solve(
                     seg: 0,
                     z_re: impedance.re_ohm,
                     z_im: impedance.im_ohm,
+                    // The worker refuses the pulse bases, so its points never
+                    // carry the unvalidated-solver caveat.
+                    caveat: None,
                 });
                 Ok(FrequencySolveResult {
                     report,
@@ -1355,19 +1365,23 @@ mod tests {
         );
     }
 
+    /// FND-081: these modes were silent, sinusoidal included. A negative
+    /// resistance is physically impossible whatever produced it.
     #[test]
-    fn the_current_source_bases_stay_silent() {
-        // Their corpus has documented negative-R values, so a warning would be noise.
+    fn every_basis_reports_a_negative_resistance() {
         let (deck, segs) = deck_and_segs(BENT);
-        for mode in [
-            SolverMode::Pulse,
-            SolverMode::Continuity,
-            SolverMode::Sinusoidal,
-        ] {
-            assert!(
-                negative_resistance_warnings(&[row(-5.973)], &deck, &segs, mode).is_empty(),
-                "{mode:?} must stay silent"
-            );
+        let sin =
+            negative_resistance_warnings(&[row(-5.973)], &deck, &segs, SolverMode::Sinusoidal);
+        assert_eq!(sin.len(), 1, "{sin:?}");
+        assert!(sin[0].contains("-5.973"), "{}", sin[0]);
+        for mode in [SolverMode::Pulse, SolverMode::Continuity] {
+            let w = negative_resistance_warnings(&[row(-5.973)], &deck, &segs, mode);
+            assert_eq!(w.len(), 1, "{mode:?}: {w:?}");
+            assert!(w[0].contains("unvalidated solver"), "{mode:?}: {}", w[0]);
+        }
+        // Negative control: a physical resistance earns nothing.
+        for mode in [SolverMode::Sinusoidal, SolverMode::Pulse] {
+            assert!(negative_resistance_warnings(&[row(73.0)], &deck, &segs, mode).is_empty());
         }
     }
 

@@ -68,7 +68,7 @@ for deck_path in ${decks}; do
             times_ms=()
             for (( i=0; i<n_runs; i++ )); do
                 t0=$(date +%s%N)
-                "${binary}" --solver "${solver}" --exec "${exec_arg}" "${deck_path}" \
+                "${binary}" --solver "${solver}" --experimental-solver --exec "${exec_arg}" "${deck_path}" \
                     > /dev/null 2>&1 || true
                 t1=$(date +%s%N)
                 elapsed_ms=$(( (t1 - t0) / 1000000 ))

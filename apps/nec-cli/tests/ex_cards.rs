@@ -131,7 +131,11 @@ fn ex_type1_plane_wave_requires_hallen_solver() {
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 1 1 1 0 30.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&ex1_path, ex1_deck).expect("failed to write EX type 1 pulse deck");
 
-    let output = run_fnec_output(&ex1_path, &workspace_root, &["--solver", "pulse"]);
+    let output = run_fnec_output(
+        &ex1_path,
+        &workspace_root,
+        &["--solver", "pulse", "--experimental-solver"],
+    );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let _ = fs::remove_file(&ex1_path);
 
@@ -160,7 +164,11 @@ fn ex_type4_current_source_requires_hallen_solver() {
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&ex4_path, ex4_deck).expect("failed to write EX type 4 pulse deck");
 
-    let output = run_fnec_output(&ex4_path, &workspace_root, &["--solver", "pulse"]);
+    let output = run_fnec_output(
+        &ex4_path,
+        &workspace_root,
+        &["--solver", "pulse", "--experimental-solver"],
+    );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let _ = fs::remove_file(&ex4_path);
 
@@ -189,7 +197,11 @@ fn ex_type5_voltage_source_solves_under_pulse() {
         "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nEX 5 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&ex5_path, ex5_deck).expect("failed to write EX type 5 pulse deck");
 
-    let output = run_fnec_output(&ex5_path, &workspace_root, &["--solver", "pulse"]);
+    let output = run_fnec_output(
+        &ex5_path,
+        &workspace_root,
+        &["--solver", "pulse", "--experimental-solver"],
+    );
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let _ = fs::remove_file(&ex5_path);
 
