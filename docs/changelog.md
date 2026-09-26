@@ -33,6 +33,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The Hallén free-end rows use true segment lengths (FND-159).** The
+  extrapolation weights assumed the end segment and its neighbour were equally
+  long. That is exact within one `GW`, but not for a collinear chain whose end is
+  a one-segment `GW` of a different length. A 0.78 m end segment beside 0.2 m
+  segments put the reactance 26 Ω off: 75.11 + j19.58 against nec2c's
+  79.34 + j45.73. It now reads 78.13 + j40.07. The Z-matrix carries the lengths
+  from assembly.
+
 - **`--solver mpie` is now accurate: its self and adjacent terms were
   under-integrated (FND-157).** A 6-point Gauss rule cannot resolve the reduced
   kernel's peak, whose width is the wire radius (1 mm on a 200 mm segment). The

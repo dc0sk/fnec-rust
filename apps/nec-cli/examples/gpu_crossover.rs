@@ -199,7 +199,11 @@ fn main() {
                 &rhs.sin_vec,
                 &endpoints,
                 &nec_solver::sin_eligible(&endpoints, &junctions),
-                &nec_solver::hallen_constraint_rows(&endpoints, &junctions),
+                &nec_solver::hallen_constraint_rows(
+                    &endpoints,
+                    &junctions,
+                    &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+                ),
                 FREQ_HZ,
             ));
             let us = t.elapsed().as_micros() as u64;
