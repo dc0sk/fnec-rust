@@ -1062,6 +1062,19 @@ pub(super) fn solve_frequency_point(
     // TL/NT networks are solved by superposition inside the Hallén session
     // (FND-123); the other bases have no such solve yet, and the old series-Z
     // stamp they used to get was inert. Refused rather than answered.
+    // A wire touching PEC ground is solved by explicit images inside the Hallén
+    // session (FND-082); the other bases would put a free-end row at the base and
+    // answer billions of ohms. MPIE refuses ground contact itself.
+    if matches!(
+        solver_mode,
+        SolverMode::Sinusoidal | SolverMode::Pulse | SolverMode::Continuity
+    ) && matches!(ground, GroundModel::PerfectConductor)
+        && nec_solver::ground_contact::touches_ground(segs)
+    {
+        return Err(
+            "wires touching the ground are supported on --solver hallen only (FND-082)".to_string(),
+        );
+    }
     if stamps.has_networks && !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
         return Err(format!(
             "TL/NT networks are supported on --solver hallen only (FND-123); \

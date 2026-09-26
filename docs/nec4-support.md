@@ -160,7 +160,7 @@ Planned PAR-002 scope:
 
 Current scoped coverage:
 
-- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`; interface-touching or buried active-ground wires remain fail-fast deferred classes.
+- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`; wires touching or crossing FINITE ground remain refused (no trustworthy contact model). Wires standing on PERFECT ground (GN 1) are solved by explicit images since FND-082 (`corpus/monopole-pec-26seg.nec`, nec2c-gated); a wire lying in the ground plane, grounded at both ends, or several wires meeting at one ground point are refused.
 - Buried `z < 0` active-ground wire classes remain out of scope for now and fail fast with actionable diagnostics (`corpus/dipole-gn2-buried-unsupported.nec`).
 3. Add tolerance-gated external-reference comparisons for those fixtures in `corpus/reference-results.json` and `apps/nec-cli/tests/corpus_validation.rs`.
 4. Keep existing GN type 1 PEC behavior unchanged and regression-protected while finite-ground support expands.

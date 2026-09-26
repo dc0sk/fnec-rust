@@ -1422,9 +1422,13 @@ mod tests {
     /// Two wires crossing at mid-span, neither meeting the other at an endpoint.
     /// The CLI has always refused this; the GUI used to solve it and show a number.
     const CROSSING_WIRES: &str = "GW 1 11 -5 0 0 5 0 0 0.001\nGW 2 11 0 -5 0 0 5 0 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    /// A vertical wire whose base sits on an active (PEC) ground plane.
+    /// A wire lying in an active (PEC) ground plane — still refused. (This was a
+    /// vertical wire standing on the plane until FND-082 made that solvable.)
     const BURIED_OVER_PEC: &str =
-        "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    /// A λ/4 monopole standing on PEC ground: solved by images (FND-082).
+    const MONOPOLE_ON_PEC: &str =
+        "GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 1\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     /// A clean lambda/2 dipole — the negative control for all of the above.
     const GOOD_DIPOLE: &str =
         "GW 1 21 -5.278 0 0 5.278 0 0 0.001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
@@ -1435,8 +1439,11 @@ mod tests {
             .expect_err("crossing wires must be refused");
         assert!(err.contains("intersecting-wire"), "unexpected: {err}");
         let err = solve_deck_str(BURIED_OVER_PEC, SolverKind::Hallen)
-            .expect_err("a wire on the ground plane must be refused");
-        assert!(err.contains("buried-wire"), "unexpected: {err}");
+            .expect_err("a wire in the ground plane must be refused");
+        assert!(err.contains("ground plane"), "unexpected: {err}");
+        // ...and the GUI solves a ground-mounted monopole as the CLI does.
+        let mono = solve_deck_str(MONOPOLE_ON_PEC, SolverKind::Hallen).expect("monopole solves");
+        assert!((mono.z_re - 39.30).abs() < 0.05, "monopole {mono:?}");
         // Negative control: a clean deck still solves, with nothing to report.
         let ok = solve_deck_str(GOOD_DIPOLE, SolverKind::Hallen)
             .expect("a clean dipole must still solve");

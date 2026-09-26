@@ -722,7 +722,7 @@ Quick reference:
 | GR | Full | Geometry repeat (successive z-axis rotation copies) |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |
 | GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
-| GN type 1 | Full | Perfect-conductor (PEC) image method |
+| GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) |
 | GN type 2 | Partial | Aliases the GN 0 path by default; the true Sommerfeld surface wave comes from `--ground-solver sommerfeld` (feedpoint Z of a straight wire) or `--solver mpie` (currents and patterns, any geometry above ground) |
 | EX type 0 | Full | Applied-field voltage-gap source, on every solver path |
 | EX type 1 | Partial | Incident plane wave, linear polarization — solves on `--solver hallen` (receiving antenna → induced currents, no feedpoint), including degree-2 junctioned geometry. Degree-3+, closed loops and `--solver pulse` fail fast |

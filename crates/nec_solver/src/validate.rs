@@ -113,36 +113,30 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
 }
 
 pub fn buried_wire_geometry_error(segs: &[Segment], ground: &GroundModel) -> Option<String> {
-    const BURIED_Z_EPS: f64 = 1.0e-9;
-
-    // PH2-CHK-002 guardrail: buried-wire handling is not yet supported for
-    // active image/finite-ground paths. Keep deferred/free-space behavior
-    // unchanged so existing deferred contracts remain stable.
-    if !matches!(
-        ground,
-        GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
-    ) {
-        return None;
-    }
-
-    for seg in segs {
-        let min_z = seg.start[2].min(seg.end[2]);
-        if min_z <= BURIED_Z_EPS {
-            let detail = match ground {
-                GroundModel::SimpleFiniteGround { eps_r, sigma } => {
-                    format!("finite ground eps_r={:.3}, sigma={:.6}", eps_r, sigma)
-                }
-                GroundModel::PerfectConductor => "PEC ground".to_string(),
-                _ => "active ground".to_string(),
-            };
-            return Some(format!(
-                "unsupported buried-wire geometry for active ground model on tag {} seg {} (min z = {:.6e} m, {}). Use free-space or move geometry strictly above the ground interface (z > 0); buried/ground-contact classes are deferred",
-                seg.tag, seg.tag_index, min_z, detail,
-            ));
+    // Wires touching PEC ground are solved by explicit images (FND-082); the
+    // shapes that cannot be are refused by the same function the solve uses.
+    // Finite ground has no trustworthy contact model (nec2c answers a λ/4
+    // vertical on average ground with 179 − j261 Ω), so contact stays refused.
+    match ground {
+        GroundModel::PerfectConductor => {
+            // Only the geometry matters here; the image deck is built at solve time.
+            crate::ground_contact::pec_ground_contact(&NecDeck::new(), segs, ground).err()
         }
+        GroundModel::SimpleFiniteGround { eps_r, sigma } => segs
+            .iter()
+            .find(|s| s.start[2].min(s.end[2]) <= crate::ground_contact::GROUND_CONTACT_EPS_M)
+            .map(|s| {
+                format!(
+                    "unsupported buried-wire geometry for active ground model: tag {} seg {} \
+                     touches or crosses the finite ground (eps_r={eps_r:.3}, \
+                     sigma={sigma:.6}). fnec models wires touching PERFECT ground (GN 1) by \
+                     images; a connection to finite ground has no trustworthy model. Use \
+                     GN 1, or move the geometry strictly above the ground (z > 0)",
+                    s.tag, s.tag_index
+                )
+            }),
+        _ => None,
     }
-
-    None
 }
 
 fn segments_share_endpoint(a: &Segment, b: &Segment, eps: f64) -> bool {
@@ -1594,9 +1588,19 @@ mod tests {
         let (_deck, segs) = deck_and_segs(
             "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let pec = buried_wire_geometry_error(&segs, &GroundModel::PerfectConductor)
-            .expect("a wire reaching z=0 over PEC ground must be rejected");
-        assert!(pec.contains("buried-wire"), "{pec}");
+        // FND-082: over PEC a wire standing on the ground is solved by images.
+        assert_eq!(
+            buried_wire_geometry_error(&segs, &GroundModel::PerfectConductor),
+            None,
+            "a ground-mounted wire over PEC is supported now"
+        );
+        // ...but one lying IN the ground plane is not (its image coincides).
+        let (_d, flat) = deck_and_segs(
+            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let pec = buried_wire_geometry_error(&flat, &GroundModel::PerfectConductor)
+            .expect("a wire in the ground plane must be rejected");
+        assert!(pec.contains("lies in the ground plane"), "{pec}");
         assert!(buried_wire_geometry_error(
             &segs,
             &GroundModel::SimpleFiniteGround {
@@ -2006,7 +2010,8 @@ mod tests {
     fn geometry_error_reports_the_ground_dependent_check_too() {
         // Ordering matters: this deck is clean until the ground model is known.
         let (deck, segs) = deck_and_segs(
-            "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            // In the ground plane: refused over PEC, fine in free space (FND-082).
+            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert_eq!(geometry_error(&deck, &segs, &GroundModel::FreeSpace), None);
         assert!(geometry_error(&deck, &segs, &GroundModel::PerfectConductor).is_some());

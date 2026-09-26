@@ -109,8 +109,9 @@ EN
 """
 
 # A vertical wire whose base sits on an active (PEC) ground plane.
-BURIED_OVER_PEC = """\
-GW 1 21 0 0 0 0 0 10 0.001
+# A wire lying IN the PEC ground plane — still refused. (This was a vertical wire
+# standing on the plane until FND-082 made that solvable by images.)
+BURIED_OVER_PEC = """GW 1 21 -5 0 0 5 0 0 0.001
 GE 1
 EX 0 1 11 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
@@ -144,7 +145,7 @@ EN
     "deck,fragment",
     [
         (CROSSING_WIRES, "intersecting-wire"),
-        (BURIED_OVER_PEC, "buried-wire"),
+        (BURIED_OVER_PEC, "ground plane"),
     ],
 )
 def test_geometry_the_cli_refuses_is_refused_here_too(deck, fragment):
@@ -485,3 +486,11 @@ def test_a_deck_with_an_fr_card_still_sweeps():
     deck = NO_FR.replace("EN\n", "FR 0 2 0 0 14.0 0.1\nEN\n")
     rows = fnec_py.sweep_deck_str(deck)
     assert len(rows) == 2, rows
+
+
+def test_a_monopole_on_pec_ground_solves():
+    """FND-082: a wire standing on perfect ground is solved by images, as on the CLI."""
+    got = fnec_py.solve_deck_str(
+        "GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 1\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n"
+    )
+    assert abs(got["z_re"] - 39.30) < 0.05, got["z_re"]
