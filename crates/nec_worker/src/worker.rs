@@ -643,8 +643,10 @@ mod tests {
     /// which caveats existed yet at each one.
     #[test]
     fn a_flaw_found_after_parsing_also_survives_a_refusal() {
-        let deck = "CM skipped load, and a source on a segment that is not there\nCE\n\
-                    GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 9 1 1 51 0.0 0.0 0.0\n\
+        // The note is the segment-0 reading of the NT; it used to be a skipped
+        // LD 9, which is refused before the solve now (FND-161).
+        let deck = "CM card note, and a source on a segment that is not there\nCE\n\
+                    GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 0 1 0 0.001 0 0 0 0 0\n\
                     EX 0 1 999 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let result = process_task(&task_line(deck));
         let TaskResult::Error {
@@ -660,8 +662,10 @@ mod tests {
             "the refusal must name the missing segment: {error_message}"
         );
         assert!(
-            warnings.iter().any(|w| w.contains("LD")),
-            "the skipped load must survive the refusal: {warnings:?}"
+            warnings
+                .iter()
+                .any(|w| w.contains("interpreting segment 0")),
+            "the card note must survive the refusal: {warnings:?}"
         );
     }
 

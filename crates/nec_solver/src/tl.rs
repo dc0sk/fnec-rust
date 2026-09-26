@@ -160,7 +160,7 @@ fn find_center_segment_index(segs: &[Segment], tag: u32) -> Option<(usize, u32, 
         (
             offset,
             Some(format!(
-                "TL endpoint ({}, 0): interpreting segment 0 as center segment {} for tag {}",
+                "network endpoint ({}, 0): interpreting segment 0 as center segment {} for tag {}",
                 tag, resolved_seg, tag
             )),
         )
@@ -173,7 +173,7 @@ fn find_center_segment_index(segs: &[Segment], tag: u32) -> Option<(usize, u32, 
         (
             offset,
             Some(format!(
-                "TL endpoint ({}, 0): tag has even segment count {}; using lower center segment {}",
+                "network endpoint ({}, 0): tag has even segment count {}; using lower center segment {}",
                 tag, n, lower_center_seg
             )),
         )

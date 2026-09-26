@@ -1063,8 +1063,10 @@ pub(super) fn solve_frequency_point(
     for warning in &stamps.warnings {
         eprintln!("warning: {warning}");
     }
-    for warning in &laplace_warnings {
-        eprintln!("warning: {warning}");
+    // A Laplace load that cannot be evaluated is refused, like an LD card fnec
+    // cannot apply (FND-161): skipping it would solve without the load.
+    if let Some(problem) = laplace_warnings.first() {
+        return Err(format!("--loads-config: {problem}"));
     }
     // Loads enter in the form the basis that runs derives for them (FND-122,
     // FND-124). Hallen: as matrix columns, stamped by the session once the route is

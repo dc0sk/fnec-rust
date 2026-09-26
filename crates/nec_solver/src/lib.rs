@@ -63,7 +63,9 @@ pub use linear::{
     solve_with_sinusoidal_basis_per_wire, ConstraintRow, CurrentSourceSolution, HallenSolution,
     SolveError,
 };
-pub use loads::{add_laplace_loads, build_loads, laplace_impedance, LaplaceLoad, LoadWarning};
+pub use loads::{
+    add_laplace_loads, build_loads, laplace_impedance, ld_card_problem, LaplaceLoad, LoadWarning,
+};
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,
 };

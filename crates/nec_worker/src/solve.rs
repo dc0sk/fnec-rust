@@ -60,15 +60,15 @@ mod tests {
     /// so if the worker drops them nobody ever learns the card was skipped.
     #[test]
     fn a_malformed_card_the_worker_skips_is_reported_not_swallowed() {
-        // An unsupported LD type is still skipped with a warning. (This used a
-        // malformed NT, which is now refused outright rather than skipped: skipping
-        // a network solves a different antenna, FND-123.)
-        let deck = "CM unsupported LD type\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 7 1 10 10 1 0 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // A card note that accompanies a successful solve: segment 0 read as the
+        // tag's centre. (This used a malformed NT, then an unsupported LD; both are
+        // refused now rather than skipped, FND-123 and FND-161.)
+        let deck = "CM NT given by segment 0\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 0 1 0 0.001 0 0 0 0 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let r = solve_deck_at_frequency(deck, 14.2e6, "hallen").expect("deck still solves");
         assert!(
             r.warnings
                 .iter()
-                .any(|w| w.contains("LD type 7 on tag 1 is not yet supported")),
+                .any(|w| w.contains("interpreting segment 0 as center segment 26")),
             "the skipped card must be reported: {:?}",
             r.warnings
         );

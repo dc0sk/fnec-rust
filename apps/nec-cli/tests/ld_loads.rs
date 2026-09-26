@@ -113,32 +113,26 @@ fn ld_type4_changes_feedpoint_impedance() {
 }
 
 #[test]
-fn unsupported_ld_type_emits_warning_and_continues() {
-    // Phase-2: LD is parsed.  LD type 9 is still not implemented in the solver;
-    // the solver emits "LD type 9 on tag 1 is not yet supported; load ignored"
-    // and the deck runs without the load (free-space impedance).
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let deck_path = std::env::temp_dir().join(format!("fnec-ld-unsupported-{now}.nec"));
+fn unsupported_ld_type_is_refused() {
+    // FND-161: an LD type fnec does not model is refused, naming the card. It used
+    // to be skipped with a warning, which solved the antenna without the load.
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-ld-unsupported-{}.nec", std::process::id()));
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nLD 9 1 26 26 1.0 0.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write deck with unsupported LD type");
-
-    let (_, stderr) = run_fnec(&deck_path, &workspace_root);
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(&deck_path)
+        .output()
+        .expect("run fnec");
     let _ = fs::remove_file(&deck_path);
-
-    // Phase-2: no more generic "unknown card 'LD'" — the card is parsed.
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("unknown card 'LD'"),
-        "Phase-2: LD card should be parsed, not produce unknown-card warning; got:\n{stderr}"
+        !output.status.success(),
+        "an unsupported LD type must be refused:\n{stderr}"
     );
-    // The solver emits a specific warning for unsupported type 9.
     assert!(
-        stderr.contains("LD type 9 on tag 1 is not yet supported; load ignored"),
-        "expected solver warning for unsupported LD type 9, got:\n{stderr}"
+        stderr.contains("LD 9 1 26 26") && stderr.contains("not supported"),
+        "the refusal must name the card: {stderr}"
     );
 }
 

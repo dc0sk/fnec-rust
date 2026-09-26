@@ -1344,6 +1344,17 @@ pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -
         .or_else(|| grid_budget_error(deck))
         .or_else(|| frequency_error(deck))
         .or_else(|| network_card_error(deck, segs))
+        .or_else(|| load_card_error(deck, segs))
+}
+
+/// Refuse a deck with an `LD` card fnec cannot apply (FND-161): an unsupported
+/// type, a type-5 load with σ ≤ 0, or a card naming no segment. These were
+/// skipped with a warning, which solved the antenna without the load.
+pub fn load_card_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
+    deck.cards.iter().find_map(|c| match c {
+        nec_model::card::Card::Ld(ld) => crate::loads::ld_card_problem(ld, segs),
+        _ => None,
+    })
 }
 
 /// Refuse a deck whose `TL` or `NT` card cannot be built at one of its
