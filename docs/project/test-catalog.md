@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Test catalog
@@ -30,6 +30,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/ld_loads.rs` | 5 | `LD` types 1/2/4 change impedance; unsupported warn+continue | PRT-002, PH2-CHK-003 |
+| `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 22 | Warnings for unknown cards, `TL` types/segments; runs still succeed | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/report_contract.rs` | 5 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
@@ -58,7 +59,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=532 --> **532** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=534 --> **534** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -83,7 +84,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=572 --> **572** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1111 --> **1111** = 572 unit + 532 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1113 --> **1113** = 572 unit + 534 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

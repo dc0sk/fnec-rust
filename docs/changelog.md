@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Changelog
@@ -32,6 +32,21 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   control.
 
 ### Fixed
+
+- **`LD` loads are now correct on `--solver sinusoidal`, `pulse` and
+  `continuity` (FND-124).** These three bases added the load in ohms to the
+  matrix diagonal, which is the wrong scaling for all of them. A 1050 Ω load at
+  the feed raised Z_in by +7348 + j1416 Ω on sinusoidal, and by −4592 Ω on pulse
+  and continuity. Each basis now takes the load in its own derived form:
+  - Sinusoidal uses the Hallén load columns, stamped before the basis
+    projection.
+  - Pulse and continuity use a diagonal of `Z_p/Δl`, scaled exactly as the
+    source vector is, under either `--pulse-rhs` mode.
+  A feed load now shifts Z_in by exactly Z_L on every basis. An off-feed load on
+  sinusoidal gives 130.93 + j30.40 Ω against nec2c's 131.33 + j34.31. The
+  "unvalidated diagonal stamp" warning is gone. Pulse and continuity remain
+  unphysical even unloaded (FND-080); their loads are now right, their matrix
+  is not.
 
 - **The default Hallén solver no longer models every wire one segment short —
   every Hallén answer changes (FND-156).** The free-end boundary rows imposed

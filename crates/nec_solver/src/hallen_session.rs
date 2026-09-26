@@ -369,20 +369,7 @@ fn solve_hallen_routed_inner(
     // where the basis is not yet decided (FND-122).
     //
     // These are deltas: call once per matrix, exactly as the old `apply` was.
-    if loads.iter().any(|z| *z != Complex64::new(0.0, 0.0)) {
-        for (col, column) in crate::excitation::hallen_load_columns(
-            segs,
-            freq_hz,
-            loads,
-            nontrivial_paths(segs).as_deref(),
-        ) {
-            for (row, delta) in column.iter().enumerate() {
-                if *delta != Complex64::new(0.0, 0.0) {
-                    z_mat.add_to_entry(row, col, *delta);
-                }
-            }
-        }
-    }
+    crate::stamps::stamp_hallen_load_columns(z_mat, segs, freq_hz, loads, paths.as_deref());
 
     // Path grouping, built once and shared by every arm below.
     let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
