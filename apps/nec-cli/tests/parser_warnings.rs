@@ -82,8 +82,8 @@ fn supported_tl_card_runs_without_deferred_warning() {
 
 #[test]
 fn lossy_tl_type_solves_without_unsupported_warning() {
-    // PH8-CHK-005: TL type != 0 is a lossy line (Z0·coth/csch(γℓ), F3 = matched-
-    // line loss in dB). It stamps the Z matrix and solves — no "not yet supported".
+    // PH8-CHK-005: a lossy line (fnec's F8 extension: matched-line loss in dB on
+    // the NEC-2 TL layout, FND-111) solves — no "not yet supported".
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -91,7 +91,7 @@ fn lossy_tl_type_solves_without_unsupported_warning() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-tl-unsupported-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 1 1 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 50.0 0.1 0 0 0 0 1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with unsupported TL card");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -132,7 +132,7 @@ fn tl_segment_zero_is_mapped_to_center_with_warning_and_runs() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-tl-seg0-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 50.0 0.1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with TL segment 0");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -169,7 +169,7 @@ fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-tl-seg0-even-{now}.nec"));
 
-    let deck = "GW 1 52 0 0 -5.282 0 0 5.282 0.001\nGW 2 52 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 52 0 0 -5.282 0 0 5.282 0.001\nGW 2 52 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 0 2 0 50.0 0.1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck)
         .expect("failed to write temporary deck with even-segment TL segment 0");
 
@@ -279,9 +279,11 @@ fn pt_card_is_applied_without_deferred_warning() {
 }
 
 #[test]
-fn nt_card_emits_deferred_warning_but_run_succeeds() {
-    // PH8-CHK-004: this deck's NT card is malformed (8 fields), so the stamp
-    // path emits an "NT card ignored" warning and the deck runs as free-space.
+fn nt_card_is_solved_as_a_network() {
+    // PH8-CHK-004: a well-formed NT is solved as a network (FND-123). This deck's
+    // NT used to be malformed and skipped with "NT card ignored"; a skipped
+    // network solves a different antenna, so that is now a refusal
+    // (`a_malformed_nt_card_is_refused_not_skipped`).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -289,7 +291,7 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-nt-card-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with NT card");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -312,8 +314,8 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'NT'"),
@@ -322,8 +324,8 @@ fn nt_card_emits_deferred_warning_but_run_succeeds() {
 }
 
 #[test]
-fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
-    // PT+NT both parsed; PT is applied, NT is stamped — no deferred warnings.
+fn pt_then_nt_cards_both_apply() {
+    // PT+NT both parsed; PT is applied, NT is solved as a network — no warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -331,7 +333,7 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-pt-nt-card-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 1 26 1 1 26 50.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with PT and NT cards");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -358,8 +360,8 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
         "PT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("PT card support is currently deferred"),
@@ -373,8 +375,8 @@ fn pt_and_nt_cards_emit_deferred_warnings_and_run_succeeds() {
 }
 
 #[test]
-fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
-    // PT+NT both parsed; PT is applied, NT is stamped — no deferred warnings.
+fn repeated_pt_then_nt_cards_both_apply() {
+    // PT+NT both parsed; PT is applied, NT is solved as a network — no warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -382,7 +384,7 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-pt-nt-repeated-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nPT 0 1 26 0 75.0 0.2 1.0\nNT 1 1 26 1 1 26 50.0 0.0\nNT 1 1 26 1 1 26 75.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nPT 0 1 26 0 75.0 0.2 1.0\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nNT 1 15 1 37 0 -0.001 0 0.002 0 -0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck)
         .expect("failed to write temporary deck with repeated PT and NT cards");
 
@@ -411,8 +413,8 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 {stderr}"
     );
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'PT'"),
@@ -425,7 +427,7 @@ fn repeated_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 }
 
 #[test]
-fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
+fn nt_then_pt_cards_both_apply() {
     // NT+PT both parsed; NT is stamped, PT is applied — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
@@ -434,7 +436,7 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-nt-pt-card-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nPT 0 1 26 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with NT then PT cards");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -457,8 +459,8 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'PT'"),
@@ -476,7 +478,7 @@ fn nt_then_pt_cards_emit_deferred_warnings_and_run_succeeds() {
 }
 
 #[test]
-fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
+fn repeated_nt_then_pt_cards_both_apply() {
     // NT+PT both parsed; NT is stamped, PT is applied — no deferred warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
@@ -485,7 +487,7 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-nt-pt-repeated-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nNT 1 1 26 1 1 26 75.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nPT 0 1 26 0 75.0 0.2 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nNT 1 15 1 37 0 -0.001 0 0.002 0 -0.001\nPT 0 1 26 0 50.0 0.1 1.0\nPT 0 1 26 0 75.0 0.2 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck)
         .expect("failed to write temporary deck with repeated NT and PT cards");
 
@@ -509,8 +511,8 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("PT card support is currently deferred"),
@@ -528,7 +530,7 @@ fn repeated_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
 }
 
 #[test]
-fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
+fn interleaved_pt_and_nt_cards_both_apply() {
     // Interleaved PT+NT; both parsed and both emit deferred-support warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
@@ -537,7 +539,7 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-pt-nt-interleaved-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 1 26 1 1 26 50.0 0.0\nPT 0 1 26 0 75.0 0.2 1.0\nNT 1 1 26 1 1 26 75.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nPT 0 1 26 0 75.0 0.2 1.0\nNT 1 15 1 37 0 -0.001 0 0.002 0 -0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck)
         .expect("failed to write temporary deck with interleaved PT and NT cards");
 
@@ -565,8 +567,8 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
         "PT should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("PT card support is currently deferred"),
@@ -580,7 +582,7 @@ fn interleaved_pt_and_nt_cards_emit_deduplicated_warnings_per_family() {
 }
 
 #[test]
-fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
+fn interleaved_nt_and_pt_cards_both_apply() {
     // Interleaved NT+PT; both parsed and both emit deferred-support warnings.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
@@ -589,7 +591,7 @@ fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-nt-pt-interleaved-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 1 26 1 1 26 75.0 0.0\nPT 0 1 26 0 75.0 0.2 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 20 1 32 0 -0.002 0 0.003 0 -0.002\nPT 0 1 26 0 50.0 0.1 1.0\nNT 1 15 1 37 0 -0.001 0 0.002 0 -0.001\nPT 0 1 26 0 75.0 0.2 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck)
         .expect("failed to write temporary deck with interleaved NT and PT cards");
 
@@ -613,8 +615,8 @@ fn interleaved_nt_and_pt_cards_emit_deduplicated_warnings_per_family() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("NT card ignored"),
-        "expected deferred-support warning for NT, got:\n{stderr}"
+        !stderr.contains("NT card ignored") && !stderr.contains("error"),
+        "a well-formed NT is solved as a network, not skipped (FND-123); got:\n{stderr}"
     );
     assert!(
         !stderr.contains("unknown card 'PT'"),
@@ -963,5 +965,30 @@ fn ex_type3_non_default_i4_divide_by_i4_mode_emits_experimental_warning() {
             "--ex3-i4-mode=divide-by-i4 enables experimental EX type 3 normalization semantics"
         ),
         "must not emit old divide-by-i4 experimental warning, got stderr:\n{stderr}"
+    );
+}
+
+/// A malformed NT (8 fields where NEC-2 needs 10) is refused, naming the card.
+/// It used to be skipped with a warning, which solved the antenna without the
+/// network and reported that answer as this deck's (FND-123).
+#[test]
+fn a_malformed_nt_card_is_refused_not_skipped() {
+    let deck_path =
+        std::env::temp_dir().join(format!("fnec-nt-malformed-{}.nec", std::process::id()));
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nNT 1 1 26 1 1 26 50.0 0.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    fs::write(&deck_path, deck).expect("write deck");
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(&deck_path)
+        .output()
+        .expect("run fnec");
+    let _ = fs::remove_file(&deck_path);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "a malformed NT must be refused:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("NT 1 1 26 1 1 26 50.0 0.0") && stderr.contains("needs 10"),
+        "{stderr}"
     );
 }

@@ -1,10 +1,11 @@
-CM Two parallel dipoles, one driven, linked by a lossless TL card with NSEG=0.
-CM NSEG=0 is accepted as a single-section shorthand by fnec runtime.
+CM Two parallel dipoles, one driven, linked by a lossless TL of length 0.
+CM NEC-2 reads length 0 as the distance between the segment centres (1 m here).
+CM (Until FND-111 this deck tested fnec's NSEG field, which the NEC-2 layout does not have.)
 CE
 GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001
 GW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001
 GE
-TL 1 26 2 26 0 0 50.0 0.1 1.0
+TL 1 26 2 26 50.0 0
 EX 0 1 26 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
 EN

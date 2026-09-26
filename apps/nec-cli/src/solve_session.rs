@@ -1071,7 +1071,6 @@ pub(super) fn solve_frequency_point(
     // known. Sinusoidal: the same columns, since it solves the Hallen matrix in a
     // projected basis. Pulse and continuity: a diagonal of Z_p/Δl, scaled exactly
     // as the source vector is, because a load IS a source of −Z_p·I_p.
-    stamps.apply_couplings(&mut z_mat);
     match solver_mode {
         SolverMode::Hallen | SolverMode::Mpie => {}
         SolverMode::Sinusoidal => {
@@ -1088,13 +1087,19 @@ pub(super) fn solve_frequency_point(
             z_mat.add_to_diagonal(&scale_pulse_rhs(&diagonal, pulse_rhs_mode, freq_hz));
         }
     }
-    if stamps.has_couplings() {
-        eprintln!(
-            "warning: TL/NT two-port couplings are stamped as series impedances \
-             into a dimensionless matrix; that model is not derived and the \
-             resulting impedance is unreliable (FND-122). A correct treatment \
-             needs extra unknowns, not a different stamp"
-        );
+    // TL/NT networks are solved by superposition inside the Hallén session
+    // (FND-123); the other bases have no such solve yet, and the old series-Z
+    // stamp they used to get was inert. Refused rather than answered.
+    if stamps.has_networks && !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
+        return Err(format!(
+            "TL/NT networks are supported on --solver hallen only (FND-123); \
+             --solver {} has no network solve",
+            match solver_mode {
+                SolverMode::Pulse => "pulse",
+                SolverMode::Continuity => "continuity",
+                _ => "sinusoidal",
+            }
+        ));
     }
     let mut pulse_current_sources = if matches!(solver_mode, SolverMode::Pulse) {
         collect_pulse_current_source_constraints(deck, segs)?
@@ -1113,6 +1118,9 @@ pub(super) fn solve_frequency_point(
     // Set by the current-source path: the solved port voltage V (feedpoint Z=V/i0).
     let mut current_source_port: Option<Complex64> = None;
 
+    // The current each source delivers where it differs from its wire current: a
+    // driven segment that is also a TL/NT port feeds the network in parallel.
+    let mut network_branch: Vec<(usize, Complex64)> = Vec::new();
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
             // One decision, shared with the GUI, the bindings and the worker
@@ -1182,6 +1190,7 @@ pub(super) fn solve_frequency_point(
                 )
                 .map_err(|e| e.to_string())?;
                 current_source_port = routed.port_voltage;
+                network_branch.clone_from(&routed.network_branch);
                 let (a, r) = match &routed.residual_inputs {
                     Some(ri) => match &ri.grouping {
                         Ok(endpoints) => residual_hallen(
@@ -1309,11 +1318,15 @@ pub(super) fn solve_frequency_point(
         }
     };
 
+    let mut feed_i_vec = i_vec.clone();
+    for (seg, branch) in &network_branch {
+        feed_i_vec[*seg] += branch;
+    }
     let (rows, sommerfeld_outcome) = build_feedpoint_rows(
         deck,
         segs,
         v_vec,
-        &i_vec,
+        &feed_i_vec,
         &pulse_current_sources,
         solver_mode,
         current_source_port,
@@ -1457,7 +1470,7 @@ pub(super) fn solve_frequency_point(
         // already run and aborts the session on any feedpoint it cannot price, so
         // no feedpoint can reach this that the rows skipped.
         let p_in: f64 =
-            nec_solver::feedpoint_input_power(deck, segs, v_vec, &i_vec, current_source_port);
+            nec_solver::feedpoint_input_power(deck, segs, v_vec, &feed_i_vec, current_source_port);
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)

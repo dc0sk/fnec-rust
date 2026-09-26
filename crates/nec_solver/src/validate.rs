@@ -1343,6 +1343,21 @@ pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -
         .or_else(|| multiple_current_sources_error(deck))
         .or_else(|| grid_budget_error(deck))
         .or_else(|| frequency_error(deck))
+        .or_else(|| network_card_error(deck, segs))
+}
+
+/// Refuse a deck whose `TL` or `NT` card cannot be built at one of its
+/// frequencies (FND-123).
+///
+/// These used to be warn-and-skip, and skipping solves a different antenna from
+/// the one the deck describes while reporting the answer as this one's. nec2c
+/// refuses the malformed cards too. Checked at every swept frequency, because a
+/// line an exact number of half-wavelengths long has no admittance matrix at that
+/// frequency only.
+pub fn network_card_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
+    crate::frequency::frequencies_hz(deck)
+        .into_iter()
+        .find_map(|f| crate::network::build_networks(deck, segs, f).err())
 }
 
 /// Every frontend-independent diagnostic for a solve, errors first.

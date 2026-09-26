@@ -1,164 +1,109 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Simon Keimer (DC0SK)
 
-fn run_fnec(deck_path: &Path, workspace_root: &Path) -> (String, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg("--exec")
-        .arg("cpu")
-        .arg(deck_path)
-        .current_dir(workspace_root)
+//! `TL` end to end through the CLI: the NEC-2 card layout (FND-111) and the line
+//! solved as a network across the port gaps (FND-123).
+
+use std::process::{Command, Output};
+
+const PAIR: &str =
+    "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1 0 -5.282 1 0 5.282 0.001\nGE\n";
+const TAIL: &str = "EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+fn run(cards: &str, args: &[&str], tag: &str) -> Output {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let path = dir.join(format!("tl-cards-{tag}-{}.nec", std::process::id()));
+    std::fs::write(&path, format!("{PAIR}{cards}{TAIL}")).expect("write deck");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(args)
+        .arg(&path)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for {}: {e}", deck_path.display()));
-
-    assert!(
-        output.status.success(),
-        "fnec failed for {}: {}",
-        deck_path.display(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    (
-        String::from_utf8_lossy(&output.stdout).into_owned(),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
+        .expect("run fnec");
+    let _ = std::fs::remove_file(&path);
+    out
 }
 
-fn first_feedpoint_impedance(stdout: &str) -> (f64, f64) {
-    for line in stdout.lines() {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() != 8 {
-            continue;
-        }
-        if cols[0] == "TAG" {
-            continue;
-        }
-        if cols[0].parse::<usize>().is_err() || cols[1].parse::<usize>().is_err() {
-            continue;
-        }
+fn z(cards: &str, tag: &str) -> (f64, f64) {
+    let out = run(cards, &[], tag);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "fnec failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stdout
+        .lines()
+        .find_map(|l| {
+            let c: Vec<&str> = l.split_whitespace().collect();
+            (c.len() == 8 && c[0] == "1" && c[1] == "26")
+                .then(|| (c[6].parse().unwrap(), c[7].parse().unwrap()))
+        })
+        .unwrap_or_else(|| panic!("no feedpoint row:\n{stdout}"))
+}
 
-        let z_re = cols[6]
-            .parse::<f64>()
-            .unwrap_or_else(|e| panic!("failed to parse Z_RE from '{line}': {e}"));
-        let z_im = cols[7]
-            .parse::<f64>()
-            .unwrap_or_else(|e| panic!("failed to parse Z_IM from '{line}': {e}"));
-        return (z_re, z_im);
+/// The card nec2c reads, answered as nec2c answers it (84.826 + j31.131; the
+/// residual is the unloaded pair's own offset, FND-156). The old fnec reading of
+/// this card was a parse error, and its old model moved the feed by 0.37 Ω.
+#[test]
+fn a_standard_nec2_tl_card_moves_the_feed_as_nec2c_does() {
+    let (r, x) = z("TL 1 26 2 26 50.0 0.1\n", "std");
+    assert!(
+        (r - 84.826).abs() < 2.0 && (x - 31.131).abs() < 5.0,
+        "pair + TL: {r:.3} + j{x:.3}, nec2c 84.826 + j31.131"
+    );
+}
+
+/// fnec's retired layout is refused, and the message carries the rewrite —
+/// reading it as NEC-2 would have been a 1 Ω line with 50 S across one end.
+#[test]
+fn the_retired_fnec_layout_is_refused_with_its_nec2_rewrite() {
+    for (card, rewrite) in [
+        ("TL 1 26 2 26 1 0 50.0 0.1 1.0\n", "TL 1 26 2 26 50.0 0.1"),
+        (
+            "TL 1 26 2 26 1 0 50.0 0.1 0.66\n",
+            "TL 1 26 2 26 50.0 0.1 0 0 0 0 0.66",
+        ),
+        (
+            "TL 1 26 2 26 1 1 50.0 3.0 6.0\n",
+            "TL 1 26 2 26 50.0 3.0 0 0 0 0 1 6.0",
+        ),
+    ] {
+        let out = run(card, &[], "legacy");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{card} must be refused");
+        assert!(
+            stderr.contains(rewrite),
+            "{card}: no rewrite '{rewrite}' in:\n{stderr}"
+        );
     }
+}
 
-    panic!("no feedpoint rows found in stdout:\n{stdout}");
+/// A NEC-2 card that writes Z0 as an integer is not mistaken for the old layout.
+#[test]
+fn an_integer_valued_nec2_card_is_not_mistaken_for_the_old_layout() {
+    assert_eq!(
+        z("TL 1 26 2 26 50 0.1\n", "int"),
+        z("TL 1 26 2 26 50.0 0.1\n", "flt")
+    );
+}
+
+/// NEC-2: a length of zero is the distance between the segment centres, 1 m here.
+#[test]
+fn a_zero_length_line_spans_the_centre_distance() {
+    assert_eq!(
+        z("TL 1 26 2 26 50.0 0\n", "zero"),
+        z("TL 1 26 2 26 50.0 1.0\n", "one")
+    );
 }
 
 #[test]
-fn supported_tl_card_changes_feedpoint_impedance() {
-    // Phase-2: TL is parsed and applied.  The lossless Z-stamp for Z0=50 Ω,
-    // length=0.1 m between the two dipole center segments shifts Z_RE relative
-    // to the no-TL two-wire deck.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let tl_path = std::env::temp_dir().join(format!("fnec-tl-linked-{now}.nec"));
-    let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&tl_path, tl_deck).expect("failed to write TL deck");
-
-    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-{now}.nec"));
-    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&base_path, base_deck).expect("failed to write base deck");
-
-    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
-    let (base_out, _) = run_fnec(&base_path, &workspace_root);
-    let _ = fs::remove_file(&tl_path);
-    let _ = fs::remove_file(&base_path);
-
-    // Phase-2: TL is parsed — no unknown-card warning.
-    assert!(
-        !tl_err.contains("unknown card 'TL'"),
-        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
+fn a_line_on_a_solver_without_a_network_solve_is_refused() {
+    let out = run(
+        "TL 1 26 2 26 50.0 0.1\n",
+        &["--solver", "sinusoidal"],
+        "sin",
     );
-    // TL stamp changes Z_RE relative to no-TL base.
-    let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    let (base_r, _) = first_feedpoint_impedance(&base_out);
-    assert!(
-        (tl_r - base_r).abs() > 0.05,
-        "Phase-2: TL card should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
-    );
-    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
-}
-
-#[test]
-fn supported_tl_card_with_nseg_zero_changes_feedpoint_impedance() {
-    // Phase-2: TL is parsed.  NSEG=0 is a single-section shorthand and produces
-    // the same impedance stamp as NSEG=1.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let tl_path = std::env::temp_dir().join(format!("fnec-tl-linked-nseg0-{now}.nec"));
-    let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 0 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&tl_path, tl_deck).expect("failed to write TL deck with NSEG=0");
-
-    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-nseg0-{now}.nec"));
-    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&base_path, base_deck).expect("failed to write base deck");
-
-    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
-    let (base_out, _) = run_fnec(&base_path, &workspace_root);
-    let _ = fs::remove_file(&tl_path);
-    let _ = fs::remove_file(&base_path);
-
-    assert!(
-        !tl_err.contains("unknown card 'TL'"),
-        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
-    );
-    let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    let (base_r, _) = first_feedpoint_impedance(&base_out);
-    assert!(
-        (tl_r - base_r).abs() > 0.05,
-        "Phase-2: TL NSEG=0 should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
-    );
-    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
-}
-
-#[test]
-fn supported_tl_card_with_nseg_gt_one_changes_feedpoint_impedance() {
-    // Phase-2: TL is parsed.  NSEG=3 uses uniform-line stamp semantics
-    // identical to NSEG=1 for lossless lines (tl_type=0).
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-
-    let tl_path = std::env::temp_dir().join(format!("fnec-tl-linked-nseg3-{now}.nec"));
-    let tl_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 3 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&tl_path, tl_deck).expect("failed to write TL deck with NSEG=3");
-
-    let base_path = std::env::temp_dir().join(format!("fnec-tl-base-nseg3-{now}.nec"));
-    let base_deck = "GW 1 51 0.0 0 -5.282 0.0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&base_path, base_deck).expect("failed to write base deck");
-
-    let (tl_out, tl_err) = run_fnec(&tl_path, &workspace_root);
-    let (base_out, _) = run_fnec(&base_path, &workspace_root);
-    let _ = fs::remove_file(&tl_path);
-    let _ = fs::remove_file(&base_path);
-
-    assert!(
-        !tl_err.contains("unknown card 'TL'"),
-        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{tl_err}"
-    );
-    let (tl_r, _) = first_feedpoint_impedance(&tl_out);
-    let (base_r, _) = first_feedpoint_impedance(&base_out);
-    assert!(
-        (tl_r - base_r).abs() > 0.05,
-        "Phase-2: TL NSEG=3 should alter Z_RE (tl={tl_r:.3} vs base={base_r:.3})"
-    );
-    assert!(tl_r > 0.0, "expected positive R with TL, got {tl_r}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "must refuse:\n{stderr}");
+    assert!(stderr.contains("--solver hallen only"), "{stderr}");
 }

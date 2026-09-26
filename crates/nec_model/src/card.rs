@@ -413,41 +413,45 @@ pub struct GrCard {
     pub angle_deg: f64,
 }
 
-/// TL — Transmission line card.
+/// TL — Transmission line card, in the NEC-2 layout (FND-111).
 ///
-/// Connects two segments with a transmission line, with optional attenuation and
-/// velocity factor.  Used to model transmission lines (e.g., antenna feeds, coupled
-/// elements) as circuit connections.
+/// `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`
+///   I1–I4: the two ends, as (tag, segment) pairs. Segment 0 is fnec's shorthand
+///          for the tag's centre segment.
+///   F1: characteristic impedance Z0 (Ω). NEGATIVE means a crossed line: |Z0|
+///       with a 180° reversal between the ends.
+///   F2: line length (m). Zero or negative means the straight-line distance
+///       between the two segment centres, as NEC-2 does.
+///   F3–F6: shunt admittance at end 1 (real, imag) and end 2 (real, imag), in
+///       siemens, added across each end.
+///   F7: fnec extension — velocity factor (default 1).
+///   F8: fnec extension — total matched-line loss in dB (default 0 = lossless).
 ///
-/// NEC field mapping (TL I1 I2 I3 I4 I5 I6 F1 F2 F3):
-///   I1–I4: Define segment locations (tag, segment number pairs)
-///   I5: Number of transmission-line segments (for stepped models; typically 1)
-///   I6: Transmission-line type (0 = lossless; non-zero flags lossy/complex models)
-///   F1: Characteristic impedance (Ω)
-///   F2: Transmission-line length (m)
-///   F3: Angle (°) for lossy models; velocity factor (ratio) for lossless
+/// fnec used to read `TL t1 s1 t2 s2 NSEG TYPE Z0 LEN VF`, its own layout, which
+/// misread every standard card. That layout is refused at parse time with the
+/// NEC-2 equivalent in the message, rather than reinterpreted.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TlCard {
-    /// Tag number of the first segment to connect.
+    /// Tag number of the first end.
     pub tag1: u32,
-    /// Segment number within tag1 (0 = all segments in tag).
+    /// Segment number within tag1 (0 = the tag's centre segment).
     pub segment1: u32,
-    /// Tag number of the second segment to connect.
+    /// Tag number of the second end.
     pub tag2: u32,
-    /// Segment number within tag2 (0 = all segments in tag).
+    /// Segment number within tag2 (0 = the tag's centre segment).
     pub segment2: u32,
-    /// Number of transmission-line segments in the model (typically 1).
-    pub num_segments: u32,
-    /// Transmission-line type: 0 = lossless, non-zero = lossy/complex.
-    pub tl_type: u32,
-    /// Characteristic impedance (Ω).
+    /// Characteristic impedance (Ω); negative = crossed line.
     pub z0: f64,
-    /// Transmission-line length (m).
+    /// Line length (m); zero or negative = distance between the segment centres.
     pub length: f64,
-    /// Velocity factor (ratio) for a lossless line (`tl_type == 0`); for a lossy
-    /// line (`tl_type != 0`) it is the total matched-line loss in dB (velocity
-    /// factor is taken as 1). See `docs/ph8-chk-005-lossy-tl.md`.
-    pub f3: f64,
+    /// Shunt admittance across end 1, (real, imag) siemens.
+    pub shunt1: (f64, f64),
+    /// Shunt admittance across end 2, (real, imag) siemens.
+    pub shunt2: (f64, f64),
+    /// Velocity factor (fnec extension, F7); 1 when absent.
+    pub velocity_factor: f64,
+    /// Total matched-line loss in dB (fnec extension, F8); 0 when absent.
+    pub loss_db: f64,
 }
 
 /// PT — Print-control card.

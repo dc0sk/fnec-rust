@@ -102,11 +102,17 @@ pub fn write_card(card: &Card) -> String {
             u(c.segment1),
             u(c.tag2),
             u(c.segment2),
-            u(c.num_segments),
-            u(c.tl_type),
-            f(c.z0),
-            f(c.length),
-            f(c.f3),
+            // Always with a decimal point: a bare small integer Z0 followed by a
+            // length of exactly 0 or 1 is the shape of fnec's retired TL layout,
+            // which the parser refuses (FND-111).
+            f_dec(c.z0),
+            f_dec(c.length),
+            f(c.shunt1.0),
+            f(c.shunt1.1),
+            f(c.shunt2.0),
+            f(c.shunt2.1),
+            f(c.velocity_factor),
+            f(c.loss_db),
         ]),
         Card::Pt(c) => join_raw("PT", &c.raw_fields),
         Card::Nt(c) => join_raw("NT", &c.raw_fields),
@@ -192,6 +198,16 @@ fn f(v: f64) -> String {
         format!("{}", v as i64)
     } else {
         format!("{v}")
+    }
+}
+
+/// [`f`], but never without a decimal point (`10` → `10.0`).
+fn f_dec(v: f64) -> String {
+    let s = f(v);
+    if s.contains(['.', 'e', 'E', 'N', 'i']) {
+        s
+    } else {
+        format!("{s}.0")
     }
 }
 
@@ -289,6 +305,16 @@ mod tests {
         let deck = parse("EX 0 1 26 0 1.0 0.0\nEN\n").unwrap().deck;
         // vr=1 kept, everything after is zero and dropped; the 4 integer fields stay.
         assert_eq!(write_card(&deck.cards[0]), "EX 0 1 26 0 1");
+    }
+
+    /// A 10 Ω, 1 m line written with bare integers would read back as fnec's
+    /// retired TL layout and be refused; the writer must not produce that shape.
+    #[test]
+    fn a_small_integer_tl_round_trips() {
+        let deck = "CE\nGW 1 21 0 0 -5 0 0 5 .001\nGW 2 21 1 0 -5 1 0 5 .001\nGE\nTL 1 11 2 11 10.0 1.0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let first = parse(deck).expect("parses");
+        let again = parse(&write_deck(&first.deck)).expect("written deck parses");
+        assert_eq!(first.deck.cards, again.deck.cards);
     }
 
     #[test]

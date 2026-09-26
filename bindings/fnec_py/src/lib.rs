@@ -93,21 +93,11 @@ fn solve_at_freq(
     } else {
         assemble_z_matrix_with_ground(&segs, freq_hz, &ground)
     };
-    // The shared seam: LD loads, TL lines and NT networks. NT was previously
-    // absent here, so the same deck solved to a different impedance than the CLI
-    // (FND-015).
+    // The shared seam's notes: LD loads, TL lines and NT networks (FND-015). The
+    // loads and networks themselves are applied inside the routed solve.
     if !mpie {
         let stamps = nec_solver::build_deck_stamps(deck, &segs, freq_hz);
         warnings.extend(stamps.warnings.iter().cloned());
-        stamps.apply_couplings(&mut z_mat);
-        if stamps.has_couplings() {
-            warnings.push(
-                "TL/NT two-port couplings are stamped as series impedances into a \
-                 dimensionless matrix; that model is not derived and the resulting \
-                 impedance is unreliable (FND-122)"
-                    .to_string(),
-            );
-        }
     }
 
     // A current-driven deck needs a different solve, not a different pricing step:
@@ -130,7 +120,9 @@ fn solve_at_freq(
         let loads = nec_solver::build_deck_stamps(deck, &segs, freq_hz).diagonal;
         let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
-        (routed.currents, routed.port_voltage)
+        // The source currents: a feed that is also a TL/NT port delivers the
+        // network branch too, and the impedance is priced from that (FND-123).
+        (routed.source_currents(), routed.port_voltage)
     };
 
     let i_vec = &currents;

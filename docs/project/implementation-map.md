@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/implementation-map.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Implementation map
@@ -40,7 +40,7 @@ Serves **FR-001, DEC-010/011, PRT-001/002/008, NFR-004, PH8-CHK-001..006**.
 - `src/basis.rs` — `ContinuityTransform`, `SinusoidalTransform` basis mappings.
 - `src/linear.rs` — dense complex LU (partial pivoting); pulse/Hallén/continuity/sinusoidal solve entries; `SolveError`.
 - `src/loads.rs` — `LD` → per-segment complex loads (RLC/RL/RC/Z/conductivity); `LoadWarning`.
-- `src/tl.rs` — `TL` → sparse Z stamps (`TlStamp`, lossless 2-port cot/csc); `TlWarning`. **PH8-CHK-004/005 extend (NT stamp, lossy TL).**
+- `src/tl.rs` — `TL` → sparse Z stamps (`TlStamp`, lossless 2-port cot/csc); `TlWarning`. **PH8-CHK-004/005 extend (NT stamp, lossy TL).** *Superseded 2026-09-26 (FND-111/FND-123): TL and NT are no longer stamped into the matrix; they are two-port networks connected across the port gaps (NEC-2 model), and `TL` uses the NEC-2 layout.*
 - `src/farfield.rs` — RP patterns, directivity (dBi), radiated-power integration, RP point generation, bilinear gain interpolation.
 
 ## nec_accel — optional GPU acceleration

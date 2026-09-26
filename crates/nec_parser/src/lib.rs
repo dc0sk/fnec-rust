@@ -404,26 +404,41 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "TL" => {
-                // TL I1 I2 I3 I4 I5 I6 F1 F2 [F3]
-                // I1=tag1, I2=seg1, I3=tag2, I4=seg2, I5=num_segs, I6=tl_type
-                // F1=z0, F2=length, F3=velocity_factor (default 1.0)
+                // NEC-2: TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6, plus fnec's optional F7
+                // (velocity factor) and F8 (matched-line loss, dB). See TlCard.
                 let fields = parse_fields(rest);
-                require_fields(lineno, "TL", &fields, 8)?;
-                let f3 = if fields.len() > 8 {
-                    parse_f64(lineno, "TL", 9, fields[8])?
-                } else {
-                    1.0
+                require_fields(lineno, "TL", &fields, 5)?;
+                if let Some(nec2) = legacy_tl_layout(&fields) {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "TL".to_string(),
+                        field: 5,
+                        raw: fields[4..].join(" "),
+                        reason: format!(
+                            "this is fnec's old TL layout (NSEG TYPE Z0 LENGTH VF); TL now \
+                             uses the NEC-2 layout (Z0 LENGTH Y1r Y1i Y2r Y2i [VF] [LOSS_dB]). \
+                             Rewrite it as: {nec2}. If it really is a NEC-2 card, write Z0 \
+                             with a decimal point"
+                        ),
+                    });
+                }
+                let float_at = |i: usize, default: f64| -> Result<f64, ParseError> {
+                    match fields.get(i) {
+                        Some(raw) => parse_f64(lineno, "TL", i + 1, raw),
+                        None => Ok(default),
+                    }
                 };
                 deck.cards.push(Card::Tl(TlCard {
                     tag1: parse_u32(lineno, "TL", 1, fields[0])?,
                     segment1: parse_u32(lineno, "TL", 2, fields[1])?,
                     tag2: parse_u32(lineno, "TL", 3, fields[2])?,
                     segment2: parse_u32(lineno, "TL", 4, fields[3])?,
-                    num_segments: parse_u32(lineno, "TL", 5, fields[4])?,
-                    tl_type: parse_u32(lineno, "TL", 6, fields[5])?,
-                    z0: parse_f64(lineno, "TL", 7, fields[6])?,
-                    length: parse_f64(lineno, "TL", 8, fields[7])?,
-                    f3,
+                    z0: float_at(4, 0.0)?,
+                    length: float_at(5, 0.0)?,
+                    shunt1: (float_at(6, 0.0)?, float_at(7, 0.0)?),
+                    shunt2: (float_at(8, 0.0)?, float_at(9, 0.0)?),
+                    velocity_factor: float_at(10, 1.0)?,
+                    loss_db: float_at(11, 0.0)?,
                 }));
             }
             "NT" => {
@@ -480,6 +495,36 @@ fn split_mnemonic(line: &str) -> (&str, &str) {
 
 fn parse_fields(s: &str) -> Vec<&str> {
     s.split_whitespace().collect()
+}
+
+/// Recognise fnec's retired TL layout, `TL t1 s1 t2 s2 NSEG TYPE Z0 LEN [VF]`, and
+/// return its NEC-2 rewrite.
+///
+/// Read as NEC-2 such a card is silently wrong: `TL 1 26 2 26 1 0 50.0 0.1` would
+/// become a 1 Ω line of length zero with 50 S across one end (FND-111). The tell is
+/// the two bare integers where NEC-2 has Z0 and the length — NSEG, a small count,
+/// and TYPE, 0 or 1 — followed by at least Z0 and the length. A genuine NEC-2 card
+/// matches only if it writes a Z0 of at most 16 Ω and a length of exactly 0 or 1
+/// as integers; the refusal says to add a decimal point.
+fn legacy_tl_layout(fields: &[&str]) -> Option<String> {
+    let bare_int = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if fields.len() < 8 || !bare_int(fields[4]) || !matches!(fields[5], "0" | "1") {
+        return None;
+    }
+    if fields[4].parse::<u32>().ok()? > 16 {
+        return None;
+    }
+    let z0 = fields[6];
+    let len = fields[7];
+    let head = fields[..4].join(" ");
+    Some(match (fields[5], fields.get(8)) {
+        // Lossy: F3 was the matched-line loss in dB, at velocity factor 1.
+        ("1", Some(loss)) => format!("TL {head} {z0} {len} 0 0 0 0 1 {loss}"),
+        (_, Some(vf)) if *vf != "1" && *vf != "1.0" => {
+            format!("TL {head} {z0} {len} 0 0 0 0 {vf}")
+        }
+        _ => format!("TL {head} {z0} {len}"),
+    })
 }
 
 fn require_fields(
@@ -566,6 +611,56 @@ fn parse_f64(lineno: usize, card: &str, field: usize, s: &str) -> Result<f64, Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tl(line: &str) -> Result<TlCard, ParseError> {
+        let deck = parse(&format!("GW 1 5 0 0 0 0 0 1 .001\n{line}\nEN\n"))?.deck;
+        Ok(deck
+            .cards
+            .into_iter()
+            .find_map(|c| match c {
+                Card::Tl(t) => Some(t),
+                _ => None,
+            })
+            .expect("a TL card"))
+    }
+
+    /// NEC-2 layout (FND-111), with NEC's blank-means-zero defaults and fnec's
+    /// optional F7 velocity factor (default 1) and F8 loss in dB (default 0).
+    #[test]
+    fn a_tl_card_reads_the_nec2_layout() {
+        let t = tl("TL 1 2 1 4 50.0 0.1").unwrap();
+        assert_eq!((t.tag1, t.segment1, t.tag2, t.segment2), (1, 2, 1, 4));
+        assert_eq!((t.z0, t.length), (50.0, 0.1));
+        assert_eq!((t.shunt1, t.shunt2), ((0.0, 0.0), (0.0, 0.0)));
+        assert_eq!((t.velocity_factor, t.loss_db), (1.0, 0.0));
+
+        let t = tl("TL 1 2 1 4 -75.0 0 0.01 0.02 0.03 0.04 0.66 3.0").unwrap();
+        assert_eq!((t.z0, t.length), (-75.0, 0.0));
+        assert_eq!((t.shunt1, t.shunt2), ((0.01, 0.02), (0.03, 0.04)));
+        assert_eq!((t.velocity_factor, t.loss_db), (0.66, 3.0));
+    }
+
+    #[test]
+    fn the_retired_tl_layout_is_refused_with_its_rewrite() {
+        let err = tl("TL 1 2 1 4 1 0 50.0 0.1 1.0").unwrap_err().to_string();
+        assert!(
+            err.contains("TL 1 2 1 4 50.0 0.1") && err.contains("NEC-2"),
+            "{err}"
+        );
+    }
+
+    /// The legacy test must not catch genuine NEC-2 cards that happen to use
+    /// integers: a realistic Z0, or any card with fewer than eight fields.
+    #[test]
+    fn integer_valued_nec2_cards_are_not_mistaken_for_the_retired_layout() {
+        for line in [
+            "TL 1 2 1 4 50 1 0 0 0 0",
+            "TL 1 2 1 4 300 0",
+            "TL 1 2 1 4 10 1",
+        ] {
+            assert!(tl(line).is_ok(), "{line} is a NEC-2 card");
+        }
+    }
 
     /// `f64::from_str` accepts "NaN", "inf" and "-inf", and a NEC deck is plain
     /// text — so before this check those reached the solver from any card.

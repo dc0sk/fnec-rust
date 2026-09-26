@@ -301,6 +301,39 @@ pub struct HallenRouted {
     pub port_voltage: Option<Complex64>,
     pub route: HallenRoute,
     pub residual_inputs: Option<ResidualInputs>,
+    /// `(segment, current)` into a `TL`/`NT` network at each driven segment that
+    /// is also a network port. Empty without networks.
+    ///
+    /// At such a port the source is in parallel with the network, so the SOURCE
+    /// current is the segment current plus this branch. Use
+    /// [`HallenRouted::source_current`] for a feedpoint's impedance and power;
+    /// `currents` stays the wire current, which is what radiates and what the
+    /// current table prints (as nec2c does).
+    pub network_branch: Vec<(usize, Complex64)>,
+}
+
+impl HallenRouted {
+    /// The current the source at segment `idx` delivers: the wire current plus
+    /// any network branch in parallel with it (FND-123).
+    pub fn source_current(&self, idx: usize) -> Complex64 {
+        self.currents[idx]
+            + self
+                .network_branch
+                .iter()
+                .filter(|(s, _)| *s == idx)
+                .map(|(_, i)| *i)
+                .sum::<Complex64>()
+    }
+
+    /// [`Self::currents`] with every driven segment's network branch added — the
+    /// vector a frontend hands to its feedpoint impedance and input-power code.
+    pub fn source_currents(&self) -> Vec<Complex64> {
+        let mut out = self.currents.clone();
+        for (s, i) in &self.network_branch {
+            out[*s] += i;
+        }
+        out
+    }
 }
 
 /// Errors a routed solve can raise, in the caller's terms.
@@ -312,12 +345,15 @@ pub enum HallenSessionError {
     Solve(SolveError),
     /// The solve returned, but not with numbers (FND-126).
     NonFiniteCurrents(crate::NonFiniteCurrents),
+    /// A `TL`/`NT` network could not be built or solved, or is combined with a
+    /// drive the network solve does not support yet (FND-123).
+    Network(String),
 }
 
 impl std::fmt::Display for HallenSessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Excitation(m) | Self::PlaneWave(m) => write!(f, "{m}"),
+            Self::Excitation(m) | Self::PlaneWave(m) | Self::Network(m) => write!(f, "{m}"),
             Self::CurrentSource(e) => write!(f, "{e}"),
             Self::Solve(e) => write!(f, "{e}"),
             Self::NonFiniteCurrents(e) => write!(f, "{e}"),
@@ -374,6 +410,24 @@ fn solve_hallen_routed_inner(
     // Path grouping, built once and shared by every arm below.
     let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
 
+    let (networks, _) =
+        crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
+    if !networks.is_empty() && route.drive != HallenDrive::DeltaGap {
+        // Not a limitation of the model, of the superposition: the plane-wave
+        // solve carries a sin column the unit-gap solves do not, so the two
+        // responses live in different least-squares systems and do not add
+        // exactly; a current source would need its rescaling redone through the
+        // network. Refused rather than approximated (FND-123).
+        return Err(HallenSessionError::Network(format!(
+            "TL/NT networks are supported with voltage (delta-gap) sources only; \
+             this deck is driven by a {}",
+            match route.drive {
+                HallenDrive::PlaneWave => "plane wave",
+                _ => "current source",
+            }
+        )));
+    }
+
     match route.drive {
         HallenDrive::PlaneWave => {
             // The arm itself lives in `solve_hallen_planewave_routed`, because
@@ -384,17 +438,19 @@ fn solve_hallen_routed_inner(
                 port_voltage: None,
                 route,
                 residual_inputs: None,
+                network_branch: Vec::new(),
             })
         }
         HallenDrive::CurrentSource => {
             solve_current_source(deck, segs, z_mat, freq_hz, route, &grouped)
         }
-        HallenDrive::DeltaGap => {
-            solve_delta_gap(deck, segs, z_mat, freq_hz, route, &paths, &grouped)
-        }
+        HallenDrive::DeltaGap => solve_delta_gap(
+            deck, segs, z_mat, freq_hz, route, &paths, &grouped, &networks,
+        ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn solve_delta_gap(
     deck: &NecDeck,
     segs: &[Segment],
@@ -403,50 +459,140 @@ fn solve_delta_gap(
     route: HallenRoute,
     paths: &Option<Vec<ConductorPath>>,
     grouped: &Option<(Vec<usize>, Vec<ConstraintRow>)>,
+    networks: &crate::network::Networks,
 ) -> Result<HallenRouted, HallenSessionError> {
-    let rhs = match paths {
-        Some(ps) => build_hallen_rhs_paths(deck, segs, freq_hz, ps),
-        None => build_hallen_rhs(deck, segs, freq_hz),
-    }
-    .map_err(|e| HallenSessionError::Excitation(e.to_string()))?;
+    let build_rhs = |d: &NecDeck| {
+        match paths {
+            Some(ps) => build_hallen_rhs_paths(d, segs, freq_hz, ps),
+            None => build_hallen_rhs(d, segs, freq_hz),
+        }
+        .map_err(|e| HallenSessionError::Excitation(e.to_string()))
+    };
+    let rhs = build_rhs(deck)?;
 
-    let (sol, grouping) = match grouped {
-        Some((path_of, free_ends)) => {
-            let sol = solve_hallen_paths(z_mat, &rhs.rhs, &rhs.cos_vec, path_of, free_ends)
-                .map_err(HallenSessionError::Solve)?;
-            (sol, Err(path_of.clone()))
-        }
-        None => {
-            let endpoints = merge_collinear_wire_endpoints(segs);
-            let mut comp_of = vec![0usize; segs.len()];
-            for (ci, &(first, last)) in endpoints.iter().enumerate() {
-                for slot in comp_of.iter_mut().take(last + 1).skip(first) {
-                    *slot = ci;
-                }
+    // The one solve every response goes through: same matrix (loads already
+    // stamped, once), same constraints. The network superposition below is exact
+    // only because every response comes from here.
+    let endpoints_and_junctions = if grouped.is_some() {
+        None
+    } else {
+        let endpoints = merge_collinear_wire_endpoints(segs);
+        let mut comp_of = vec![0usize; segs.len()];
+        for (ci, &(first, last)) in endpoints.iter().enumerate() {
+            for slot in comp_of.iter_mut().take(last + 1).skip(first) {
+                *slot = ci;
             }
-            let junctions: Vec<(usize, usize, f64)> =
-                detect_wire_junctions(segs, &endpoints, JUNCTION_TOL_M)
-                    .iter()
-                    .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
-                    .map(|j| (j.seg_a, j.seg_b, j.sign))
-                    .collect();
-            let sol = solve_hallen(z_mat, &rhs.rhs, &rhs.cos_vec, &endpoints, &junctions)
-                .map_err(HallenSessionError::Solve)?;
-            (sol, Ok(endpoints))
         }
+        let junctions: Vec<(usize, usize, f64)> =
+            detect_wire_junctions(segs, &endpoints, JUNCTION_TOL_M)
+                .iter()
+                .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
+                .map(|j| (j.seg_a, j.seg_b, j.sign))
+                .collect();
+        Some((endpoints, junctions))
+    };
+    let solve = |r: &crate::excitation::HallenRhs| {
+        match (grouped, &endpoints_and_junctions) {
+            (Some((path_of, free_ends)), _) => {
+                solve_hallen_paths(z_mat, &r.rhs, &r.cos_vec, path_of, free_ends)
+            }
+            (None, Some((endpoints, junctions))) => {
+                solve_hallen(z_mat, &r.rhs, &r.cos_vec, endpoints, junctions)
+            }
+            (None, None) => unreachable!("one of the two groupings is always built"),
+        }
+        .map_err(HallenSessionError::Solve)
     };
 
+    let sol = solve(&rhs)?;
+    let grouping = match grouped {
+        Some((path_of, _)) => Err(path_of.clone()),
+        None => Ok(endpoints_and_junctions
+            .as_ref()
+            .expect("plain grouping")
+            .0
+            .clone()),
+    };
+    let mut residual = ResidualInputs {
+        c_hom: sol.c_hom_per_wire,
+        cos_vec: rhs.cos_vec,
+        rhs: rhs.rhs,
+        grouping,
+    };
+    if networks.is_empty() {
+        return Ok(HallenRouted {
+            currents: sol.currents,
+            port_voltage: None,
+            route,
+            residual_inputs: Some(residual),
+            network_branch: Vec::new(),
+        });
+    }
+
+    // Networks (FND-123): the structure's response to a unit gap at each
+    // undriven port, from a deck identical but for its sources, so the gap is
+    // built by the same code (and the same path signs) as a real feed.
+    let driven: Vec<(usize, Complex64)> = crate::excitation::feedpoints(deck)
+        .filter_map(|(ex, _)| {
+            segs.iter()
+                .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+                .map(|i| (i, Complex64::new(ex.voltage_real, ex.voltage_imag)))
+        })
+        .collect();
+    let mut unit_rhs: Vec<(Vec<Complex64>, Vec<Complex64>)> = Vec::new();
+    let net = crate::network::solve_with_networks(networks, &driven, &sol.currents, |q| {
+        let unit = unit_gap_deck(deck, &segs[q]);
+        let r = build_rhs(&unit)?;
+        let s = solve(&r)?;
+        unit_rhs.push((r.rhs, s.c_hom_per_wire));
+        Ok::<_, HallenSessionError>(s.currents)
+    })
+    .map_err(|e| match e {
+        crate::network::NetworkSolveError::Solve(e) => e,
+        crate::network::NetworkSolveError::Singular => HallenSessionError::Network(
+            "the TL/NT networks leave a port voltage undetermined (singular port system)"
+                .to_string(),
+        ),
+    })?;
+
+    // Superpose the right-hand side and the homogeneous constants with the same
+    // weights, so the continuity diagnostic describes the system actually solved.
+    for ((r, c), (_, v)) in unit_rhs.iter().zip(&net.undriven) {
+        for (a, b) in residual.rhs.iter_mut().zip(r) {
+            *a += v * b;
+        }
+        for (a, b) in residual.c_hom.iter_mut().zip(c) {
+            *a += v * b;
+        }
+    }
     Ok(HallenRouted {
-        currents: sol.currents,
+        currents: net.currents,
         port_voltage: None,
         route,
-        residual_inputs: Some(ResidualInputs {
-            c_hom: sol.c_hom_per_wire,
-            cos_vec: rhs.cos_vec,
-            rhs: rhs.rhs,
-            grouping,
-        }),
+        residual_inputs: Some(residual),
+        network_branch: net.driven_branch,
     })
+}
+
+/// `deck` with its sources replaced by a single 1 V delta gap at `seg`.
+fn unit_gap_deck(deck: &NecDeck, seg: &Segment) -> NecDeck {
+    let mut unit = deck.clone();
+    unit.cards
+        .retain(|c| !matches!(c, nec_model::card::Card::Ex(_)));
+    unit.cards
+        .push(nec_model::card::Card::Ex(nec_model::card::ExCard {
+            excitation_type: 0,
+            tag: seg.tag,
+            segment: seg.tag_index,
+            i4: 0,
+            voltage_real: 1.0,
+            voltage_imag: 0.0,
+            polarization_deg: 0.0,
+            polarization_ratio: 0.0,
+            theta_inc: 0.0,
+            phi_inc: 0.0,
+        }));
+    unit
 }
 
 fn solve_current_source(
@@ -467,6 +613,7 @@ fn solve_current_source(
             port_voltage: Some(fp.port_voltage),
             route,
             residual_inputs: None,
+            network_branch: Vec::new(),
         });
     };
 
@@ -495,6 +642,7 @@ fn solve_current_source(
         port_voltage: Some(port_voltage),
         route,
         residual_inputs: None,
+        network_branch: Vec::new(),
     })
 }
 
@@ -614,7 +762,6 @@ mod load_stamp_tests {
         let ground = ground_model_from_deck(&deck);
         let mut z = assemble_z_matrix_with_ground(&segs, F, &ground);
         let stamps = crate::stamps::build_deck_stamps(&deck, &segs, F);
-        stamps.apply_couplings(&mut z);
         let routed =
             solve_hallen_routed(&deck, &segs, &mut z, F, &stamps.diagonal).expect("routed solve");
         let ex = crate::first_delta_gap_feedpoint(&deck).expect("feedpoint");

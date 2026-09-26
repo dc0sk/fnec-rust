@@ -791,13 +791,16 @@ fn par003_portability_checklist_cases_are_present_and_contracted() {
         // PT is now applied at runtime (PH9-CHK-004) — no deferred warning, so no
         // warning contract (its forbidden-warning list is checked separately).
         ("dipole-pt-freesp-51seg", false),
-        ("dipole-nt-freesp-51seg", true),
-        ("dipole-pt-nt-freesp-51seg", true),
-        ("dipole-nt-pt-freesp-51seg", true),
-        ("dipole-pt-nt-repeated-freesp-51seg", true),
-        ("dipole-nt-pt-repeated-freesp-51seg", true),
-        ("dipole-pt-nt-interleaved-freesp-51seg", true),
-        ("dipole-nt-pt-interleaved-freesp-51seg", true),
+        // NT is solved as a network (FND-123), and a malformed one is refused
+        // rather than skipped with a warning — so, like PT, no warning contract;
+        // each row forbids "NT card ignored" instead.
+        ("dipole-nt-freesp-51seg", false),
+        ("dipole-pt-nt-freesp-51seg", false),
+        ("dipole-nt-pt-freesp-51seg", false),
+        ("dipole-pt-nt-repeated-freesp-51seg", false),
+        ("dipole-nt-pt-repeated-freesp-51seg", false),
+        ("dipole-pt-nt-interleaved-freesp-51seg", false),
+        ("dipole-nt-pt-interleaved-freesp-51seg", false),
         ("tl-two-dipoles-linked", false),
         ("tl-two-dipoles-linked-seg0", false),
         ("tl-two-dipoles-linked-nseg0", false),

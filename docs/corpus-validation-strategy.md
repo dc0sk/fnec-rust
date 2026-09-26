@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Corpus Validation Strategy
@@ -115,8 +115,8 @@ Rows are intentionally explicit about status:
 | PH2N5-004 | Wires over ground | in-scope implemented | `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred`, `dipole-gn2-near-ground-51seg` |
 | PH2N5-005 | Loop antennas over ground | in-scope deferred | `dipole-gn2-deferred` |
 | PH2N5-006 | Lumped-load and conductivity behavior on wires | in-scope implemented | `dipole-ld-loaded-51seg`, `dipole-ld-series-rl-51seg`, `dipole-ld-series-rc-51seg` |
-| PH2N5-007 | Transmission-line network subset on wire models | in-scope implemented | `tl-two-dipoles-linked`, `tl-two-dipoles-linked-seg0`, `tl-two-dipoles-linked-nseg0`, `tl-two-dipoles-linked-seg0-even52` |
-| PH2N5-008 | PT/NT staged network portability behavior | in-scope deferred | `dipole-pt-freesp-51seg`, `dipole-nt-freesp-51seg`, `dipole-pt-nt-freesp-51seg`, `dipole-nt-pt-freesp-51seg` |
+| PH2N5-007 | Transmission-line networks on wire models (2026-09-26: NEC-2 `TL` layout, solved as a two-port network across the port gaps as in NEC-2; `tl-two-dipoles-linked` nec2c-gated — fnec 84.05+j28.65 vs nec2c 84.826+j31.131. The four decks were migrated from fnec's retired `NSEG TYPE` layout; `-nseg0` keeps its name but now tests length 0 = centre-to-centre distance. FND-111, FND-123) | in-scope implemented | `tl-two-dipoles-linked`, `tl-two-dipoles-linked-seg0`, `tl-two-dipoles-linked-nseg0`, `tl-two-dipoles-linked-seg0-even52` |
+| PH2N5-008 | PT/NT network portability behavior (2026-09-26: PT is applied, and NT is solved as a two-port network, FND-123; the NT/PT decks' malformed filler `NT 1 1 26 1 1 26 50.0 0.0` was replaced by well-formed NT cards) | in-scope implemented | `dipole-pt-freesp-51seg`, `dipole-nt-freesp-51seg`, `dipole-pt-nt-freesp-51seg`, `dipole-nt-pt-freesp-51seg` |
 | PH2N5-009 | Surface meshing and wire-surface junctions | out-of-scope | - |
 | PH2N5-010 | Monopole on finite box and patch-ground classes | out-of-scope | - |
 

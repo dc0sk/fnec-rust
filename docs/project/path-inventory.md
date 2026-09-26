@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/path-inventory.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-09-26
 ---
 
 # Path inventory for cross-cutting concerns
@@ -154,6 +154,11 @@ than the presence of each message.
 ## C5 — Load / TL / NT builder warnings
 
 Malformed `LD`, `TL` and `NT` cards are skipped; the user must learn they were.
+
+> **2026-09-26 (FND-111/FND-123):** an unusable `TL` or `NT` card is now an
+> **error**, not a skip-with-warning, and TL/NT are solved as two-port networks
+> across the port gaps rather than stamped. The rows below still describe the
+> warning-delivery paths; the TL/NT part of this concern no longer applies.
 
 | # | Path | Covered | Evidence |
 |:--|:-----|:--------|:---------|

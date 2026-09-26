@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-09-26
 ---
 
 # NEC Card Support Matrix
@@ -81,26 +81,40 @@ no longer silently treated as EX type 0.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| TL type 0 | Partial | Lossless; supported `NSEG` range: 0, 1, and >1 — all treated as a **single-section stamp** (no per-segment subdivision); `NSEG=0` is normalised to 1; stamps a 2-port admittance model into the Z matrix; `segment=0` maps to the tag center segment with a warning |
-| TL other | Partial | Lossy line (`tl_type != 0`): stamps `Z0·coth/csch(γℓ)` with `F3` = matched-line loss in dB, velocity factor 1 (PH8-CHK-005). Reduces exactly to the lossless form at 0 dB |
-| NT | Partial | Two-port network **stamped** into the Z matrix (`nec_solver::build_nt_stamps`, admittance→Z parameters `[Z]=[Y]⁻¹`; PH8-CHK-004). A well-formed reciprocal NT reproduces the equivalent TL feedpoint impedance end to end. Malformed / singular-admittance / missing-endpoint cards warn and are skipped |
+| TL | Partial | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]` (see field table). Solved as a two-port network connected **across the port segments' gaps, in parallel** (NEC-2's model), not stamped into the matrix: Y11 = Y22 = coth(γℓ)/Z0, Y12 = −csch(γℓ)/Z0 with γℓ = αℓ + j·kℓ/vf; the F3–F6 shunt admittances add to Y11/Y22; negative Z0 = crossed line. Lossy via the F8 extension (total matched-line loss dB). Validated vs nec2c: `TL 1 26 2 26 50.0 0.1` across two λ/2 dipoles 1 m apart → fnec 84.05+j28.65, nec2c 84.826+j31.131. fnec's retired layout (`… NSEG TYPE Z0 LEN [VF]`) is **refused** at parse time with the NEC-2 rewrite in the message (FND-111, FND-123) |
+| NT | Partial | Two-port network given directly as Y11 Y12 Y22 (`NT I1 I2 I3 I4 Y11r Y11i Y12r Y12i Y22r Y22i`), solved across the port gaps in parallel, exactly like TL (FND-123). Several networks at one port add; both ports on one segment act as a one-port Y11+Y22+2·Y12. A zero-admittance NT opens the wire at its ports (KCL forces zero current), as in NEC. Validated vs nec2c: a 2 m, 50 Ω line's Y between segments 20 and 32 of a dipole → fnec 63.35−j213.68, nec2c 64.51−j212.78 |
 | NE | Partial | Near electric field (PH9-CHK-004): Hertzian-element sum over the solved currents, emits a `NEAR_FIELD` section. Both **rectangular (`I1=0`) and spherical (`I1=1`)** grids are supported — spherical reinterprets the fields as `NX→R, NY→φ, NZ→θ` and maps to Cartesian, with point locations matching nec2c. Validated vs the far field at large range (0.02%); very-near-the-wire accuracy is out of scope |
 | NH | Partial | Near magnetic field (PH9-CHK-004): azimuthal Hertzian-element sum over the solved currents, emits a `NEAR_H_FIELD` section. Rectangular and spherical grids supported (same convention as `NE`). Validated by the far-field `|E|=η·|H|` relationship |
 | PT | Partial | Print-control applied at runtime (PH9-CHK-004): `I1 ≤ −1` suppresses the current output, `I1 = 0` prints all, `I1 ≥ 1` restricts to tag `I2` / segment range `I3..I4`. Last PT card wins |
 
 ### TL field mapping
 
-`TL  tag1  seg1  tag2  seg2  NSEG  type  F1  F2  F3`
+`TL  I1  I2  I3  I4  F1  F2  F3  F4  F5  F6  [F7]  [F8]` (NEC-2 layout)
 
 | Field | Meaning |
 |-------|---------|
-| tag1, seg1 | Port 1 endpoint |
-| tag2, seg2 | Port 2 endpoint |
-| NSEG | Number of TL sections; supported range: 0, 1, or >1 — all use a single-section stamp (no subdivision); `NSEG=0` is normalised to 1 before stamping |
-| type | 0 = lossless; non-zero = lossy (Z0·coth/csch(γℓ), F3 = matched-line loss dB) |
-| F1 | Characteristic impedance Z₀ (Ω, default 50) |
-| F2 | Transmission-line length (m) |
-| F3 | Velocity factor (ratio, default 1.0) for lossless; angle (°) for lossy (deferred) |
+| I1, I2 | Tag and segment of end 1. Segment 0 is fnec shorthand for the tag's centre segment (the lower centre for even segment counts; a note is emitted) |
+| I3, I4 | Tag and segment of end 2 (same segment-0 rule) |
+| F1 | Characteristic impedance Z₀ (Ω). **Negative = crossed line** (180° reversal; negates Y12) |
+| F2 | Line length (m). Zero or negative = the straight-line distance between the two segment centres (NEC-2 semantics) |
+| F3, F4 | Shunt admittance at end 1, real and imaginary (S) |
+| F5, F6 | Shunt admittance at end 2, real and imaginary (S) |
+| F7 | fnec extension: velocity factor (default 1) |
+| F8 | fnec extension: total matched-line loss in dB (default 0 = lossless) |
+
+Missing trailing fields default to 0 as in NEC, except F7, which defaults to 1. `NSEG` and `TYPE` no longer exist.
+
+**Retired layout.** fnec's old `TL t1 s1 t2 s2 NSEG TYPE Z0 LEN [VF]` is refused at parse time, and the error gives the NEC-2 rewrite — e.g. `TL 1 26 2 26 1 0 50.0 0.1 1.0` → `TL 1 26 2 26 50.0 0.1`; a lossy `TYPE=1` card (F3 = loss dB) → `… 0 0 0 0 1 <loss>`; a non-1 velocity factor → `… 0 0 0 0 <vf>`. Detection: ≥ 8 fields, field 5 a bare integer ≤ 16 and field 6 exactly `0` or `1`. A genuine NEC-2 card that happens to match is refused too; the message says to write Z₀ with a decimal point (e.g. `50.0`).
+
+### TL / NT refusals
+
+These are **errors, not warnings** (previously an unusable card was warned about and skipped, which solved a different antenna):
+
+- any unusable TL/NT card: missing segment, fewer than 10 NT fields, non-numeric field, Z₀ = 0, velocity factor ≤ 0, loss < 0, electrical length a multiple of λ/2;
+- a network with a non-Hallén solver (pulse / continuity / sinusoidal): "supported on --solver hallen only" (MPIE already rejected TL/NT);
+- a network with a plane-wave or current-source drive: voltage (delta-gap) sources only.
+
+The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 
 ## Output / post-processing cards
 

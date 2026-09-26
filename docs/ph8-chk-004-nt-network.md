@@ -2,10 +2,36 @@
 project: fnec-rust
 doc: docs/ph8-chk-004-nt-network.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # PH8-CHK-004: NT two-port network stamping
+
+> **Superseded (2026-09-26, FND-111/FND-123).** Everything below is the
+> historical design and is **no longer how fnec solves NT or TL.** The Y→Z
+> stamp into the Hallén matrix described here was inert (a +0.37 Ω shift where
+> nec2c moves the feed by +78.5 Ω). NT and TL are now two-port
+> networks connected **across the port segments' gaps, in parallel** (NEC-2's
+> model): the port voltage is the gap voltage, KCL holds at an undriven port, and
+> at a driven port the source is in parallel with the network (the source
+> current = segment current + network branch, used for input impedance/power;
+> the `CURRENTS` table and far field use the wire current, as nec2c does). It is
+> solved by superposition — the response to the real excitation plus a unit-gap
+> response per undriven port, weighted by port voltages from a small linear
+> system. NT supplies Y11, Y12, Y22 directly; several networks at a port add;
+> both ports on one segment act as a one-port Y11+Y22+2·Y12; a zero-admittance
+> NT opens the wire at its ports, as in NEC. Unusable cards (missing segment,
+> fewer than 10 fields, non-numeric) are now **errors**, not warn-and-skip, as
+> are networks with a non-Hallén solver or a plane-wave/current-source drive.
+>
+> Validation is now external: the `dipole-nt-tl-equiv-freesp-51seg` NT (a 2 m,
+> 50 Ω line's Y between segments 20 and 32) gives fnec 63.35−j213.68 vs nec2c
+> 64.51−j212.78 (the stamp gave 75.02+j42.29). Identity gates: a one-port NT of
+> 1/Z_L equals `LD 4 Z_L` at the same segment (0.07% on a straight wire, 0.5% on
+> a start-to-start split — the Hallén least-squares inconsistency, FND-118); a
+> shunt NT across the feed gives exactly 1/(1/Z_ant+Y). The 7 NT/PT corpus decks'
+> malformed filler `NT 1 1 26 1 1 26 50.0 0.0` was replaced by well-formed NT
+> cards. See `docs/card-support-matrix.md` for current behaviour.
 
 ## Requirement / change
 
