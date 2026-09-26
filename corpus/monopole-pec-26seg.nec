@@ -1,0 +1,12 @@
+CM Quarter-wave monopole standing on perfect ground (GN 1), base-fed on
+CM segment 1, 14.2 MHz. Solved by explicit images (FND-082): the wire and its
+CM mirror image meet start-to-start at z = 0, so current flows through the base.
+CM nec2c 1.3.1: 39.584 + j23.206 ohm, exactly half of each gap of the doubled
+CM two-gap dipole.
+CE
+GW 1 26 0 0 0 0 0 5.282 0.001
+GE 1
+GN 1
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN

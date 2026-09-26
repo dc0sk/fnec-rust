@@ -33,6 +33,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Wires standing on perfect ground are solved: the ground-mounted monopole
+  works (FND-082).** A wire touching z = 0 over `GN 1` used to be refused as
+  "buried". It is now solved by explicit images. Over PEC the problem is exactly
+  free space with the geometry mirrored, and the wire and its image meet at the
+  base, so current flows through it. A λ/4 monopole gives 39.30 + j21.38 Ω
+  against nec2c's 39.58 + j23.21, and equals the explicitly doubled free-space
+  deck to rounding. A wire in the ground plane, below it, grounded at both ends,
+  or sharing a ground point with another wire is refused, as is contact with
+  finite ground, where there is no trustworthy model (nec2c answers 179 − j261 Ω
+  for a λ/4 vertical). Hallén only, with voltage sources.
+
 - **Hallén now carries both homogeneous solutions, cos(k·s) and sin(k·s)
   (FND-158). Every answer with an asymmetric current changes.** It carried the
   cos term alone, which is exact only when the current is symmetric about the

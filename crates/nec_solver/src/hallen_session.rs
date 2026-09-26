@@ -117,10 +117,18 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
     } else {
         HallenDrive::DeltaGap
     };
-    HallenRoute {
-        drive,
-        paths: nontrivial_paths(segs).is_some(),
-    }
+    // A deck touching PEC ground is solved as its doubled image problem (FND-082),
+    // and the route must describe what runs: the base joins its image, so the
+    // doubled structure is what decides the path basis.
+    let paths = match crate::ground_contact::pec_ground_contact(
+        deck,
+        segs,
+        &crate::ground_model_from_deck(deck),
+    ) {
+        Ok(Some(img)) => nontrivial_paths(&img.segs).is_some(),
+        _ => nontrivial_paths(segs).is_some(),
+    };
+    HallenRoute { drive, paths }
 }
 
 /// What the conductor-path decomposition says about a geometry.
@@ -378,11 +386,73 @@ pub fn solve_hallen_routed(
     freq_hz: f64,
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
-    let routed = solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?;
+    let routed = match image_problem(deck, segs)? {
+        Some(img) => solve_ground_contact(deck, segs, &img, freq_hz, loads)?,
+        None => solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?,
+    };
     // One exit, guarded once. The inner function returns from three arms, and a
     // check per arm is three chances to add a fourth arm without one (FND-126).
     crate::check_currents_finite(&routed.currents)
         .map_err(HallenSessionError::NonFiniteCurrents)?;
+    Ok(routed)
+}
+
+/// The image problem when the deck has wires touching PEC ground (FND-082).
+fn image_problem(
+    deck: &NecDeck,
+    segs: &[Segment],
+) -> Result<Option<crate::ground_contact::ImageProblem>, HallenSessionError> {
+    crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck))
+        .map_err(HallenSessionError::Excitation)
+}
+
+/// A PEC-ground deck with ground contact, solved as its doubled free-space image
+/// problem (FND-082). The caller's PEC-kernel matrix is not used: the image is in
+/// the geometry now, so the matrix is the free-space one of the doubled segments.
+/// Returns the original segments' currents only; everything downstream (patterns
+/// with the PEC ground model, the current table, the feedpoint) works on those.
+fn solve_ground_contact(
+    deck: &NecDeck,
+    segs: &[Segment],
+    img: &crate::ground_contact::ImageProblem,
+    freq_hz: f64,
+    loads: &[Complex64],
+) -> Result<HallenRouted, HallenSessionError> {
+    // The drives and cards whose images this does not build. Refused rather than
+    // solved without their images (which would be a different antenna).
+    let route = hallen_route(deck, segs);
+    if route.drive != HallenDrive::DeltaGap {
+        return Err(HallenSessionError::Excitation(
+            "wires touching the ground are supported with voltage (delta-gap) sources only"
+                .to_string(),
+        ));
+    }
+    if deck.cards.iter().any(|c| {
+        matches!(
+            c,
+            nec_model::card::Card::Tl(_) | nec_model::card::Card::Nt(_)
+        )
+    }) {
+        return Err(HallenSessionError::Network(
+            "TL/NT networks are not supported with wires touching the ground".to_string(),
+        ));
+    }
+    // The image of a series load is the same load.
+    let mut image_loads = loads.to_vec();
+    image_loads.extend_from_slice(loads);
+    let mut z = crate::assemble_z_matrix_with_ground(
+        &img.segs,
+        freq_hz,
+        &crate::geometry::GroundModel::FreeSpace,
+    );
+    let mut routed =
+        solve_hallen_routed_inner(&img.deck, &img.segs, &mut z, freq_hz, &image_loads)?;
+    routed.currents.truncate(img.n_orig);
+    routed.network_branch.clear();
+    // The residual inputs describe the doubled system; keeping them beside
+    // truncated currents would compare vectors of different problems.
+    routed.residual_inputs = None;
+    routed.route = route;
     Ok(routed)
 }
 

@@ -20,7 +20,7 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **77.41 + j41.67 Ω** (nec2c: 74.79 + j43.94 Ω)
 	- GN 0 (simple finite-ground reflection coefficient path) is supported; `dipole-gn0-fresnel-51seg` is regression-gated
 	- GN 2 low above-ground finite-conductivity cases are supported on the current scoped path; the supported subset is strictly above-ground (`z > 0`); `dipole-gn2-deferred` and `dipole-gn2-near-ground-51seg` are regression-gated
-	- Buried or interface-touching active-ground wire classes (`z <= 0`) remain deferred and fail fast with an actionable error instead of silently falling back
+	- Wires standing on perfect ground (GN 1) — the ground-mounted monopole — are solved by explicit images (FND-082; λ/4 monopole 39.30 + j21.38 Ω vs nec2c 39.58 + j23.21). Wires touching finite ground, or lying in or below the ground plane, fail fast with an actionable error
 	- GN types outside the current scoped subset still remain deferred
 	- GE ground-reflection flag: `1` = PEC image (handled); `-1` = below-ground (warns); other values warn with valid range hint
 	- **Multi-wire junctioned / non-collinear Hallen** (unique to fnec-rust): per-wire local cos(k·s) homogeneous vectors, KCL junction continuity rows, and correct passive-wire (zero) RHS — no other NEC2-compatible tool handles junctioned wire topologies via the Hallen integral equation; validated against NEC2 on `dipole-loaded` top-hat geometry (Z ≈ 12.4−j918 Ω, NEC2 ref 13.5−j896 Ω); external cross-check recommended for novel geometries

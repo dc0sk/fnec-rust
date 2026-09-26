@@ -16,8 +16,8 @@ Of the 50 cases in `corpus/reference-results.json`:
 | Tier | Cases | What the gate proves |
 |:-----|------:|:---------------------|
 | Self-pinned regression only | 36 | the answer has not changed since it was pinned |
-| Additionally gated against an external engine | 14 | the answer also agrees with an independent solver, within a stated absolute tolerance |
-| **Total** | **50** | |
+| Additionally gated against an external engine | 15 | the answer also agrees with an independent solver, within a stated absolute tolerance |
+| **Total** | **51** | |
 
 Of the 36 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
 

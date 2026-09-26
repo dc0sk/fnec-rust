@@ -8,6 +8,7 @@ pub mod farfield;
 pub mod feedpoint;
 pub mod frequency;
 pub mod geometry;
+pub mod ground_contact;
 pub mod hallen_session;
 pub mod linear;
 pub mod loads;

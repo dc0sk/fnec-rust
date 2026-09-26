@@ -141,7 +141,7 @@ The current GN0/GN2 implementation is a scoped finite-ground approximation, not 
 
 - Runtime model: Hallen image contribution is scaled by a complex Fresnel-style reflection factor derived from `EPSE` and `SIG`.
 - Current validation scope: above-ground wire cases that are explicitly locked in corpus CI (`dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred`, and `dipole-gn2-near-ground-51seg`).
-- Current non-goals: buried conductors (`z < 0`), loop/patch/surface classes, and broad claims of NEC-4-class accuracy outside the contracted corpus cases.
+- Current non-goals: buried conductors (`z < 0`) and wires touching finite ground (wires standing on PEC ground are solved by explicit images, FND-082), loop/patch/surface classes, and broad claims of NEC-4-class accuracy outside the contracted corpus cases.
 
 Known limitations of this approximation class:
 

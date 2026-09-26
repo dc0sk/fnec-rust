@@ -1845,6 +1845,42 @@
       "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances are wide ON PURPOSE and are not a defect being hidden: fnec's Hallen formulation differs from nec2c systematically (R within 1.4 percent here, X within 9.2 percent), which is the documented corpus-validation position for this solver. The tight gates are the self-pinned regression; the external numbers say the answer is the right shape. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). That fix removed a cancellation this row had been relying on: the 21-per-arm answer used to sit 1.4 percent from nec2c only because the 1/N shortening offset a real difference. Both end conditions converge to the same limit (old 295.26 + j495.96, new 304.40 + j522.25 at 81 segments per arm), while nec2c converges to about 279 + j459, so the ~11 percent R / ~13 percent X gap is a converged Hallen-vs-nec2c difference on this off-centre, near-antiresonant feed, not discretisation. The external gate is now relative (12 / 15 percent) and states that band; FND-158 tracks the difference itself. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). FND-158 then restored the sin homogeneous term, which moved this row to 344.58 + j530.33: 28% / 17% from nec2c, further than before. What remains is the bend itself. Hallen's 1-D equation along a bent conductor is an approximation, exact on a straight path, 3.5% on a shallow V, 28% on this steep one; the earlier 11% was that error partly cancelled by the missing term. The external band is widened to 30% R / 20% X so that it states this known bend error and can still fail on anything worse. The fix is equal-scalar-potential rows at the bend (FND-162).",
       "last_produced_on": "2026-09-26",
       "last_produced_in": "0.18.0"
+    },
+    "monopole-pec-26seg": {
+      "deck_file": "monopole-pec-26seg.nec",
+      "description": "Quarter-wave monopole standing on perfect ground, base-fed. The canonical ground-mounted vertical, refused as 'buried' until FND-082; now solved by explicit images.",
+      "frequency_mhz": 14.2,
+      "segments": 26,
+      "wires": 1,
+      "sources": 1,
+      "ground": "perfect",
+      "reference_source": "fnec Hallen solve of the doubled image problem; gated against nec2c",
+      "expected_warning_substrings": [],
+      "forbidden_warning_substrings": [
+        "buried"
+      ],
+      "feedpoint_impedance": {
+        "real_ohm": 39.298595,
+        "imag_ohm": 21.375371
+      },
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26",
+        "engine": "nec2c",
+        "real_ohm": 39.584,
+        "imag_ohm": 23.206,
+        "captured_on": "2026-09-26"
+      },
+      "tolerance_gates": {
+        "R_percent_rel": 0.1,
+        "X_percent_rel": 0.1,
+        "R_absolute_ohm": 0.05,
+        "X_absolute_ohm": 0.05,
+        "ExternalR_absolute_ohm": 1.5,
+        "ExternalX_absolute_ohm": 4.0
+      },
+      "status": "FND-082 gate, added 2026-09-26. The residual against nec2c is half the half-wave dipole's (FND-156), as image theory requires. Pinned 2026-09-26 (FND-082).",
+      "last_produced_on": "2026-09-26",
+      "last_produced_in": "0.18.0"
     }
   }
 }
