@@ -904,7 +904,11 @@ fn maybe_gpu_resident_hallen(
         &hallen_rhs.sin_vec,
         wire_endpoints,
         &nec_solver::sin_eligible(wire_endpoints, junctions),
-        &nec_solver::hallen_constraint_rows(wire_endpoints, junctions),
+        &nec_solver::hallen_constraint_rows(
+            wire_endpoints,
+            junctions,
+            &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+        ),
         freq_hz,
     ))?;
 
@@ -998,7 +1002,9 @@ pub(super) fn solve_frequency_point(
                             .iter()
                             .map(|e| Complex64::new(e.re as f64, e.im as f64))
                             .collect();
-                        ZMatrix::from_flat(n, flat)
+                        let mut z = ZMatrix::from_flat(n, flat);
+                        z.set_segments(segs);
+                        z
                     }
                     None => {
                         eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU Z-matrix fill");

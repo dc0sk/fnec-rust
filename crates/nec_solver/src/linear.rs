@@ -408,10 +408,10 @@ pub type ConstraintRow = (usize, Option<usize>, f64, f64);
 /// midpoint lies `h_end/2` inside the physical end and `(h_end + h_inner)/2` from
 /// its neighbour's midpoint, so with `t = h_end / (h_end + h_inner)`:
 /// `I(end) = (1 + t)·I[end] − t·I[inner]`. For equal lengths that is the familiar
-/// `1.5·I[end] − 0.5·I[inner]`. Callers without segment lengths pass equal ones,
-/// which is exact inside a single `GW` (fnec has no `GC` taper) and approximate
-/// only where a wire's end segment is the sole segment of its `GW` and its
-/// neighbour belongs to another card with a different length.
+/// `1.5·I[end] − 0.5·I[inner]`. Every solve passes the true lengths — the Z-matrix
+/// carries them from assembly (FND-159) — because a merged chain's end segment can
+/// be a one-segment `GW` of a different length from its neighbour, where equal
+/// weights put the reactance 26 Ω off.
 ///
 /// `rel_sign` is `sign[end]·sign[inner]` for a conductor path, whose rows constrain
 /// the path current rather than each segment's own: the row
@@ -447,7 +447,12 @@ pub fn free_end_row(
 pub fn hallen_constraint_rows(
     wire_endpoints: &[(usize, usize)],
     junction_constraints: &[(usize, usize, f64)],
+    seg_lengths: &[f64],
 ) -> Vec<ConstraintRow> {
+    // True lengths where known (FND-159); equal otherwise, which is exact within
+    // one `GW` and only approximate where a merged chain's end segment and its
+    // neighbour come from different cards.
+    let h = |i: usize| seg_lengths.get(i).copied().unwrap_or(1.0);
     let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
         .iter()
         .flat_map(|&(a, b, _)| [a, b])
@@ -456,10 +461,20 @@ pub fn hallen_constraint_rows(
     for &(first, last) in wire_endpoints {
         let inner = |nb: usize| (last > first).then_some((nb, 1.0));
         if !junction_endpoint_set.contains(&first) {
-            rows.push(free_end_row(first, inner(first + 1), 1.0, 1.0));
+            rows.push(free_end_row(
+                first,
+                inner(first + 1),
+                h(first),
+                h(first + 1),
+            ));
         }
         if !junction_endpoint_set.contains(&last) {
-            rows.push(free_end_row(last, inner(last.wrapping_sub(1)), 1.0, 1.0));
+            rows.push(free_end_row(
+                last,
+                inner(last.wrapping_sub(1)),
+                h(last),
+                h(last.wrapping_sub(1)),
+            ));
         }
     }
     for &(a, b, sign) in junction_constraints {
@@ -709,7 +724,7 @@ pub fn solve_hallen_sinusoidal_basis(
     // the unknowns per wire, and these rows are what make the system determined —
     // dropping them returns thousands of ohms. So they are extrapolated to the
     // physical end like every other variant's, not removed (FND-156).
-    let crows = hallen_constraint_rows(endpoints, junction_constraints);
+    let crows = hallen_constraint_rows(endpoints, junction_constraints, z.seg_lengths());
     let constraint_rows = crows.len();
 
     // --- Galerkin projection ---
@@ -923,7 +938,7 @@ pub fn solve_hallen(
     // The boundary rows — a free-end row per wire end that is not a junction
     // endpoint, then one continuity row per junction — built by the one function the
     // GPU resident solve also takes them from (FND-156).
-    let crows = hallen_constraint_rows(endpoints, junction_constraints);
+    let crows = hallen_constraint_rows(endpoints, junction_constraints, z.seg_lengths());
     let constraint_rows = crows.len();
 
     let w = endpoints.len();
@@ -1148,7 +1163,7 @@ pub fn solve_hallen_planewave(
     // reciprocity gates compare pattern SHAPES, and a one-segment-short wire barely
     // moves a normalised pattern, so a fix that missed this site would pass them
     // all (FND-156).
-    let crows = hallen_constraint_rows(endpoints, &[]);
+    let crows = hallen_constraint_rows(endpoints, &[], z.seg_lengths());
     let constraint_rows = crows.len();
     let rows = n + constraint_rows;
     // Two homogeneous constants (cos, sin) per wire.
@@ -1441,12 +1456,23 @@ mod tests {
         assert_eq!(free_end_row(2, None, 0.5, 0.5), (2, None, 1.0, 0.0));
     }
 
+    /// FND-159: with segment lengths the free-end weights follow them. A merged
+    /// chain's 0.8 m end segment beside 0.2 m neighbours extrapolates with
+    /// t = 0.8, not the equal-length 0.5.
+    #[test]
+    fn constraint_rows_use_true_segment_lengths_when_given() {
+        let lengths = [0.8, 0.2, 0.2, 0.2];
+        let rows = hallen_constraint_rows(&[(0, 3)], &[], &lengths);
+        assert_eq!(rows[0], (0, Some(1), 1.8, -0.8));
+        assert_eq!(rows[1], (3, Some(2), 1.5, -0.5));
+    }
+
     /// Rows only at ends that are not junctions, each extrapolating INWARD, and
     /// the junction rows after them unchanged.
     #[test]
     fn constraint_rows_extrapolate_inward_and_skip_junction_ends() {
         // Wire 0 = segs 0..=4, wire 1 = segs 5..=9 joined 4↔5, wire 2 = seg 10 alone.
-        let rows = hallen_constraint_rows(&[(0, 4), (5, 9), (10, 10)], &[(4, 5, 1.0)]);
+        let rows = hallen_constraint_rows(&[(0, 4), (5, 9), (10, 10)], &[(4, 5, 1.0)], &[]);
         assert_eq!(
             rows,
             vec![

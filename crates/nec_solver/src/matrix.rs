@@ -83,6 +83,14 @@ pub struct ZMatrix {
     /// Dimension (number of segments).
     pub n: usize,
     data: Vec<Complex64>,
+    /// The lengths of the segments the matrix was assembled from, or empty.
+    ///
+    /// Carried because the Hallén free-end rows extrapolate the current through
+    /// the end segment's neighbour, and the weights depend on both lengths
+    /// (FND-159): equal-length weights on a merged chain whose end segment is a
+    /// one-segment `GW` four times its neighbour's length put the reactance 26 Ω
+    /// off. Empty means equal lengths, the case for a matrix built by hand.
+    seg_lengths: Vec<f64>,
 }
 
 impl ZMatrix {
@@ -91,6 +99,7 @@ impl ZMatrix {
         Self {
             n,
             data: vec![Complex64::new(0.0, 0.0); n * n],
+            seg_lengths: Vec::new(),
         }
     }
 
@@ -105,7 +114,22 @@ impl ZMatrix {
             n * n,
             data.len()
         );
-        Self { n, data }
+        Self {
+            n,
+            data,
+            seg_lengths: Vec::new(),
+        }
+    }
+
+    /// The segment lengths this matrix was assembled from (empty if unknown).
+    pub fn seg_lengths(&self) -> &[f64] {
+        &self.seg_lengths
+    }
+
+    /// Record the segments this matrix belongs to — for a matrix filled
+    /// elsewhere (the GPU), so the solve sees the same lengths as a CPU fill.
+    pub fn set_segments(&mut self, segs: &[Segment]) {
+        self.seg_lengths = segs.iter().map(|s| s.length).collect();
     }
 
     /// Get element at (row, col).
@@ -190,6 +214,7 @@ pub fn assemble_z_matrix_with_ground(
 ) -> ZMatrix {
     let n = segs.len();
     let mut z = ZMatrix::new(n);
+    z.set_segments(segs);
 
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
 
@@ -227,6 +252,7 @@ pub fn assemble_z_matrix_with_ground(
 pub fn assemble_pocklington_matrix(segs: &[Segment], freq_hz: f64) -> ZMatrix {
     let n = segs.len();
     let mut z = ZMatrix::new(n);
+    z.set_segments(segs);
 
     let omega = 2.0 * std::f64::consts::PI * freq_hz;
     let k = omega / C0;

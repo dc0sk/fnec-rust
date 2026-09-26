@@ -544,7 +544,11 @@ fn solve_inner(
             &hallen_rhs.sin_vec,
             &wire_endpoints,
             &nec_solver::sin_eligible(&wire_endpoints, &junc_constraints),
-            &nec_solver::hallen_constraint_rows(&wire_endpoints, &junc_constraints),
+            &nec_solver::hallen_constraint_rows(
+                &wire_endpoints,
+                &junc_constraints,
+                &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+            ),
             freq_hz,
         )) {
             Some(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),

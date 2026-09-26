@@ -114,7 +114,11 @@ fn gpu_resident_hallen_solve_within_2_ohm_of_cpu() {
         &rhs.sin_vec,
         &wire_endpoints,
         &nec_solver::sin_eligible(&wire_endpoints, &[]),
-        &nec_solver::hallen_constraint_rows(&wire_endpoints, &[]),
+        &nec_solver::hallen_constraint_rows(
+            &wire_endpoints,
+            &[],
+            &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+        ),
         freq_hz,
     )) {
         Some(c) => c,
@@ -205,7 +209,11 @@ fn gpu_resident_solve_tracks_the_cpu_on_asymmetric_feeds() {
             &rhs.sin_vec,
             &ep,
             &nec_solver::sin_eligible(&ep, &[]),
-            &nec_solver::hallen_constraint_rows(&ep, &[]),
+            &nec_solver::hallen_constraint_rows(
+                &ep,
+                &[],
+                &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+            ),
             freq_hz,
         )) else {
             assert!(

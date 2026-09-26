@@ -110,3 +110,24 @@ fn a_five_element_yagi_tracks_nec2c() {
                 GE\nEX 0 2 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
     assert_near("5-element Yagi", z_in(deck), (8.1749, 56.538), (1.5, 10.0));
 }
+
+/// FND-159: a merged collinear chain whose end segment is a one-segment `GW`
+/// (0.782 m) beside 0.196 m segments. Equal-length extrapolation weights put the
+/// reactance 26 Ω off (75.11 + j19.58); the true lengths give 78.13 + j40.07.
+/// nec2c 1.3.1: 79.335 + j45.730. The remaining ~6 Ω is the coarse end segment's
+/// own pulse-basis residual.
+#[test]
+fn a_mixed_length_merged_chain_tracks_nec2c() {
+    let deck = "CE\nGW 1 1 0 0 -5.282 0 0 -4.5 0.001\nGW 2 50 0 0 -4.5 0 0 5.282 0.001\n\
+                GE\nEX 0 2 23 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let d = nec_parser::parse(deck).expect("deck parses").deck;
+    let segs = build_geometry(&d).expect("geometry");
+    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&d));
+    let routed = solve_hallen_routed(&d, &segs, &mut z, FREQ, &[]).expect("solves");
+    let idx = segs
+        .iter()
+        .position(|s| s.tag == 2 && s.tag_index == 23)
+        .expect("feed");
+    let zin = Complex64::new(1.0, 0.0) / routed.currents[idx];
+    assert_near("mixed-length chain", zin, (79.335, 45.730), (2.0, 8.0));
+}
