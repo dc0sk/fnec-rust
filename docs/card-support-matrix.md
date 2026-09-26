@@ -60,7 +60,7 @@ no longer silently treated as EX type 0.
 | LD type 3 | Full | Series RC: `Z = R − j/(ωC)` |
 | LD type 4 | Full | Series impedance (frequency-independent): `Z = R + jX` |
 | LD type 5 | Full | Distributed wire conductivity: `Z = dl / (2π·a·σ)` |
-| LD other | Deferred | Unknown type: load ignored with a warning |
+| LD other | Refused | Any other type, a type-5 load with σ ≤ 0, or an LD naming no segment is an error naming the card (FND-161). It used to be skipped with a warning, which solved the antenna without the load |
 
 ### LD field mapping
 

@@ -47,7 +47,7 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 | EX type 4 | Segment current | PARTIAL | `--solver pulse` now enforces EX type 4 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
 | EX type 5 | Electromagnetic current source (qdsrc) | PARTIAL | `--solver pulse` now enforces EX type 5 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
 | PT | Transmission line source | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores PT electrical semantics. |
-| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types warn and are ignored. |
+| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types, a type-5 load with σ ≤ 0, and a card naming no segment are refused with an error (FND-161). |
 
 ### Frequency and output cards
 
@@ -108,7 +108,7 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 | GN | Ground definition | `recognized` | PARTIAL | Types 0/2 finite-conductivity (Fresnel), type 1 PEC image, type -1 free-space implemented. Full Sommerfeld/Norton deferred. |
 | GR | Repeat segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for z-axis rotation repeat. Each copy rotated by cumulative multiple of `angle_deg` with incremented tag numbers. |
 | GW | Wire segment | `recognized` | FULL | Straight wire; tag, segments, endpoints, radius fully supported. |
-| LD | Load impedance | `recognized` | PARTIAL | Types 0–5 implemented (series/parallel RLC, series RL/RC/Z, distributed conductivity). Other types warn and are ignored. |
+| LD | Load impedance | `recognized` | PARTIAL | Types 0–5 implemented (series/parallel RLC, series RL/RC/Z, distributed conductivity). Other types are refused (FND-161). |
 | MA | Matériel (material) definition | `unknown` | DEFERRED | Lossy wire materials. Phase 2+. |
 | NE | Program end (NEC-4) | `unknown` | DEFERRED | Extension to EN. Phase 2+. |
 | NM | Program control (NEC-4) | `unknown` | DEFERRED | Version/control flags. Phase 2+. |

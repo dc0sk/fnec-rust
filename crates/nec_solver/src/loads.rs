@@ -92,6 +92,35 @@ impl std::fmt::Display for LoadWarning {
     }
 }
 
+/// Why an `LD` card cannot be applied, if it cannot (FND-161).
+///
+/// A load fnec cannot represent is refused rather than skipped: skipping it
+/// solves the antenna without the load and reports that answer as the deck's,
+/// which is the reasoning FND-123 applied to `TL`/`NT`. Frequency-independent, so
+/// [`crate::validate::pre_solve_error`] checks it once for every frontend.
+pub fn ld_card_problem(ld: &LdCard, segs: &[Segment]) -> Option<String> {
+    let name = format!(
+        "LD {} {} {} {}",
+        ld.load_type, ld.tag, ld.seg_first, ld.seg_last
+    );
+    if ld.load_type > 5 {
+        return Some(format!(
+            "{name}: load type {} is not supported (fnec models LD types 0-5)",
+            ld.load_type
+        ));
+    }
+    if ld.load_type == 5 && (ld.f1 <= 0.0 || ld.f1.is_nan()) {
+        return Some(format!(
+            "{name}: a distributed-conductivity load needs σ > 0, got {}",
+            ld.f1
+        ));
+    }
+    if !segs.iter().any(|seg| segment_matches(ld, seg)) {
+        return Some(format!("{name}: names no segment in the geometry"));
+    }
+    None
+}
+
 /// Compute a flat vector of per-segment load impedances (Ω) for `freq_hz`.
 ///
 /// The returned `Vec` has the same length as `segs`.  Element `[i]` is the
@@ -177,23 +206,19 @@ pub fn build_loads(
                     // surface impedance once the skin depth drops below the radius.
                     let sigma = ld.f1;
                     if sigma <= 0.0 {
-                        warnings.push(LoadWarning {
-                            message: format!(
-                                "LD type 5 on tag {} seg {}–{}: conductivity σ={} ≤ 0, load ignored",
-                                ld.tag, ld.seg_first, ld.seg_last, sigma
-                            ),
-                        });
+                        // Refused before any solve (`ld_card_problem`); kept so a
+                        // caller that skips `pre_solve_error` is told, not misled.
+                        warnings.extend(
+                            ld_card_problem(ld, segs).map(|message| LoadWarning { message }),
+                        );
                         continue;
                     }
                     wire_internal_impedance(sigma, seg.radius, seg.length, omega)
                 }
-                other => {
-                    warnings.push(LoadWarning {
-                        message: format!(
-                            "LD type {other} on tag {} is not yet supported; load ignored",
-                            ld.tag
-                        ),
-                    });
+                _ => {
+                    // Refused before any solve (`ld_card_problem`).
+                    warnings
+                        .extend(ld_card_problem(ld, segs).map(|message| LoadWarning { message }));
                     continue;
                 }
             };
@@ -543,21 +568,27 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_type_produces_warning_and_zero_load() {
+    fn an_unusable_ld_card_is_named_as_a_problem() {
         let segs = vec![seg(1, 1, 0.1, 0.001)];
-        let deck = deck_with_ld(LdCard {
-            load_type: 9,
-            tag: 1,
+        let ld = |load_type, tag, f1| LdCard {
+            load_type,
+            tag,
             seg_first: 1,
             seg_last: 1,
-            f1: 0.0,
+            f1,
             f2: 0.0,
             f3: 0.0,
-        });
-        let (loads, warns) = build_loads(&deck, &segs, 14.2e6);
-        assert_eq!(loads[0], Complex64::new(0.0, 0.0));
-        assert_eq!(warns.len(), 1);
-        assert!(warns[0].message.contains("not yet supported"));
+        };
+        for (card, needle) in [
+            (ld(9, 1, 0.0), "not supported"),
+            (ld(5, 1, 0.0), "σ > 0"),
+            (ld(4, 7, 50.0), "names no segment"),
+        ] {
+            let p = ld_card_problem(&card, &segs).expect("a problem");
+            assert!(p.contains(needle), "{p}");
+        }
+        assert_eq!(ld_card_problem(&ld(4, 1, 50.0), &segs), None);
+        assert_eq!(ld_card_problem(&ld(5, 1, 5.8e7), &segs), None);
     }
 
     #[test]

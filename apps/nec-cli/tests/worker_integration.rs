@@ -127,13 +127,13 @@ fn test_worker_single_task_round_trip() {
 /// `fnec worker --stdio` as an actual subprocess and asserts the caveat comes
 /// back over the pipe — the only test that exercises the deployed shape.
 ///
-/// An unsupported `LD` type is skipped. The deck still solves; the user has to
-/// be told the card was ignored, and before this the worker was the one frontend
-/// that said nothing. (The fixture was a malformed `NT` until FND-123 made that a
-/// refusal: skipping a network solves a different antenna.)
+/// A card note must reach the caller across the process boundary: an `NT` given
+/// by segment 0, which fnec reads as the tag's centre and says so. Before this the
+/// worker was the one frontend that said nothing. (The fixture was a malformed
+/// `NT`, then an unsupported `LD`; both are refused now, FND-123 and FND-161.)
 #[test]
 fn a_skipped_card_warning_survives_the_wire_to_a_real_worker() {
-    const SKIPPED_LD: &str = "CM unsupported LD type\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 7 1 10 10 1 0 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const SEGMENT_ZERO_NT: &str = "CM NT given by segment 0\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 0 1 0 0.001 0 0 0 0 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     let fnec = env!("CARGO_BIN_EXE_fnec");
     let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker --stdio");
@@ -141,7 +141,7 @@ fn a_skipped_card_warning_survives_the_wire_to_a_real_worker() {
     let task = nec_worker::TaskMessage {
         task_id: "nt-warn".to_string(),
         deck_hash: "ignored".to_string(),
-        deck_b64: b64(SKIPPED_LD),
+        deck_b64: b64(SEGMENT_ZERO_NT),
         solver_config: nec_worker::WorkerSolverConfig {
             basis: "hallen".to_string(),
             ground_model: "none".to_string(),
@@ -157,7 +157,7 @@ fn a_skipped_card_warning_survives_the_wire_to_a_real_worker() {
     assert!(
         warnings
             .iter()
-            .any(|w| w.contains("LD type 7 on tag 1 is not yet supported")),
+            .any(|w| w.contains("interpreting segment 0 as center segment 26")),
         "the skipped card must cross the wire: {warnings:?}"
     );
 

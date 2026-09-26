@@ -112,6 +112,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **An `LD` card fnec cannot apply is refused (FND-161).** This covers an
+  unsupported load type, a type-5 load with σ ≤ 0, and a card naming no segment.
+  Each is now an error naming the card. Before, it was skipped with a warning,
+  which solved the antenna without the load; `TL`/`NT` got the same treatment in
+  #458. A `--loads-config` Laplace load that cannot be evaluated at a frequency is
+  refused the same way.
 - **`TL` cards are read in the NEC-2 layout (FND-111)**:
   `TL t1 s1 t2 s2 Z0 LEN Y1r Y1i Y2r Y2i`, plus two optional fnec extensions,
   F7 (velocity factor) and F8 (matched-line loss in dB). A negative Z0 is a
