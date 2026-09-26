@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/worker-deployment.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Worker Node Deployment Guide
@@ -145,7 +145,7 @@ fnec --exec gpu --hosts hosts.toml antenna.nec
 
 Each worker honours the request only if it actually has a usable wgpu adapter
 **and** the deck is in the GPU-resident supported class (Hallén solver,
-free-space ground, no `LD`/`TL` cards). Otherwise it transparently falls back to
+free-space ground, no `LD`/`TL`/`NT` cards). Otherwise it transparently falls back to
 the f64 CPU solve — so a heterogeneous pool (some GPU nodes, some CPU-only)
 returns correct impedance on every node. The worker reports which path it took
 via the `exec_used` field (`"cpu"` | `"gpu"`) in each result. The GPU path is the

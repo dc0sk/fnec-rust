@@ -1,27 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! NT two-port network builder (PH8-CHK-004): converts supported `NT` cards into
-//! impedance-matrix stamps, mirroring the TL stamp path.
+//! `TL` and `NT` two-port networks, connected across segment gaps (FND-123).
 //!
-//! NEC2 `NT` card layout:
-//! `NT tag1 seg1 tag2 seg2 Y11r Y11i Y12r Y12i Y22r Y22i`
-//! — the network's short-circuit admittance parameters (mhos), reciprocal
-//! (`Y21 = Y12`). The two-port is inserted between the segments `(tag1,seg1)` and
-//! `(tag2,seg2)`.
+//! NEC-2 connects a network's ports across the gaps of its port segments, in
+//! parallel with whatever else is there. The port voltage is the gap voltage; a
+//! gap with no source must carry zero net current into the junction of the wire
+//! and the network (KCL); at a driven port the source is in parallel with the
+//! network, and the source current is the segment current PLUS the network
+//! branch. That is what nec2c prints as the input current, and what the input
+//! impedance and power are computed from.
 //!
-//! fnec's MoM system is in impedance form (`Z·I = V`) and stamps 2-port
-//! **Z-parameters** into the matrix (see [`crate::build_tl_stamps`], where a
-//! lossless TL contributes `Z11=Z22=−jZ0·cot θ`, `Z12=Z21=−jZ0·csc θ`). So an
-//! `NT` network is stamped by converting its admittance matrix to impedance
-//! parameters, `[Z] = [Y]⁻¹`:
+//! fnec used to stamp these as series Z-parameters into the dimensionless Hallén
+//! matrix, which was inert: +0.37 Ω where nec2c moves the same feed by +78.5 Ω.
+//! A two-port couples port VOLTAGES, which are not unknowns of the Hallén system,
+//! so no stamp can represent it.
 //!
-//! - `det = Y11·Y22 − Y12·Y21`
-//! - `Z11 = Y22/det`, `Z22 = Y11/det`, `Z12 = −Y12/det`, `Z21 = −Y21/det`
+//! The solve is by superposition, as NEC-2's own network routine does it: the
+//! structure's response to the real excitation, plus its response to a unit gap
+//! at each undriven port, weighted by port voltages from a small linear system.
+//! That is exact because the Hallén solve is linear in its right-hand side.
 //!
-//! Consistency check (see the tests): an `NT` whose Y-parameters are the inverse
-//! of a lossless TL's Z-parameters stamps **identically** to that TL — because
-//! `[Y]⁻¹` inverts straight back to the TL's `[Z]`.
+//! `NT I1 I2 I3 I4 Y11r Y11i Y12r Y12i Y22r Y22i` gives the short-circuit
+//! admittance parameters directly (reciprocal, `Y21 = Y12`). Several networks on
+//! one port add; a network whose two ports are the same segment is a one-port of
+//! `Y11 + Y22 + 2·Y12`, which the accumulation in [`Networks::admittance`]
+//! produces by itself.
 
 use num_complex::Complex64;
 
@@ -31,269 +35,363 @@ use nec_model::deck::NecDeck;
 use crate::geometry::Segment;
 use crate::tl::find_segment_index;
 
-/// A sparse impedance-matrix stamp `(row, col, delta_z)`.
-pub type NtStamp = (usize, usize, Complex64);
+const ZERO: Complex64 = Complex64::new(0.0, 0.0);
 
-/// A non-fatal warning produced by NT processing.
+/// One two-port between segments `seg_a` and `seg_b` (which may coincide).
 #[derive(Debug, Clone, PartialEq)]
-pub struct NtWarning {
-    /// Human-readable description of the issue.
-    pub message: String,
+pub struct TwoPort {
+    /// Global index of the port-1 segment.
+    pub seg_a: usize,
+    /// Global index of the port-2 segment.
+    pub seg_b: usize,
+    /// Short-circuit input admittance at port 1 (S).
+    pub y11: Complex64,
+    /// Transfer admittance, `Y12 = Y21` (S).
+    pub y12: Complex64,
+    /// Short-circuit input admittance at port 2 (S).
+    pub y22: Complex64,
 }
 
-impl std::fmt::Display for NtWarning {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+/// Every network in a deck, at one frequency.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Networks {
+    /// The two-ports, in card order.
+    pub two_ports: Vec<TwoPort>,
+}
+
+impl Networks {
+    /// Whether the deck has no network at all.
+    pub fn is_empty(&self) -> bool {
+        self.two_ports.is_empty()
+    }
+
+    /// The distinct port segments, ascending. One voltage per segment, however
+    /// many networks share it.
+    pub fn ports(&self) -> Vec<usize> {
+        let mut p: Vec<usize> = self
+            .two_ports
+            .iter()
+            .flat_map(|t| [t.seg_a, t.seg_b])
+            .collect();
+        p.sort_unstable();
+        p.dedup();
+        p
+    }
+
+    /// The combined admittance matrix over `ports` (as returned by [`Self::ports`]).
+    pub fn admittance(&self, ports: &[usize]) -> Vec<Vec<Complex64>> {
+        let at = |seg: usize| ports.iter().position(|&p| p == seg).expect("port listed");
+        let mut y = vec![vec![ZERO; ports.len()]; ports.len()];
+        for t in &self.two_ports {
+            let (a, b) = (at(t.seg_a), at(t.seg_b));
+            y[a][a] += t.y11;
+            y[b][b] += t.y22;
+            y[a][b] += t.y12;
+            y[b][a] += t.y12;
+        }
+        y
     }
 }
 
-/// Build sparse impedance stamps from supported `NT` cards.
+/// Build every `TL` and `NT` in the deck at `freq_hz`.
 ///
-/// Unsupported / malformed cards (fewer than 10 fields, an endpoint not present
-/// in the geometry, coincident endpoints, or a singular admittance matrix that
-/// cannot be inverted to Z-parameters) are skipped with an explanatory warning.
-pub fn build_nt_stamps(deck: &NecDeck, segs: &[Segment]) -> (Vec<NtStamp>, Vec<NtWarning>) {
-    let mut stamps: Vec<NtStamp> = Vec::new();
-    let mut warnings: Vec<NtWarning> = Vec::new();
-
+/// A card fnec cannot use is an ERROR, never a skip: skipping it solves a
+/// different antenna from the one the deck describes, and reports that answer
+/// as this one. The `Ok` side carries informational notes (segment-0 shorthand).
+pub fn build_networks(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+) -> Result<(Networks, Vec<String>), String> {
+    let mut networks = Networks::default();
+    let mut notes = Vec::new();
     for card in &deck.cards {
-        let Card::Nt(nt) = card else { continue };
-        let f = &nt.raw_fields;
-        if f.len() < 10 {
-            warnings.push(NtWarning {
-                message: format!(
-                    "NT card has {} fields; expected 10 (tag1 seg1 tag2 seg2 Y11r Y11i Y12r Y12i Y22r Y22i); NT card ignored",
-                    f.len()
-                ),
-            });
-            continue;
+        match card {
+            Card::Tl(tl) => {
+                let (tp, n) = crate::tl::tl_two_port(tl, segs, freq_hz)?;
+                networks.two_ports.push(tp);
+                notes.extend(n);
+            }
+            Card::Nt(nt) => {
+                let (tp, n) = nt_two_port(&nt.raw_fields, segs)?;
+                networks.two_ports.push(tp);
+                notes.extend(n);
+            }
+            _ => {}
         }
+    }
+    notes.sort();
+    notes.dedup();
+    Ok((networks, notes))
+}
 
-        let parse_u = |i: usize| f[i].parse::<u32>().ok();
-        let parse_f = |i: usize| f[i].parse::<f64>().ok();
-        let (Some(tag1), Some(seg1), Some(tag2), Some(seg2)) =
-            (parse_u(0), parse_u(1), parse_u(2), parse_u(3))
-        else {
-            warnings.push(NtWarning {
-                message: "NT card has non-integer segment identifiers; NT card ignored".to_string(),
-            });
-            continue;
-        };
-        let ys: Option<Vec<f64>> = (4..10).map(parse_f).collect();
-        let Some(ys) = ys else {
-            warnings.push(NtWarning {
-                message: "NT card has non-numeric admittance parameters; NT card ignored"
-                    .to_string(),
-            });
-            continue;
-        };
-        let y11 = Complex64::new(ys[0], ys[1]);
-        let y12 = Complex64::new(ys[2], ys[3]);
-        let y21 = y12; // reciprocal network
-        let y22 = Complex64::new(ys[4], ys[5]);
+fn nt_two_port(f: &[String], segs: &[Segment]) -> Result<(TwoPort, Vec<String>), String> {
+    let name = format!("NT {}", f.join(" "));
+    if f.len() < 10 {
+        return Err(format!(
+            "{name}: has {} fields; NT needs 10 (tag1 seg1 tag2 seg2 Y11r Y11i Y12r Y12i \
+             Y22r Y22i)",
+            f.len()
+        ));
+    }
+    let int = |i: usize| {
+        f[i].parse::<f64>()
+            .ok()
+            .filter(|v| v.fract() == 0.0 && *v >= 0.0)
+            .map(|v| v as u32)
+            .ok_or_else(|| {
+                format!(
+                    "{name}: field {} ('{}') is not a segment identifier",
+                    i + 1,
+                    f[i]
+                )
+            })
+    };
+    let float = |i: usize| {
+        f[i].parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| format!("{name}: field {} ('{}') is not a number", i + 1, f[i]))
+    };
+    let (tag1, seg1, tag2, seg2) = (int(0)?, int(1)?, int(2)?, int(3)?);
+    let mut notes = Vec::new();
+    let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
+        let (idx, _, note) = find_segment_index(segs, tag, seg)
+            .ok_or_else(|| format!("{name}: port ({tag}, {seg}) is not in the geometry"))?;
+        notes.extend(note);
+        Ok(idx)
+    };
+    let a = end(tag1, seg1)?;
+    let b = end(tag2, seg2)?;
+    Ok((
+        TwoPort {
+            seg_a: a,
+            seg_b: b,
+            y11: Complex64::new(float(4)?, float(5)?),
+            y12: Complex64::new(float(6)?, float(7)?),
+            y22: Complex64::new(float(8)?, float(9)?),
+        },
+        notes,
+    ))
+}
 
-        let Some((i1, _, _)) = find_segment_index(segs, tag1, seg1) else {
-            warnings.push(NtWarning {
-                message: format!(
-                    "NT endpoint ({tag1}, {seg1}) not found in geometry; NT card ignored"
-                ),
-            });
-            continue;
-        };
-        let Some((i2, _, _)) = find_segment_index(segs, tag2, seg2) else {
-            warnings.push(NtWarning {
-                message: format!(
-                    "NT endpoint ({tag2}, {seg2}) not found in geometry; NT card ignored"
-                ),
-            });
-            continue;
-        };
-        if i1 == i2 {
-            warnings.push(NtWarning {
-                message: format!(
-                    "NT endpoints resolve to the same segment (({tag1}, {seg1}) and ({tag2}, {seg2})); NT card ignored"
-                ),
-            });
-            continue;
-        }
+/// The structure's response combined with its networks.
+#[derive(Debug, Clone)]
+pub struct NetworkSolution {
+    /// Segment currents: the base response plus each undriven port's unit-gap
+    /// response, weighted by that port's voltage.
+    pub currents: Vec<Complex64>,
+    /// `(segment, voltage)` for every UNDRIVEN port, i.e. the weights applied to
+    /// the unit-gap responses. A caller superposing anything else that is linear
+    /// in the excitation (a right-hand side, homogeneous constants) uses these.
+    pub undriven: Vec<(usize, Complex64)>,
+    /// `(segment, current)` into the network at every DRIVEN port segment. The
+    /// source current there is the segment current plus this.
+    pub driven_branch: Vec<(usize, Complex64)>,
+}
 
-        // Convert admittance parameters to impedance parameters: [Z] = [Y]^-1.
-        let det = y11 * y22 - y12 * y21;
-        if det.norm() < 1e-30 {
-            warnings.push(NtWarning {
-                message: format!(
-                    "NT between ({tag1}, {seg1}) and ({tag2}, {seg2}) has a singular admittance matrix (det≈0) and cannot be inverted to Z-parameters; NT card ignored"
-                ),
-            });
-            continue;
-        }
-        let z11 = y22 / det;
-        let z22 = y11 / det;
-        let z12 = -y12 / det;
-        let z21 = -y21 / det;
+/// Solve a structure with networks attached, by superposition.
+///
+/// `base` is the structure's current for the deck's own excitation, `driven` the
+/// delta-gap segments with their source voltages, and `unit_gap(q)` the current
+/// for a 1 V gap at segment `q` and nothing else, through the SAME solve that
+/// produced `base` (same matrix, loads and constraints). Solver-agnostic on
+/// purpose: any linear solver can be combined through it.
+///
+/// For each undriven port `u`, KCL at its gap:
+/// `I_u + Σ_j Y[u][j]·V_j = 0`, with `I = base + Σ_q V_q·unit_gap(q)` and `V_j`
+/// the source voltage at a driven port. That is a square system in the undriven
+/// port voltages.
+pub fn solve_with_networks<E>(
+    networks: &Networks,
+    driven: &[(usize, Complex64)],
+    base: &[Complex64],
+    mut unit_gap: impl FnMut(usize) -> Result<Vec<Complex64>, E>,
+) -> Result<NetworkSolution, NetworkSolveError<E>> {
+    let ports = networks.ports();
+    let y = networks.admittance(&ports);
+    let driven_v = |seg: usize| driven.iter().find(|(s, _)| *s == seg).map(|(_, v)| *v);
+    let undriven: Vec<usize> = (0..ports.len())
+        .filter(|&i| driven_v(ports[i]).is_none())
+        .collect();
 
-        stamps.push((i1, i1, z11));
-        stamps.push((i2, i2, z22));
-        stamps.push((i1, i2, z12));
-        stamps.push((i2, i1, z21));
+    let mut responses = Vec::with_capacity(undriven.len());
+    for &i in &undriven {
+        responses.push(unit_gap(ports[i]).map_err(NetworkSolveError::Solve)?);
     }
 
-    (stamps, warnings)
+    // Row u: Σ_q (unit_q[u] + Y[u][q]) V_q = −base[u] − Σ_d Y[u][d] V_d.
+    let m = undriven.len();
+    let mut a = vec![vec![ZERO; m]; m];
+    let mut rhs = vec![ZERO; m];
+    for (r, &u) in undriven.iter().enumerate() {
+        let seg_u = ports[u];
+        for (c, &q) in undriven.iter().enumerate() {
+            a[r][c] = responses[c][seg_u] + y[u][q];
+        }
+        rhs[r] = -base[seg_u];
+        for (d, &seg_d) in ports.iter().enumerate() {
+            if let Some(v) = driven_v(seg_d) {
+                rhs[r] -= y[u][d] * v;
+            }
+        }
+    }
+    let v_undriven = solve_small(a, rhs).ok_or(NetworkSolveError::Singular)?;
+
+    let mut currents = base.to_vec();
+    for (resp, v) in responses.iter().zip(&v_undriven) {
+        for (i, r) in currents.iter_mut().zip(resp) {
+            *i += v * r;
+        }
+    }
+
+    // Every port voltage, driven and solved, for the branch currents.
+    let v_at = |p: usize| -> Complex64 {
+        driven_v(ports[p]).unwrap_or_else(|| {
+            let k = undriven.iter().position(|&u| u == p).expect("undriven");
+            v_undriven[k]
+        })
+    };
+    let driven_branch = (0..ports.len())
+        .filter(|&d| driven_v(ports[d]).is_some())
+        .map(|d| {
+            let i: Complex64 = (0..ports.len()).map(|j| y[d][j] * v_at(j)).sum();
+            (ports[d], i)
+        })
+        .collect();
+
+    Ok(NetworkSolution {
+        currents,
+        undriven: undriven
+            .iter()
+            .zip(&v_undriven)
+            .map(|(&u, &v)| (ports[u], v))
+            .collect(),
+        driven_branch,
+    })
+}
+
+/// Why [`solve_with_networks`] failed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NetworkSolveError<E> {
+    /// A unit-gap solve failed.
+    Solve(E),
+    /// The port-voltage system is singular: the networks short or isolate a port
+    /// in a way that leaves its voltage undetermined.
+    Singular,
+}
+
+/// Gaussian elimination with partial pivoting, for the (tiny) port system.
+fn solve_small(mut a: Vec<Vec<Complex64>>, mut b: Vec<Complex64>) -> Option<Vec<Complex64>> {
+    let n = b.len();
+    let scale = a
+        .iter()
+        .flatten()
+        .map(|z| z.norm())
+        .fold(0.0f64, f64::max)
+        .max(f64::MIN_POSITIVE);
+    for col in 0..n {
+        let piv = (col..n).max_by(|&i, &j| a[i][col].norm().total_cmp(&a[j][col].norm()))?;
+        if a[piv][col].norm() <= 1e-13 * scale {
+            return None;
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        let pivot: Vec<Complex64> = a[col][col..n].to_vec();
+        for row in col + 1..n {
+            let f = a[row][col] / pivot[0];
+            for (x, p) in a[row][col..n].iter_mut().zip(&pivot) {
+                *x -= f * p;
+            }
+            let t = b[col];
+            b[row] -= f * t;
+        }
+    }
+    let mut x = vec![ZERO; n];
+    for row in (0..n).rev() {
+        let s: Complex64 = (row + 1..n).map(|k| a[row][k] * x[k]).sum();
+        x[row] = (b[row] - s) / a[row][row];
+    }
+    Some(x)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{GwCard, NtCard};
 
-    /// Two parallel three-segment wires — enough for a two-port network to span.
-    fn two_wire_segments() -> Vec<Segment> {
-        let mut deck = NecDeck::new();
-        for (tag, x) in [(1u32, 0.0), (2u32, 1.0)] {
-            deck.cards.push(Card::Gw(GwCard {
-                tag,
-                segments: 3,
-                start: [x, 0.0, -1.0],
-                end: [x, 0.0, 1.0],
-                radius: 0.001,
-            }));
-        }
-        crate::geometry::build_geometry(&deck).expect("geometry builds")
+    fn c(re: f64, im: f64) -> Complex64 {
+        Complex64::new(re, im)
     }
 
-    fn deck_with_nt(fields: &[&str]) -> NecDeck {
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Nt(NtCard {
-            raw_fields: fields.iter().map(|s| (*s).to_string()).collect(),
-        }));
-        deck
-    }
-
-    fn only_warning(deck: &NecDeck, segs: &[Segment]) -> String {
-        let (stamps, warnings) = build_nt_stamps(deck, segs);
-        assert!(stamps.is_empty(), "a rejected NT card must stamp nothing");
-        assert_eq!(
-            warnings.len(),
-            1,
-            "expected exactly one warning: {warnings:?}"
-        );
-        warnings[0].message.clone()
-    }
-
-    /// The supported path: a well-formed reciprocal NT stamps all four
-    /// Z-parameter entries and says nothing.
+    /// A made-up but consistent "structure": two ports with a known admittance
+    /// matrix Ys (unit gap at q gives current Ys[·][q] at the ports), plus a third
+    /// segment that is not a port. The network solve must reproduce the circuit
+    /// combination Z_in = 1/(Y11 − Y12²/Y22) with Y = Ys + Yn.
     #[test]
-    fn a_well_formed_nt_stamps_four_entries_without_warning() {
-        let segs = two_wire_segments();
-        let deck = deck_with_nt(&[
-            "1", "2", "2", "2", // tag1 seg1 tag2 seg2
-            "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0", // Y11 Y12 Y22
-        ]);
-        let (stamps, warnings) = build_nt_stamps(&deck, &segs);
-        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
-        assert_eq!(stamps.len(), 4, "expected Z11, Z22, Z12, Z21: {stamps:?}");
-
-        // [Z] = [Y]^-1 for a reciprocal two-port, so the off-diagonals match and
-        // the stamp is symmetric in position.
-        let det = Complex64::new(0.02, 0.0) * Complex64::new(0.02, 0.0)
-            - Complex64::new(-0.01, 0.0) * Complex64::new(-0.01, 0.0);
-        let z12_expected = -Complex64::new(-0.01, 0.0) / det;
-        let z12 = stamps
-            .iter()
-            .find(|(r, c, _)| r != c)
-            .map(|(_, _, z)| *z)
-            .expect("an off-diagonal stamp");
-        assert!(
-            (z12 - z12_expected).norm() < 1e-9,
-            "off-diagonal stamp {z12} != [Y]^-1 value {z12_expected}"
-        );
+    fn a_driven_and_an_undriven_port_combine_as_admittances_in_parallel() {
+        let ys = [
+            [c(0.004, -0.026), c(0.001, 0.024)],
+            [c(0.001, 0.024), c(0.004, -0.026)],
+        ];
+        let col = |q: usize| vec![ys[0][q], ys[1][q], c(0.5, 0.5)];
+        let net = Networks {
+            two_ports: vec![TwoPort {
+                seg_a: 0,
+                seg_b: 1,
+                y11: c(0.0, -0.3),
+                y12: c(0.0, 0.31),
+                y22: c(0.0, -0.3),
+            }],
+        };
+        let sol =
+            solve_with_networks::<()>(&net, &[(0, c(1.0, 0.0))], &col(0), |q| Ok(col(q))).unwrap();
+        let src = sol.currents[0] + sol.driven_branch[0].1;
+        let y = [
+            [ys[0][0] + c(0.0, -0.3), ys[0][1] + c(0.0, 0.31)],
+            [ys[1][0] + c(0.0, 0.31), ys[1][1] + c(0.0, -0.3)],
+        ];
+        let want = y[0][0] - y[0][1] * y[1][0] / y[1][1];
+        assert!((src - want).norm() < 1e-12, "{src} vs {want}");
+        // KCL at the undriven port.
+        let (seg, v) = sol.undriven[0];
+        assert_eq!(seg, 1);
+        let into_network = c(0.0, 0.31) * c(1.0, 0.0) + c(0.0, -0.3) * v;
+        assert!((sol.currents[1] + into_network).norm() < 1e-12);
     }
 
-    /// Every rejection path warns and skips, rather than stamping something wrong.
-    /// These are the defensive guards the review flagged as untested; each is
-    /// reached by exactly one malformation.
+    /// Two networks on the same segment pair add; both ports on one segment is a
+    /// one-port of Y11 + Y22 + 2·Y12.
     #[test]
-    fn a_short_nt_card_is_rejected() {
-        let segs = two_wire_segments();
-        let deck = deck_with_nt(&["1", "2", "2", "2", "0.02"]);
-        let m = only_warning(&deck, &segs);
-        assert!(
-            m.contains("has 5 fields") && m.contains("expected 10"),
-            "{m}"
-        );
+    fn networks_sharing_ports_accumulate() {
+        let tp = TwoPort {
+            seg_a: 3,
+            seg_b: 3,
+            y11: c(1.0, 0.0),
+            y12: c(0.5, 0.0),
+            y22: c(2.0, 0.0),
+        };
+        let net = Networks {
+            two_ports: vec![tp.clone(), tp],
+        };
+        assert_eq!(net.ports(), vec![3]);
+        assert_eq!(net.admittance(&[3]), vec![vec![c(8.0, 0.0)]]);
     }
 
     #[test]
-    fn non_integer_segment_identifiers_are_rejected() {
-        let segs = two_wire_segments();
-        let deck = deck_with_nt(&[
-            "one", "2", "2", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
-        ]);
-        let m = only_warning(&deck, &segs);
-        assert!(m.contains("non-integer segment identifiers"), "{m}");
-    }
-
-    #[test]
-    fn non_numeric_admittance_parameters_are_rejected() {
-        let segs = two_wire_segments();
-        let deck = deck_with_nt(&[
-            "1",
-            "2",
-            "2",
-            "2",
-            "0.02",
-            "0.0",
-            "not-a-number",
-            "0.0",
-            "0.02",
-            "0.0",
-        ]);
-        let m = only_warning(&deck, &segs);
-        assert!(m.contains("non-numeric admittance parameters"), "{m}");
-    }
-
-    #[test]
-    fn an_endpoint_missing_from_the_geometry_is_rejected() {
-        let segs = two_wire_segments();
-        // Tag 9 does not exist; the first endpoint is checked before the second.
-        let first = deck_with_nt(&[
-            "9", "2", "2", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
-        ]);
-        assert!(only_warning(&first, &segs).contains("NT endpoint (9, 2) not found"));
-        let second = deck_with_nt(&[
-            "1", "2", "9", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
-        ]);
-        assert!(only_warning(&second, &segs).contains("NT endpoint (9, 2) not found"));
-    }
-
-    #[test]
-    fn both_endpoints_on_one_segment_is_rejected() {
-        let segs = two_wire_segments();
-        let deck = deck_with_nt(&[
-            "1", "2", "1", "2", "0.02", "0.0", "-0.01", "0.0", "0.02", "0.0",
-        ]);
-        let m = only_warning(&deck, &segs);
-        assert!(m.contains("resolve to the same segment"), "{m}");
-    }
-
-    /// A singular [Y] has no [Z]; inverting it anyway would stamp infinities into
-    /// the impedance matrix and take the whole solve with it.
-    #[test]
-    fn a_singular_admittance_matrix_is_rejected() {
-        let segs = two_wire_segments();
-        // Y11*Y22 - Y12*Y21 = 0.01*0.01 - 0.01*0.01 = 0.
-        let deck = deck_with_nt(&[
-            "1", "2", "2", "2", "0.01", "0.0", "0.01", "0.0", "0.01", "0.0",
-        ]);
-        let m = only_warning(&deck, &segs);
-        assert!(m.contains("singular admittance matrix"), "{m}");
-    }
-
-    /// A deck with no NT card at all is not an error and produces nothing.
-    #[test]
-    fn a_deck_without_nt_cards_produces_nothing() {
-        let segs = two_wire_segments();
-        let (stamps, warnings) = build_nt_stamps(&NecDeck::new(), &segs);
-        assert!(stamps.is_empty() && warnings.is_empty());
+    fn a_singular_port_system_is_an_error() {
+        // No structure coupling and a network that adds nothing: 0·V = −base.
+        let net = Networks {
+            two_ports: vec![TwoPort {
+                seg_a: 1,
+                seg_b: 1,
+                y11: c(0.0, 0.0),
+                y12: c(0.0, 0.0),
+                y22: c(0.0, 0.0),
+            }],
+        };
+        let r = solve_with_networks::<()>(&net, &[], &[c(1.0, 0.0), c(0.0, 0.0)], |_| {
+            Ok(vec![c(0.0, 0.0), c(0.0, 0.0)])
+        });
+        assert!(matches!(r, Err(NetworkSolveError::Singular)));
     }
 }

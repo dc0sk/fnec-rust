@@ -1,186 +1,126 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! TL network builder: converts supported TL cards into impedance-matrix stamps.
+//! `TL` cards as two-port admittance networks (FND-111, FND-123).
 //!
-//! Supported subset (initial executable semantics):
-//! - `tl_type = 0` (lossless)
-//! - `num_segments >= 0` (`0` is treated as a single-section shorthand)
-//! - endpoint segments (`segment=0` is accepted and mapped to the tag center;
-//!   for even segment counts, the lower of the two center segments is used)
-//! - positive characteristic impedance `z0 > 0`
+//! A transmission line is a two-port connected ACROSS the gaps of its two end
+//! segments, in parallel with whatever else is there — the model NEC-2 uses, and
+//! the one nec2c's answer confirms: combining nec2c's own structure 2-port with
+//! the admittance below reproduces its `TL` result to 0.005 Ω. The network solve
+//! itself is [`crate::network`]; this file turns a card into its `[Y]`.
 //!
-//! For the supported subset we stamp a symmetric 2-port Z-parameter model into
-//! the MoM matrix for the connected segment pair:
+//! For a line of characteristic impedance `Z0` and propagation `γℓ`,
+//! `[Z] = Z0·[[coth γℓ, csch γℓ], [csch γℓ, coth γℓ]]`, so
 //!
-//! - $$Z_{11} = Z_{22} = -j Z_0 \cot(\theta)$$
-//! - $$Z_{12} = Z_{21} = -j Z_0 \csc(\theta)$$
-//! - $$\theta = k \cdot \ell / v_f$$
+//! ```text
+//! Y11 = Y22 = coth(γℓ) / Z0        Y12 = Y21 = −csch(γℓ) / Z0
+//! ```
+//!
+//! which for a lossless line (`γℓ = jθ`) is `−j·cot θ / Z0` and `+j·csc θ / Z0`.
+//! The sign of `Y12` is not a convention to pick: `−j·csc θ` gives 0.70 + j10.5 Ω
+//! on the validation deck where nec2c gives 84.83 + j31.13.
+//!
+//! `γℓ = αℓ + j·kℓ/vf`, with `αℓ` from the fnec F8 loss in dB and `vf` from F7.
+//! A crossed line (negative `Z0`) negates `Y12`. The shunt admittances F3–F6 add
+//! to `Y11` and `Y22`.
 
 use num_complex::Complex64;
 
-use nec_model::card::Card;
-use nec_model::deck::NecDeck;
+use nec_model::card::TlCard;
 
 use crate::geometry::Segment;
+use crate::network::TwoPort;
 
 const C0: f64 = 299_792_458.0; // m/s
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 
-/// A sparse matrix stamp `(row, col, delta_z)` for impedance matrix updates.
-pub type TlStamp = (usize, usize, Complex64);
-
-/// A non-fatal warning produced by TL processing.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TlWarning {
-    /// Human-readable description of the issue.
-    pub message: String,
-}
-
-impl std::fmt::Display for TlWarning {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+/// The admittance parameters `(Y11, Y12)` of a uniform line, `Y22 = Y11`.
+///
+/// Errors when `sinh(γℓ)` vanishes: a lossless line an exact multiple of half a
+/// wavelength long has no admittance matrix.
+pub fn line_admittance(z0: f64, gamma_l: Complex64) -> Result<(Complex64, Complex64), String> {
+    let sinh = gamma_l.sinh();
+    if sinh.norm() < 1e-9 {
+        return Err(format!(
+            "its electrical length is a multiple of half a wavelength (γℓ = {gamma_l:.6}), \
+             where a line has no admittance matrix"
+        ));
     }
+    Ok((
+        gamma_l.cosh() / sinh / z0,
+        -Complex64::new(1.0, 0.0) / sinh / z0,
+    ))
 }
 
-/// Build sparse impedance stamps from supported `TL` cards.
-pub fn build_tl_stamps(
-    deck: &NecDeck,
+/// Resolve one `TL` card to a two-port, or say why it cannot be used.
+///
+/// Returns notes (segment-0 interpretation) alongside, which are informational.
+pub(crate) fn tl_two_port(
+    tl: &TlCard,
     segs: &[Segment],
     freq_hz: f64,
-) -> (Vec<TlStamp>, Vec<TlWarning>) {
-    let mut stamps: Vec<TlStamp> = Vec::new();
-    let mut warnings: Vec<TlWarning> = Vec::new();
-
-    let k = TWO_PI * freq_hz / C0;
-
-    for card in &deck.cards {
-        let Card::Tl(tl) = card else { continue };
-
-        // tl_type != 0 selects the lossy line (handled below after endpoint
-        // resolution); tl_type == 0 is the lossless line.
-        // NSEG>1 cards are accepted using the same uniform-line stamp semantics
-        // as a single-section card; NSEG=0 remains a single-section shorthand.
-        let _effective_num_segments = if tl.num_segments == 0 {
-            1
-        } else {
-            tl.num_segments
-        };
-
-        let Some((i1, resolved_seg1, center_warn1)) =
-            find_segment_index(segs, tl.tag1, tl.segment1)
-        else {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL endpoint ({}, {}) not found in geometry; TL card ignored",
-                    tl.tag1, tl.segment1
-                ),
-            });
-            continue;
-        };
-        let Some((i2, resolved_seg2, center_warn2)) =
-            find_segment_index(segs, tl.tag2, tl.segment2)
-        else {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL endpoint ({}, {}) not found in geometry; TL card ignored",
-                    tl.tag2, tl.segment2
-                ),
-            });
-            continue;
-        };
-        if let Some(warn) = center_warn1 {
-            warnings.push(TlWarning { message: warn });
-        }
-        if let Some(warn) = center_warn2 {
-            warnings.push(TlWarning { message: warn });
-        }
-        if i1 == i2 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL endpoints resolve to the same segment (({}, {}) and ({}, {})); TL card ignored",
-                    tl.tag1, resolved_seg1, tl.tag2, resolved_seg2
-                ),
-            });
-            continue;
-        }
-        if tl.z0 <= 0.0 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL between ({}, {}) and ({}, {}): characteristic impedance z0={} must be > 0; TL card ignored",
-                    tl.tag1, tl.segment1, tl.tag2, tl.segment2, tl.z0
-                ),
-            });
-            continue;
-        }
-        if tl.length <= 0.0 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL between ({}, {}) and ({}, {}): length={} must be > 0; TL card ignored",
-                    tl.tag1, tl.segment1, tl.tag2, tl.segment2, tl.length
-                ),
-            });
-            continue;
-        }
-
-        // Lossy line (tl_type != 0): complex propagation γℓ = αℓ + jβℓ. The
-        // 2-port impedance parameters are Z11=Z22=Z0·coth(γℓ), Z12=Z21=Z0·csch(γℓ),
-        // which reduce to the lossless −jZ0·cot/csc when αℓ = 0. fnec's TL card has
-        // a single spare float (F3), so the lossy form takes velocity factor 1 and
-        // reads F3 as the **total matched-line loss in dB** (αℓ = F3·ln10/20).
-        if tl.tl_type != 0 {
-            let beta_l = k * tl.length; // vf = 1 for the lossy form
-            let alpha_l = tl.f3 * std::f64::consts::LN_10 / 20.0; // dB → nepers
-            let gl = Complex64::new(alpha_l, beta_l);
-            let sinh = gl.sinh();
-            if sinh.norm() < 1e-9 {
-                warnings.push(TlWarning {
-                    message: format!(
-                        "TL between ({}, {}) and ({}, {}): lossy line near a singular sinh point; TL card ignored",
-                        tl.tag1, tl.segment1, tl.tag2, tl.segment2
-                    ),
-                });
-                continue;
-            }
-            let z0c = Complex64::new(tl.z0, 0.0);
-            let z_diag = z0c * gl.cosh() / sinh; // Z0·coth(γℓ)
-            let z_off = z0c / sinh; // Z0·csch(γℓ)
-            stamps.push((i1, i1, z_diag));
-            stamps.push((i2, i2, z_diag));
-            stamps.push((i1, i2, z_off));
-            stamps.push((i2, i1, z_off));
-            continue;
-        }
-
-        let vf = if (0.0..=1.0).contains(&tl.f3) && tl.f3 > 0.0 {
-            tl.f3
-        } else {
-            1.0
-        };
-        let theta = k * tl.length / vf;
-        let sin_theta = theta.sin();
-        if sin_theta.abs() < 1e-9 {
-            warnings.push(TlWarning {
-                message: format!(
-                    "TL between ({}, {}) and ({}, {}): electrical length is near a singular csc/cot point (theta={:.6e}); TL card ignored",
-                    tl.tag1, tl.segment1, tl.tag2, tl.segment2, theta
-                ),
-            });
-            continue;
-        }
-
-        let cot = theta.cos() / sin_theta;
-        let csc = 1.0 / sin_theta;
-        let z_diag = Complex64::new(0.0, -tl.z0 * cot);
-        let z_off = Complex64::new(0.0, -tl.z0 * csc);
-
-        stamps.push((i1, i1, z_diag));
-        stamps.push((i2, i2, z_diag));
-        stamps.push((i1, i2, z_off));
-        stamps.push((i2, i1, z_off));
+) -> Result<(TwoPort, Vec<String>), String> {
+    let name = format!("TL {} {} {} {}", tl.tag1, tl.segment1, tl.tag2, tl.segment2);
+    let mut notes = Vec::new();
+    let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
+        let (idx, _, note) = find_segment_index(segs, tag, seg)
+            .ok_or_else(|| format!("{name}: end ({tag}, {seg}) is not in the geometry"))?;
+        notes.extend(note);
+        Ok(idx)
+    };
+    let a = end(tl.tag1, tl.segment1)?;
+    let b = end(tl.tag2, tl.segment2)?;
+    if tl.z0 == 0.0 || !tl.z0.is_finite() {
+        return Err(format!(
+            "{name}: characteristic impedance must be nonzero, got {}",
+            tl.z0
+        ));
     }
-
-    (stamps, warnings)
+    if !(tl.velocity_factor > 0.0 && tl.velocity_factor.is_finite()) {
+        return Err(format!(
+            "{name}: velocity factor (F7) must be positive, got {}",
+            tl.velocity_factor
+        ));
+    }
+    if !(tl.loss_db >= 0.0 && tl.loss_db.is_finite()) {
+        return Err(format!(
+            "{name}: loss (F8) must be ≥ 0 dB, got {}",
+            tl.loss_db
+        ));
+    }
+    // NEC-2: a length of zero or less means the straight-line distance between
+    // the two segment centres.
+    let length = if tl.length > 0.0 {
+        tl.length
+    } else {
+        let (p, q) = (segs[a].midpoint, segs[b].midpoint);
+        ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+    };
+    if length <= 0.0 {
+        return Err(format!(
+            "{name}: both ends are on one segment and no length is given, so the line has none"
+        ));
+    }
+    let k = TWO_PI * freq_hz / C0;
+    let gamma_l = Complex64::new(
+        tl.loss_db * std::f64::consts::LN_10 / 20.0,
+        k * length / tl.velocity_factor,
+    );
+    let (y11, mut y12) =
+        line_admittance(tl.z0.abs(), gamma_l).map_err(|e| format!("{name}: {e}"))?;
+    if tl.z0 < 0.0 {
+        y12 = -y12; // crossed line
+    }
+    Ok((
+        TwoPort {
+            seg_a: a,
+            seg_b: b,
+            y11: y11 + Complex64::new(tl.shunt1.0, tl.shunt1.1),
+            y12,
+            y22: y11 + Complex64::new(tl.shunt2.0, tl.shunt2.1),
+        },
+        notes,
+    ))
 }
 
 pub(crate) fn find_segment_index(
@@ -246,317 +186,138 @@ fn find_center_segment_index(segs: &[Segment], tag: u32) -> Option<(usize, u32, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nec_model::card::{Card, GwCard, TlCard};
+    use crate::geometry::build_geometry;
+    use nec_model::card::{Card, GwCard};
+    use nec_model::deck::NecDeck;
 
-    fn warn_contains(warns: &[TlWarning], needle: &str) -> bool {
-        warns.iter().any(|w| w.message.contains(needle))
-    }
-
-    fn segs_two_wire_geometry_with_segments(per_wire_segments: u32) -> Vec<Segment> {
+    /// Two parallel 21-segment wires 1 m apart.
+    fn pair() -> Vec<Segment> {
         let mut deck = NecDeck::new();
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 1,
-            segments: per_wire_segments,
-            start: [0.0, 0.0, -1.0],
-            end: [0.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        deck.cards.push(Card::Gw(GwCard {
-            tag: 2,
-            segments: per_wire_segments,
-            start: [1.0, 0.0, -1.0],
-            end: [1.0, 0.0, 1.0],
-            radius: 0.001,
-        }));
-        crate::geometry::build_geometry(&deck).expect("geometry should build")
+        for (tag, x) in [(1u32, 0.0), (2u32, 1.0)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments: 21,
+                start: [x, 0.0, -5.0],
+                end: [x, 0.0, 5.0],
+                radius: 0.001,
+            }));
+        }
+        build_geometry(&deck).unwrap()
     }
 
-    fn segs_two_wire_geometry() -> Vec<Segment> {
-        segs_two_wire_geometry_with_segments(3)
-    }
-
-    #[test]
-    fn segment_zero_even_segment_count_uses_lower_center() {
-        let segs = segs_two_wire_geometry_with_segments(4);
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 0,
-            tag2: 2,
-            segment2: 0,
-            num_segments: 1,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert_eq!(stamps.len(), 4);
-        assert_eq!(warns.len(), 2);
-        assert!(warn_contains(
-            &warns,
-            "tag has even segment count 4; using lower center segment 2"
-        ));
-    }
-
-    #[test]
-    fn supported_lossless_tl_produces_four_stamps() {
-        let segs = segs_two_wire_geometry();
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 2,
-            tag2: 2,
-            segment2: 2,
-            num_segments: 1,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert!(warns.is_empty());
-        assert_eq!(stamps.len(), 4);
-        assert!(stamps.iter().any(|(r, c, _)| r == c));
-        assert!(stamps.iter().any(|(r, c, _)| r != c));
-    }
-
-    #[test]
-    fn nseg_zero_is_accepted_like_single_section() {
-        let segs = segs_two_wire_geometry();
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 2,
-            tag2: 2,
-            segment2: 2,
-            num_segments: 0,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert!(warns.is_empty());
-        assert_eq!(stamps.len(), 4);
-    }
-
-    #[test]
-    fn nseg_gt_one_is_accepted_like_single_section() {
-        let segs = segs_two_wire_geometry();
-
-        let mut deck_nseg1 = NecDeck::new();
-        deck_nseg1.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 2,
-            tag2: 2,
-            segment2: 2,
-            num_segments: 1,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let mut deck_nseg3 = NecDeck::new();
-        deck_nseg3.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 2,
-            tag2: 2,
-            segment2: 2,
-            num_segments: 3,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let (stamps_nseg1, warns_nseg1) = build_tl_stamps(&deck_nseg1, &segs, 14.2e6);
-        let (stamps_nseg3, warns_nseg3) = build_tl_stamps(&deck_nseg3, &segs, 14.2e6);
-
-        assert!(warns_nseg1.is_empty());
-        assert!(warns_nseg3.is_empty());
-        assert_eq!(stamps_nseg1, stamps_nseg3);
-    }
-
-    #[test]
-    fn lossy_tl_type_stamps_without_warning() {
-        // PH8-CHK-005: tl_type != 0 is a lossy line and stamps (no warning).
-        let segs = segs_two_wire_geometry();
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 2,
-            tag2: 2,
-            segment2: 2,
-            num_segments: 1,
-            tl_type: 1,
-            z0: 50.0,
-            length: 1.0,
-            f3: 3.0, // 3 dB matched-line loss
-        }));
-
-        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert_eq!(stamps.len(), 4, "lossy TL should stamp a 2x2 block");
-        assert!(warns.is_empty(), "lossy TL should not warn: {warns:?}");
-    }
-
-    #[test]
-    fn segment_zero_maps_to_tag_center() {
-        let segs = segs_two_wire_geometry();
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(TlCard {
-            tag1: 1,
-            segment1: 0,
-            tag2: 2,
-            segment2: 0,
-            num_segments: 1,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
-        }));
-
-        let (stamps, warns) = build_tl_stamps(&deck, &segs, 14.2e6);
-        assert_eq!(stamps.len(), 4);
-        assert_eq!(warns.len(), 2);
-        assert!(warn_contains(
-            &warns,
-            "interpreting segment 0 as center segment"
-        ));
-    }
-
-    // --- rejection paths (review-260719 FIND-014) ---------------------------
-    //
-    // Each of these guards skips the card rather than stamping something wrong
-    // into the impedance matrix, and each was previously unexercised.
-
-    /// A well-formed lossless card, which the cases below mutate one field at a
-    /// time so exactly one guard fires per test.
-    fn good_tl() -> TlCard {
+    fn tl(z0: f64, length: f64) -> TlCard {
         TlCard {
             tag1: 1,
-            segment1: 2,
+            segment1: 11,
             tag2: 2,
-            segment2: 2,
-            num_segments: 1,
-            tl_type: 0,
-            z0: 50.0,
-            length: 1.0,
-            f3: 1.0,
+            segment2: 11,
+            z0,
+            length,
+            shunt1: (0.0, 0.0),
+            shunt2: (0.0, 0.0),
+            velocity_factor: 1.0,
+            loss_db: 0.0,
         }
     }
 
-    fn stamps_and_warnings(tl: TlCard) -> (usize, Vec<TlWarning>) {
-        let segs = segs_two_wire_geometry();
-        let mut deck = NecDeck::new();
-        deck.cards.push(Card::Tl(tl));
-        let (stamps, warnings) = build_tl_stamps(&deck, &segs, 14.2e6);
-        (stamps.len(), warnings)
+    /// The lossless line in closed form, independently of the γℓ route.
+    #[test]
+    fn a_lossless_line_has_the_textbook_admittance() {
+        let f = 14.2e6;
+        let (tp, _) = tl_two_port(&tl(50.0, 0.1), &pair(), f).unwrap();
+        let theta = TWO_PI * f / C0 * 0.1;
+        let y11 = Complex64::new(0.0, -1.0 / theta.tan() / 50.0);
+        let y12 = Complex64::new(0.0, 1.0 / theta.sin() / 50.0);
+        assert!((tp.y11 - y11).norm() < 1e-12 && (tp.y22 - y11).norm() < 1e-12);
+        assert!((tp.y12 - y12).norm() < 1e-12, "{} vs {y12}", tp.y12);
     }
 
-    /// The control: the unmutated card stamps and stays quiet, so a rejection
-    /// below is caused by the mutation and not by the fixture.
+    /// Loss → 0 recovers the lossless line; the lossy Y12 sign is the one that
+    /// is easy to get wrong by analogy (−csch, not +csch).
     #[test]
-    fn the_rejection_fixture_itself_is_accepted() {
-        let (n, warnings) = stamps_and_warnings(good_tl());
-        assert_eq!(n, 4, "control card should stamp four entries");
-        assert!(warnings.is_empty(), "control card warned: {warnings:?}");
+    fn a_vanishing_loss_recovers_the_lossless_line() {
+        let segs = pair();
+        let (lossless, _) = tl_two_port(&tl(50.0, 0.1), &segs, 14.2e6).unwrap();
+        let mut card = tl(50.0, 0.1);
+        card.loss_db = 1e-12;
+        let (lossy, _) = tl_two_port(&card, &segs, 14.2e6).unwrap();
+        assert!((lossy.y11 - lossless.y11).norm() < 1e-9);
+        assert!((lossy.y12 - lossless.y12).norm() < 1e-9);
     }
 
     #[test]
-    fn an_endpoint_missing_from_the_geometry_is_rejected() {
-        for (tl, want) in [
+    fn a_crossed_line_negates_only_the_transfer_admittance() {
+        let segs = pair();
+        let (straight, _) = tl_two_port(&tl(50.0, 0.1), &segs, 14.2e6).unwrap();
+        let (crossed, _) = tl_two_port(&tl(-50.0, 0.1), &segs, 14.2e6).unwrap();
+        assert_eq!(crossed.y11, straight.y11);
+        assert_eq!(crossed.y12, -straight.y12);
+    }
+
+    /// NEC-2: length 0 is the distance between the segment centres (1 m here).
+    #[test]
+    fn a_zero_length_means_the_centre_distance() {
+        let segs = pair();
+        let (zero, _) = tl_two_port(&tl(50.0, 0.0), &segs, 14.2e6).unwrap();
+        let (one, _) = tl_two_port(&tl(50.0, 1.0), &segs, 14.2e6).unwrap();
+        assert!((zero.y12 - one.y12).norm() < 1e-12);
+    }
+
+    #[test]
+    fn shunt_admittances_add_to_their_own_end() {
+        let mut card = tl(50.0, 0.1);
+        card.shunt1 = (0.01, 0.0);
+        card.shunt2 = (0.0, 0.02);
+        let segs = pair();
+        let (bare, _) = tl_two_port(&tl(50.0, 0.1), &segs, 14.2e6).unwrap();
+        let (tp, _) = tl_two_port(&card, &segs, 14.2e6).unwrap();
+        assert!((tp.y11 - bare.y11 - Complex64::new(0.01, 0.0)).norm() < 1e-15);
+        assert!((tp.y22 - bare.y22 - Complex64::new(0.0, 0.02)).norm() < 1e-15);
+        assert_eq!(tp.y12, bare.y12);
+    }
+
+    #[test]
+    fn unusable_cards_are_errors_not_skips() {
+        let segs = pair();
+        let mut missing = tl(50.0, 0.1);
+        missing.tag2 = 9;
+        for (card, needle) in [
+            (missing, "not in the geometry"),
+            (tl(0.0, 0.1), "nonzero"),
             (
                 TlCard {
-                    tag1: 9,
-                    ..good_tl()
+                    velocity_factor: 0.0,
+                    ..tl(50.0, 0.1)
                 },
-                "TL endpoint (9, 2) not found",
+                "velocity factor",
             ),
             (
                 TlCard {
-                    tag2: 9,
-                    ..good_tl()
+                    loss_db: -1.0,
+                    ..tl(50.0, 0.1)
                 },
-                "TL endpoint (9, 2) not found",
+                "loss",
             ),
+            // λ/2 at 14.2 MHz: no admittance matrix.
+            (tl(50.0, C0 / 14.2e6 / 2.0), "half a wavelength"),
         ] {
-            let (n, warnings) = stamps_and_warnings(tl);
-            assert_eq!(n, 0, "a rejected TL must stamp nothing");
-            assert!(warn_contains(&warnings, want), "{warnings:?}");
+            let err = tl_two_port(&card, &segs, 14.2e6).unwrap_err();
+            assert!(err.contains(needle), "{err}");
         }
     }
 
     #[test]
-    fn both_endpoints_on_one_segment_is_rejected() {
-        let tl = TlCard {
-            tag2: 1,
-            ..good_tl()
+    fn segment_zero_maps_to_the_tag_centre_with_a_note() {
+        let segs = pair();
+        let card = TlCard {
+            segment1: 0,
+            ..tl(50.0, 0.1)
         };
-        let (n, warnings) = stamps_and_warnings(tl);
-        assert_eq!(n, 0);
+        let (tp, notes) = tl_two_port(&card, &segs, 14.2e6).unwrap();
+        assert_eq!(segs[tp.seg_a].tag_index, 11);
         assert!(
-            warn_contains(&warnings, "resolve to the same segment"),
-            "{warnings:?}"
+            notes.iter().any(|n| n.contains("center segment 11")),
+            "{notes:?}"
         );
-    }
-
-    #[test]
-    fn a_non_positive_characteristic_impedance_is_rejected() {
-        for z0 in [0.0, -50.0] {
-            let (n, warnings) = stamps_and_warnings(TlCard { z0, ..good_tl() });
-            assert_eq!(n, 0, "z0={z0} must stamp nothing");
-            assert!(
-                warn_contains(&warnings, "must be > 0; TL card ignored"),
-                "z0={z0}: {warnings:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_non_positive_length_is_rejected() {
-        for length in [0.0, -1.0] {
-            let (n, warnings) = stamps_and_warnings(TlCard {
-                length,
-                ..good_tl()
-            });
-            assert_eq!(n, 0, "length={length} must stamp nothing");
-            assert!(
-                warn_contains(&warnings, "must be > 0; TL card ignored"),
-                "length={length}: {warnings:?}"
-            );
-        }
-    }
-
-    /// A lossy line whose `sinh(γℓ)` is ~0 has no finite Z-parameters; stamping it
-    /// anyway would put infinities into the impedance matrix. `γℓ ≈ jπ` is such a
-    /// point: pick the length that puts βℓ at exactly π with zero loss.
-    #[test]
-    fn a_lossy_line_at_a_singular_sinh_point_is_rejected() {
-        let lambda = 299_792_458.0 / 14.2e6;
-        let tl = TlCard {
-            tl_type: 1,
-            length: lambda / 2.0, // βℓ = π
-            f3: 0.0,              // αℓ = 0, so γℓ = jπ exactly and sinh(γℓ) = 0
-            ..good_tl()
-        };
-        let (n, warnings) = stamps_and_warnings(tl);
-        assert_eq!(n, 0, "a singular lossy line must stamp nothing");
-        assert!(warn_contains(&warnings, "singular sinh"), "{warnings:?}");
-
-        // Negative control: the same line with real loss is no longer singular.
-        let ok = TlCard {
-            tl_type: 1,
-            length: lambda / 2.0,
-            f3: 1.0,
-            ..good_tl()
-        };
-        let (n, warnings) = stamps_and_warnings(ok);
-        assert_eq!(n, 4, "a lossy line off the singular point must stamp");
-        assert!(warnings.is_empty(), "{warnings:?}");
     }
 }

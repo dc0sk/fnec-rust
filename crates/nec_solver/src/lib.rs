@@ -74,7 +74,9 @@ pub use mpie::{
     MpieWire,
 };
 pub use mpie_session::{mpie_unsupported, solve_mpie_session, MpieSessionError, MpieUnsupported};
-pub use network::{build_nt_stamps, NtStamp, NtWarning};
+pub use network::{
+    build_networks, solve_with_networks, NetworkSolution, NetworkSolveError, Networks, TwoPort,
+};
 pub use planewave::{
     build_planewave_hallen, build_planewave_hallen_paths, IncidentPlaneWave, PlaneWaveError,
     PlaneWaveHallen,
@@ -83,4 +85,4 @@ pub use stamps::{
     build_deck_stamps, pocklington_load_diagonal, stamp_hallen_load_columns, DeckStamps,
 };
 pub use taper::{leeson_equivalent_element, EquivalentElement, TaperSection};
-pub use tl::{build_tl_stamps, TlStamp, TlWarning};
+pub use tl::line_admittance;

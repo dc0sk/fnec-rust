@@ -33,6 +33,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`TL` and `NT` are solved as networks across the port gaps (FND-123).**
+  Before, they were stamped as series impedances into the dimensionless Hallén
+  matrix, which left them effectively inert. Two dipoles 1 m apart, linked by a
+  50 Ω, 0.1 m line between the feeds:
+  - nec2c gives **84.83 + j31.13 Ω**;
+  - fnec now gives **84.05 + j28.65 Ω**;
+  - the old stamp moved the feed by only 0.37 Ω.
+
+  A driven port feeds its network in parallel, so the input impedance and power
+  include the network branch, as nec2c's do. Networks run on `--solver hallen`
+  with voltage sources; other solvers and drives are refused rather than
+  approximated. Every `TL`/`NT` corpus row moved, and four now carry nec2c
+  gates.
+
 - **`LD` loads are now correct on `--solver sinusoidal`, `pulse` and
   `continuity` (FND-124).** These three bases added the load in ohms to the
   matrix diagonal, which is the wrong scaling for all of them. A 1050 Ω load at
@@ -97,6 +111,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   chrome, which is how it came to truncate an unrelated file.
 
 ### Changed
+
+- **`TL` cards are read in the NEC-2 layout (FND-111)**:
+  `TL t1 s1 t2 s2 Z0 LEN Y1r Y1i Y2r Y2i`, plus two optional fnec extensions,
+  F7 (velocity factor) and F8 (matched-line loss in dB). A negative Z0 is a
+  crossed line, and a length of 0 means the distance between the segment
+  centres, both as NEC-2 has them. fnec's old layout
+  (`TL t1 s1 t2 s2 NSEG TYPE Z0 LEN VF`) misread every standard deck. It is now
+  **refused**, with the NEC-2 rewrite in the message, rather than silently
+  reinterpreted.
+- **A `TL` or `NT` card fnec cannot use is an error, not a warning.** This covers
+  a missing segment, fewer than 10 `NT` fields, a non-numeric field, and a line
+  an exact number of half-wavelengths long. Skipping such a card solved a
+  different antenna from the one the deck describes; nec2c refuses these too.
 
 - **`hosts.toml`'s `cpu_threads_override` and `gpu_weight_override` are accepted
   and now warned about, not silently ignored** (FND-104). They were documented as

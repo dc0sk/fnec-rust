@@ -39,85 +39,69 @@ use crate::geometry::Segment;
 use crate::matrix::ZMatrix;
 use nec_model::deck::NecDeck;
 
-/// Everything a deck contributes to the impedance matrix, plus what went wrong
-/// building it.
+/// Everything a deck contributes to a solve beyond its geometry and sources,
+/// plus what went wrong building it.
 #[derive(Debug, Clone, Default)]
 pub struct DeckStamps {
-    /// Per-segment series impedance from `LD` cards, added to the diagonal.
+    /// Per-segment series impedance from `LD` cards. Never added to a matrix as
+    /// it stands: how a load enters depends on the basis that runs — columns for
+    /// the Hallén family ([`stamp_hallen_load_columns`]), a scaled diagonal for
+    /// the Pocklington solvers ([`pocklington_load_diagonal`]).
     pub diagonal: Vec<Complex64>,
-    /// Off-diagonal `(row, col, delta)` contributions from `TL` and `NT` cards.
-    pub entries: Vec<(usize, usize, Complex64)>,
-    /// Cards that were skipped, and why. Deduplicated: the same malformed card
-    /// produces one message however many frontends render it.
+    /// Whether the deck has `TL` or `NT` networks. They are not matrix stamps at
+    /// all: a two-port couples port voltages, so the Hallén session solves them
+    /// by superposition ([`crate::network`], FND-123). Only whether they exist
+    /// matters here.
+    pub has_networks: bool,
+    /// Informational notes about the cards (segment-0 shorthand, skipped load
+    /// types). Deduplicated: the same card produces one message however many
+    /// frontends render it.
     pub warnings: Vec<String>,
 }
 
 impl DeckStamps {
-    /// Add only the two-port couplings (`TL`, `NT`), leaving loads to the caller.
+    /// Whether the deck contributes nothing beyond geometry and sources.
     ///
-    /// Loads are never stamped here, because how a load enters depends on the
-    /// basis that will run: columns for the Hallén family
-    /// ([`stamp_hallen_load_columns`]), a scaled diagonal for the Pocklington
-    /// solvers ([`pocklington_load_diagonal`]). [`Self::diagonal`] is the data both
-    /// start from.
-    ///
-    /// The couplings carry the same units error as the loads did — they are
-    /// impedances added to a dimensionless matrix — and are not fixed here: a
-    /// two-port network couples port *voltages*, which are not unknowns in the
-    /// Hallén system, so a correct treatment needs extra unknowns and equations
-    /// rather than a different stamp. They earn a caveat, not a silent answer.
-    pub fn apply_couplings(&self, z: &mut ZMatrix) {
-        for &(row, col, delta) in &self.entries {
-            z.add_to_entry(row, col, delta);
-        }
-    }
-
-    /// Whether this deck stamps any two-port coupling whose model is unvalidated.
-    pub fn has_couplings(&self) -> bool {
-        !self.entries.is_empty()
-    }
-
-    /// Whether applying this would leave the matrix unchanged.
-    ///
-    /// The question the GPU-resident paths need: a deck that stamps nothing can be
-    /// solved on the device, because there is no host-side contribution to lose.
-    /// Asked of the *values* rather than of which cards are present, so a deck
-    /// carrying an `LD` card that stamps zero is not needlessly refused, and a card
-    /// type nobody remembered to list cannot slip through.
+    /// The question the GPU-resident paths need: they re-fill and solve on the
+    /// device from raw segment inputs, so any load or network would be silently
+    /// lost there. Loads are asked by *value*, so an `LD` that stamps exactly zero
+    /// does not force the CPU path. Networks are asked by *presence*: even a
+    /// zero-admittance `NT` changes the answer, because it inserts itself into the
+    /// port gaps (FND-123) — and a deck whose networks moved out of the matrix
+    /// must not start looking like an empty one (FND-023 in reverse).
     pub fn is_identity(&self) -> bool {
-        self.entries.is_empty() && self.diagonal.iter().all(|z| *z == Complex64::new(0.0, 0.0))
+        !self.has_networks && self.diagonal.iter().all(|z| *z == Complex64::new(0.0, 0.0))
     }
 }
 
-/// Build the deck's matrix contribution: `LD` loads, `TL` lines and `NT` networks.
+/// Build the deck's contribution: `LD` loads, and whether it has `TL`/`NT`
+/// networks.
 ///
-/// Frequency-dependent — `LD` and `TL` both need it — so a sweep rebuilds per point.
+/// Frequency-dependent (`LD` needs it), so a sweep rebuilds per point.
 pub fn build_deck_stamps(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> DeckStamps {
     let mut warnings: Vec<String> = Vec::new();
 
     let (diagonal, load_warnings) = crate::loads::build_loads(deck, segs, freq_hz);
     warnings.extend(load_warnings.into_iter().map(|w| w.to_string()));
 
-    let (tl_stamps, tl_warnings) = crate::tl::build_tl_stamps(deck, segs, freq_hz);
-    warnings.extend(tl_warnings.into_iter().map(|w| w.to_string()));
+    // The network notes (segment-0 shorthand) belong with the other card notes.
+    // A network that cannot be built is not a note: `pre_solve_error` refuses the
+    // deck and the Hallén session refuses the solve.
+    if let Ok((_, notes)) = crate::network::build_networks(deck, segs, freq_hz) {
+        warnings.extend(notes);
+    }
 
-    let (nt_stamps, nt_warnings) = crate::network::build_nt_stamps(deck, segs);
-    warnings.extend(nt_warnings.into_iter().map(|w| w.to_string()));
-
-    // One message per distinct problem. The frontends previously deduplicated
-    // differently — the CLI only for `NT`, the bindings across everything, the GUI
-    // not at all — so "the same warnings everywhere" was not true even where the
-    // same cards were read.
     let mut seen = std::collections::HashSet::new();
     warnings.retain(|w| seen.insert(w.clone()));
 
-    let mut entries: Vec<(usize, usize, Complex64)> = Vec::new();
-    entries.extend(tl_stamps);
-    entries.extend(nt_stamps);
-
     DeckStamps {
         diagonal,
-        entries,
+        has_networks: deck.cards.iter().any(|c| {
+            matches!(
+                c,
+                nec_model::card::Card::Tl(_) | nec_model::card::Card::Nt(_)
+            )
+        }),
         warnings,
     }
 }
@@ -228,7 +212,30 @@ mod tests {
             .collect(),
         }));
         let stamps = stamps_for(&deck);
-        assert!(!stamps.entries.is_empty(), "NT should stamp off-diagonals");
+        assert!(stamps.has_networks, "an NT card is a network");
+        assert!(!stamps.is_identity());
+    }
+
+    /// FND-123 moved TL/NT out of the matrix entries. A GPU gate that still asked
+    /// only about entries would now wave a TL-only deck through and drop its line
+    /// on the device — FND-023 again, from the other side.
+    #[test]
+    fn a_tl_card_makes_the_deck_non_identity() {
+        let mut deck = dipole();
+        deck.cards.push(Card::Tl(nec_model::card::TlCard {
+            tag1: 1,
+            segment1: 5,
+            tag2: 1,
+            segment2: 15,
+            z0: 50.0,
+            length: 1.0,
+            shunt1: (0.0, 0.0),
+            shunt2: (0.0, 0.0),
+            velocity_factor: 1.0,
+            loss_db: 0.0,
+        }));
+        let stamps = stamps_for(&deck);
+        assert!(stamps.has_networks);
         assert!(!stamps.is_identity());
     }
 

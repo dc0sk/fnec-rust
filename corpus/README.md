@@ -15,11 +15,11 @@ Of the 50 cases in `corpus/reference-results.json`:
 
 | Tier | Cases | What the gate proves |
 |:-----|------:|:---------------------|
-| Self-pinned regression only | 40 | the answer has not changed since it was pinned |
-| Additionally gated against an external engine | 10 | the answer also agrees with an independent solver, within a stated absolute tolerance |
+| Self-pinned regression only | 36 | the answer has not changed since it was pinned |
+| Additionally gated against an external engine | 14 | the answer also agrees with an independent solver, within a stated absolute tolerance |
 | **Total** | **50** | |
 
-Of the 40 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
+Of the 36 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
 
 These three counts are **derived from `reference-results.json` and checked**, not maintained by hand — a stale count here is the same failure as the stale claim this section replaced.
 
@@ -27,7 +27,7 @@ The external engines actually used are **nec2c 1.3.1** and **NEC2DXS500 via Wine
 
 Until FND-156 the external X tolerances were 35–47 Ω, to absorb a "systematic" ~32 Ω reactance offset from nec2c that was in fact a defect: the Hallén free-end rows zeroed the current half a segment inside every wire tip, shortening each wire by one segment. With that fixed, the external rows agree with nec2c to within 3.6 Ω in R and 4.9 Ω in X, and the gates were tightened to about twice the remaining difference. One row keeps a wide, relative gate: `split-v-conductor-path-freesp`, an off-centre feed near antiresonance, sits about 11 % / 13 % from nec2c at convergence (FND-158). The tight gates are still the self-pinned regression.
 
-**What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 40 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
+**What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 36 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
 
 `external_reference_candidate` is the key the validator reads. A case that declares an `External*` tolerance gate must carry one, and `every_external_gate_is_backed_by_a_readable_external_reference` fails the build otherwise — a gate stored under any other key is never evaluated, which is how one row advertised a nec2c parity check that had never run (FND-138).
 

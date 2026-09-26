@@ -32,7 +32,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/ld_loads.rs` | 5 | `LD` types 1/2/4 change impedance; unsupported warn+continue | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
-| `apps/nec-cli/tests/parser_warnings.rs` | 22 | Warnings for unknown cards, `TL` types/segments; runs still succeed | COMP-001, PRT-002 |
+| `apps/nec-cli/tests/parser_warnings.rs` | 23 | Warnings for unknown cards, `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/report_contract.rs` | 5 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
 | `apps/nec-cli/tests/resonance_contract.rs` | 3 | `--resonance` convergence, unbounded fail, missing-flag usage | FR-010, PH3-CHK-008 |
 | `apps/nec-cli/tests/result_cache_contract.rs` | 5 | Distributed result cache hit/miss/invalidation + sweep reuse | PH6-CHK-007 |
@@ -40,7 +40,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 7 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
 | `apps/nec-cli/tests/template_contract.rs` | 5 | TOML/JSON var substitution; undefined-token error | PH3-CHK-007 |
-| `apps/nec-cli/tests/tl_cards.rs` | 3 | `TL` card changes feedpoint Z across nseg | PRT-002, PH2-CHK-003 |
+| `apps/nec-cli/tests/tl_cards.rs` | 5 | NEC-2 `TL` card matches nec2c; retired fnec layout refused with the NEC-2 rewrite; integer-valued NEC-2 card not mistaken for the old layout; zero length = segment-centre distance; non-Hallén solver refused | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/topology_fallback.rs` | 13 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
 | `apps/nec-cli/tests/worker_gpu_exec.rs` | 1 | Distributed GPU dispatch through worker pool (mixed gpu/cpu) | PH7-CHK-004 |
 | `apps/nec-cli/tests/worker_integration.rs` | 7 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
@@ -53,13 +53,14 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
+| `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 4 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
 | `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=534 --> **534** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=543 --> **543** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -70,21 +71,21 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 240 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_solver` | 231 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
 | `nec_worker` | 102 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
-| `nec-gui` | 91 | app_state, model_doc, mesh, camera, solve |
+| `nec-gui` | 92 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
-| `nec_parser` | 27 | lib, template |
+| `nec_parser` | 30 | lib, template |
 | `nec_accel` | 26 | kernel_reference 20, lib 6 |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=572 --> **572** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1113 --> **1113** = 572 unit + 534 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1117 --> **1117** = 567 unit + 543 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

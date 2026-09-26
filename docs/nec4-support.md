@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # NEC-4 Support Boundary
@@ -70,8 +70,8 @@ This document explicitly defines which NEC-2/NEC-4 cards and features are suppor
 |:-----|:------------|:-------|:------|
 | CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
 | SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
-| TL | Transmission line (network) | PARTIAL | Initial executable subset: lossless TL (`type=0`, `NSEG>=0`, with `NSEG=0` treated as a single-section shorthand) contributes a 2-port impedance stamp to the matrix. Endpoint `segment=0` is mapped to the tag center segment with a warning; for even segment counts, the lower center segment is chosen deterministically. Unsupported TL variants emit runtime warnings and are ignored. |
-| NT | Network definition | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores NT electrical semantics. |
+| TL | Transmission line (network) | PARTIAL | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]` (F1 = Z0, negative = crossed; F2 = length, ≤ 0 = centre-to-centre distance; F3–F6 = end shunt admittances; fnec extensions F7 = velocity factor, F8 = matched-line loss dB). Solved as a two-port network across the port gaps, in parallel (NEC-2's model), on `--solver hallen` with voltage sources only; nec2c-gated (FND-111, FND-123). Endpoint `segment=0` maps to the tag centre segment (lower centre for even counts). fnec's retired `NSEG TYPE` layout and any unusable card are refused with an error. See `docs/card-support-matrix.md`. |
+| NT | Network definition | PARTIAL | Y11 Y12 Y22 two-port solved across the port gaps in parallel, as for TL (FND-123); `--solver hallen`, voltage sources only; unusable cards refused with an error. |
 | CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
 | MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |
 
@@ -112,12 +112,12 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 | MA | Matériel (material) definition | `unknown` | DEFERRED | Lossy wire materials. Phase 2+. |
 | NE | Program end (NEC-4) | `unknown` | DEFERRED | Extension to EN. Phase 2+. |
 | NM | Program control (NEC-4) | `unknown` | DEFERRED | Version/control flags. Phase 2+. |
-| NT | Network definition | `recognized` | PARTIAL | Parsed for staged portability; solver emits explicit deferred-support warning; NT electrical semantics not applied. |
+| NT | Network definition | `recognized` | PARTIAL | Solved as a two-port network across the port gaps (Hallén, voltage sources only); unusable cards are errors. |
 | PT | Print/store control | `recognized` | PARTIAL | Parsed for staged portability; runtime emits explicit deferred-support warning. Portability path only. |
 | RP | Radiation pattern request | `recognized` | PARTIAL | THETA/PHI far-field pattern executed and reported in `RADIATION_PATTERN` section; no near-field, no JSON/CSV/plot export. |
 | SP | Special segment | `unknown` | OUT OF SCOPE | Complex geometry types (spheres, absorbers) belong in CAD tools. |
 | SY | Symbol definition | `unknown` | OUT OF SCOPE | Parametric expressions; use pre-processing/template tool (PH3-CHK-007). |
-| TL | Transmission line | `recognized` | PARTIAL | Lossless TL type 0 contributes 2-port impedance stamp; NSEG=0 mapped to tag center; unsupported variants warn and are ignored. |
+| TL | Transmission line | `recognized` | PARTIAL | NEC-2 layout; solved as a two-port network across the port gaps (Hallén, voltage sources only); retired `NSEG TYPE` layout and unusable cards are refused. |
 | XQ | Near/far field request | `unknown` | DEFERRED | Near-field analysis. Phase 2+. |
 
 ## Source type support matrix
@@ -128,7 +128,7 @@ This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exa
 | Current excitation (magnetic dipole) | PARTIAL | `--solver pulse` now implements first slices for EX 1 and EX 5 using driven-segment current constraints. Hallen and other non-pulse paths still map both to EX 0 with explicit runtime warnings while broader semantics remain deferred. |
 | Plane wave incidence | PARTIAL | EX 2 is accepted as a staged portability fallback, currently mapped to EX 0 behavior with an explicit runtime warning; full scattering semantics remain deferred. |
 | Segment-current excitation | PARTIAL | `--solver pulse` now implements a first EX 4 segment-current slice using a driven-segment current constraint. Hallen and other non-pulse paths still map EX 4 to EX 0 with an explicit runtime warning while broader semantics remain deferred. |
-| Multi-port sources | PARTIAL | PT and NT are parsed for staged portability with explicit deferred-support warnings; electrical semantics remain deferred. |
+| Multi-port sources | PARTIAL | NT (and TL) are solved as two-port networks across the port gaps (FND-123; `--solver hallen`, voltage sources only). PT is parsed for staged portability with explicit deferred-support warnings. |
 
 ## Solver mode support
 

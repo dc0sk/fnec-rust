@@ -60,12 +60,15 @@ mod tests {
     /// so if the worker drops them nobody ever learns the card was skipped.
     #[test]
     fn a_malformed_card_the_worker_skips_is_reported_not_swallowed() {
-        let deck = "CM malformed NT: 8 fields, expected 10\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 10 1 40 0.0 -0.002 0.0 0.004\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // An unsupported LD type is still skipped with a warning. (This used a
+        // malformed NT, which is now refused outright rather than skipped: skipping
+        // a network solves a different antenna, FND-123.)
+        let deck = "CM unsupported LD type\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 7 1 10 10 1 0 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let r = solve_deck_at_frequency(deck, 14.2e6, "hallen").expect("deck still solves");
         assert!(
             r.warnings
                 .iter()
-                .any(|w| w.contains("NT card has 8 fields")),
+                .any(|w| w.contains("LD type 7 on tag 1 is not yet supported")),
             "the skipped card must be reported: {:?}",
             r.warnings
         );
@@ -473,19 +476,10 @@ fn solve_inner(
         }
     })?;
 
-    // 4. Assemble Z-matrix and apply loads / TL stamps
+    // 4. Assemble Z-matrix
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
-    // Loads reach the solve as data, applied by the session as matrix columns in
-    // the basis that runs (FND-122). Only the two-port couplings are stamped here.
-    stamps.apply_couplings(&mut z_mat);
-    if stamps.has_couplings() {
-        warnings.push(
-            "TL/NT two-port couplings are stamped as series impedances into a \
-             dimensionless matrix; that model is not derived and the resulting \
-             impedance is unreliable (FND-122)"
-                .to_string(),
-        );
-    }
+    // Loads and TL/NT networks reach the solve as data, applied by the routed
+    // session in the basis that runs (FND-122, FND-123).
 
     // Which drive this deck carries. A current source is a real feedpoint, but it
     // needs its own solve — the excitation vector is all zeros, so `V/I` has
@@ -568,7 +562,9 @@ fn solve_inner(
             nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
                 .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         current_source_port = routed.port_voltage;
-        (routed.currents, "cpu")
+        // Only the feedpoint is read from these, so they are the SOURCE currents:
+        // a feed that is also a TL/NT port includes the network branch (FND-123).
+        (routed.source_currents(), "cpu")
     };
 
     // 7. Extract the feedpoint, through the shared seam.

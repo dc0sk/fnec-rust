@@ -2,10 +2,26 @@
 project: fnec-rust
 doc: docs/ph8-chk-005-lossy-tl.md
 status: living
-last_updated: 2026-07-04
+last_updated: 2026-09-26
 ---
 
 # PH8-CHK-005: lossy transmission line (`tl_type != 0`)
+
+> **Superseded (2026-09-26, FND-111/FND-123).** The card layout and the matrix
+> stamp described below are **retired**. `TL` now uses NEC-2's layout,
+> `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`: F1 = Z0 (negative = crossed
+> line), F2 = length (≤ 0 = straight-line distance between the segment centres),
+> F3–F6 = shunt admittances at the two ends, and two fnec extensions — F7 =
+> velocity factor (default 1) and **F8 = total matched-line loss in dB** (default
+> 0 = lossless), which replaces the `TYPE≠0` + `F3` = loss convention below.
+> `NSEG` and `TYPE` no longer exist; the old layout is refused at parse time with
+> the NEC-2 rewrite in the error (a lossy `TYPE=1` card with F3 = loss dB becomes
+> `… 0 0 0 0 1 <loss>`). The line is no longer stamped as Z-parameters into the
+> Hallén matrix (that stamp was inert); it is a two-port network across the port
+> gaps, in parallel, as in NEC-2, with Y11 = Y22 = coth(γℓ)/Z0 and
+> Y12 = −csch(γℓ)/Z0, γℓ = αℓ + j·kℓ/vf (lossless: −j·cotθ/Z0, +j·cscθ/Z0);
+> shunts add to Y11/Y22. Loss < 0, vf ≤ 0, Z0 = 0 or an electrical length that is
+> a multiple of λ/2 are errors. See `docs/card-support-matrix.md`.
 
 ## Requirement / change
 
