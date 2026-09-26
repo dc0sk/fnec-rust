@@ -172,7 +172,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in
-  deck". The GUI's Solve tab points at its Currents and Pattern tabs, `fnec_py`
+  deck". The GUI's Solve tab points at its Currents tab, `fnec_py`
   at `solve_currents_deck_str`, and the distributed worker — whose protocol
   carries only an impedance, and is unchanged — at those and the CLI. The worker
   now refuses such a deck before the matrix fill rather than after a full solve.

@@ -617,11 +617,12 @@ fn feedpoint_impedance(
         return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
     // Reached only when the deck has no driven feedpoint at all — a plane-wave
-    // receive deck. This window solves one for currents and a pattern, so the
-    // refusal points there rather than at another program (FND-108).
+    // receive deck. The Currents tab solves one, so the refusal points there
+    // rather than at another program (FND-108). Not the Pattern tab: that draws
+    // the induced current's re-radiation, which is not a receive pattern.
     Err(nec_solver::validate::unpriceable_feedpoint_error(
         deck,
-        "the Currents and Pattern tabs solve a receive deck",
+        "the Currents tab solves a receive deck for its induced currents",
     ))
 }
 
@@ -1166,7 +1167,7 @@ mod tests {
         let deck_src = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
         let e = solve_deck_str(deck_src, SolverKind::Hallen).expect_err("no feedpoint");
         assert!(e.contains("receiving antenna has no feedpoint"), "{e}");
-        assert!(e.contains("Currents and Pattern tabs"), "{e}");
+        assert!(e.contains("Currents tab"), "{e}");
         // The route it names must be real.
         let pts = current_distribution_deck_str(deck_src, SolverKind::Hallen)
             .expect("the Currents tab solves a receive deck");

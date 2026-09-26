@@ -669,6 +669,49 @@ mod tests {
         );
     }
 
+    /// FND-059 at the receive-deck refusal: a flaw found at the stamps survives
+    /// it. The refusal runs after the stamps; ahead of them, the note is lost.
+    #[test]
+    fn a_receive_deck_refusal_keeps_the_stamp_caveats() {
+        let deck = "CM card note, and a plane wave\nCE\n\
+                    GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 0 1 0 0.001 0 0 0 0 0\n\
+                    EX 1 1 1 0 30 0 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_message,
+            warnings,
+            ..
+        } = &result
+        else {
+            panic!("expected a receive-deck refusal: {result:?}");
+        };
+        assert!(
+            error_message.contains("receiving antenna has no feedpoint"),
+            "{error_message}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("interpreting segment 0")),
+            "the card note must survive the refusal: {warnings:?}"
+        );
+    }
+
+    /// An EX type outside 0-5 is refused for what it is. `feedpoints` skips such
+    /// a card, so a receive-deck check placed ahead of the RHS build called this
+    /// deck a receive deck and sent the reader to frontends that refuse it too.
+    #[test]
+    fn an_unknown_ex_type_is_not_called_a_receive_deck() {
+        let deck = "CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 9 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error { error_message, .. } = &result else {
+            panic!("expected a refusal: {result:?}");
+        };
+        assert!(error_message.contains("EX type 9"), "{error_message}");
+        assert!(!error_message.contains("receiving"), "{error_message}");
+    }
+
     /// ...and a deck refused before anything was parsed reports none, rather than
     /// inventing caveats for a deck that never existed.
     #[test]

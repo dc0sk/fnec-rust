@@ -522,11 +522,13 @@ RECEIVE_NEC2C = {
 def test_a_receive_deck_solves_for_its_currents():
     """FND-108: the bindings had no answer at all for a receive deck.
 
-    Gated against nec2c, not against fnec's own CLI: a Python-side wiring error
-    (the wrong current vector, an index shift, a dropped sign) shows as a
-    departure from an external solver. The band is the absolute one the Rust
-    test holds, 6% of the peak; the asymmetric θ=30° drive makes an end-for-end
-    reversal visible at segments 1 and 51.
+    Gated against nec2c, not against fnec's own CLI. The band is the absolute
+    one the Rust test holds, 6% of the peak (fnec's own residual is 4%), so what
+    this catches is a gross wiring error: a dropped sign or a zero vector
+    anywhere, a row order shifted away from the centre, or an end-for-end
+    reversal — measured to fail at segment 39, where the θ=30° drive makes the
+    two halves differ by more than the band. It cannot tell wire currents from
+    source currents: this deck has no network, so they are equal.
     """
     got = fnec_py.solve_currents_deck_str(RECEIVE)
     assert got["freq_mhz"] == pytest.approx(14.2)

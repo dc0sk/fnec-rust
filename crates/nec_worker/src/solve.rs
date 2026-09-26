@@ -454,16 +454,6 @@ fn solve_inner(
     let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
     warnings.extend(stamps.warnings.iter().cloned());
 
-    // 2d. A deck with nothing to price — a plane-wave receive deck — is refused
-    // here, before the matrix fill it cannot use. It used to be solved in full
-    // and then refused as `NoFeedpoint`, with a sentence that named no remedy.
-    // After the stamps, so a flawed receive deck still reports its flaw (FND-059).
-    if nec_solver::feedpoints(&deck).next().is_none() {
-        return Err(SolveError::UnsupportedConfig(
-            nec_solver::validate::unpriceable_feedpoint_error(&deck, RECEIVE_DECK_REMEDY),
-        ));
-    }
-
     // 3. Build Hallén RHS
     let hallen_rhs = build_hallen_rhs(&deck, &segs, freq_hz).map_err(|e| {
         use nec_solver::ExcitationError;
@@ -486,6 +476,19 @@ fn solve_inner(
             other => SolveError::UnsupportedConfig(other.to_string()),
         }
     })?;
+
+    // 3b. A deck with nothing to price — a plane-wave receive deck — is refused
+    // here, before the matrix fill it cannot use. It used to be solved in full
+    // and then refused as `NoFeedpoint`, with a sentence that named no remedy.
+    // After the stamps, so a flawed receive deck still reports its flaw (FND-059),
+    // and after the RHS build, whose refusal of an EX type outside 0-5 names the
+    // real cause — `feedpoints` skips such a card, so ahead of it this would
+    // misreport the deck as a receive deck. Still before the O(N^2) fill.
+    if nec_solver::feedpoints(&deck).next().is_none() {
+        return Err(SolveError::UnsupportedConfig(
+            nec_solver::validate::unpriceable_feedpoint_error(&deck, RECEIVE_DECK_REMEDY),
+        ));
+    }
 
     // 4. Assemble Z-matrix
     let mut z_mat = assemble_z_matrix_with_ground(&segs, freq_hz, &ground);
@@ -652,9 +655,9 @@ fn solve_inner(
         });
     }
 
-    // Unreachable: step 2d refused every deck without a feedpoint, before the
+    // Unreachable: step 3b refused every deck without a feedpoint, before the
     // solve. Worded apart from that refusal so a receive deck reaching here —
-    // step 2d gone, and a full solve wasted — fails the tests that pin it.
+    // step 3b gone, and a full solve wasted — fails the tests that pin it.
     Err(SolveError::UnsupportedConfig(
         "internal: solved a deck with no feedpoint to price".to_string(),
     ))

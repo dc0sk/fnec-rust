@@ -166,7 +166,7 @@ Adjust the `PYTHONPATH` Python version component to match your environment.
 
 - Single feedpoint per record (first EX card).
 - No radiation-pattern output, so a receive deck returns its currents but not
-  its receive pattern (the CLI and the GUI's Pattern tab have that).
+  its receive pattern (the CLI computes that).
 - Hallen and MPIE only: the pulse, continuity and sinusoidal *bases* that
   `fnec --solver` offers are not selectable from Python. (This line previously
   said "Hallen solver only"; `solver="mpie"` has been accepted since #413 /
