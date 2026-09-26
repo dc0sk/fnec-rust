@@ -2413,9 +2413,9 @@ fn an_unrecognised_excitation_warns_while_typing_rather_than_at_solve() {
 ///
 /// Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI reported a peak
 /// `GAIN_DB` of 0.2997, and the GUI reported **6.3355** — overstating gain by
-/// 6.04 dB, which is the ground loss it was not accounting for. Both read 0.3654
-/// since the FND-156 end-row fix (CLI with `RP 0 37 1 1000 0 0 5 0`, the GUI's
-/// grid).
+/// 6.04 dB, which is the ground loss it was not accounting for. Both read 0.4678
+/// since FND-158 (0.3654 after FND-156; CLI with `RP 0 37 1 1000 0 0 5 0`, the
+/// GUI's grid).
 #[test]
 fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
     let deck = std::fs::read_to_string(concat!(
@@ -2432,8 +2432,8 @@ fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
         .map(|p| p.gain_total_dbi)
         .fold(f64::MIN, f64::max);
     assert!(
-        (peak - 0.3654).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's 0.3654; \
+        (peak - 0.4678).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.4678; \
          6.34 would mean the ground loss is unaccounted for"
     );
 }
@@ -2504,10 +2504,10 @@ fn the_gui_pattern_corrects_a_current_source_drive_as_the_cli_does() {
     // the CLI answers 0.2997 here — the voltage-drive value — and the GUI must
     // still match it. What this test gates is unchanged: CLI-GUI parity on a
     // current-source deck over lossy ground, which is FND-114. FND-156 moved both
-    // frontends to 0.3654 together.
+    // frontends to 0.3654 together, and FND-158 to 0.4678.
     assert!(
-        (peak - 0.3654).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's 0.3654 for this current-source \
+        (peak - 0.4678).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.4678 for this current-source \
          deck; 6.34 would mean the ground loss is unaccounted for, which is exactly \
          what a current source used to do"
     );

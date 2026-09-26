@@ -33,6 +33,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Hallén now carries both homogeneous solutions, cos(k·s) and sin(k·s)
+  (FND-158). Every answer with an asymmetric current changes.** It carried the
+  cos term alone, which is exact only when the current is symmetric about the
+  conductor's midpoint: a centre-fed isolated dipole, or a symmetric array.
+  Everything else was a least-squares compromise. Measured against nec2c:
+  - a 0.55 λ wire fed off-centre: 324 → **370** Ω (nec2c 367);
+  - a vertical dipole over perfect ground: 113.6 → **102.5** Ω (103.2);
+  - a dipole beside an axially offset parasitic: **459 → 27.3** Ω (25.5).
+
+  Both columns are now in the plain, conductor-path, sinusoidal and
+  current-source solves, and in the GPU-resident shader. Wires touching a
+  junction keep cos only: they need junction conditions fnec does not yet
+  impose (FND-162), and they already warn and recommend `--solver mpie`. The
+  default ground model (reflection coefficient) now reads 92.7 Ω on the
+  near-ground vertical dipole, against nec2c's Sommerfeld 97.3;
+  `--ground-solver sommerfeld` gives 96.6. The earlier 97.2 was two errors
+  cancelling.
+
 - **`TL` and `NT` are solved as networks across the port gaps (FND-123).**
   Before, they were stamped as series impedances into the dimensionless Hallén
   matrix, which left them effectively inert. Two dipoles 1 m apart, linked by a

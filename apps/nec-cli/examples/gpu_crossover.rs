@@ -170,7 +170,14 @@ fn main() {
 
         let cpu_us = best_us(3, || {
             let z = assemble_z_matrix(&segs, FREQ_HZ);
-            let _ = nec_solver::solve_hallen(&z, &rhs.rhs, &rhs.cos_vec, &endpoints, &junctions);
+            let _ = nec_solver::solve_hallen(
+                &z,
+                &rhs.rhs,
+                &rhs.cos_vec,
+                &rhs.sin_vec,
+                &endpoints,
+                &junctions,
+            );
         });
 
         let z_inputs: Vec<ZSegmentInput> = segs
@@ -189,7 +196,9 @@ fn main() {
                 &z_inputs,
                 &rhs.rhs,
                 &rhs.cos_vec,
+                &rhs.sin_vec,
                 &endpoints,
+                &nec_solver::sin_eligible(&endpoints, &junctions),
                 &nec_solver::hallen_constraint_rows(&endpoints, &junctions),
                 FREQ_HZ,
             ));

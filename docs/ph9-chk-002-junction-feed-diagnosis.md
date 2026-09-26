@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-junction-feed-diagnosis.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # PH9-CHK-002: multi-wire junction accuracy — root-cause diagnosis & fix plan
@@ -79,6 +79,18 @@ This is a formulation gap in the Hallén homogeneous solution, not the
 current-continuity constraint and not a tolerance issue — it reproduces exactly
 across solvers and mesh densities.
 
+> **Correction (2026-09-26, FND-158):** the diagnosis above treats `cos(k·s)` as
+> *the* homogeneous basis. Hallén's homogeneous solution along a conductor is
+> two-dimensional, `C·cos(k·s) + D·sin(k·s)`; the delta-gap solves carried only the
+> `cos` term, which is exact only for a current symmetric about the conductor's
+> midpoint. Since FND-158 every conductor with two free ends (a merged conductor of
+> ≥ 2 segments with no junction endpoint, or a conductor path of ≥ 2 segments)
+> carries both constants. Wires ending on a junction row in the per-wire route keep
+> `cos` only — W wires with W − 1 continuity rows give W + 1 conditions for 2W
+> constants — pending the equal-scalar-potential junction rows tracked as FND-162.
+> The per-wire phase-reset mechanism described above is unchanged and remains the
+> historical root cause of this finding.
+
 ## Practical impact
 
 Real centre-fed bent/branched antennas — inverted-V, folded dipole, T/gamma
@@ -99,7 +111,8 @@ present and is not the cause).
    conductor. `build_hallen_rhs` then computes `cos(k·s)` from the *merged*
    conductor's midpoint/axis and applies each source across its whole conductor,
    and `solve_session` passes the merged endpoints to `solve_hallen` (one
-   homogeneous constant per conductor) and drops the now-internal continuity
+   homogeneous constant per conductor at the time; `cos` + `sin` since 2026-09-26,
+   FND-158) and drops the now-internal continuity
    constraint. The merge is a strict no-op for any geometry without such a split,
    so single-wire, parallel-array, bent, and stepped-radius solves are byte-for-byte
    unchanged. Validated: collinear chain → 74.41 + j14.52 Ω; single-wire 74.24 and

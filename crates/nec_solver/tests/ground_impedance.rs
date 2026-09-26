@@ -35,7 +35,7 @@ fn feedpoint_z(deck: &NecDeck, ground: &GroundModel, feed_tag: u32, feed_seg: u3
     let z = assemble_z_matrix_with_ground(&segs, FREQ, ground);
     let h = build_hallen_rhs(deck, &segs, FREQ).unwrap();
     let endpoints = wire_endpoints_from_segs(&segs);
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &endpoints, &[]).unwrap();
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &endpoints, &[]).unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)

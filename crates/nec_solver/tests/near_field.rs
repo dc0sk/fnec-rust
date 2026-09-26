@@ -36,7 +36,7 @@ fn z_dipole() -> (Vec<Segment>, Vec<Complex64>, Complex64) {
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
     let h = build_hallen_rhs(&d, &segs, FREQ).unwrap();
     let ep = wire_endpoints_from_segs(&segs);
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &ep, &[]).unwrap();
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &ep, &[]).unwrap();
     let i_feed = sol.currents[25];
     (segs, sol.currents, i_feed)
 }

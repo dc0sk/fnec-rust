@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-06-20
+last_updated: 2026-09-26
 ---
 
 # Requirements
@@ -18,7 +18,7 @@ last_updated: 2026-06-20
 - **DEC-007**: License compatibility risk is tracked and evaluated continuously via SBOM and dependency review.
 - **DEC-008**: GPU acceleration prioritizes FOSS-based frameworks (e.g., OpenCL, SYCL, HIP) over proprietary stacks. Within FOSS frameworks, AMD GPUs are preferred over Intel and NVIDIA for vendor diversity and ecosystem growth.
 - **DEC-009**: Product parity targets are explicit: fnec-rust aims to be at least equal to NEC-2/NEC-4 in supported-scope accuracy, equal to 4nec2 and EZNEC in mainstream workflow coverage, competitive with AutoEZ in automation-driven design workflows, competitive with xnec2c-optimize for optimizer-loop orchestration, and competitive with xnec2c, yeti01/nec2, and necpp in open-source workflow, batch execution, and embeddability.
-- **DEC-010**: Hallen solver supports non-collinear and junctioned multi-wire topologies via the segmented hybrid formulation (per-wire local cos(k·s) vectors and KCL junction rows). `--allow-noncollinear-hallen` is a silent no-op retained for backward-compatible invocation.
+- **DEC-010**: Hallen solver supports non-collinear and junctioned multi-wire topologies via the segmented hybrid formulation (per-wire local cos(k·s) vectors — plus sin(k·s) on every conductor with two free ends since 2026-09-26, FND-158 — and KCL junction rows). `--allow-noncollinear-hallen` is a silent no-op retained for backward-compatible invocation.
 - **DEC-011**: Experimental sinusoidal solver mode must be safety-bounded. If residual quality is unstable for supported chain geometry, CLI behavior falls back to a stable Hallen-class solve path with explicit diagnostics.
 
 ## Functional requirements

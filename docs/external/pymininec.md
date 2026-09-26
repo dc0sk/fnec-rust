@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/external/pymininec.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Reference: pymininec (schlatterbeck/pymininec)
@@ -90,8 +90,10 @@ note; several of these are logged there as backlog candidates, not commitments.
    strategy was built to avoid blind `nec2c` parity because fnec's Hallén result
    appeared to differ from `nec2c` *systematically* — since FND-156 (2026-09-25)
    that difference is known to have been a free-end boundary defect, and Hallén
-   now tracks `nec2c` to a few ohms on the corpus (remaining: FND-158, off-centre
-   near-antiresonant feed, and ~4 Ω residual X at 51 segments). A
+   now tracks `nec2c` to a few ohms on the corpus (remaining: ~4 Ω residual X at
+   51 segments; the off-centre-feed error, FND-158, was the missing `sin(k·s)`
+   homogeneous term, added 2026-09-26 — bent conductor paths and junction-ended
+   wires remain approximate, FND-162). A
    MININEC-formulation code is a genuinely independent third data point: where
    fnec, `nec2c`, and pymininec **all** agree we have high confidence; where fnec
    sits between the other two, formulation bias is a candidate cause — but

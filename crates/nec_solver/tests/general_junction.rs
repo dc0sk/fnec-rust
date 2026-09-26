@@ -46,7 +46,7 @@ fn solve_z_paths(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Complex64 {
         }
     }
     let free_ends = path_end_rows(&segs, &paths);
-    let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
+    let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &path_of, &free_ends).unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)

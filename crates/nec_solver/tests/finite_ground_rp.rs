@@ -44,7 +44,7 @@ fn solve_and_pattern(ground: &GroundModel, thetas: &[f64]) -> Vec<f64> {
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, ground);
     let h = build_hallen_rhs(&deck, &segs, FREQ_HZ).expect("rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &endpoints, &[]).expect("solve");
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &endpoints, &[]).expect("solve");
     let pts: Vec<FarFieldPoint> = thetas
         .iter()
         .map(|&t| FarFieldPoint {
@@ -151,7 +151,7 @@ fn input_power(
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, ground);
     let h = build_hallen_rhs(deck, &segs, FREQ_HZ).unwrap();
     let ep = wire_endpoints_from_segs(&segs);
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &ep, &[]).unwrap();
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &ep, &[]).unwrap();
     let i_feed = sol.currents[25];
     let p_in = 0.5 * (num_complex::Complex64::new(1.0, 0.0) * i_feed.conj()).re;
     (sol.currents, p_in, segs)

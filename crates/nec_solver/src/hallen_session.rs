@@ -285,8 +285,9 @@ pub fn solve_hallen_planewave_routed(
 /// solves do not produce a per-group homogeneous constant to subtract.
 #[derive(Debug, Clone)]
 pub struct ResidualInputs {
-    pub c_hom: Vec<Complex64>,
-    pub cos_vec: Vec<f64>,
+    /// The solved homogeneous term per row, `cos·C + sin·D`
+    /// ([`crate::linear::hallen_homogeneous`]): the residual is `Z·I − h − rhs`.
+    pub homogeneous: Vec<Complex64>,
     pub rhs: Vec<Complex64>,
     /// `Ok` groups rows by contiguous wire range, `Err` by conductor path.
     pub grouping: Result<Vec<(usize, usize)>, Vec<usize>>,
@@ -413,11 +414,11 @@ fn solve_hallen_routed_inner(
     let (networks, _) =
         crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
     if !networks.is_empty() && route.drive != HallenDrive::DeltaGap {
-        // Not a limitation of the model, of the superposition: the plane-wave
-        // solve carries a sin column the unit-gap solves do not, so the two
-        // responses live in different least-squares systems and do not add
-        // exactly; a current source would need its rescaling redone through the
-        // network. Refused rather than approximated (FND-123).
+        // Refused rather than approximated (FND-123). A plane wave is not a port
+        // drive: its responses come from the receive solve, a separate
+        // least-squares system from the unit-gap solves, and superposing across
+        // two systems is not exact. A current source would need its rescaling
+        // redone through the network.
         return Err(HallenSessionError::Network(format!(
             "TL/NT networks are supported with voltage (delta-gap) sources only; \
              this deck is driven by a {}",
@@ -476,34 +477,35 @@ fn solve_delta_gap(
     let endpoints_and_junctions = if grouped.is_some() {
         None
     } else {
-        let endpoints = merge_collinear_wire_endpoints(segs);
-        let mut comp_of = vec![0usize; segs.len()];
-        for (ci, &(first, last)) in endpoints.iter().enumerate() {
-            for slot in comp_of.iter_mut().take(last + 1).skip(first) {
-                *slot = ci;
-            }
-        }
-        let junctions: Vec<(usize, usize, f64)> =
-            detect_wire_junctions(segs, &endpoints, JUNCTION_TOL_M)
-                .iter()
-                .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
-                .map(|j| (j.seg_a, j.seg_b, j.sign))
-                .collect();
-        Some((endpoints, junctions))
+        Some(merged_grouping(segs))
     };
     let solve = |r: &crate::excitation::HallenRhs| {
         match (grouped, &endpoints_and_junctions) {
             (Some((path_of, free_ends)), _) => {
-                solve_hallen_paths(z_mat, &r.rhs, &r.cos_vec, path_of, free_ends)
+                solve_hallen_paths(z_mat, &r.rhs, &r.cos_vec, &r.sin_vec, path_of, free_ends)
             }
             (None, Some((endpoints, junctions))) => {
-                solve_hallen(z_mat, &r.rhs, &r.cos_vec, endpoints, junctions)
+                solve_hallen(z_mat, &r.rhs, &r.cos_vec, &r.sin_vec, endpoints, junctions)
             }
             (None, None) => unreachable!("one of the two groupings is always built"),
         }
         .map_err(HallenSessionError::Solve)
     };
 
+    // The homogeneous term per row, through the evaluator that shares the solvers'
+    // column map (FND-158).
+    let homogeneous_of = |r: &crate::excitation::HallenRhs, c: &[Complex64]| match (
+        grouped,
+        &endpoints_and_junctions,
+    ) {
+        (Some((path_of, _)), _) => {
+            crate::linear::hallen_homogeneous_paths(&r.cos_vec, &r.sin_vec, c, path_of)
+        }
+        (None, Some((endpoints, junctions))) => {
+            crate::linear::hallen_homogeneous(&r.cos_vec, &r.sin_vec, c, endpoints, junctions)
+        }
+        (None, None) => unreachable!("one of the two groupings is always built"),
+    };
     let sol = solve(&rhs)?;
     let grouping = match grouped {
         Some((path_of, _)) => Err(path_of.clone()),
@@ -514,9 +516,8 @@ fn solve_delta_gap(
             .clone()),
     };
     let mut residual = ResidualInputs {
-        c_hom: sol.c_hom_per_wire,
-        cos_vec: rhs.cos_vec,
-        rhs: rhs.rhs,
+        homogeneous: homogeneous_of(&rhs, &sol.c_hom_per_wire),
+        rhs: rhs.rhs.clone(),
         grouping,
     };
     if networks.is_empty() {
@@ -544,7 +545,7 @@ fn solve_delta_gap(
         let unit = unit_gap_deck(deck, &segs[q]);
         let r = build_rhs(&unit)?;
         let s = solve(&r)?;
-        unit_rhs.push((r.rhs, s.c_hom_per_wire));
+        unit_rhs.push((r.rhs.clone(), homogeneous_of(&r, &s.c_hom_per_wire)));
         Ok::<_, HallenSessionError>(s.currents)
     })
     .map_err(|e| match e {
@@ -555,13 +556,13 @@ fn solve_delta_gap(
         ),
     })?;
 
-    // Superpose the right-hand side and the homogeneous constants with the same
+    // Superpose the right-hand side and the homogeneous term with the same
     // weights, so the continuity diagnostic describes the system actually solved.
-    for ((r, c), (_, v)) in unit_rhs.iter().zip(&net.undriven) {
+    for ((r, h), (_, v)) in unit_rhs.iter().zip(&net.undriven) {
         for (a, b) in residual.rhs.iter_mut().zip(r) {
             *a += v * b;
         }
-        for (a, b) in residual.c_hom.iter_mut().zip(c) {
+        for (a, b) in residual.homogeneous.iter_mut().zip(h) {
             *a += v * b;
         }
     }
@@ -572,6 +573,33 @@ fn solve_delta_gap(
         residual_inputs: Some(residual),
         network_branch: net.driven_branch,
     })
+}
+
+/// `(merged conductor endpoints, junction rows between different conductors)`.
+pub type MergedGrouping = (Vec<(usize, usize)>, Vec<(usize, usize, f64)>);
+
+/// The merged-conductor grouping every plain Hallén solve uses: collinear `GW`
+/// runs merged into one conductor each, and a junction row only where two
+/// DIFFERENT merged conductors meet.
+///
+/// One function because the grouping decides the physics — which conductors take
+/// the sin homogeneous term (FND-158) — so a caller that built its own from raw
+/// wire endpoints would give a collinear split cos-only on one `--solver` and
+/// cos+sin on another. It was built inline three times.
+pub fn merged_grouping(segs: &[Segment]) -> MergedGrouping {
+    let endpoints = merge_collinear_wire_endpoints(segs);
+    let mut comp_of = vec![0usize; segs.len()];
+    for (ci, &(first, last)) in endpoints.iter().enumerate() {
+        for slot in comp_of.iter_mut().take(last + 1).skip(first) {
+            *slot = ci;
+        }
+    }
+    let junctions = detect_wire_junctions(segs, &endpoints, JUNCTION_TOL_M)
+        .iter()
+        .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
+        .map(|j| (j.seg_a, j.seg_b, j.sign))
+        .collect();
+    (endpoints, junctions)
 }
 
 /// `deck` with its sources replaced by a single 1 V delta gap at `seg`.
@@ -620,7 +648,7 @@ fn solve_current_source(
     let (tag, seg, i0) = first_current_source(deck)
         .ok_or_else(|| HallenSessionError::Excitation("no current source in deck".into()))?;
     let paths = nontrivial_paths(segs).expect("grouped implies non-trivial paths");
-    let (shape, cos_vec, src_seg) =
+    let (shape, cos_vec, sin_vec, src_seg) =
         build_current_source_shape_paths(deck, segs, freq_hz, tag, seg, &paths)
             .map_err(|e| HallenSessionError::Excitation(e.to_string()))?;
     // The same scaling as the plain branch, through the same helper. This branch
@@ -632,7 +660,7 @@ fn solve_current_source(
     // EX 0, a 6.4% split in FREE SPACE. The defect is not confined to ground; it
     // appears wherever the augmented system is inconsistent, and a bent conductor
     // does that too (FND-118).
-    let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, path_of, free_ends)
+    let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &sin_vec, path_of, free_ends)
         .map_err(HallenSessionError::Solve)?;
     let (currents, port_voltage) =
         crate::current_source::scale_to_impressed_current(sol.currents, src_seg, i0, tag, seg)
@@ -721,7 +749,8 @@ mod routing_tests {
         // The basis the three non-CLI frontends used to take.
         let rhs = build_hallen_rhs(&deck, &segs, 14.2e6).expect("plain rhs");
         let endpoints = merge_collinear_wire_endpoints(&segs);
-        let plain = solve_hallen(&z, &rhs.rhs, &rhs.cos_vec, &endpoints, &[]).expect("plain solve");
+        let plain = solve_hallen(&z, &rhs.rhs, &rhs.cos_vec, &rhs.sin_vec, &endpoints, &[])
+            .expect("plain solve");
         let z_plain = Complex64::new(1.0, 0.0) / feed_current(&deck, &segs, &plain.currents);
 
         // nec2c answers this deck 268.56 + j452.26. Until FND-156 the path basis
@@ -733,8 +762,14 @@ mod routing_tests {
         // converges to ~279 + j459. The remaining ~10% is a Hallén-vs-nec2c
         // offset on this off-centre, near-antiresonant feed, present on a straight
         // wire too, not a discretisation error. Pin the value, not the oracle.
+        // FND-158 moved it again, to 344.58 + j530.33: the sin homogeneous term
+        // the path basis lacked. That is further from nec2c, not closer: with the
+        // missing term gone, what remains is the bend itself — Hallén's 1-D
+        // equation along a bent conductor is an approximation, 28% high on this
+        // steep split-V, 3.5% on a shallow one, exact on a straight path. The old
+        // 297.81 was that bend error partly cancelled by the missing term.
         assert!(
-            (z_paths.re - 297.81).abs() < 1.0 && (z_paths.im - 511.45).abs() < 1.0,
+            (z_paths.re - 344.58).abs() < 1.0 && (z_paths.im - 530.33).abs() < 1.0,
             "path basis moved, got {z_paths}"
         );
         assert!(

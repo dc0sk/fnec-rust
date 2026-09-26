@@ -246,7 +246,7 @@ Residual budget precedence:
 
 Opt-in mixed-potential EFIE with a subsectional (triangle) current basis
 (PH9-CHK-007). Unlike the Hallen hybrid — which folds the scalar potential into a
-per-wire homogeneous term and so cannot represent it — the MPIE carries the
+per-wire homogeneous term (`C·cos(ks) + D·sin(ks)`) and so cannot represent it — the MPIE carries the
 vector and scalar potentials separately. That lets it solve three geometry
 classes the Hallen path cannot:
 

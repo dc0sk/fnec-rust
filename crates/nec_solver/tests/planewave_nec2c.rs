@@ -223,7 +223,8 @@ fn planewave_reciprocity_matches_transmit_pattern() {
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
     let h = nec_solver::build_hallen_rhs(&driven, &segs, FREQ_HZ).expect("rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
-    let tx = nec_solver::solve_hallen(&z, &h.rhs, &h.cos_vec, &endpoints, &[]).expect("tx solve");
+    let tx = nec_solver::solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &endpoints, &[])
+        .expect("tx solve");
 
     let angles = [40.0f64, 55.0, 70.0, 90.0];
     let mut ratios = Vec::new();

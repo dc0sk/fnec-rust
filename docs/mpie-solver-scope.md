@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/mpie-solver-scope.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # MPIE solver — scope
@@ -30,8 +30,8 @@ validated corpus.
 ## Why MPIE, and why it is de-risked
 
 - **MPIE keeps the scalar potential explicit.** The Hallén reduction eliminates the
-  scalar potential (folding it into the `C·cos(ks)` homogeneous term); the surface
-  wave and the junction charge condition both *live* in the scalar potential, which is
+  scalar potential (folding it into the homogeneous term `C·cos(ks) + D·sin(ks)`);
+  the surface wave and the junction charge condition both *live* in the scalar potential, which is
   why Hallén cannot represent them. MPIE carries `A` and `Φ` separately.
 - **KCL is satisfied by the basis topology.** Overlapping triangle bases spanning a
   junction make Kirchhoff's current law exact by construction — no explicit KCL row,

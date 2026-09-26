@@ -43,7 +43,7 @@ fn solve_z(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Complex64 {
         .filter(|j| comp[j.seg_a] != comp[j.seg_b])
         .map(|j| (j.seg_a, j.seg_b, j.sign))
         .collect();
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &merged, &jt).unwrap();
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &merged, &jt).unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)

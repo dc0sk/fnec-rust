@@ -57,6 +57,11 @@ pub fn first_delta_gap_feedpoint(deck: &NecDeck) -> Option<&ExCard> {
         .map(|(ex, _)| ex)
 }
 
+/// A current source's Hallén shape: `(source_shape, cos_vec, sin_vec,
+/// src_global_index)`, the homogeneous columns built with the same coordinate as
+/// the delta-gap RHS (FND-158).
+pub type CurrentSourceShape = (Vec<Complex64>, Vec<f64>, Vec<f64>, usize);
+
 /// Right-hand side data for Hallén's integral equation.
 #[derive(Debug)]
 pub struct HallenRhs {
@@ -64,6 +69,9 @@ pub struct HallenRhs {
     pub rhs: Vec<Complex64>,
     /// cos(k·s_m) samples for the homogeneous-term column.
     pub cos_vec: Vec<f64>,
+    /// sin(k·s_m) samples, same coordinate and sign: the second homogeneous
+    /// solution of Hallén's equation along a conductor (FND-158).
+    pub sin_vec: Vec<f64>,
 }
 
 /// Error from the excitation builder.
@@ -193,6 +201,7 @@ pub fn build_hallen_rhs(
         return Ok(HallenRhs {
             rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
             cos_vec: vec![0.0; segs.len()],
+            sin_vec: vec![0.0; segs.len()],
         });
     };
 
@@ -251,6 +260,7 @@ pub fn build_hallen_rhs(
 
     let mut rhs = vec![Complex64::new(0.0, 0.0); segs.len()];
     let mut cos_vec = vec![0.0; segs.len()];
+    let mut sin_vec = vec![0.0; segs.len()];
 
     // cos_vec: cos(k·s_local), with s_local measured from the merged conductor's
     // midpoint along its axis.
@@ -269,6 +279,7 @@ pub fn build_hallen_rhs(
         ];
         let s_local = dl[0] * wire_dir[0] + dl[1] * wire_dir[1] + dl[2] * wire_dir[2];
         cos_vec[m] = (k * s_local).cos();
+        sin_vec[m] = (k * s_local).sin();
     }
 
     // rhs: each voltage source drives its whole merged conductor; `s` is measured
@@ -288,7 +299,11 @@ pub fn build_hallen_rhs(
         }
     }
 
-    Ok(HallenRhs { rhs, cos_vec })
+    Ok(HallenRhs {
+        rhs,
+        cos_vec,
+        sin_vec,
+    })
 }
 
 /// Build Hallén RHS data over **conductor paths** — the general-junction delta-gap
@@ -332,8 +347,10 @@ pub fn build_hallen_rhs_paths(
     }
 
     let mut cos_vec = vec![0.0; n];
+    let mut sin_vec = vec![0.0; n];
     for m in 0..n {
         cos_vec[m] = sign_of[m] * (k * s_of[m]).cos();
+        sin_vec[m] = sign_of[m] * (k * s_of[m]).sin();
     }
 
     // Collect voltage-source segments (type 0/5), superposing across the deck.
@@ -385,16 +402,21 @@ pub fn build_hallen_rhs_paths(
         return Ok(HallenRhs {
             rhs: vec![Complex64::new(0.0, 0.0); n],
             cos_vec,
+            sin_vec,
         });
     }
 
-    Ok(HallenRhs { rhs, cos_vec })
+    Ok(HallenRhs {
+        rhs,
+        cos_vec,
+        sin_vec,
+    })
 }
 
 /// Build the unit-voltage Hallén source shape `g` at a given segment, for the
 /// current-source (EX type 4) solve.
 ///
-/// Returns `(source_shape, cos_vec, src_global_index)` where `source_shape` is
+/// Returns `(source_shape, cos_vec, sin_vec, src_global_index)` where `source_shape` is
 /// [`build_hallen_rhs`]'s RHS for a `V = 1` delta-gap at `(src_tag, src_segment)`
 /// — i.e. the coefficient of the (unknown) port voltage in the current-source
 /// system. Other EX cards are dropped from the synthesized geometry.
@@ -404,7 +426,7 @@ pub fn build_current_source_shape(
     freq_hz: f64,
     src_tag: u32,
     src_segment: u32,
-) -> Result<(Vec<Complex64>, Vec<f64>, usize), ExcitationError> {
+) -> Result<CurrentSourceShape, ExcitationError> {
     let src_seg = segs
         .iter()
         .position(|s| s.tag == src_tag && s.tag_index == src_segment)
@@ -440,7 +462,7 @@ pub fn build_current_source_shape(
     }
 
     let h = build_hallen_rhs(&synth, segs, freq_hz)?;
-    Ok((h.rhs, h.cos_vec, src_seg))
+    Ok((h.rhs, h.cos_vec, h.sin_vec, src_seg))
 }
 
 /// Build the unit-voltage Hallén source shape `g` over **conductor paths** — the
@@ -451,7 +473,7 @@ pub fn build_current_source_shape(
 /// delta-gap RHS is built with the path-aware [`build_hallen_rhs_paths`] (signed
 /// arc-length `cos(k·s)`, source term summed along the conductor path) instead of
 /// the per-`GW` [`build_hallen_rhs`], so the source shape stays continuous across a
-/// degree-2 junction. Returns `(source_shape, cos_vec, src_global_index)`.
+/// degree-2 junction. Returns `(source_shape, cos_vec, sin_vec, src_global_index)`.
 pub fn build_current_source_shape_paths(
     deck: &NecDeck,
     segs: &[Segment],
@@ -459,7 +481,7 @@ pub fn build_current_source_shape_paths(
     src_tag: u32,
     src_segment: u32,
     paths: &[ConductorPath],
-) -> Result<(Vec<Complex64>, Vec<f64>, usize), ExcitationError> {
+) -> Result<CurrentSourceShape, ExcitationError> {
     let src_seg = segs
         .iter()
         .position(|s| s.tag == src_tag && s.tag_index == src_segment)
@@ -495,7 +517,7 @@ pub fn build_current_source_shape_paths(
     }
 
     let h = build_hallen_rhs_paths(&synth, segs, freq_hz, paths)?;
-    Ok((h.rhs, h.cos_vec, src_seg))
+    Ok((h.rhs, h.cos_vec, h.sin_vec, src_seg))
 }
 
 fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {

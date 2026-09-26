@@ -126,13 +126,16 @@ fn ge1_without_gn_infers_pec_ground() {
     // PH9-CHK-006: values corrected after the ground-image current-direction sign
     // fix (was 81.91 + j16.42, the wrong-sign ground effect). FND-156 moved them
     // again (was 73.86 + j12.23): the free-end rows no longer shorten the wire.
+    // FND-158 once more (was 77.41 + j41.67): the image makes the current
+    // asymmetric, which the cos-only homogeneous term could not represent.
+    // nec2c: 74.79 + j43.94.
     assert!(
-        (z_re - 77.405597).abs() < 0.05,
-        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~77.41"
+        (z_re - 74.283392).abs() < 0.05,
+        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~74.28"
     );
     assert!(
-        (z_im - 41.673605).abs() < 0.05,
-        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~41.67"
+        (z_im - 40.197738).abs() < 0.05,
+        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~40.20"
     );
 }
 
@@ -224,10 +227,10 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         .expect("no feedpoint row in output");
 
     // PH9-CHK-006: corrected after the ground-image sign fix (was 78.17);
-    // FND-156 end-row fix (was 72.86).
+    // FND-156 end-row fix (was 72.86); FND-158 sin homogeneous term (was 77.04).
     assert!(
-        (z_re - 77.037412).abs() < 0.05,
-        "GN2 regression mismatch: got Z_RE={z_re}, expected ~77.04"
+        (z_re - 75.986529).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~75.99"
     );
 }
 
@@ -501,12 +504,14 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     // PH9-CHK-006: corrected after the ground-image sign fix (was 69.44). This
-    // near-ground vertical dipole gains a large +18 Ω from ground — fnec's
-    // ground-resistance delta tracks nec2c's (+18.3 vs +18.0 Ω since the FND-156
-    // end-row fix, which moved this pin from 92.27).
+    // near-ground vertical dipole gains resistance from ground. Under the default
+    // reflection-coefficient model fnec's delta is +13.9 Ω against nec2c's +18.0;
+    // with --ground-solver sommerfeld it is +17.8. (This pin read 97.16, a +18.3
+    // delta, between FND-156 and FND-158: the cos-only homogeneous term's error
+    // cancelled the RCM model's, and the match was coincidence.)
     assert!(
-        (z_re - 97.15776).abs() < 0.05,
-        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~97.16"
+        (z_re - 92.725245).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~92.73"
     );
 }
 

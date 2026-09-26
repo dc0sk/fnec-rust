@@ -12,8 +12,9 @@
 //
 // Mirrors `nec_solver::linear::solve_hallen` / `solve_square_in_place`:
 //
-//   M  : R x S  augmented matrix      (R = N + C, S = N + W)
-//        rows 0..N : Z-matrix + per-wire homogeneous column (-cos_vec)
+//   M  : R x S  augmented matrix      (R = N + C, S = N + W + W_sin)
+//        rows 0..N : Z-matrix + per-wire homogeneous columns (-cos_vec, and
+//                    -sin_vec for the wires with two free ends, FND-158)
 //        rows N..  : endpoint (I=0) and junction (I[a]+sign*I[b]=0) constraints
 //   y  : R       RHS (rhs for Z rows, 0 for constraint rows)
 //   solve  min ||M x - y||  ;  currents = x[0..N]
@@ -42,8 +43,9 @@
 // binding 4 vec  (storage, rw)    : 5 complex vectors of stride R: x, gp, dx, t, out
 //
 // aux layout (f32):
-//   per-seg  r in 0..N : [4r+0]=cos_vec[r] [4r+1]=rhs_re[r] [4r+2]=rhs_im[r] [4r+3]=wire(r)
-//   constr   base=4N, ci in 0..nc :
+//   per-seg  r in 0..N : [6r+0]=cos_vec[r] [6r+1]=sin_vec[r] [6r+2]=rhs_re[r]
+//                        [6r+3]=rhs_im[r] [6r+4]=cos column [6r+5]=sin column (-1 = none)
+//   constr   base=6N, ci in 0..nc :
 //            [base+4ci+0]=col_a [base+4ci+1]=col_b(or -1) [base+4ci+2]=val_a [base+4ci+3]=val_b
 
 struct Params {
@@ -91,10 +93,12 @@ fn z_get(r: u32, c: u32) -> vec2<f32> {
     let base = 2u * (r * params.n + c);
     return vec2<f32>(zmat[base], zmat[base + 1u]);
 }
-fn seg_cos(r: u32) -> f32 { return aux[4u * r]; }
-fn seg_rhs(r: u32) -> vec2<f32> { return vec2<f32>(aux[4u * r + 1u], aux[4u * r + 2u]); }
-fn seg_wire(r: u32) -> u32 { return u32(aux[4u * r + 3u]); }
-fn con_base() -> u32 { return 4u * params.n; }
+fn seg_cos(r: u32) -> f32 { return aux[6u * r]; }
+fn seg_sin(r: u32) -> f32 { return aux[6u * r + 1u]; }
+fn seg_rhs(r: u32) -> vec2<f32> { return vec2<f32>(aux[6u * r + 2u], aux[6u * r + 3u]); }
+fn seg_cos_col(r: u32) -> u32 { return u32(aux[6u * r + 4u]); }
+fn seg_sin_col_raw(r: u32) -> f32 { return aux[6u * r + 5u]; }
+fn con_base() -> u32 { return 6u * params.n; }
 fn con_cola(ci: u32) -> u32 { return u32(aux[con_base() + 4u * ci]); }
 fn con_colb_raw(ci: u32) -> f32 { return aux[con_base() + 4u * ci + 1u]; }
 fn con_vala(ci: u32) -> f32 { return aux[con_base() + 4u * ci + 2u]; }
@@ -105,7 +109,9 @@ fn m_full(r: u32, c: u32) -> vec2<f32> {
     let n = params.n;
     if r < n {
         if c < n { return z_get(r, c); }
-        if seg_wire(r) == (c - n) { return vec2<f32>(-seg_cos(r), 0.0); }
+        if seg_cos_col(r) == c { return vec2<f32>(-seg_cos(r), 0.0); }
+        let sc = seg_sin_col_raw(r);
+        if sc >= 0.0 && u32(sc) == c { return vec2<f32>(-seg_sin(r), 0.0); }
         return vec2<f32>(0.0, 0.0);
     }
     let ci = r - n;

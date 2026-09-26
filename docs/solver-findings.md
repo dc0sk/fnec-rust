@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Solver Findings
@@ -18,6 +18,24 @@ last_updated: 2026-09-25
 > the current linearly to the physical tip; fixed, the N=51 dipole gives
 > **78.83 + j42.44 Ω** (Python reference 78.825 + j42.435; nec2c 79.35 + j46.22).
 > The numbers and the explanation below are kept as the historical record.
+
+> **Correction (2026-09-26, FND-158):** fnec's delta-gap Hallén solves carried only
+> the `cos(k·s)` half of the two-dimensional homogeneous solution
+> `C·cos(k·s) + D·sin(k·s)`. That is exact for a current symmetric about the
+> conductor's midpoint (the centre-fed isolated dipole in this document is
+> unchanged: 78.834 + j42.440 Ω) and a least-squares compromise otherwise. Every
+> conductor with two free ends now carries both. Measured (`cos`-only → `cos`+`sin`,
+> nec2c 1.3.1): 0.55λ wire fed at 0.25 L 324.12 + j463.78 → 369.95 + j473.33
+> (366.93 + j483.11); vertical λ/2 over PEC 113.63 + j49.80 → 102.45 + j44.37
+> (103.22 + j48.52); λ/2 dipole beside a parasitic shifted 4 m axially
+> 459.03 − j89.50 → 27.27 − j48.93 (25.49 − j42.20); collinear pair
+> 95.14 + j55.99 → 71.22 + j41.57 (71.75 + j45.41). Near ground, the vertical dipole
+> over `GN 2` reads 92.73 with the default RCM model and 96.59 + j40.23 with
+> `--ground-solver sommerfeld` (nec2c Sommerfeld 97.32 + j44.15); the earlier RCM
+> 97.16 "match" was the RCM approximation cancelling the missing `sin` term.
+> Symmetric free-space decks (e.g. the Yagi) are unchanged; the `GN 1` value in
+> the section below predates both FND-156 and FND-158 and was not re-measured here.
+> Wires ending on a junction row keep `cos` only pending FND-162.
 
 ## Scope
 

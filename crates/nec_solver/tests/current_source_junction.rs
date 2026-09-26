@@ -56,7 +56,7 @@ fn voltage_source_z(deck: &NecDeck, segs: &[Segment], feed_tag: u32, feed_seg: u
     let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
     let h = build_hallen_rhs_paths(deck, segs, FREQ, &paths).unwrap();
     let (path_of, free_ends) = paths_index_vectors(segs, &paths);
-    let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
+    let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &path_of, &free_ends).unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)

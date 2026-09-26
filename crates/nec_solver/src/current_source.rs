@@ -125,11 +125,11 @@ pub fn solve_current_source_hallen(
     // `UnsupportedTopology` path (FND-140).
     match crate::hallen_session::classify_paths(segs) {
         crate::hallen_session::PathRoute::NonTrivial(paths) => {
-            let (shape, cos_vec, src_seg) =
+            let (shape, cos_vec, sin_vec, src_seg) =
                 build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
                     .map_err(CurrentSourceError::Excitation)?;
             let (path_of, free_ends) = crate::hallen_session::group_paths(segs, &paths);
-            let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &path_of, &free_ends)
+            let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends)
                 .map_err(CurrentSourceError::Solve)?;
             let (currents, port_voltage) =
                 scale_to_impressed_current(sol.currents, src_seg, i0, cs.tag, cs.segment)?;
@@ -167,14 +167,14 @@ pub fn solve_current_source_hallen(
     // a different change from telling one solver where the conductor really ends.
     let merged_endpoints = merge_collinear_wire_endpoints(segs);
 
-    let (shape, cos_vec, src_seg) =
+    let (shape, cos_vec, sin_vec, src_seg) =
         build_current_source_shape(deck, segs, freq_hz, cs.tag, cs.segment)
             .map_err(CurrentSourceError::Excitation)?;
     // No junction constraints: this branch runs only when the geometry has none.
     // A non-trivial path diverted above, and a junction without paths was refused
     // as unsupported topology, so anything reaching here is a single conductor or
     // a set of independent ones.
-    let sol = solve_hallen(z_mat, &shape, &cos_vec, &merged_endpoints, &[])
+    let sol = solve_hallen(z_mat, &shape, &cos_vec, &sin_vec, &merged_endpoints, &[])
         .map_err(CurrentSourceError::Solve)?;
     let (currents, port_voltage) =
         scale_to_impressed_current(sol.currents, src_seg, i0, cs.tag, cs.segment)?;
