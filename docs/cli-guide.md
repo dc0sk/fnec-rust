@@ -260,9 +260,12 @@ classes the Hallen path cannot:
   bent geometry via the per-segment-pair reflected reaction. Only a wire that
   reaches or crosses the `z = 0` plane is rejected.
 
-On the 51-segment λ/2 dipole the MPIE gives 74.89 + j45.78 Ω, against
-Hallen's 78.83 + j42.44 Ω and nec2c's 79.35 + j46.22 Ω. Its reactance tracks
-nec2c closely; its resistance runs about 6% low (FND-157).
+On the 51-segment λ/2 dipole the MPIE gives 79.15 + j45.95 Ω, against
+Hallén's 78.83 + j42.44 Ω and nec2c's 79.35 + j46.22 Ω. It is now the most accurate
+solver in fnec: 8.20 + j55.78 Ω on the 5-element Yagi (nec2c 8.17 + j56.54) and
+65.44 − j61.60 Ω on a Y-junction (nec2c 67.22 − j63.03). Until FND-157 it read
+6% low on the dipole, 35 Ω off on the Yagi and 260 Ω off in reactance on the
+Y-junction: its self and adjacent terms were under-integrated.
 
 The MPIE feeds a delta-gap at the graph node nearest the `EX`-driven segment (a
 half-segment offset from NEC's segment-gap feed, vanishing under refinement). It

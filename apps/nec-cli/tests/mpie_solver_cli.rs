@@ -240,7 +240,7 @@ fn mpie_composes_with_json_output() {
     assert!(out.status.success(), "mpie+json failed: {out:?}");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("\"z_re\":74.") && stdout.contains("\"z_im\":41."),
+        stdout.contains("\"z_re\":78.") && stdout.contains("\"z_im\":44."),
         "expected MPIE feedpoint Z in JSON:\n{stdout}"
     );
 }
@@ -403,8 +403,10 @@ fn mpie_dipole_pinned_impedance() {
     assert!(out.status.success(), "mpie dipole failed: {out:?}");
     let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
     assert!(
-        (r - 74.437414).abs() < 0.05 && (x - 41.753720).abs() < 0.05,
-        "MPIE dipole moved: got {r} + j{x}, pinned 74.437414 + j41.753720"
+        // FND-157: was 74.437414 + j41.753720 until the near-term singularity was
+        // extracted; nec2c on this deck gives 79.107 + j45.047.
+        (r - 78.877627).abs() < 0.05 && (x - 44.719127).abs() < 0.05,
+        "MPIE dipole moved: got {r} + j{x}, pinned 78.877627 + j44.719127"
     );
 }
 
@@ -430,8 +432,10 @@ EN
     assert!(out.status.success(), "mpie Y-junction failed: {out:?}");
     let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
     assert!(
-        (r - 63.673674).abs() < 0.05 && (x - -322.199211).abs() < 0.05,
-        "MPIE Y-junction moved: got {r} + j{x}, pinned 63.673674 - j322.199211"
+        // FND-157: was 63.673674 - j322.199211, 260 Ω of reactance off, on the
+        // topology MPIE is recommended for; nec2c on this deck: 67.215 - j63.033.
+        (r - 65.437925).abs() < 0.05 && (x - -61.604612).abs() < 0.05,
+        "MPIE Y-junction moved: got {r} + j{x}, pinned 65.437925 - j61.604612"
     );
 }
 
@@ -457,7 +461,8 @@ EN
     assert!(out.status.success(), "mpie over ground failed: {out:?}");
     let (r, x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
     assert!(
-        (r - 73.857642).abs() < 0.05 && (x - 30.548668).abs() < 0.05,
-        "MPIE over GN2 moved: got {r} + j{x}, pinned 73.857642 + j30.548668"
+        // FND-157: was 73.857642 + j30.548668; nec2c on this deck: 77.619 + j33.224.
+        (r - 77.602091).abs() < 0.05 && (x - 32.943185).abs() < 0.05,
+        "MPIE over GN2 moved: got {r} + j{x}, pinned 77.602091 + j32.943185"
     );
 }
