@@ -1150,7 +1150,7 @@ mod tests {
         let r = solve_deck_str(EX4_DECK, SolverKind::Hallen)
             .expect("the GUI can price a current source now");
         assert!(
-            (r.z_re - 74.23).abs() < 0.05 && (r.z_im - 13.9).abs() < 0.05,
+            (r.z_re - 78.834).abs() < 0.05 && (r.z_im - 42.440).abs() < 0.05,
             "GUI disagrees with the CLI's corpus value: {} + j{}",
             r.z_re,
             r.z_im

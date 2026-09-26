@@ -8,12 +8,16 @@ half-wave dipole using:
   - 4-point GL for the self-term smooth part (singularity subtracted)
   - Analytic log term for the near-singularity
   - Augmented system: [A | -cos(kz)] [I; C_hom] = b
-    with endpoint constraints I[0] = I[N-1] = 0
+    with free-end rows that extrapolate the current to zero at the physical
+    wire tips: 1.5·I[0] − 0.5·I[1] = 0 and the same at the far end
 
-Ground-truth result for the benchmark geometry: 74.23 + j13.90 Ω (Hallén model).
-NOTE: NEC2 (Pocklington EFIE / delta-gap) gives 79.35 + j46.22 Ω for the same
-geometry at 14.2 MHz. The ~0.3 MHz frequency offset between the two models' resonance
-curves is a known systematic difference. See docs/solver-findings.md for details.
+Result for the benchmark geometry: ≈ 78.8 + j42.4 Ω; NEC2 (nec2c) gives
+79.35 + j46.22 Ω. Until FND-156 this script imposed I[0] = I[N-1] = 0 — zero
+current at the end segments' MIDPOINTS, half a segment inside each tip — and
+gave 74.23 + j13.90 Ω. fnec had the same rows, so the two agreed to the digit
+and the ~32 Ω gap to nec2c was written up as a "known systematic difference".
+It was a one-segment shortening of the wire, shared by both implementations;
+agreement between two codes proves nothing about a step they both copy.
 
 Benchmark geometry
 ------------------
@@ -117,7 +121,11 @@ def build_hallen_rhs() -> np.ndarray:
 
 def solve_hallen(a_mat: np.ndarray, rhs: np.ndarray):
     """Solve the augmented Hallén system [A | -cos] [I; C] = b
-    with endpoint constraints I[0] = I[N-1] = 0.
+    with free-end rows that put the current zero at the physical tips.
+
+    The current on segment 0 is sampled at its midpoint, Δ/2 inside the tip.
+    Linear extrapolation through segments 0 and 1 to the tip gives
+    I_tip = 1.5·I[0] − 0.5·I[1]; that, not I[0], is what must vanish (FND-156).
 
     Returns (currents, c_hom).
     """
@@ -132,9 +140,9 @@ def solve_hallen(a_mat: np.ndarray, rhs: np.ndarray):
     M[:N, N]  = -cos_vec
     y[:N]      = rhs
 
-    # Endpoint current = 0
-    M[N,   0]   = 1.0
-    M[N+1, N-1] = 1.0
+    # Current extrapolated to each physical tip = 0
+    M[N,   0],   M[N,   1]   = 1.5, -0.5
+    M[N+1, N-1], M[N+1, N-2] = 1.5, -0.5
 
     x = np.linalg.lstsq(M, y, rcond=None)[0]
     return x[:N], x[N]
@@ -151,7 +159,7 @@ def main():
     z_feed = 1.0 / I[FEED]
     print(f"\n  Feed current I[{FEED}] = {I[FEED]:.6e}")
     print(f"  Impedance Z  = {z_feed:.6f} Ω")
-    print(f"\n  Expected: 74.23 + j13.90 Ω  (Hallén model; see docs/solver-findings.md for NEC2 comparison)")
+    print(f"\n  Expected: ≈ 78.83 + j42.44 Ω  (fnec Hallén); nec2c gives 79.35 + j46.22 Ω")
 
     # Print current distribution summary
     print(f"\n  Current distribution (normalised to max):")

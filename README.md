@@ -14,10 +14,10 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 	- **EX type 4** (current source): solved; the feedpoint reports `Z = V_port / i0`, which matches the voltage-source impedance on the same geometry because impedance is a property of the port and not of the drive
 	- **EX type 5** (NEC's current-slope-discontinuity voltage source): fnec models it by the applied-field method, so it solves and gives the same answer as type 0. That is a documented approximation of NEC's numerics, not an identity of the two cards
 	- **PT**: print control is applied at runtime — `PT -1` suppresses the `CURRENTS` table, `PT 0` prints all segments
-	- **NT**: two-port network admittance is stamped into the solve. A well-formed `NT` moves the feedpoint (74.24 + j13.90 -> 70.63 + j14.01 on `dipole-nt-tl-equiv-freesp-51seg`); a malformed card is warned about and skipped
+	- **NT**: two-port network admittance is stamped into the solve. A well-formed `NT` moves the feedpoint (78.83 + j42.44 -> 75.02 + j42.29 on `dipole-nt-tl-equiv-freesp-51seg`); a malformed card is warned about and skipped
 - Hallén MoM solver — physically accurate feedpoint impedance for thin-wire antennas
-  - Validated: 51-segment λ/2 dipole at 14.2 MHz → **74.24 + j13.90 Ω** (matches Python reference)
-	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **81.91 + j16.42 Ω**
+  - Validated: 51-segment λ/2 dipole at 14.2 MHz → **78.83 + j42.44 Ω** (nec2c: 79.35 + j46.22 Ω; matches the Python reference `studies/mom-kernel-accuracy/hallen_reference.py`)
+	- GN 1 (perfect ground at z=0) is supported via image method; `dipole-ground-51seg` regression is **77.41 + j41.67 Ω** (nec2c: 74.79 + j43.94 Ω)
 	- GN 0 (simple finite-ground reflection coefficient path) is supported; `dipole-gn0-fresnel-51seg` is regression-gated
 	- GN 2 low above-ground finite-conductivity cases are supported on the current scoped path; the supported subset is strictly above-ground (`z > 0`); `dipole-gn2-deferred` and `dipole-gn2-near-ground-51seg` are regression-gated
 	- Buried or interface-touching active-ground wire classes (`z <= 0`) remain deferred and fail fast with an actionable error instead of silently falling back
@@ -65,7 +65,7 @@ PULSE_RHS Nec2
 
 FEEDPOINTS
 TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
-1 26 1.000000 0.000000 0.013013 -0.002436 74.242874 13.899516
+1 26 1.000000 0.000000 0.009835 -0.005294 78.834228 42.439515
 ```
 
 See [docs/cli-guide.md](docs/cli-guide.md) for full option reference and [docs/card-support-matrix.md](docs/card-support-matrix.md) for the NEC card support matrix. For the 3-D GUI workbench (`cargo run -p nec-gui`), see [docs/gui-guide.md](docs/gui-guide.md).

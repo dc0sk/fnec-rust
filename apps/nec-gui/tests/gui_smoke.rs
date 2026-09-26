@@ -167,10 +167,12 @@ EN
         "Z_re = {} Ω out of range",
         result.z_re
     );
-    // Reactance should be small near resonance.
+    // An exact half-wave dipole is inductive, ~+42 Ω; resonance is a few percent
+    // shorter. This bound used to be |X| < 20, which only held while every wire
+    // was modelled one segment short (FND-156).
     assert!(
-        result.z_im.abs() < 20.0,
-        "Z_im = {} Ω unexpectedly large",
+        result.z_im > 0.0 && result.z_im < 60.0,
+        "Z_im = {} Ω outside the inductive half-wave range",
         result.z_im
     );
 }
@@ -2409,9 +2411,11 @@ fn an_unrecognised_excitation_warns_while_typing_rather_than_at_solve() {
 /// deck's pattern read as gain on one frontend and directivity on the other with
 /// nothing saying which.
 ///
-/// Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI reports a peak
+/// Measured on `corpus/dipole-gn2-near-ground-51seg.nec`: the CLI reported a peak
 /// `GAIN_DB` of 0.2997, and the GUI reported **6.3355** — overstating gain by
-/// 6.04 dB, which is the ground loss it was not accounting for.
+/// 6.04 dB, which is the ground loss it was not accounting for. Both read 0.3654
+/// since the FND-156 end-row fix (CLI with `RP 0 37 1 1000 0 0 5 0`, the GUI's
+/// grid).
 #[test]
 fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
     let deck = std::fs::read_to_string(concat!(
@@ -2428,8 +2432,8 @@ fn the_gui_pattern_reports_gain_over_lossy_ground_as_the_cli_does() {
         .map(|p| p.gain_total_dbi)
         .fold(f64::MIN, f64::max);
     assert!(
-        (peak - 0.2997).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's 0.2997; \
+        (peak - 0.3654).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.3654; \
          6.34 would mean the ground loss is unaccounted for"
     );
 }
@@ -2499,10 +2503,11 @@ fn the_gui_pattern_corrects_a_current_source_drive_as_the_cli_does() {
     // by 6.5% over ground. A current source is now the voltage solve rescaled, so
     // the CLI answers 0.2997 here — the voltage-drive value — and the GUI must
     // still match it. What this test gates is unchanged: CLI-GUI parity on a
-    // current-source deck over lossy ground, which is FND-114.
+    // current-source deck over lossy ground, which is FND-114. FND-156 moved both
+    // frontends to 0.3654 together.
     assert!(
-        (peak - 0.2997).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's 0.2997 for this current-source \
+        (peak - 0.3654).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's 0.3654 for this current-source \
          deck; 6.34 would mean the ground loss is unaccounted for, which is exactly \
          what a current source used to do"
     );

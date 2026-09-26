@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-08-24
+last_updated: 2026-09-25
 ---
 
 # Roadmap
@@ -57,7 +57,7 @@ fnec-rust is not aiming for "good enough for a Rust rewrite". The target is to b
 
 - Documentation baseline established under docs/ with YAML frontmatter.
 - PR-based last_updated automation path defined for protected main.
-- Hallén MoM solver validated: 51-segment λ/2 dipole → 74.24 + j13.90 Ω (matches Python reference).
+- Hallén MoM solver validated: 51-segment λ/2 dipole → 74.24 + j13.90 Ω (matches Python reference). *Correction (2026-09-25, FND-156): both codes shared a free-end boundary defect that shortened every wire by one segment; fixed, the dipole gives 78.83 + j42.44 Ω vs nec2c 79.35 + j46.22.*
 - Pulse/continuity solver modes marked EXPERIMENTAL (divergence root-caused).
 - Core requirement, gap, tolerance matrix, and architectural docs in place.
 

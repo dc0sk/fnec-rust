@@ -146,7 +146,7 @@ def section1():
     P, mid_z, dl = build_pocklington_matrix(N_REF, L_REF, A_REF)
     z_pock = solve_and_z(P, mid_z, dl)
     print(f"  Pocklington (Python):  Z = {z_pock:.4f} Ω")
-    print(f"  Hallén reference:      Z = 74.2301 + j13.8973 Ω")
+    print(f"  Hallén reference (pre-FND-156 end rows): Z = 74.2301 + j13.8973 Ω")
     print()
     print("  Both Python and Rust Pocklington give ~16.37 + j46.8 Ω.")
     print("  This confirms the bug is in the mathematical formulation,")
@@ -271,7 +271,7 @@ def section4():
     print("Section 4 — Convergence study (pulse-basis Pocklington)")
     print("=" * 65)
     print(f"  Geometry: L={L_REF} m, a={A_REF} m, f={F_HZ/1e6:.1f} MHz")
-    print(f"  Reference (Hallén): 74.23 + j13.90 Ω\n")
+    print(f"  Reference (Hallén, pre-FND-156 end rows): 74.23 + j13.90 Ω\n")
     print(f"  {'N':>6}  {'Z (Ω)'}")
     print(f"  {'-'*6}  {'-'*35}")
 

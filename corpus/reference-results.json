@@ -14,10 +14,10 @@
       "wires": 1,
       "sources": 1,
       "ground": "none",
-      "reference_source": "Python MoM validation (hallen_reference.py)",
+      "reference_source": "fnec Hallen solve (self-pinned); studies/mom-kernel-accuracy/hallen_reference.py reproduces it to 0.01 ohm (78.825 + j42.435) but shares the formulation, so it is a cross-check, not an oracle; the external gate is nec2c",
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -25,31 +25,40 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "Current_amplitude_dB": 0.0001,
-        "Current_phase_deg": 0.1
+        "Current_phase_deg": 0.1,
+        "ExternalR_absolute_ohm": 2.0,
+        "ExternalX_absolute_ohm": 8.0
       },
       "current_samples": [
         {
           "wire_id": 1,
           "segment_id": 1,
-          "amplitude_db": 2.167828e-07,
-          "phase_deg": -86.2964
+          "amplitude_db": 0.000411,
+          "phase_deg": -32.8471
         },
         {
           "wire_id": 1,
           "segment_id": 26,
-          "amplitude_db": 0.01323928,
-          "phase_deg": -10.604
+          "amplitude_db": 0.011169,
+          "phase_deg": -28.2953
         },
         {
           "wire_id": 1,
           "segment_id": 51,
-          "amplitude_db": 2.167828e-07,
-          "phase_deg": -86.2964
+          "amplitude_db": 0.000411,
+          "phase_deg": -32.8471
         }
       ],
-      "status": "Reference captured from Python study; xnec2c validation TBD",
-      "last_produced_on": "2026-04-29",
-      "last_produced_in": "0.2.0"
+      "status": "Reference captured from Python study; xnec2c validation TBD Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External nec2c gate added 2026-09-25 (FND-156): the reference dipole had none, so a one-segment length error in every Hallen answer went ungated for its whole life.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0",
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended), captured 2026-09-25",
+        "engine": "nec2c",
+        "real_ohm": 79.348,
+        "imag_ohm": 46.223,
+        "captured_on": "2026-09-25"
+      }
     },
     "dipole-ex3-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
@@ -187,8 +196,8 @@
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -196,9 +205,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole. Re-pinned 2026-08-30 (FND-118): was 74.23 + j13.9, fnec's old bespoke current-source solver, which agreed with the voltage drive to 0.02 percent rather than exactly. The current drive is now the voltage solve rescaled, so this is the voltage-drive value to the digit. The change is 0.015 ohm and the row passed its tolerance either way; it is re-pinned so the reference states what the code produces rather than what it produced.",
-      "last_produced_on": "2026-08-30",
-      "last_produced_in": "0.17.0"
+      "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole. Re-pinned 2026-08-30 (FND-118): was 74.23 + j13.9, fnec's old bespoke current-source solver, which agreed with the voltage drive to 0.02 percent rather than exactly. The current drive is now the voltage solve rescaled, so this is the voltage-drive value to the digit. The change is 0.015 ohm and the row passed its tolerance either way; it is re-pinned so the reference states what the code produces rather than what it produced. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex4-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex4-pulse-current-freesp-51seg.nec",
@@ -244,8 +253,8 @@
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -253,9 +262,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0.",
-      "last_produced_on": "2026-07-03",
-      "last_produced_in": "0.7.0"
+      "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex5-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex5-pulse-current-freesp-51seg.nec",
@@ -302,8 +311,8 @@
         "PT card support is currently deferred"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -311,9 +320,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression lock for PT deck portability while PT runtime semantics remain deferred.",
-      "last_produced_on": "2026-07-05",
-      "last_produced_in": "0.9.0"
+      "status": "Regression lock for PT deck portability while PT runtime semantics remain deferred. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-nt-freesp-51seg": {
       "deck_file": "dipole-nt-freesp-51seg.nec",
@@ -331,8 +340,8 @@
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -340,9 +349,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-nt-tl-equiv-freesp-51seg": {
       "deck_file": "dipole-nt-tl-equiv-freesp-51seg.nec",
@@ -359,8 +368,8 @@
         "deferred"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 70.6327,
-        "imag_ohm": 14.0088
+        "real_ohm": 75.016582,
+        "imag_ohm": 42.29105
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -368,9 +377,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -388,8 +397,8 @@
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -397,9 +406,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-nt-pt-freesp-51seg": {
       "deck_file": "dipole-nt-pt-freesp-51seg.nec",
@@ -417,8 +426,8 @@
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -426,9 +435,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-pt-nt-repeated-freesp-51seg": {
       "deck_file": "dipole-pt-nt-repeated-freesp-51seg.nec",
@@ -446,8 +455,8 @@
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -455,9 +464,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-nt-pt-repeated-freesp-51seg": {
       "deck_file": "dipole-nt-pt-repeated-freesp-51seg.nec",
@@ -475,8 +484,8 @@
         "unknown card 'NT'"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -484,9 +493,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-pt-nt-interleaved-freesp-51seg": {
       "deck_file": "dipole-pt-nt-interleaved-freesp-51seg.nec",
@@ -501,8 +510,8 @@
         "NT card ignored"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -510,12 +519,12 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: interleaved PT+NT; PT still unknown-card, NT parsed with deferred-support warning.",
+      "status": "Phase-2 regression lock: interleaved PT+NT; PT still unknown-card, NT parsed with deferred-support warning. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
       ],
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-nt-pt-interleaved-freesp-51seg": {
       "deck_file": "dipole-nt-pt-interleaved-freesp-51seg.nec",
@@ -530,8 +539,8 @@
         "NT card ignored"
       ],
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -539,12 +548,12 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Phase-2 regression lock: interleaved NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card.",
+      "status": "Phase-2 regression lock: interleaved NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
       "forbidden_warning_substrings": [
         "unknown card 'NT'"
       ],
-      "last_produced_on": "2026-07-02",
-      "last_produced_in": "0.7.0"
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex3-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
@@ -652,8 +661,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference; RP table support)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
@@ -728,40 +737,40 @@
         {
           "theta_deg": 30.0,
           "phi_deg": 0.0,
-          "gain_db": -5.422,
-          "gain_v_db": -5.422,
+          "gain_db": -5.4788,
+          "gain_v_db": -5.4788,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 60.0,
           "phi_deg": 0.0,
-          "gain_db": 0.391,
-          "gain_v_db": 0.391,
+          "gain_db": 0.3845,
+          "gain_v_db": 0.3845,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 0.0,
-          "gain_db": 2.1483,
-          "gain_v_db": 2.1483,
+          "gain_db": 2.1655,
+          "gain_v_db": 2.1655,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 120.0,
           "phi_deg": 0.0,
-          "gain_db": 0.391,
-          "gain_v_db": 0.391,
+          "gain_db": 0.3845,
+          "gain_v_db": 0.3845,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 150.0,
           "phi_deg": 0.0,
-          "gain_db": -5.422,
-          "gain_v_db": -5.422,
+          "gain_db": -5.4788,
+          "gain_v_db": -5.4788,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
@@ -784,9 +793,9 @@
         "ExternalGain_absolute_dB": 0.08,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068).",
-      "last_produced_on": "2026-04-29",
-      "last_produced_in": "0.2.0"
+      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ground-rp-51seg": {
       "deck_file": "dipole-ground-rp-51seg.nec",
@@ -798,79 +807,79 @@
       "ground": "PEC",
       "reference_source": "fnec Hallen solver (regression reference; PEC image far-field) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
-        "real_ohm": 73.861164,
-        "imag_ohm": 12.226487
+        "real_ohm": 77.405597,
+        "imag_ohm": 41.673605
       },
       "pattern_samples": [
         {
           "theta_deg": 10.0,
           "phi_deg": 0.0,
-          "gain_db": -9.0142,
-          "gain_v_db": -9.0142,
+          "gain_db": -9.1035,
+          "gain_v_db": -9.1035,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 20.0,
           "phi_deg": 0.0,
-          "gain_db": -3.2806,
-          "gain_v_db": -3.2806,
+          "gain_db": -3.3604,
+          "gain_v_db": -3.3604,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 30.0,
           "phi_deg": 0.0,
-          "gain_db": -0.6464,
-          "gain_v_db": -0.6464,
+          "gain_db": -0.7118,
+          "gain_v_db": -0.7118,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 40.0,
           "phi_deg": 0.0,
-          "gain_db": -0.4049,
-          "gain_v_db": -0.4049,
+          "gain_db": -0.453,
+          "gain_v_db": -0.453,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 50.0,
           "phi_deg": 0.0,
-          "gain_db": -4.3292,
-          "gain_v_db": -4.3292,
+          "gain_db": -4.3596,
+          "gain_v_db": -4.3596,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 60.0,
           "phi_deg": 0.0,
-          "gain_db": -14.5948,
-          "gain_v_db": -14.5948,
+          "gain_db": -14.6077,
+          "gain_v_db": -14.6077,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 70.0,
           "phi_deg": 0.0,
-          "gain_db": 2.0828,
-          "gain_v_db": 2.0828,
+          "gain_db": 2.0827,
+          "gain_v_db": 2.0827,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 80.0,
           "phi_deg": 0.0,
-          "gain_db": 7.0166,
-          "gain_v_db": 7.0166,
+          "gain_db": 7.0248,
+          "gain_v_db": 7.0248,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 0.0,
-          "gain_db": 8.4199,
-          "gain_v_db": 8.4199,
+          "gain_db": 8.4311,
+          "gain_v_db": 8.4311,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         }
@@ -883,9 +892,9 @@
         "Gain_absolute_dB": 0.05,
         "AxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs)",
-      "last_produced_on": "2026-07-08",
-      "last_produced_in": "0.9.0"
+      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs) Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-xaxis-rp-grid-51seg": {
       "deck_file": "dipole-xaxis-rp-grid-51seg.nec",
@@ -897,8 +906,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference; multi-phi RP grid support)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
@@ -973,16 +982,16 @@
         {
           "theta_deg": 0.0,
           "phi_deg": 0.0,
-          "gain_db": 2.1485,
-          "gain_v_db": 2.1485,
+          "gain_db": 2.1657,
+          "gain_v_db": 2.1657,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 45.0,
           "phi_deg": 0.0,
-          "gain_db": -1.8861,
-          "gain_v_db": -1.8861,
+          "gain_db": -1.9173,
+          "gain_v_db": -1.9173,
           "gain_h_db": -999.99,
           "axial_ratio": 0.0
         },
@@ -997,41 +1006,41 @@
         {
           "theta_deg": 0.0,
           "phi_deg": 90.0,
-          "gain_db": 2.1485,
+          "gain_db": 2.1657,
           "gain_v_db": -999.99,
-          "gain_h_db": 2.1485,
+          "gain_h_db": 2.1657,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 45.0,
           "phi_deg": 90.0,
-          "gain_db": 2.1485,
+          "gain_db": 2.1657,
           "gain_v_db": -999.99,
-          "gain_h_db": 2.1485,
+          "gain_h_db": 2.1657,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 90.0,
-          "gain_db": 2.1485,
+          "gain_db": 2.1657,
           "gain_v_db": -999.99,
-          "gain_h_db": 2.1485,
+          "gain_h_db": 2.1657,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 0.0,
           "phi_deg": 270.0,
-          "gain_db": 2.1485,
+          "gain_db": 2.1657,
           "gain_v_db": -999.99,
-          "gain_h_db": 2.1485,
+          "gain_h_db": 2.1657,
           "axial_ratio": 0.0
         },
         {
           "theta_deg": 90.0,
           "phi_deg": 270.0,
-          "gain_db": 2.1485,
+          "gain_db": 2.1657,
           "gain_v_db": -999.99,
-          "gain_h_db": 2.1485,
+          "gain_h_db": 2.1657,
           "axial_ratio": 0.0
         }
       ],
@@ -1045,9 +1054,9 @@
         "ExternalGain_absolute_dB": 0.04,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034).",
-      "last_produced_on": "2026-04-29",
-      "last_produced_in": "0.2.0"
+      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-freesp-gm-inplace-shifted": {
       "deck_file": "dipole-freesp-gm-inplace-shifted.nec",
@@ -1059,8 +1068,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (regression reference; GM in-place translation validated against baseline free-space dipole)",
       "feedpoint_impedance": {
-        "real_ohm": 74.242874,
-        "imag_ohm": 13.899516
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1068,9 +1077,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches dipole-freesp-51seg exactly; added to lock GM in-place translation into corpus validation",
-      "last_produced_on": "2026-04-25",
-      "last_produced_in": "0.2.0"
+      "status": "Regression reference matches dipole-freesp-51seg exactly; added to lock GM in-place translation into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ground-51seg": {
       "deck_file": "dipole-ground-51seg.nec",
@@ -1082,8 +1091,8 @@
       "ground": "perfect conductor (infinite)",
       "reference_source": "fnec Hallén solver with GN=1 PEC image-method ground (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
-        "real_ohm": 73.861164,
-        "imag_ohm": 12.226487
+        "real_ohm": 77.405597,
+        "imag_ohm": 41.673605
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended)",
@@ -1097,32 +1106,32 @@
         "X_absolute_ohm": 0.05,
         "Current_amplitude_dB": 0.0001,
         "Current_phase_deg": 0.1,
-        "ExternalR_absolute_ohm": 8.0,
-        "ExternalX_absolute_ohm": 35.0
+        "ExternalR_absolute_ohm": 6.0,
+        "ExternalX_absolute_ohm": 5.0
       },
       "current_samples": [
         {
           "wire_id": 1,
           "segment_id": 1,
-          "amplitude_db": 0.0003586276,
-          "phase_deg": -76.6265
+          "amplitude_db": 0.000629,
+          "phase_deg": -57.1031
         },
         {
           "wire_id": 1,
           "segment_id": 26,
-          "amplitude_db": 0.01335715,
-          "phase_deg": -9.3991
+          "amplitude_db": 0.011375,
+          "phase_deg": -28.2971
         },
         {
           "wire_id": 1,
           "segment_id": 51,
-          "amplitude_db": 0.0002246787,
-          "phase_deg": 110.6499
+          "amplitude_db": 0.000364,
+          "phase_deg": -3.8002
         }
       ],
-      "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks.",
-      "last_produced_on": "2026-07-08",
-      "last_produced_in": "0.9.0"
+      "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 8 / X 35 ohm to R 6 / X 5: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-gn0-fresnel-51seg": {
       "deck_file": "dipole-gn0-fresnel-51seg.nec",
@@ -1134,8 +1143,8 @@
       "ground": "finite ground GN0 (simple Fresnel approximation)",
       "reference_source": "fnec Hallen solver with GN=0 simple finite-ground model (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
-        "real_ohm": 72.859147,
-        "imag_ohm": 13.16435
+        "real_ohm": 77.037412,
+        "imag_ohm": 41.970772
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1148,9 +1157,9 @@
         "GN type 0 is not yet supported; treating this deck as free-space"
       ],
       "expected_warning_counts": {},
-      "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract.",
-      "last_produced_on": "2026-07-08",
-      "last_produced_in": "0.9.0"
+      "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-gn2-deferred": {
       "deck_file": "dipole-gn2-deferred.nec",
@@ -1162,8 +1171,8 @@
       "ground": "finite conductivity GN2 (scoped runtime path; simple finite-ground approximation)",
       "reference_source": "fnec Hallén solver with GN2 scoped finite-ground path (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
-        "real_ohm": 72.859147,
-        "imag_ohm": 13.16435
+        "real_ohm": 77.037412,
+        "imag_ohm": 41.970772
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1176,9 +1185,9 @@
         "GN type 2 is not yet supported; treating this deck as free-space"
       ],
       "expected_warning_counts": {},
-      "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract.",
-      "last_produced_on": "2026-07-08",
-      "last_produced_in": "0.9.0"
+      "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-gn2-buried-unsupported": {
       "deck_file": "dipole-gn2-buried-unsupported.nec",
@@ -1210,8 +1219,8 @@
       "ground": "finite conductivity GN2 near-ground class",
       "reference_source": "fnec Hallén solver with GN2 scoped finite-ground path on low above-ground geometry (regression) (updated 2026-07-08: ground-image current-direction sign fix, PH9-CHK-006; ground-effect delta validated vs nec2c)",
       "feedpoint_impedance": {
-        "real_ohm": 92.266147,
-        "imag_ohm": 13.61731
+        "real_ohm": 97.15776,
+        "imag_ohm": 44.129567
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1225,9 +1234,9 @@
         "unsupported buried-wire geometry for active ground model"
       ],
       "expected_warning_counts": {},
-      "status": "PH2-CHK-002 supported-class contract: low above-ground GN2 near-ground geometry remains solveable, regression-gated, and explicitly forbids both deferred-ground and buried-wire guardrail text.",
-      "last_produced_on": "2026-07-08",
-      "last_produced_in": "0.9.0"
+      "status": "PH2-CHK-002 supported-class contract: low above-ground GN2 near-ground geometry remains solveable, regression-gated, and explicitly forbids both deferred-ground and buried-wire guardrail text. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ex4-gn2-near-ground-51seg": {
       "deck_file": "dipole-ex4-gn2-near-ground-51seg.nec",
@@ -1239,8 +1248,8 @@
       "ground": "finite conductivity GN2 near-ground class",
       "reference_source": "fnec Hallen current-source solve over the GN2 scoped finite-ground path. Since FND-118 a current source is the unit-voltage solve rescaled by i0/I_feed, so this is the SAME number as the voltage-drive row dipole-gn2-near-ground-51seg -- identical by construction, not by coincidence.",
       "feedpoint_impedance": {
-        "real_ohm": 92.266147,
-        "imag_ohm": 13.61731
+        "real_ohm": 97.15776,
+        "imag_ohm": 44.129567
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1256,9 +1265,9 @@
         "unsupported buried-wire geometry for active ground model"
       ],
       "expected_warning_counts": {},
-      "status": "FND-118 gate, RE-PINNED. This row was frozen at 86.237810 + j12.681089 to DOCUMENT a defect: the current drive disagreed with the voltage drive by 6.5 percent over ground, and every EX4 fixture was free space so the class was ungated. The defect is now fixed and the row records the corrected answer. The two drives agree to the digit because Z = V/I is a property of the port and not of how it is driven; a current source is the voltage solve scaled by i0/I_feed, exactly, for a linear system. MY FIRST DIAGNOSIS WAS WRONG and the ablation refuted it: I attributed the split to a constraint weight of 1e6 in the bespoke current-source solver, but sweeping that across nine orders of magnitude moves R by 0.28 percent against a 6.5 percent gap, and equalising the weight on both drives leaves the split intact. The real cause is that over finite ground the augmented Hallen system becomes INCONSISTENT -- the free-space homogeneous basis no longer satisfies the ground-modified operator, measured residual rising from 3e-7 to 5.8 percent -- so the port voltage is pinned only to about 4 percent and the two drives minimised slightly different objectives over a nearly flat valley. Which drive to keep was settled by an oracle that is NEITHER: the MPIE solver, a different kernel with a different ground model, answers this geometry R = 91.208. The voltage drive is 1.2 percent away; the old current drive was 5.4 percent away.",
-      "last_produced_on": "2026-08-30",
-      "last_produced_in": "0.17.0"
+      "status": "FND-118 gate, RE-PINNED. This row was frozen at 86.237810 + j12.681089 to DOCUMENT a defect: the current drive disagreed with the voltage drive by 6.5 percent over ground, and every EX4 fixture was free space so the class was ungated. The defect is now fixed and the row records the corrected answer. The two drives agree to the digit because Z = V/I is a property of the port and not of how it is driven; a current source is the voltage solve scaled by i0/I_feed, exactly, for a linear system. MY FIRST DIAGNOSIS WAS WRONG and the ablation refuted it: I attributed the split to a constraint weight of 1e6 in the bespoke current-source solver, but sweeping that across nine orders of magnitude moves R by 0.28 percent against a 6.5 percent gap, and equalising the weight on both drives leaves the split intact. The real cause is that over finite ground the augmented Hallen system becomes INCONSISTENT -- the free-space homogeneous basis no longer satisfies the ground-modified operator, measured residual rising from 3e-7 to 5.8 percent -- so the port voltage is pinned only to about 4 percent and the two drives minimised slightly different objectives over a nearly flat valley. Which drive to keep was settled by an oracle that is NEITHER: the MPIE solver, a different kernel with a different ground model, answers this geometry R = 91.208. The voltage drive is 1.2 percent away; the old current drive was 5.4 percent away. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-gn-1-null": {
       "deck_file": "dipole-gn-1-null.nec",
@@ -1270,8 +1279,8 @@
       "ground": "none (GN -1 null ground → free-space)",
       "reference_source": "fnec Hallén solver free-space (regression; GN -1 treated as free-space per NEC spec)",
       "feedpoint_impedance": {
-        "real_ohm": 74.23,
-        "imag_ohm": 13.9
+        "real_ohm": 78.834228,
+        "imag_ohm": 42.439515
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1284,9 +1293,9 @@
         "GN type -1 is not yet supported"
       ],
       "expected_warning_counts": {},
-      "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted.",
-      "last_produced_on": "2026-04-28",
-      "last_produced_in": "0.2.0"
+      "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
@@ -1298,8 +1307,8 @@
       "ground": "none",
       "reference_source": "fnec Hallén solver (regression reference; multi-wire RHS/endpoints fixed 2026-04-25); updated to free-space (GN not parsed in Phase-1 parser)",
       "feedpoint_impedance": {
-        "real_ohm": 30.626169,
-        "imag_ohm": 5.023033
+        "real_ohm": 8.848894,
+        "imag_ohm": 49.606607
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1307,9 +1316,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Reference updated after Hallen RHS fix (2026). Old reference (-18.32) was captured with incorrect code that applied source excitation to passive parasitic elements. New result (30.63+j5.02) reflects correct passive-wire handling with rhs=0 for non-EX wires. Passive Yagi elements couple only through Z-matrix. External NEC2 validation pending.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.2.0"
+      "status": "Reference updated after Hallen RHS fix (2026). Old reference (-18.32) was captured with incorrect code that applied source excitation to passive parasitic elements. New result (30.63+j5.02) reflects correct passive-wire handling with rhs=0 for non-EX wires. Passive Yagi elements couple only through Z-matrix. External NEC2 validation pending. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ld-loaded-51seg": {
       "deck_file": "dipole-ld-loaded-51seg.nec",
@@ -1321,8 +1330,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified independently of any reference engine by the port identity: LD 4 (50 Ohm) and LD 1 (1000 Ohm) at the feed series-accumulate to 1050 Ohm, and the measured shift from the unloaded 74.242874 + j13.899516 is +1049.9881 - j0.0024. nec2c performs the same accumulation and shifts by exactly +1050 + j0.",
       "feedpoint_impedance": {
-        "real_ohm": 1124.231015,
-        "imag_ohm": 13.897144
+        "real_ohm": 1128.825991,
+        "imag_ohm": 42.434673
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ inserted before EN)",
@@ -1334,12 +1343,12 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 5.0,
         "X_absolute_ohm": 5.0,
-        "ExternalR_absolute_ohm": 10.1,
-        "ExternalX_absolute_ohm": 40.4
+        "ExternalR_absolute_ohm": 2.0,
+        "ExternalX_absolute_ohm": 8.0
       },
-      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-30",
-      "last_produced_in": "0.17.0"
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 10.1 / X 40.4 ohm to R 2 / X 8: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ld-series-rl-51seg": {
       "deck_file": "dipole-ld-series-rl-51seg.nec",
@@ -1351,8 +1360,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified against the analytic value rather than against fnec's own prior output: LD 2 with R=10 Ohm and L=1e-6 H at 14.2 MHz must shift the feedpoint by +10 + j*omega*L = +10 + j89.2212. Measured shift from the unloaded baseline is +9.9919 + j89.2245.",
       "feedpoint_impedance": {
-        "real_ohm": 84.234792,
-        "imag_ohm": 103.124053
+        "real_ohm": 88.828417,
+        "imag_ohm": 131.660677
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1360,9 +1369,9 @@
         "R_absolute_ohm": 0.1,
         "X_absolute_ohm": 2.0
       },
-      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-30",
-      "last_produced_in": "0.17.0"
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-ld-series-rc-51seg": {
       "deck_file": "dipole-ld-series-rc-51seg.nec",
@@ -1374,8 +1383,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver, load stamp derived (FND-122). Verified against the analytic value: LD 3 with R=10 Ohm and C=1e-12 F at 14.2 MHz must shift the feedpoint by +10 - j/(omega*C) = +10 - j11208.15. Measured shift from the unloaded baseline is +9.9873 - j11208.0971.",
       "feedpoint_impedance": {
-        "real_ohm": 84.230146,
-        "imag_ohm": -11194.197538
+        "real_ohm": 88.825177,
+        "imag_ohm": -11165.660024
       },
       "tolerance_gates": {
         "R_percent_rel": 0.1,
@@ -1383,9 +1392,9 @@
         "R_absolute_ohm": 50.0,
         "X_absolute_ohm": 500.0
       },
-      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec.",
-      "last_produced_on": "2026-08-30",
-      "last_produced_in": "0.17.0"
+      "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
@@ -1397,8 +1406,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.670498,
-        "imag_ohm": -14.490403
+        "real_ohm": 0.256177,
+        "imag_ohm": 34.697979
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1406,9 +1415,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.3.0"
+      "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1420,8 +1429,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card with seg=0 mapping parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.670498,
-        "imag_ohm": -14.490403
+        "real_ohm": 0.256177,
+        "imag_ohm": 34.697979
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1429,9 +1438,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position).",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.3.0"
+      "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "tl-two-dipoles-linked-nseg0": {
       "deck_file": "tl-two-dipoles-linked-nseg0.nec",
@@ -1443,8 +1452,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL card with NSEG=0 shorthand parsed and Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.670498,
-        "imag_ohm": -14.490403
+        "real_ohm": 0.256177,
+        "imag_ohm": 34.697979
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1452,9 +1461,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.3.0"
+      "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "tl-two-dipoles-linked-seg0-even52": {
       "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
@@ -1466,8 +1475,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen solver (Phase-2 regression reference; TL with seg=0 lower-center mapping on even-segment tags, Z-stamp applied)",
       "feedpoint_impedance": {
-        "real_ohm": 3.609804,
-        "imag_ohm": -13.463569
+        "real_ohm": 0.240606,
+        "imag_ohm": 34.829753
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1475,9 +1484,9 @@
         "R_absolute_ohm": 1.0,
         "X_absolute_ohm": 2.0
       },
-      "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.3.0"
+      "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",
@@ -1489,8 +1498,8 @@
       "ground": "none",
       "reference_source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
       "feedpoint_impedance": {
-        "real_ohm": 12.388043,
-        "imag_ohm": -918.121215
+        "real_ohm": 12.924657,
+        "imag_ohm": -893.251051
       },
       "external_reference_candidate": {
         "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
@@ -1502,12 +1511,12 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.5,
         "X_absolute_ohm": 5.0,
-        "ExternalR_absolute_ohm": 5.0,
-        "ExternalX_absolute_ohm": 35.0
+        "ExternalR_absolute_ohm": 2.0,
+        "ExternalX_absolute_ohm": 6.0
       },
-      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.2.0"
+      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-loaded-noncollinear-hallen": {
       "deck_file": "dipole-loaded.nec",
@@ -1523,8 +1532,8 @@
       "reference_source": "fnec Hallen solver (experimental non-collinear projection path regression lock)",
       "expected_warning_substrings": [],
       "feedpoint_impedance": {
-        "real_ohm": 12.388043,
-        "imag_ohm": -918.121215
+        "real_ohm": 12.924657,
+        "imag_ohm": -893.251051
       },
       "external_reference_candidate": {
         "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
@@ -1536,12 +1545,12 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
-        "ExternalR_absolute_ohm": 5.0,
-        "ExternalX_absolute_ohm": 35.0
+        "ExternalR_absolute_ohm": 2.0,
+        "ExternalX_absolute_ohm": 6.0
       },
-      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case.",
-      "last_produced_on": "2026-04-30",
-      "last_produced_in": "0.2.0"
+      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",
@@ -1560,24 +1569,24 @@
       "reference_source": "fnec Hallen solver (regression reference)",
       "feedpoint_impedance": {
         "10.0": {
-          "real_ohm": 27.928159,
-          "imag_ohm": -456.030376
+          "real_ohm": 29.265309,
+          "imag_ohm": -432.890927
         },
         "12.0": {
-          "real_ohm": 45.070916,
-          "imag_ohm": -220.400895
+          "real_ohm": 47.474543,
+          "imag_ohm": -195.898313
         },
         "14.0": {
-          "real_ohm": 70.978931,
-          "imag_ohm": -7.133893
+          "real_ohm": 75.303956,
+          "imag_ohm": 20.909562
         },
         "16.0": {
-          "real_ohm": 111.641332,
-          "imag_ohm": 207.119271
+          "real_ohm": 119.677628,
+          "imag_ohm": 241.725207
         },
         "18.0": {
-          "real_ohm": 179.635817,
-          "imag_ohm": 444.830198
+          "real_ohm": 195.53292,
+          "imag_ohm": 491.033923
         }
       },
       "external_reference_candidate": {
@@ -1608,12 +1617,12 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
-        "ExternalR_absolute_ohm": 14.0,
-        "ExternalX_absolute_ohm": 47.0
+        "ExternalR_absolute_ohm": 8.0,
+        "ExternalX_absolute_ohm": 8.0
       },
-      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50→14/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92).",
-      "last_produced_on": "2026-04-29",
-      "last_produced_in": "0.2.0"
+      "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50→14/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 14 / X 47 ohm to R 8 / X 8: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "multi-source": {
       "deck_file": "multi-source.nec",
@@ -1626,12 +1635,12 @@
       "reference_source": "fnec Hallen solver (regression reference)",
       "feedpoint_impedance": {
         "source_1": {
-          "real_ohm": 152.352342,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.18398,
+          "imag_ohm": 63.62732
         },
         "source_2": {
-          "real_ohm": 152.352339,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.183979,
+          "imag_ohm": 63.62732
         }
       },
       "external_reference_candidate": {
@@ -1650,12 +1659,12 @@
         "X_percent_rel": 0.1,
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
-        "ExternalR_absolute_ohm": 12.0,
-        "ExternalX_absolute_ohm": 40.0
+        "ExternalR_absolute_ohm": 3.0,
+        "ExternalX_absolute_ohm": 10.0
       },
-      "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50→12/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97).",
-      "last_produced_on": "2026-04-29",
-      "last_produced_in": "0.2.0"
+      "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50→12/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 12 / X 40 ohm to R 3 / X 10: the old X band existed to absorb the one-segment shortening, which is gone.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "multi-source-gr-180": {
       "deck_file": "multi-source-gr-180.nec",
@@ -1668,12 +1677,12 @@
       "reference_source": "fnec Hallen solver (regression reference; GR geometry expansion validated against handwritten multi-source deck)",
       "feedpoint_impedance": {
         "source_1": {
-          "real_ohm": 152.352342,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.18398,
+          "imag_ohm": 63.62732
         },
         "source_2": {
-          "real_ohm": 152.352339,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.183979,
+          "imag_ohm": 63.62732
         }
       },
       "tolerance_gates": {
@@ -1682,9 +1691,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation",
-      "last_produced_on": "2026-06-20",
-      "last_produced_in": "0.6.0"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "multi-source-gm-copy": {
       "deck_file": "multi-source-gm-copy.nec",
@@ -1697,12 +1706,12 @@
       "reference_source": "fnec Hallen solver (regression reference; GM translated-copy expansion validated against handwritten multi-source deck)",
       "feedpoint_impedance": {
         "source_1": {
-          "real_ohm": 152.352342,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.18398,
+          "imag_ohm": 63.62732
         },
         "source_2": {
-          "real_ohm": 152.352339,
-          "imag_ohm": 31.560296
+          "real_ohm": 162.183979,
+          "imag_ohm": 63.62732
         }
       },
       "tolerance_gates": {
@@ -1711,9 +1720,9 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05
       },
-      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation",
-      "last_produced_on": "2026-06-20",
-      "last_produced_in": "0.6.0"
+      "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "dipole-sinusoidal-51seg": {
       "deck_file": "dipole-sinusoidal-51seg.nec",
@@ -1729,8 +1738,8 @@
       ],
       "reference_source": "fnec sinusoidal Galerkin-on-Hallen, PH6-CHK-003",
       "feedpoint_impedance": {
-        "real_ohm": 74.27,
-        "imag_ohm": 13.32
+        "real_ohm": 78.953986,
+        "imag_ohm": 42.448379
       },
       "tolerance_gates": {
         "R_percent_rel": 1.0,
@@ -1748,25 +1757,25 @@
         {
           "wire_id": 1,
           "segment_id": 1,
-          "amplitude_db": 2.047353e-07,
-          "phase_deg": -86.11
+          "amplitude_db": 0.00041,
+          "phase_deg": -32.9291
         },
         {
           "wire_id": 1,
           "segment_id": 26,
-          "amplitude_db": 0.013253,
-          "phase_deg": -10.17
+          "amplitude_db": 0.011156,
+          "phase_deg": -28.264
         },
         {
           "wire_id": 1,
           "segment_id": 51,
-          "amplitude_db": 2.047353e-07,
-          "phase_deg": -86.11
+          "amplitude_db": 0.00041,
+          "phase_deg": -32.9291
         }
       ],
-      "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X",
-      "last_produced_on": "2026-05-05",
-      "last_produced_in": "0.5.0"
+      "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22).",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     },
     "split-v-conductor-path-freesp": {
       "deck_file": "split-v-conductor-path-freesp.nec",
@@ -1778,8 +1787,8 @@
       "ground": "none",
       "reference_source": "fnec Hallen conductor-path solve (self-pinned regression), cross-checked against nec2c 268.56 + j452.26 on the same deck",
       "feedpoint_impedance": {
-        "real_ohm": 264.882179,
-        "imag_ohm": 410.856326
+        "real_ohm": 297.809863,
+        "imag_ohm": 511.445265
       },
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux, captured 2026-08-30",
@@ -1794,14 +1803,16 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "ExternalR_absolute_ohm": 4.0,
-        "ExternalX_absolute_ohm": 42.0
+        "ExternalX_absolute_ohm": 4.0,
+        "ExternalR_percent_rel": 12.0,
+        "ExternalX_percent_rel": 15.0
       },
       "expected_warning_substrings": [],
       "forbidden_warning_substrings": [],
       "expected_warning_counts": {},
-      "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances are wide ON PURPOSE and are not a defect being hidden: fnec's Hallen formulation differs from nec2c systematically (R within 1.4 percent here, X within 9.2 percent), which is the documented corpus-validation position for this solver. The tight gates are the self-pinned regression; the external numbers say the answer is the right shape.",
-      "last_produced_on": "2026-08-31",
-      "last_produced_in": "0.17.0"
+      "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances are wide ON PURPOSE and are not a defect being hidden: fnec's Hallen formulation differs from nec2c systematically (R within 1.4 percent here, X within 9.2 percent), which is the documented corpus-validation position for this solver. The tight gates are the self-pinned regression; the external numbers say the answer is the right shape. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). That fix removed a cancellation this row had been relying on: the 21-per-arm answer used to sit 1.4 percent from nec2c only because the 1/N shortening offset a real difference. Both end conditions converge to the same limit (old 295.26 + j495.96, new 304.40 + j522.25 at 81 segments per arm), while nec2c converges to about 279 + j459, so the ~11 percent R / ~13 percent X gap is a converged Hallen-vs-nec2c difference on this off-centre, near-antiresonant feed, not discretisation. The external gate is now relative (12 / 15 percent) and states that band; FND-158 tracks the difference itself.",
+      "last_produced_on": "2026-09-25",
+      "last_produced_in": "0.18.0"
     }
   }
 }

@@ -52,12 +52,13 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
+| `crates/nec_solver/tests/end_condition_nec2c.rs` | 4 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
 | `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=527 --> **527** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=532 --> **532** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -68,7 +69,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 234 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_solver` | 240 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
 | `nec_worker` | 102 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 91 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
@@ -78,11 +79,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=566 --> **566** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=572 --> **572** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1100 --> **1100** = 566 unit + 527 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1111 --> **1111** = 572 unit + 532 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

@@ -9,32 +9,31 @@
 //! test — "the two drives agree" — definitional, unable to fail, and therefore
 //! worthless as a gate.
 //!
-//! So the anchor is the **MPIE solver**: a different kernel with a different
-//! ground model, validated separately against `nec2c`. Both drives cannot drift
-//! together past it.
+//! So the anchor is **nec2c**: a different kernel with a different ground
+//! model, and not a drive of fnec's at all. It is not available in CI, so its
+//! answer on the voltage twin of this deck is captured below, as the corpus does
+//! with every external reference.
 //!
-//! Measured on this geometry: MPIE R = 91.208. Before the fix the current drive
-//! sat 5.45% away and this test fails; after, 1.16% and it passes. A gate that
-//! fails before and passes after is sabotage-verified by construction.
+//! The anchor used to be fnec's MPIE solver, run live (MPIE R = 91.208). Hallén
+//! then sat within 1.16% of it, which looked like two kernels agreeing, and was
+//! two defects cancelling: Hallén's free-end rows shortened every wire by one
+//! segment (FND-156) and MPIE's resistance runs ~6% low (FND-157). With FND-156
+//! fixed Hallén moved to 97.158 and nec2c answers 97.323; MPIE stayed at 91.208.
 //!
-//! **Reactance is deliberately not gated here.** Hallén gives X ≈ 13.6 against
-//! MPIE's ≈ 44.7 at 0.024 λ, and that gap is the reflection-coefficient
-//! systematic the whole Hallén ground path carries — it is drive-INDEPENDENT, so
-//! `EX 0` would fail such a gate too. Gating it would be gating a different
-//! defect under this one's name.
+//! **Reactance is gated too, now.** This header used to say Hallén's X ≈ 13.6
+//! against MPIE's ≈ 44.7 was "the reflection-coefficient systematic the whole
+//! Hallén ground path carries". It was not a ground effect: free-space Hallén was
+//! 29 Ω low as well, for the same one-segment reason. Fixed Hallén gives 44.130
+//! against nec2c's 44.149.
 
 use std::process::Command;
 
-fn feedpoint_r(deck: &str, extra: &[&str]) -> f64 {
+fn feedpoint_z(deck: &str) -> (f64, f64) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .expect("workspace root");
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
-    for a in extra {
-        cmd.arg(a);
-    }
-    let out = cmd
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg(root.join("corpus").join(deck))
         .output()
         .unwrap_or_else(|e| panic!("run fnec on {deck}: {e}"));
@@ -51,27 +50,36 @@ fn feedpoint_r(deck: &str, extra: &[&str]) -> f64 {
             if c.len() != 8 || c[0].parse::<u32>().is_err() {
                 return None;
             }
-            c[6].parse::<f64>().ok()
+            Some((c[6].parse::<f64>().ok()?, c[7].parse::<f64>().ok()?))
         })
         .next()
         .unwrap_or_else(|| panic!("no feedpoint row for {deck}:\n{stdout}"))
 }
 
-/// The gate. Before the fix: 86.238 against MPIE's 91.208 — 5.45%, fails.
+fn feedpoint_r(deck: &str) -> f64 {
+    feedpoint_z(deck).0
+}
+
+/// nec2c 1.3.1 on `dipole-gn2-near-ground-51seg.nec` (the voltage twin: nec2c
+/// takes the same geometry, ground and frequency), captured 2026-09-25 with the
+/// deck's leading `CE` lines turned into `CM` and `XQ` appended.
+const NEC2C_NEAR_GROUND: (f64, f64) = (97.323, 44.149);
+
+/// The gate. Before FND-118 the current drive sat 6.5% from the voltage drive,
+/// so it fails a 1% band around any kernel the voltage drive agrees with.
 #[test]
 fn a_current_drive_over_ground_tracks_an_independent_kernel() {
-    let hallen_ex4 = feedpoint_r("dipole-ex4-gn2-near-ground-51seg.nec", &[]);
-    // MPIE refuses EX 4, so it is run on the voltage twin: same geometry, same
-    // ground, same frequency, differing only in the drive it can accept.
-    let mpie = feedpoint_r("dipole-gn2-near-ground-51seg.nec", &["--solver", "mpie"]);
-
-    let rel = (hallen_ex4 - mpie).abs() / mpie;
+    let (r, x) = feedpoint_z("dipole-ex4-gn2-near-ground-51seg.nec");
+    let (r_ref, x_ref) = NEC2C_NEAR_GROUND;
+    let rel_r = (r - r_ref).abs() / r_ref;
+    let rel_x = (x - x_ref).abs() / x_ref;
     assert!(
-        rel < 0.02,
-        "the current drive over ground must track the MPIE kernel: Hallen EX4 \
-         R = {hallen_ex4:.3}, MPIE R = {mpie:.3}, {:.2}% apart. Before FND-118 \
-         this was 5.45%.",
-        rel * 100.0
+        rel_r < 0.01 && rel_x < 0.02,
+        "the current drive over ground must track nec2c: Hallen EX4 {r:.3} + j{x:.3}, \
+         nec2c {r_ref} + j{x_ref}, R {:.2}% / X {:.2}% apart. Before FND-118 R was \
+         6.5% off; before FND-156 X was 69% off.",
+        rel_r * 100.0,
+        rel_x * 100.0
     );
 }
 
@@ -83,8 +91,8 @@ fn a_current_drive_over_ground_tracks_an_independent_kernel() {
 /// said the defect was in the ground coupling rather than in the drive.
 #[test]
 fn a_current_drive_far_above_ground_matches_free_space() {
-    let high = feedpoint_r("dipole-ex4-gn2-high-above-ground.nec", &[]);
-    let free = feedpoint_r("dipole-ex4-freesp-51seg.nec", &[]);
+    let high = feedpoint_r("dipole-ex4-gn2-high-above-ground.nec");
+    let free = feedpoint_r("dipole-ex4-freesp-51seg.nec");
     let rel = (high - free).abs() / free;
     assert!(
         rel < 0.02,

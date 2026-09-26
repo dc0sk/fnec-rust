@@ -1406,8 +1406,10 @@ const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
 ///
 /// `rhs` and `cos_vec` are the Hallén RHS / projection vectors (length `N`),
 /// `wire_endpoints` the per-wire `(first, last)` segment indices, and
-/// `junctions` the `(seg_a, seg_b, sign)` continuity constraints — i.e. exactly
-/// the inputs of `nec_solver::linear::solve_hallen`, which this reproduces.
+/// `constraint_rows` the augmented rows `(col_a, col_b, val_a, val_b)` — pass
+/// `nec_solver::hallen_constraint_rows(wire_endpoints, junctions)`, so the
+/// free-end extrapolation (FND-156) and the junction rows are built in one
+/// place and cannot drift from the CPU solve this reproduces.
 ///
 /// Returns `None` when no wgpu adapter is available (caller falls back to the
 /// f64 CPU solve). All GPU arithmetic is f32; the result is intended to be
@@ -1417,7 +1419,7 @@ pub async fn solve_hallen_gpu_resident(
     rhs: &[num_complex::Complex64],
     cos_vec: &[f64],
     wire_endpoints: &[(usize, usize)],
-    junctions: &[(usize, usize, f64)],
+    constraint_rows: &[(usize, Option<usize>, f64, f64)],
     freq_hz: f64,
 ) -> Option<Vec<num_complex::Complex64>> {
     use wgpu::util::DeviceExt;
@@ -1431,30 +1433,19 @@ pub async fn solve_hallen_gpu_resident(
     }
 
     // ---- host-side augmented-system metadata (mirrors solve_hallen) --------
-    let fallback_endpoints;
-    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() {
-        fallback_endpoints = vec![(0usize, n - 1)];
-        &fallback_endpoints
-    } else {
-        wire_endpoints
-    };
-
-    let junction_endpoint_set: std::collections::HashSet<usize> =
-        junctions.iter().flat_map(|&(a, b, _)| [a, b]).collect();
+    // The constraint rows come from the caller, built over these same
+    // endpoints; with no wires there is nothing consistent to build them from,
+    // so leave that case to the CPU solve.
+    if wire_endpoints.is_empty() {
+        return None;
+    }
+    let endpoints = wire_endpoints;
 
     // Constraint rows encoded as [col_a, col_b_or_-1, val_a, val_b].
-    let mut constraints: Vec<[f32; 4]> = Vec::new();
-    for &(first, last) in endpoints.iter() {
-        if !junction_endpoint_set.contains(&first) {
-            constraints.push([first as f32, -1.0, 1.0, 0.0]);
-        }
-        if !junction_endpoint_set.contains(&last) {
-            constraints.push([last as f32, -1.0, 1.0, 0.0]);
-        }
-    }
-    for &(seg_a, seg_b, sign) in junctions.iter() {
-        constraints.push([seg_a as f32, seg_b as f32, 1.0, sign as f32]);
-    }
+    let constraints: Vec<[f32; 4]> = constraint_rows
+        .iter()
+        .map(|&(a, b, va, vb)| [a as f32, b.map_or(-1.0, |b| b as f32), va as f32, vb as f32])
+        .collect();
 
     let w = endpoints.len();
     let s = n + w;

@@ -190,7 +190,7 @@ fn main() {
                 &rhs.rhs,
                 &rhs.cos_vec,
                 &endpoints,
-                &junctions,
+                &nec_solver::hallen_constraint_rows(&endpoints, &junctions),
                 FREQ_HZ,
             ));
             let us = t.elapsed().as_micros() as u64;

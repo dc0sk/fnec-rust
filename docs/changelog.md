@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-25
 ---
 
 # Changelog
@@ -32,6 +32,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   control.
 
 ### Fixed
+
+- **The default Hallén solver no longer models every wire one segment short —
+  every Hallén answer changes (FND-156).** The free-end boundary rows imposed
+  `I = 0` on the end segment's *midpoint*, half a segment inside each wire tip.
+  They now extrapolate the current to zero at the physical tip
+  (`1.5·I_end − 0.5·I_inner` for equal segments). This applies at all five solve
+  sites that carried the rows: the plain and sinusoidal bases, the plane-wave
+  receive solve, both conductor-path solves, and the GPU-resident solve, which
+  now takes its rows from the caller instead of building its own. What changes:
+  - The corpus half-wave dipole moves from 74.24 + j13.90 Ω to **78.83 + j42.44
+    Ω**. nec2c gives 79.35 + j46.22.
+  - A five-element Yagi moves from 30.63 + j5.02 Ω to **8.85 + j49.61 Ω** (nec2c
+    8.17 + j56.54).
+  - A dipole 0.024 λ over average ground moves from 92.27 + j13.62 Ω to **97.16
+    + j44.13 Ω** (nec2c 97.32 + j44.15).
+  - Radiation patterns, currents and sweeps derived from these solves move with
+    them.
+
+  The ~30 Ω reactance gap to nec2c had been documented for months as a
+  "systematic formulation difference" and absorbed into 35–47 Ω external
+  tolerances. It was never a formulation difference. The Python reference used
+  to cross-check the solver had the same rows, so the two agreed to the digit.
+  The pulse, continuity and MPIE solvers are unaffected. Two residual
+  differences from nec2c that the fix exposed rather than caused are tracked as
+  FND-158 (bent conductor paths, and off-centre feeds near antiresonance) and
+  FND-159 (one-segment wires).
 
 - **A sweep that fails partway now lists the points it computed**, instead of
   drawing them on the chart above an empty table. `sweep_points()` matched

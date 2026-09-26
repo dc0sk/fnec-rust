@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/phase5-entry-criteria.md
 status: living
-last_updated: 2026-05-03
+last_updated: 2026-09-25
 ---
 
 # Phase 5 Entry Criteria
@@ -98,11 +98,13 @@ The following corpus decks pass the CI tolerance gate (validated through
 
 | # | Corpus deck | Key result (Z_re + jZ_im Ω) | Reference source |
 |:-:|:------------|:---------------------------|:-----------------|
-| 1 | `dipole-freesp-51seg.nec` | 74.24 + j13.90 | Python MoM / xnec2c |
+| 1 | `dipole-freesp-51seg.nec` | 74.24 + j13.90 ¹ | Python MoM / xnec2c |
 | 2 | `dipole-ground-51seg.nec` | 35.09 + j19.81 | xnec2c (image method) |
 | 3 | `dipole-loaded.nec` | 12.4 − j918 | NEC-2 reference |
 | 4 | `yagi-5elm-51seg.nec` | driven element impedance within tolerance | xnec2c |
 | 5 | `frequency-sweep-dipole.nec` | all 5 sweep points within tolerance | xnec2c |
+
+¹ *(Correction 2026-09-25, FND-156: this predates the Hallén free-end fix, which had modelled every wire one segment short; the dipole is now 78.83 + j42.44 Ω, nec2c 79.35 + j46.22.)*
 | 6 | `multi-source.nec` | both source records within tolerance | xnec2c |
 
 **6 corpus decks** currently pass CI tolerance gates — well above the 4-deck

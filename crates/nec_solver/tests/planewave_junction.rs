@@ -22,9 +22,9 @@ use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_hallen_rhs_paths,
-    build_planewave_hallen, build_planewave_hallen_paths, compute_radiation_pattern,
+    build_planewave_hallen, build_planewave_hallen_paths, compute_radiation_pattern, path_end_rows,
     solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    wire_endpoints_from_segs, ConductorPath, FarFieldPoint, GroundModel, Segment,
+    wire_endpoints_from_segs, ConductorPath, ConstraintRow, FarFieldPoint, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -46,19 +46,19 @@ fn plane_wave_card(theta_deg: f64, phi_deg: f64, eta_deg: f64) -> Card {
     })
 }
 
-/// Map paths → (path_of_seg, free_end_segs), the two index vectors the path
+/// Map paths → (path_of_seg, free-end rows), the two inputs the path
 /// solvers consume.
-fn path_index_vectors(paths: &[ConductorPath], n: usize) -> (Vec<usize>, Vec<usize>) {
-    let mut path_of = vec![0usize; n];
-    let mut free_ends = Vec::with_capacity(paths.len() * 2);
+fn path_index_vectors(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+) -> (Vec<usize>, Vec<ConstraintRow>) {
+    let mut path_of = vec![0usize; segs.len()];
     for (pi, p) in paths.iter().enumerate() {
         for &m in &p.segs {
             path_of[m] = pi;
         }
-        free_ends.push(p.free_ends.0);
-        free_ends.push(p.free_ends.1);
     }
-    (path_of, free_ends)
+    (path_of, path_end_rows(segs, paths))
 }
 
 /// Receive solve through the general conductor-path plane-wave solver.
@@ -66,7 +66,7 @@ fn receive_currents_paths(deck: &NecDeck, segs: &[Segment]) -> Vec<Complex64> {
     let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
     let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
     let pw = build_planewave_hallen_paths(deck, segs, FREQ, &paths).expect("planewave rhs");
-    let (path_of, free_ends) = path_index_vectors(&paths, segs.len());
+    let (path_of, free_ends) = path_index_vectors(segs, &paths);
     solve_hallen_planewave_paths(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &path_of, &free_ends)
         .expect("path receive solve")
 }
@@ -204,7 +204,7 @@ fn bent_inverted_v_receive_reciprocity() {
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
     let tx_paths = build_conductor_paths(&segs).unwrap();
     let h = build_hallen_rhs_paths(&driven, &segs, FREQ, &tx_paths).unwrap();
-    let (path_of, free_ends) = path_index_vectors(&tx_paths, segs.len());
+    let (path_of, free_ends) = path_index_vectors(&segs, &tx_paths);
     let tx = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
 
     // Receive: illuminate from each θ (η=0, θ̂-polarised) and take the short-circuit

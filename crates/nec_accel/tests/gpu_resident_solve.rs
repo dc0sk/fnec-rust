@@ -93,7 +93,7 @@ fn gpu_resident_hallen_solve_within_2_ohm_of_cpu() {
         &rhs.rhs,
         &rhs.cos_vec,
         &wire_endpoints,
-        &[],
+        &nec_solver::hallen_constraint_rows(&wire_endpoints, &[]),
         freq_hz,
     )) {
         Some(c) => c,

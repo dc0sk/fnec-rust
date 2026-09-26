@@ -61,8 +61,8 @@ EN
 ";
 
 /// A straight λ/2 dipole solves to a physical impedance whose reactance tracks
-/// nec2c (~+42 Ω), not the Hallén ~32 Ω low offset — MPIE keeps the scalar
-/// potential, so its absolute reactance is right.
+/// nec2c (~+46 Ω). This once contrasted MPIE with "the Hallén ~32 Ω low offset";
+/// that was FND-156, a Hallén end-row defect, and fixed Hallén reads +42 Ω too.
 #[test]
 fn dipole_mpie_reports_physical_impedance() {
     let deck = write_deck("dipole", DIPOLE);

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/mpie-solver-scope.md
 status: living
-last_updated: 2026-07-09
+last_updated: 2026-09-25
 ---
 
 # MPIE solver — scope
@@ -76,7 +76,10 @@ solve; report feedpoint Z + currents.
 - **Gate A2 (nec2c):** straight λ/2 dipole R within a few % of 79.35 Ω **with a
   mesh-refinement plateau** (`|R(2N)−R(N)| → 0`). Document the MPIE's own systematic
   offset (Python shows ≈6 % at N=40 — a discretization effect, not a fixed bias like
-  Hallén's ~32 Ω).
+  Hallén's ~32 Ω). *Correction (2026-09-25): Hallén's "~32 Ω bias" was a defect in its
+  free-end rows (FND-156), not a formulation bias; fixed, Hallén gives 78.83 + j42.44 Ω
+  vs nec2c 79.35 + j46.22. The MPIE's ≈6 % low R on the dipole (74.89 + j45.78) is
+  tracked as FND-157 — it was masked while MPIE was compared with the defective Hallén.*
 - **Gate A3 (identity):** a collinear split dipole equals the single-wire result to
   ~machine precision (the split-recovers-single gate, MPIE analog).
 - **Watch:** self/near-segment charge integrals (log-singular even with the reduced

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-001-current-source.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-09-25
 ---
 
 # PH8-CHK-001: current-source excitation (NEC2 EX type 4)
@@ -94,7 +94,7 @@ Current-source decks are now user-runnable end to end.
 **Contract updates**: `ex_cards.rs`/`parser_warnings.rs` type-4 tests flipped from
 "rejected" to the accept-path. Corpus `dipole-ex4-freesp-51seg` now **solves** and
 is validated against the dipole feedpoint impedance (74.23+j13.9 — the same value
-the current-source path is internally consistent with); the pulse variant's error
+the current-source path is internally consistent with; 78.83+j42.44 since FND-156); the pulse variant's error
 contract became "requires --solver hallen".
 
 Manual CLI check: `EX 4 1 26 0 1.0 0.0` on `--solver hallen` →

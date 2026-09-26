@@ -335,8 +335,8 @@ def test_a_current_source_deck_solves_and_agrees_with_the_cli():
     with open(os.path.join(root, "corpus", "dipole-ex4-freesp-51seg.nec")) as f:
         got = fnec_py.solve_deck_str(f.read())
 
-    assert abs(got["z_re"] - 74.23) < 0.05, got["z_re"]
-    assert abs(got["z_im"] - 13.9) < 0.05, got["z_im"]
+    assert abs(got["z_re"] - 78.834) < 0.05, got["z_re"]
+    assert abs(got["z_im"] - 42.440) < 0.05, got["z_im"]
     # And it names the current source, not some other EX card.
     assert (got["tag"], got["seg"]) == (1, 26), got
 

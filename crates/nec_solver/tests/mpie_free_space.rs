@@ -10,8 +10,9 @@
 //   Gate A2 (nec2c): a straight λ/2 dipole converges (mesh-refinement plateau)
 //     to within a few percent of the analytic 79.35 Ω. The MPIE has its own
 //     systematic discretization offset (~6% low at N=40, per the Python oracle:
-//     N=20→73.39, N=40→74.36, N=80→75.52), converging UP toward 79.35 — unlike
-//     the Hallén solver's fixed ~32 Ω reactance bias.
+//     N=20→73.39, N=40→74.36, N=80→75.52), converging UP toward 79.35. (This
+//     used to contrast it with "the Hallén solver's fixed ~32 Ω reactance bias",
+//     which was FND-156, a defect in Hallén's free-end rows, since fixed.)
 //
 //   Gate A3 (identity): the impedance is invariant to wire orientation. Reversing
 //     the node order (and feeding the mirror-image node) is the same physical

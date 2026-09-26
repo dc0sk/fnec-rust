@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-08-22
+last_updated: 2026-09-25
 ---
 
 # Traceability matrix
@@ -80,7 +80,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 **Req** FR-003/005, PRT-003/008, DEC-010 → **Design** `applied-math.md`,
 `architecture.md` → **Impl** `nec_parser`, `nec_solver` (geometry/matrix/linear),
 `nec_report` → **Tests** `corpus_validation.rs`, `report_contract.rs`,
-`topology_fallback.rs` → **Result** reference dipole 74.24+j13.90 Ω; corpus green.
+`topology_fallback.rs` → **Result** reference dipole 78.83+j42.44 Ω (nec2c 79.35+j46.22; was 74.24+j13.90 before FND-156); corpus green.
 ✅
 
 ### Phase 2 — compatibility expansion (complete, v0.5.0)

@@ -377,6 +377,115 @@ pub fn solve_with_continuity_basis_per_wire(
     Ok(basis_to_currents(&global_t, &a_sol))
 }
 
+/// One linear constraint on the per-segment currents:
+/// `val_a · I[col_a] + val_b · I[col_b] = 0`, the second term absent when `col_b`
+/// is `None`.
+///
+/// Primitive on purpose. The GPU resident solve in `nec_accel` consumes exactly
+/// these rows and does not depend on this crate, so a named struct here would force
+/// a second definition there — and a second copy of a boundary decision is how the
+/// original defect survived (FND-156): the GPU built its own end rows.
+pub type ConstraintRow = (usize, Option<usize>, f64, f64);
+
+/// The free-end boundary row: the wire current, extrapolated linearly from the end
+/// segment's midpoint through its inner neighbour's to the PHYSICAL wire end, is
+/// zero.
+///
+/// **This replaces `I[end] = 0`, which was the defect in FND-156.** A pulse current
+/// is sampled at its segment's midpoint, so pinning `I[end] = 0` put the zero half
+/// a segment inside the wire at each end — every wire was modelled one segment
+/// short. On the corpus half-wave dipole that is 74.24+j13.90 Ω against nec2c's
+/// 79.35+j46.22 Ω; with this row it is 78.83+j42.44 Ω. The remaining reactance gap
+/// to nec2c at the same segment count is 7.0, 3.8, 2.2 and 1.4 Ω at N = 25, 51, 101
+/// and 201 — first-order in 1/N, from the pulse basis itself rather than the end
+/// row. (Quadratic extrapolation, weights (15, −10, 3)/8, gives 79.15+j43.93 at
+/// N = 51: 1.5 Ω closer, for a third neighbour per end and a three-segment minimum.
+/// Not shipped; recorded so it is not later rediscovered as a defect.) The offset
+/// had been explained three different ways in three documents, and it was never
+/// ablated.
+///
+/// The weights come from the geometry of the extrapolation. The end segment's
+/// midpoint lies `h_end/2` inside the physical end and `(h_end + h_inner)/2` from
+/// its neighbour's midpoint, so with `t = h_end / (h_end + h_inner)`:
+/// `I(end) = (1 + t)·I[end] − t·I[inner]`. For equal lengths that is the familiar
+/// `1.5·I[end] − 0.5·I[inner]`. Callers without segment lengths pass equal ones,
+/// which is exact inside a single `GW` (fnec has no `GC` taper) and approximate
+/// only where a wire's end segment is the sole segment of its `GW` and its
+/// neighbour belongs to another card with a different length.
+///
+/// `rel_sign` is `sign[end]·sign[inner]` for a conductor path, whose rows constrain
+/// the path current rather than each segment's own: the row
+/// `(1+t)·sign[e]·I[e] − t·sign[nb]·I[nb] = 0`, divided through by `sign[e]`. It is
+/// `+1.0` within a wire. One relative sign rather than two separate ones, because
+/// two would invite passing them in the wrong order — a mistake visible only on a
+/// reversed one-segment end wire, which
+/// `a_reversed_one_segment_end_wire_extrapolates_the_path_current` builds.
+///
+/// With no inner neighbour (a one-segment wire) it falls back to `I[end] = 0`,
+/// which is what every site did before.
+pub fn free_end_row(
+    end: usize,
+    inner: Option<(usize, f64)>,
+    h_end: f64,
+    h_inner: f64,
+) -> ConstraintRow {
+    let Some((nb, rel_sign)) = inner else {
+        return (end, None, 1.0, 0.0);
+    };
+    let t = h_end / (h_end + h_inner);
+    (end, Some(nb), 1.0 + t, -t * rel_sign)
+}
+
+/// The constraint rows [`solve_hallen`] imposes, in the order it imposes them: each
+/// wire's free ends (a wire end that is a junction endpoint gets no free-end row),
+/// then the junction continuity rows `I[a] + sign·I[b] = 0`.
+///
+/// Public so the GPU resident solve can take the rows it enforces from here rather
+/// than re-deriving them from the same inputs — which it used to do, and which is
+/// how a CPU-only fix to the end condition would have left `--exec gpu` answering
+/// the old, one-segment-short model.
+pub fn hallen_constraint_rows(
+    wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
+) -> Vec<ConstraintRow> {
+    let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
+        .iter()
+        .flat_map(|&(a, b, _)| [a, b])
+        .collect();
+    let mut rows = Vec::new();
+    for &(first, last) in wire_endpoints {
+        let inner = |nb: usize| (last > first).then_some((nb, 1.0));
+        if !junction_endpoint_set.contains(&first) {
+            rows.push(free_end_row(first, inner(first + 1), 1.0, 1.0));
+        }
+        if !junction_endpoint_set.contains(&last) {
+            rows.push(free_end_row(last, inner(last.wrapping_sub(1)), 1.0, 1.0));
+        }
+    }
+    for &(a, b, sign) in junction_constraints {
+        rows.push((a, Some(b), 1.0, sign));
+    }
+    rows
+}
+
+/// Write each constraint row into `m`, starting at row `first_row`, over the given
+/// column mapping: `col(i)` yields the matrix entries for the current on segment
+/// `i`. The pulse solvers map a segment to its own column; the sinusoidal basis
+/// maps it to that segment's row of the basis transform.
+fn write_constraint_rows(
+    m: &mut [Vec<Complex64>],
+    first_row: usize,
+    rows: &[ConstraintRow],
+    mut col: impl FnMut(usize, f64, &mut [Complex64]),
+) {
+    for (crow, &(a, b, va, vb)) in (first_row..).zip(rows) {
+        col(a, va, &mut m[crow]);
+        if let Some(b) = b {
+            col(b, vb, &mut m[crow]);
+        }
+    }
+}
+
 /// Solve Hallén's augmented integral equation using a sinusoidal (Galerkin)
 /// basis for the segment currents.
 ///
@@ -470,24 +579,14 @@ pub fn solve_hallen_sinusoidal_basis(
         }
     }
 
-    // Build the set of endpoint segments that are part of a junction.
-    let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
-        .iter()
-        .flat_map(|&(a, b, _)| [a, b])
-        .collect();
-
-    // Count constraint rows.
-    let mut free_endpoint_count = 0usize;
-    for &(first, last) in endpoints.iter() {
-        if !junction_endpoint_set.contains(&first) {
-            free_endpoint_count += 1;
-        }
-        if !junction_endpoint_set.contains(&last) {
-            free_endpoint_count += 1;
-        }
-    }
-    let jc = junction_constraints.len();
-    let constraint_rows = free_endpoint_count + jc;
+    // The same boundary rows `solve_hallen` imposes, expressed below in the sine
+    // basis. The end rows are NOT redundant with the basis: the sine modes vanish
+    // at the physical ends, but Galerkin testing with them yields one row fewer than
+    // the unknowns per wire, and these rows are what make the system determined —
+    // dropping them returns thousands of ohms. So they are extrapolated to the
+    // physical end like every other variant's, not removed (FND-156).
+    let crows = hallen_constraint_rows(endpoints, junction_constraints);
+    let constraint_rows = crows.len();
 
     // --- Galerkin projection ---
     // Step 1: ZT = Z @ T  (n × m, complex).
@@ -557,28 +656,13 @@ pub fn solve_hallen_sinusoidal_basis(
         y_vec[i] = b_proj[i];
     }
 
-    // Endpoint and junction constraints.
-    let mut crow = m;
-    for &(first, last) in endpoints.iter() {
-        if !junction_endpoint_set.contains(&first) {
-            for c in 0..m {
-                mat[crow][c] = Complex64::new(global_t[first][c], 0.0);
-            }
-            crow += 1;
+    // Endpoint and junction constraints: a row on segment currents becomes, in the
+    // sine basis, the same combination of those segments' rows of `global_t`.
+    write_constraint_rows(&mut mat, m, &crows, |seg, v, row| {
+        for (c, t) in global_t[seg].iter().enumerate().take(m) {
+            row[c] += Complex64::new(v * t, 0.0);
         }
-        if !junction_endpoint_set.contains(&last) {
-            for c in 0..m {
-                mat[crow][c] = Complex64::new(global_t[last][c], 0.0);
-            }
-            crow += 1;
-        }
-    }
-    for &(seg_a, seg_b, sign) in junction_constraints.iter() {
-        for c in 0..m {
-            mat[crow][c] = Complex64::new(global_t[seg_a][c] + sign * global_t[seg_b][c], 0.0);
-        }
-        crow += 1;
-    }
+    });
 
     // Solve the (m + constraint_rows) × (m + w) system via normal equations.
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -662,8 +746,10 @@ pub struct HallenSolution {
 /// `junction_constraints` is a slice of `(seg_a, seg_b, sign)` where each entry
 /// encodes a current-continuity constraint `I[seg_a] + sign * I[seg_b] = 0` at a
 /// geometric wire junction. Wire endpoint indices that appear in at least one
-/// junction constraint will NOT receive the default `I = 0` constraint; free
-/// endpoints (not in any junction) still receive `I = 0`.
+/// junction constraint will NOT receive a free-end row; free endpoints (not in any
+/// junction) receive one — the current extrapolated to the PHYSICAL wire end is
+/// zero ([`free_end_row`]). Until FND-156 this was `I = 0` at the end segment's
+/// midpoint, which modelled every wire one segment short.
 /// Pass an empty slice for the single-wire or collinear-multi-wire case.
 ///
 /// Solved via regularized normal equations:
@@ -693,28 +779,11 @@ pub fn solve_hallen(
         wire_endpoints
     };
 
-    // Build the set of endpoint segment indices that participate in at least one
-    // junction constraint. These will receive a continuity constraint rather than
-    // the default I = 0 free-endpoint constraint.
-    let junction_endpoint_set: std::collections::HashSet<usize> = junction_constraints
-        .iter()
-        .flat_map(|&(a, b, _)| [a, b])
-        .collect();
-
-    // Count constraint rows:
-    //   - one per wire endpoint NOT in a junction (I = 0)
-    //   - one per junction pair (I[a] + sign * I[b] = 0)
-    let mut free_endpoint_count = 0usize;
-    for &(first, last) in endpoints.iter() {
-        if !junction_endpoint_set.contains(&first) {
-            free_endpoint_count += 1;
-        }
-        if !junction_endpoint_set.contains(&last) {
-            free_endpoint_count += 1;
-        }
-    }
-    let jc = junction_constraints.len();
-    let constraint_rows = free_endpoint_count + jc;
+    // The boundary rows — a free-end row per wire end that is not a junction
+    // endpoint, then one continuity row per junction — built by the one function the
+    // GPU resident solve also takes them from (FND-156).
+    let crows = hallen_constraint_rows(endpoints, junction_constraints);
+    let constraint_rows = crows.len();
 
     let w = endpoints.len();
     let rows = n + constraint_rows;
@@ -739,25 +808,9 @@ pub fn solve_hallen(
         y[r] = rhs[r];
     }
 
-    // Add free-endpoint I = 0 constraints (skip junction endpoints).
-    let mut crow = n;
-    for &(first, last) in endpoints.iter() {
-        if !junction_endpoint_set.contains(&first) {
-            m[crow][first] = Complex64::new(1.0, 0.0);
-            crow += 1;
-        }
-        if !junction_endpoint_set.contains(&last) {
-            m[crow][last] = Complex64::new(1.0, 0.0);
-            crow += 1;
-        }
-    }
-
-    // Add junction continuity constraints: I[seg_a] + sign * I[seg_b] = 0.
-    for &(seg_a, seg_b, sign) in junction_constraints.iter() {
-        m[crow][seg_a] = Complex64::new(1.0, 0.0);
-        m[crow][seg_b] = Complex64::new(sign, 0.0);
-        crow += 1;
-    }
+    write_constraint_rows(&mut m, n, &crows, |seg, v, row| {
+        row[seg] += Complex64::new(v, 0.0);
+    });
 
     // Normal equations with light Tikhonov regularization.
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -799,13 +852,13 @@ pub fn solve_hallen(
 ///
 /// This generalizes [`solve_hallen`] from contiguous single wires to arbitrary
 /// degree-2 conductor chains (bends, start-to-start / end-to-end splits). The
-/// difference is entirely in how the homogeneous term and the `I = 0` boundary
+/// difference is entirely in how the homogeneous term and the free-end boundary
 /// condition are addressed:
 ///
 /// - `path_of_seg[m]` assigns each segment to a logical conductor path; all
 ///   segments on a path **share one** homogeneous constant `C`. There is one `C`
 ///   column per distinct path.
-/// - `free_end_segs` lists the segments that get the `I = 0` constraint — the two
+/// - `free_end_rows` are the free-end boundary rows (see [`free_end_row`]) — the two
 ///   physical free ends of each open chain, *not* every `GW` endpoint. Interior
 ///   degree-2 junctions receive no constraint (the current flows through them
 ///   continuously, exactly as inside a single wire).
@@ -823,7 +876,7 @@ pub fn solve_hallen_paths(
     rhs: &[Complex64],
     cos_vec: &[f64],
     path_of_seg: &[usize],
-    free_end_segs: &[usize],
+    free_end_rows: &[ConstraintRow],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n || path_of_seg.len() != n {
@@ -835,7 +888,7 @@ pub fn solve_hallen_paths(
     }
 
     let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
-    let constraint_rows = free_end_segs.len();
+    let constraint_rows = free_end_rows.len();
     let rows = n + constraint_rows;
     let cols = n + num_paths;
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
@@ -850,10 +903,12 @@ pub fn solve_hallen_paths(
         y[r] = rhs[r];
     }
 
-    // Free-end I = 0 constraints (the open-chain terminals only).
-    for (crow, &seg) in (n..).zip(free_end_segs.iter()) {
-        m[crow][seg] = Complex64::new(1.0, 0.0);
-    }
+    // Free-end rows (the open-chain terminals only), extrapolated to the physical
+    // end along the path — built by `path_end_rows`, which knows the path's
+    // traversal order, signs and segment lengths (FND-156).
+    write_constraint_rows(&mut m, n, free_end_rows, |seg, v, row| {
+        row[seg] += Complex64::new(v, 0.0);
+    });
 
     // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -900,7 +955,8 @@ pub fn solve_hallen_paths(
 /// path is intentionally left unchanged so the validated corpus is unaffected.
 ///
 /// The per-segment row is `Z·I − C_cos·cos(k·s) − C_sin·sin(k·s) = rhs`, plus a
-/// `I = 0` constraint at each wire endpoint. The system is square
+/// free-end row at each wire end ([`free_end_row`]: zero current at the physical
+/// end, not at the end segment's midpoint). The system is square
 /// (`N + 2·wires` unknowns and equations) and solved via regularized normal
 /// equations, mirroring [`solve_hallen`]. Returns the segment currents.
 pub fn solve_hallen_planewave(
@@ -928,8 +984,14 @@ pub fn solve_hallen_planewave(
     };
 
     let w = endpoints.len();
-    // Two endpoint constraints (I=0 at first and last) per wire.
-    let constraint_rows = 2 * w;
+    // Two free-end rows per wire (no junctions on this path — the builder refuses
+    // them), built by the same function every other variant uses. The plane-wave
+    // sites need this as much as the driven ones and are harder to catch: the
+    // reciprocity gates compare pattern SHAPES, and a one-segment-short wire barely
+    // moves a normalised pattern, so a fix that missed this site would pass them
+    // all (FND-156).
+    let crows = hallen_constraint_rows(endpoints, &[]);
+    let constraint_rows = crows.len();
     let rows = n + constraint_rows;
     // Two homogeneous constants (cos, sin) per wire.
     let cols = n + 2 * w;
@@ -953,13 +1015,9 @@ pub fn solve_hallen_planewave(
         y[r] = rhs[r];
     }
 
-    let mut crow = n;
-    for &(first, last) in endpoints.iter() {
-        m[crow][first] = Complex64::new(1.0, 0.0);
-        crow += 1;
-        m[crow][last] = Complex64::new(1.0, 0.0);
-        crow += 1;
-    }
+    write_constraint_rows(&mut m, n, &crows, |seg, v, row| {
+        row[seg] += Complex64::new(v, 0.0);
+    });
 
     // Regularized normal equations (mirrors solve_hallen).
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -1000,12 +1058,12 @@ pub fn solve_hallen_planewave(
 /// `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path arc-length `s`; both DOF are
 /// needed because a distributed incident field induces a general asymmetric
 /// current. Each path therefore carries **two** homogeneous constants and gets the
-/// `I = 0` boundary condition at its **two free ends only** — interior degree-2
+/// free-end boundary condition at its **two free ends only** — interior degree-2
 /// junctions flow continuously, exactly as inside a single wire.
 ///
 /// - `path_of_seg[m]` assigns each segment to a logical conductor path; all
 ///   segments on a path share the same two `C` columns (`n + 2·p` and `n + 2·p+1`).
-/// - `free_end_segs` lists the segments that get the `I = 0` constraint — the two
+/// - `free_end_rows` are the free-end boundary rows (see [`free_end_row`]) — the two
 ///   physical free ends of each open chain (two per path).
 ///
 /// The caller must pass `cos_vec`, `sin_vec` and `rhs` already built with the path
@@ -1023,7 +1081,7 @@ pub fn solve_hallen_planewave_paths(
     cos_vec: &[f64],
     sin_vec: &[f64],
     path_of_seg: &[usize],
-    free_end_segs: &[usize],
+    free_end_rows: &[ConstraintRow],
 ) -> Result<Vec<Complex64>, SolveError> {
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
@@ -1037,8 +1095,8 @@ pub fn solve_hallen_planewave_paths(
     let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
     // Two homogeneous constants (cos, sin) per path.
     let cols = n + 2 * num_paths;
-    // One I = 0 constraint per free-end segment (two per open-chain path).
-    let constraint_rows = free_end_segs.len();
+    // One free-end row per path terminal (two per open-chain path).
+    let constraint_rows = free_end_rows.len();
     let rows = n + constraint_rows;
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y = vec![Complex64::new(0.0, 0.0); rows];
@@ -1053,10 +1111,12 @@ pub fn solve_hallen_planewave_paths(
         y[r] = rhs[r];
     }
 
-    // Free-end I = 0 constraints (the open-chain terminals only).
-    for (crow, &seg) in (n..).zip(free_end_segs.iter()) {
-        m[crow][seg] = Complex64::new(1.0, 0.0);
-    }
+    // Free-end rows (the open-chain terminals only), extrapolated to the physical
+    // end along the path — built by `path_end_rows`, which knows the path's
+    // traversal order, signs and segment lengths (FND-156).
+    write_constraint_rows(&mut m, n, free_end_rows, |seg, v, row| {
+        row[seg] += Complex64::new(v, 0.0);
+    });
 
     // Regularized normal equations (mirrors solve_hallen_planewave).
     let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
@@ -1168,6 +1228,78 @@ mod tests {
     use crate::basis::{ContinuityTransform, SinusoidalTransform};
     use crate::matrix::ZMatrix;
     use num_complex::Complex64;
+
+    /// The row's value on a current: what the solver forces to zero.
+    fn row_value(row: ConstraintRow, i: &[f64]) -> f64 {
+        let (a, b, va, vb) = row;
+        va * i[a] + b.map_or(0.0, |b| vb * i[b])
+    }
+
+    /// FND-156: the row must vanish on a current that is zero at the PHYSICAL
+    /// tip and linear in arc length, whatever the two segment lengths. The old
+    /// `I[end] = 0` fails this for every current that is nonzero at the end
+    /// segment's midpoint, which is every current that is zero at the tip.
+    #[test]
+    fn a_free_end_row_vanishes_on_a_current_that_is_zero_at_the_tip() {
+        for (h_end, h_inner) in [(1.0, 1.0), (0.3, 0.7), (2.0, 0.5)] {
+            // Arc length from the tip to each midpoint, scaled by an arbitrary slope.
+            let i = [3.7 * h_end / 2.0, 3.7 * (h_end + h_inner / 2.0)];
+            let row = free_end_row(0, Some((1, 1.0)), h_end, h_inner);
+            assert!(
+                row_value(row, &i).abs() < 1e-12,
+                "h = ({h_end}, {h_inner}): row {row:?} leaves {} on a tip-zero current",
+                row_value(row, &i)
+            );
+            let old: ConstraintRow = (0, None, 1.0, 0.0);
+            assert!(
+                row_value(old, &i).abs() > 0.1,
+                "the old row must fail this, or the test cannot tell them apart"
+            );
+        }
+    }
+
+    #[test]
+    fn equal_segments_give_the_one_and_a_half_minus_a_half_row() {
+        assert_eq!(
+            free_end_row(7, Some((6, 1.0)), 0.2, 0.2),
+            (7, Some(6), 1.5, -0.5)
+        );
+    }
+
+    /// A reversed neighbour flips the inner weight's sign and nothing else.
+    #[test]
+    fn a_relative_sign_flips_only_the_inner_weight() {
+        let (a, b, va, vb) = free_end_row(3, Some((4, -1.0)), 0.3, 0.7);
+        assert_eq!((a, b), (3, Some(4)));
+        assert!(
+            (va - 1.3).abs() < 1e-12 && (vb - 0.3).abs() < 1e-12,
+            "{va} {vb}"
+        );
+    }
+
+    /// A one-segment wire has no inner neighbour to extrapolate through.
+    #[test]
+    fn a_one_segment_end_falls_back_to_a_zero_current() {
+        assert_eq!(free_end_row(2, None, 0.5, 0.5), (2, None, 1.0, 0.0));
+    }
+
+    /// Rows only at ends that are not junctions, each extrapolating INWARD, and
+    /// the junction rows after them unchanged.
+    #[test]
+    fn constraint_rows_extrapolate_inward_and_skip_junction_ends() {
+        // Wire 0 = segs 0..=4, wire 1 = segs 5..=9 joined 4↔5, wire 2 = seg 10 alone.
+        let rows = hallen_constraint_rows(&[(0, 4), (5, 9), (10, 10)], &[(4, 5, 1.0)]);
+        assert_eq!(
+            rows,
+            vec![
+                (0, Some(1), 1.5, -0.5),
+                (9, Some(8), 1.5, -0.5),
+                (10, None, 1.0, 0.0),
+                (10, None, 1.0, 0.0),
+                (4, Some(5), 1.0, 1.0),
+            ]
+        );
+    }
 
     fn c(re: f64, im: f64) -> Complex64 {
         Complex64::new(re, im)

@@ -15,7 +15,8 @@ use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
     assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_hallen_rhs_paths,
-    solve_current_source_hallen, solve_hallen_paths, ConductorPath, GroundModel, Segment,
+    path_end_rows, solve_current_source_hallen, solve_hallen_paths, ConductorPath, ConstraintRow,
+    GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -36,17 +37,17 @@ fn ex(excitation_type: u32, tag: u32, seg: u32, v_re: f64, v_im: f64) -> ExCard 
     }
 }
 
-fn paths_index_vectors(paths: &[ConductorPath], n: usize) -> (Vec<usize>, Vec<usize>) {
-    let mut path_of = vec![0usize; n];
-    let mut free_ends = Vec::with_capacity(paths.len() * 2);
+fn paths_index_vectors(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+) -> (Vec<usize>, Vec<ConstraintRow>) {
+    let mut path_of = vec![0usize; segs.len()];
     for (pi, p) in paths.iter().enumerate() {
         for &m in &p.segs {
             path_of[m] = pi;
         }
-        free_ends.push(p.free_ends.0);
-        free_ends.push(p.free_ends.1);
     }
-    (path_of, free_ends)
+    (path_of, path_end_rows(segs, paths))
 }
 
 /// Voltage-source feedpoint impedance through the conductor-path delta-gap solver.
@@ -54,7 +55,7 @@ fn voltage_source_z(deck: &NecDeck, segs: &[Segment], feed_tag: u32, feed_seg: u
     let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
     let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
     let h = build_hallen_rhs_paths(deck, segs, FREQ, &paths).unwrap();
-    let (path_of, free_ends) = paths_index_vectors(&paths, segs.len());
+    let (path_of, free_ends) = paths_index_vectors(segs, &paths);
     let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
     let idx = segs
         .iter()

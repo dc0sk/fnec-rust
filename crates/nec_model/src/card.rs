@@ -124,8 +124,8 @@ impl ExcitationKind {
     ///
     /// Deliberately a *classification* rather than a predicate: no single boolean
     /// serves every caller. A current source (type 4) is not a delta gap, but it
-    /// *is* a feedpoint the CLI prices as `Z = V_port / i0` — corpus-pinned at
-    /// 74.23 + j13.9 Ω under PH8-CHK-001 — so a caller keyed on
+    /// *is* a feedpoint the CLI prices as `Z = V_port / i0` — corpus-pinned
+    /// under PH8-CHK-001 (`dipole-ex4-freesp-51seg`) — so a caller keyed on
     /// [`Self::is_voltage_source`] would silently delete that row.
     ///
     /// The match is exhaustive with no wildcard arm on purpose: a new

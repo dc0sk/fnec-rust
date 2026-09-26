@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/external/pymininec.md
 status: living
-last_updated: 2026-08-21
+last_updated: 2026-09-25
 ---
 
 # Reference: pymininec (schlatterbeck/pymininec)
@@ -87,12 +87,16 @@ Ranked by value to us. See the whole-project gap review that accompanies this
 note; several of these are logged there as backlog candidates, not commitments.
 
 1. **Use pymininec as an independent cross-validation oracle.** Our validation
-   strategy already avoids blind `nec2c` parity because fnec's Hallén result
-   differs from `nec2c` *systematically* (see the validation-strategy memory). A
+   strategy was built to avoid blind `nec2c` parity because fnec's Hallén result
+   appeared to differ from `nec2c` *systematically* — since FND-156 (2026-09-25)
+   that difference is known to have been a free-end boundary defect, and Hallén
+   now tracks `nec2c` to a few ohms on the corpus (remaining: FND-158, off-centre
+   near-antiresonant feed, and ~4 Ω residual X at 51 segments). A
    MININEC-formulation code is a genuinely independent third data point: where
    fnec, `nec2c`, and pymininec **all** agree we have high confidence; where fnec
-   sits between the other two, formulation bias — not a bug — is the likely
-   cause. Concretely: add a small opt-in study (like `studies/`) that runs the
+   sits between the other two, formulation bias is a candidate cause — but
+   ablate it before accepting it (FND-156's "formulation offset" turned out to be
+   a bug). Concretely: add a small opt-in study (like `studies/`) that runs the
    same handful of canonical antennas through all three and tabulates R/X and
    pattern shape, keeping MININEC's known high-resonance bias in mind.
 2. **Richer loads — trap and Laplace-domain.** fnec has LD0–LD5 (incl. the newly

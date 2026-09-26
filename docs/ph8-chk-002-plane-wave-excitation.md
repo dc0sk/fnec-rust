@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-002-plane-wave-excitation.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-09-25
 ---
 
 # PH8-CHK-002: incident plane-wave excitation (+ NEC2 EX-type alignment)
@@ -154,6 +154,14 @@ operator; the offset is a *constant complex factor shared with the delta-gap
 solve*, removed by peak-alignment before the shape comparison. Hence the
 validation gates are shape-parity + reciprocity, not absolute nec2c current
 magnitude.
+
+> **Correction (2026-09-25, FND-156):** the "systematic" difference above was not a
+> property of the Hallén operator but a defect in its free-end rows (`I[end] = 0`
+> imposed at the end segment's midpoint, shortening every wire by one segment).
+> Fixed, the 51-seg λ/2 dipole gives 78.83 + j42.44 Ω vs nec2c 79.35 + j46.22, and
+> the corpus's nec2c-gated rows agree within 3.6 Ω in R and 4.9 Ω in X. The
+> 21-segment and current-ratio figures above were not re-measured. Shape-parity and
+> reciprocity remain valid gates; absolute parity is no longer out of reach.
 
 Results: `cargo test --workspace` **543 passed** (was 540; +3 plane-wave tests),
 0 failed; clippy clean.

@@ -99,7 +99,7 @@ mod tests {
     /// FND-031: the worker drove a type-5 card as a delta gap through
     /// `build_hallen_rhs`, solved it, and then refused to read the answer —
     /// "no EX type-0 card found in deck" for a deck the CLI and `fnec_py` both
-    /// solve to 74.243 + j13.900 Ω. The distributed path rejected a deck the
+    /// solve to 78.834 + j42.440 Ω (74.243 + j13.900 before FND-156). The distributed path rejected a deck the
     /// other three frontends handle.
     #[test]
     fn a_type_5_voltage_source_is_a_feedpoint_here_as_it_is_everywhere_else() {
@@ -107,12 +107,12 @@ mod tests {
             .expect("EX 5 is a voltage source fnec models as a delta gap");
         // The corpus reference for this deck, which the CLI already matches.
         assert!(
-            (r.impedance_re - 74.23).abs() < 0.1,
+            (r.impedance_re - 78.83).abs() < 0.1,
             "R = {} Ω",
             r.impedance_re
         );
         assert!(
-            (r.impedance_im - 13.9).abs() < 0.1,
+            (r.impedance_im - 42.44).abs() < 0.1,
             "X = {} Ω",
             r.impedance_im
         );
@@ -139,7 +139,7 @@ mod tests {
         );
         // ...and the answer is the same one the CPU path gives.
         assert!(
-            (r.impedance_re - 74.227929).abs() < 0.05,
+            (r.impedance_re - 78.834228).abs() < 0.05,
             "{}",
             r.impedance_re
         );
@@ -150,8 +150,8 @@ mod tests {
         let r = solve_deck_at_frequency(DIPOLE_EX4, 14.2e6, "hallen")
             .expect("the worker prices a current source now");
         assert!(
-            (r.impedance_re - 74.227929).abs() < 0.05 && (r.impedance_im - 13.896926).abs() < 0.05,
-            "worker gave {} + j{}, CLI gives 74.227929 + j13.896926",
+            (r.impedance_re - 78.834228).abs() < 0.05 && (r.impedance_im - 42.439515).abs() < 0.05,
+            "worker gave {} + j{}, CLI gives 78.834228 + j42.439515",
             r.impedance_re,
             r.impedance_im
         );
@@ -548,7 +548,7 @@ fn solve_inner(
             &hallen_rhs.rhs,
             &hallen_rhs.cos_vec,
             &wire_endpoints,
-            &junc_constraints,
+            &nec_solver::hallen_constraint_rows(&wire_endpoints, &junc_constraints),
             freq_hz,
         )) {
             Some(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),

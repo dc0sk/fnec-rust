@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-junction-feed-diagnosis.md
 status: living
-last_updated: 2026-07-05
+last_updated: 2026-09-25
 ---
 
 # PH9-CHK-002: multi-wire junction accuracy — root-cause diagnosis & fix plan
@@ -26,6 +26,12 @@ geometry is mis-solved (the investigation corrected two mis-hypotheses — every
 here is measured, not assumed) and what the fix does.
 
 ## What was measured (14.2 MHz, `--solver hallen`, all values Ω)
+
+> **Note (2026-09-25, FND-156):** these values predate the fix to the Hallén free-end
+> rows, which had modelled every wire one segment short. The single-wire centre-fed
+> reference is now 78.83 + j42.44 Ω (nec2c 79.35 + j46.22); the other rows were not
+> re-measured. The comparisons in this table are between fnec runs that all shared
+> the defect, so the diagnosis they support is unaffected.
 
 | Geometry | Feed | fnec Z | Physical? |
 |:---------|:-----|:-------|:----------|
