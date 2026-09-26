@@ -135,7 +135,8 @@
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 1 (incident plane wave) requested on the pulse solver path. NEC2 plane waves solve only on --solver hallen, so pulse fails fast with an actionable error.",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,
@@ -214,7 +215,8 @@
       "description": "Half-wave dipole, free space, 51 segments, 14.2 MHz, EX type 4 source on the pulse solver path with the first implemented segment-current semantics slice.",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,
@@ -271,7 +273,8 @@
       "description": "Half-wave dipole, 51 seg, 14.2 MHz, EX type 5 voltage source on the pulse solver path. PH8-CHK-003: type 5 is a voltage source and solves under --solver pulse (same value as type 0).",
       "cli_args": [
         "--solver",
-        "pulse"
+        "pulse",
+        "--experimental-solver"
       ],
       "frequency_mhz": 14.2,
       "segments": 51,

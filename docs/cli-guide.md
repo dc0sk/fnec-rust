@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
 fnec project convert <in.toml|in.md> [out.md|out.toml]
@@ -40,6 +40,7 @@ Compatibility profile note:
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
 | `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of any **straight** wire — horizontal, vertical or tilted; bent or mixed geometry is declined with a warning and keeps the `rcm` result. Currents and patterns are unaffected either way — for those, use `--solver mpie` |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
+| `--experimental-solver` | flag | off | Required to run `--solver pulse` or `continuity`, which are unvalidated (FND-080). Without it those modes are refused; with it every result carries a `CAVEAT` line (text) or `caveat` field (JSON) |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `hybrid` uses split-lane FR scheduling (CPU-parallel lane + GPU-candidate lane) with deterministic ordered output; the GPU-candidate lane's per-frequency routing seam is not wired — a measured decision, not pending work (see the Execution modes notes) — so those points run on CPU with an explicit diagnostic. `gpu` runs real wgpu kernels for the RP far-field and, on free-space Hallén decks of ≥ 128 segments, the Z-matrix fill. It additionally takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments — a lower threshold than the fill's, and one this table previously did not distinguish — which warns because it is measured slower than the CPU (PH7-CHK-003). |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
@@ -209,19 +210,23 @@ Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 78.834228 + j42.439515 Ω  (Python MoM reference: 78.825 + j42.435 Ω; nec2c: 79.35 + j46.22 Ω)
 ```
 
-### `pulse` (EXPERIMENTAL)
+### `pulse` (EXPERIMENTAL — opt-in only)
 
-Pulse-basis Pocklington EFIE.  **Known to diverge** from the physical solution
-as segment count increases — do not use for production work. Use `hallen` or
-`sinusoidal` for accurate supported-path runs.
+Pulse-basis Pocklington EFIE.  **It has never produced a correct dipole
+impedance**: 16+j47 Ω with `--pulse-rhs raw`, −346−j988 Ω with the default
+`nec2` scaling, against nec2c's 79+j46 (FND-080). It runs only with
+`--experimental-solver`, and every result then carries a `CAVEAT UNVALIDATED
+SOLVER` header line (text) or a `caveat` field (JSON), so the warning travels
+with the numbers and not only on stderr. Use `hallen`, `sinusoidal` or `mpie`
+for results.
 
-### `continuity` (EXPERIMENTAL)
+### `continuity` (EXPERIMENTAL — opt-in only)
 
 Same Pocklington matrix as `pulse`, but solves via a continuity-enforcing rooftop
 basis transform applied per wire chain on multi-wire decks when each wire has
 at least two segments. Falls back to `pulse` when topology is infeasible for
 the basis transform or when residual exceeds 1e-3. Subject to the same fundamental
-divergence as `pulse`.
+divergence as `pulse`, and the same `--experimental-solver` gate.
 
 ### `sinusoidal`
 
@@ -284,6 +289,7 @@ FORMAT_VERSION 1
 FREQ_MHZ <mhz>
 SOLVER_MODE <mode>
 PULSE_RHS <Raw|Nec2>
+CAVEAT <text>            (only for an unvalidated solver: pulse/continuity)
 
 FEEDPOINTS
 TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
@@ -406,7 +412,7 @@ fnec --exec gpu dipole.nec
 ### Experimental pulse mode (diagnostic only)
 
 ```bash
-fnec --solver pulse --pulse-rhs nec2 dipole.nec
+fnec --solver pulse --experimental-solver --pulse-rhs nec2 dipole.nec
 ```
 
 ### Sinusoidal mode with custom fallback threshold

@@ -123,6 +123,9 @@ pub(super) struct SweepPointSummary {
     pub(super) seg: usize,
     pub(super) z_re: f64,
     pub(super) z_im: f64,
+    /// The unvalidated-solver caveat, when the point came from one (FND-080);
+    /// the JSON record carries it so it travels with the numbers.
+    pub(super) caveat: Option<&'static str>,
 }
 
 pub(super) struct HybridLanePlan {
@@ -645,7 +648,25 @@ pub(super) fn negative_resistance_warnings(
             kind: nec_solver::validate::SolverKind::Mpie,
             mpie_remedy: CLI_MPIE_REMEDY,
         },
-        SolverMode::Pulse | SolverMode::Continuity | SolverMode::Sinusoidal => return Vec::new(),
+        // FND-081: these were silent, including sinusoidal, which is Hallén's
+        // matrix in a projected basis and as accurate. A negative resistance is
+        // physically impossible whatever produced it, so every mode reports it.
+        // Sinusoidal takes Hallén's wording; the pulse bases get their own, since
+        // for them it is the expected output of an unvalidated solver (FND-080).
+        SolverMode::Sinusoidal => nec_solver::validate::SolverContext::cli_hallen(),
+        SolverMode::Pulse | SolverMode::Continuity => {
+            return rows
+                .iter()
+                .filter(|r| r.z_in.re < 0.0)
+                .map(|r| {
+                    format!(
+                        "tag {} seg {}: negative feedpoint resistance ({:.3} ohm), which is \
+                         physically impossible — the output of an unvalidated solver (FND-080)",
+                        r.tag, r.seg, r.z_in.re
+                    )
+                })
+                .collect();
+        }
     };
     rows.iter()
         .filter_map(|r| {
@@ -1529,6 +1550,8 @@ pub(super) fn solve_frequency_point(
     let report = render_text_report(&ReportInput {
         solver_mode: diag_label,
         pulse_rhs: pulse_rhs_mode.as_contract_str(),
+        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
+            .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
         frequency_hz: freq_hz,
         rows: &rows,
         source_table: &source_table,
@@ -1550,6 +1573,8 @@ pub(super) fn solve_frequency_point(
         seg: row.seg,
         z_re: row.z_in.re,
         z_im: row.z_in.im,
+        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
+            .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
     });
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e}",

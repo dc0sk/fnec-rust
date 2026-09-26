@@ -48,9 +48,21 @@ fn solve(loads: &str, args: &[&str], tag: &str) -> ((f64, f64), String) {
 
 const BASES: [&[&str]; 4] = [
     &["--solver", "sinusoidal"],
-    &["--solver", "pulse", "--pulse-rhs", "nec2"],
-    &["--solver", "pulse", "--pulse-rhs", "raw"],
-    &["--solver", "continuity"],
+    &[
+        "--solver",
+        "pulse",
+        "--pulse-rhs",
+        "nec2",
+        "--experimental-solver",
+    ],
+    &[
+        "--solver",
+        "pulse",
+        "--pulse-rhs",
+        "raw",
+        "--experimental-solver",
+    ],
+    &["--solver", "continuity", "--experimental-solver"],
 ];
 
 /// ΔZ = Z_L at the feed, resistive and reactive, on every non-Hallén basis — and

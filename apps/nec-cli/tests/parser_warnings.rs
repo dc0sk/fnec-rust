@@ -729,6 +729,7 @@ fn ex_type1_pulse_runs_without_portability_warning() {
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg("pulse")
+        .arg("--experimental-solver")
         .arg("--exec")
         .arg("cpu")
         .arg(&deck_path)

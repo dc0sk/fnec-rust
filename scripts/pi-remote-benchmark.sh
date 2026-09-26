@@ -162,7 +162,7 @@ for deck in ${BENCH_DECKS}; do
         fi
         export FNEC_ACCEL_STUB_GPU="${bench_stub_gpu}"
 
-        if ! target/debug/fnec --solver "${solver}" --exec "${exec_arg}" "${deck}" >/tmp/fnec_out.txt 2>/tmp/fnec_err.txt; then
+        if ! target/debug/fnec --solver "${solver}" --experimental-solver --exec "${exec_arg}" "${deck}" >/tmp/fnec_out.txt 2>/tmp/fnec_err.txt; then
           status="fail"
         fi
 

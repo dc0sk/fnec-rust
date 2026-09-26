@@ -168,7 +168,15 @@ fn an_undriven_deck_is_refused_on_every_solver_mode_and_writes_nothing_to_stdout
     for mode in &modes {
         for format in ["text", "json"] {
             let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-                .args(["--solver", mode, "--output-format", format])
+                // The opt-in for the pulse bases (FND-080), so every mode reaches
+                // the undriven-deck refusal rather than stopping at the gate.
+                .args([
+                    "--solver",
+                    mode,
+                    "--experimental-solver",
+                    "--output-format",
+                    format,
+                ])
                 .arg(&path)
                 .output()
                 .expect("failed to run fnec");
