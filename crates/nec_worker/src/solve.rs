@@ -163,15 +163,19 @@ mod tests {
     }
 
     /// A plane wave has no feedpoint at all: its tag/segment fields carry
-    /// NTHETA/NPHI. It must not be read as one.
+    /// NTHETA/NPHI. It must not be read as one, and the refusal must say where a
+    /// receive deck CAN be solved (FND-108).
     #[test]
-    fn a_plane_wave_deck_has_no_feedpoint() {
+    fn a_plane_wave_deck_is_refused_as_a_receive_deck_with_a_route() {
         let err = solve_deck_at_frequency(DIPOLE_EX1, 14.2e6, "hallen").unwrap_err();
-        // Pinned to the exact variant. Accepting `UnsupportedConfig` too would let
-        // FND-035's spurious source-risk rejection — raised by the same
-        // `geometry_error` this function calls earlier — keep this test green
-        // while the deck failed for an entirely different and wrong reason.
-        assert!(matches!(err, SolveError::NoFeedpoint), "{err:?}");
+        // Pinned to the message, not only the variant: FND-035's spurious
+        // source-risk rejection is also an `UnsupportedConfig`, raised by the
+        // same `pre_solve_error` earlier, and must not keep this green.
+        let SolveError::UnsupportedConfig(m) = &err else {
+            panic!("{err:?}")
+        };
+        assert!(m.contains("receiving antenna has no feedpoint"), "{m}");
+        assert!(m.contains("solve_currents_deck_str"), "{m}");
     }
 
     #[test]
@@ -244,12 +248,6 @@ mod tests {
 
     #[test]
     fn solve_error_display() {
-        let err = SolveError::NoFeedpoint;
-        assert_eq!(
-            err.to_string(),
-            "no driven feedpoint (EX voltage source) found in deck"
-        );
-
         let err = SolveError::SingularMatrix("det=0".into());
         assert_eq!(err.to_string(), "singular matrix: det=0");
     }
@@ -290,6 +288,13 @@ pub struct FeedpointResult {
 /// Minimum segment count before a worker attempts the GPU-resident solve.
 const MIN_GPU_RESIDENT_SEGS: usize = 16;
 
+/// What the worker says to a receive deck. The worker's protocol carries a
+/// feedpoint impedance and nothing else, so the route is another frontend; the
+/// wire format stays as it is (FND-108).
+const RECEIVE_DECK_REMEDY: &str = "the distributed worker returns feedpoint impedances only; \
+     solve it locally with the fnec CLI, the GUI's Currents tab, or \
+     fnec_py.solve_currents_deck_str";
+
 /// Errors from the worker solve path.
 #[derive(Debug, Clone)]
 pub enum SolveError {
@@ -297,7 +302,6 @@ pub enum SolveError {
     GeometryError(String),
     SingularMatrix(String),
     UnsupportedConfig(String),
-    NoFeedpoint,
     /// The deck asks for more of some resource than this worker will allocate.
     ///
     /// Distinct from `UnsupportedConfig` because the remedy is different: the
@@ -315,9 +319,6 @@ impl std::fmt::Display for SolveError {
             SolveError::SingularMatrix(m) => write!(f, "singular matrix: {m}"),
             SolveError::UnsupportedConfig(m) => write!(f, "unsupported config: {m}"),
             SolveError::ResourceExhausted(m) => write!(f, "resource exhausted: {m}"),
-            SolveError::NoFeedpoint => {
-                write!(f, "no driven feedpoint (EX voltage source) found in deck")
-            }
         }
     }
 }
@@ -452,6 +453,16 @@ fn solve_inner(
     // stays at step 4, where the matrix exists.
     let stamps = nec_solver::build_deck_stamps(&deck, &segs, freq_hz);
     warnings.extend(stamps.warnings.iter().cloned());
+
+    // 2d. A deck with nothing to price — a plane-wave receive deck — is refused
+    // here, before the matrix fill it cannot use. It used to be solved in full
+    // and then refused as `NoFeedpoint`, with a sentence that named no remedy.
+    // After the stamps, so a flawed receive deck still reports its flaw (FND-059).
+    if nec_solver::feedpoints(&deck).next().is_none() {
+        return Err(SolveError::UnsupportedConfig(
+            nec_solver::validate::unpriceable_feedpoint_error(&deck, RECEIVE_DECK_REMEDY),
+        ));
+    }
 
     // 3. Build Hallén RHS
     let hallen_rhs = build_hallen_rhs(&deck, &segs, freq_hz).map_err(|e| {
@@ -589,7 +600,11 @@ fn solve_inner(
     if let Some(v_port) = current_source_port {
         let (ex, _) = nec_solver::feedpoints(&deck)
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
-            .ok_or(SolveError::NoFeedpoint)?;
+            .ok_or_else(|| {
+                SolveError::UnsupportedConfig(
+                    "a current-source solve without a current source".to_string(),
+                )
+            })?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
         let z_in =
             nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
@@ -604,14 +619,17 @@ fn solve_inner(
         });
     }
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(&deck) {
-        // A feedpoint naming a segment the geometry does not contain is a bad
-        // deck, not "no feedpoint" — but the distinction is the caller's, and
-        // `NoFeedpoint` is what this returned before.
+        // Unreachable today: `build_hallen_rhs` refuses an EX naming an absent
+        // segment first. Kept defensive, saying what would be true — the deck
+        // HAS a feedpoint; its segment is missing.
         let Some(idx) = segs
             .iter()
             .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
         else {
-            return Err(SolveError::NoFeedpoint);
+            return Err(SolveError::UnsupportedConfig(format!(
+                "EX on tag {} segment {} names a segment the geometry does not contain",
+                ex.tag, ex.segment
+            )));
         };
         let current = currents[idx];
         let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
@@ -634,7 +652,12 @@ fn solve_inner(
         });
     }
 
-    Err(SolveError::NoFeedpoint)
+    // Unreachable: step 2d refused every deck without a feedpoint, before the
+    // solve. Worded apart from that refusal so a receive deck reaching here —
+    // step 2d gone, and a full solve wasted — fails the tests that pin it.
+    Err(SolveError::UnsupportedConfig(
+        "internal: solved a deck with no feedpoint to price".to_string(),
+    ))
 }
 
 /// CPU Hallén solve returning just the current vector.

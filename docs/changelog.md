@@ -15,6 +15,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **`fnec_py.solve_currents_deck_str`** returns the per-segment currents of a deck
+  at its first frequency, and is the Python route for a **plane-wave receive
+  deck** (FND-108), which the impedance functions cannot answer. It shares the
+  impedance functions' solve, and is gated against nec2c's induced currents.
+
 ### Removed
 
 - **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
@@ -162,6 +169,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   chrome, which is how it came to truncate an unrelated file.
 
 ### Changed
+
+- **A plane-wave receive deck is refused by an impedance-only frontend with the
+  reason and the route**, not "no driven feedpoint (EX voltage source) found in
+  deck". The GUI's Solve tab points at its Currents and Pattern tabs, `fnec_py`
+  at `solve_currents_deck_str`, and the distributed worker — whose protocol
+  carries only an impedance, and is unchanged — at those and the CLI. The worker
+  now refuses such a deck before the matrix fill rather than after a full solve.
+  The shared sentence lives in `validate::unpriceable_feedpoint_error`, which
+  used to name only current sources — a class every frontend has priced since
+  FND-045 — and so was never reached (FND-146).
 
 - **`--solver pulse` and `--solver continuity` run only with the new
   `--experimental-solver` flag (FND-080).** These modes have never produced a

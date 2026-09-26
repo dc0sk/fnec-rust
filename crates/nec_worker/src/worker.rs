@@ -259,7 +259,7 @@ fn process_task(line: &str) -> TaskResult {
             // deck that parsed cleanly — and that the local CLI solves — crossed
             // the wire as `parse_error`, sending the reader hunting for a syntax
             // mistake that is not there. A plane-wave (`EX 1`) receive deck is the
-            // live case: it returns `NoFeedpoint`, which is a statement about what
+            // live case: it is refused as `UnsupportedConfig`, a statement about what
             // this worker supports, not about the deck's syntax (FND-049).
             //
             // Listing every variant means a new `SolveError` forces a decision
@@ -272,9 +272,9 @@ fn process_task(line: &str) -> TaskResult {
             let error_code = match &e {
                 SolveError::ParseError(_) => ErrorCode::ParseError,
                 SolveError::SingularMatrix(_) => ErrorCode::SingularMatrix,
-                SolveError::GeometryError(_)
-                | SolveError::UnsupportedConfig(_)
-                | SolveError::NoFeedpoint => ErrorCode::UnsupportedConfig,
+                SolveError::GeometryError(_) | SolveError::UnsupportedConfig(_) => {
+                    ErrorCode::UnsupportedConfig
+                }
                 // The first producer of this code. It has been in the enum — and
                 // so deserialisable by every released controller — since the
                 // crate's first commit, which is why a too-big deck can be given
@@ -576,7 +576,7 @@ mod tests {
     /// named, so a deck that **parsed cleanly** crossed the wire as `parse_error`.
     ///
     /// A plane-wave receive deck is the live case: it has no driven feedpoint, so
-    /// the worker returns `NoFeedpoint` — a statement about what this worker
+    /// the worker refuses it as `UnsupportedConfig` — a statement about what this worker
     /// supports, not about the deck's syntax. The local CLI solves the same deck.
     #[test]
     fn a_cleanly_parsed_deck_is_not_reported_as_a_parse_error() {
@@ -626,8 +626,8 @@ mod tests {
         // earlier RHS failure yields, so asserting the code alone would let a
         // reclassification silently certify the wrong exit as the tested one.
         assert!(
-            error_message.contains("no driven feedpoint"),
-            "expected the no-feedpoint exit, got: {error_message}"
+            error_message.contains("receiving antenna has no feedpoint"),
+            "expected the receive-deck exit, got: {error_message}"
         );
         assert!(
             warnings.iter().any(|w| w.contains("ZZ")),

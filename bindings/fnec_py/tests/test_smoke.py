@@ -34,6 +34,7 @@ def test_import():
     """Module can be imported."""
     assert hasattr(fnec_py, "solve_deck_str")
     assert hasattr(fnec_py, "sweep_deck_str")
+    assert hasattr(fnec_py, "solve_currents_deck_str")
 
 
 def test_solve_deck_str_returns_dict():
@@ -495,3 +496,67 @@ def test_a_monopole_on_pec_ground_solves():
         "GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 1\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n"
     )
     assert abs(got["z_re"] - 39.30) < 0.05, got["z_re"]
+
+
+# A λ/2 dipole receiving a linear plane wave from θ=30°, φ=0 (EX 1). It has an EX
+# card and a perfectly good solve; what it has not got is a feedpoint.
+RECEIVE = """CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+EX 1 1 1 0 30 0 0
+FR 0 1 0 0 14.2 0
+EN
+"""
+
+# nec2c 1.3.1 "CURRENTS AND LOCATION" for RECEIVE, captured 2026-07-02 (the same
+# capture `crates/nec_solver/tests/planewave_nec2c.rs` gates in full).
+RECEIVE_NEC2C = {
+    1: complex(-1.1717e-3, 6.9702e-4),
+    13: complex(-1.9993e-2, 1.2110e-2),
+    26: complex(-2.6778e-2, 1.6886e-2),
+    39: complex(-1.8034e-2, 1.2101e-2),
+    51: complex(-9.5593e-4, 6.9600e-4),
+}
+
+
+def test_a_receive_deck_solves_for_its_currents():
+    """FND-108: the bindings had no answer at all for a receive deck.
+
+    Gated against nec2c, not against fnec's own CLI: a Python-side wiring error
+    (the wrong current vector, an index shift, a dropped sign) shows as a
+    departure from an external solver. The band is the absolute one the Rust
+    test holds, 6% of the peak; the asymmetric θ=30° drive makes an end-for-end
+    reversal visible at segments 1 and 51.
+    """
+    got = fnec_py.solve_currents_deck_str(RECEIVE)
+    assert got["freq_mhz"] == pytest.approx(14.2)
+    rows = got["currents"]
+    assert [(r["tag"], r["seg"]) for r in rows] == [(1, k) for k in range(1, 52)]
+    peak = abs(RECEIVE_NEC2C[26])
+    for seg, want in RECEIVE_NEC2C.items():
+        r = rows[seg - 1]
+        i = complex(r["re"], r["im"])
+        assert abs(i - want) < 0.06 * peak, (seg, i, want)
+        assert r["mag"] == pytest.approx(abs(i))
+
+
+def test_the_impedance_entry_points_name_the_currents_route():
+    """A receive deck has no input impedance; the refusal says where to go.
+
+    It used to read "no driven feedpoint (EX voltage source) found in deck",
+    which is true and names no remedy (FND-108, FND-146).
+    """
+    for fn in (fnec_py.solve_deck_str, fnec_py.sweep_deck_str):
+        with pytest.raises(RuntimeError, match="solve_currents_deck_str"):
+            fn(RECEIVE)
+
+
+def test_a_driven_deck_gives_the_same_currents_both_ways():
+    """The currents entry point answers driven decks with the same solve: the
+    feed current it lists prices to the impedance `solve_deck_str` reports."""
+    z = fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    feed = fnec_py.solve_currents_deck_str(DIPOLE_14MHZ)["currents"][25]
+    assert (feed["tag"], feed["seg"]) == (1, 26)
+    zi = 1.0 / complex(feed["re"], feed["im"])
+    assert zi.real == pytest.approx(z["z_re"], rel=1e-9)
+    assert zi.imag == pytest.approx(z["z_im"], rel=1e-9)
