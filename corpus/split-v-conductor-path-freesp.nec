@@ -17,9 +17,11 @@ CE fnec 264.882179 + j410.856326; nec2c 268.56 + j452.26 on the same deck
 CE (R within 1.4%, X within 9.2%), the same pair of numbers FND-121 recorded
 CE when the four frontends disagreed by 29x. That closeness was an accident:
 CE the Hallen free-end rows modelled every wire one segment short (FND-156),
-CE which cancelled a real residual. Fixed (2026-09-25), fnec gives
-CE 297.81 + j511.45, ~11% R / ~13% X from nec2c at convergence -- an
-CE off-centre, near-antiresonant feed residual tracked as FND-158.
+CE which cancelled a real residual. Fixed (2026-09-25), fnec gave
+CE 297.81 + j511.45 -- itself a second cancellation: the missing sin
+CE homogeneous term (FND-158) against the bend. With that term restored
+CE (2026-09-26) fnec gives 344.58 + j530.33, 28% R / 17% X from nec2c: the
+CE error of Hallen's 1-D equation along a steep bend, tracked as FND-162.
 GW 1 21 0 0 3 -5 0 0 .001
 GW 2 21 0 0 3 5 0 0 .001
 GE

@@ -205,7 +205,7 @@ fn bent_inverted_v_receive_reciprocity() {
     let tx_paths = build_conductor_paths(&segs).unwrap();
     let h = build_hallen_rhs_paths(&driven, &segs, FREQ, &tx_paths).unwrap();
     let (path_of, free_ends) = path_index_vectors(&segs, &tx_paths);
-    let tx = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &path_of, &free_ends).unwrap();
+    let tx = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &path_of, &free_ends).unwrap();
 
     // Receive: illuminate from each θ (η=0, θ̂-polarised) and take the short-circuit
     // feed-segment current. |I_feed|²/G_θ must be constant across angles.

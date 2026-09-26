@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -35,6 +35,27 @@ remaining general work: **degree-3+** (T/Y) junctions and **closed loops** — s
 [Out-of-scope topologies](#out-of-scope-topologies-degree-3-and-closed-loops).
 These now warn for the *whole geometry* (2026-07-06), not only when the feed sits on
 the junction.
+
+> **Correction (2026-09-26, FND-158):** this document said a voltage delta-gap (and
+> the EX-type-4 current source) "needs only one homogeneous constant" `cos(k·s)` per
+> conductor path because the source is "symmetric". **That was wrong.** Hallén's
+> homogeneous solution along a conductor is `C·cos(k·s) + D·sin(k·s)`; the `sin` term
+> vanishes only when the *current* is symmetric about the path's arc-length centre
+> (an apex/centre-fed path with mirror-image arms). An off-centre feed, or any
+> asymmetric coupling, needs both; with `cos` only the solve returned a least-squares
+> compromise. `solve_hallen_paths`, `solve_hallen_current_source_paths` (and the
+> plain, sinusoidal-basis and GPU-resident delta-gap solves) now carry a
+> `sin(k·s)` column on every conductor path of ≥ 2 segments
+> (`nec_solver::sin_eligible`). A straight 0.55λ conductor path fed at 0.25 L now
+> gives the single-wire result (369.95 + j473.33 Ω; nec2c 366.93 + j483.11; `cos`-only
+> 324.12 + j463.78). Apex-fed symmetric cases below (split dipole, inverted-V) are
+> unchanged. On **bent** paths the 1-D Hallén equation is itself an approximation
+> whose error grows with bend angle: a shallow V fed off-centre reads 369.10 vs nec2c
+> 356.64 Ω (+3.5 %); the steep split-V deck reads 344.58 + j530.33 vs
+> 268.56 + j452.26 (+28 % / +17 %) — its earlier 297.81 + j511.45 was that bend error
+> partly cancelled by the missing `sin` term. The apex-fed inverted-V's ≈ +17 Ω X
+> offset is the bend error. FND-162 tracks the equal-scalar-potential junction
+> formulation that would replace the bent-path approximation.
 
 ## What was fixed
 
@@ -70,12 +91,15 @@ The current on segment `m` in its own direction is `I[m] = σ_m · I_path(s_m)`,
 
 - `cos_vec[m] = σ_m · cos(k·s_m)` — continuous across the junction because `cos` is
   even in `s` and the sign tracks the traversal (`build_hallen_rhs_paths`).
+- `sin_vec[m] = σ_m · sin(k·s_m)` — the second homogeneous solution, likewise
+  continuous in the signed path arc-length (added 2026-09-26, FND-158).
 - the delta-gap source term is `σ_m · σ_feed · (−j·(2π/η)·V·sin(k·|s_m − s_src|))`,
   with arc-length distance along the path. The `σ_feed` factor references the drive
   to the feed segment's own direction, so `V/I[feed]` stays positive regardless of
   which arm the feed lands on.
-- `solve_hallen_paths` (`linear.rs`) groups **one homogeneous constant per path**
-  (not per `GW`) and applies `I = 0` only at the free ends; interior degree-2
+- `solve_hallen_paths` (`linear.rs`) groups the homogeneous constants **per path**
+  (not per `GW`) — originally one (`cos`), since 2026-09-26 (FND-158) two
+  (`cos` + `sin`) on every path of ≥ 2 segments — and applies `I = 0` only at the free ends; interior degree-2
   junctions get no constraint (the current flows through continuously, exactly as
   inside a single wire).
 
@@ -120,10 +144,12 @@ guarded).
 
 ## Receive-side junctions (plane wave)
 
-The transmit fix above solves a *symmetric* delta-gap source, for which one
-homogeneous constant (`cos(k·s)`) per path suffices. A **receiving** antenna sees a
-*distributed, asymmetric* incident field, so its Hallén homogeneous solution needs
-**both** degrees of freedom — `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path
+The transmit fix above originally carried one homogeneous constant (`cos(k·s)`)
+per path, on the belief that a delta-gap source needs no more — true only for a
+current symmetric about the path centre, and corrected 2026-09-26 (FND-158, see
+the correction under Status); the transmit path now carries both. A **receiving**
+antenna sees a *distributed, asymmetric* incident field, so its Hallén homogeneous
+solution always needed **both** degrees of freedom — `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path
 arc-length `s`. `solve_hallen_planewave_paths` (`linear.rs`) is the path-aware
 counterpart of `solve_hallen_planewave`: two `C` columns per conductor path, and the
 `I = 0` boundary condition applied at each path's **two free ends only**, so the
@@ -163,13 +189,15 @@ solved on conductor paths.
 The EX-type-4 current source is the **symmetric-source** cousin of the plane-wave
 receive path: it forces a known current `i0` at the feed and solves for the port
 voltage `V` (feedpoint `Z = V/i0`). Because the driven current is symmetric about
-the feed — exactly like the voltage delta-gap — it needs only **one** homogeneous
-constant `cos(k·s)` per conductor path (not the plane-wave's two), plus the single
-unknown `V`.
+the feed — exactly like the voltage delta-gap — it was built with only **one**
+homogeneous constant `cos(k·s)` per conductor path, plus the single unknown `V`.
+*Corrected 2026-09-26 (FND-158):* that is exact only for a symmetric current; an
+off-centre forced current needs the `sin(k·s)` constant too, and the solve now
+carries both on every path of ≥ 2 segments.
 
 `solve_hallen_current_source_paths` (`linear.rs`) is the path-aware counterpart of
-`solve_hallen_current_source`: one `C` column per path, the port-voltage column, the
-`I = 0` constraint at each path's two free ends, and the forced `I[src] = i0` row
+`solve_hallen_current_source`: the homogeneous columns per path (`cos`, plus `sin`
+since FND-158), the port-voltage column, the `I = 0` constraint at each path's two free ends, and the forced `I[src] = i0` row
 (the exact rows heavily weighted so `V/i0` recovers the true impedance).
 `build_current_source_shape_paths` (`excitation.rs`) builds the unit-voltage source
 shape `g` over the path via `build_hallen_rhs_paths`, so it stays continuous across

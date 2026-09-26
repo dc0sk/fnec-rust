@@ -84,8 +84,15 @@ fn gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu() {
 
     // --- CPU reference ---
     let z_cpu = assemble_z_matrix(&segs, freq_hz);
-    let sol_cpu = solve_hallen(&z_cpu, &rhs.rhs, &rhs.cos_vec, &wire_endpoints, &[])
-        .expect("CPU solve should succeed");
+    let sol_cpu = solve_hallen(
+        &z_cpu,
+        &rhs.rhs,
+        &rhs.cos_vec,
+        &rhs.sin_vec,
+        &wire_endpoints,
+        &[],
+    )
+    .expect("CPU solve should succeed");
     let feed_seg = n / 2; // segment 25 (0-indexed)
     let i_cpu = sol_cpu.currents[feed_seg];
     let v_feed = rhs.rhs[feed_seg];
@@ -125,8 +132,15 @@ fn gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu() {
     let z_gpu = ZMatrix::from_flat(n, flat);
 
     // --- GPU-filled solve ---
-    let sol_gpu = solve_hallen(&z_gpu, &rhs.rhs, &rhs.cos_vec, &wire_endpoints, &[])
-        .expect("GPU-matrix solve should succeed");
+    let sol_gpu = solve_hallen(
+        &z_gpu,
+        &rhs.rhs,
+        &rhs.cos_vec,
+        &rhs.sin_vec,
+        &wire_endpoints,
+        &[],
+    )
+    .expect("GPU-matrix solve should succeed");
 
     let i_gpu = sol_gpu.currents[feed_seg];
     let z_gpu_imp = if i_gpu.norm() > 1e-30 {

@@ -90,10 +90,9 @@ use nec_report::{
 // diff (FND-128).
 use nec_solver::{
     assemble_pocklington_matrix, assemble_z_matrix_with_ground, build_hallen_rhs,
-    compute_radiation_pattern, detect_wire_junctions, integrate_radiated_power,
-    merge_collinear_wire_endpoints, scale_excitation_for_pulse_rhs, solve, solve_hallen,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire, FarFieldPoint,
-    GroundModel, Segment, ZMatrix,
+    compute_radiation_pattern, integrate_radiated_power, scale_excitation_for_pulse_rhs, solve,
+    solve_hallen, solve_hallen_sinusoidal_basis, solve_with_continuity_basis_per_wire,
+    FarFieldPoint, GroundModel, Segment, ZMatrix,
 };
 use num_complex::Complex64;
 
@@ -187,61 +186,13 @@ pub(super) fn residual_zi_minus_v(
 pub(super) fn residual_hallen(
     z: &ZMatrix,
     i_vec: &[Complex64],
-    c_hom_per_wire: &[Complex64],
-    cos_vec: &[f64],
+    homogeneous: &[Complex64],
     rhs: &[Complex64],
-    wire_endpoints: &[(usize, usize)],
 ) -> (f64, f64) {
-    let n = z.n;
-    let mut r = vec![Complex64::new(0.0, 0.0); n];
-
-    let fallback_endpoints;
-    let endpoints: &[(usize, usize)] = if wire_endpoints.is_empty() || n == 0 {
-        fallback_endpoints = if n > 0 { vec![(0usize, n - 1)] } else { vec![] };
-        &fallback_endpoints
-    } else {
-        wire_endpoints
-    };
-
-    let mut row_wire = vec![0usize; n];
-    for (wi, &(first, last)) in endpoints.iter().enumerate() {
-        for rw in row_wire.iter_mut().take(last + 1).skip(first) {
-            *rw = wi;
-        }
-    }
-
-    for row in 0..n {
-        let mut zi = Complex64::new(0.0, 0.0);
-        for (col, i_col) in i_vec.iter().enumerate().take(n) {
-            zi += z.get(row, col) * *i_col;
-        }
-        let c_row = c_hom_per_wire
-            .get(row_wire[row])
-            .copied()
-            .or_else(|| c_hom_per_wire.first().copied())
-            .unwrap_or(Complex64::new(0.0, 0.0));
-        let lhs = zi - c_row * cos_vec[row];
-        r[row] = lhs - rhs[row];
-    }
-
-    let res = l2_norm(&r);
-    let denom = l2_norm(rhs);
-    let rel = if denom > 0.0 { res / denom } else { res };
-    (res, rel)
-}
-
-/// Residual of the conductor-path Hallén system (PH9-CHK-002): the counterpart of
-/// [`residual_hallen`] for the general-junction solve, where the homogeneous
-/// constant is grouped by conductor path (`path_of_seg`) rather than by contiguous
-/// wire range. `cos_vec` already carries the path sign.
-pub(super) fn residual_hallen_paths(
-    z: &ZMatrix,
-    i_vec: &[Complex64],
-    c_hom_per_path: &[Complex64],
-    cos_vec: &[f64],
-    rhs: &[Complex64],
-    path_of_seg: &[usize],
-) -> (f64, f64) {
+    // `homogeneous` is the solved `cos·C + sin·D` per row, from
+    // `nec_solver::hallen_homogeneous(_paths)` — the evaluator that shares the
+    // solvers' column map, so this cannot drift from them (FND-158). It replaced
+    // a per-route pair of functions that each re-derived the cos term alone.
     let n = z.n;
     let mut r = vec![Complex64::new(0.0, 0.0); n];
     for row in 0..n {
@@ -249,11 +200,7 @@ pub(super) fn residual_hallen_paths(
         for (col, i_col) in i_vec.iter().enumerate().take(n) {
             zi += z.get(row, col) * *i_col;
         }
-        let c_row = c_hom_per_path
-            .get(path_of_seg[row])
-            .copied()
-            .unwrap_or(Complex64::new(0.0, 0.0));
-        r[row] = (zi - c_row * cos_vec[row]) - rhs[row];
+        r[row] = zi - homogeneous[row] - rhs[row];
     }
     let res = l2_norm(&r);
     let denom = l2_norm(rhs);
@@ -954,7 +901,9 @@ fn maybe_gpu_resident_hallen(
         &z_inputs,
         &hallen_rhs.rhs,
         &hallen_rhs.cos_vec,
+        &hallen_rhs.sin_vec,
         wire_endpoints,
+        &nec_solver::sin_eligible(wire_endpoints, junctions),
         &nec_solver::hallen_constraint_rows(wire_endpoints, junctions),
         freq_hz,
     ))?;
@@ -1162,19 +1111,7 @@ pub(super) fn solve_frequency_point(
             {
                 let hallen_rhs =
                     build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-                let merged_endpoints = merge_collinear_wire_endpoints(segs);
-                let mut comp_of = vec![0usize; segs.len()];
-                for (ci, &(first, last)) in merged_endpoints.iter().enumerate() {
-                    for slot in comp_of.iter_mut().take(last + 1).skip(first) {
-                        *slot = ci;
-                    }
-                }
-                let junction_tuples: Vec<(usize, usize, f64)> =
-                    detect_wire_junctions(segs, &merged_endpoints, nec_solver::JUNCTION_TOL_M)
-                        .iter()
-                        .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
-                        .map(|j| (j.seg_a, j.seg_b, j.sign))
-                        .collect();
+                let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
                 maybe_gpu_resident_hallen(
                     deck,
                     segs,
@@ -1185,23 +1122,23 @@ pub(super) fn solve_frequency_point(
                     execution_mode,
                     freq_hz,
                 )
-                .map(|sol| (sol, hallen_rhs, merged_endpoints))
+                .map(|sol| (sol, hallen_rhs, merged_endpoints, junction_tuples))
             } else {
                 None
             };
 
-            if let Some((sol, hallen_rhs, merged_endpoints)) = gpu_sol {
+            if let Some((sol, hallen_rhs, merged_endpoints, junction_tuples)) = gpu_sol {
                 // This arm exists because it bypasses `solve_hallen_routed`, so
                 // the guard there does not reach it (FND-126).
                 nec_solver::check_currents_finite(&sol.currents).map_err(|e| e.to_string())?;
-                let (a, r) = residual_hallen(
-                    &z_mat,
-                    &sol.currents,
-                    &sol.c_hom_per_wire,
+                let h = nec_solver::hallen_homogeneous(
                     &hallen_rhs.cos_vec,
-                    &hallen_rhs.rhs,
+                    &hallen_rhs.sin_vec,
+                    &sol.c_hom_per_wire,
                     &merged_endpoints,
+                    &junction_tuples,
                 );
+                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
                 (sol.currents, a, r, "hallen")
             } else {
                 let routed = nec_solver::solve_hallen_routed(
@@ -1215,24 +1152,7 @@ pub(super) fn solve_frequency_point(
                 current_source_port = routed.port_voltage;
                 network_branch.clone_from(&routed.network_branch);
                 let (a, r) = match &routed.residual_inputs {
-                    Some(ri) => match &ri.grouping {
-                        Ok(endpoints) => residual_hallen(
-                            &z_mat,
-                            &routed.currents,
-                            &ri.c_hom,
-                            &ri.cos_vec,
-                            &ri.rhs,
-                            endpoints,
-                        ),
-                        Err(path_of) => residual_hallen_paths(
-                            &z_mat,
-                            &routed.currents,
-                            &ri.c_hom,
-                            &ri.cos_vec,
-                            &ri.rhs,
-                            path_of,
-                        ),
-                    },
+                    Some(ri) => residual_hallen(&z_mat, &routed.currents, &ri.homogeneous, &ri.rhs),
                     None => (0.0, 0.0),
                 };
                 (routed.currents, a, r, routed.route.mode_label())
@@ -1282,27 +1202,28 @@ pub(super) fn solve_frequency_point(
                 // sinusoidal expansion functions and pulse testing (projection).
                 let hallen_rhs =
                     build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-                let wire_junctions = detect_wire_junctions(segs, wire_endpoints, 1e-6);
-                let junction_tuples: Vec<(usize, usize, f64)> = wire_junctions
-                    .iter()
-                    .map(|j| (j.seg_a, j.seg_b, j.sign))
-                    .collect();
+                // The Hallén arm's grouping, not the raw wires: it decides which
+                // conductors take the sin homogeneous term, and a collinear split
+                // must be one conductor on every `--solver` (FND-158).
+                let (sin_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
+                let wire_endpoints = &sin_endpoints[..];
                 let sol = solve_hallen_sinusoidal_basis(
                     &z_mat,
                     &hallen_rhs.rhs,
                     &hallen_rhs.cos_vec,
+                    &hallen_rhs.sin_vec,
                     wire_endpoints,
                     &junction_tuples,
                 )
                 .map_err(|e| e.to_string())?;
-                let (a, r) = residual_hallen(
-                    &z_mat,
-                    &sol.currents,
-                    &sol.c_hom_per_wire,
+                let h = nec_solver::hallen_homogeneous(
                     &hallen_rhs.cos_vec,
-                    &hallen_rhs.rhs,
+                    &hallen_rhs.sin_vec,
+                    &sol.c_hom_per_wire,
                     wire_endpoints,
+                    &junction_tuples,
                 );
+                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
                 sin_rel_res = r;
                 if r <= sin_fallback_rel_max {
                     (sol.currents, a, r, "sinusoidal")
@@ -1315,18 +1236,20 @@ pub(super) fn solve_frequency_point(
                         &z_mat,
                         &hallen_rhs.rhs,
                         &hallen_rhs.cos_vec,
+                        &hallen_rhs.sin_vec,
                         wire_endpoints,
                         &junction_tuples,
                     )
                     .map_err(|e| e.to_string())?;
-                    let (a2, r2) = residual_hallen(
-                        &z_mat,
-                        &hallen_sol.currents,
-                        &hallen_sol.c_hom_per_wire,
+                    let h2 = nec_solver::hallen_homogeneous(
                         &hallen_rhs.cos_vec,
-                        &hallen_rhs.rhs,
+                        &hallen_rhs.sin_vec,
+                        &hallen_sol.c_hom_per_wire,
                         wire_endpoints,
+                        &junction_tuples,
                     );
+                    let (a2, r2) =
+                        residual_hallen(&z_mat, &hallen_sol.currents, &h2, &hallen_rhs.rhs);
                     (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                 }
             }

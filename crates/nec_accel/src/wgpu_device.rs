@@ -1414,11 +1414,14 @@ const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
 /// Returns `None` when no wgpu adapter is available (caller falls back to the
 /// f64 CPU solve). All GPU arithmetic is f32; the result is intended to be
 /// validated to the 2 Ω GPU-path tolerance, not the f64 corpus gate.
+#[allow(clippy::too_many_arguments)] // the CPU solve's inputs, one for one
 pub async fn solve_hallen_gpu_resident(
     segments: &[ZSegmentInput],
     rhs: &[num_complex::Complex64],
     cos_vec: &[f64],
+    sin_vec: &[f64],
     wire_endpoints: &[(usize, usize)],
+    sin_eligible: &[bool],
     constraint_rows: &[(usize, Option<usize>, f64, f64)],
     freq_hz: f64,
 ) -> Option<Vec<num_complex::Complex64>> {
@@ -1428,7 +1431,7 @@ pub async fn solve_hallen_gpu_resident(
     if n == 0 {
         return Some(Vec::new());
     }
-    if rhs.len() != n || cos_vec.len() != n {
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n {
         return None;
     }
 
@@ -1448,7 +1451,20 @@ pub async fn solve_hallen_gpu_resident(
         .collect();
 
     let w = endpoints.len();
-    let s = n + w;
+    if sin_eligible.len() != w {
+        return None;
+    }
+    // The sin homogeneous column (FND-158) for the wires `sin_eligible` marks —
+    // `nec_solver::sin_eligible`, the rule the CPU solve uses.
+    let mut sin_col = vec![-1.0f32; w];
+    let mut next = n + w;
+    for (wi, &e) in sin_eligible.iter().enumerate() {
+        if e {
+            sin_col[wi] = next as f32;
+            next += 1;
+        }
+    }
+    let s = next;
     let nc = constraints.len();
 
     // The solve shader holds per-column scratch in fixed-size workgroup arrays
@@ -1465,13 +1481,16 @@ pub async fn solve_hallen_gpu_resident(
         }
     }
 
-    // meta buffer: per-seg [cos, rhs_re, rhs_im, wire] then constraint rows.
-    let mut meta: Vec<f32> = Vec::with_capacity(4 * n + 4 * nc);
+    // meta buffer: per-seg [cos, sin, rhs_re, rhs_im, cos_col, sin_col (-1 = none)]
+    // then constraint rows.
+    let mut meta: Vec<f32> = Vec::with_capacity(6 * n + 4 * nc);
     for r in 0..n {
         meta.push(cos_vec[r] as f32);
+        meta.push(sin_vec[r] as f32);
         meta.push(rhs[r].re as f32);
         meta.push(rhs[r].im as f32);
-        meta.push(row_wire[r] as f32);
+        meta.push((n as u32 + row_wire[r]) as f32);
+        meta.push(sin_col[row_wire[r] as usize]);
     }
     for c in &constraints {
         meta.extend_from_slice(c);

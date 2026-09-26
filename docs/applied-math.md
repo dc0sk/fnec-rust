@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/applied-math.md
 status: living
-last_updated: 2026-04-24
+last_updated: 2026-09-26
 ---
 
 # Applied Math Reference
@@ -72,7 +72,9 @@ Hallen recasts the wire equation into a first-kind integral equation with homoge
 integral I(z') * G(R) dz' = F(z) + C1*cos(k*z) + C2*sin(k*z)
 $$\int I(z')\,G(R)\,dz' = F(z) + C_1\cos(kz) + C_2\sin(kz)$$
 
-For symmetric center-fed dipoles, symmetry often removes one homogeneous component (implementation-dependent convention).
+For a current symmetric about the conductor's midpoint (a centre-fed isolated dipole) the `sin` component vanishes, so a `cos`-only solve is exact there — but only there. Any asymmetry (an off-centre feed, a parasitic or ground image that couples unevenly, an unequal collinear pair) needs both constants; a `cos`-only solve then returns a least-squares compromise, not the Hallén solution.
+
+**fnec (since 2026-09-26, FND-158)** carries **both** `C1` and `C2` on every conductor with two free ends (`nec_solver::sin_eligible`: a merged conductor of ≥ 2 segments with no junction endpoint, and every conductor path of ≥ 2 segments) — in the delta-gap, conductor-path, sinusoidal-basis, current-source and GPU-resident solves; the plane-wave solves already did. Wires that end on a junction row in the plain route keep `cos` only: W wires with W − 1 current-continuity rows give W + 1 conditions for 2W constants, and closing that system needs equal-scalar-potential rows at each node plus one KCL row (Mei 1965; King/Wu) — not implemented, tracked as FND-162. That junction class is already guarded (warning; `--solver mpie` recommended). Along a *bent* conductor path the 1-D Hallén equation is itself an approximation whose error grows with bend angle; FND-162 tracks that too.
 
 ## Segment discretization notes
 

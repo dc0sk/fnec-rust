@@ -27,7 +27,7 @@ pub use current_source::{solve_current_source_hallen, CurrentSourceError, Curren
 pub use excitation::{
     build_current_source_shape, build_current_source_shape_paths, build_excitation,
     build_hallen_rhs, build_hallen_rhs_paths, feedpoints, first_delta_gap_feedpoint,
-    scale_excitation_for_pulse_rhs, ExcitationError, HallenRhs,
+    scale_excitation_for_pulse_rhs, CurrentSourceShape, ExcitationError, HallenRhs,
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power, gain_correction_db,
@@ -52,14 +52,15 @@ pub use geometry::{
 // they are `pub(crate)`, because nothing outside this crate consumes them and a
 // public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, hallen_route, path_end_rows,
+    deck_has_current_source, deck_has_plane_wave, hallen_route, merged_grouping, path_end_rows,
     solve_hallen_planewave_routed, solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted,
     HallenSessionError, ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
-    free_end_row, hallen_constraint_rows, solve, solve_hallen, solve_hallen_paths,
-    solve_hallen_planewave, solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis,
-    solve_with_continuity_basis, solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
+    free_end_row, hallen_constraint_rows, hallen_homogeneous, hallen_homogeneous_paths,
+    sin_eligible, solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave,
+    solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
+    solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, ConstraintRow, CurrentSourceSolution, HallenSolution,
     SolveError,
 };

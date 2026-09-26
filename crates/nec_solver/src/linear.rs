@@ -468,6 +468,115 @@ pub fn hallen_constraint_rows(
     rows
 }
 
+/// Which conductors take the second homogeneous solution, `sin(k·s)` (FND-158).
+///
+/// Hallén's equation along a straight conductor has a two-dimensional homogeneous
+/// solution, `C·cos(k·s) + D·sin(k·s)`, and fnec used to carry only the cos term —
+/// exact when the current is symmetric about the conductor's midpoint, and a
+/// least-squares compromise otherwise: 12% low on an off-centre feed, 10% on a
+/// vertical dipole over ground, 18× on a dipole beside an offset parasitic.
+///
+/// Two constants need two conditions. A conductor with two free ends has them (its
+/// two end rows), so it takes both. A conductor touching a junction does not: `W`
+/// wires joined by `W−1` current-continuity rows give `W+1` conditions for `2W`
+/// constants, underdetermined without the charge-continuity condition fnec does
+/// not impose. Those keep the cos term alone, as before — the junction class the
+/// Hallén guard already sends to `--solver mpie`. A one-segment conductor has one
+/// usable end row and keeps cos only too.
+pub fn sin_eligible(
+    wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
+) -> Vec<bool> {
+    let junction_end: std::collections::HashSet<usize> = junction_constraints
+        .iter()
+        .flat_map(|&(a, b, _)| [a, b])
+        .collect();
+    wire_endpoints
+        .iter()
+        .map(|&(first, last)| {
+            last > first && !junction_end.contains(&first) && !junction_end.contains(&last)
+        })
+        .collect()
+}
+
+/// The homogeneous term of a solved merged-conductor Hallén system, per row:
+/// `cos[r]·C[wire] + sin[r]·D[wire]`, with `c_hom` laid out as [`solve_hallen`]
+/// returns it (cos constants, then sin constants for [`sin_eligible`] wires).
+/// What a residual check subtracts; one function, so it cannot drift from the
+/// column map the solvers use.
+pub fn hallen_homogeneous(
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    c_hom: &[Complex64],
+    wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
+) -> Vec<Complex64> {
+    let w = wire_endpoints.len();
+    let sin_col = sin_columns(&sin_eligible(wire_endpoints, junction_constraints));
+    // A constants vector laid out for another column map (cos-only, or another
+    // grouping) must not be read as this one.
+    assert_eq!(
+        c_hom.len(),
+        w + sin_col.iter().flatten().count(),
+        "homogeneous constants do not match this wire grouping's column map"
+    );
+    let mut h = vec![Complex64::new(0.0, 0.0); cos_vec.len()];
+    for (wi, &(first, last)) in wire_endpoints.iter().enumerate() {
+        for r in first..=last {
+            h[r] = c_hom[wi] * cos_vec[r];
+            if let Some(k) = sin_col[wi] {
+                h[r] += c_hom[w + k] * sin_vec[r];
+            }
+        }
+    }
+    h
+}
+
+/// [`hallen_homogeneous`] for the conductor-path solve ([`solve_hallen_paths`]).
+pub fn hallen_homogeneous_paths(
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    c_hom: &[Complex64],
+    path_of_seg: &[usize],
+) -> Vec<Complex64> {
+    let num_paths = path_of_seg.iter().copied().max().map_or(0, |p| p + 1);
+    let mut path_len = vec![0usize; num_paths];
+    for &p in path_of_seg {
+        path_len[p] += 1;
+    }
+    let sin_col = sin_columns(&path_len.iter().map(|&l| l >= 2).collect::<Vec<_>>());
+    assert_eq!(
+        c_hom.len(),
+        num_paths + sin_col.iter().flatten().count(),
+        "homogeneous constants do not match this path grouping's column map"
+    );
+    path_of_seg
+        .iter()
+        .enumerate()
+        .map(|(r, &p)| {
+            let mut h = c_hom[p] * cos_vec[r];
+            if let Some(k) = sin_col[p] {
+                h += c_hom[num_paths + k] * sin_vec[r];
+            }
+            h
+        })
+        .collect()
+}
+
+/// Column offsets (after the cos columns) for the conductors that take a sin column.
+fn sin_columns(eligible: &[bool]) -> Vec<Option<usize>> {
+    let mut next = 0;
+    eligible
+        .iter()
+        .map(|&e| {
+            e.then(|| {
+                next += 1;
+                next - 1
+            })
+        })
+        .collect()
+}
+
 /// Write each constraint row into `m`, starting at row `first_row`, over the given
 /// column mapping: `col(i)` yields the matrix entries for the current on segment
 /// `i`. The pulse solvers map a segment to its own column; the sinusoidal basis
@@ -517,11 +626,12 @@ pub fn solve_hallen_sinusoidal_basis(
     z: &ZMatrix,
     rhs: &[Complex64],
     cos_vec: &[f64],
+    sin_vec: &[f64],
     wire_endpoints: &[(usize, usize)],
     junction_constraints: &[(usize, usize, f64)],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
-    if rhs.len() != n || cos_vec.len() != n {
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n {
         return Err(SolveError::HallenDimensionMismatch {
             z_n: n,
             rhs_len: rhs.len(),
@@ -540,7 +650,14 @@ pub fn solve_hallen_sinusoidal_basis(
 
     // If any wire has fewer than 2 segments, fall back to standard Hallén.
     if endpoints.iter().any(|&(first, last)| last <= first) {
-        return solve_hallen(z, rhs, cos_vec, wire_endpoints, junction_constraints);
+        return solve_hallen(
+            z,
+            rhs,
+            cos_vec,
+            sin_vec,
+            wire_endpoints,
+            junction_constraints,
+        );
     }
 
     let w = endpoints.len(); // number of wires (= number of homogeneous constants)
@@ -553,7 +670,14 @@ pub fn solve_hallen_sinusoidal_basis(
         .map(|&(first, last)| (last - first + 1).saturating_sub(1))
         .sum();
     if m == 0 {
-        return solve_hallen(z, rhs, cos_vec, wire_endpoints, junction_constraints);
+        return solve_hallen(
+            z,
+            rhs,
+            cos_vec,
+            sin_vec,
+            wire_endpoints,
+            junction_constraints,
+        );
     }
 
     let mut global_t = vec![vec![0.0f64; m]; n];
@@ -637,11 +761,25 @@ pub fn solve_hallen_sinusoidal_basis(
         }
     }
 
+    // The sin homogeneous term (FND-158), projected the same way, for the
+    // conductors with two free ends (`sin_eligible`).
+    let sin_col = sin_columns(&sin_eligible(endpoints, junction_constraints));
+    let n_sin = sin_col.iter().flatten().count();
+    let mut sin_projs = vec![vec![0.0f64; m]; n_sin];
+    for r in 0..n {
+        if let Some(k) = sin_col[seg_wire[r]] {
+            for i in 0..m {
+                sin_projs[k][i] += global_t[r][i] * sin_vec[r];
+            }
+        }
+    }
+
     // Assemble the projected + constrained system:
     //   rows: m (Galerkin) + constraint_rows
-    //   cols: m + w  (basis coefficients + one C per wire)
+    //   cols: m + w + n_sin  (basis coefficients, one C per wire, one D per
+    //   sin-eligible wire)
     let rows = m + constraint_rows;
-    let cols = m + w;
+    let cols = m + w + n_sin;
     let mut mat = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y_vec = vec![Complex64::new(0.0, 0.0); rows];
 
@@ -652,6 +790,9 @@ pub fn solve_hallen_sinusoidal_basis(
         }
         for k in 0..w {
             mat[i][m + k] = Complex64::new(-cos_projs[k][i], 0.0);
+        }
+        for (k, proj) in sin_projs.iter().enumerate() {
+            mat[i][m + w + k] = Complex64::new(-proj[i], 0.0);
         }
         y_vec[i] = b_proj[i];
     }
@@ -722,9 +863,8 @@ fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f6
 pub struct HallenSolution {
     /// Solved segment currents.
     pub currents: Vec<Complex64>,
-    /// Homogeneous-constant coefficients per wire.
-    ///
-    /// Length is the number of wires constrained in the Hallen solve.
+    /// Homogeneous constants: one cos constant per wire, then one sin constant per
+    /// wire with two free ends (`sin_eligible`, FND-158).
     pub c_hom_per_wire: Vec<Complex64>,
     /// Homogeneous-constant coefficient of the first wire (compat field).
     pub c_hom: Complex64,
@@ -758,15 +898,16 @@ pub fn solve_hallen(
     z: &ZMatrix,
     rhs: &[Complex64],
     cos_vec: &[f64],
+    sin_vec: &[f64],
     wire_endpoints: &[(usize, usize)],
     junction_constraints: &[(usize, usize, f64)],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
-    if rhs.len() != n || cos_vec.len() != n {
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n {
         return Err(SolveError::HallenDimensionMismatch {
             z_n: n,
             rhs_len: rhs.len(),
-            cos_len: cos_vec.len(),
+            cos_len: cos_vec.len().min(sin_vec.len()),
         });
     }
 
@@ -786,8 +927,10 @@ pub fn solve_hallen(
     let constraint_rows = crows.len();
 
     let w = endpoints.len();
+    let sin_col = sin_columns(&sin_eligible(endpoints, junction_constraints));
+    let n_sin = sin_col.iter().flatten().count();
     let rows = n + constraint_rows;
-    let cols = n + w;
+    let cols = n + w + n_sin;
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y = vec![Complex64::new(0.0, 0.0); rows];
 
@@ -805,6 +948,9 @@ pub fn solve_hallen(
         }
         let c_col = n + row_wire[r];
         m[r][c_col] = Complex64::new(-cos_vec[r], 0.0);
+        if let Some(k) = sin_col[row_wire[r]] {
+            m[r][n + w + k] = Complex64::new(-sin_vec[r], 0.0);
+        }
         y[r] = rhs[r];
     }
 
@@ -875,11 +1021,12 @@ pub fn solve_hallen_paths(
     z: &ZMatrix,
     rhs: &[Complex64],
     cos_vec: &[f64],
+    sin_vec: &[f64],
     path_of_seg: &[usize],
     free_end_rows: &[ConstraintRow],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
-    if rhs.len() != n || cos_vec.len() != n || path_of_seg.len() != n {
+    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
         return Err(SolveError::HallenDimensionMismatch {
             z_n: n,
             rhs_len: rhs.len(),
@@ -890,7 +1037,15 @@ pub fn solve_hallen_paths(
     let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
     let constraint_rows = free_end_rows.len();
     let rows = n + constraint_rows;
-    let cols = n + num_paths;
+    // Every path has two free ends (FND-158), so every path takes both
+    // homogeneous solutions — unless it is a single segment, whose one row
+    // cannot fix two constants.
+    let mut path_len = vec![0usize; num_paths];
+    for &p in path_of_seg {
+        path_len[p] += 1;
+    }
+    let sin_col = sin_columns(&path_len.iter().map(|&l| l >= 2).collect::<Vec<_>>());
+    let cols = n + num_paths + sin_col.iter().flatten().count();
     let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
     let mut y = vec![Complex64::new(0.0, 0.0); rows];
 
@@ -900,6 +1055,9 @@ pub fn solve_hallen_paths(
         }
         let c_col = n + path_of_seg[r];
         m[r][c_col] = Complex64::new(-cos_vec[r], 0.0);
+        if let Some(k) = sin_col[path_of_seg[r]] {
+            m[r][n + num_paths + k] = Complex64::new(-sin_vec[r], 0.0);
+        }
         y[r] = rhs[r];
     }
 
@@ -1450,7 +1608,7 @@ mod tests {
         let rhs = vec![c(1.0, 0.0)];
         let cos_vec = vec![1.0, 1.0];
         assert!(matches!(
-            solve_hallen(&z, &rhs, &cos_vec, &[], &[]),
+            solve_hallen(&z, &rhs, &cos_vec, &cos_vec, &[], &[]),
             Err(SolveError::HallenDimensionMismatch {
                 z_n: 2,
                 rhs_len: 1,
@@ -1467,12 +1625,13 @@ mod tests {
             vec![c(0.1, 0.0), c(0.3, 0.0), c(2.0, 0.0)],
         ]);
         let cos_vec = vec![1.0, 0.9, 0.7];
+        let sin_vec = vec![-0.3, 0.0, 0.3];
 
         let rhs_a = vec![c(0.0, 0.0), c(0.0, 0.0), c(0.0, 0.0)];
         let rhs_b = vec![c(0.0, -0.1), c(0.0, -0.2), c(0.0, -0.1)];
 
-        let a = solve_hallen(&z, &rhs_a, &cos_vec, &[], &[]).unwrap();
-        let b = solve_hallen(&z, &rhs_b, &cos_vec, &[], &[]).unwrap();
+        let a = solve_hallen(&z, &rhs_a, &cos_vec, &sin_vec, &[], &[]).unwrap();
+        let b = solve_hallen(&z, &rhs_b, &cos_vec, &sin_vec, &[], &[]).unwrap();
 
         let mut diff = 0.0;
         for i in 0..3 {

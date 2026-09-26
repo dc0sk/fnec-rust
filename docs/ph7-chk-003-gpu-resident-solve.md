@@ -2,10 +2,16 @@
 project: fnec-rust
 doc: docs/ph7-chk-003-gpu-resident-solve.md
 status: living
-last_updated: 2026-08-23
+last_updated: 2026-09-26
 ---
 
 # PH7-CHK-003: GPU-resident dense Hallén solve
+
+> **Correction (2026-09-26, FND-158):** the solve as first built carried only the
+> per-wire `cos(k·s)` homogeneous column, which is exact only for a current
+> symmetric about each wire's midpoint. It now also carries a `sin(k·s)` column for
+> every wire with two free ends, matching the CPU `solve_hallen`; the layout below
+> is the corrected one.
 
 ## Requirement / change
 
@@ -34,9 +40,12 @@ GPU-resident solve is an opt-in acceleration path, not the accuracy reference.
 The CPU reference is `nec_solver::linear::solve_hallen` →
 `solve_square_in_place` (`crates/nec_solver/src/linear.rs:672,799`). It:
 
-1. Builds an augmented matrix `M` (`rows = N + C`, `cols = S = N + W`): rows `0..N`
-   are the Z-matrix plus one per-wire homogeneous-constant column
-   (`M[r][N+wire(r)] = -cos_vec[r]`); rows `N..` are endpoint (`I=0`) and junction
+1. Builds an augmented matrix `M` (`rows = N + C`, `cols = S = N + W + W_sin`):
+   rows `0..N` are the Z-matrix plus one per-wire `cos` homogeneous-constant column
+   (`M[r][N+wire(r)] = -cos_vec[r]`) and, for each wire that
+   `nec_solver::sin_eligible` admits (two free ends, ≥ 2 segments, no junction
+   endpoint), a second `sin` column (`-sin_vec[r]`) numbered after all `cos`
+   columns (`W_sin` = number of such wires; added 2026-09-26, FND-158); rows `N..` are endpoint (`I=0`) and junction
    (`I[a] + sign·I[b] = 0`) constraints. RHS `y[r] = rhs[r]` for `r<N`, else 0.
 2. Forms the regularized normal equations `ata = MᴴM + λI`, `aty = Mᴴy`.
 3. Solves `ata x = aty` by complex Gaussian elimination with partial pivoting.
@@ -49,8 +58,11 @@ Two dispatches sharing a **device-resident Z buffer** (no full-matrix copy-back)
 - **Dispatch 1** — existing `zmatrix_fill.wgsl` fills `Z` (N×N, `2·N·N` f32) into a
   device storage buffer.
 - **Dispatch 2** — new `hallen_normal_solve.wgsl` (single workgroup) reads the
-  device `Z` buffer plus small host-uploaded metadata (per-segment `cos_vec`,
-  `rhs`, `wire` index; a compact constraint-row list), and:
+  device `Z` buffer plus small host-uploaded metadata (a compact constraint-row
+  list and a per-segment block `[cos, sin, rhs_re, rhs_im, cos_col, sin_col]`,
+  where `sin_col = -1` marks a wire with no `sin` column; the host computes the
+  columns from `nec_solver::sin_eligible` so the GPU and CPU column maps cannot
+  diverge), and:
   - **assembles** `ata = MᴴM + λI` (`S×S`) and `aty = Mᴴy` (`S`) into a device
     scratch buffer, parallelised across the workgroup over `(i,j)` pairs. The
     `MᴴM` sum is split into the dense Z-block contribution (`r<N`, read from the

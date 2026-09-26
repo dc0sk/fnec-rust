@@ -48,7 +48,7 @@ fn voltage_source_impedance(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Com
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
     let h = build_hallen_rhs(&d, &segs, FREQ_HZ).expect("rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
-    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &endpoints, &[]).expect("solve");
+    let sol = solve_hallen(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &endpoints, &[]).expect("solve");
     let feed_idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)

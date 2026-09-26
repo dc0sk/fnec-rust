@@ -48,20 +48,21 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-gui/tests/gui_smoke.rs` | 128 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
-| `crates/nec_accel/tests/gpu_resident_solve.rs` | 1 | Fully GPU-resident Hallén fill+solve parity | PH7-CHK-003 |
+| `crates/nec_accel/tests/gpu_resident_solve.rs` | 2 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
 | `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
+| `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 4 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
 | `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=546 --> **546** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=553 --> **553** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -86,7 +87,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1120 --> **1120** = 567 unit + 546 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1127 --> **1127** = 567 unit + 553 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

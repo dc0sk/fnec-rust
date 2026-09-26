@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-006-sommerfeld-ground.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # PH9-CHK-006: accurate near-ground impedance
@@ -60,6 +60,15 @@ far-field image.
 > 97.16 + j44.13 Ω (nec2c 97.32 + j44.15), and `dipole-ground-51seg` (PEC) gives
 > 77.41 + j41.67 (nec2c 74.79 + j43.94). The reactance difference attributed to the
 > ground model was this defect too. The ΔZ analysis below is kept as recorded.
+
+> **Correction (2026-09-26, FND-158):** the 97.16 + j44.13 Ω RCM "match" on
+> `dipole-gn2-near-ground-51seg` above was itself a cancellation. The vertical dipole
+> over ground sees an asymmetric (image-coupled) current, and the Hallén solve
+> carried only the `cos(k·s)` homogeneous term; the missing `sin(k·s)` term happened
+> to offset the RCM approximation's error. With both terms the default RCM model
+> reads 92.73 Ω and `--ground-solver sommerfeld` gives 96.59 + j40.23 Ω (nec2c
+> Sommerfeld 97.32 + j44.15) — so the Sommerfeld correction, not RCM, is what tracks
+> nec2c here. The `dipole-ground-51seg` (PEC) value above was not re-measured here.
 
 fnec's Hallén operator carries a documented ~32 Ω systematic reactance offset vs
 nec2c (present in free space: fs X 13.9 vs 46.2), so absolute parity is not the gate.

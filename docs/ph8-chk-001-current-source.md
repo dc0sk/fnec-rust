@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-001-current-source.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # PH8-CHK-001: current-source excitation (NEC2 EX type 4)
@@ -20,8 +20,15 @@ A current source is the exact **dual** of the delta-gap voltage source. The
 voltage-source Hallén equation is
 
 ```
-Z·I − C·cos(k·s) = g·V         (endpoints: I = 0)
+Z·I − C·cos(k·s) − D·sin(k·s) = g·V         (endpoints: I = 0)
 ```
+
+> **Correction (2026-09-26, FND-158):** this design originally carried only the
+> `C·cos(k·s)` term. Hallén's homogeneous solution is two-dimensional; `D·sin(k·s)`
+> vanishes only when the current is symmetric about the wire's midpoint, so a
+> current source off the centre of the wire needs both. The current-source solves now carry the `sin` column on every
+> wire/conductor path with two free ends (`nec_solver::sin_eligible`), exactly like
+> the voltage delta-gap. The equation above is the corrected form.
 
 where `g` is the unit-voltage source shape (`build_hallen_rhs` with `V = 1`) and
 `V` is a **known** driving voltage. For a current source the roles swap: the
@@ -29,7 +36,7 @@ current at the source segment is **known** (`I[src] = i0`) and the port voltage
 `V` is **unknown**. So `V` becomes an extra solve column and `I[src] = i0` an
 extra constraint:
 
-- rows `0..N`:  `Z·I − C·cos − g·V = 0`
+- rows `0..N`:  `Z·I − C·cos − D·sin − g·V = 0` (`D·sin` since FND-158)
 - endpoint rows: `I = 0` at each wire end
 - source row:    `I[src] = i0`
 
@@ -44,12 +51,12 @@ under-satisfied and the impedance drifts ~0.3 %.
 
 Implementation:
 - `nec_solver::build_current_source_shape` — synthesizes a `V = 1` delta-gap at
-  the source segment and returns `g` + `cos_vec` (reusing `build_hallen_rhs`).
+  the source segment and returns `g` + `cos_vec` + `sin_vec` (reusing `build_hallen_rhs`).
 - `nec_solver::solve_hallen_current_source` — the augmented solve above; returns
   `CurrentSourceSolution { currents, port_voltage }`.
 
-Supported class: a single straight wire (one source shape, one homogeneous
-constant). This is the solve core; CLI wiring + the EX type-4 report path are a
+Supported class: a single straight wire (one source shape; originally one
+homogeneous constant, two since FND-158). This is the solve core; CLI wiring + the EX type-4 report path are a
 follow-on increment (mirroring the plane-wave staging).
 
 ## Validation

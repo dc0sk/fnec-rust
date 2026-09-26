@@ -541,7 +541,9 @@ fn solve_inner(
             &z_inputs,
             &hallen_rhs.rhs,
             &hallen_rhs.cos_vec,
+            &hallen_rhs.sin_vec,
             &wire_endpoints,
+            &nec_solver::sin_eligible(&wire_endpoints, &junc_constraints),
             &nec_solver::hallen_constraint_rows(&wire_endpoints, &junc_constraints),
             freq_hz,
         )) {
@@ -642,6 +644,7 @@ fn cpu_currents(
         z_mat,
         &hallen_rhs.rhs,
         &hallen_rhs.cos_vec,
+        &hallen_rhs.sin_vec,
         wire_endpoints,
         junc_constraints,
     )
