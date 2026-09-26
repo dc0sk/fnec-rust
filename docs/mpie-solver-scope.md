@@ -80,6 +80,12 @@ solve; report feedpoint Z + currents.
   free-end rows (FND-156), not a formulation bias; fixed, Hallén gives 78.83 + j42.44 Ω
   vs nec2c 79.35 + j46.22. The MPIE's ≈6 % low R on the dipole (74.89 + j45.78) is
   tracked as FND-157 — it was masked while MPIE was compared with the defective Hallén.*
+  *Resolved (2026-09-26, FND-157): the "≈6 % discretization offset" was quadrature, not
+  discretization. The 6-point Gauss rule cannot resolve the reduced kernel's ~a-wide
+  peak on self and adjacent segments; the static `1/R` part is now integrated exactly.
+  The dipole gives 79.15 + j45.95 at 51 segments, the Yagi 8.20 + j55.78 (nec2c
+  8.17 + j56.54), a Y-junction 65.44 − j61.60 (nec2c 67.22 − j63.03; was −j322). The
+  Python oracle agreed with the old code because it used the same 6-point rule.*
 - **Gate A3 (identity):** a collinear split dipole equals the single-wire result to
   ~machine precision (the split-recovers-single gate, MPIE analog).
 - **Watch:** self/near-segment charge integrals (log-singular even with the reduced

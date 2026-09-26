@@ -57,6 +57,9 @@ const MU0: f64 = 4.0e-7 * std::f64::consts::PI;
 const EPS0: f64 = 8.854_187_812_8e-12;
 
 /// 6-point Gauss–Legendre nodes/weights on [-1, 1] (matches the Python oracle).
+/// Observer-side panels for a near pair (see `assemble`).
+const NEAR_OUTER_PANELS: usize = 8;
+
 const GL_NODES: [f64; 6] = [
     -0.932_469_514_203_152,
     -0.661_209_386_466_265,
@@ -305,6 +308,31 @@ fn g_reduced(dist: f64, radius: f64, k: f64) -> Complex64 {
     Complex64::from_polar(1.0 / r, -k * r)
 }
 
+/// The static part of the reduced kernel, `1/R` with `R = √(|r − r(t)|² + a²)`,
+/// integrated EXACTLY over a straight segment for an observer at `r`:
+/// `(∫₀ᴸ dt/R, ∫₀ᴸ t·dt/R)`, `t` measured from `p0` (FND-157).
+///
+/// With `s₀` the observer's projection on the segment axis and `b² = ρ² + a²`:
+/// `∫dt/R = asinh((L−s₀)/b) + asinh(s₀/b)` and
+/// `∫t·dt/R = √((L−s₀)²+b²) − √(s₀²+b²) + s₀·∫dt/R`.
+fn static_kernel_moments(r: [f64; 3], seg: &SegGeom, radius: f64) -> (f64, f64) {
+    let d = sub(r, seg.p0);
+    let s0 = dot(d, seg.tangent);
+    let rho2 = (dot(d, d) - s0 * s0).max(0.0);
+    let b = (rho2 + radius * radius).sqrt();
+    let l = seg.len;
+    let i0 = ((l - s0) / b).asinh() + (s0 / b).asinh();
+    let i1 = ((l - s0) * (l - s0) + b * b).sqrt() - (s0 * s0 + b * b).sqrt() + s0 * i0;
+    (i0, i1)
+}
+
+/// Whether two legs are close enough that the 6-point rule cannot resolve the
+/// reduced kernel's `~a`-wide peak between them: the same segment, or segments
+/// whose midpoints are within about one segment length of each other.
+fn near_pair(a: &SegGeom, b: &SegGeom) -> bool {
+    norm(sub(quad_point(a, 0.5), quad_point(b, 0.5))) < 1.01 * (a.len + b.len)
+}
+
 /// Position at parameter `u ∈ [0, 1]` along a segment (`p0 → p1`).
 fn quad_point(seg: &SegGeom, u: f64) -> [f64; 3] {
     [
@@ -312,6 +340,64 @@ fn quad_point(seg: &SegGeom, u: f64) -> [f64; 3] {
         seg.p0[1] + u * (seg.p1[1] - seg.p0[1]),
         seg.p0[2] + u * (seg.p1[2] - seg.p0[2]),
     ]
+}
+
+/// The two integrals one pair of basis legs contributes to `Z_mn`, before the
+/// tangent and charge factors: `(∬ f_m f_n G, ∬ G)` over leg `m` × leg `n`.
+///
+/// Near pairs: the reduced kernel's static part `1/R` is a spike of width ~a,
+/// which the 6-point rule cannot resolve — it under-integrated the self and
+/// adjacent terms, reading 6% low on a dipole, 35 Ω off on a Yagi and 260 Ω off
+/// in X on a Y-junction (FND-157). It is subtracted and integrated exactly over
+/// the source leg; the remainder `(e^{-jkR} − 1)/R` is smooth. The observer side
+/// uses more points there, because the exact inner integral still varies on the
+/// scale `a` near the source leg's ends.
+fn leg_pair_integrals(
+    sm: &SegGeom,
+    lm: &Leg,
+    sn: &SegGeom,
+    ln: &Leg,
+    radius: f64,
+    k: f64,
+) -> (Complex64, Complex64) {
+    let (mut za, mut zp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
+    let near = near_pair(sm, sn);
+    let outer = if near { NEAR_OUTER_PANELS } else { 1 };
+    for pa in 0..outer {
+        for gi in 0..6 {
+            let ua = (pa as f64 + 0.5 * (GL_NODES[gi] + 1.0)) / outer as f64;
+            let wa = 0.5 * GL_WEIGHTS[gi] * sm.len / outer as f64;
+            let ra = quad_point(sm, ua);
+            let fm = lm.f_scalar(ua);
+            let mut inner_a = Complex64::new(0.0, 0.0);
+            let mut inner_p = Complex64::new(0.0, 0.0);
+            for gj in 0..6 {
+                let ub = 0.5 * (GL_NODES[gj] + 1.0);
+                let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
+                let rb = quad_point(sn, ub);
+                let dist = norm(sub(ra, rb));
+                let mut g = g_reduced(dist, radius, k);
+                if near {
+                    g -= 1.0 / (dist * dist + radius * radius).sqrt();
+                }
+                inner_a += wb * ln.f_scalar(ub) * g;
+                inner_p += wb * g;
+            }
+            if near {
+                let (i0, i1) = static_kernel_moments(ra, sn, radius);
+                // ∫ f_n/R: the ramp is t/L toward p1, 1 − t/L toward p0.
+                inner_a += if ln.v_is_p1 {
+                    i1 / sn.len
+                } else {
+                    i0 - i1 / sn.len
+                };
+                inner_p += i0;
+            }
+            za += wa * fm * inner_a;
+            zp += wa * inner_p;
+        }
+    }
+    (za, zp)
 }
 
 /// Assemble the dense free-space MPIE impedance matrix over the given bases.
@@ -346,21 +432,9 @@ fn assemble(
                     let sn = &segs[ln.seg];
                     let tt = dot(tm, ln.flow_tangent(segs));
                     let cc = cm * ln.charge(segs);
-                    for gi in 0..6 {
-                        let ua = 0.5 * (GL_NODES[gi] + 1.0);
-                        let wa = 0.5 * GL_WEIGHTS[gi] * sm.len;
-                        let ra = quad_point(sm, ua);
-                        let fm = lm.f_scalar(ua);
-                        for gj in 0..6 {
-                            let ub = 0.5 * (GL_NODES[gj] + 1.0);
-                            let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
-                            let rb = quad_point(sn, ub);
-                            let fn_ = ln.f_scalar(ub);
-                            let g = g_reduced(norm(sub(ra, rb)), radius, k);
-                            za += wa * wb * fm * fn_ * tt * g;
-                            zp += wa * wb * cc * g;
-                        }
-                    }
+                    let (a, p) = leg_pair_integrals(sm, lm, sn, ln, radius, k);
+                    za += tt * a;
+                    zp += cc * p;
                 }
             }
             let entry = pre_a * za + pre_p * zp;
@@ -929,6 +1003,60 @@ mod tests {
         straight_wire([0.0, 0.0, -half], [0.0, 0.0, half], nseg, 0.001)
     }
 
+    /// FND-157: every leg-pair integral equals brute force, each term separately.
+    ///
+    /// Compared term by term because a whole-element comparison cannot see an
+    /// error in the vector-potential term: the charge term dominates a short
+    /// segment by ~(kΔ)⁻², so swapping the rising and falling ramp moments of the
+    /// extraction passed all three nec2c gates AND an element-wise check at 2e-3.
+    /// Brute force here is a midpoint rule on 1024 panels per leg, finer than the
+    /// 1 mm kernel peak on a 0.2 m leg.
+    #[test]
+    fn leg_pair_integrals_match_brute_force_term_by_term() {
+        // Three segments: self, adjacent and distant pairs, at a cost a unit test can afford.
+        let wire = straight_wire([0.0, 0.0, 0.0], [0.0, 0.0, 0.6], 3, 0.001);
+        let geom = wire.geometry();
+        let segs = seg_geom(&geom);
+        let k = 2.0 * std::f64::consts::PI * FREQ / C0;
+        const P: usize = 1024;
+        let legs: Vec<Leg> = (0..segs.len())
+            .flat_map(|seg| {
+                [true, false].map(|v_is_p1| Leg {
+                    seg,
+                    v_is_p1,
+                    toward: true,
+                })
+            })
+            .collect();
+        for lm in &legs {
+            for ln in &legs {
+                let (sm, sn) = (&segs[lm.seg], &segs[ln.seg]);
+                let (a, pot) = leg_pair_integrals(sm, lm, sn, ln, geom.radius, k);
+                let (mut ba, mut bp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
+                let w = sm.len * sn.len / (P * P) as f64;
+                for i in 0..P {
+                    let ua = (i as f64 + 0.5) / P as f64;
+                    let ra = quad_point(sm, ua);
+                    for j in 0..P {
+                        let ub = (j as f64 + 0.5) / P as f64;
+                        let g = g_reduced(norm(sub(ra, quad_point(sn, ub))), geom.radius, k) * w;
+                        ba += lm.f_scalar(ua) * ln.f_scalar(ub) * g;
+                        bp += g;
+                    }
+                }
+                let (ra_, rp) = ((a - ba).norm() / ba.norm(), (pot - bp).norm() / bp.norm());
+                assert!(
+                    ra_ < 1e-4 && rp < 1e-4,
+                    "legs {}/{} → {}/{}: A-term {ra_:.2e}, charge term {rp:.2e}",
+                    lm.seg,
+                    lm.v_is_p1,
+                    ln.seg,
+                    ln.v_is_p1
+                );
+            }
+        }
+    }
+
     /// Degenerate geometry (empty, or a zero-length self-coincident segment) is
     /// rejected with a clear error instead of panicking / producing NaNs.
     #[test]
@@ -991,19 +1119,27 @@ mod tests {
         );
     }
 
-    /// Reproduce the validated Python oracle at N=40 (74.36 + j41.36).
+    /// A half-wave dipole at N=40 lands on the converged physical value.
+    ///
+    /// This test reproduced a "validated Python oracle" (74.36 + j41.36) until
+    /// FND-157, and the oracle shared this file's defect: both integrated the
+    /// reduced kernel's `~a`-wide self-term peak with a 6-point rule, and read 6%
+    /// low. Two codes with the same quadrature agreeing proved nothing about the
+    /// quadrature. The reference now is nec2c's converged dipole (~79.6 + j46.6);
+    /// a node feed has no exact nec2c twin, so this is a band, and the exact pins
+    /// are the CLI decks in `mpie_solver_cli.rs`, which do have one.
     #[test]
-    fn matches_python_oracle_n40() {
+    fn a_half_wave_dipole_lands_on_the_converged_value() {
         let wire = half_wave_dipole(40);
         let sol = solve_mpie_free_space(&wire, FREQ, 40 / 2 - 1).unwrap();
         assert!(
-            (sol.z_in.re - 74.36).abs() < 0.1,
-            "R={} (oracle 74.36)",
+            (78.5..80.0).contains(&sol.z_in.re),
+            "R={} (nec2c converges to ~79.6; the old quadrature gave 74.36)",
             sol.z_in.re
         );
         assert!(
-            (sol.z_in.im - 41.36).abs() < 0.1,
-            "X={} (oracle 41.36)",
+            (43.0..47.5).contains(&sol.z_in.im),
+            "X={} (nec2c converges to ~46.6)",
             sol.z_in.im
         );
     }

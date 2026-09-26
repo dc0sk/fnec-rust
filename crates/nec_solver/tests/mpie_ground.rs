@@ -62,13 +62,15 @@ fn gn2() -> GroundModel {
 /// Gate D1: horizontal dipole over GN2 — the feed Z tracks the oracle/nec2c and
 /// the ground substantially lowers R from the 74 Ω free-space value.
 #[test]
-fn horizontal_dipole_gn2_matches_oracle() {
-    // 0.05λ: oracle 64.00 + j49.18, nec2c 67.26 + j52.61.
+fn horizontal_dipole_gn2_tracks_nec2c() {
+    // 0.05λ: nec2c 67.26 + j52.61; fnec 67.61 + j52.42 since FND-157. (This
+    // pinned a Python oracle's 64.00 + j49.18, which shared the self-term
+    // quadrature defect and so agreed with the old code to the digit.)
     let (g05, f05) = horizontal_dipole(0.05);
     let z05 = solve_mpie_ground(&g05, FREQ, f05, &gn2()).unwrap();
     assert!(
-        (z05.z_in.re - 64.0).abs() < 2.0 && (z05.z_in.im - 49.18).abs() < 2.0,
-        "GN2 0.05λ Z={} (oracle 64.00+j49.18)",
+        (z05.z_in.re - 67.26).abs() < 1.0 && (z05.z_in.im - 52.61).abs() < 1.0,
+        "GN2 0.05λ Z={} (nec2c 67.26+j52.61)",
         z05.z_in
     );
     // Within ~8% of nec2c on both parts.
@@ -82,19 +84,20 @@ fn horizontal_dipole_gn2_matches_oracle() {
         "X vs nec2c: {}",
         z05.z_in.im
     );
-    // The ground is a strong effect: R well below the 74 Ω free-space value.
+    // The ground is a strong effect: R well below the ~79 Ω free-space value.
     assert!(
         z05.z_in.re < 70.0,
         "ground effect too weak: R={}",
         z05.z_in.re
     );
 
-    // 0.025λ: oracle 83.46 + j66.26, nec2c 87.81 + j68.64.
+    // 0.025λ: nec2c 87.81 + j68.64; fnec 88.59 + j68.45 since FND-157 (the
+    // shared-defect oracle said 83.46 + j66.26).
     let (g025, f025) = horizontal_dipole(0.025);
     let z025 = solve_mpie_ground(&g025, FREQ, f025, &gn2()).unwrap();
     assert!(
-        (z025.z_in.re - 83.46).abs() < 2.5 && (z025.z_in.im - 66.26).abs() < 2.5,
-        "GN2 0.025λ Z={} (oracle 83.46+j66.26)",
+        (z025.z_in.re - 87.81).abs() < 1.5 && (z025.z_in.im - 68.64).abs() < 1.5,
+        "GN2 0.025λ Z={} (nec2c 87.81+j68.64)",
         z025.z_in
     );
     assert!(
@@ -136,7 +139,8 @@ fn vertical_dipole_gn2_matches_nec2c() {
 
 /// Gate E2 (consistency): the general E-field-reaction path reproduces the
 /// Phase-D horizontal potential-kernel result — a wire tilted just 2° off
-/// horizontal gives ≈ 64.00 + j49.18.
+/// horizontal gives ≈ the horizontal 67.61 + j52.42 (64.00 + j49.18 before
+/// FND-157's self-term fix).
 #[test]
 fn general_path_reproduces_horizontal_limit() {
     let lam = C0 / FREQ;
@@ -149,8 +153,8 @@ fn general_path_reproduces_horizontal_limit() {
         .unwrap()
         .z_in;
     assert!(
-        (z.re - 64.0).abs() < 1.5 && (z.im - 49.18).abs() < 1.5,
-        "near-horizontal Z={z} should approach Phase-D 64.00+j49.18"
+        (z.re - 67.61).abs() < 1.5 && (z.im - 52.42).abs() < 1.5,
+        "near-horizontal Z={z} should approach the horizontal 67.61+j52.42"
     );
 }
 

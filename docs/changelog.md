@@ -33,6 +33,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver mpie` is now accurate: its self and adjacent terms were
+  under-integrated (FND-157).** A 6-point Gauss rule cannot resolve the reduced
+  kernel's peak, whose width is the wire radius (1 mm on a 200 mm segment). The
+  static `1/R` part is now subtracted and integrated exactly; only the smooth
+  remainder is integrated numerically. Against nec2c:
+  - dipole: 74.4 → **78.9** Ω (79.1);
+  - 5-element Yagi: 43.5 → **8.20 + j55.78** Ω (8.17 + j56.54);
+  - Y-junction: −j322 → **65.4 − j61.6** Ω (67.2 − j63.0);
+  - horizontal dipole over GN2: 73.9 → **77.6** Ω (77.6).
+
+  The Python oracle several MPIE tests pinned against used the same 6-point
+  rule and agreed with the defect; those tests now use nec2c. A term-by-term
+  brute-force quadrature test guards the exact integrals.
+
 - **Wires standing on perfect ground are solved: the ground-mounted monopole
   works (FND-082).** A wire touching z = 0 over `GN 1` used to be refused as
   "buried". It is now solved by explicit images. Over PEC the problem is exactly

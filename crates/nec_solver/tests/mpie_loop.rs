@@ -85,9 +85,14 @@ fn one_wavelength_loop_converges_to_nec2c() {
         x20 > x10 && (x20 + 146.2).abs() / 146.2 < 0.05,
         "X not converging to nec2c: {x10:.1} then {x20:.1}"
     );
-    // Resistance converges toward nec2c ~109.7 from above, within 5% at 20/side.
+    // Resistance converges toward nec2c ~109.7 — within 1% at both meshes since
+    // FND-157 (108.9 then 109.1). It used to approach from ABOVE, which this
+    // asserted; that direction was the old self-term quadrature error, not the
+    // physics, so the gate is now closeness and a gap that does not grow.
     assert!(
-        r20 < r10 && (r20 - 109.7).abs() / 109.7 < 0.05,
+        (r10 - 109.7).abs() / 109.7 < 0.01
+            && (r20 - 109.7).abs() / 109.7 < 0.01
+            && (r20 - 109.7).abs() <= (r10 - 109.7).abs(),
         "R not converging to nec2c: {r10:.1} then {r20:.1}"
     );
 }
