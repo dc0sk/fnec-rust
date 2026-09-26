@@ -996,10 +996,7 @@ pub(super) fn solve_frequency_point(
         }
     }
 
-    let mut v_vec_pulse = match pulse_rhs_mode {
-        PulseRhsMode::Raw => v_vec.to_vec(),
-        PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(v_vec, freq_hz),
-    };
+    let mut v_vec_pulse = scale_pulse_rhs(v_vec, pulse_rhs_mode, freq_hz);
 
     let mut z_mat = match solver_mode {
         SolverMode::Hallen => {
@@ -1069,34 +1066,26 @@ pub(super) fn solve_frequency_point(
     for warning in &laplace_warnings {
         eprintln!("warning: {warning}");
     }
-    // Loads are applied by the Hallen session, as matrix columns in the basis
-    // that will actually run (FND-122). Only the two-port couplings are stamped
-    // here — and their model carries the same units error the loads did, so they
-    // are caveated rather than answered silently.
-    if matches!(solver_mode, SolverMode::Hallen) {
-        stamps.apply_couplings(&mut z_mat);
-    } else {
-        // Pulse and continuity solve a Pocklington system in field units, and
-        // sinusoidal uses a basis for which the column stamp is not the load
-        // sample. None of those has a derived load treatment yet, so they keep
-        // the old diagonal add and say so.
-        stamps.apply_with_diagonal_loads(&mut z_mat);
-        if stamps
-            .diagonal
-            .iter()
-            .any(|z| *z != Complex64::new(0.0, 0.0))
-        {
-            eprintln!(
-                "warning: LD/--loads-config loads on --solver {} use the unvalidated \
-                 diagonal stamp; only the hallen basis has a derived load model \
-                 (FND-122). Treat the loaded result as indicative",
-                match solver_mode {
-                    SolverMode::Pulse => "pulse",
-                    SolverMode::Continuity => "continuity",
-                    SolverMode::Sinusoidal => "sinusoidal",
-                    _ => "this",
-                }
+    // Loads enter in the form the basis that runs derives for them (FND-122,
+    // FND-124). Hallen: as matrix columns, stamped by the session once the route is
+    // known. Sinusoidal: the same columns, since it solves the Hallen matrix in a
+    // projected basis. Pulse and continuity: a diagonal of Z_p/Δl, scaled exactly
+    // as the source vector is, because a load IS a source of −Z_p·I_p.
+    stamps.apply_couplings(&mut z_mat);
+    match solver_mode {
+        SolverMode::Hallen | SolverMode::Mpie => {}
+        SolverMode::Sinusoidal => {
+            nec_solver::stamp_hallen_load_columns(
+                &mut z_mat,
+                segs,
+                freq_hz,
+                &stamps.diagonal,
+                None,
             );
+        }
+        SolverMode::Pulse | SolverMode::Continuity => {
+            let diagonal = nec_solver::pocklington_load_diagonal(segs, &stamps.diagonal);
+            z_mat.add_to_diagonal(&scale_pulse_rhs(&diagonal, pulse_rhs_mode, freq_hz));
         }
     }
     if stamps.has_couplings() {
@@ -1644,5 +1633,15 @@ where
             })
             .collect();
         (solved, 0)
+    }
+}
+
+/// The pulse solvers' right-hand-side scaling, as one function so the source
+/// vector and the load diagonal cannot be scaled differently: a lumped load is a
+/// source of `−Z_p·I_p` and must carry the source's units (FND-124).
+fn scale_pulse_rhs(v: &[Complex64], mode: PulseRhsMode, freq_hz: f64) -> Vec<Complex64> {
+    match mode {
+        PulseRhsMode::Raw => v.to_vec(),
+        PulseRhsMode::Nec2 => scale_excitation_for_pulse_rhs(v, freq_hz),
     }
 }

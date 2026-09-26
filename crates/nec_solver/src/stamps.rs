@@ -26,7 +26,10 @@
 //! anything destructive that follows — `replace_row` for pulse current-source
 //! constraints must run after [`DeckStamps::apply`], never before.
 //!
-//! This is the Hallén family only. `--solver mpie` rejects `LD`/`TL`/`NT` outright,
+//! Every solver except MPIE: the Hallén family (plain, conductor-path, sinusoidal)
+//! and the Pocklington pulse/continuity pair, each with its own load form (see
+//! [`stamp_hallen_load_columns`], [`pocklington_load_diagonal`]). `--solver mpie`
+//! rejects `LD`/`TL`/`NT` outright,
 //! so the seam must not be wired into an MPIE path: the matrix it would stamp is
 //! never read there.
 
@@ -50,33 +53,13 @@ pub struct DeckStamps {
 }
 
 impl DeckStamps {
-    /// Add every stamp to `z`, loads included, by adding the load impedance to
-    /// the diagonal.
-    ///
-    /// **This is dimensionally wrong for the Hallén matrix** and is kept only for
-    /// the solver modes that have not been given a derived load treatment yet:
-    /// pulse and continuity solve a Pocklington system in field units, and
-    /// sinusoidal uses the Hallén matrix with a basis in which the rank-1 column
-    /// update is not the load-current sample either. Those modes keep the old
-    /// behaviour and now say so out loud rather than reporting it silently
-    /// (FND-122; the derivation for the other bases is not done).
-    ///
-    /// The Hallén path must use [`Self::apply_couplings`] plus
-    /// [`crate::excitation::hallen_load_columns`] instead.
-    ///
-    /// Must run before any destructive matrix edit (`replace_row`), and must not be
-    /// applied twice to the same matrix — these are deltas, not assignments.
-    pub fn apply_with_diagonal_loads(&self, z: &mut ZMatrix) {
-        if !self.diagonal.is_empty() {
-            z.add_to_diagonal(&self.diagonal);
-        }
-        self.apply_couplings(z);
-    }
-
     /// Add only the two-port couplings (`TL`, `NT`), leaving loads to the caller.
     ///
-    /// The Hallén path applies loads as matrix *columns* rather than diagonal
-    /// terms, so it takes [`Self::diagonal`] as data and stamps it itself.
+    /// Loads are never stamped here, because how a load enters depends on the
+    /// basis that will run: columns for the Hallén family
+    /// ([`stamp_hallen_load_columns`]), a scaled diagonal for the Pocklington
+    /// solvers ([`pocklington_load_diagonal`]). [`Self::diagonal`] is the data both
+    /// start from.
     ///
     /// The couplings carry the same units error as the loads did — they are
     /// impedances added to a dimensionless matrix — and are not fixed here: a
@@ -137,6 +120,58 @@ pub fn build_deck_stamps(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> Deck
         entries,
         warnings,
     }
+}
+
+/// Stamp lumped series loads into a Hallén-family matrix, as the columns
+/// [`crate::excitation::hallen_load_columns`] derives.
+///
+/// One function for every Hallén-matrix solve, so the routed session and the
+/// sinusoidal basis cannot stamp differently. The sinusoidal basis needs nothing
+/// more: it solves `Tᵀ·Z·T·a` with `I = T·a`, and a column update
+/// `(Z + c·eₚᵀ)·T·a = Z·T·a + c·I_p` still multiplies the load's own current
+/// sample. The stamp must go into `Z` BEFORE the projection; stamped into
+/// `Tᵀ·Z·T` it would multiply a basis coefficient instead, which is the objection
+/// FND-124 recorded against reusing the Hallén derivation there.
+///
+/// `paths` must be the conductor paths of the solve that will run, or `None` for
+/// the merged-conductor basis. These are deltas: call once per matrix.
+pub fn stamp_hallen_load_columns(
+    z: &mut ZMatrix,
+    segs: &[Segment],
+    freq_hz: f64,
+    loads: &[Complex64],
+    paths: Option<&[crate::geometry::ConductorPath]>,
+) {
+    if loads.iter().all(|l| *l == Complex64::new(0.0, 0.0)) {
+        return;
+    }
+    for (col, column) in crate::excitation::hallen_load_columns(segs, freq_hz, loads, paths) {
+        for (row, delta) in column.iter().enumerate() {
+            if *delta != Complex64::new(0.0, 0.0) {
+                z.add_to_entry(row, col, *delta);
+            }
+        }
+    }
+}
+
+/// The diagonal a set of lumped series loads adds to a pulse-basis Pocklington
+/// system, BEFORE the solver's right-hand-side scaling.
+///
+/// Pulse testing matches the tangential field at each segment midpoint, and a
+/// delta-gap source of voltage `V` on segment `p` enters the right-hand side as
+/// `V / Δl_p` ([`crate::build_excitation`]). A lumped series load `Z_p` is a
+/// source of `−Z_p·I_p` in the same place, so it contributes `−Z_p·I_p / Δl_p`,
+/// and moving the unknown to the left gives a diagonal term of `+Z_p / Δl_p`.
+///
+/// **The caller must pass the result through exactly the scaling it applies to
+/// the source vector** (`--pulse-rhs nec2` multiplies by `−1/λ`). A load is a
+/// source, so it takes the source's units, and since the scaling is linear the
+/// port identity survives it: a load at the feed raises `Z_in` by exactly `Z_p`,
+/// whatever the rest of the matrix is. Adding bare `Z_p` instead, as this basis
+/// did until FND-124, gave `−4591 Ω` for a `1050 Ω` feed load: `Z_p` divided by
+/// the missing `−1/(λ·Δl)`.
+pub fn pocklington_load_diagonal(segs: &[Segment], loads: &[Complex64]) -> Vec<Complex64> {
+    loads.iter().zip(segs).map(|(z, s)| *z / s.length).collect()
 }
 
 #[cfg(test)]
