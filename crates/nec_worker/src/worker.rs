@@ -259,7 +259,7 @@ fn process_task(line: &str) -> TaskResult {
             // deck that parsed cleanly — and that the local CLI solves — crossed
             // the wire as `parse_error`, sending the reader hunting for a syntax
             // mistake that is not there. A plane-wave (`EX 1`) receive deck is the
-            // live case: it returns `NoFeedpoint`, which is a statement about what
+            // live case: it is refused as `UnsupportedConfig`, a statement about what
             // this worker supports, not about the deck's syntax (FND-049).
             //
             // Listing every variant means a new `SolveError` forces a decision
@@ -272,9 +272,9 @@ fn process_task(line: &str) -> TaskResult {
             let error_code = match &e {
                 SolveError::ParseError(_) => ErrorCode::ParseError,
                 SolveError::SingularMatrix(_) => ErrorCode::SingularMatrix,
-                SolveError::GeometryError(_)
-                | SolveError::UnsupportedConfig(_)
-                | SolveError::NoFeedpoint => ErrorCode::UnsupportedConfig,
+                SolveError::GeometryError(_) | SolveError::UnsupportedConfig(_) => {
+                    ErrorCode::UnsupportedConfig
+                }
                 // The first producer of this code. It has been in the enum — and
                 // so deserialisable by every released controller — since the
                 // crate's first commit, which is why a too-big deck can be given
@@ -576,7 +576,7 @@ mod tests {
     /// named, so a deck that **parsed cleanly** crossed the wire as `parse_error`.
     ///
     /// A plane-wave receive deck is the live case: it has no driven feedpoint, so
-    /// the worker returns `NoFeedpoint` — a statement about what this worker
+    /// the worker refuses it as `UnsupportedConfig` — a statement about what this worker
     /// supports, not about the deck's syntax. The local CLI solves the same deck.
     #[test]
     fn a_cleanly_parsed_deck_is_not_reported_as_a_parse_error() {
@@ -626,8 +626,8 @@ mod tests {
         // earlier RHS failure yields, so asserting the code alone would let a
         // reclassification silently certify the wrong exit as the tested one.
         assert!(
-            error_message.contains("no driven feedpoint"),
-            "expected the no-feedpoint exit, got: {error_message}"
+            error_message.contains("receiving antenna has no feedpoint"),
+            "expected the receive-deck exit, got: {error_message}"
         );
         assert!(
             warnings.iter().any(|w| w.contains("ZZ")),
@@ -667,6 +667,49 @@ mod tests {
                 .any(|w| w.contains("interpreting segment 0")),
             "the card note must survive the refusal: {warnings:?}"
         );
+    }
+
+    /// FND-059 at the receive-deck refusal: a flaw found at the stamps survives
+    /// it. The refusal runs after the stamps; ahead of them, the note is lost.
+    #[test]
+    fn a_receive_deck_refusal_keeps_the_stamp_caveats() {
+        let deck = "CM card note, and a plane wave\nCE\n\
+                    GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nNT 1 0 1 0 0.001 0 0 0 0 0\n\
+                    EX 1 1 1 0 30 0 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error {
+            error_message,
+            warnings,
+            ..
+        } = &result
+        else {
+            panic!("expected a receive-deck refusal: {result:?}");
+        };
+        assert!(
+            error_message.contains("receiving antenna has no feedpoint"),
+            "{error_message}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("interpreting segment 0")),
+            "the card note must survive the refusal: {warnings:?}"
+        );
+    }
+
+    /// An EX type outside 0-5 is refused for what it is. `feedpoints` skips such
+    /// a card, so a receive-deck check placed ahead of the RHS build called this
+    /// deck a receive deck and sent the reader to frontends that refuse it too.
+    #[test]
+    fn an_unknown_ex_type_is_not_called_a_receive_deck() {
+        let deck = "CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    EX 9 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let result = process_task(&task_line(deck));
+        let TaskResult::Error { error_message, .. } = &result else {
+            panic!("expected a refusal: {result:?}");
+        };
+        assert!(error_message.contains("EX type 9"), "{error_message}");
+        assert!(!error_message.contains("receiving"), "{error_message}");
     }
 
     /// ...and a deck refused before anything was parsed reports none, rather than

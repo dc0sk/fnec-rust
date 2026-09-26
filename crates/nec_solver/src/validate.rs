@@ -1106,34 +1106,41 @@ pub fn mixed_excitation_error(deck: &NecDeck) -> Option<String> {
     None
 }
 
-/// Why a deck has no impedance a delta-gap frontend can report, if that is the
-/// case — named, rather than left to a fallthrough.
+/// Why a deck has no feedpoint impedance to report — named, with the caller's
+/// route to what it *can* have.
 ///
-/// A current source **is** a feedpoint, but pricing one needs the solved port
-/// voltage, which only the CLI's Hallén path computes. A frontend without that
-/// machinery has to decline, and the useful question is *which* way it declines:
-/// the GUI and the Python bindings fell through their feedpoint loop to
-/// "deck has no EX card", which is false for a deck that plainly has one and
-/// sends the reader looking for a missing card (FND-038).
+/// An impedance-shaped frontend (the GUI's Solve tab, `fnec_py.solve_deck_str`,
+/// the distributed worker) prices a delta gap as `V / I` and a current source
+/// from the solved port voltage (FND-045). It calls this only after both have
+/// failed to find anything to price. The deck that then remains is a plane-wave
+/// **receive** deck: it has an `EX` card and solves perfectly well for induced
+/// currents and a pattern, but a receiving antenna has no feedpoint, so there is
+/// no input impedance to return (FND-108).
 ///
-/// `remedy` is the caller's, because the honest advice differs: the distributed
-/// path says "run without `--hosts`", a GUI says "use the CLI". Everything else
-/// is the same sentence, which is why it lives here rather than a third time in
-/// each frontend.
-pub fn unpriceable_feedpoint_error(deck: &NecDeck, remedy: &str) -> Option<String> {
-    // Only when there is no delta gap at all: a deck carrying both is priced from
-    // the delta gap and needs no excuse.
-    if crate::excitation::first_delta_gap_feedpoint(deck).is_some() {
-        return None;
+/// This used to name only the current-source case, which every frontend had
+/// since learned to price, so it returned `None` at both call sites and each fell
+/// back to "no driven feedpoint (EX voltage source) found in deck" — true, but it
+/// told the reader neither that the deck is fine nor where to solve it (FND-146).
+///
+/// `remedy` is the caller's, because the route differs: the GUI has a Currents
+/// tab, `fnec_py` a currents entry point, the worker neither. A deck with no `EX`
+/// at all never gets here — `pre_solve_error` refuses it first, naming the card.
+pub fn unpriceable_feedpoint_error(deck: &NecDeck, remedy: &str) -> String {
+    let plane_wave = deck.cards.iter().find_map(|card| match card {
+        nec_model::card::Card::Ex(ex) if ex.kind().feedpoint_role() == FeedpointRole::PlaneWave => {
+            Some(ex)
+        }
+        _ => None,
+    });
+    match plane_wave {
+        Some(ex) => format!(
+            "EX type {} is an incident plane wave: a receiving antenna has no feedpoint, \
+             so there is no input impedance to report; {remedy}",
+            ex.excitation_type
+        ),
+        // Defensive: every other deck is priced or refused before this runs.
+        None => format!("no driven feedpoint (EX voltage or current source) in deck; {remedy}"),
     }
-    let (ex, _) = crate::excitation::feedpoints(deck)
-        .find(|(_, role)| *role == FeedpointRole::CurrentSource)?;
-    Some(format!(
-        "EX type {} (current source) on tag {} segment {}: a current-source \
-         feedpoint is priced from the solved port voltage, which this path does \
-         not compute; {remedy}",
-        ex.excitation_type, ex.tag, ex.segment
-    ))
 }
 
 /// The same set for a whole frequency sweep.
@@ -1911,40 +1918,19 @@ mod tests {
     }
 
     #[test]
-    fn a_current_source_only_deck_is_declined_by_name_not_called_cardless() {
-        // FND-038. The GUI and the bindings fell through their feedpoint loop to
-        // "deck has no EX card" — false for a deck that plainly has one, and it
-        // sends the reader looking for a missing card instead of the real reason.
+    fn a_receive_deck_is_declined_as_one_with_the_callers_route() {
+        // FND-108/FND-146. This returned `None` for a plane-wave deck, the only
+        // class that reaches it, so every caller fell back to a sentence that
+        // named no remedy.
         let (deck, _segs) = deck_and_segs(
-            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 1 1 1 0 90 0 0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let msg = unpriceable_feedpoint_error(&deck, "use the fnec CLI").expect("a named reason");
-        assert!(msg.contains("current source"), "{msg}");
-        assert!(msg.contains("tag 1 segment 11"), "{msg}");
-        assert!(msg.contains("use the fnec CLI"), "{msg}");
-        assert!(
-            !msg.contains("no EX card"),
-            "must not blame a card the deck has: {msg}"
-        );
-    }
-
-    #[test]
-    fn a_deck_with_both_source_kinds_needs_no_excuse() {
-        // Priced from the delta gap, so there is nothing to decline. Without this
-        // the check could fire on any deck containing a current source at all.
-        let (deck, _segs) = deck_and_segs(
-            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 5 0 1.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-        );
-        assert_eq!(unpriceable_feedpoint_error(&deck, "use the fnec CLI"), None);
-    }
-
-    #[test]
-    fn a_deck_with_no_feedpoint_at_all_gets_no_current_source_excuse() {
-        // A genuinely cardless deck must still fall through to the caller's own
-        // message, or this would replace one wrong reason with another.
-        let (deck, _segs) =
-            deck_and_segs("GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nFR 0 1 0 0 14.2 0.0\nEN\n");
-        assert_eq!(unpriceable_feedpoint_error(&deck, "use the fnec CLI"), None);
+        let msg = unpriceable_feedpoint_error(&deck, "open the Currents tab");
+        assert!(msg.contains("plane wave"), "{msg}");
+        assert!(msg.contains("receiving antenna has no feedpoint"), "{msg}");
+        assert!(msg.ends_with("open the Currents tab"), "{msg}");
+        // NTHETA/NPHI are not a location; the message must not cite them as one.
+        assert!(!msg.contains("segment"), "{msg}");
     }
 
     #[test]

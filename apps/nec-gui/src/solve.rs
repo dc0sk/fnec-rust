@@ -617,17 +617,13 @@ fn feedpoint_impedance(
         return Ok((z_in, seg.tag as usize, seg.tag_index as usize));
     }
     // Reached only when the deck has no driven feedpoint at all — a plane-wave
-    // receive deck. Current sources are priced above now (FND-045), so the
-    // "use the fnec CLI" remedy no longer applies to them.
-    Err(
-        nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
-            .unwrap_or_else(|| {
-                // Not "no EX card" here either: a plane-wave receive deck has one,
-                // and #397 deliberately lets such decks solve. What it lacks is a
-                // *driven* feedpoint. Same wording the worker already used.
-                "no driven feedpoint (EX voltage source) found in deck".to_string()
-            }),
-    )
+    // receive deck. The Currents tab solves one, so the refusal points there
+    // rather than at another program (FND-108). Not the Pattern tab: that draws
+    // the induced current's re-radiation, which is not a receive pattern.
+    Err(nec_solver::validate::unpriceable_feedpoint_error(
+        deck,
+        "the Currents tab solves a receive deck for its induced currents",
+    ))
 }
 
 /// Run a sweep on the selected solver over a frequency range for the deck at `path`.
@@ -1164,6 +1160,20 @@ mod tests {
     /// adoption — reverting the GUI to its old loop passed it, because no call
     /// edge to the GUI existed at all. That trap is why this still goes through
     /// `solve_deck_str`.
+    /// FND-108: the Solve tab refuses a receive deck — it has no input impedance —
+    /// and points at the tabs in this same window that do solve it.
+    #[test]
+    fn a_receive_deck_is_sent_to_the_currents_tab_which_solves_it() {
+        let deck_src = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
+        let e = solve_deck_str(deck_src, SolverKind::Hallen).expect_err("no feedpoint");
+        assert!(e.contains("receiving antenna has no feedpoint"), "{e}");
+        assert!(e.contains("Currents tab"), "{e}");
+        // The route it names must be real.
+        let pts = current_distribution_deck_str(deck_src, SolverKind::Hallen)
+            .expect("the Currents tab solves a receive deck");
+        assert_eq!(pts.len(), 51);
+    }
+
     #[test]
     fn a_plane_wave_is_not_read_as_the_feedpoint() {
         let deck_src = include_str!("../../../corpus/dipole-planewave-then-source-51seg.nec");

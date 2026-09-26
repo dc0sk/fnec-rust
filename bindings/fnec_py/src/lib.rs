@@ -3,11 +3,14 @@
 
 //! Python bindings for fnec.
 //!
-//! Exposes two functions:
+//! Exposes three functions:
 //! - `solve_deck_str(deck: str) -> dict`   — solve the first frequency point.
 //! - `sweep_deck_str(deck: str) -> list[dict]` — solve all frequency points.
+//! - `solve_currents_deck_str(deck: str) -> dict` — the segment currents at the
+//!   first frequency point; the one entry point that answers a plane-wave
+//!   receive deck, which has no feedpoint impedance (FND-108).
 //!
-//! Both functions return dicts with keys:
+//! The two impedance functions return dicts with keys:
 //!   `freq_mhz`, `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`
 //!
 //! Errors are raised as `RuntimeError` with a descriptive message. Geometry the
@@ -53,18 +56,34 @@ fn py_solver_context(
     }
 }
 
-/// Solve a NEC deck string at one frequency.
+/// A deck solved for its currents at one frequency.
+struct SolvedStructure {
+    segs: Vec<nec_solver::Segment>,
+    /// The applied-field excitation vector, which prices a delta gap.
+    v_vec: Vec<Complex64>,
+    /// The wire currents — what radiates, and what the CLI's current table prints.
+    wire: Vec<Complex64>,
+    /// The currents the sources deliver: the wire current plus any TL/NT branch
+    /// in parallel with a feed (FND-123). Equal to `wire` without networks.
+    source: Vec<Complex64>,
+    /// The solved port voltage of a current-source deck.
+    port_voltage: Option<Complex64>,
+    warnings: Vec<String>,
+}
+
+/// Validate and solve a deck at one frequency, for every drive the shared routed
+/// solve takes — delta gap, current source, and plane-wave receive.
 ///
-/// Returns the impedance record and the non-fatal caveats the caller should raise
-/// as Python warnings. `Err` means the deck was rejected — either it could not be
-/// solved at all, or `nec_solver::validate` found geometry outside the supported
-/// class, which the CLI has always refused and these bindings used to solve
-/// silently (review-260719 FIND-004).
-fn solve_at_freq(
+/// `Err` means the deck was rejected — either it could not be solved at all, or
+/// `nec_solver::validate` found geometry outside the supported class, which the
+/// CLI has always refused and these bindings used to solve silently
+/// (review-260719 FIND-004). The impedance and the currents entry points both
+/// start here, so they cannot disagree about which decks are solvable.
+fn solve_structure(
     deck: &nec_model::deck::NecDeck,
     freq_hz: f64,
     solver: nec_solver::validate::SolverKind,
-) -> Result<(std::collections::HashMap<String, f64>, Vec<String>), String> {
+) -> Result<SolvedStructure, String> {
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
@@ -110,21 +129,49 @@ fn solve_at_freq(
     // one decision shared by every frontend (FND-121). This branch used to end in
     // a plain `solve_hallen` with no paths arm, so a bent or split geometry was
     // answered on the wrong basis, silently, exactly as in the worker and the GUI.
-    let (currents, port_voltage) = if mpie {
+    let (wire, source, port_voltage) = if mpie {
         // Its refusals travel inside `solve_mpie_session` (#414), so this branch
         // cannot hand it a deck it would answer with a card silently ignored.
         let currents = nec_solver::solve_mpie_session(deck, &segs, &ground, freq_hz)
             .map_err(|e| e.to_string())?;
-        (currents, None)
+        (currents.clone(), currents, None)
     } else {
         let loads = nec_solver::build_deck_stamps(deck, &segs, freq_hz).diagonal;
         let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
         // The source currents: a feed that is also a TL/NT port delivers the
         // network branch too, and the impedance is priced from that (FND-123).
-        (routed.source_currents(), routed.port_voltage)
+        let source = routed.source_currents();
+        (routed.currents, source, routed.port_voltage)
     };
+    Ok(SolvedStructure {
+        segs,
+        v_vec,
+        wire,
+        source,
+        port_voltage,
+        warnings,
+    })
+}
 
+/// Solve a NEC deck string at one frequency, for its feedpoint impedance.
+///
+/// Returns the impedance record and the non-fatal caveats the caller should raise
+/// as Python warnings. `Err` means the deck was rejected (see [`solve_structure`])
+/// or has no feedpoint to price.
+fn solve_at_freq(
+    deck: &nec_model::deck::NecDeck,
+    freq_hz: f64,
+    solver: nec_solver::validate::SolverKind,
+) -> Result<(std::collections::HashMap<String, f64>, Vec<String>), String> {
+    let SolvedStructure {
+        segs,
+        v_vec,
+        source: currents,
+        port_voltage,
+        mut warnings,
+        ..
+    } = solve_structure(deck, freq_hz, solver)?;
     let i_vec = &currents;
 
     if let Some(v_port) = port_voltage {
@@ -210,16 +257,12 @@ fn solve_at_freq(
         rec.insert("z_arg_deg".to_string(), z_arg_deg);
         return Ok((rec, warnings));
     }
-    // See the GUI's copy: a current-source-only deck has an EX card, so blaming
-    // its absence is both false and unactionable (FND-038).
-    Err(
-        nec_solver::validate::unpriceable_feedpoint_error(deck, "use the fnec CLI for this deck")
-            .unwrap_or_else(|| {
-                // A plane-wave receive deck has an EX card too; what it lacks is a
-                // driven feedpoint. Matches the worker's wording.
-                "no driven feedpoint (EX voltage source) found in deck".to_string()
-            }),
-    )
+    // A plane-wave receive deck: solvable, but with no feedpoint to price. The
+    // refusal names the entry point that answers it (FND-108).
+    Err(nec_solver::validate::unpriceable_feedpoint_error(
+        deck,
+        "call fnec_py.solve_currents_deck_str for its induced currents",
+    ))
 }
 
 /// Raise each message as a Python `UserWarning`, so a caveat is visible by default
@@ -260,6 +303,19 @@ fn solver_from_name(name: &str) -> PyResult<nec_solver::validate::SolverKind> {
     }
 }
 
+/// The frequency a single-point entry point solves at: the deck's first.
+fn first_frequency_hz(deck: &nec_model::deck::NecDeck) -> PyResult<f64> {
+    let freqs = frequencies_from_deck(deck);
+    freqs.first().copied().ok_or_else(|| {
+        // The shared sentence (FND-070). No `--sweep-config` remedy: these
+        // bindings take their frequencies from the deck only.
+        pyo3::exceptions::PyRuntimeError::new_err(
+            nec_solver::validate::no_frequency_error(&freqs, "Add an `FR` card to the deck.")
+                .unwrap_or_else(|| "deck has no FR card".to_string()),
+        )
+    })
+}
+
 /// Solve a NEC deck string at the first frequency defined by its FR card.
 ///
 /// Returns a dict with keys: ``freq_mhz``, ``tag``, ``seg``,
@@ -272,15 +328,7 @@ fn solve_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     let solver = solver_from_name(solver)?;
     let result = parse(deck)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
-    let freqs = frequencies_from_deck(&result.deck);
-    let freq_hz = freqs.first().copied().ok_or_else(|| {
-        // The shared sentence (FND-070). No `--sweep-config` remedy: these
-        // bindings take their frequencies from the deck only.
-        pyo3::exceptions::PyRuntimeError::new_err(
-            nec_solver::validate::no_frequency_error(&freqs, "Add an `FR` card to the deck.")
-                .unwrap_or_else(|| "deck has no FR card".to_string()),
-        )
-    })?;
+    let freq_hz = first_frequency_hz(&result.deck)?;
     let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz, solver)
         .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
     let mut seen = Vec::new();
@@ -363,11 +411,60 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     Ok(pyo3::types::PyList::new(py, records)?.into())
 }
 
+/// Solve a NEC deck string for its segment currents at the first frequency
+/// defined by its FR card.
+///
+/// Returns a dict with ``freq_mhz`` and ``currents``: a list with one dict per
+/// segment, in geometry order, with keys ``tag``, ``seg``, ``re``, ``im``,
+/// ``mag`` and ``phase_deg`` (amperes, degrees) — the CLI's ``CURRENTS`` table.
+///
+/// This is the entry point for a plane-wave (``EX 1``/``2``/``3``) receive deck,
+/// which the impedance functions refuse because a receiving antenna has no
+/// feedpoint (FND-108). It answers driven decks too, with the same solve.
+///
+/// The currents are the wire currents. At a feed that is also a ``TL``/``NT``
+/// port the source additionally delivers the network branch, which is not a
+/// wire current and is not listed — as in the CLI and nec2c.
+///
+/// Raises ``RuntimeError`` on parse or solver errors.
+#[pyfunction]
+#[pyo3(signature = (deck, solver = "hallen"))]
+fn solve_currents_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject> {
+    let solver = solver_from_name(solver)?;
+    let result = parse(deck)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("parse error: {e}")))?;
+    let freq_hz = first_frequency_hz(&result.deck)?;
+    let mut solved = solve_structure(&result.deck, freq_hz, solver)
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+    let mut seen = Vec::new();
+    let parse_warnings: Vec<String> = result.warnings.iter().map(ToString::to_string).collect();
+    emit_warnings(py, &parse_warnings, &mut seen)?;
+    solved.warnings.sort();
+    emit_warnings(py, &solved.warnings, &mut seen)?;
+
+    let rows = pyo3::types::PyList::empty(py);
+    for (seg, i) in solved.segs.iter().zip(&solved.wire) {
+        let row = PyDict::new(py);
+        row.set_item("tag", seg.tag)?;
+        row.set_item("seg", seg.tag_index)?;
+        row.set_item("re", i.re)?;
+        row.set_item("im", i.im)?;
+        row.set_item("mag", i.norm())?;
+        row.set_item("phase_deg", i.im.atan2(i.re).to_degrees())?;
+        rows.append(row)?;
+    }
+    let d = PyDict::new(py);
+    d.set_item("freq_mhz", freq_hz / 1e6)?;
+    d.set_item("currents", rows)?;
+    Ok(d.into())
+}
+
 /// fnec Python bindings — NEC deck solver.
 #[pymodule]
 fn fnec_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(solve_deck_str, m)?)?;
     m.add_function(wrap_pyfunction!(sweep_deck_str, m)?)?;
+    m.add_function(wrap_pyfunction!(solve_currents_deck_str, m)?)?;
     Ok(())
 }
 
@@ -419,6 +516,23 @@ mod tests {
         .expect_err("two current sources must be refused");
         assert!(err.contains("2 current sources"), "{err}");
         assert!(err.contains("tag 2 segment 11"), "{err}");
+    }
+
+    /// FND-108: a plane-wave receive deck solves for currents through the shared
+    /// structure solve, and the impedance path refuses it naming that route.
+    #[test]
+    fn a_receive_deck_solves_for_currents_and_is_refused_for_impedance() {
+        let deck_src =
+            "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 1 1 1 0 30 0 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let kind = nec_solver::validate::SolverKind::Hallen;
+        let solved = solve_structure(&parsed.deck, 14.2e6, kind).expect("a receive deck solves");
+        // nec2c's centre current for this deck, -2.6778e-2 + j1.6886e-2 A.
+        let centre = solved.wire[25];
+        let want = Complex64::new(-2.6778e-2, 1.6886e-2);
+        assert!((centre - want).norm() < 0.06 * want.norm(), "{centre}");
+        let err = solve_at_freq(&parsed.deck, 14.2e6, kind).expect_err("no feedpoint");
+        assert!(err.contains("solve_currents_deck_str"), "{err}");
     }
 
     /// The control. Without it, a guard that refused every deck would pass above.

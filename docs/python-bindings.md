@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/python-bindings.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-26
 ---
 
 # fnec Python Bindings (`fnec_py`)
@@ -114,6 +114,38 @@ for r in records:
     print(f"{r['freq_mhz']:.1f} MHz  Z = {r['z_re']:.1f} + {r['z_im']:.1f}j Ω")
 ```
 
+### `solve_currents_deck_str(deck: str, solver: str = "hallen") -> dict`
+
+Solve the deck at its first frequency and return the current on every segment —
+the CLI's `CURRENTS` table:
+
+```python
+{'freq_mhz': 14.2,
+ 'currents': [{'tag': 1, 'seg': 1, 're': ..., 'im': ..., 'mag': ..., 'phase_deg': ...},
+              ...]}   # one row per segment, in geometry order; amperes, degrees
+```
+
+This is the entry point for a **plane-wave receive deck** (`EX 1`/`2`/`3`). A
+receiving antenna has no feedpoint, so `solve_deck_str` and `sweep_deck_str` have
+no impedance to return for one and raise `RuntimeError` naming this function
+(FND-108). It answers driven decks too, through the same solve as the impedance
+functions.
+
+The rows are wire currents. Where a feed is also a `TL`/`NT` port, the source
+additionally delivers the network branch; that is not a wire current and is not
+listed, as in the CLI and nec2c.
+
+```python
+receive = """CE
+GW 1 51 0 0 -5.282 0 0 5.282 0.001
+GE
+EX 1 1 1 0 30 0 0
+FR 0 1 0 0 14.2 0
+EN
+"""
+centre = fnec_py.solve_currents_deck_str(receive)["currents"][25]
+```
+
 ## Running the smoke tests
 
 ```sh
@@ -133,7 +165,8 @@ Adjust the `PYTHONPATH` Python version component to match your environment.
 ## Limitations (scaffolding phase)
 
 - Single feedpoint per record (first EX card).
-- No radiation-pattern output.
+- No radiation-pattern output, so a receive deck returns its currents but not
+  its receive pattern (the CLI computes that).
 - Hallen and MPIE only: the pulse, continuity and sinusoidal *bases* that
   `fnec --solver` offers are not selectable from Python. (This line previously
   said "Hallen solver only"; `solver="mpie"` has been accepted since #413 /
