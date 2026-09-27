@@ -2,10 +2,114 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-27
 ---
 
 # Release Notes
+
+## 0.19.0 — One answer, however the deck is written
+
+Twenty-nine changes since 0.18.0 (#451–#479). The Hallén solver's answers moved
+onto nec2c's, a common way of writing an inverted-V stopped producing garbage,
+wires on perfect ground solve, and what fnec still cannot model is refused or
+warned about by name. The findings ledger went from 149 findings / 33 open to
+**167 / 0 open**.
+
+Every value below was re-measured at the release commit (release builds, 14.2 MHz).
+
+### Answers that change
+
+Read this before upgrading if you have recorded results. **Every Hallén impedance
+moves**, most by a few percent and some by a great deal:
+
+| deck | nec2c 1.3.1 | fnec 0.18.0 | fnec 0.19.0 |
+|---|---|---|---|
+| λ/2 dipole, 51 segments, centre-fed | 79.35 + j46.22 | 74.24 + j13.90 | 78.83 + j42.43 |
+| same dipole, fed off-centre (segment 13) | 171.58 + j81.93 | 155.15 + j17.27 | 170.01 + j73.98 |
+| two dipoles 1 m apart, one fed | 6.28 + j37.74 | 3.31 − j14.54 | 5.40 + j32.54 |
+| collinear chain, 3 + 30 segments | 83.19 + j47.59 | 69.12 − j34.67 | 81.07 + j38.27 |
+| inverted-V written end-to-start, apex feed | 86.79 + j197.23 | **−24.06 − j1321.25** | 87.71 + j198.00 |
+| λ/4 monopole standing on PEC ground | 39.58 + j23.21 | refused | 39.29 + j21.37 |
+
+The causes, each a separate fix. The free-end rows modelled every wire one segment
+short (FND-156). The homogeneous solution carried `cos` alone, so an asymmetric
+current could not be represented (FND-158). Free ends used equal weights across
+unequal segments (FND-159). A fixed regularisation term biased small and coupled
+problems (FND-164: 4.7 % on a 2 cm dipole). And a bent chain written end-to-start
+was routed to the wrong basis entirely (FND-167). The residual against nec2c on the
+dipole is now 0.7 % in R and 8 % in X, first-order in segment length.
+
+*Migration.* Re-baseline any stored Hallén results. The corpus references were
+re-pinned against these changes and are gated against nec2c where one exists.
+
+### Refused or gated, where 0.18.0 answered
+
+- **`--solver pulse` and `--solver continuity` need `--experimental-solver`**
+  (FND-080). They have never produced a correct dipole impedance. With the flag,
+  every result carries a `CAVEAT UNVALIDATED SOLVER` line (text) or a `caveat`
+  field (JSON). Without it: exit 2, `error: --solver pulse is not a validated solver
+  and runs only with --experimental-solver …`.
+- **An `LD` card fnec cannot apply is refused**, not skipped with a warning
+  (FND-161): `error: LD 9 1 26 26: load type 9 is not supported (fnec models LD
+  types 0-5)`, exit 1.
+- **`TL` uses the NEC-2 card layout** (FND-111). fnec's old layout is refused with
+  its rewrite: `TL 1 26 2 26 1 0 50.0 0.1 1.0` → `TL 1 26 2 26 50.0 0.1`. `TL`/`NT`
+  are now solved as networks across the port gaps (FND-123), and an unusable one is
+  an error.
+- **A deck with no frequency from any source is refused** (#451): exit 1, `error:
+  FR: this deck has no frequency to solve at …`; it used to exit 0 writing nothing.
+- **A same-tag `GM` copy is numbered as nec2c numbers it** (FND-135): segment *n* of
+  a tag is its *n*-th occurrence, so an `EX`/`LD` naming the copy now reaches it, and
+  a translated copy is its own wire.
+
+*Migration.* Scripts calling the pulse bases add `--experimental-solver`. Decks with
+the old `TL` layout take the printed rewrite.
+
+### Warned about, where 0.18.0 was silent
+
+- **A bent conductor on Hallén** (FND-162): Hallén has no condition at a bend. A
+  90° L is 40 % off in R, and an inverted-V fed away from its apex 35 %. Every
+  frontend now says so and points to `--solver mpie`, which tracks nec2c on these
+  decks. What was tried is in `docs/hallen-bends.md`.
+- A CLI sweep reports negative feedpoint resistance **once**, counting the points
+  (FND-069).
+
+### New
+
+- **Wires standing on perfect ground solve** by explicit images (FND-082). Finite
+  ground contact is refused.
+- **`fnec_py.solve_currents_deck_str`** returns per-segment currents and answers
+  plane-wave receive decks (FND-108). The impedance-only frontends refuse a receive
+  deck with the route to use.
+- The MPIE's near-pair static term is integrated exactly (FND-157).
+
+### Distributed execution
+
+- **`--hosts` verifies worker SSH host keys** with `StrictHostKeyChecking=accept-new`
+  (FND-154). *Upgrade note:* a worker reinstalled with a new host key fails with
+  "Host key verification failed" until `ssh-keygen -R <host>` removes the old entry.
+- The unused result cache is removed; PH6-CHK-007 is withdrawn (FND-155).
+
+### GUI
+
+- Saves are atomic, and Save is refused over a deck loaded through a `--vars`
+  template (Save as… still writes the instantiated deck) (FND-152, FND-153).
+- File dialogs no longer block the window (FND-071).
+
+### Project and CI
+
+- **All eight CI jobs are required status checks on `main`**, and a release cannot
+  be tagged with a stale SBOM (FND-068).
+- One Rust toolchain pin, `rust-toolchain.toml` at **1.98.1**, is checked in CI and
+  locally (FND-149).
+- `scripts/check-all.sh` runs everything CI runs, including the Python bindings'
+  pytest (FND-066). The GPU gates can no longer pass a CPU fallback as a skip
+  (FND-163, FND-165).
+
+### Versions
+
+Workspace 0.18.0 → **0.19.0**; `fnec_py` 0.9.0 → **0.10.0**. One dependency left
+(`sha2`) and none arrived; the SBOM has 525 packages.
 
 ## 0.18.0 — Nothing drives it, so there is no solve
 
