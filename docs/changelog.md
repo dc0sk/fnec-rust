@@ -240,6 +240,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   in a different order (`pulse|hallen|…`); it now reads
   `hallen|pulse|continuity|sinusoidal|mpie` like the errors, which are built from
   `SolverMode::ALL`, and a test ties the usage line to it.
+- **The pulse solver's current-source path is marked dormant, and its corpus row
+  no longer carries a reference it cannot produce (FND-130).** `EX 4` with any
+  solver but Hallén is refused, so the path finds nothing to act on; it is kept
+  with the pulse bases (FND-080), documented as dormant. The corpus row's
+  -345.6 - j988.0 Ω was unread — the row expects the refusal — but read as live.
 
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in

@@ -121,6 +121,15 @@ use num_complex::Complex64;
 /// frontend quotes the other's interface.
 pub(crate) const CLI_MPIE_REMEDY: &str = "re-run with `--solver mpie`";
 
+/// **Dormant (FND-130).** The pulse solver's EX 4 current-source path. No input
+/// reaches it: an `EX 4` deck with any solver but Hallén is refused before the
+/// solve (`--solver hallen` only, corpus-pinned by
+/// `dipole-ex4-pulse-current-freesp-51seg`), so this finds no current source to
+/// act on. Retained rather than deleted because the pulse bases are kept, behind
+/// `--experimental-solver`, for experiment (maintainer, 2026-09-26, FND-080);
+/// lifting that refusal is the one change that would wake it, and it would then
+/// need the validation it never had — its only reference value was
+/// -345.6 - j988.0 Ω against Hallén's 74 Ω.
 pub(super) struct PulseCurrentSourceConstraint {
     pub(super) seg_index: usize,
     pub(super) source_current: Complex64,
@@ -326,6 +335,7 @@ pub(super) fn deck_has_current_source(deck: &nec_model::deck::NecDeck) -> bool {
     })
 }
 
+/// Dormant — see [`PulseCurrentSourceConstraint`].
 pub(super) fn collect_pulse_current_source_constraints(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
@@ -356,6 +366,7 @@ pub(super) fn collect_pulse_current_source_constraints(
     Ok(out)
 }
 
+/// Dormant — see [`PulseCurrentSourceConstraint`].
 pub(super) fn apply_pulse_current_source_constraints(
     z_mat: &mut ZMatrix,
     rhs: &mut [Complex64],
@@ -373,6 +384,7 @@ pub(super) fn apply_pulse_current_source_constraints(
     }
 }
 
+/// Dormant — see [`PulseCurrentSourceConstraint`].
 pub(super) fn pulse_current_source_voltage(
     constraint: &PulseCurrentSourceConstraint,
     i_vec: &[Complex64],
