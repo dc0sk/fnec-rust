@@ -838,7 +838,14 @@ pub fn solve_hallen_sinusoidal_basis(
 
 /// Tikhonov weight for [`solve_normal_equations`], RELATIVE: it is added after
 /// the columns are equilibrated to unit diagonal (FND-164).
-const HALLEN_TIKHONOV_REL: f64 = 1e-8;
+///
+/// Chosen by measurement, not by analogy with the old absolute value. Swept on a
+/// λ/2 dipole, a coupled pair, a steep split-V and a 2 cm dipole, every answer
+/// converges smoothly as λ → 0 (stable down to 1e-16). At 1e-12 each sits at
+/// that limit to < 1e-5 relative. At 1e-8 — the obvious "same number, now
+/// relative" — the dipole moved 0.30 Ω and the pair 9 %: after equilibration a
+/// relative 1e-8 is far MORE regularisation than the old absolute 1e-8 was here.
+const HALLEN_TIKHONOV_REL: f64 = 1e-12;
 
 /// Least squares `mat · x ≈ y` through its normal equations — the one
 /// implementation for every Hallén solver (it was five copies).
@@ -846,10 +853,10 @@ const HALLEN_TIKHONOV_REL: f64 = 1e-8;
 /// The normal matrix is Jacobi-equilibrated (`D⁻¹ MᴴM D⁻¹`, `D_ii = √(MᴴM)_ii`)
 /// before the Tikhonov term is added, so the regularisation is the same
 /// RELATIVE size for every column (FND-164). It was an absolute `λ = 1e-8`,
-/// which is negligible against a current column but not against the `sin`
-/// homogeneous column of an electrically tiny conductor, whose diagonal is
-/// ≈ `N·(kL)²/12`: a relative bias of ~5e-5 at kL = 0.01 and ~1e-3 at
-/// kL = 0.002. (The GPU solve adds its λ absolutely too, but its Björck
+/// whose size relative to a column depended on that column's scale. Measured
+/// against the λ → 0 limit, it biased a 2 cm dipole's R by 4.7 % (0.000157 vs
+/// 0.000150 Ω — the `sin` column's diagonal is ≈ `N·(kL)²/12`), a coupled pair by
+/// 0.25 % (5.4119 vs 5.3982 Ω) and a λ/2 dipole by 0.009 Ω. (The GPU solve adds its λ absolutely too, but its Björck
 /// refinement converges on the unregularised residual, which removes the bias.)
 fn solve_normal_equations(
     mat: &[Vec<Complex64>],
