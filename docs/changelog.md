@@ -102,6 +102,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
   test built the same cards inline, so the corpus deck — which records the nec2c
   capture — was checked by nothing; the test now reads the deck.
+- **The GUI's file dialogs no longer freeze it (FND-071).** Open deck, Open vars
+  and Save as… used blocking dialogs inside the update loop; they are async now,
+  run as tasks, and Save as… writes the document as it was when chosen.
+
 - **The GUI saves a deck atomically (FND-152).** Both Save and Save as… wrote
   with a truncate-then-write, so an interrupted save left a partial deck. They
   now write a temporary file beside the deck and rename it over, keeping the

@@ -136,6 +136,11 @@ impl FnecGui {
 
         if persist {
             // Fails soft: a missing config dir just skips persistence.
+            //
+            // Synchronous on purpose, unlike the dialogs (FND-071): a few hundred
+            // bytes, and two saves spawned as tasks could complete out of order
+            // and leave the OLDER session on disk. Ordering is worth more here
+            // than the microseconds.
             let _ = Session::from_state(&self.state).save();
         }
 
@@ -360,46 +365,61 @@ impl FnecGui {
                 Err(_) => Task::none(),
             }
         } else if matches!(message, Message::BrowseDeck) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("NEC deck", &["nec", "txt"])
-                .pick_file()
-            {
-                self.state
-                    .apply(&Message::DeckPathChanged(p.to_string_lossy().into_owned()));
-                let _ = Session::from_state(&self.state).save();
-            }
-            Task::none()
+            // Async dialogs, run as tasks: the blocking `rfd::FileDialog` held the
+            // event loop for as long as the dialog was open (FND-071). The chosen
+            // path comes back as the ordinary message, whose persistence is the
+            // reducer's `persists_to_session` rule rather than a save here.
+            Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("NEC deck", &["nec", "txt"])
+                    .pick_file(),
+                |h| h.map(|h| h.path().to_string_lossy().into_owned()),
+            )
+            .then(|p| match p {
+                Some(p) => Task::done(Message::DeckPathChanged(p)),
+                None => Task::none(),
+            })
         } else if matches!(message, Message::BrowseVars) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("Vars file", &["toml", "json"])
-                .pick_file()
-            {
-                self.state
-                    .apply(&Message::VarsPathChanged(p.to_string_lossy().into_owned()));
-                let _ = Session::from_state(&self.state).save();
-            }
-            Task::none()
+            Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Vars file", &["toml", "json"])
+                    .pick_file(),
+                |h| h.map(|h| h.path().to_string_lossy().into_owned()),
+            )
+            .then(|p| match p {
+                Some(p) => Task::done(Message::VarsPathChanged(p)),
+                None => Task::none(),
+            })
         } else if matches!(message, Message::BrowseSaveDeck) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("NEC deck", &["nec", "txt"])
-                .set_file_name("antenna.nec")
-                .save_file()
-            {
-                let path = p.to_string_lossy().into_owned();
-                let saved = match self.state.editor.doc.to_deck_string() {
-                    Ok(text) => {
+            // The run was armed by `apply` above, and the document rendered now:
+            // the write is of the document as it was when Save as… was chosen,
+            // and an edit made while the dialog is open retires the run, so its
+            // completion is dropped rather than marking newer edits saved.
+            let run = self
+                .state
+                .current_edit_save_run()
+                .expect("Save as… armed a save run in apply()");
+            let rendered = self.state.editor.doc.to_deck_string();
+            Task::perform(
+                async move {
+                    let handle = rfd::AsyncFileDialog::new()
+                        .add_filter("NEC deck", &["nec", "txt"])
+                        .set_file_name("antenna.nec")
+                        .save_file()
+                        .await?;
+                    let path = handle.path().to_string_lossy().into_owned();
+                    Some(rendered.and_then(|text| {
                         nec_gui::deck_write::save_deck_file(std::path::Path::new(&path), &text)
                             .map(|()| path)
-                    }
-                    Err(e) => Err(e),
-                };
-                let run = self
-                    .state
-                    .current_edit_save_run()
-                    .expect("Save as… armed a save run in apply()");
-                self.state.apply(&Message::DeckSaved(run, saved));
-            }
-            Task::none()
+                    }))
+                },
+                |r| r,
+            )
+            .then(move |saved| match saved {
+                Some(saved) => Task::done(Message::DeckSaved(run, saved)),
+                // Cancelled: nothing written, nothing to report.
+                None => Task::none(),
+            })
         } else {
             Task::none()
         };
