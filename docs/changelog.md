@@ -95,6 +95,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   with its own `Re Z`; the GUI and `fnec_py` already aggregated through the
   shared producer. The local and the distributed sweep now print one line
   ("N of M sweep points …"); a single frequency keeps the per-point sentence.
+- **A bad `--hosts` path is reported even when the deck is refused too
+  (FND-150).** The hosts file is now read with `--sweep-config`, before any
+  deck-level refusal; a deck with no frequency used to end the run first, so the
+  missing file was never mentioned.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

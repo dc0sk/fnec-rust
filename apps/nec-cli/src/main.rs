@@ -355,6 +355,20 @@ fn main() -> ExitCode {
     }
     // ----------------------------------------------------------------------
 
+    // Every configuration file the run names is read and checked here, before
+    // any refusal about the deck, as `--sweep-config` is just below: a bad
+    // `--hosts` path used to go unreported whenever an earlier deck refusal
+    // (a missing frequency) ended the run first (FND-150). Reading the file
+    // contacts nothing; the pool is built only once the run gets that far.
+    let hosts_cfg = match hosts_path.as_deref().map(HostsConfig::from_file) {
+        None => None,
+        Some(Ok(cfg)) => Some(cfg),
+        Some(Err(e)) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let freqs_hz = if let Some(ref sc_path) = sweep_config_path {
         match sweep_config::SweepConfig::from_file(sc_path) {
             Ok(sc) => sc.frequencies_hz,
@@ -443,7 +457,7 @@ fn main() -> ExitCode {
     // ------------------------------------------------------------------
     // Distributed solve via --hosts
     // ------------------------------------------------------------------
-    if let Some(ref hosts_path) = hosts_path {
+    if let (Some(ref hosts_path), Some(hosts_cfg)) = (hosts_path, hosts_cfg) {
         // Two flags change the answer locally and are dropped on the floor by the
         // distributed path: `run_distributed_solve` takes neither, and the worker
         // protocol carries no field for either. Left alone, both return a
@@ -501,6 +515,7 @@ fn main() -> ExitCode {
             &segs,
             &freqs_hz,
             hosts_path,
+            hosts_cfg,
             output_format,
             enable_benchmarking,
             bench_format,
@@ -844,6 +859,7 @@ fn run_distributed_solve(
     segs: &[nec_solver::Segment],
     freqs_hz: &[f64],
     hosts_path: &std::path::Path,
+    cfg: HostsConfig,
     output_format: OutputFormat,
     enable_benchmarking: bool,
     bench_format: BenchFormat,
@@ -855,13 +871,6 @@ fn run_distributed_solve(
     exec_requested_explicitly: bool,
     path: &std::path::Path,
 ) -> ExitCode {
-    let cfg = match HostsConfig::from_file(hosts_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
     // Before any connection, so a user who set a field that does nothing hears
     // about it even when the run then fails to reach a worker (FND-104).
     for line in cfg.ignored_field_warnings() {
