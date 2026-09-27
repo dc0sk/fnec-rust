@@ -131,6 +131,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   where the next segment does not start at its end. A dipole and its same-tag
   copy fed at segment 77 now equal the same pair written as two tags, to 1e-9,
   and nec2c's 44.055 + j79.902 Ω.
+- **The Hallén solve's regularisation no longer biases the answer (FND-164).**
+  Its normal equations added an absolute `λ = 1e-8`; measured against the λ → 0
+  limit, that moved a 2 cm dipole's R by 4.7 %, a coupled pair by 0.25 % and a
+  λ/2 dipole by 0.009 Ω. The five solvers now share one routine that equilibrates
+  the columns and adds a relative 1e-12, which sits at the limit on every deck
+  measured. Every Hallén impedance moves by the bias it carried.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally
