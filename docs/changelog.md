@@ -62,6 +62,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A bent conductor on the Hallén solver is warned about (FND-162).** Hallén
+  has no bend condition: a 90° L came out 40 % off in R, and an inverted-V fed away
+  from its apex 35 %, with no warning at all. Every frontend now says so, with the
+  measured error, and points to `--solver mpie`, which tracks nec2c on these decks.
+  The GUI and the Python bindings reach it too: `validate::diagnose` calls the
+  shared caveat producer instead of keeping its own list. What was tried and what
+  remains is in `docs/hallen-bends.md`.
+
 - **A bent chain written end-to-start is solved on the conductor-path basis
   (FND-167).** The route counted a path as "trivial" (straight) when its segments
   were forward and contiguous, without checking that they were straight, so the
