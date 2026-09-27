@@ -101,10 +101,12 @@ that, inflating one row by 7 and the integration subtotal with it, and **passed*
 
 **The configuration matters, so it is stated rather than implied.** These numbers are
 from a `--workspace` run. Feature unification turns on `nec_accel/wgpu` there, which
-adds four `nec_accel` lib tests (26 rather than 22) *and* is the only reason that
-crate's four `tests/*.rs` binaries compile at all — `cargo test -p nec_accel` alone
-fails to build them (FND-144). A count is not a property of the tree by itself; it is
-a property of the tree and the build configuration together.
+adds four `nec_accel` lib tests (26 rather than 22). Until FND-144 it was also the
+only reason that crate's four `tests/*.rs` binaries compiled — `cargo test -p
+nec_accel` alone failed to build them; the crate's tests now enable the feature
+themselves, and a per-crate run gives the same 26. A count is still not a property
+of the tree by itself; it is a property of the tree and the build configuration
+together.
 
 These counts are derived, not typed: `scripts/check-test-catalog-counts.py` enumerates
 what the harness will actually run and fails on drift. The previous figures — "~532
