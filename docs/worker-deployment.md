@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/worker-deployment.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Worker Node Deployment Guide
@@ -272,18 +272,20 @@ let (handles, cache) = connect_all(&cfg);
 
 ### SSH connection options
 
-The `SshWorkerHandle::connect` method passes these options to the `ssh`
-binary by default:
+Every `ssh` the controller runs — the worker connection, a reconnect, and the
+capability probes — passes these options (one list, `SSH_OPTIONS` in
+`crates/nec_worker/src/ssh_worker.rs`):
 
 | Option | Value | Purpose |
 |---|---|---|
-| `BatchMode` | `yes` | Disable interactive password prompts |
-| `StrictHostKeyChecking` | `no` | **Accept any host key without checking** — see Security Notes |
-| `UserKnownHostsFile` | `/dev/null` | **Never record or compare host keys** — see Security Notes |
+| `BatchMode` | `yes` | Disable interactive prompts |
+| `StrictHostKeyChecking` | `accept-new` | Record a never-seen host's key; **refuse a host whose key has changed** — see Security Notes |
 | `ConnectTimeout` | `5` | Abort after 5 seconds if host is unreachable |
 
-This table used to list only the first and last rows, omitting the two options
-that disable host-key verification.
+Host keys are kept in the controller user's own `~/.ssh/known_hosts`. Until
+FND-154 was fixed the list carried `StrictHostKeyChecking=no` and
+`UserKnownHostsFile=/dev/null`, which accepted any host key and never recorded
+one.
 
 ---
 
@@ -340,16 +342,18 @@ resonant frequency.
 
 ## Security Notes
 
-- **Host keys are not verified.** Every connection passes
-  `StrictHostKeyChecking=no` and `UserKnownHostsFile=/dev/null`, so the
-  controller accepts whatever machine answers at a worker's hostname, and
-  nothing about that host key is ever stored or compared. Anyone who can
-  intercept or redirect that connection can pose as a worker: they receive
-  every deck sent to it and can return any impedance they like, and the
-  controller reports it as a solved result. Run `--hosts` only on a network
-  you control. This is recorded as FND-154, and has not been changed yet
-  because tightening it would make new, never-seen hosts fail to connect
-  until their keys are known.
+- **Host keys are verified on every connection after the first**
+  (`StrictHostKeyChecking=accept-new`, FND-154). The first connection to a
+  worker records its key in `~/.ssh/known_hosts`; from then on a host that
+  answers with a different key is refused, so nobody on the network path can
+  pose as a known worker, receive its decks and return an impedance of their
+  choosing. **The first connection is trust-on-first-use:** to close that
+  window too, add each worker's key before its first use
+  (`ssh-keyscan -H <host> >> ~/.ssh/known_hosts`, then compare the fingerprint
+  with the worker's own `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
+  A worker whose key legitimately changed (reinstalled) is refused with
+  "Host key verification failed" until its old entry is removed with
+  `ssh-keygen -R <host>`.
 - The worker subprocess runs with the SSH user's full privileges on the
   worker node.  Use a dedicated service account with minimal filesystem
   permissions.

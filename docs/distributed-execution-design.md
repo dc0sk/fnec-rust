@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/distributed-execution-design.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-27
 ---
 
 # Distributed Execution Design
@@ -105,10 +105,12 @@ accepted.  Job-level authorisation (per-deck ACLs) is out of scope for Phase 6.
   (`PasswordAuthentication no`).  The deployment guide enforces this.
 - **Agent forwarding is not required** — the controller connects outbound to
   workers; workers never need to reach back to the controller.
-- **Host key verification is required** — `StrictHostKeyChecking yes` in the
-  controller's SSH invocation.  Operators add worker host keys to
-  `~/.ssh/known_hosts` during initial setup.  `StrictHostKeyChecking accept-new`
-  is permitted during first-time provisioning only.
+- **Host key verification is on** — the controller's SSH invocation passes
+  `StrictHostKeyChecking=accept-new` with the user's own `~/.ssh/known_hosts`
+  (FND-154): a never-seen worker's key is recorded, a changed key is refused.
+  Operators who want no trust-on-first-use window add worker keys to
+  `known_hosts` during initial setup. (This section once said `yes`, while the
+  code passed `no` with `/dev/null` as the known-hosts file.)
 
 ### Future path
 

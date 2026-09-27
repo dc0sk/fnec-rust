@@ -59,6 +59,37 @@ fn parse_gpu_available(stdout: &str) -> bool {
     stdout.contains("has_gpu")
 }
 
+/// The options every controller-to-worker SSH connection uses.
+///
+/// Host keys are verified (FND-154). The list used to carry
+/// `StrictHostKeyChecking=no` and `UserKnownHostsFile=/dev/null`, so the
+/// controller accepted whatever machine answered at a worker's hostname and
+/// never stored or compared a key: anyone on the network path could pose as a
+/// worker, receive its decks and return any impedance as a solved result.
+///
+/// `accept-new` keeps a first connection working without a prompt — the key is
+/// recorded in the user's own `known_hosts` — and refuses a host whose key has
+/// CHANGED since, which is the attack. `BatchMode` stays: a worker connection
+/// must never stop to ask a question nobody is there to answer.
+///
+/// One list, used by every `ssh` this module spawns, because it was four copies
+/// of the same eight lines, which is how one of them would have been missed.
+const SSH_OPTIONS: [&str; 3] = [
+    "BatchMode=yes",
+    "StrictHostKeyChecking=accept-new",
+    "ConnectTimeout=5",
+];
+
+/// An `ssh` command to `destination` with [`SSH_OPTIONS`] applied.
+fn ssh_command(destination: &str) -> Command {
+    let mut cmd = Command::new("ssh");
+    for option in SSH_OPTIONS {
+        cmd.arg("-o").arg(option);
+    }
+    cmd.arg(destination);
+    cmd
+}
+
 impl SshWorkerHandle {
     /// Connect to a remote worker via SSH.
     ///
@@ -77,16 +108,7 @@ impl SshWorkerHandle {
         };
         let binary = entry.binary_path.as_deref().unwrap_or("fnec");
 
-        let child = Command::new("ssh")
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(&user_part)
+        let child = ssh_command(&user_part)
             .arg(binary)
             .arg("worker")
             .arg("--stdio")
@@ -179,16 +201,7 @@ impl SshWorkerHandle {
         let user_part = self.user_part();
         let binary = self.binary_path.as_deref().unwrap_or("fnec");
 
-        let child = Command::new("ssh")
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(&user_part)
+        let child = ssh_command(&user_part)
             .arg(binary)
             .arg("worker")
             .arg("--stdio")
@@ -262,16 +275,7 @@ impl SshWorkerHandle {
             None => self.hostname.clone(),
         };
 
-        let cpu_output = Command::new("ssh")
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(&user_part)
+        let cpu_output = ssh_command(&user_part)
             .arg("nproc 2>/dev/null || echo 1")
             .output();
 
@@ -282,16 +286,7 @@ impl SshWorkerHandle {
                 .as_deref(),
         );
 
-        let gpu_stdout = Command::new("ssh")
-            .arg("-o")
-            .arg("BatchMode=yes")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(&user_part)
+        let gpu_stdout = ssh_command(&user_part)
             .arg("lspci 2>/dev/null | grep -qiE '(vga|3d|display|nvidia|amd)' && echo has_gpu || echo no_gpu")
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -382,6 +377,37 @@ pub fn connect_all(config: &crate::HostsConfig) -> (Vec<SshWorkerHandle>, crate:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FND-154: host keys are verified, and nothing turns verification off.
+    #[test]
+    fn worker_connections_verify_host_keys() {
+        let cmd = ssh_command("worker.example");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter().any(|a| a == "StrictHostKeyChecking=accept-new"),
+            "{args:?}"
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|a| a == "StrictHostKeyChecking=no" || a.starts_with("UserKnownHostsFile")),
+            "{args:?}"
+        );
+        assert_eq!(args.last().map(String::as_str), Some("worker.example"));
+    }
+
+    /// Every `ssh` this module spawns goes through `ssh_command`. The options
+    /// were four hand-copied lists; a fifth call site built by hand would skip
+    /// the verification the test above pins.
+    #[test]
+    fn every_ssh_process_is_built_by_ssh_command() {
+        let src = include_str!("ssh_worker.rs");
+        let spawns = src.matches(concat!("Command::new(", "\"ssh\")")).count();
+        assert_eq!(spawns, 1, "an ssh Command is built outside ssh_command");
+    }
 
     #[test]
     fn connect_all_empty_config_returns_empty() {
