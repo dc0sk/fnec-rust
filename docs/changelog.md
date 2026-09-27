@@ -60,6 +60,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `last_produced_on` date, which a squash-merge changes without changing the data.
   It now compares the version (which survives the squash) and only requires a date
   to be present; the date is still written.
+- **A GPU gate can no longer pass a broken device solve as "no GPU, skipped"
+  (FND-163).** `nec_accel::solve_hallen_gpu_resident` returns `GpuSolveDeclined`
+  (`NoAdapter`, `DeviceFailed`, `OutOfClass`, `NotConverged`) instead of `None`
+  for all four, and every GPU test skips only on `NoAdapter` — and only on a host
+  without a hardware adapter (`nec_accel::hardware_adapter_present`). The Z-fill,
+  microbenchmark, RP and worker GPU tests apply the same rule, and the CLI and
+  worker GPU tests now fail when a GPU host answered from the CPU fallback.
+- **The worker's GPU path asks for a delta-gap drive, as the CLI's does
+  (FND-147).** It excluded only current sources.
+- **One `nec_accel::MIN_GPU_RESIDENT_SEGS` for the CLI and the worker (FND-078)**,
+  with its (absent) provenance stated; the PH7-CHK-003 doc named the Z-fill
+  path's threshold of 128, which the resident path never used.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

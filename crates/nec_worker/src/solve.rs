@@ -285,8 +285,8 @@ pub struct FeedpointResult {
     pub warnings: Vec<String>,
 }
 
-/// Minimum segment count before a worker attempts the GPU-resident solve.
-const MIN_GPU_RESIDENT_SEGS: usize = 16;
+// The shared floor below which the GPU-resident solve is not attempted.
+use nec_accel::MIN_GPU_RESIDENT_SEGS;
 
 /// What the worker says to a receive deck. The worker's protocol carries a
 /// feedpoint impedance and nothing else, so the route is another frontend; the
@@ -495,13 +495,9 @@ fn solve_inner(
     // Loads and TL/NT networks reach the solve as data, applied by the routed
     // session in the basis that runs (FND-122, FND-123).
 
-    // Which drive this deck carries. A current source is a real feedpoint, but it
-    // needs its own solve — the excitation vector is all zeros, so `V/I` has
-    // nothing to divide. The machinery has been in `nec_solver` since #412; the
-    // worker was the last frontend not calling it (FND-051). A deck carrying both
-    // kinds is refused earlier by `pre_solve_error`, so these are exclusive.
-    let driven_by_current = nec_solver::feedpoints(&deck)
-        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource);
+    // A current source is a real feedpoint, but it needs its own solve — the
+    // excitation vector is all zeros, so `V/I` has nothing to divide. The routed
+    // session runs it and returns the port voltage it is priced from (FND-051).
     let mut current_source_port: Option<Complex64> = None;
 
     // 5. Wire-junction constraints
@@ -535,11 +531,12 @@ fn solve_inner(
         // which is why it never had the CLI's NT hole (FND-023) — it now asks the
         // same question through the shared seam.
         && stamps.is_identity()
-        // The device solves a delta-gap right-hand side from raw segment inputs;
-        // a current source needs a different solve entirely (it forces `I` and
-        // recovers `V`), so it is excluded here rather than silently answered
-        // with the wrong physics (FND-051).
-        && !driven_by_current;
+        // The device solves a delta-gap right-hand side from raw segment inputs,
+        // so it asks the route for exactly that drive — the question the CLI's
+        // twin gate asks. A current source needs a different solve entirely (it
+        // forces `I` and recovers `V`, FND-051), and this gate used to exclude
+        // only that, leaving any other drive to the device (FND-147).
+        && route.drive == nec_solver::HallenDrive::DeltaGap;
 
     let (currents, exec_used) = if gpu_eligible {
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
@@ -565,8 +562,9 @@ fn solve_inner(
             ),
             freq_hz,
         )) {
-            Some(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),
-            // No adapter (or short result) — fall back to CPU.
+            Ok(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),
+            // No adapter, a device fault, or a rejected f32 answer (or a short
+            // result) — fall back to CPU, which `exec_used` then reports.
             _ => (
                 cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
                 "cpu",

@@ -71,6 +71,17 @@ fn mixed_pool_gpu_and_cpu_dispatch_matches_local() {
         }
     }
 
+    // With a GPU present the gpu lane must have solved on it: a fallback reports
+    // `exec_used = cpu` and matches the local CPU by construction (FND-163).
+    if pollster::block_on(nec_accel::hardware_adapter_present()) {
+        if let nec_worker::TaskResult::Ok { exec_used, .. } = &r_gpu {
+            assert_eq!(
+                exec_used, "gpu",
+                "gpu lane fell back to the CPU on a GPU host"
+            );
+        }
+    }
+
     // The cpu-lane must always report a CPU solve.
     if let nec_worker::TaskResult::Ok { exec_used, .. } = &r_cpu {
         assert_eq!(exec_used, "cpu", "cpu lane must use CPU");

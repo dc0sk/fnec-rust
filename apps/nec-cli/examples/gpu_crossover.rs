@@ -207,9 +207,9 @@ fn main() {
                 FREQ_HZ,
             ));
             let us = t.elapsed().as_micros() as u64;
-            // `None` means the accuracy gate rejected it or the system is out of
-            // class; report that rather than timing a path that did not run.
-            if got.is_some() {
+            // An `Err` means the accuracy gate rejected it or the system is out
+            // of class; report that rather than timing a path that did not run.
+            if got.is_ok() {
                 gpu_us = Some(gpu_us.map_or(us, |b: u64| b.min(us)));
             }
         }

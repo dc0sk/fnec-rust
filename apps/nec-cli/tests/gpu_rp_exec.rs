@@ -108,6 +108,10 @@ fn exec_gpu_rp_output_matches_cpu_or_falls_back_gracefully() {
     let no_adapter = gpu_stderr.contains("no wgpu adapter available");
 
     if no_adapter {
+        assert!(
+            !pollster::block_on(nec_accel::hardware_adapter_present()),
+            "a hardware adapter is present but the RP path found none:\n{gpu_stderr}"
+        );
         // Fallback to CPU — output must still be present (already asserted above).
         // Just verify the warning was correctly emitted.
         eprintln!("note: no wgpu adapter — fallback path exercised");

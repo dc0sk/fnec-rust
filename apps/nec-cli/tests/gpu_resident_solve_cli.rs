@@ -129,9 +129,19 @@ EN
     let _ = std::fs::remove_file(&path);
 
     if gpu_stderr.contains("no wgpu adapter available") {
+        assert!(
+            !pollster::block_on(nec_accel::hardware_adapter_present()),
+            "a hardware adapter is present but the solve found none:\n{gpu_stderr}"
+        );
         eprintln!("SKIP: no wgpu adapter on this host — the GPU solve never ran");
         return;
     }
+    // Any other decline means the CPU answered in the GPU's place, and the
+    // comparison below would then compare the CPU with itself (FND-163).
+    assert!(
+        !gpu_stderr.contains("solve_hallen_gpu_resident:"),
+        "the GPU-resident solve declined and fell back to the CPU:\n{gpu_stderr}"
+    );
 
     assert_eq!(cpu.len(), 3, "expected 3 sweep points, got {cpu:?}");
     assert_eq!(

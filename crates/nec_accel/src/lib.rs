@@ -82,8 +82,9 @@ pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
 pub use wgpu_device::{
-    fill_zmatrix_wgpu, gpu_context_build_count, microbench_zmatrix_dispatch,
-    solve_hallen_gpu_resident, GpuMicrobench, ZElem, ZSegmentInput,
+    fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present,
+    microbench_zmatrix_dispatch, solve_hallen_gpu_resident, GpuMicrobench, GpuSolveDeclined, ZElem,
+    ZSegmentInput, MIN_GPU_RESIDENT_SEGS,
 };
 
 pub use kernel_reference::{
