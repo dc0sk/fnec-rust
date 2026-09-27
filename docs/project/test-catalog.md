@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Test catalog
@@ -36,7 +36,6 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | Warnings for unknown cards, `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/report_contract.rs` | 5 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
 | `apps/nec-cli/tests/resonance_contract.rs` | 3 | `--resonance` convergence, unbounded fail, missing-flag usage | FR-010, PH3-CHK-008 |
-| `apps/nec-cli/tests/result_cache_contract.rs` | 5 | Distributed result cache hit/miss/invalidation + sweep reuse | PH6-CHK-007 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 7 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
@@ -76,7 +75,7 @@ functions across the `tests/` binaries listed above.
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
 | `nec_solver` | 231 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
-| `nec_worker` | 104 | worker, result_cache, solve, capability, protocol, hosts, pool, controller, ssh_worker |
+| `nec_worker` | 104 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 93 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
 | `nec_parser` | 30 | lib, template |

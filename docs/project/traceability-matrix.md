@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-27
 ---
 
 # Traceability matrix
@@ -144,7 +144,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 | PH6-CHK-004 | DEC-008, CP-009 | `multi-vendor-gpu.md` | `nec_accel` | wgpu parity tests | AMD Vulkan validated | ✅ |
 | PH6-CHK-005 | PRT-011, CP-011 | `distributed-execution-design.md` | — | — | transport/authN design | ✅ |
 | PH6-CHK-006 | PRT-011 | `worker-deployment.md` | `nec_worker/*` | `worker_integration.rs` | two-node solve match | ✅ |
-| PH6-CHK-007 | PRT-011 | `distributed-execution-design.md` | `nec_worker/result_cache.rs` | `result_cache_contract.rs` | hit/miss/invalidation | ✅ |
+| PH6-CHK-007 | PRT-011 | `distributed-execution-design.md` §5 | — (removed) | — | withdrawn 2026-09-27: the cache type was never called (FND-155) | withdrawn |
 
 ### Phase 7 — GPU productionization (complete, v0.7.0)
 

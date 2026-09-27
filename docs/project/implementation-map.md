@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/implementation-map.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Implementation map
@@ -66,8 +66,9 @@ GAP-010/015, PH3-CHK-004/005**.
 - `src/lib.rs` — `ProjectFile`, `SolverConfig`, `NamedRun`, `RunHistory`/`RunRecord`/`ResultSummary`; `from/to_toml`, `from/to_markdown`; version-guard `ProjectError`.
 
 ## nec_worker — distributed execution
-Controller/worker protocol, local + SSH handles, worker pool, capability model,
-result cache. Serves **PRT-011, CP-011, PH6-CHK-005/006/007, PH7-CHK-004**.
+Controller/worker protocol, local + SSH handles, worker pool, capability model.
+Serves **PRT-011, CP-011, PH6-CHK-005/006, PH7-CHK-004** (PH6-CHK-007, the result
+cache, was withdrawn — FND-155).
 
 - `src/lib.rs` — facade + `encode_deck` base64 helper.
 - `src/protocol.rs` — NDJSON wire types (`TaskMessage`, `TaskResult`, `Impedance`, `WorkerSolverConfig` incl. `exec`, `ErrorCode`); serde-default for wire back-compat.
@@ -78,7 +79,6 @@ result cache. Serves **PRT-011, CP-011, PH6-CHK-005/006/007, PH7-CHK-004**.
 - `src/pool.rs` — `WorkerPool`/`WorkerHandle` (Local/Ssh); `dispatch` (sequential, unused by the CLI) and `dispatch_batch` (the pull loop `--hosts` runs).
 - `src/solve.rs` — in-worker Hallén solve (`solve_deck_at_frequency`/`_with_exec`); GPU-resident dispatch for supported class (PH7-CHK-004).
 - `src/worker.rs` — `run_worker_stdio` event loop (stdin tasks → stdout results).
-- `src/result_cache.rs` — SHA-256 `cache_key(deck, config, freq)`; FIFO `ResultCache`.
 
 ## apps/nec-cli (`fnec`) — CLI frontend & orchestrator
 Args → validate → solve (single/sweep/hybrid GPU/distributed) → report/bench.

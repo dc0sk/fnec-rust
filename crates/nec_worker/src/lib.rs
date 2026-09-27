@@ -11,7 +11,6 @@ pub mod hosts;
 pub mod pipe;
 pub mod pool;
 pub mod protocol;
-pub mod result_cache;
 pub mod solve;
 pub mod ssh_worker;
 pub mod worker;
@@ -21,7 +20,6 @@ pub use controller::{DispatchError, LocalWorkerHandle};
 pub use hosts::{HostEntry, HostsConfig, HostsConfigError};
 pub use pool::{DispatchOutcome, WorkerPool};
 pub use protocol::{ErrorCode, Impedance, TaskMessage, TaskResult, WorkerSolverConfig};
-pub use result_cache::{cache_key, ResultCache};
 pub use ssh_worker::{connect_all, SshWorkerHandle};
 pub use worker::run_worker_stdio;
 

@@ -24,6 +24,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Removed
 
+- **`nec_worker::ResultCache` and `cache_key`, the result-cache contract tests,
+  and the `sha2` dependency (FND-155).** The distributed result cache was
+  designed and documented but never called: no sweep ever reused a result. The
+  maintainer chose to remove it rather than build it; PH6-CHK-007 is withdrawn
+  and `distributed-execution-design.md` §5 now says so.
+
 - **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
   weighting scheme that was designed and never built (FND-104). It had no caller
   outside its own tests.
