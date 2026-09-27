@@ -2812,6 +2812,39 @@ fn a_stale_currents_solve_cannot_survive_an_editor_edit() {
     );
 }
 
+/// FND-141: an edit that does not render retires the viewport's pending
+/// completions too. They were cleared only when the edited deck rendered AND
+/// its geometry loaded, so a half-typed coordinate left a currents solve armed
+/// and its result was accepted over the edited document.
+#[test]
+fn an_invalid_edit_also_retires_a_viewport_solve_in_flight() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents solve");
+
+    let mut st = loaded_editor();
+    st.apply(&Message::LoadCurrents);
+    let stale = st
+        .current_viewport_currents_run()
+        .expect("viewport currents armed");
+
+    st.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "not-a-number".into(),
+    });
+    assert!(
+        st.editor.error.is_some(),
+        "the edit must be the invalid kind for this test to mean anything"
+    );
+
+    deliver_viewport_currents_as(&mut st, stale, Ok(gc));
+    assert!(
+        st.viewport.currents_ma.is_none(),
+        "a completion from before the edit must not land on the edited document"
+    );
+}
+
 /// The pattern leg of FND-116, which had exactly the same missing guard as the
 /// currents leg and the most visible symptom: the lobe is drawn *over* the
 /// geometry, so a stale one reappearing is the hardest to miss and was the
@@ -2992,8 +3025,8 @@ fn save_as_still_marks_the_document_saved() {
 
 /// An edit that does not even render still retires a pending completion.
 ///
-/// `refresh_editor_preview` clears the two editor ids above its `match`, not
-/// inside the Ok/Ok arm where the viewport legs sit (FND-141). Typing passes
+/// `refresh_editor_preview` clears the editor ids above its `match`, not inside
+/// its Ok/Ok arm — and since FND-141 the viewport legs are cleared there too. Typing passes
 /// through invalid intermediate states constantly — a half-typed coordinate
 /// fails `to_deck_string` — and an edit that cannot render is still an edit a
 /// load would clobber and a save did not contain.

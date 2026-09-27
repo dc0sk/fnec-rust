@@ -114,6 +114,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   through a vars file holds the substituted values, and Save wrote them over the
   template's `$VARIABLES`. Save is refused for such a document, with the reason;
   Save as… writes the instantiated deck to another file.
+- **An editor edit that fails validation still retires the viewport's pending
+  solves (FND-141).** They were retired only when the edit rendered, so a
+  currents, pattern or geometry result in flight across a half-typed coordinate
+  landed on the edited document.
+- **The GUI's caveat strip describes the deck that was solved (FND-072).** Solve,
+  Pattern, Currents and Sweep read the deck once and feed the same text to the
+  caveats, which were a second, independent read; Apply+Solve's caveats now come
+  from the edited document rather than the file on disk.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

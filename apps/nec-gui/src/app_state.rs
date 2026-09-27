@@ -1137,10 +1137,19 @@ impl AppState {
         // because typing passes through invalid intermediate states routinely: a
         // half-typed coordinate fails `to_deck_string`, and an edit that cannot
         // render is still an edit that a load would clobber and that a save did
-        // not contain. (The viewport legs have the same asymmetry; it predates
-        // this change and is FND-141.)
+        // not contain.
+        //
+        // The three viewport legs belong here for the same reason, and used to
+        // sit inside the Ok/Ok arm below: an edit that failed validation left
+        // them armed, so a currents, pattern or geometry completion still in
+        // flight was accepted over the edited document (FND-141). After an edit
+        // the editor's document owns the viewport, rendered or not — a file load
+        // in flight would clobber the preview with the deck on disk.
         self.editor_load_run = None;
         self.editor_save_run = None;
+        self.viewport.pending_currents = None;
+        self.viewport.pending_pattern = None;
+        self.viewport.pending_geometry = None;
         match self.editor.doc.to_deck_string() {
             Ok(text) => match crate::solve::load_geometry_str(&text) {
                 Ok(geo) => {
@@ -1153,15 +1162,6 @@ impl AppState {
                     self.viewport.show_currents = false;
                     self.viewport.grid = None;
                     self.viewport.show_pattern = false;
-                    // The SECOND discard site, and it needs the same reach: a
-                    // stale completion landing after an edit silently undid this
-                    // clearing exactly as it did after a solver switch. All THREE
-                    // legs go here, geometry included — after an edit the editor's
-                    // document owns the viewport geometry, so a file load still in
-                    // flight would clobber the preview with the deck on disk.
-                    self.viewport.pending_currents = None;
-                    self.viewport.pending_pattern = None;
-                    self.viewport.pending_geometry = None;
                     self.viewport.rebuild_scene();
                     self.viewport.rebuild_lobe();
                 }

@@ -860,24 +860,6 @@ pub struct PatternPoint {
     pub gain_total_dbi: f64,
 }
 
-/// Compute an elevation-plane (fixed φ) radiation-pattern slice from a deck
-/// at `path`.
-///
-/// `phi_deg` selects the azimuth plane.  θ is sampled in 5° steps from 0° to
-/// 180° (37 points), giving a full elevation cut.
-/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
-pub fn pattern_slice_deck_path(
-    path: &Path,
-    vars_path: Option<&str>,
-    phi_deg: f64,
-    solver: SolverKind,
-) -> Result<Vec<PatternPoint>, String> {
-    let input = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
-    let input = apply_vars(&input, vars_path)?;
-    pattern_slice_deck_str(&input, phi_deg, solver)
-}
-
 /// The lossy-ground gain correction for a GUI pattern, in dB (0.0 when none).
 ///
 /// Re-parses the deck for its feedpoints rather than threading them through four
@@ -969,19 +951,6 @@ pub struct CurrentPoint {
     pub position_m: f64,
     /// Current magnitude |I| in milliamperes.
     pub current_mag_ma: f64,
-}
-
-/// Compute the per-segment current distribution from the deck at `path`.
-/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
-pub fn current_distribution_deck_path(
-    path: &Path,
-    vars_path: Option<&str>,
-    solver: SolverKind,
-) -> Result<Vec<CurrentPoint>, String> {
-    let input = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
-    let input = apply_vars(&input, vars_path)?;
-    current_distribution_deck_str(&input, solver)
 }
 
 /// Compute the per-segment current distribution from a raw deck string.
