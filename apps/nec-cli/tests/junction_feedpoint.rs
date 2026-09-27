@@ -198,14 +198,18 @@ EN
 ";
 
 /// An apex-fed inverted-V, which genuinely does have a junction.
-const BENT_NEGATIVE_R: &str = "\
-CM apex-fed inverted-V over finite ground
+/// A Y junction fed on its stem: Hallén's unsupported degree-3 class (FND-162),
+/// which still solves to a negative resistance (Re Z = -1.83 Ω). This was an
+/// end-to-start inverted-V until FND-167 routed bent chains to the path basis
+/// and that deck stopped being wrong.
+const JUNCTION_NEGATIVE_R: &str = "\
+CM Y junction fed on its stem
 CE
-GW 1 20 -3.732135 0 1.055607 0 0 4.787742 0.001
-GW 2 20 0 0 4.787742 3.732135 0 1.055607 0.001
-GE 1
-GN 2 0 0 0 13.0 0.005
-EX 0 1 20 0 1.0 0.0
+GW 1 11 0 0 0 0 0 3 .001
+GW 2 11 0 0 3 -2 0 5 .001
+GW 3 11 0 0 3 2 0 5 .001
+GE 0
+EX 0 1 3 0 1.0 0.0
 FR 0 1 0 0 14.2 0
 EN
 ";
@@ -246,7 +250,7 @@ fn negative_resistance_does_not_blame_junctions_on_a_junctionless_deck() {
 /// junction explanation is still the useful one and must be kept.
 #[test]
 fn negative_resistance_still_blames_junctions_where_there_is_one() {
-    let stderr = stderr_for(BENT_NEGATIVE_R, "bent");
+    let stderr = stderr_for(JUNCTION_NEGATIVE_R, "junction");
     assert!(
         stderr.contains("negative resistance"),
         "fixture must actually produce a negative resistance:\n{stderr}"

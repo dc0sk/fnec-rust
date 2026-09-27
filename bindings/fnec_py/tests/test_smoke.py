@@ -268,7 +268,7 @@ def test_a_negative_resistance_deck_raises_a_warning():
     import warnings as pywarnings
 
     root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
-    with open(os.path.join(root, "corpus", "inverted-v-negative-r-freesp.nec")) as f:
+    with open(os.path.join(root, "corpus", "y-junction-negative-r-freesp.nec")) as f:
         deck = f.read()
 
     with pywarnings.catch_warnings(record=True) as caught:
@@ -400,22 +400,30 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
     text differs and dedup on message identity fails. A junctioned sweep raised one
     UserWarning per frequency; the GUI had aggregated and the bindings had not.
     """
-    bent = (
-        "CM inverted-V fed away from the apex\nCE\n"
-        "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\n"
-        "GW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\n"
-        "GE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
+    # A Y junction fed on its stem, negative at every point (FND-162's class).
+    # This was a bent end-to-start chain, which FND-167 fixed; the test then
+    # passed with NO negative point at all, because it allowed "<= 1" and
+    # checked the text only "if" there was one. It now requires exactly one.
+    junction = (
+        "CM Y junction fed on its stem\nCE\n"
+        "GW 1 11 0 0 0 0 0 3 .001\n"
+        "GW 2 11 0 0 3 -2 0 5 .001\n"
+        "GW 3 11 0 0 3 2 0 5 .001\n"
+        "GE 0\nEX 0 1 3 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
     )
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        fnec_py.sweep_deck_str(bent)
-    negative = [w for w in caught if "negative resistance" in str(w.message)]
-    assert len(negative) <= 1, (
+        fnec_py.sweep_deck_str(junction)
+    # Both sentences: the per-point one says "negative resistance", the sweep
+    # aggregate "negative feedpoint resistance". Filtering on the first alone
+    # counted zero aggregates, which "<= 1" then accepted — the test could not
+    # fail on any fixture.
+    negative = [w for w in caught if "negative" in str(w.message) and "resistance" in str(w.message)]
+    assert len(negative) == 1, (
         f"expected one aggregate line, got {len(negative)}: "
         f"{[str(w.message)[:60] for w in negative]}"
     )
-    if negative:
-        assert "sweep points report negative" in str(negative[0].message)
+    assert "11 of 11 sweep points report negative" in str(negative[0].message)
 
 
 NO_EX = """CM nothing drives this

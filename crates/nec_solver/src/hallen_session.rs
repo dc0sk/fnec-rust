@@ -180,7 +180,7 @@ pub(crate) enum PathRoute {
 /// Classify a geometry for routing. The one copy of that decision.
 pub(crate) fn classify_paths(segs: &[Segment]) -> PathRoute {
     match build_conductor_paths(segs) {
-        Some(ps) if ps.iter().any(|p| !p.is_trivial()) => PathRoute::NonTrivial(ps),
+        Some(ps) if ps.iter().any(|p| !p.is_trivial(segs)) => PathRoute::NonTrivial(ps),
         Some(_) => PathRoute::Reducible,
         None => PathRoute::Unsupported,
     }

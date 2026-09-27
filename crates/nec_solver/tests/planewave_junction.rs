@@ -127,7 +127,10 @@ fn start_to_start_split_receive_matches_single_wire() {
     let split_segs = build_geometry(&split_geom(plane_wave_card(30.0, 0.0, 0.0))).unwrap();
     let paths = build_conductor_paths(&split_segs).unwrap();
     assert_eq!(paths.len(), 1, "split dipole must be one conductor path");
-    assert!(!paths[0].is_trivial(), "split arm is traversed in reverse");
+    assert!(
+        !paths[0].is_trivial(&split_segs),
+        "split arm is traversed in reverse"
+    );
 
     let mut max_rel = 0.0f64;
     for &theta in &[35.0f64, 55.0, 75.0, 90.0] {

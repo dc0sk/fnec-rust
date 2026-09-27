@@ -471,11 +471,25 @@ impl ConductorPath {
     /// index order. Such a path is handled identically by the pre-existing
     /// collinear-merge Hallén code, so the general path solver is only needed when
     /// at least one path is **not** trivial (a reversed or bent junction).
-    pub fn is_trivial(&self) -> bool {
+    pub fn is_trivial(&self, segs: &[Segment]) -> bool {
         if self.signs.iter().any(|&s| s != 1.0) {
             return false;
         }
-        self.segs.windows(2).all(|w| w[1] == w[0] + 1)
+        // Straight as well as forward and contiguous. Without this, a BENT
+        // end-to-start chain — the usual way to write an inverted-V — counted as
+        // trivial, took the plain per-wire basis with a pairwise junction row, and
+        // came out as garbage (-20.9 - j1274.6 where nec2c and the same antenna
+        // written start-to-start give 86.8 + j197.2).
+        self.segs.windows(2).all(|w| {
+            let (a, b) = (&segs[w[0]], &segs[w[1]]);
+            w[1] == w[0] + 1
+                && a.direction
+                    .iter()
+                    .zip(&b.direction)
+                    .map(|(x, y)| x * y)
+                    .sum::<f64>()
+                    > 1.0 - 1e-9
+        })
     }
 }
 

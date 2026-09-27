@@ -160,7 +160,7 @@ fn single_wire_is_one_trivial_path() {
     })]);
     let paths = build_conductor_paths(&segs).unwrap();
     assert_eq!(paths.len(), 1);
-    assert!(paths[0].is_trivial());
+    assert!(paths[0].is_trivial(&segs));
     assert_eq!(paths[0].free_ends, (0, 20));
 }
 
@@ -185,7 +185,7 @@ fn collinear_end_to_start_is_one_trivial_path() {
     let paths = build_conductor_paths(&segs).unwrap();
     assert_eq!(paths.len(), 1);
     assert!(
-        paths[0].is_trivial(),
+        paths[0].is_trivial(&segs),
         "collinear end-to-start reduces to a single wire"
     );
 }
@@ -212,7 +212,7 @@ fn start_to_start_is_one_nontrivial_path() {
     let paths = build_conductor_paths(&segs).unwrap();
     assert_eq!(paths.len(), 1);
     assert!(
-        !paths[0].is_trivial(),
+        !paths[0].is_trivial(&segs),
         "start-to-start requires a sign flip → non-trivial"
     );
     // Exactly one of the two arms is reversed.
@@ -362,5 +362,53 @@ fn classify_square_loop_is_closed_loop() {
     assert_eq!(
         classify_unsupported_topology(&segs),
         Some(UnsupportedTopology::ClosedLoop)
+    );
+}
+
+/// FND-167. A BENT end-to-start chain is not a trivial path: it must take the
+/// conductor-path basis. `is_trivial` checked only that the signs were +1 and
+/// the segments contiguous, so the usual way to write an inverted-V counted as
+/// "straight", took the plain per-wire basis with a pairwise junction row, and
+/// solved to -20.911 - j1274.572 Ω.
+///
+/// Gated two ways. The identity needs no reference: the same antenna written
+/// start-to-start (apex first on both wires), fed on the same segment next to
+/// the apex, is the same problem. And nec2c 1.3.1 gives 86.786 + j197.230 Ω for
+/// BOTH spellings (captured 2026-09-27).
+#[test]
+fn a_bent_end_to_start_chain_takes_the_path_basis() {
+    let z_in = |text: &str, feed: (u32, u32)| {
+        let deck = nec_parser::parse(text).expect("parses").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        let mut z = assemble_z_matrix_with_ground(&segs, 14.2e6, &ground_model_from_deck(&deck));
+        let routed = solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &[]).expect("solves");
+        let idx = segs
+            .iter()
+            .position(|s| s.tag == feed.0 && s.tag_index == feed.1)
+            .expect("feed segment");
+        (
+            Complex64::new(1.0, 0.0) / routed.source_current(idx),
+            routed.route.paths,
+        )
+    };
+    let tail = "GE 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let (end_to_start, paths) = z_in(
+        &format!(
+            "CE\nGW 1 21 -5 0 0 0 0 3 .001\nGW 2 21 0 0 3 5 0 0 .001\nEX 0 1 21 0 1 0\n{tail}"
+        ),
+        (1, 21),
+    );
+    assert!(paths, "a bent chain must take the conductor-path basis");
+    let (start_to_start, _) = z_in(
+        &format!("CE\nGW 1 21 0 0 3 -5 0 0 .001\nGW 2 21 0 0 3 5 0 0 .001\nEX 0 1 1 0 1 0\n{tail}"),
+        (1, 1),
+    );
+    assert!(
+        (end_to_start - start_to_start).norm() < 1e-9 * start_to_start.norm(),
+        "end-to-start {end_to_start} vs start-to-start {start_to_start}"
+    );
+    assert!(
+        (end_to_start.re - 86.786).abs() < 3.0 && (end_to_start.im - 197.230).abs() < 5.0,
+        "{end_to_start:.3}, nec2c 86.786 + j197.230"
     );
 }

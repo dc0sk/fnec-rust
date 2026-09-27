@@ -1081,7 +1081,7 @@ mod tests {
     // negative feedpoint resistance on the Hallén path, which is physically
     // impossible for a passive antenna. Before FND-014 the GUI reported that
     // number with no caveat at all.
-    const BENT_NEGATIVE_R: &str = "CM inverted-V fed away from the apex\nCE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const BENT_NEGATIVE_R: &str = "CM Y junction fed on its stem — Hallen's unsupported degree-3 class (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 11 0 0 3 -2 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 3 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     #[test]
