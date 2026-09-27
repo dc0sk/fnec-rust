@@ -387,6 +387,33 @@ pub fn solve_with_continuity_basis_per_wire(
 /// original defect survived (FND-156): the GPU built its own end rows.
 pub type ConstraintRow = (usize, Option<usize>, f64, f64);
 
+/// The two rows at a bend on a conductor path — where two straight sections,
+/// each with its own homogeneous `(C, D)`, meet (FND-162).
+///
+/// - **Continuity:** the path current extrapolated to the node from each side
+///   is the same, `Σ coef·I[seg] = 0` (four terms, the free-end extrapolation of
+///   [`free_end_row`] taken from both sides).
+/// - **Equal scalar potential:** `φ ∝ ∂A_s/∂s`, and on each section `A_s` is
+///   `C cos(ks) + D sin(ks)` plus the source term. The delta-gap and current-
+///   source terms are one function along the path, smooth at a node (a feed is
+///   a segment midpoint, never a node), so their derivatives cancel and the row
+///   is `−C_a sin(ks₀) + D_a cos(ks₀) = −C_b sin(ks₀) + D_b cos(ks₀)`.
+///
+/// Omitted, and recorded rather than hidden: the transverse term `∇⊥·A⊥` that
+/// non-parallel sections contribute at a corner (Mei 1965). Without it the rows
+/// improve a bend but are not expected to converge to nec2c exactly — the
+/// design review's stage 1.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BendRow {
+    pub continuity: Vec<(usize, f64)>,
+    /// Homogeneous groups (sections) before and after the node, in traversal order.
+    pub group_a: usize,
+    pub group_b: usize,
+    /// `cos(k·s₀)` and `sin(k·s₀)` at the node, in the path's arc-length coordinate.
+    pub cos0: f64,
+    pub sin0: f64,
+}
+
 /// The free-end boundary row: the wire current, extrapolated linearly from the end
 /// segment's midpoint through its inner neighbour's to the PHYSICAL wire end, is
 /// zero.
@@ -1061,6 +1088,7 @@ pub fn solve_hallen_paths(
     sin_vec: &[f64],
     path_of_seg: &[usize],
     free_end_rows: &[ConstraintRow],
+    bends: &[BendRow],
 ) -> Result<HallenSolution, SolveError> {
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
@@ -1073,7 +1101,7 @@ pub fn solve_hallen_paths(
 
     let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
     let constraint_rows = free_end_rows.len();
-    let rows = n + constraint_rows;
+    let rows = n + constraint_rows + 2 * bends.len();
     // Every path has two free ends (FND-158), so every path takes both
     // homogeneous solutions — unless it is a single segment, whose one row
     // cannot fix two constants.
@@ -1104,6 +1132,24 @@ pub fn solve_hallen_paths(
     write_constraint_rows(&mut m, n, free_end_rows, |seg, v, row| {
         row[seg] += Complex64::new(v, 0.0);
     });
+
+    // Two rows per bend (FND-162): path-current continuity and equal potential.
+    // Both sections of a bend are ≥ 2 segments (the layout builder guarantees
+    // it), so both carry a sin column.
+    for (b, bend) in bends.iter().enumerate() {
+        let r = n + constraint_rows + 2 * b;
+        for &(seg, coef) in &bend.continuity {
+            m[r][seg] += Complex64::new(coef, 0.0);
+        }
+        let d_col = |g: usize| {
+            n + num_paths + sin_col[g].expect("a bend's sections carry a sin column (≥ 2 segments)")
+        };
+        let phi = &mut m[r + 1];
+        phi[n + bend.group_a] += Complex64::new(-bend.sin0, 0.0);
+        phi[d_col(bend.group_a)] += Complex64::new(bend.cos0, 0.0);
+        phi[n + bend.group_b] += Complex64::new(bend.sin0, 0.0);
+        phi[d_col(bend.group_b)] += Complex64::new(-bend.cos0, 0.0);
+    }
 
     // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
     let x = solve_normal_equations(&m, &y, cols)?;

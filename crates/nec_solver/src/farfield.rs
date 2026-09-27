@@ -24,7 +24,7 @@ use std::f64::consts::PI;
 use crate::geometry::GroundModel;
 use crate::geometry::Segment;
 
-const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
+pub(crate) const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
 /// 4.34294481903... = 10 / ln(10)
 const DB_FACTOR: f64 = 10.0_f64;
 /// Minimum normalised pattern value before clamping to -999.99 dB.
