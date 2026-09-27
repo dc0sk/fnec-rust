@@ -90,6 +90,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `derive-corpus-provenance.py` and `check-version-bump-docs.sh` took the first
   `version` line and split on quotes; both, and `check-release-tags.py`, now use
   `scripts/cargo_version.py` (`tomllib`).
+- **A CLI sweep reports negative feedpoint resistance once, not once per point
+  (FND-069).** A 50-point sweep over a junctioned deck printed 50 lines, each
+  with its own `Re Z`; the GUI and `fnec_py` already aggregated through the
+  shared producer. The local and the distributed sweep now print one line
+  ("N of M sweep points …"); a single frequency keeps the per-point sentence.
+- **A bad `--hosts` path is reported even when the deck is refused too
+  (FND-150).** The hosts file is now read with `--sweep-config`, before any
+  deck-level refusal; a deck with no frequency used to end the run first, so the
+  missing file was never mentioned.
+- **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
+  test built the same cards inline, so the corpus deck — which records the nec2c
+  capture — was checked by nothing; the test now reads the deck.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally
@@ -226,6 +238,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the hooks linted with whatever clippy was installed. `check-toolchain-pin.py`
   fails CI when a workflow names another version, and `check-all.sh` also when
   the local `rustc` differs — a host without rustup is held to the pin that way.
+- **The `--solver` values are one list (FND-148).** Parsing, the two error
+  messages and the usage line each spelled the five modes out, and the usage line
+  in a different order (`pulse|hallen|…`); it now reads
+  `hallen|pulse|continuity|sinusoidal|mpie` like the errors, which are built from
+  `SolverMode::ALL`, and a test ties the usage line to it.
+- **The pulse solver's current-source path is marked dormant, and its corpus row
+  no longer carries a reference it cannot produce (FND-130).** `EX 4` with any
+  solver but Hallén is refused, so the path finds nothing to act on; it is kept
+  with the pulse bases (FND-080), documented as dormant. The corpus row's
+  -345.6 - j988.0 Ω was unread — the row expects the refusal — but read as live.
 
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in

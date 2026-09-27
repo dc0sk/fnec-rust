@@ -47,9 +47,13 @@ fn close(got: &[f64], want: &[f64], what: &str) {
 /// nec2c: 9 segments, tags 1/11/21. fnec before the fix: 6, tags 1/11.
 /// The cumulative part is what the z-centres pin — a non-cumulative reading
 /// would put the third block at 0.67, not 1.67.
+///
+/// Reads the corpus deck, which records the nec2c capture in its comments. This
+/// test built the same cards inline, so the deck file was gated by nothing and
+/// an edit to it broke no test (FND-139).
 #[test]
 fn nrpt_generates_that_many_cumulative_copies() {
-    let segs = geometry("GW 1 3 0 0 -.5 0 0 .5 .001\nGM 10 2 0 0 0 0 0 1. 0\nGE\nEN\n");
+    let segs = geometry(include_str!("../../../corpus/dipole-gm-nrpt2-freesp.nec"));
     assert_eq!(segs.len(), 9, "nec2c: TOTAL SEGMENTS USED 9");
     assert_eq!(tags(&segs), vec![1, 1, 1, 11, 11, 11, 21, 21, 21]);
     close(

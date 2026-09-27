@@ -83,7 +83,7 @@ fn no_validator_warning_for_well_formed_deck() {
 /// Every `--solver` value the binary advertises, taken **from the binary**.
 ///
 /// `fnec --solver` with no value prints the usage line to stderr, and that line
-/// carries the closed list `--solver <pulse|hallen|continuity|sinusoidal|mpie>`.
+/// carries the closed list `--solver <hallen|pulse|continuity|sinusoidal|mpie>`.
 /// Parsing it here rather than typing the five names is the point: a sixth mode
 /// is swept the day it appears in the usage string, and a removed one cannot
 /// leave a stale row behind.
