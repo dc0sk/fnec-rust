@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -45,8 +46,46 @@ UNIT_ROWS = {
 }
 
 
+def executable_sources() -> dict[str, str]:
+    """Each test executable's file name -> its repo-relative source file.
+
+    The `--list` output names a target by a PACKAGE-relative path
+    (`tests/current_source_junction.rs`), and two packages ship a file of that
+    name, so keying on it merged them (FND-143). Cargo's JSON build messages
+    give every test artifact its executable and its absolute `src_path`.
+    """
+    proc = subprocess.run(
+        ["cargo", "test", "--workspace", "--no-run", "--message-format=json"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if proc.returncode != 0:
+        sys.exit(f"cargo test --no-run failed (exit {proc.returncode})")
+    out: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("reason") != "compiler-artifact" or not msg.get("executable"):
+            continue
+        src = Path(msg["target"]["src_path"])
+        try:
+            rel = src.resolve().relative_to(ROOT.resolve()).as_posix()
+        except ValueError:
+            continue
+        out[Path(msg["executable"]).name] = rel
+    if not out:
+        sys.exit("no test executables were reported — the JSON parse or the build is wrong")
+    return out
+
+
 def measured() -> tuple[Counter, Counter, int]:
-    """(unit counts by crate, integration counts by test-file, doctest count)."""
+    """(unit counts by crate, integration counts by repo-relative test file,
+    doctest count)."""
+    sources = executable_sources()
     # stderr must be MERGED, not captured separately: cargo prints the
     # "Running <target>" markers on stderr and the test names on stdout, so two
     # separate streams lose the interleaving that attributes a name to a target.
@@ -80,7 +119,12 @@ def measured() -> tuple[Counter, Counter, int]:
         if m:
             src, binary = m.group(1), m.group(2).split("/")[-1]
             crate = re.sub(r"-[0-9a-f]{16}$", "", binary)
-            current = (src.startswith("src/"), crate)
+            is_unit = src.startswith("src/")
+            if not is_unit:
+                if binary not in sources:
+                    sys.exit(f"no source file known for test binary {binary}")
+                crate = sources[binary]
+            current = (is_unit, crate)
             in_doctests = False
             continue
         # `Doc-tests <crate>` opens a section with NO "Running" line. Without
@@ -118,7 +162,7 @@ def main() -> int:
             print(f"  {crate:24s} {unit[crate]:4d}")
         print("integration tests (tests/), by test file:")
         for f in sorted(integration):
-            print(f"  {f:24s} {integration[f]:4d}")
+            print(f"  {f:60s} {integration[f]:4d}")
         print(f"\nunit {sum(unit.values())} + integration {sum(integration.values())} "
               f"+ doctests {doctests} = {total}")
         return 0
@@ -171,13 +215,23 @@ def main() -> int:
                 f"**{first_bold.group(1)}** — the visible claim and the checked value disagree"
             )
 
-    # LIMIT, stated rather than implied: this checks the per-crate UNIT rows and
-    # the three totals. The per-file integration table is NOT checked, because a
-    # test file's binary is named for its stem alone and two packages here both
-    # ship `tests/current_source_junction.rs`, so a stem key silently merges
-    # them. Doing it correctly needs `--message-format=json` to map each
-    # executable to its `src_path`. Measured drift in that table as of
-    # 2026-08-31: 12 listed rows wrong, ~30 test binaries with no row. FND-143.
+    # The per-file integration table, both ways (FND-143): every measured test
+    # file has a row with its count, and every row names a file that exists.
+    # Keys are repo-relative paths from `executable_sources`, so the two
+    # `tests/current_source_junction.rs` files are two rows, not one.
+    section = text.split("## Integration / contract tests", 1)[1].split("\n## ", 1)[0]
+    rows: dict[str, str] = {}
+    for line in section.splitlines():
+        cells = line.split("|")
+        if len(cells) > 3 and cells[1].strip().startswith("`") and cells[1].strip().endswith(".rs`"):
+            rows[cells[1].strip().strip("`")] = cells[2].strip()
+    for path, want in sorted(integration.items()):
+        if path not in rows:
+            problems.append(f"no integration-table row for `{path}` (measured {want})")
+        elif rows[path] != str(want):
+            problems.append(f"`{path}`: table says {rows[path]}, harness reports {want}")
+    for path in sorted(set(rows) - set(integration)):
+        problems.append(f"integration-table row `{path}` names no test binary the harness runs")
     if problems:
         print("docs/project/test-catalog.md counts are stale:")
         for p in problems:

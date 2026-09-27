@@ -62,6 +62,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The per-file integration table in the test catalog is checked (FND-143).**
+  `check-test-catalog-counts.py` maps each test binary to its source file through
+  cargo's JSON build messages and requires one row per file with its measured
+  count. It found 18 wrong rows and 36 files with no row; the table is
+  regenerated.
+
 - **Gate G5 measures something (FND-165).** It timed two whole `fnec`
   processes and skipped whenever stderr carried one of three strings, two of
   which every `--exec gpu` run prints, so it skipped everywhere and never

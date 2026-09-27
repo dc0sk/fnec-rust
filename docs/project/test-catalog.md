@@ -14,53 +14,95 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 
 ## Integration / contract tests
 
+<!-- CHECKED: `scripts/check-test-catalog-counts.py` requires a row for every
+     integration test binary the harness runs, keyed by its repo-relative source
+     file, with its measured count, and no row for a file that runs nothing
+     (FND-143). Two packages ship `tests/current_source_junction.rs`; they are
+     two rows. New rows take "Validates" from the file's own header comment. -->
+
 | Test file | # | Validates | Gates |
 |:----------|:--|:----------|:------|
-| `apps/nec-cli/tests/core_flags_contract.rs` | 15 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors | NFR-005, PH2-CHK-008 |
+| `apps/nec-cli/tests/core_flags_contract.rs` | 16 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors | NFR-005, PH2-CHK-008 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
-| `apps/nec-cli/tests/corpus_validation.rs` | 8 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/corpus_validation.rs` | 10 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
+| `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
-| `apps/nec-cli/tests/ex_cards.rs` | 9 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
+| `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
+| `apps/nec-cli/tests/exec_modes.rs` | 26 | `--exec` selection, drop-in alias resolution, sandbox paths | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
-| `apps/nec-cli/tests/exec_modes.rs` | 24 | `--exec` selection, drop-in alias resolution, sandbox paths | DEC-003, CP-012 |
-| `apps/nec-cli/tests/geometry_diagnostics.rs` | 3 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
+| `apps/nec-cli/tests/geometry_diagnostics.rs` | 15 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
-| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 1 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus | PH7-CHK-003 |
+| `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 2 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 2 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
-| `apps/nec-cli/tests/ground_diagnostics.rs` | 10 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred | PRT-001, PH2-CHK-001/002 |
+| `apps/nec-cli/tests/ground_diagnostics.rs` | 13 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
+| `apps/nec-cli/tests/junction_feedpoint.rs` | 8 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary. | PH9-CHK-002, PH9-CHK-005 |
+| `apps/nec-cli/tests/laplace_load.rs` | 2 | End-to-end tests for the fnec-specific Laplace-domain load (`--loads-config`, BL-IMPR-016). | — |
 | `apps/nec-cli/tests/ld_loads.rs` | 5 | `LD` types 1/2/4 change impedance; unsupported warn+continue | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
+| `apps/nec-cli/tests/mpie_solver_cli.rs` | 14 | PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring. | PH9-CHK-007 |
+| `apps/nec-cli/tests/near_field_spherical.rs` | 2 | PH9-CHK-004: spherical NE/NH near-field grids (NEC-2 I1=1). | PH9-CHK-004 |
+| `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
+| `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | Warnings for unknown cards, `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
-| `apps/nec-cli/tests/report_contract.rs` | 5 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
+| `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
+| `apps/nec-cli/tests/pt_print_control.rs` | 4 | PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment current output by mode / tag / segment range. | PH9-CHK-004 |
+| `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
+| `apps/nec-cli/tests/receive_pattern.rs` | 2 | PH9-CHK-001: incident-plane-wave receive-pattern sweep. | PH9-CHK-001 |
+| `apps/nec-cli/tests/report_contract.rs` | 7 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
 | `apps/nec-cli/tests/resonance_contract.rs` | 3 | `--resonance` convergence, unbounded fail, missing-flag usage | FR-010, PH3-CHK-008 |
+| `apps/nec-cli/tests/rp_avg_power_gain.rs` | 2 | PH9-CHK-004: RP XNDA `A` digit — average power gain. | PH9-CHK-004 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
-| `apps/nec-cli/tests/sweep_contract.rs` | 7 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
+| `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 4 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp… | PH9-CHK-006 |
+| `apps/nec-cli/tests/sweep_contract.rs` | 8 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
+| `apps/nec-cli/tests/sweep_partial_output.rs` | 2 | A sweep prints the points it computed, even when one of them fails. | FND-033 |
+| `apps/nec-cli/tests/taper_cli.rs` | 2 | `fnec taper` — the Leeson step-tapered-radius correction (BL-IMPR-014). | — |
 | `apps/nec-cli/tests/template_contract.rs` | 5 | TOML/JSON var substitution; undefined-token error | PH3-CHK-007 |
 | `apps/nec-cli/tests/tl_cards.rs` | 5 | NEC-2 `TL` card matches nec2c; retired fnec layout refused with the NEC-2 rewrite; integer-valued NEC-2 card not mistaken for the old layout; zero length = segment-centre distance; non-Hallén solver refused | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/topology_fallback.rs` | 13 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
+| `apps/nec-cli/tests/traceability.rs` | 1 | G2 — machine-enforced requirements traceability (review-260821). | — |
+| `apps/nec-cli/tests/worker_deadline.rs` | 2 | FND-101 — a worker that accepts a task and never answers must not wedge the run. | FND-101 |
 | `apps/nec-cli/tests/worker_gpu_exec.rs` | 1 | Distributed GPU dispatch through worker pool (mixed gpu/cpu) | PH7-CHK-004 |
-| `apps/nec-cli/tests/worker_integration.rs` | 7 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
-| `apps/nec-gui/tests/gui_smoke.rs` | 128 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
+| `apps/nec-cli/tests/worker_infinite_vswr.rs` | 2 | FND-117 — one unusable result must not destroy the worker pool. | FND-117 |
+| `apps/nec-cli/tests/worker_integration.rs` | 10 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
+| `apps/nec-cli/tests/worker_poison_budget.rs` | 2 | FND-102 — one task that kills workers must not kill the pool. | FND-102 |
+| `apps/nec-cli/tests/worker_task_fault.rs` | 1 | FND-117 — a task fault must not evict the worker that reported it. | FND-117 |
+| `apps/nec-gui/tests/gui_smoke.rs` | 131 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 2 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
-| `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
-| `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
-| `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
-| `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
-| `crates/nec_solver/tests/mpie_nec2c.rs` | 3 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
-| `crates/nec_solver/tests/ground_contact.rs` | 6 | Wires on PEC ground by explicit images: monopole and grounded array vs nec2c, identity with the doubled free-space deck, base-load identity, unrepresentable contacts and unmirrored drives refused (FND-082) | NFR-004 |
 | `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
+| `crates/nec_solver/tests/collinear_merge.rs` | 7 | PH9-CHK-002 (collinear case): a straight conductor split across several GW cards must solve as one wire. | PH9-CHK-002 |
+| `crates/nec_solver/tests/conductor_path_corpus.rs` | 3 | FND-132 — the corpus must reach the conductor-path basis. | FND-121, FND-132, PH9-CHK-002 |
+| `crates/nec_solver/tests/current_source.rs` | 4 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
+| `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 5 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
+| `crates/nec_solver/tests/finite_ground_rp.rs` | 5 | PH8-CHK-006: radiation pattern over finite ground via the Fresnel reflection-coefficient far field. | PH8-CHK-006 |
+| `crates/nec_solver/tests/general_junction.rs` | 9 | PH9-CHK-002 (general junction case): a single physical conductor whose two arms meet at a degree-2 junction — start-to-start splits and bent inverted-V feeds — must solve to a p… | PH9-CHK-002 |
+| `crates/nec_solver/tests/gm_nec2c.rs` | 8 | FND-119 — the `GM` card, pinned against `nec2c`. | FND-119 |
+| `crates/nec_solver/tests/ground_contact.rs` | 6 | Wires on PEC ground by explicit images: monopole and grounded array vs nec2c, identity with the doubled free-space deck, base-load identity, unrepresentable contacts and unmirrored drives refused (FND-082) | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
-| `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
-| `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
+| `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
+| `crates/nec_solver/tests/mpie_farfield.rs` | 3 | PH9-CHK-007 MPIE Phase C — far-field from the recovered MPIE currents. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_free_space.rs` | 4 | PH9-MPIE Phase A — free-space MPIE straight-wire core, external gates. | — |
+| `crates/nec_solver/tests/mpie_ground.rs` | 6 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_junction.rs` | 4 | PH9-CHK-007 MPIE Phase B — degree-N junctions, external gates. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_loop.rs` | 2 | PH9-CHK-007 MPIE Phase B (B3) — closed loops. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_nec2c.rs` | 3 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
+| `crates/nec_solver/tests/near_field.rs` | 3 | PH9-CHK-004: near electric-field computation (NE card), validated against the far field it must reduce to at large range and by dipole symmetry. | PH9-CHK-004 |
+| `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
+| `crates/nec_solver/tests/nt_network.rs` | 2 | PH8-CHK-004: `NT` networks, read as the admittance parameters they are (FND-123). | FND-123, PH8-CHK-004 |
+| `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
+| `crates/nec_solver/tests/planewave_nec2c.rs` | 10 | PH8-CHK-002: validate the incident-plane-wave Hallén solve. | PH8-CHK-002 |
+| `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
+| `crates/nec_solver/tests/regularisation_bias.rs` | 1 | FND-164 — the Hallén solve's Tikhonov term must not bias the answer. | FND-164 |
+| `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
 Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=565 --> **565** test
@@ -111,4 +153,6 @@ together.
 These counts are derived, not typed: `scripts/check-test-catalog-counts.py` enumerates
 what the harness will actually run and fails on drift. The previous figures — "~532
 across 53 test binaries" — were hand-maintained and had drifted by more than a factor
-of two while every one of them looked precise (FND-143).
+of two while every one of them looked precise (FND-143). The per-file integration
+table above is derived and checked the same way since 2026-09-27; before that it had
+18 wrong rows and 36 test files with no row at all.
