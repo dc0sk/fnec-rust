@@ -62,6 +62,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A bent chain written end-to-start is solved on the conductor-path basis
+  (FND-167).** The route counted a path as "trivial" (straight) when its segments
+  were forward and contiguous, without checking that they were straight, so the
+  usual way to write an inverted-V took the per-wire basis with a pairwise
+  junction row: −20.9 − j1274.6 Ω, where nec2c and the same antenna written
+  start-to-start give 86.8 + j197.2. It now equals the start-to-start form
+  exactly. Bent decks fed off the apex, and L shapes, move from garbage to finite
+  but are still well off nec2c (FND-162).
+
 - **The per-file integration table in the test catalog is checked (FND-143).**
   `check-test-catalog-counts.py` maps each test binary to its source file through
   cargo's JSON build messages and requires one row per file with its measured

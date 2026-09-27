@@ -226,7 +226,7 @@ mod tests {
         // aggregate sends with the *geometry* producer passed the entire suite.
         //
         // An inverted-V fed away from its apex sweeps negative at every point.
-        const BENT_NEGATIVE_R: &str = "CM inverted-V fed away from the apex\nCE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        const BENT_NEGATIVE_R: &str = "CM Y junction fed on its stem — Hallen's unsupported degree-3 class (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 11 0 0 3 -2 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 3 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let msgs = run(BENT_NEGATIVE_R, 13.8, 14.6, 0.2);
         assert!(
             matches!(msgs.last(), Some(Message::SweepStreamDone(_))),

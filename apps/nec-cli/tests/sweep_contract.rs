@@ -361,14 +361,15 @@ fn a_deck_with_no_frequency_at_all_is_refused_in_both_output_formats() {
 
 /// FND-069: a sweep states negative feedpoint resistance ONCE, counting the
 /// points; the per-point sentence (it embeds each point's `Re Z`) printed one
-/// line per negative point — 3 lines on this deck, measured on the old code.
+/// line per negative point (3 on the fixture this test was written with).
 /// A single frequency keeps the per-point sentence, which names the segment.
 #[test]
 fn a_sweep_reports_negative_resistance_once() {
-    // A bent two-wire deck fed off the apex, which Hallén answers with Re Z < 0
-    // at 10, 12 and 14 MHz and > 0 at 16 and 18 MHz.
-    let bent = "CE\nGW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\n\
-                EX 0 1 5 0 1.0 0.0\n";
+    // A T junction fed low on its stem — Hallén's unsupported degree-3 class
+    // (FND-162) — which answers with Re Z < 0 at 10, 12, 14 and 16 MHz and > 0
+    // at 18 MHz. (This was a bent end-to-start chain until FND-167 fixed it.)
+    let bent = "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
+                GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
     let run = |name: &str, fr: &str| {
         let deck = write_temp(name, &format!("{bent}{fr}EN\n"));
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -387,13 +388,13 @@ fn a_sweep_reports_negative_resistance_once() {
         "one aggregate line, got:\n{}",
         lines.join("\n")
     );
-    assert!(lines[0].contains("3 of 5 sweep points"), "{}", lines[0]);
+    assert!(lines[0].contains("4 of 5 sweep points"), "{}", lines[0]);
 
     let single = run("negr-single", "FR 0 1 0 0 10 0\n");
     let lines: Vec<&str> = single.lines().filter(|l| l.contains("negative")).collect();
     assert_eq!(lines.len(), 1, "{}", lines.join("\n"));
     assert!(
-        lines[0].contains("segment 5"),
+        lines[0].contains("segment 3"),
         "per-point sentence: {}",
         lines[0]
     );
