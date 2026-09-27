@@ -63,7 +63,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=563 --> **563** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=565 --> **565** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -88,7 +88,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=564 --> **564** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1134 --> **1134** = 564 unit + 563 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1136 --> **1136** = 564 unit + 565 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

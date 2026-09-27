@@ -165,3 +165,57 @@ fn an_ordinary_gm_copy_is_unaffected() {
     assert_eq!(segs.len(), 6);
     assert_eq!(tags(&segs), vec![1, 1, 1, 2, 2, 2]);
 }
+
+/// FND-135. A same-tag copy (`ITGI = 0`) is addressed the way nec2c addresses
+/// it — "tag 1 segment 77" is the 77th segment carrying tag 1, the copy's centre
+/// — and it is solved as a wire of its own.
+///
+/// fnec numbered the copy's segments from 1 again, so segment 77 named nothing;
+/// and it split wires only on a tag change, so the copy 3 m away was one
+/// conductor with the original, jumping the gap.
+///
+/// Gated two ways. The identity needs no reference: the same two dipoles written
+/// as tags 1 and 2, fed at tag 2 segment 26, are the same problem. nec2c 1.3.1
+/// (captured 2026-09-27) gives 44.055 + j79.902 Ω for BOTH decks, and prints the
+/// fed segment of the second as 77 as well.
+#[test]
+fn a_same_tag_copy_is_addressed_by_occurrence_and_solved_as_its_own_wire() {
+    use nec_solver::{
+        assemble_z_matrix_with_ground, build_deck_stamps, ground_model_from_deck,
+        solve_hallen_routed, wire_endpoints_from_segs,
+    };
+    let solve = |text: &str, feed: (u32, u32)| {
+        let deck = parse(text).expect("parses").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        let mut z = assemble_z_matrix_with_ground(&segs, 14.2e6, &ground_model_from_deck(&deck));
+        let loads = build_deck_stamps(&deck, &segs, 14.2e6).diagonal;
+        let routed = solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &loads).expect("solves");
+        let idx = segs
+            .iter()
+            .position(|s| s.tag == feed.0 && s.tag_index == feed.1)
+            .expect("the fed segment exists");
+        (
+            num_complex::Complex64::new(1.0, 0.0) / routed.source_current(idx),
+            wire_endpoints_from_segs(&segs).len(),
+        )
+    };
+    let (copy, wires) = solve(
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGM 0 1 0 0 0 3 0 0 0\nGE 0\n\
+         EX 0 1 77 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        (1, 77),
+    );
+    assert_eq!(wires, 2, "the copy is its own wire, not a continuation");
+    let (tagged, _) = solve(
+        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 3 0 -5.282 3 0 5.282 0.001\nGE 0\n\
+         EX 0 2 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        (2, 26),
+    );
+    assert!(
+        (copy - tagged).norm() < 1e-9 * tagged.norm(),
+        "same-tag copy {copy} vs two tags {tagged}"
+    );
+    assert!(
+        (copy.re - 44.055).abs() < 2.0 && (copy.im - 79.902).abs() < 5.0,
+        "{copy:.3}, nec2c 44.055 + j79.902"
+    );
+}

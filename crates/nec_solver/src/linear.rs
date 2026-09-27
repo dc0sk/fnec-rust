@@ -821,28 +821,7 @@ pub fn solve_hallen_sinusoidal_basis(
     });
 
     // Solve the (m + constraint_rows) × (m + w) system via normal equations.
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
-    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for r in 0..rows {
-                sum += mat[r][i].conj() * mat[r][j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for r in 0..rows {
-            sum += mat[r][i].conj() * y_vec[r];
-        }
-        aty[i] = sum;
-    }
-    let lambda = 1e-8;
-    for i in 0..cols {
-        ata[i][i] += Complex64::new(lambda, 0.0);
-    }
-
-    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let x = solve_normal_equations(&mat, &y_vec, cols)?;
     let a_basis = &x[..m];
     let c_hom_per_wire = x[m..].to_vec();
     let currents = basis_to_currents(&global_t, a_basis);
@@ -855,6 +834,71 @@ pub fn solve_hallen_sinusoidal_basis(
             .unwrap_or(Complex64::new(0.0, 0.0)),
         c_hom_per_wire,
     })
+}
+
+/// Tikhonov weight for [`solve_normal_equations`], RELATIVE: it is added after
+/// the columns are equilibrated to unit diagonal (FND-164).
+///
+/// Chosen by measurement, not by analogy with the old absolute value. Swept on a
+/// λ/2 dipole, a coupled pair, a steep split-V and a 2 cm dipole, every answer
+/// converges smoothly as λ → 0 (stable down to 1e-16). At 1e-12 each sits at
+/// that limit to < 1e-5 relative. At 1e-8 — the obvious "same number, now
+/// relative" — the dipole moved 0.30 Ω and the pair 9 %: after equilibration a
+/// relative 1e-8 is far MORE regularisation than the old absolute 1e-8 was here.
+const HALLEN_TIKHONOV_REL: f64 = 1e-12;
+
+/// Least squares `mat · x ≈ y` through its normal equations — the one
+/// implementation for every Hallén solver (it was five copies).
+///
+/// The normal matrix is Jacobi-equilibrated (`D⁻¹ MᴴM D⁻¹`, `D_ii = √(MᴴM)_ii`)
+/// before the Tikhonov term is added, so the regularisation is the same
+/// RELATIVE size for every column (FND-164). It was an absolute `λ = 1e-8`,
+/// whose size relative to a column depended on that column's scale. Measured
+/// against the λ → 0 limit, it biased a 2 cm dipole's R by 4.7 % (0.000157 vs
+/// 0.000150 Ω — the `sin` column's diagonal is ≈ `N·(kL)²/12`), a coupled pair by
+/// 0.25 % (5.4119 vs 5.3982 Ω) and a λ/2 dipole by 0.009 Ω. (The GPU solve adds its λ absolutely too, but its Björck
+/// refinement converges on the unregularised residual, which removes the bias.)
+fn solve_normal_equations(
+    mat: &[Vec<Complex64>],
+    y: &[Complex64],
+    cols: usize,
+) -> Result<Vec<Complex64>, SolveError> {
+    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
+    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
+    for i in 0..cols {
+        for j in 0..cols {
+            let mut sum = Complex64::new(0.0, 0.0);
+            for row in mat {
+                sum += row[i].conj() * row[j];
+            }
+            ata[i][j] = sum;
+        }
+        let mut sum = Complex64::new(0.0, 0.0);
+        for (row, yr) in mat.iter().zip(y) {
+            sum += row[i].conj() * yr;
+        }
+        aty[i] = sum;
+    }
+    // An all-zero column keeps scale 1, so it is regularised exactly as before.
+    let d: Vec<f64> = (0..cols)
+        .map(|i| {
+            let a = ata[i][i].re;
+            if a > 0.0 {
+                1.0 / a.sqrt()
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    for i in 0..cols {
+        for j in 0..cols {
+            ata[i][j] *= d[i] * d[j];
+        }
+        aty[i] *= d[i];
+        ata[i][i] += Complex64::new(HALLEN_TIKHONOV_REL, 0.0);
+    }
+    let scaled = solve_square_in_place(&mut ata, &mut aty)?;
+    Ok(scaled.iter().zip(&d).map(|(v, s)| v * s).collect())
 }
 
 fn regularization_lambda(a: &[Vec<Complex64>], rel_scale: f64, floor: f64) -> f64 {
@@ -974,29 +1018,7 @@ pub fn solve_hallen(
     });
 
     // Normal equations with light Tikhonov regularization.
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
-    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for r in 0..rows {
-                sum += m[r][i].conj() * m[r][j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for r in 0..rows {
-            sum += m[r][i].conj() * y[r];
-        }
-        aty[i] = sum;
-    }
-
-    let lambda = 1e-8;
-    for i in 0..cols {
-        ata[i][i] += Complex64::new(lambda, 0.0);
-    }
-
-    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let x = solve_normal_equations(&m, &y, cols)?;
     let c_hom_per_wire = x[n..].to_vec();
     Ok(HallenSolution {
         currents: x[..n].to_vec(),
@@ -1084,28 +1106,7 @@ pub fn solve_hallen_paths(
     });
 
     // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
-    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for r in 0..rows {
-                sum += m[r][i].conj() * m[r][j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for r in 0..rows {
-            sum += m[r][i].conj() * y[r];
-        }
-        aty[i] = sum;
-    }
-    let lambda = 1e-8;
-    for i in 0..cols {
-        ata[i][i] += Complex64::new(lambda, 0.0);
-    }
-
-    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let x = solve_normal_equations(&m, &y, cols)?;
     let c_hom_per_wire = x[n..].to_vec();
     Ok(HallenSolution {
         currents: x[..n].to_vec(),
@@ -1193,28 +1194,7 @@ pub fn solve_hallen_planewave(
     });
 
     // Regularized normal equations (mirrors solve_hallen).
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
-    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for r in 0..rows {
-                sum += m[r][i].conj() * m[r][j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for r in 0..rows {
-            sum += m[r][i].conj() * y[r];
-        }
-        aty[i] = sum;
-    }
-    let lambda = 1e-8;
-    for i in 0..cols {
-        ata[i][i] += Complex64::new(lambda, 0.0);
-    }
-
-    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let x = solve_normal_equations(&m, &y, cols)?;
     Ok(x[..n].to_vec())
 }
 
@@ -1292,28 +1272,7 @@ pub fn solve_hallen_planewave_paths(
     });
 
     // Regularized normal equations (mirrors solve_hallen_planewave).
-    let mut ata = vec![vec![Complex64::new(0.0, 0.0); cols]; cols];
-    let mut aty = vec![Complex64::new(0.0, 0.0); cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = Complex64::new(0.0, 0.0);
-            for r in 0..rows {
-                sum += m[r][i].conj() * m[r][j];
-            }
-            ata[i][j] = sum;
-        }
-        let mut sum = Complex64::new(0.0, 0.0);
-        for r in 0..rows {
-            sum += m[r][i].conj() * y[r];
-        }
-        aty[i] = sum;
-    }
-    let lambda = 1e-8;
-    for i in 0..cols {
-        ata[i][i] += Complex64::new(lambda, 0.0);
-    }
-
-    let x = solve_square_in_place(&mut ata, &mut aty)?;
+    let x = solve_normal_equations(&m, &y, cols)?;
     Ok(x[..n].to_vec())
 }
 
