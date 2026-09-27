@@ -198,6 +198,10 @@ jobs:
       # rust-toolchain.toml's channel (FND-149).
       - name: Toolchain pin matches rust-toolchain.toml
         run: python3 scripts/check-toolchain-pin.py
+      # The SBOM describes the workspace version (FND-068); caught here, not
+      # first at release time by release-tag.yml.
+      - name: SBOM describes the workspace version
+        run: python3 scripts/check-sbom-version.py
       # Five releases were cut without tags (FND-043), and v0.15.0 was first
       # tagged at a commit whose tree said fnec_py 0.4.0 (FND-044) — caught by
       # hand, minutes before publishing. `fetch-depth: 0` above is what makes the
