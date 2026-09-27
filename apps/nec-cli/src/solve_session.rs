@@ -1203,10 +1203,7 @@ pub(super) fn solve_frequency_point(
             // plain delta-gap solve — so it asks `hallen_route` rather than
             // assuming, and declines anything else.
             let route = nec_solver::hallen_route(deck, segs);
-            let gpu_sol = if route.drive == nec_solver::HallenDrive::DeltaGap
-                && !route.paths
-                && laplace_loads.is_empty()
-            {
+            let gpu_sol = if route.gpu_resident_supported() && laplace_loads.is_empty() {
                 let hallen_rhs =
                     build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
                 let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);

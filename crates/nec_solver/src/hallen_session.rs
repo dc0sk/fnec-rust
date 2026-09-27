@@ -70,9 +70,26 @@ pub struct HallenRoute {
     /// split, or an apex feed that the collinear merge cannot express, so the
     /// homogeneous basis must follow signed arc length along a path.
     pub paths: bool,
+    /// True when the conductor-path decomposition refuses the geometry: a
+    /// degree-3+ T/Y junction or a closed loop. Such a deck falls to the plain
+    /// basis with pairwise junction rows, which are not KCL at a degree-3 node
+    /// (FND-162); the CPU path warns about it, and the device must not take it.
+    pub unsupported_topology: bool,
 }
 
 impl HallenRoute {
+    /// Whether the GPU-resident solve implements this route: the plain
+    /// delta-gap solve on the merged-straight-conductor basis and nothing else.
+    ///
+    /// One answer for the CLI and the worker, which each wrote the drive and
+    /// path conditions out themselves and so diverged once already (FND-147).
+    /// The topology condition is new (FND-166): a T/Y deck routes to the plain
+    /// basis, so `!paths` let it through, and the shader then solved it with
+    /// the pairwise junction rows. Ground, stamps and size are the callers'
+    /// conditions, since only they hold those facts.
+    pub fn gpu_resident_supported(&self) -> bool {
+        self.drive == HallenDrive::DeltaGap && !self.paths && !self.unsupported_topology
+    }
     /// The `SOLVER_MODE` label this route reports.
     pub fn mode_label(&self) -> &'static str {
         match self.drive {
@@ -121,15 +138,19 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
     // A deck touching PEC ground is solved as its doubled image problem (FND-082),
     // and the route must describe what runs: the base joins its image, so the
     // doubled structure is what decides the path basis.
-    let paths = match crate::ground_contact::pec_ground_contact(
+    let class = match crate::ground_contact::pec_ground_contact(
         deck,
         segs,
         &crate::ground_model_from_deck(deck),
     ) {
-        Ok(Some(img)) => nontrivial_paths(&img.segs).is_some(),
-        _ => nontrivial_paths(segs).is_some(),
+        Ok(Some(img)) => classify_paths(&img.segs),
+        _ => classify_paths(segs),
     };
-    HallenRoute { drive, paths }
+    HallenRoute {
+        drive,
+        paths: matches!(class, PathRoute::NonTrivial(_)),
+        unsupported_topology: matches!(class, PathRoute::Unsupported),
+    }
 }
 
 /// What the conductor-path decomposition says about a geometry.
@@ -848,6 +869,38 @@ mod routing_tests {
             "the two bases must still disagree for this test to be meaningful; \
              plain gave {z_plain}, paths gave {z_paths}"
         );
+    }
+}
+
+#[cfg(test)]
+mod gpu_route_tests {
+    use crate::geometry::build_geometry;
+
+    fn route(text: &str) -> super::HallenRoute {
+        let deck = nec_parser::parse(text).expect("parses").deck;
+        let segs = build_geometry(&deck).expect("geometry");
+        super::hallen_route(&deck, &segs)
+    }
+
+    /// FND-166: a T junction routes to the plain basis (`paths` is false), so a
+    /// gate that asked only `!paths` sent it to the device, which solved it with
+    /// the pairwise junction rows. The topology now vetoes it by name. This is the
+    /// discriminating gate: sabotaging the veto fails it on any host.
+    #[test]
+    fn a_t_junction_is_not_offered_to_the_device() {
+        let tee = route(
+            "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
+             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        assert!(!tee.paths, "the T falls to the plain basis — the hole");
+        assert!(tee.unsupported_topology);
+        assert!(!tee.gpu_resident_supported());
+
+        // The control: a straight dipole is exactly what the device implements.
+        let dipole = route(
+            "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        assert!(dipole.gpu_resident_supported());
     }
 }
 
