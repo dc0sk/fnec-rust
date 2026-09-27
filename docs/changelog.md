@@ -102,6 +102,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
   test built the same cards inline, so the corpus deck — which records the nec2c
   capture — was checked by nothing; the test now reads the deck.
+- **The GUI's file dialogs no longer freeze it (FND-071).** Open deck, Open vars
+  and Save as… used blocking dialogs inside the update loop; they are async now,
+  run as tasks, and Save as… writes the document as it was when chosen.
+
+- **The GUI saves a deck atomically (FND-152).** Both Save and Save as… wrote
+  with a truncate-then-write, so an interrupted save left a partial deck. They
+  now write a temporary file beside the deck and rename it over, keeping the
+  deck's permissions and writing through a symlink.
+- **The GUI no longer saves over a `--vars` template (FND-153).** A deck loaded
+  through a vars file holds the substituted values, and Save wrote them over the
+  template's `$VARIABLES`. Save is refused for such a document, with the reason;
+  Save as… writes the instantiated deck to another file.
+- **An editor edit that fails validation still retires the viewport's pending
+  solves (FND-141).** They were retired only when the edit rendered, so a
+  currents, pattern or geometry result in flight across a half-typed coordinate
+  landed on the edited document.
+- **The GUI's caveat strip describes the deck that was solved (FND-072).** Solve,
+  Pattern, Currents and Sweep read the deck once and feed the same text to the
+  caveats, which were a second, independent read; Apply+Solve's caveats now come
+  from the edited document rather than the file on disk.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

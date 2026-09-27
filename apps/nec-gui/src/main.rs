@@ -26,11 +26,54 @@ use nec_gui::model_doc::{ControlEdit, ControlKind, PostSlot, WireField, WireRow}
 use nec_gui::plot::PlotMetric;
 use nec_gui::session::Session;
 use nec_gui::solve::{
-    current_distribution_deck_path, deck_warnings, load_currents_path, load_geometry_path,
-    load_model_doc_path, pattern_grid_path, pattern_slice_deck_path, read_deck_text,
-    solve_deck_path, solve_deck_str, SolveResult, SweepPoint,
+    current_distribution_deck_str, deck_warnings, load_currents_path, load_geometry_path,
+    load_model_doc_path, pattern_grid_path, pattern_slice_deck_str, read_deck_text, solve_deck_str,
+    SolveResult, SweepPoint,
 };
 use std::path::PathBuf;
+
+/// Read the deck ONCE and give the same text to the task that uses it and to the
+/// caveat refresh armed alongside it (FND-072).
+///
+/// They were two independent reads of the file, so the caveat strip could
+/// describe a different deck from the one just solved — saved in between, or a
+/// vars file changed. `warn` is the refresh's run, when one was armed.
+fn read_deck_once(
+    path: PathBuf,
+    vars: Option<String>,
+    solver: nec_gui::solve::SolverKind,
+    warn: Option<nec_gui::app_state::RunId>,
+    use_text: impl FnOnce(Result<String, String>) -> Task<Message> + Send + 'static,
+) -> Task<Message> {
+    let mut use_text = Some(use_text);
+    Task::perform(async move { read_deck_text(&path, vars.as_deref()) }, |t| t).then(
+        move |text: Result<String, String>| {
+            let mut tasks = Vec::with_capacity(2);
+            if let Some(f) = use_text.take() {
+                tasks.push(f(text.clone()));
+            }
+            if let Some(run) = warn {
+                tasks.push(Task::perform(
+                    async move { text.map(|t| deck_warnings(&t, solver)).unwrap_or_default() },
+                    move |w| Message::DeckWarnings(run, w),
+                ));
+            }
+            Task::batch(tasks)
+        },
+    )
+}
+
+/// The caveat refresh for deck text already in hand (FND-072): a sweep read
+/// the file itself, and Apply+Solve solves the editor's document, not the file.
+fn deck_warnings_for_text(
+    text: String,
+    solver: nec_gui::solve::SolverKind,
+    run: nec_gui::app_state::RunId,
+) -> Task<Message> {
+    Task::perform(async move { deck_warnings(&text, solver) }, move |w| {
+        Message::DeckWarnings(run, w)
+    })
+}
 
 fn main() -> iced::Result {
     iced::application("fnec-gui — Antenna Modeler", FnecGui::update, FnecGui::view)
@@ -136,8 +179,22 @@ impl FnecGui {
 
         if persist {
             // Fails soft: a missing config dir just skips persistence.
+            //
+            // Synchronous on purpose, unlike the dialogs (FND-071): a few hundred
+            // bytes, and two saves spawned as tasks could complete out of order
+            // and leave the OLDER session on disk. Ordering is worth more here
+            // than the microseconds.
             let _ = Session::from_state(&self.state).save();
         }
+
+        // Every task below that reads the deck also feeds the caveat refresh from
+        // the same text, and sets this so the fallback read at the end is skipped.
+        let warn_run = if refresh_warnings {
+            self.state.current_deck_warnings_run()
+        } else {
+            None
+        };
+        let mut warnings_spawned = false;
 
         let primary = if spawn_solve {
             let path = PathBuf::from(self.state.deck_path.clone());
@@ -153,10 +210,13 @@ impl FnecGui {
                 .state
                 .current_solve_run()
                 .expect("solve was just armed");
-            Task::perform(
-                async move { solve_deck_path(&path, vars.as_deref(), solver) },
-                move |r| Message::SolveComplete(run, r),
-            )
+            warnings_spawned = true;
+            read_deck_once(path, vars, solver, warn_run, move |text| {
+                Task::perform(
+                    async move { text.and_then(|t| solve_deck_str(&t, solver)) },
+                    move |r| Message::SolveComplete(run, r),
+                )
+            })
         } else if spawn_sweep {
             // Parse parameters (validated in apply; if invalid, sweep_phase becomes
             // SweepPhase::Running but we guard here to surface the error correctly).
@@ -175,24 +235,34 @@ impl FnecGui {
                         .current_sweep_run()
                         .expect("sweep was just armed");
                     match read_deck_text(&path, vars.as_deref()) {
-                        Ok(deck_text) => Task::run(
-                            iced::stream::channel(64, move |mut output| async move {
-                                // The body lives in `sweep_stream` so its messages
-                                // can be asserted: inline here, deleting any of its
-                                // sends left the whole suite green (FND-034).
-                                nec_gui::sweep_stream::run_sweep_stream(
-                                    run,
-                                    deck_text,
-                                    start,
-                                    end,
-                                    step,
-                                    solver,
-                                    &mut output,
-                                )
-                                .await;
-                            }),
-                            |m| m,
-                        ),
+                        Ok(deck_text) => {
+                            let warn = match warn_run {
+                                Some(w) => {
+                                    warnings_spawned = true;
+                                    deck_warnings_for_text(deck_text.clone(), solver, w)
+                                }
+                                None => Task::none(),
+                            };
+                            let stream = Task::run(
+                                iced::stream::channel(64, move |mut output| async move {
+                                    // The body lives in `sweep_stream` so its messages
+                                    // can be asserted: inline here, deleting any of its
+                                    // sends left the whole suite green (FND-034).
+                                    nec_gui::sweep_stream::run_sweep_stream(
+                                        run,
+                                        deck_text,
+                                        start,
+                                        end,
+                                        step,
+                                        solver,
+                                        &mut output,
+                                    )
+                                    .await;
+                                }),
+                                |m| m,
+                            );
+                            Task::batch([stream, warn])
+                        }
                         Err(e) => {
                             self.state.apply(&Message::SweepComplete(run, Err(e)));
                             Task::none()
@@ -224,10 +294,15 @@ impl FnecGui {
                         .state
                         .current_pattern_run()
                         .expect("pattern was just armed");
-                    Task::perform(
-                        async move { pattern_slice_deck_path(&path, vars.as_deref(), phi_deg, solver) },
-                        move |r| Message::PatternComplete(run, r),
-                    )
+                    warnings_spawned = true;
+                    read_deck_once(path, vars, solver, warn_run, move |text| {
+                        Task::perform(
+                            async move {
+                                text.and_then(|t| pattern_slice_deck_str(&t, phi_deg, solver))
+                            },
+                            move |r| Message::PatternComplete(run, r),
+                        )
+                    })
                 }
                 Err(e) => {
                     let run = self
@@ -249,10 +324,13 @@ impl FnecGui {
                 .state
                 .current_currents_run()
                 .expect("currents was just armed");
-            Task::perform(
-                async move { current_distribution_deck_path(&path, vars.as_deref(), solver) },
-                move |r| Message::CurrentsComplete(run, r),
-            )
+            warnings_spawned = true;
+            read_deck_once(path, vars, solver, warn_run, move |text| {
+                Task::perform(
+                    async move { text.and_then(|t| current_distribution_deck_str(&t, solver)) },
+                    move |r| Message::CurrentsComplete(run, r),
+                )
+            })
         } else if spawn_geometry {
             let path = PathBuf::from(self.state.deck_path.clone());
             let vars: Option<String> = if self.state.vars_path.is_empty() {
@@ -332,10 +410,10 @@ impl FnecGui {
             match self.state.editor.doc.to_deck_string() {
                 Ok(text) => Task::perform(
                     async move {
-                        match std::fs::write(&path, &text) {
-                            Ok(()) => Ok(path),
-                            Err(e) => Err(e.to_string()),
-                        }
+                        // Temp-then-rename: an interrupted save must not
+                        // leave half a deck (FND-152).
+                        nec_gui::deck_write::save_deck_file(std::path::Path::new(&path), &text)
+                            .map(|()| path)
                     },
                     move |r| Message::DeckSaved(run, r),
                 ),
@@ -353,57 +431,86 @@ impl FnecGui {
                         .state
                         .current_solve_run()
                         .expect("Apply+Solve was just armed");
-                    Task::perform(async move { solve_deck_str(&text, solver) }, move |r| {
-                        Message::SolveComplete(run, r)
-                    })
+                    // The caveats describe the document being solved, not the
+                    // file on disk it may since have diverged from (FND-072).
+                    let warn = match warn_run {
+                        Some(w) => {
+                            warnings_spawned = true;
+                            deck_warnings_for_text(text.clone(), solver, w)
+                        }
+                        None => Task::none(),
+                    };
+                    let solve =
+                        Task::perform(async move { solve_deck_str(&text, solver) }, move |r| {
+                            Message::SolveComplete(run, r)
+                        });
+                    Task::batch([solve, warn])
                 }
                 Err(_) => Task::none(),
             }
         } else if matches!(message, Message::BrowseDeck) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("NEC deck", &["nec", "txt"])
-                .pick_file()
-            {
-                self.state
-                    .apply(&Message::DeckPathChanged(p.to_string_lossy().into_owned()));
-                let _ = Session::from_state(&self.state).save();
-            }
-            Task::none()
+            // Async dialogs, run as tasks: the blocking `rfd::FileDialog` held the
+            // event loop for as long as the dialog was open (FND-071). The chosen
+            // path comes back as the ordinary message, whose persistence is the
+            // reducer's `persists_to_session` rule rather than a save here.
+            Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("NEC deck", &["nec", "txt"])
+                    .pick_file(),
+                |h| h.map(|h| h.path().to_string_lossy().into_owned()),
+            )
+            .then(|p| match p {
+                Some(p) => Task::done(Message::DeckPathChanged(p)),
+                None => Task::none(),
+            })
         } else if matches!(message, Message::BrowseVars) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("Vars file", &["toml", "json"])
-                .pick_file()
-            {
-                self.state
-                    .apply(&Message::VarsPathChanged(p.to_string_lossy().into_owned()));
-                let _ = Session::from_state(&self.state).save();
-            }
-            Task::none()
+            Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Vars file", &["toml", "json"])
+                    .pick_file(),
+                |h| h.map(|h| h.path().to_string_lossy().into_owned()),
+            )
+            .then(|p| match p {
+                Some(p) => Task::done(Message::VarsPathChanged(p)),
+                None => Task::none(),
+            })
         } else if matches!(message, Message::BrowseSaveDeck) {
-            if let Some(p) = rfd::FileDialog::new()
-                .add_filter("NEC deck", &["nec", "txt"])
-                .set_file_name("antenna.nec")
-                .save_file()
-            {
-                let path = p.to_string_lossy().into_owned();
-                let saved = match self.state.editor.doc.to_deck_string() {
-                    Ok(text) => std::fs::write(&path, text)
-                        .map(|()| path)
-                        .map_err(|e| e.to_string()),
-                    Err(e) => Err(e),
-                };
-                let run = self
-                    .state
-                    .current_edit_save_run()
-                    .expect("Save as… armed a save run in apply()");
-                self.state.apply(&Message::DeckSaved(run, saved));
-            }
-            Task::none()
+            // The run was armed by `apply` above, and the document rendered now:
+            // the write is of the document as it was when Save as… was chosen,
+            // and an edit made while the dialog is open retires the run, so its
+            // completion is dropped rather than marking newer edits saved.
+            let run = self
+                .state
+                .current_edit_save_run()
+                .expect("Save as… armed a save run in apply()");
+            let rendered = self.state.editor.doc.to_deck_string();
+            Task::perform(
+                async move {
+                    let handle = rfd::AsyncFileDialog::new()
+                        .add_filter("NEC deck", &["nec", "txt"])
+                        .set_file_name("antenna.nec")
+                        .save_file()
+                        .await?;
+                    let path = handle.path().to_string_lossy().into_owned();
+                    Some(rendered.and_then(|text| {
+                        nec_gui::deck_write::save_deck_file(std::path::Path::new(&path), &text)
+                            .map(|()| path)
+                    }))
+                },
+                |r| r,
+            )
+            .then(move |saved| match saved {
+                Some(saved) => Task::done(Message::DeckSaved(run, saved)),
+                // Cancelled: nothing written, nothing to report.
+                None => Task::none(),
+            })
         } else {
             Task::none()
         };
 
-        if refresh_warnings {
+        if refresh_warnings && !warnings_spawned {
+            // Nothing above read the deck (a solver switch): read it for the
+            // caveats alone.
             let path = PathBuf::from(self.state.deck_path.clone());
             let vars: Option<String> = if self.state.vars_path.is_empty() {
                 None
@@ -1215,10 +1322,17 @@ impl FnecGui {
         // came to truncate an unrelated file. Fixing the target without showing
         // it would leave the user unable to tell where Save goes except by
         // clicking it.
-        let editing_line = text(match self.state.save_target() {
-            Some(p) => format!("Editing: {p}"),
-            None => "Editing: (no file yet — use Save as…)".to_string(),
-        })
+        let editing_line = text(
+            match (self.state.save_target(), &self.state.editor.file_path) {
+                (Some(p), _) => format!("Editing: {p}"),
+                // Loaded through a vars file: Save would overwrite the template's
+                // tokens, so it is refused and the line says why (FND-153).
+                (None, Some(p)) if self.state.editor.from_template => {
+                    format!("Editing: {p} (template with vars — Save as… only)")
+                }
+                (None, _) => "Editing: (no file yet — use Save as…)".to_string(),
+            },
+        )
         .width(Length::Fill);
 
         // ── Sources & environment (EX/GN/LD/FR editors) ──────────────────────

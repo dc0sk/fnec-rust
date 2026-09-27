@@ -2812,6 +2812,39 @@ fn a_stale_currents_solve_cannot_survive_an_editor_edit() {
     );
 }
 
+/// FND-141: an edit that does not render retires the viewport's pending
+/// completions too. They were cleared only when the edited deck rendered AND
+/// its geometry loaded, so a half-typed coordinate left a currents solve armed
+/// and its result was accepted over the edited document.
+#[test]
+fn an_invalid_edit_also_retires_a_viewport_solve_in_flight() {
+    let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
+        .expect("currents solve");
+
+    let mut st = loaded_editor();
+    st.apply(&Message::LoadCurrents);
+    let stale = st
+        .current_viewport_currents_run()
+        .expect("viewport currents armed");
+
+    st.apply(&Message::EditWireField {
+        row: 0,
+        field: WireField::Z2,
+        value: "not-a-number".into(),
+    });
+    assert!(
+        st.editor.error.is_some(),
+        "the edit must be the invalid kind for this test to mean anything"
+    );
+
+    deliver_viewport_currents_as(&mut st, stale, Ok(gc));
+    assert!(
+        st.viewport.currents_ma.is_none(),
+        "a completion from before the edit must not land on the edited document"
+    );
+}
+
 /// The pattern leg of FND-116, which had exactly the same missing guard as the
 /// currents leg and the most visible symptom: the lobe is drawn *over* the
 /// geometry, so a stale one reappearing is the hardest to miss and was the
@@ -2992,8 +3025,8 @@ fn save_as_still_marks_the_document_saved() {
 
 /// An edit that does not even render still retires a pending completion.
 ///
-/// `refresh_editor_preview` clears the two editor ids above its `match`, not
-/// inside the Ok/Ok arm where the viewport legs sit (FND-141). Typing passes
+/// `refresh_editor_preview` clears the editor ids above its `match`, not inside
+/// its Ok/Ok arm — and since FND-141 the viewport legs are cleared there too. Typing passes
 /// through invalid intermediate states constantly — a half-typed coordinate
 /// fails `to_deck_string` — and an edit that cannot render is still an edit a
 /// load would clobber and a save did not contain.
@@ -3138,6 +3171,54 @@ fn a_deck_with_no_frequency_is_refused_by_both_gui_seams() {
             "{name}: the GUI must not offer a remedy it does not have: {msg}"
         );
     }
+}
+
+/// FND-153: a deck loaded through a vars file is a template, and the document
+/// holds one instantiation of it. Save would write `14.2` over `$FREQ`, so it is
+/// refused — including through a save run a cancelled Save-as left armed —
+/// while Save as… still writes, and rebinds the document to the plain file.
+#[test]
+fn a_template_loaded_with_vars_is_not_saved_over() {
+    let mut state = AppState::default();
+    let doc = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    state.apply(&Message::DeckPathChanged(LOADED_FROM.into()));
+    state.apply(&Message::VarsPathChanged("/tmp/fnec-vars.toml".into()));
+    state.apply(&Message::EditDeckLoad);
+    let run = state.current_edit_load_run().expect("load armed");
+    state.apply(&Message::EditDeckLoaded(run, Ok(doc)));
+    assert!(state.editor.from_template);
+
+    // A cancelled Save-as leaves a run armed; the target must still be withheld.
+    state.apply(&Message::BrowseSaveDeck);
+    state.apply(&Message::SaveDeck);
+    assert_eq!(
+        state.save_target(),
+        None,
+        "the template must not be a Save target"
+    );
+    assert!(
+        state.editor.save_status.contains("vars file"),
+        "{}",
+        state.editor.save_status
+    );
+
+    // Save as… writes an instantiated copy; the document belongs to it now.
+    state.apply(&Message::BrowseSaveDeck);
+    let run = state.current_edit_save_run().expect("save-as armed");
+    state.apply(&Message::DeckSaved(
+        run,
+        Ok("/tmp/fnec-instance.nec".into()),
+    ));
+    assert!(!state.editor.from_template);
+    assert_eq!(state.save_target(), Some("/tmp/fnec-instance.nec"));
+}
+
+/// The control: without a vars file, Save targets the loaded file as before.
+#[test]
+fn a_deck_loaded_without_vars_is_saved_in_place() {
+    let state = loaded_editor();
+    assert!(!state.editor.from_template);
+    assert_eq!(state.save_target(), Some(LOADED_FROM));
 }
 
 /// `Save` writes to the file the document was loaded from, not to whatever the

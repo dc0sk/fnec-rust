@@ -236,8 +236,128 @@ fn trim_floats(mut fields: Vec<String>, min_len: usize) -> String {
     join(&fields)
 }
 
+/// Write deck text to `path` so that an interrupted save never leaves a partial
+/// deck behind (FND-152).
+///
+/// `std::fs::write` truncates the file first, so a crash, a full disk or a killed
+/// process mid-save left a truncated deck where a complete one was. This writes
+/// a temporary file beside the target, syncs it, and renames it over the target
+/// — the rename is atomic on one filesystem, so a reader sees the old deck or
+/// the new one and nothing in between.
+///
+/// The failure modes the plain write did not have are handled rather than
+/// traded in: the temp file lives in the target's own directory (a rename across
+/// filesystems is not atomic, and fails); an existing target's permissions are
+/// copied to the replacement; a symlinked target is written through to the file
+/// it names, not replaced by a regular file; and the temp file is removed on
+/// every error path.
+pub fn save_deck_file(path: &std::path::Path, text: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let target = match std::fs::canonicalize(path) {
+        Ok(real) => real,
+        // A new file: nothing to resolve, write where asked.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
+        Err(e) => return Err(format!("cannot resolve '{}': {e}", path.display())),
+    };
+    let dir = match target.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => std::path::PathBuf::from("."),
+    };
+    let name = target
+        .file_name()
+        .ok_or_else(|| format!("'{}' names no file", path.display()))?;
+    let tmp = dir.join(format!(
+        ".{}.fnec-save-{}.tmp",
+        name.to_string_lossy(),
+        std::process::id()
+    ));
+
+    let result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()?;
+        if let Ok(meta) = std::fs::metadata(&target) {
+            std::fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        std::fs::rename(&tmp, &target)
+    })();
+    result.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("cannot save '{}': {e}", path.display())
+    })
+}
+
 #[cfg(test)]
 mod tests {
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        // A few bytes, removed by each test; `CARGO_TARGET_TMPDIR` exists only
+        // for integration tests.
+        let dir =
+            std::env::temp_dir().join(format!("fnec-deck-save-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn leftovers(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect()
+    }
+
+    /// FND-152: the save replaces the deck whole, keeps its permissions, and
+    /// leaves no temporary file behind.
+    #[test]
+    fn a_save_replaces_the_deck_and_keeps_its_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("replace");
+        let deck = dir.join("a.nec");
+        std::fs::write(&deck, "old\n").unwrap();
+        std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o600)).unwrap();
+        save_deck_file(&deck, "new\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&deck).unwrap(), "new\n");
+        let mode = std::fs::metadata(&deck).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert!(leftovers(&dir).is_empty(), "{:?}", leftovers(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A symlinked deck is written through: the link stays a link.
+    #[test]
+    fn a_save_through_a_symlink_updates_the_file_it_names() {
+        let dir = scratch("symlink");
+        let real = dir.join("real.nec");
+        let link = dir.join("link.nec");
+        std::fs::write(&real, "old\n").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        save_deck_file(&link, "new\n").unwrap();
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "new\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A save that cannot complete leaves the existing target untouched and no
+    /// temporary file: the rename onto a directory fails after the temp file
+    /// was written.
+    #[test]
+    fn a_failed_save_leaves_the_target_and_no_temp_file() {
+        let dir = scratch("fail");
+        let target = dir.join("is-a-dir.nec");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("keep"), "x").unwrap();
+        assert!(save_deck_file(&target, "new\n").is_err());
+        assert_eq!(std::fs::read_to_string(target.join("keep")).unwrap(), "x");
+        assert!(leftovers(&dir).is_empty(), "{:?}", leftovers(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
     use super::*;
     use nec_parser::parse;
     use std::fs;
