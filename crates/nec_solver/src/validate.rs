@@ -1174,9 +1174,60 @@ fn frequency_independent_caveats(
     let mut out = Vec::new();
     if let Some(w) = unsupported_topology_warning(deck, segs, mpie_remedy) {
         out.push(w);
+    } else if let Some(w) = bent_conductor_warning(deck, segs, mpie_remedy) {
+        out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
     out
+}
+
+/// A conductor path turns by at least this much before [`bent_conductor_warning`]
+/// speaks, in degrees.
+const BEND_CAVEAT_DEG: f64 = 10.0;
+
+/// The largest bend on any conductor path, in degrees, when it reaches
+/// [`BEND_CAVEAT_DEG`]: the angle between consecutive segments' traversal
+/// directions. `None` for straight geometry and for topologies the path
+/// decomposition refuses (those have their own warning).
+pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
+    let paths = crate::geometry::build_conductor_paths(segs)?;
+    let mut worst = 0.0f64;
+    for p in &paths {
+        for i in 1..p.segs.len() {
+            let (a, b) = (segs[p.segs[i - 1]].direction, segs[p.segs[i]].direction);
+            let dot = p.signs[i - 1] * p.signs[i] * (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+            worst = worst.max(dot.clamp(-1.0, 1.0).acos().to_degrees());
+        }
+    }
+    (worst >= BEND_CAVEAT_DEG).then_some(worst)
+}
+
+/// The Hallén solve has no condition at a bend (FND-162), and gave a bent
+/// conductor a wrong answer with no warning at all.
+///
+/// Measured against nec2c on 21- and 41-segment arms at 14.2 MHz: a 90° L is
+/// 40 % off in R and 58 % in X; an inverted-V fed a quarter of the way up an arm
+/// is 35 % off; the same inverted-V fed next to its apex is within 2 %. The MPIE
+/// solver tracks nec2c on all three (the L within 2–4 %). A reviewed design for
+/// Hallén bend rows exists; its first stage was built and measured no gain, and
+/// the remaining stage (the corner term) is parked in FND-162.
+pub fn bent_conductor_warning(
+    deck: &NecDeck,
+    segs: &[Segment],
+    mpie_remedy: &str,
+) -> Option<String> {
+    let angle = largest_bend_deg(segs)?;
+    let remedy = if mpie_compatible_deck(deck) {
+        format!("{mpie_remedy}, which models the bend (PH9-CHK-007)")
+    } else {
+        "support for this combination on a bent conductor is deferred (FND-162)".to_string()
+    };
+    Some(format!(
+        "geometry contains a bent conductor (a {angle:.0}° bend); the Hallén solve has no \
+         condition at a bend, so the impedance, currents and pattern can be far off — \
+         measured 40 % in R on a 90° L, and 35 % on an inverted-V fed away from its apex \
+         (within 2 % fed at the apex) — {remedy}"
+    ))
 }
 
 /// The low-over-ground caveat for a swept range, annotated with what it applies to.
@@ -1435,16 +1486,11 @@ pub fn diagnose(
         // The Hallén basis cannot model a loop closure, a Kirchhoff split at a
         // T/Y junction, or the surface wave near lossy ground.
         SolverKind::Hallen => {
-            for w in [
-                unsupported_topology_warning(deck, segs, ctx.mpie_remedy),
-                low_finite_ground_warning(segs, ground, freq_hz, false),
-            ]
-            .into_iter()
-            .flatten()
-            {
-                out.push(ValidationDiagnostic::warning(w));
-            }
-            for w in feedpoint_at_junction_warnings(deck, segs) {
+            // Through the producer the CLI calls, not a list of its own: this arm
+            // named the topology and junction caveats itself, so the bent-
+            // conductor caveat added to the producer (FND-162) reached the CLI and
+            // not the GUI or the bindings.
+            for w in hallen_geometry_caveats(deck, segs, ground, freq_hz, false, ctx.mpie_remedy) {
                 out.push(ValidationDiagnostic::warning(w));
             }
         }
@@ -1915,6 +1961,38 @@ mod tests {
                 "EX type {ex_type} drives the deck"
             );
         }
+    }
+
+    #[test]
+    fn a_bent_conductor_is_warned_about_and_a_straight_one_is_not() {
+        // FND-162: Hallén has no bend condition, and a 90° L came out 40 % off
+        // in R with no warning. Checked through `diagnose`, which the GUI and the
+        // bindings call, so the arm there cannot drift from the CLI's producer.
+        let ctx = SolverContext::cli_hallen();
+        let warns = |text: &str| -> Vec<String> {
+            let (deck, segs) = deck_and_segs(text);
+            let ground = crate::geometry::ground_model_from_deck(&deck);
+            diagnose(&deck, &segs, &ground, 14.2e6, ctx)
+                .into_iter()
+                .map(|d| d.message)
+                .collect()
+        };
+        let l = warns("GW 1 21 0 0 0 0 0 5 .001\nGW 2 21 0 0 5 5 0 5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
+        assert!(l.iter().any(|w| w.contains("a 90° bend")), "{l:?}");
+        assert!(l.iter().any(|w| w.contains("--solver mpie")), "{l:?}");
+
+        for (what, text) in [
+            ("straight", "GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"),
+            // A collinear split walked start-to-start is straight, not bent.
+            ("collinear split", "GW 1 21 0 0 0 0 0 -5 .001\nGW 2 21 0 0 0 0 0 5 .001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"),
+        ] {
+            let w = warns(text);
+            assert!(!w.iter().any(|w| w.contains("bent conductor")), "{what}: {w:?}");
+        }
+        // A T junction has its own, stronger warning; the bend one does not pile on.
+        let t = warns("GW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\nGW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 3 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
+        assert!(t.iter().any(|w| w.contains("T/Y junction")), "{t:?}");
+        assert!(!t.iter().any(|w| w.contains("bent conductor")), "{t:?}");
     }
 
     #[test]
