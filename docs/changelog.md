@@ -82,6 +82,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **`cargo test -p nec_accel` compiles (FND-144).** Its GPU tests need the
   `wgpu` feature, which only a workspace run turned on; the crate's tests now
   enable it themselves.
+- **`scripts/check-all.sh` runs what CI runs (FND-066):** `cargo audit`,
+  `cargo deny`, the bindings pytest (a scratch venv under `target/` and the
+  cargo-built library, no maturin needed), the test-catalog count check and the
+  version-bump docs check, plus CI's coverage gate behind `--coverage`.
+- **One `Cargo.toml` version parser for the scripts (FND-067, FND-068).**
+  `derive-corpus-provenance.py` and `check-version-bump-docs.sh` took the first
+  `version` line and split on quotes; both, and `check-release-tags.py`, now use
+  `scripts/cargo_version.py` (`tomllib`).
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

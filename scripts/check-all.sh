@@ -2,7 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Simon Keimer (DC0SK)
 #
-# The full local gate, across BOTH cargo trees (FND-024).
+# The full local gate, across BOTH cargo trees (FND-024): every check the CI
+# workflow runs, run the same way (FND-066). The one CI job left out by default
+# is coverage, an instrumented rebuild of the whole suite; `--coverage` adds it.
+# An earlier version called itself "the full local gate" while omitting eight CI
+# checks, the bindings pytest among them — which was then believed to be
+# CI-only and cost two CI round trips on stale pinned values.
 #
 # `bindings/fnec_py` is deliberately excluded from the workspace — it is a cdylib
 # with its own lockfile — so every `--workspace` command run at the root skips it
@@ -18,20 +23,39 @@
 # `bindings/fnec_py` covers both trees, while the root run covers only its own.
 # That is why the fmt step below runs there and not at the root.
 #
-# Usage:  scripts/check-all.sh [--fast]
-#   --fast   skip the test suite (fmt, clippy and the doc checkers only)
+# Usage:  scripts/check-all.sh [--fast] [--coverage]
+#   --fast       skip the test suites (fmt, clippy, audit/deny and the doc checkers)
+#   --coverage   also run CI's coverage gate (cargo llvm-cov, >= 75% lines)
 
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 FAST=0
-[[ "${1:-}" == "--fast" ]] && FAST=1
+COVERAGE=0
+for arg in "$@"; do
+    case "$arg" in
+        --fast) FAST=1 ;;
+        --coverage) COVERAGE=1 ;;
+        *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    esac
+done
 
 # Queue behind any other heavy build on this machine, in any project, rather
 # than race it for RAM. See the helper for why this is host-wide.
 # shellcheck source=scripts/host-build-lock.sh
 source "$ROOT/scripts/host-build-lock.sh" "check-all"
+
+pytest_bindings() {
+    local venv="$ROOT/target/pytest-venv" module="$ROOT/target/pytest-module"
+    if ! "$venv/bin/python" -c 'import pytest' 2>/dev/null; then
+        python3 -m venv "$venv" && "$venv/bin/pip" install -q pytest || return 1
+    fi
+    (cd "$ROOT/bindings/fnec_py" && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo build -q) || return 1
+    mkdir -p "$module" &&
+        cp "$ROOT/bindings/fnec_py/target/debug/libfnec_py.so" "$module/fnec_py.abi3.so" || return 1
+    PYTHONPATH="$module" "$venv/bin/python" -m pytest -q "$ROOT/bindings/fnec_py/tests"
+}
 
 FAILED=()
 run() {
@@ -67,7 +91,19 @@ if [[ $FAST -eq 0 ]]; then
     # Same asymmetry as the fmt note at the top of this file (FND-024).
     run "test (fnec_py)" bash -c \
         "cd '$ROOT/bindings/fnec_py' && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo test"
+
+    # CI's pytest, without maturin: a scratch venv under target/ (off the tmpfs,
+    # ignored by git) and the cargo-built library copied onto PYTHONPATH under
+    # the name Python imports. The first run needs network for `pip install`.
+    run "pytest (fnec_py)" pytest_bindings
+
+    # Checks the counts in docs/project/test-catalog.md against what the
+    # harness lists; it builds nothing the suite above has not already built.
+    run "test-catalog counts" python3 scripts/check-test-catalog-counts.py
 fi
+
+run "cargo audit" cargo audit
+run "cargo deny" cargo deny check bans licenses sources
 
 for c in check-changelog-headings check-findings-ledger check-path-inventory \
          check-release-tags check-binding-version; do
@@ -99,8 +135,15 @@ run "check-release-tags self-test" python3 scripts/test-check-release-tags.py
 BASE="$(git merge-base HEAD origin/main 2>/dev/null || echo '')"
 if [[ -n "$BASE" ]]; then
     run "check-doc-attachment" python3 scripts/check-doc-attachment.py --base "$BASE"
+    # CI runs this on pull requests, against the PR base; the merge base is
+    # the local equivalent.
+    run "version-bump docs" bash scripts/check-version-bump-docs.sh "$BASE" HEAD
 else
     run "check-doc-attachment" python3 scripts/check-doc-attachment.py
+fi
+
+if [[ $COVERAGE -eq 1 ]]; then
+    run "coverage (>= 75% lines)" cargo llvm-cov --workspace --summary-only --fail-under-lines 75
 fi
 
 echo

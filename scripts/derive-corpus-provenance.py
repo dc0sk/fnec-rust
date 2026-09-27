@@ -34,6 +34,10 @@ import json
 import subprocess
 import sys
 from hashlib import sha256
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cargo_version import version_at  # noqa: E402  (one parser, FND-067)
 
 FILE = "corpus/reference-results.json"
 # Bookkeeping keys are provenance *about* the cases, not part of a case's data;
@@ -51,10 +55,7 @@ def case_fingerprint(case: dict) -> str:
 
 
 def workspace_version_at(sha: str) -> str:
-    for line in run("git", "show", f"{sha}:Cargo.toml").splitlines():
-        if line.startswith("version"):
-            return line.split('"')[1]
-    return "unknown"
+    return version_at(sha) or "unknown"
 
 
 def derive() -> dict[str, tuple[str, str]]:

@@ -19,8 +19,11 @@ if ! git cat-file -e "${head_ref}:Cargo.toml" 2>/dev/null; then
   exit 0
 fi
 
-base_version="$(git show "${base_ref}:Cargo.toml" | sed -n 's/^version = "\([^"]*\)"$/\1/p' | head -n1)"
-head_version="$(git show "${head_ref}:Cargo.toml" | sed -n 's/^version = "\([^"]*\)"$/\1/p' | head -n1)"
+# Parsed, not grepped: the first-match `^version =` extraction worked only
+# because the manifest has one such line (FND-068).
+here="$(cd "$(dirname "$0")" && pwd)"
+base_version="$(python3 "$here/cargo_version.py" "$base_ref" || true)"
+head_version="$(python3 "$here/cargo_version.py" "$head_ref" || true)"
 
 if [[ -z "$base_version" || -z "$head_version" ]]; then
   echo "Unable to determine workspace version from Cargo.toml." >&2
