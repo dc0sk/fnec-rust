@@ -30,6 +30,23 @@ fn feedpoint_impedance(deck: &str, exec: &str) -> (f64, f64) {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
+    // FND-163: at 51 segments the f32 solve is accurate, so on a host with a GPU
+    // it must not decline at all. A fallback would make the comparison in the
+    // test below the CPU against itself — it passed with the device solve forced
+    // to fail. Without a GPU, "no adapter" is the one expected decline.
+    if exec == "gpu" {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if let Some(line) = stderr
+            .lines()
+            .find(|l| l.contains("solve_hallen_gpu_resident:"))
+        {
+            assert!(
+                line.contains("no wgpu adapter available")
+                    && !pollster::block_on(nec_accel::hardware_adapter_present()),
+                "{deck}: the GPU-resident solve declined on this host:\n{line}"
+            );
+        }
+    }
 
     let mut lines = stdout.lines();
     // Find the FEEDPOINTS header, skip the column header, read the first data row.
@@ -136,12 +153,19 @@ EN
         eprintln!("SKIP: no wgpu adapter on this host — the GPU solve never ran");
         return;
     }
-    // Any other decline means the CPU answered in the GPU's place, and the
-    // comparison below would then compare the CPU with itself (FND-163).
-    assert!(
-        !gpu_stderr.contains("solve_hallen_gpu_resident:"),
-        "the GPU-resident solve declined and fell back to the CPU:\n{gpu_stderr}"
-    );
+    // The one decline this test expects is its subject: the f32 solve failing
+    // its residual check at this size, and falling back. Any OTHER decline — a
+    // device fault, an out-of-class input — means the GPU path is broken and the
+    // comparison below would compare the CPU with itself (FND-163).
+    for line in gpu_stderr
+        .lines()
+        .filter(|l| l.contains("solve_hallen_gpu_resident:"))
+    {
+        assert!(
+            line.contains("did not converge"),
+            "the GPU-resident solve declined for a reason other than its residual check:\n{line}"
+        );
+    }
 
     assert_eq!(cpu.len(), 3, "expected 3 sweep points, got {cpu:?}");
     assert_eq!(
