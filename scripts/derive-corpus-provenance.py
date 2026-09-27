@@ -16,6 +16,15 @@ that commit*, which is the release under development, not necessarily a released
 build. Cases whose values never changed since they were added report the commit
 that added them.
 
+The `--check` compares the VERSION, not the date (FND-160). A squash-merge
+replaces the branch commit that last changed a case with a new commit on `main`,
+dated the day of the merge: the data is identical, only the date moves. Checking
+the date turned `main` red for every re-pin merged on a later day than its
+branch commit, and a PR branch can never stamp the date its own merge will get.
+The version survives the squash (the merge commit carries the branch's
+`Cargo.toml`), so it is what the check can hold. The date is still written, and
+a case with no date at all still fails the check.
+
 Usage:
   scripts/derive-corpus-provenance.py           # rewrite the file in place
   scripts/derive-corpus-provenance.py --check   # exit 1 if it is stale
@@ -89,7 +98,9 @@ def main() -> int:
     stale = []
     for name, case in doc["cases"].items():
         date, version = provenance[name]
-        if case.get("last_produced_on") != date or case.get("last_produced_in") != version:
+        # The date is informational: a squash-merge moves it without changing the
+        # data (see the module docstring), so only its presence is checked.
+        if not case.get("last_produced_on") or case.get("last_produced_in") != version:
             stale.append(name)
         case["last_produced_on"] = date
         case["last_produced_in"] = version

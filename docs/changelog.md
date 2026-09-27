@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Changelog
@@ -24,11 +24,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Removed
 
+- **`nec_worker::ResultCache` and `cache_key`, the result-cache contract tests,
+  and the `sha2` dependency (FND-155).** The distributed result cache was
+  designed and documented but never called: no sweep ever reused a result. The
+  maintainer chose to remove it rather than build it; PH6-CHK-007 is withdrawn
+  and `distributed-execution-design.md` §5 now says so.
+
 - **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
   weighting scheme that was designed and never built (FND-104). It had no caller
   outside its own tests.
 
 ### Security
+
+- **`--hosts` now verifies worker SSH host keys (FND-154).** Every controller
+  `ssh` passes `StrictHostKeyChecking=accept-new` with the user's own
+  `~/.ssh/known_hosts`, replacing `StrictHostKeyChecking=no` and
+  `UserKnownHostsFile=/dev/null`: a never-seen worker still connects (its key is
+  recorded), and a worker whose key has changed is refused rather than trusted.
+  **Upgrade note:** a worker reinstalled with a new host key fails with "Host key
+  verification failed" until `ssh-keygen -R <host>` removes the old entry. The
+  four hand-copied option lists are now one.
 
 - **`docs/worker-deployment.md` now states that `--hosts` connects with SSH
   host-key verification disabled** (`StrictHostKeyChecking=no`,
@@ -39,6 +54,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   control.
 
 ### Fixed
+
+- **A corpus re-pin merged on a later day than its branch commit no longer turns
+  `main` red (FND-160).** The provenance freshness check compared each case's
+  `last_produced_on` date, which a squash-merge changes without changing the data.
+  It now compares the version (which survives the squash) and only requires a date
+  to be present; the date is still written.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

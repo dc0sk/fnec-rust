@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/distributed-execution-design.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-27
 ---
 
 # Distributed Execution Design
@@ -10,7 +10,7 @@ last_updated: 2026-09-25
 ## Purpose and Scope
 
 This document is the gating prerequisite for PH6-CHK-006 (SSH-backed worker
-deployment) and PH6-CHK-007 (result-cache layer).  No cluster code ships until
+deployment) and PH6-CHK-007 (result-cache layer, withdrawn 2026-09-27 — §5).  No cluster code ships until
 all five design sections here carry an explicit, non-TBD decision.
 
 Distributed execution targets large frequency-sweep and parameter-sweep
@@ -105,10 +105,12 @@ accepted.  Job-level authorisation (per-deck ACLs) is out of scope for Phase 6.
   (`PasswordAuthentication no`).  The deployment guide enforces this.
 - **Agent forwarding is not required** — the controller connects outbound to
   workers; workers never need to reach back to the controller.
-- **Host key verification is required** — `StrictHostKeyChecking yes` in the
-  controller's SSH invocation.  Operators add worker host keys to
-  `~/.ssh/known_hosts` during initial setup.  `StrictHostKeyChecking accept-new`
-  is permitted during first-time provisioning only.
+- **Host key verification is on** — the controller's SSH invocation passes
+  `StrictHostKeyChecking=accept-new` with the user's own `~/.ssh/known_hosts`
+  (FND-154): a never-seen worker's key is recorded, a changed key is refused.
+  Operators who want no trust-on-first-use window add worker keys to
+  `known_hosts` during initial setup. (This section once said `yes`, while the
+  code passed `no` with `/dev/null` as the known-hosts file.)
 
 ### Future path
 
@@ -306,78 +308,24 @@ all-or-nothing, as `docs/cli-guide.md` states.
 
 ---
 
-## 5. Result-Cache Design
+## 5. Result-Cache Design — not planned
 
-**Decision: SHA-256-keyed flat-file cache on the controller node.
-Cache key = SHA-256(deck_bytes ‖ solver_config_canonical_json ‖ frequency_hz_ieee754_le).**
+**Decision (2026-09-27, the maintainer, FND-155): no result cache.** This
+section designed a SHA-256-keyed flat-file cache on the controller
+(`~/.cache/fnec-rust/result-cache/`, key = SHA-256 of deck bytes, canonical
+solver config and frequency; LRU eviction to 512 MiB; `fnec cache` commands; an
+integrity check on read). None of it was built. What existed was
+`nec_worker::ResultCache`, an in-memory FIFO keyed the same way, which nothing
+called — so the "cache hit skips the remote solve" this section promised never
+happened on any run. The type, its contract tests and the `sha2` dependency were
+removed rather than left looking like a feature, and PH6-CHK-007 is withdrawn.
 
-### Cache location
-
-`$XDG_CACHE_HOME/fnec-rust/result-cache/` (default:
-`~/.cache/fnec-rust/result-cache/`).
-
-Each cache entry is a single JSON file named `<sha256hex>.json` containing the
-full result message (identical schema to §3.2 output, plus a `cached_at`
-timestamp field).
-
-### Cache key construction
-
-```
-key = SHA-256(
-    deck_bytes                        // raw NEC deck file bytes, no normalisation
-  ‖ 0x00                             // separator byte
-  ‖ solver_config_canonical_json     // keys sorted, no whitespace, UTF-8
-  ‖ 0x00                             // separator byte
-  ‖ frequency_hz_le                  // f64 little-endian IEEE 754, 8 bytes
-)
-```
-
-Deck bytes are used verbatim (no AST normalisation).  Two decks that are
-semantically identical but textually different produce different keys.  This is
-intentional: normalisation adds complexity and the cache is a performance
-optimisation, not a semantic equivalence oracle.
-
-### Cache lookup
-
-Before dispatching a task to a worker, the controller computes the key and
-checks for the cache file.  On a hit, the cached result is used immediately; the
-task is never sent to a worker.  On a miss, the task is dispatched and the result
-is written to the cache after receipt (only for `status: "ok"` results — errors
-are not cached).
-
-### Cache invalidation
-
-There is no TTL and no background eviction.  The cache is invalidated
-naturally: if the deck changes, the deck bytes change, the key changes, and the
-old entry is never referenced again (it becomes orphaned).
-
-Manual eviction:
-
-```
-fnec cache clear              # delete all cache entries
-fnec cache clear --deck <path>  # delete all entries for a specific deck
-fnec cache stats              # print entry count and total size
-```
-
-Cache size is bounded by a configurable `max_cache_size_mb` setting in
-`~/.config/fnec-rust/config.toml` (default: 512 MiB).  When the limit is
-reached, the controller evicts the least-recently-used entries before writing a
-new result.  LRU metadata is stored in a `lru.json` index file alongside the
-cache entries.
-
-### Integrity check
-
-On read, the controller verifies that the cache file name matches
-`SHA-256(file contents minus the cached_at field)`.  A mismatch causes the
-entry to be treated as a miss and the corrupt file is deleted.  This guards
-against partial writes and filesystem corruption without requiring a separate
-checksum database.
-
-### Error-result policy
-
-`status: "error"` results are **not** cached.  If a solve fails at a given
-frequency, the next run re-attempts it.  This avoids persisting transient
-failures (singular matrices from slightly bad geometry that the user then fixes).
+Why not build it: nobody has asked for it, a distributed sweep re-solves only
+what changed when the user changes the deck anyway, and a cache is one more
+place a stale answer can come from — the solver has changed values several
+times in 2026-09 alone (FND-156/158/159), and every such change would have had
+to invalidate it. The full design is in this file's git history if a need
+appears.
 
 ---
 
@@ -393,12 +341,7 @@ failures (singular matrices from slightly bad geometry that the user then fixes)
 | Assignment | Pull loop: each worker claims the next task when it finishes one (as built; the weighted round-robin was never implemented — FND-104) |
 | Pipeline depth | 1 task per worker |
 | Local fallback | None — `--hosts` is all-or-nothing |
-| Cache (the next four rows) | **Designed, not built, and not used.** `ResultCache` is an in-memory FIFO that nothing calls — FND-155 |
-| Cache key | SHA-256(deck bytes ‖ solver config ‖ frequency f64 LE) |
-| Cache storage | Flat JSON files under `~/.cache/fnec-rust/result-cache/` |
-| Cache invalidation | Key-based (natural on any change); no TTL |
-| Cache eviction | LRU up to configurable size limit (default 512 MiB) |
-| Error-result caching | Never cached |
+| Result cache | **Not planned** — designed, never built, and withdrawn (§5, FND-155) |
 
 ---
 
