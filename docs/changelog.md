@@ -122,6 +122,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   Pattern, Currents and Sweep read the deck once and feed the same text to the
   caveats, which were a second, independent read; Apply+Solve's caveats now come
   from the edited document rather than the file on disk.
+- **A same-tag `GM` copy is numbered, addressed and solved as nec2c does it
+  (FND-135).** Its segments restarted at 1, so an `EX`/`LD`/`NT`/`PT` naming the
+  copy (e.g. tag 1 segment 77 on a 51-segment wire copied once) reached the
+  original or nothing; and a run of one tag was one wire however far apart, so a
+  translated copy was solved as one conductor with the original. Segment numbers
+  within a tag now count its occurrences (nec2c's `isegno`), and a wire also ends
+  where the next segment does not start at its end. A dipole and its same-tag
+  copy fed at segment 77 now equal the same pair written as two tags, to 1e-9,
+  and nec2c's 44.055 + j79.902 Ω.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

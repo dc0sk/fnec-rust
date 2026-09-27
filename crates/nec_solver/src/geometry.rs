@@ -13,7 +13,8 @@
 //! - `length`        — segment length in metres
 //! - `radius`        — wire radius in metres
 //! - `tag`           — wire tag number from the GW card
-//! - `tag_index`     — 1-based segment index within the tag
+//! - `tag_index`     — 1-based occurrence of this segment's tag, in definition
+//!   order: NEC's segment number within a tag, as nec2c's `isegno` counts it
 //! - `global_index`  — 0-based index in the flat segment list
 
 use nec_model::card::{Card, GeCard, GmCard, GrCard, GwCard};
@@ -115,7 +116,14 @@ pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
 pub struct Segment {
     /// Wire tag number (from GW card).
     pub tag: u32,
-    /// 1-based segment index within the tag.
+    /// NEC's segment number within the tag: the 1-based occurrence of `tag` in
+    /// definition order, as nec2c's `isegno` counts it.
+    ///
+    /// Not the index within one `GW` card. A same-tag `GM` copy (`ITGI = 0`)
+    /// numbered its segments from 1 again, so "tag 1 segment 77" on a 51-segment
+    /// wire copied once named nothing, and every EX/LD/NT/PT that addressed the
+    /// copy reached the original instead (FND-135). Numbered here, once, so the
+    /// twenty sites that resolve `(tag, segment)` agree with nec2c unchanged.
     pub tag_index: u32,
     /// 0-based index in the global segment list.
     pub global_index: usize,
@@ -213,15 +221,25 @@ impl std::error::Error for GeometryError {}
 
 /// Compute per-wire endpoint indices from a flat segment list.
 ///
-/// Wires are identified by contiguous runs of segments sharing the same tag.
-/// Returns a `Vec` of `(first, last)` inclusive global-index pairs, one per
-/// wire, in deck order.  An empty segment list returns an empty `Vec`.
+/// A wire is a run of segments sharing one tag, each starting where the one
+/// before it ended. Returns a `Vec` of `(first, last)` inclusive global-index
+/// pairs, one per wire, in deck order. An empty segment list returns an empty
+/// `Vec`.
+///
+/// The continuity condition is new (FND-135). A run of one tag used to be one
+/// wire however far apart its segments were, so a same-tag `GM` copy translated
+/// away from its original was solved as ONE conductor jumping the gap.
 pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
+    let gap = |a: &[f64; 3], b: &[f64; 3]| {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    };
     let mut out: Vec<(usize, usize)> = Vec::new();
     let mut current_tag = u32::MAX;
     let mut first = 0usize;
     for (i, seg) in segs.iter().enumerate() {
-        if seg.tag != current_tag {
+        let breaks = seg.tag != current_tag
+            || (i > 0 && gap(&segs[i - 1].end, &seg.start) > crate::hallen_session::JUNCTION_TOL_M);
+        if breaks {
             if current_tag != u32::MAX {
                 out.push((first, i - 1));
             }
@@ -774,9 +792,14 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
         return Err(GeometryError::NoWires);
     }
 
-    // Re-number global_index in final order.
+    // Re-number global_index in final order, and tag_index as NEC counts it:
+    // the running occurrence of each tag (see `Segment::tag_index`, FND-135).
+    let mut seen: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
     for (i, seg) in segments.iter_mut().enumerate() {
         seg.global_index = i;
+        let n = seen.entry(seg.tag).or_insert(0);
+        *n += 1;
+        seg.tag_index = *n;
     }
 
     Ok(segments)
