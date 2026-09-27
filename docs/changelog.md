@@ -15,12 +15,30 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-09-27 — One answer, however the deck is written
+
+Twenty-nine changes since v0.18.0 (#451–#479). **The Hallén solver's answers
+moved onto nec2c's**: a λ/2 dipole went from 74.24 + j13.90 Ω to 78.83 + j42.43
+(nec2c 79.35 + j46.22), after four fixes to how it models a wire's ends, its
+asymmetric currents, mixed segment lengths and its own regularisation
+(FND-156/158/159/164). An inverted-V written end-to-start, the usual spelling,
+went from −24.1 − j1321.3 Ω to 87.7 + j198.0 (FND-167). Wires standing on
+perfect ground now solve (FND-082), the Python bindings answer receive decks,
+and what fnec still cannot model — bent conductors on Hallén, unusable loads,
+the unvalidated pulse bases — is now refused or warned about by name.
+
+The findings ledger went from 149 findings / 33 open to **167 / 0 open**, one of
+them (FND-162, Hallén bend conditions) deferred with a design and a measured
+first stage. Every value quoted below and in the release notes was re-measured
+at the release commit.
+
+
 ### Added
 
 - **`fnec_py.solve_currents_deck_str`** returns the per-segment currents of a deck
   at its first frequency, and is the Python route for a **plane-wave receive
   deck** (FND-108), which the impedance functions cannot answer. It shares the
-  impedance functions' solve, and is gated against nec2c's induced currents.
+  impedance functions' solve, and is gated against nec2c's induced currents. (#466)
 
 ### Removed
 
@@ -28,18 +46,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   and the `sha2` dependency (FND-155).** The distributed result cache was
   designed and documented but never called: no sweep ever reused a result. The
   maintainer chose to remove it rather than build it; PH6-CHK-007 is withdrawn
-  and `distributed-execution-design.md` §5 now says so.
+  and `distributed-execution-design.md` §5 now says so. (#467)
 - **Dead public API with no caller anywhere:** `WorkerPool::new_ssh` (FND-073),
   `ExcitationKind::is_voltage_source` (FND-074; `feedpoint_role` is the
   classification every caller uses), and the GUI's `sweep_deck_path` and
-  `MeshData::segment_count` (FND-075).
+  `MeshData::segment_count` (FND-075). (#468)
 - **The tolerance parameter of `nec_solver::detect_wire_junctions` (FND-079).**
   Every caller passed the same `1e-6`, as a bare literal at most of them; the
-  function now reads `JUNCTION_TOL_M` itself, so no caller can pass another.
+  function now reads `JUNCTION_TOL_M` itself, so no caller can pass another. (#468)
 
 - **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
   weighting scheme that was designed and never built (FND-104). It had no caller
-  outside its own tests.
+  outside its own tests. (#454)
 
 ### Security
 
@@ -50,7 +68,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   recorded), and a worker whose key has changed is refused rather than trusted.
   **Upgrade note:** a worker reinstalled with a new host key fails with "Host key
   verification failed" until `ssh-keygen -R <host>` removes the old entry. The
-  four hand-copied option lists are now one.
+  four hand-copied option lists are now one. (#467)
 
 - **`docs/worker-deployment.md` now states that `--hosts` connects with SSH
   host-key verification disabled** (`StrictHostKeyChecking=no`,
@@ -58,7 +76,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   out, and its Security Notes did not mention host keys. The behaviour itself is
   unchanged and recorded as FND-154: turning verification on would change how
   every existing cluster first connects. Run `--hosts` only on a network you
-  control.
+  control. (#467)
 
 ### Fixed
 
@@ -68,7 +86,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   measured error, and points to `--solver mpie`, which tracks nec2c on these decks.
   The GUI and the Python bindings reach it too: `validate::diagnose` calls the
   shared caveat producer instead of keeping its own list. What was tried and what
-  remains is in `docs/hallen-bends.md`.
+  remains is in `docs/hallen-bends.md`. (#479)
 
 - **A bent chain written end-to-start is solved on the conductor-path basis
   (FND-167).** The route counted a path as "trivial" (straight) when its segments
@@ -77,13 +95,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   junction row: −20.9 − j1274.6 Ω, where nec2c and the same antenna written
   start-to-start give 86.8 + j197.2. It now equals the start-to-start form
   exactly. Bent decks fed off the apex, and L shapes, move from garbage to finite
-  but are still well off nec2c (FND-162).
+  but are still well off nec2c (FND-162). (#478, #479)
 
 - **The per-file integration table in the test catalog is checked (FND-143).**
   `check-test-catalog-counts.py` maps each test binary to its source file through
   cargo's JSON build messages and requires one row per file with its measured
   count. It found 18 wrong rows and 36 files with no row; the table is
-  regenerated.
+  regenerated. (#477)
 
 - **Gate G5 measures something (FND-165).** It timed two whole `fnec`
   processes and skipped whenever stderr carried one of three strings, two of
@@ -91,81 +109,81 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   enforced. It now times what its documentation always named — the GPU RP
   far-field kernel against the CPU far-field, in-process, device started once —
   and skips only without a hardware adapter. Measured on an AMD Renoir:
-  5.7 ms against 460 ms (debug build).
+  5.7 ms against 460 ms (debug build). (#476)
 
 - **A release cannot be tagged with a stale SBOM (FND-068).**
   `scripts/check-sbom-version.py` requires every workspace member in
   `SBOM.spdx.json` at the workspace version; the release workflow runs it on the
   tree it tags, and CI and `check-all.sh` run it on every change. The eight CI
-  jobs are now required status checks on `main`.
+  jobs are now required status checks on `main`. (#469, #475)
 
 - **A T/Y-junction deck is no longer solved on the GPU with the pairwise
   junction rows (FND-166).** Such decks route to the plain basis, and the GPU
   gates in the CLI and the worker asked only whether the path basis was needed,
   so `--exec gpu` on a deck of 16 or more segments sent them to the device. The
   route now records the unsupported topology, and one method,
-  `HallenRoute::gpu_resident_supported`, answers for both gates.
+  `HallenRoute::gpu_resident_supported`, answers for both gates. (#474)
 
 - **A corpus re-pin merged on a later day than its branch commit no longer turns
   `main` red (FND-160).** The provenance freshness check compared each case's
   `last_produced_on` date, which a squash-merge changes without changing the data.
   It now compares the version (which survives the squash) and only requires a date
-  to be present; the date is still written.
+  to be present; the date is still written. (#467)
 - **A GPU gate can no longer pass a broken device solve as "no GPU, skipped"
   (FND-163).** `nec_accel::solve_hallen_gpu_resident` returns `GpuSolveDeclined`
   (`NoAdapter`, `DeviceFailed`, `OutOfClass`, `NotConverged`) instead of `None`
   for all four, and every GPU test skips only on `NoAdapter` — and only on a host
   without a hardware adapter (`nec_accel::hardware_adapter_present`). The Z-fill,
   microbenchmark, RP and worker GPU tests apply the same rule, and the CLI and
-  worker GPU tests now fail when a GPU host answered from the CPU fallback.
+  worker GPU tests now fail when a GPU host answered from the CPU fallback. (#462, #468)
 - **The worker's GPU path asks for a delta-gap drive, as the CLI's does
-  (FND-147).** It excluded only current sources.
+  (FND-147).** It excluded only current sources. (#468)
 - **One `nec_accel::MIN_GPU_RESIDENT_SEGS` for the CLI and the worker (FND-078)**,
   with its (absent) provenance stated; the PH7-CHK-003 doc named the Z-fill
-  path's threshold of 128, which the resident path never used.
+  path's threshold of 128, which the resident path never used. (#468)
 - **`cargo test -p nec_accel` compiles (FND-144).** Its GPU tests need the
   `wgpu` feature, which only a workspace run turned on; the crate's tests now
-  enable it themselves.
+  enable it themselves. (#468)
 - **`scripts/check-all.sh` runs what CI runs (FND-066):** `cargo audit`,
   `cargo deny`, the bindings pytest (a scratch venv under `target/` and the
   cargo-built library, no maturin needed), the test-catalog count check and the
-  version-bump docs check, plus CI's coverage gate behind `--coverage`.
+  version-bump docs check, plus CI's coverage gate behind `--coverage`. (#469)
 - **One `Cargo.toml` version parser for the scripts (FND-067, FND-068).**
   `derive-corpus-provenance.py` and `check-version-bump-docs.sh` took the first
   `version` line and split on quotes; both, and `check-release-tags.py`, now use
-  `scripts/cargo_version.py` (`tomllib`).
+  `scripts/cargo_version.py` (`tomllib`). (#469, #475)
 - **A CLI sweep reports negative feedpoint resistance once, not once per point
   (FND-069).** A 50-point sweep over a junctioned deck printed 50 lines, each
   with its own `Re Z`; the GUI and `fnec_py` already aggregated through the
   shared producer. The local and the distributed sweep now print one line
-  ("N of M sweep points …"); a single frequency keeps the per-point sentence.
+  ("N of M sweep points …"); a single frequency keeps the per-point sentence. (#471)
 - **A bad `--hosts` path is reported even when the deck is refused too
   (FND-150).** The hosts file is now read with `--sweep-config`, before any
   deck-level refusal; a deck with no frequency used to end the run first, so the
-  missing file was never mentioned.
+  missing file was never mentioned. (#471)
 - **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
   test built the same cards inline, so the corpus deck — which records the nec2c
-  capture — was checked by nothing; the test now reads the deck.
+  capture — was checked by nothing; the test now reads the deck. (#471)
 - **The GUI's file dialogs no longer freeze it (FND-071).** Open deck, Open vars
   and Save as… used blocking dialogs inside the update loop; they are async now,
-  run as tasks, and Save as… writes the document as it was when chosen.
+  run as tasks, and Save as… writes the document as it was when chosen. (#472)
 
 - **The GUI saves a deck atomically (FND-152).** Both Save and Save as… wrote
   with a truncate-then-write, so an interrupted save left a partial deck. They
   now write a temporary file beside the deck and rename it over, keeping the
-  deck's permissions and writing through a symlink.
+  deck's permissions and writing through a symlink. (#472)
 - **The GUI no longer saves over a `--vars` template (FND-153).** A deck loaded
   through a vars file holds the substituted values, and Save wrote them over the
   template's `$VARIABLES`. Save is refused for such a document, with the reason;
-  Save as… writes the instantiated deck to another file.
+  Save as… writes the instantiated deck to another file. (#472)
 - **An editor edit that fails validation still retires the viewport's pending
   solves (FND-141).** They were retired only when the edit rendered, so a
   currents, pattern or geometry result in flight across a half-typed coordinate
-  landed on the edited document.
+  landed on the edited document. (#472)
 - **The GUI's caveat strip describes the deck that was solved (FND-072).** Solve,
   Pattern, Currents and Sweep read the deck once and feed the same text to the
   caveats, which were a second, independent read; Apply+Solve's caveats now come
-  from the edited document rather than the file on disk.
+  from the edited document rather than the file on disk. (#472)
 - **A same-tag `GM` copy is numbered, addressed and solved as nec2c does it
   (FND-135).** Its segments restarted at 1, so an `EX`/`LD`/`NT`/`PT` naming the
   copy (e.g. tag 1 segment 77 on a 51-segment wire copied once) reached the
@@ -174,13 +192,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   within a tag now count its occurrences (nec2c's `isegno`), and a wire also ends
   where the next segment does not start at its end. A dipole and its same-tag
   copy fed at segment 77 now equal the same pair written as two tags, to 1e-9,
-  and nec2c's 44.055 + j79.902 Ω.
+  and nec2c's 44.055 + j79.902 Ω. (#473)
 - **The Hallén solve's regularisation no longer biases the answer (FND-164).**
   Its normal equations added an absolute `λ = 1e-8`; measured against the λ → 0
   limit, that moved a 2 cm dipole's R by 4.7 %, a coupled pair by 0.25 % and a
   λ/2 dipole by 0.009 Ω. The five solvers now share one routine that equilibrates
   the columns and adds a relative 1e-12, which sits at the limit on every deck
-  measured. Every Hallén impedance moves by the bias it carried.
+  measured. Every Hallén impedance moves by the bias it carried. (#473)
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally
@@ -188,7 +206,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   a one-segment `GW` of a different length. A 0.78 m end segment beside 0.2 m
   segments put the reactance 26 Ω off: 75.11 + j19.58 against nec2c's
   79.34 + j45.73. It now reads 78.13 + j40.07. The Z-matrix carries the lengths
-  from assembly.
+  from assembly. (#465)
 
 - **`--solver mpie` is now accurate: its self and adjacent terms were
   under-integrated (FND-157).** A 6-point Gauss rule cannot resolve the reduced
@@ -198,7 +216,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   - dipole: 74.4 → **78.9** Ω (79.1);
   - 5-element Yagi: 43.5 → **8.20 + j55.78** Ω (8.17 + j56.54);
   - Y-junction: −j322 → **65.4 − j61.6** Ω (67.2 − j63.0);
-  - horizontal dipole over GN2: 73.9 → **77.6** Ω (77.6).
+  - horizontal dipole over GN2: 73.9 → **77.6** Ω (77.6). (#464)
 
   The Python oracle several MPIE tests pinned against used the same 6-point
   rule and agreed with the defect; those tests now use nec2c. A term-by-term
@@ -213,7 +231,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   deck to rounding. A wire in the ground plane, below it, grounded at both ends,
   or sharing a ground point with another wire is refused, as is contact with
   finite ground, where there is no trustworthy model (nec2c answers 179 − j261 Ω
-  for a λ/4 vertical). Hallén only, with voltage sources.
+  for a λ/4 vertical). Hallén only, with voltage sources. (#463)
 
 - **Hallén now carries both homogeneous solutions, cos(k·s) and sin(k·s)
   (FND-158). Every answer with an asymmetric current changes.** It carried the
@@ -222,7 +240,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   Everything else was a least-squares compromise. Measured against nec2c:
   - a 0.55 λ wire fed off-centre: 324 → **370** Ω (nec2c 367);
   - a vertical dipole over perfect ground: 113.6 → **102.5** Ω (103.2);
-  - a dipole beside an axially offset parasitic: **459 → 27.3** Ω (25.5).
+  - a dipole beside an axially offset parasitic: **459 → 27.3** Ω (25.5). (#462)
 
   Both columns are now in the plain, conductor-path, sinusoidal and
   current-source solves, and in the GPU-resident shader. Wires touching a
@@ -239,7 +257,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   50 Ω, 0.1 m line between the feeds:
   - nec2c gives **84.83 + j31.13 Ω**;
   - fnec now gives **84.05 + j28.65 Ω**;
-  - the old stamp moved the feed by only 0.37 Ω.
+  - the old stamp moved the feed by only 0.37 Ω. (#458)
 
   A driven port feeds its network in parallel, so the input impedance and power
   include the network branch, as nec2c's do. Networks run on `--solver hallen`
@@ -260,7 +278,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   sinusoidal gives 130.93 + j30.40 Ω against nec2c's 131.33 + j34.31. The
   "unvalidated diagonal stamp" warning is gone. Pulse and continuity remain
   unphysical even unloaded (FND-080); their loads are now right, their matrix
-  is not.
+  is not. (#457, #461)
 
 - **The default Hallén solver no longer models every wire one segment short —
   every Hallén answer changes (FND-156).** The free-end boundary rows imposed
@@ -277,7 +295,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   - A dipole 0.024 λ over average ground moves from 92.27 + j13.62 Ω to **97.16
     + j44.13 Ω** (nec2c 97.32 + j44.15).
   - Radiation patterns, currents and sweeps derived from these solves move with
-    them.
+    them. (#456)
 
   The ~30 Ω reactance gap to nec2c had been documented for months as a
   "systematic formulation difference" and absorbed into 35–47 Ω external
@@ -294,39 +312,47 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   two — one phase enum, two matches, one of them missing an arm — so the chart,
   the cursor readout and the status line showed data the table discarded
   (FND-099). The points are preserved into `Failed` deliberately; the table now
-  derives from the same function as the chart rather than re-matching the phase.
+  derives from the same function as the chart rather than re-matching the phase. (#453)
 
 - **The GUI's `Save deck` writes to the file the document belongs to, not to
   whatever the deck-path box says.** That box is global chrome, editable on the
   Editor tab itself, and `Save` cloned it live — so loading deck A, retyping the
   box to B without loading it, and clicking Save truncated B with A's text
   (FND-103). Ordinary click sequence, default config, an unrelated file
-  destroyed.
+  destroyed. (#452)
 - **`Save as…` now rebinds the document**, so a later `Save deck` goes to the
   file just written rather than back to the previous one. Not recorded in the
-  ledger row; found by measuring it.
+  ledger row; found by measuring it. (#452)
 - The editor shows an **`Editing:`** line naming the file `Save` will write to.
   The document's file and the chrome's deck path are two different facts and can
   legitimately differ; before this they could not, because Save simply used the
-  chrome, which is how it came to truncate an unrelated file.
+  chrome, which is how it came to truncate an unrelated file. (#452)
 
 ### Changed
+
+- **Heavy builds queue behind each other across projects.** `check-all.sh` and the
+  pre-push hook take a host-wide `flock` (`scripts/host-build-lock.sh`), shared with
+  other projects on the machine, so two workspace test runs no longer race for RAM —
+  three gate runs had been OOM-killed and read as code failures (#455). The lock
+  fails closed when it cannot be taken (#469).
+- The findings ledger records the maintainer's 2026-09-26 decisions on the core-solver
+  findings and their order (#459).
 
 - **One Rust toolchain pin, `rust-toolchain.toml` at 1.98.1, and CI moves to it
   (FND-149).** CI pinned 1.97.1 in seven places and nothing pinned the host, so
   the hooks linted with whatever clippy was installed. `check-toolchain-pin.py`
   fails CI when a workflow names another version, and `check-all.sh` also when
-  the local `rustc` differs — a host without rustup is held to the pin that way.
+  the local `rustc` differs — a host without rustup is held to the pin that way. (#470)
 - **The `--solver` values are one list (FND-148).** Parsing, the two error
   messages and the usage line each spelled the five modes out, and the usage line
   in a different order (`pulse|hallen|…`); it now reads
   `hallen|pulse|continuity|sinusoidal|mpie` like the errors, which are built from
-  `SolverMode::ALL`, and a test ties the usage line to it.
+  `SolverMode::ALL`, and a test ties the usage line to it. (#471)
 - **The pulse solver's current-source path is marked dormant, and its corpus row
   no longer carries a reference it cannot produce (FND-130).** `EX 4` with any
   solver but Hallén is refused, so the path finds nothing to act on; it is kept
   with the pulse bases (FND-080), documented as dormant. The corpus row's
-  -345.6 - j988.0 Ω was unread — the row expects the refusal — but read as live.
+  -345.6 - j988.0 Ω was unread — the row expects the refusal — but read as live. (#461, #471)
 
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in
@@ -336,7 +362,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   now refuses such a deck before the matrix fill rather than after a full solve.
   The shared sentence lives in `validate::unpriceable_feedpoint_error`, which
   used to name only current sources — a class every frontend has priced since
-  FND-045 — and so was never reached (FND-146).
+  FND-045 — and so was never reached (FND-146). (#466)
 
 - **`--solver pulse` and `--solver continuity` run only with the new
   `--experimental-solver` flag (FND-080).** These modes have never produced a
@@ -344,17 +370,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   nec2c's 79+j46. They are kept for experiment, and their caveat now travels with
   every result: a `CAVEAT UNVALIDATED SOLVER` header line in the text report, and
   a `caveat` field in each JSON record. Output from validated solvers is
-  unchanged.
+  unchanged. (#461)
 - **A negative feedpoint resistance is reported on every solver (FND-081).**
   Pulse, continuity and sinusoidal were silent. Sinusoidal is as accurate as
   Hallén, and a negative resistance is physically impossible whatever produced
-  it.
+  it. (#461)
 - **An `LD` card fnec cannot apply is refused (FND-161).** This covers an
   unsupported load type, a type-5 load with σ ≤ 0, and a card naming no segment.
   Each is now an error naming the card. Before, it was skipped with a warning,
   which solved the antenna without the load; `TL`/`NT` got the same treatment in
   #458. A `--loads-config` Laplace load that cannot be evaluated at a frequency is
-  refused the same way.
+  refused the same way. (#460)
 - **`TL` cards are read in the NEC-2 layout (FND-111)**:
   `TL t1 s1 t2 s2 Z0 LEN Y1r Y1i Y2r Y2i`, plus two optional fnec extensions,
   F7 (velocity factor) and F8 (matched-line loss in dB). A negative Z0 is a
@@ -362,11 +388,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   centres, both as NEC-2 has them. fnec's old layout
   (`TL t1 s1 t2 s2 NSEG TYPE Z0 LEN VF`) misread every standard deck. It is now
   **refused**, with the NEC-2 rewrite in the message, rather than silently
-  reinterpreted.
+  reinterpreted. (#458)
 - **A `TL` or `NT` card fnec cannot use is an error, not a warning.** This covers
   a missing segment, fewer than 10 `NT` fields, a non-numeric field, and a line
   an exact number of half-wavelengths long. Skipping such a card solved a
-  different antenna from the one the deck describes; nec2c refuses these too.
+  different antenna from the one the deck describes; nec2c refuses these too. (#458)
 
 - **`hosts.toml`'s `cpu_threads_override` and `gpu_weight_override` are accepted
   and now warned about, not silently ignored** (FND-104). They were documented as
@@ -375,11 +401,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   either thing: each worker runs one task at a time, pulled from a shared queue,
   so there is nothing to cap and a faster node already takes more work by
   finishing sooner. Setting either key prints a `warning: [hosts]` line naming
-  the host, before any connection is made. Existing files still parse.
+  the host, before any connection is made. Existing files still parse. (#454)
 - `docs/distributed-execution-design.md` §4 now describes the scheduler that
   shipped (a pull loop, one task in flight per worker, no local fallback) in
   place of the weighted round-robin, pipeline depth 2 and local fallback it had
-  specified. None of those three was built.
+  specified. None of those three was built. (#454)
 
 - **A deck with no frequency at all is refused instead of silently succeeding.**
   `fnec deck.nec` on a deck with no `FR` card exited **0 having written zero
@@ -387,7 +413,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   that worked — while the GUI and `fnec_py`'s `solve_deck_str` refused the same
   deck and `fnec_py`'s `sweep_deck_str` returned `[]` (FND-070). Four frontends,
   three wordings and one silence; now one sentence, via
-  `validate::no_frequency_error`.
+  `validate::no_frequency_error`. (#451)
 
   The check is typed on the **resolved** frequency list, not on the deck, which
   is what keeps `--sweep-config` working: that flag *supplies* frequencies for a
@@ -2620,7 +2646,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/dc0sk/fnec-rust/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/dc0sk/fnec-rust/compare/v0.15.0...v0.16.0
