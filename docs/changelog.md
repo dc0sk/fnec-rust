@@ -27,7 +27,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   5.0 %, the corpus split-V 1.8 % (was 28 %). Every bent deck's impedance moves;
   the corpus is re-pinned, with the split-V's nec2c band tightened from 30 % to
   3 %. The bent-conductor caveat now fires only for plane-wave receive decks,
-  whose solve does not model the bend yet. Details: `docs/hallen-bends.md`.
+  whose solve does not model the bend yet. Details: `docs/hallen-bends.md`. (#481)
 
 ## [0.19.0] — 2026-09-27 — One answer, however the deck is written
 
