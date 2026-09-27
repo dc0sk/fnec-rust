@@ -24,7 +24,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
 | `apps/nec-cli/tests/exec_modes.rs` | 24 | `--exec` selection, drop-in alias resolution, sandbox paths | DEC-003, CP-012 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 3 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
-| `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: GPU exec ≤1.5× CPU on large RP grid (best-of-N) | PH5-CHK-005, PH7-CHK-002 |
+| `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 1 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 2 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 10 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred | PRT-001, PH2-CHK-001/002 |

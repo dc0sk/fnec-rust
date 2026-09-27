@@ -62,6 +62,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Gate G5 measures something (FND-165).** It timed two whole `fnec`
+  processes and skipped whenever stderr carried one of three strings, two of
+  which every `--exec gpu` run prints, so it skipped everywhere and never
+  enforced. It now times what its documentation always named — the GPU RP
+  far-field kernel against the CPU far-field, in-process, device started once —
+  and skips only without a hardware adapter. Measured on an AMD Renoir:
+  5.7 ms against 460 ms (debug build).
+
 - **A release cannot be tagged with a stale SBOM (FND-068).**
   `scripts/check-sbom-version.py` requires every workspace member in
   `SBOM.spdx.json` at the workspace version; the release workflow runs it on the

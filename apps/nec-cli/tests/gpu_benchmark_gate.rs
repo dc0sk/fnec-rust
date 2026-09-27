@@ -1,139 +1,95 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! Gate G5 (PH5-CHK-005): CPU-vs-GPU benchmark regression gate.
+//! Gate G5 (PH5-CHK-005): the GPU far-field (RP) kernel must not be more than
+//! 50% slower than the CPU far-field on the large RP grid (37×73 = 2701 points).
 //!
-//! Runs `corpus/dipole-freesp-rp-large-grid.nec` (37×73 = 2701 RP points)
-//! under `--exec cpu` and `--exec gpu`, takes the best (minimum) of several
-//! wall-clock measurements for each, and asserts that the GPU path is no more
-//! than 50% slower than the CPU path.
+//! **In-process, device initialised once** (FND-165). This gate used to time two
+//! whole `fnec` processes, `--exec gpu` against `--exec cpu`, and skip whenever
+//! stderr contained any of three strings. Every `--exec gpu` run prints two of
+//! them — the scheduling-seam warning and the GPU-resident solve warning — and
+//! the diagnostics label contains the third, so it skipped on every run on every
+//! host and never enforced anything. It could not honestly have done otherwise:
+//! the 51-segment deck takes the GPU-resident SOLVE, measured at 0.04x–0.48x the
+//! CPU, and even at 15 segments (no resident solve) each process pays wgpu's
+//! device start-up, ~100 ms, which put the GPU run at 1.63x the CPU on its own.
 //!
-//! On a host with a real wgpu adapter the `--exec gpu` path dispatches actual
-//! wgpu kernels (RP far-field batch / Z-matrix fill). Each measurement is a
-//! fresh process spawn, so the GPU path pays a fixed wgpu device-initialization
-//! cost (tens of ms) on every invocation. For a workload that solves in a few
-//! hundred ms that fixed cost is a structural floor on the ratio, not a
-//! dispatch regression — so the gate guards against *gross* overhead (>50%)
-//! rather than fine-grained deltas, and uses best-of-N timing to reject the
-//! positive-only scheduling noise that made a tight median-based gate flaky.
-//!
-//! When no wgpu adapter is present the GPU path falls back to the CPU stub and
-//! the timing comparison is meaningless; the gate detects that and skips.
+//! What G5's documentation always said it measured is the RP far-field kernel,
+//! so that is what it times now: the same currents and the same 2701 points,
+//! through `run_rp_farfield_batch_wgpu` (one warm-up call pays the device
+//! start-up) and through `compute_radiation_pattern`, best of several runs each.
+//! It skips only where there is no hardware adapter; on a host with one, a
+//! kernel that returns nothing is a failure (FND-163).
 
-use std::path::PathBuf;
-use std::process::Command;
+use nec_solver::{
+    assemble_z_matrix_with_ground, build_geometry, compute_radiation_pattern,
+    ground_model_from_deck, integrate_radiated_power, rp_card_points, solve_hallen_routed,
+};
 use std::time::Instant;
 
-fn deck_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("corpus/dipole-freesp-rp-large-grid.nec")
-}
+const REPS: usize = 7;
 
-struct RunResult {
-    elapsed: std::time::Duration,
-    stderr: String,
-}
-
-fn run_timed(exec_mode: &str) -> RunResult {
-    let deck = deck_path();
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
-    cmd.args(["--solver", "hallen", "--exec", exec_mode])
-        .arg(&deck);
-
-    let start = Instant::now();
-    let out = cmd
-        .output()
-        .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
-    let elapsed = start.elapsed();
-
-    assert!(
-        out.status.success(),
-        "fnec --exec {exec_mode} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-
-    RunResult {
-        elapsed,
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-    }
-}
-
-/// Best-case (minimum) timing. Wall-clock noise is positive-only (scheduling,
-/// page faults, device-init jitter only ever *add* time), so the minimum over
-/// several repetitions is the most stable estimator of each path's true cost.
-fn best_us(times: &[u64]) -> u64 {
-    times.iter().copied().min().expect("non-empty timing set")
-}
-
-/// Gate G5: GPU path must not be more than 50% slower than the CPU path
-/// on the large RP grid (37×73 = 2701 observation points).
-///
-/// Uses the best of several repetitions to reject OS scheduling noise.
 #[test]
-fn gpu_exec_not_more_than_50_percent_slower_than_cpu() {
-    const REPS: usize = 7;
-    let mut cpu_us = [0u64; REPS];
-    let mut gpu_us = [0u64; REPS];
-    let mut gpu_fallback = false;
+fn gpu_rp_kernel_not_more_than_50_percent_slower_than_cpu() {
+    let text = include_str!("../../../corpus/dipole-freesp-rp-large-grid.nec");
+    let deck = nec_parser::parse(text).expect("parses").deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let ground = ground_model_from_deck(&deck);
+    let f = 14.2e6;
+    let mut z = assemble_z_matrix_with_ground(&segs, f, &ground);
+    let currents = solve_hallen_routed(&deck, &segs, &mut z, f, &[])
+        .expect("solves")
+        .currents;
 
-    for i in 0..REPS {
-        let cpu = run_timed("cpu");
-        let gpu = run_timed("gpu");
-        cpu_us[i] = cpu.elapsed.as_micros() as u64;
-        gpu_us[i] = gpu.elapsed.as_micros() as u64;
-        // The GPU path is meaningless to time whenever the GPU is not what
-        // decides the wall clock: no adapter at all (CI), a fallback to the CPU
-        // solve, a software adapter (e.g. lavapipe) where wgpu-init dwarfs the
-        // solve — or the GPU-resident solve running and being slower by design,
-        // which PH7-CHK-003 measured at 0.04x-0.48x with no crossover.
-        //
-        // That last signal used to be caught by the string "using CPU solve
-        // path", which was FALSE for this deck class: a free-space, stamp-free
-        // deck of >= 16 segments does take the resident solve. Keying the skip on
-        // an untrue message worked by accident; it now keys on the warning that
-        // is actually true.
+    let points = rp_card_points(37, 73, 0.0, 0.0, 5.0, 5.0);
+    assert_eq!(points.len(), 2701);
+    let tuples: Vec<(f64, f64)> = points.iter().map(|p| (p.theta_deg, p.phi_deg)).collect();
+    let gpu_segs: Vec<_> = segs
+        .iter()
+        .map(|s| nec_accel::kernel_reference::GpuSegment {
+            midpoint: s.midpoint,
+            direction: s.direction,
+            length: s.length,
+        })
+        .collect();
+    let k = 2.0 * std::f64::consts::PI * f / 299_792_458.0;
+    let total = integrate_radiated_power(&segs, &currents, f, false);
+    let gpu_run = || {
+        pollster::block_on(nec_accel::wgpu_device::run_rp_farfield_batch_wgpu(
+            &gpu_segs, &currents, k, total, &tuples,
+        ))
+    };
+
+    // Warm-up: pays the device start-up, which is not the kernel's cost.
+    if gpu_run().is_none() {
         assert!(
-            !(gpu.stderr.contains("no wgpu adapter available")
-                && pollster::block_on(nec_accel::hardware_adapter_present())),
-            "a hardware adapter is present but the GPU path found none:\n{}",
-            gpu.stderr
+            !pollster::block_on(nec_accel::hardware_adapter_present()),
+            "G5: a hardware adapter is present but the RP kernel returned nothing"
         );
-        if gpu.stderr.contains("no wgpu adapter available")
-            || gpu.stderr.contains("cpu-fallback")
-            || gpu
-                .stderr
-                .contains("the per-frequency scheduling seam takes no work")
-            || gpu
-                .stderr
-                .contains("GPU-resident dense solve was measured at")
-        {
-            gpu_fallback = true;
-        }
-    }
-
-    // When running in CI without a hardware GPU the wgpu path falls back to
-    // the CPU stub.  The timing comparison is meaningless (and noisy) in that
-    // environment, so we only enforce the gate when a real adapter was used.
-    if gpu_fallback {
-        eprintln!("G5 gate: GPU path fell back to CPU (no hardware adapter or dispatch unwired) — timing gate skipped");
+        eprintln!("G5 gate: no hardware GPU adapter — skipped");
         return;
     }
 
-    let cpu_best = best_us(&cpu_us);
-    let gpu_best = best_us(&gpu_us);
-
-    let ratio = gpu_best as f64 / cpu_best as f64;
-    let limit = 1.5_f64;
-
-    eprintln!(
-        "G5 gate: cpu_best={cpu_best}µs  gpu_best={gpu_best}µs  ratio={ratio:.3}  limit={limit:.2}×"
-    );
-
+    let best = |f: &mut dyn FnMut()| {
+        (0..REPS)
+            .map(|_| {
+                let t = Instant::now();
+                f();
+                t.elapsed().as_micros()
+            })
+            .min()
+            .expect("REPS > 0")
+    };
+    let gpu_us = best(&mut || {
+        assert!(gpu_run().is_some(), "the RP kernel failed after warm-up");
+    });
+    let cpu_us = best(&mut || {
+        let _ = compute_radiation_pattern(&segs, &currents, f, &points, &ground);
+    });
+    let ratio = gpu_us as f64 / cpu_us as f64;
+    eprintln!("G5 gate: RP kernel {gpu_us} µs vs CPU {cpu_us} µs (ratio {ratio:.3})");
     assert!(
-        ratio <= limit,
-        "G5 regression: GPU best={gpu_best}µs exceeds {limit:.2}× CPU best={cpu_best}µs \
-         (ratio={ratio:.3}). GPU dispatch path has too much overhead."
+        ratio <= 1.5,
+        "G5: the GPU RP kernel took {gpu_us} µs against the CPU's {cpu_us} µs ({ratio:.2}x > 1.5x)"
     );
 }
