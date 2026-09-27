@@ -99,6 +99,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   (FND-150).** The hosts file is now read with `--sweep-config`, before any
   deck-level refusal; a deck with no frequency used to end the run first, so the
   missing file was never mentioned.
+- **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
+  test built the same cards inline, so the corpus deck — which records the nec2c
+  capture — was checked by nothing; the test now reads the deck.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally
