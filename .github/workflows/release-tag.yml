@@ -132,10 +132,10 @@ jobs:
 
           git worktree add -q /tmp/mint "$SHA"
 
-          # A changelog section must exist. The docs gate that requires one is
-          # `if: github.event_name == 'pull_request'` and is NOT a required
-          # status check, so a PR can merge with it red — "it reached main"
-          # does not imply it passed.
+          # A changelog section must exist. The docs gate that requires one runs
+          # only on pull requests; since 2026-09-27 the CI jobs are required
+          # status checks on main (FND-068), but a tag can still name a commit
+          # that reached main another way, so this checks the tree itself.
           grep -qE "^## \[${VERSION//./\\.}\]" /tmp/mint/docs/changelog.md \
             || { echo "::error::no [$VERSION] section in docs/changelog.md"; exit 1; }
           grep -qE "^## ${VERSION//./\\.}( |$)" /tmp/mint/docs/releasenotes.md \
@@ -146,6 +146,13 @@ jobs:
           # commit may not contain the checker at all — 2f51d63 does not — and
           # `python3: can't open file` is a failure for the wrong reason.
           ( cd /tmp/mint && python3 "$GITHUB_WORKSPACE/scripts/check-binding-version.py" )
+
+          # The SBOM must describe THIS release: every workspace member at
+          # $VERSION. The version-bump gate only requires the file to change on a
+          # bumping PR; nothing looked inside it before a tag (FND-068). Same
+          # this-checkout-against-target-tree pattern as above; the checker's own
+          # version parser is imported from beside it.
+          ( cd /tmp/mint && python3 "$GITHUB_WORKSPACE/scripts/check-sbom-version.py" )
 
       - name: Require CI green at that commit
         env:

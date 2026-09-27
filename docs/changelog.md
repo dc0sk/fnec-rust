@@ -62,6 +62,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A release cannot be tagged with a stale SBOM (FND-068).**
+  `scripts/check-sbom-version.py` requires every workspace member in
+  `SBOM.spdx.json` at the workspace version; the release workflow runs it on the
+  tree it tags, and CI and `check-all.sh` run it on every change. The eight CI
+  jobs are now required status checks on `main`.
+
 - **A T/Y-junction deck is no longer solved on the GPU with the pairwise
   junction rows (FND-166).** Such decks route to the plain basis, and the GPU
   gates in the CLI and the worker asked only whether the path basis was needed,

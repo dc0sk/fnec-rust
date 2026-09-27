@@ -112,6 +112,7 @@ done
 # Local too: the hooks and this script lint with the `rustc` on PATH, so a
 # host a version ahead of the pin gates with a clippy CI does not run (FND-149).
 run "toolchain pin (CI + local)" python3 scripts/check-toolchain-pin.py --local
+run "SBOM describes the version" python3 scripts/check-sbom-version.py
 
 # The three CI enforces that this script did not, so a stale artifact could only
 # ever be caught after a push. All three are --check modes of generators, so the
