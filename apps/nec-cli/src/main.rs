@@ -1427,6 +1427,37 @@ mod tests {
         assert!(w.is_empty(), "{w:?}");
     }
 
+    /// FND-148: `SolverMode::ALL` holds every variant exactly once. The match
+    /// is exhaustive, so a new variant is a compile error here until it has a
+    /// position — and then this fails until `ALL` lists it in that position.
+    #[test]
+    fn every_solver_mode_is_listed_once() {
+        fn position(m: SolverMode) -> usize {
+            match m {
+                SolverMode::Hallen => 0,
+                SolverMode::Pulse => 1,
+                SolverMode::Continuity => 2,
+                SolverMode::Sinusoidal => 3,
+                SolverMode::Mpie => 4,
+            }
+        }
+        for (i, m) in SolverMode::ALL.iter().enumerate() {
+            assert_eq!(position(*m), i, "{m:?} is out of place in ALL");
+        }
+    }
+
+    /// The usage line is a literal; it must list exactly the modes `--solver`
+    /// accepts, in the same order as the error messages (FND-148: it did not).
+    #[test]
+    fn the_usage_line_lists_every_solver_mode() {
+        let want = format!("--solver <{}>", SolverMode::flag_alternation());
+        assert!(super::cli_args::USAGE.contains(&want), "USAGE lacks {want}");
+        for m in SolverMode::ALL {
+            assert_eq!(SolverMode::from_flag(m.as_flag()), Some(m));
+        }
+        assert_eq!(SolverMode::from_flag("nec4"), None);
+    }
+
     #[test]
     fn the_mpie_arm_blames_the_solver_rather_than_the_geometry() {
         // The MPIE models junctions correctly, so a junction is never the reason —

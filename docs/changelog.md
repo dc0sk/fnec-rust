@@ -231,6 +231,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the hooks linted with whatever clippy was installed. `check-toolchain-pin.py`
   fails CI when a workflow names another version, and `check-all.sh` also when
   the local `rustc` differs — a host without rustup is held to the pin that way.
+- **The `--solver` values are one list (FND-148).** Parsing, the two error
+  messages and the usage line each spelled the five modes out, and the usage line
+  in a different order (`pulse|hallen|…`); it now reads
+  `hallen|pulse|continuity|sinusoidal|mpie` like the errors, which are built from
+  `SolverMode::ALL`, and a test ties the usage line to it.
 
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in

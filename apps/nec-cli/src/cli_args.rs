@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <pulse|hallen|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio";
+pub const USAGE: &str = "Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -54,23 +54,18 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--solver" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err(
-                        "missing value after --solver (expected: hallen|pulse|continuity|sinusoidal|mpie)"
-                            .to_string(),
-                    );
+                    return Err(format!(
+                        "missing value after --solver (expected: {})",
+                        SolverMode::flag_alternation()
+                    ));
                 }
-                solver_mode = match args[i].as_str() {
-                    "hallen" => SolverMode::Hallen,
-                    "pulse" => SolverMode::Pulse,
-                    "continuity" => SolverMode::Continuity,
-                    "sinusoidal" => SolverMode::Sinusoidal,
-                    "mpie" => SolverMode::Mpie,
-                    other => {
-                        return Err(format!(
-                            "invalid --solver value '{other}' (expected: hallen|pulse|continuity|sinusoidal|mpie)"
-                        ))
-                    }
-                };
+                solver_mode = SolverMode::from_flag(&args[i]).ok_or_else(|| {
+                    format!(
+                        "invalid --solver value '{}' (expected: {})",
+                        args[i],
+                        SolverMode::flag_alternation()
+                    )
+                })?;
             }
             "--ground-solver" => {
                 i += 1;

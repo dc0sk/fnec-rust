@@ -18,6 +18,28 @@ pub(super) enum SolverMode {
 }
 
 impl SolverMode {
+    /// Every mode, in the order the CLI lists them. The one enumeration of the
+    /// `--solver` axis: parsing and both error messages derive from it, and a
+    /// test ties the usage line to it (FND-148). A new variant cannot be left
+    /// out — see `every_solver_mode_is_listed_once`.
+    pub(super) const ALL: [SolverMode; 5] = [
+        SolverMode::Hallen,
+        SolverMode::Pulse,
+        SolverMode::Continuity,
+        SolverMode::Sinusoidal,
+        SolverMode::Mpie,
+    ];
+
+    /// The `--solver` values joined for a message: `hallen|pulse|…`.
+    pub(super) fn flag_alternation() -> String {
+        Self::ALL.map(Self::as_flag).join("|")
+    }
+
+    /// The mode a `--solver` value selects.
+    pub(super) fn from_flag(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.as_flag() == value)
+    }
+
     /// The `--solver` value that selects this mode.
     ///
     /// So a message about the flag can name what the user actually typed rather
@@ -34,14 +56,10 @@ impl SolverMode {
 }
 
 impl SolverMode {
+    /// The mode's name in reports and benchmark records — its flag value, so
+    /// the two spellings cannot drift (they were two identical matches).
     pub(super) fn as_str(self) -> &'static str {
-        match self {
-            SolverMode::Hallen => "hallen",
-            SolverMode::Pulse => "pulse",
-            SolverMode::Continuity => "continuity",
-            SolverMode::Sinusoidal => "sinusoidal",
-            SolverMode::Mpie => "mpie",
-        }
+        self.as_flag()
     }
 }
 
