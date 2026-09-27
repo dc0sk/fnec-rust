@@ -29,6 +29,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   designed and documented but never called: no sweep ever reused a result. The
   maintainer chose to remove it rather than build it; PH6-CHK-007 is withdrawn
   and `distributed-execution-design.md` §5 now says so.
+- **Dead public API with no caller anywhere:** `WorkerPool::new_ssh` (FND-073),
+  `ExcitationKind::is_voltage_source` (FND-074; `feedpoint_role` is the
+  classification every caller uses), and the GUI's `sweep_deck_path` and
+  `MeshData::segment_count` (FND-075).
+- **The tolerance parameter of `nec_solver::detect_wire_junctions` (FND-079).**
+  Every caller passed the same `1e-6`, as a bare literal at most of them; the
+  function now reads `JUNCTION_TOL_M` itself, so no caller can pass another.
 
 - **`nec_worker::Capability::assignment_weight`**, the code form of a capacity
   weighting scheme that was designed and never built (FND-104). It had no caller
@@ -72,6 +79,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **One `nec_accel::MIN_GPU_RESIDENT_SEGS` for the CLI and the worker (FND-078)**,
   with its (absent) provenance stated; the PH7-CHK-003 doc named the Z-fill
   path's threshold of 128, which the resident path never used.
+- **`cargo test -p nec_accel` compiles (FND-144).** Its GPU tests need the
+  `wgpu` feature, which only a workspace run turned on; the crate's tests now
+  enable it themselves.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

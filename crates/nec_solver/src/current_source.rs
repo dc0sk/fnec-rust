@@ -142,7 +142,7 @@ pub fn solve_current_source_hallen(
         }
         crate::hallen_session::PathRoute::Reducible => {}
         crate::hallen_session::PathRoute::Unsupported => {
-            if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs), 1e-6).is_empty() {
+            if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs)).is_empty() {
                 // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
                 return Err(CurrentSourceError::UnsupportedTopology);
             }

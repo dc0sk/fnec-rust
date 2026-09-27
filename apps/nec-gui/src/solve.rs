@@ -626,25 +626,6 @@ fn feedpoint_impedance(
     ))
 }
 
-/// Run a sweep on the selected solver over a frequency range for the deck at `path`.
-///
-/// `start_mhz`, `end_mhz`, `step_mhz` define the linear sweep.  The geometry
-/// and excitation vector are built once and reused for every frequency point.
-/// If `vars_path` is `Some(path)`, `$VAR` tokens are substituted before parsing.
-pub fn sweep_deck_path(
-    path: &std::path::Path,
-    vars_path: Option<&str>,
-    start_mhz: f64,
-    end_mhz: f64,
-    step_mhz: f64,
-    solver: SolverKind,
-) -> Result<Vec<SweepPoint>, String> {
-    let input = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read '{}': {e}", path.display()))?;
-    let input = apply_vars(&input, vars_path)?;
-    sweep_deck_str(&input, start_mhz, end_mhz, step_mhz, solver)
-}
-
 /// Run a sweep on the selected solver for a deck given as a string.
 pub fn sweep_deck_str(
     deck_text: &str,

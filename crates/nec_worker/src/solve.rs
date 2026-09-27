@@ -501,7 +501,7 @@ fn solve_inner(
     let mut current_source_port: Option<Complex64> = None;
 
     // 5. Wire-junction constraints
-    let junctions = detect_wire_junctions(&segs, &wire_endpoints, 1e-6);
+    let junctions = detect_wire_junctions(&segs, &wire_endpoints);
     let junc_constraints: Vec<(usize, usize, f64)> = junctions
         .iter()
         .map(|j| (j.seg_a, j.seg_b, j.sign))

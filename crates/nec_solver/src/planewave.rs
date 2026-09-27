@@ -192,13 +192,7 @@ pub fn build_planewave_hallen(
     // before changes, and a genuine T/Y junction is still detected and refused
     // (FND-142).
     let wire_endpoints = crate::geometry::merge_collinear_wire_endpoints(segs);
-    if !crate::geometry::detect_wire_junctions(
-        segs,
-        &wire_endpoints,
-        crate::hallen_session::JUNCTION_TOL_M,
-    )
-    .is_empty()
-    {
+    if !crate::geometry::detect_wire_junctions(segs, &wire_endpoints).is_empty() {
         return Err(PlaneWaveError::JunctionedGeometryNotSupported);
     }
 

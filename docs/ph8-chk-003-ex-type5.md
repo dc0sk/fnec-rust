@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph8-chk-003-ex-type5.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-09-27
 ---
 
 # PH8-CHK-003: EX type 5 (voltage source, current-slope discontinuity)
@@ -37,8 +37,10 @@ refinement is a documented limitation.
 
 ## Implementation
 
-- `nec_model::card`: `ExcitationKind::is_voltage_source()` = `VoltageSource`
-  (type 0) or `VoltageSourceCurrentSlope` (type 5).
+- `nec_model::card`: `ExcitationKind::feedpoint_role()` classifies both
+  `VoltageSource` (type 0) and `VoltageSourceCurrentSlope` (type 5) as
+  `FeedpointRole::DeltaGap`. (An `is_voltage_source()` predicate was added here
+  first; it never had a caller and was removed — FND-074.)
 - `nec_solver::excitation`: `build_excitation` / `build_hallen_rhs` accept both
   voltage-source types (were type-0-only). Unknown types (≥ 6) still error.
 - Type 5 flows through the existing feedpoint/report path unchanged; it solves on
