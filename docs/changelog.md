@@ -102,6 +102,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **`corpus/dipole-gm-nrpt2-freesp.nec` is gated (FND-139).** The GM `NRPT = 2`
   test built the same cards inline, so the corpus deck — which records the nec2c
   capture — was checked by nothing; the test now reads the deck.
+- **The GUI saves a deck atomically (FND-152).** Both Save and Save as… wrote
+  with a truncate-then-write, so an interrupted save left a partial deck. They
+  now write a temporary file beside the deck and rename it over, keeping the
+  deck's permissions and writing through a symlink.
+- **The GUI no longer saves over a `--vars` template (FND-153).** A deck loaded
+  through a vars file holds the substituted values, and Save wrote them over the
+  template's `$VARIABLES`. Save is refused for such a document, with the reason;
+  Save as… writes the instantiated deck to another file.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

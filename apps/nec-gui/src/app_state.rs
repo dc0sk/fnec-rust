@@ -214,6 +214,12 @@ pub struct EditorState {
     /// sets that — but `Save` refuses rather than guessing, so a future "New
     /// deck" button cannot inherit the truncation.
     pub file_path: Option<String>,
+    /// The document was loaded through a `--vars` file, so `file_path` holds a
+    /// TEMPLATE and the document one instantiation of it (`14.2` where the file
+    /// says `$FREQ`). A plain Save would write the values over the tokens,
+    /// silently, so it is refused; Save as… writes an instantiated copy
+    /// elsewhere, and the document then belongs to that copy (FND-153).
+    pub from_template: bool,
 }
 
 /// State of the GPU 3-D viewport. The camera and mesh are pure data (rendered by
@@ -666,6 +672,12 @@ impl AppState {
     /// place the suite could not look, under a comment that said it did the right
     /// thing ("write it back over the loaded path").
     pub fn save_target(&self) -> Option<&str> {
+        // Not only the reducer's refusal: a Save-as dialog that was cancelled
+        // leaves a save run armed, and the binary writes whenever a run and a
+        // target both exist. So the target itself is withheld (FND-153).
+        if self.editor.from_template {
+            return None;
+        }
         self.editor.file_path.as_deref()
     }
 
@@ -949,6 +961,9 @@ impl AppState {
                 // Empty is normalised to `None` so a state that never had a path
                 // does not acquire an empty one.
                 self.editor.file_path = Some(self.deck_path.clone()).filter(|p| !p.is_empty());
+                // The load substituted the vars file iff one was set, and a vars
+                // change retires a load in flight, so this is the value it used.
+                self.editor.from_template = !self.vars_path.is_empty();
                 self.editor.doc = doc.clone();
                 self.editor.history.reset();
                 self.editor.loaded = true;
@@ -1054,6 +1069,13 @@ impl AppState {
                     self.editor.save_status = "This document has no file yet — use Save as…".into();
                     return;
                 }
+                if self.editor.from_template {
+                    self.editor.save_status = "Not saved: this deck was loaded with a vars file, \
+                        and saving would replace its $VARIABLES with their values. Use \
+                        Save as… to write this instantiation to another file."
+                        .into();
+                    return;
+                }
                 self.editor.save_status = "Saving…".into();
                 let id = self.mint_run();
                 self.editor_save_run = Some(id);
@@ -1067,6 +1089,9 @@ impl AppState {
                 // to whatever it was before, so the NEXT plain Save went back to
                 // the old file rather than to C.
                 self.editor.file_path = Some(path.clone());
+                // Whatever was written is an instantiated deck, so the document
+                // now belongs to a plain file that Save may overwrite.
+                self.editor.from_template = false;
                 self.editor.doc.mark_saved();
                 self.editor.save_status = format!("Saved to {path}");
             }

@@ -3140,6 +3140,54 @@ fn a_deck_with_no_frequency_is_refused_by_both_gui_seams() {
     }
 }
 
+/// FND-153: a deck loaded through a vars file is a template, and the document
+/// holds one instantiation of it. Save would write `14.2` over `$FREQ`, so it is
+/// refused — including through a save run a cancelled Save-as left armed —
+/// while Save as… still writes, and rebinds the document to the plain file.
+#[test]
+fn a_template_loaded_with_vars_is_not_saved_over() {
+    let mut state = AppState::default();
+    let doc = load_model_doc_str(EDITOR_DECK).expect("parse doc");
+    state.apply(&Message::DeckPathChanged(LOADED_FROM.into()));
+    state.apply(&Message::VarsPathChanged("/tmp/fnec-vars.toml".into()));
+    state.apply(&Message::EditDeckLoad);
+    let run = state.current_edit_load_run().expect("load armed");
+    state.apply(&Message::EditDeckLoaded(run, Ok(doc)));
+    assert!(state.editor.from_template);
+
+    // A cancelled Save-as leaves a run armed; the target must still be withheld.
+    state.apply(&Message::BrowseSaveDeck);
+    state.apply(&Message::SaveDeck);
+    assert_eq!(
+        state.save_target(),
+        None,
+        "the template must not be a Save target"
+    );
+    assert!(
+        state.editor.save_status.contains("vars file"),
+        "{}",
+        state.editor.save_status
+    );
+
+    // Save as… writes an instantiated copy; the document belongs to it now.
+    state.apply(&Message::BrowseSaveDeck);
+    let run = state.current_edit_save_run().expect("save-as armed");
+    state.apply(&Message::DeckSaved(
+        run,
+        Ok("/tmp/fnec-instance.nec".into()),
+    ));
+    assert!(!state.editor.from_template);
+    assert_eq!(state.save_target(), Some("/tmp/fnec-instance.nec"));
+}
+
+/// The control: without a vars file, Save targets the loaded file as before.
+#[test]
+fn a_deck_loaded_without_vars_is_saved_in_place() {
+    let state = loaded_editor();
+    assert!(!state.editor.from_template);
+    assert_eq!(state.save_target(), Some(LOADED_FROM));
+}
+
 /// `Save` writes to the file the document was loaded from, not to whatever the
 /// deck-path box currently says.
 ///

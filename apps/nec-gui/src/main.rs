@@ -332,10 +332,10 @@ impl FnecGui {
             match self.state.editor.doc.to_deck_string() {
                 Ok(text) => Task::perform(
                     async move {
-                        match std::fs::write(&path, &text) {
-                            Ok(()) => Ok(path),
-                            Err(e) => Err(e.to_string()),
-                        }
+                        // Temp-then-rename: an interrupted save must not
+                        // leave half a deck (FND-152).
+                        nec_gui::deck_write::save_deck_file(std::path::Path::new(&path), &text)
+                            .map(|()| path)
                     },
                     move |r| Message::DeckSaved(run, r),
                 ),
@@ -387,9 +387,10 @@ impl FnecGui {
             {
                 let path = p.to_string_lossy().into_owned();
                 let saved = match self.state.editor.doc.to_deck_string() {
-                    Ok(text) => std::fs::write(&path, text)
-                        .map(|()| path)
-                        .map_err(|e| e.to_string()),
+                    Ok(text) => {
+                        nec_gui::deck_write::save_deck_file(std::path::Path::new(&path), &text)
+                            .map(|()| path)
+                    }
                     Err(e) => Err(e),
                 };
                 let run = self
@@ -1215,10 +1216,17 @@ impl FnecGui {
         // came to truncate an unrelated file. Fixing the target without showing
         // it would leave the user unable to tell where Save goes except by
         // clicking it.
-        let editing_line = text(match self.state.save_target() {
-            Some(p) => format!("Editing: {p}"),
-            None => "Editing: (no file yet — use Save as…)".to_string(),
-        })
+        let editing_line = text(
+            match (self.state.save_target(), &self.state.editor.file_path) {
+                (Some(p), _) => format!("Editing: {p}"),
+                // Loaded through a vars file: Save would overwrite the template's
+                // tokens, so it is refused and the line says why (FND-153).
+                (None, Some(p)) if self.state.editor.from_template => {
+                    format!("Editing: {p} (template with vars — Save as… only)")
+                }
+                (None, _) => "Editing: (no file yet — use Save as…)".to_string(),
+            },
+        )
         .width(Length::Fill);
 
         // ── Sources & environment (EX/GN/LD/FR editors) ──────────────────────
