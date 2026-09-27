@@ -586,6 +586,7 @@ fn main() -> ExitCode {
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
     let any_failed = emit_sweep_points(
         solved,
         output_format,
@@ -753,6 +754,33 @@ fn worker_warning_lines(
         .map(|w| format!("warning: worker '{label}': {w}"))
         .filter(|line| seen.insert(line.clone()))
         .collect()
+}
+
+/// Print the run's negative-resistance caveat once — per point for a single
+/// frequency, one aggregate line for a sweep (FND-069). One function for the
+/// local and the distributed sweep, called just before their shared
+/// `emit_sweep_points`.
+fn warn_negative_resistance_for_run<T>(
+    solved: &[(usize, Result<FrequencySolveResult, String>, T)],
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+    solver_mode: SolverMode,
+) {
+    let ok: Vec<&FrequencySolveResult> = solved
+        .iter()
+        .filter_map(|(_, r, _)| r.as_ref().ok())
+        .collect();
+    let per_point = ok.iter().map(|r| r.negative_r.clone()).collect();
+    let min_feed_re: Vec<Option<f64>> = ok.iter().map(|r| r.min_feed_re).collect();
+    for w in solve_session::run_negative_resistance_warnings(
+        per_point,
+        &min_feed_re,
+        deck,
+        segs,
+        solver_mode,
+    ) {
+        eprintln!("warning: {w}");
+    }
 }
 
 /// The negative-resistance caveat for one distributed result, if it earns one.
@@ -971,15 +999,14 @@ fn run_distributed_solve(
                 // separately installed binary, so an older one would send no
                 // warning and the controller would stay silent — exactly the
                 // silence this fixes. Here it covers every worker ever built, and
-                // the controller already has the impedance and the deck.
-                for w in distributed_negative_resistance_warnings(
+                // the controller already has the impedance and the deck. Printed
+                // for the whole run, with the local path's (FND-069).
+                let negative_r = distributed_negative_resistance_warnings(
                     impedance.re_ohm,
                     deck,
                     segs,
                     solver_mode,
-                ) {
-                    eprintln!("warning: {w}");
-                }
+                );
                 let sweep_summary = Some(SweepPointSummary {
                     freq_mhz,
                     tag: 0,
@@ -995,6 +1022,8 @@ fn run_distributed_solve(
                     diag_line,
                     bench,
                     sweep_summary,
+                    negative_r,
+                    min_feed_re: Some(impedance.re_ohm),
                 })
             }
             Ok((
@@ -1045,6 +1074,7 @@ fn run_distributed_solve(
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_negative_resistance_for_run(&solved, deck, segs, solver_mode);
     let any_failed = emit_sweep_points(
         solved,
         output_format,
@@ -1272,6 +1302,11 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             &[], // Laplace loads apply to the normal solve path, not `sweep --resonance`.
         )?;
 
+        // A probe is not a sweep point: each one still says so itself, as
+        // before the sweep caveat was aggregated (FND-069).
+        for w in &solve_result.negative_r {
+            eprintln!("warning: {w}");
+        }
         let summary = solve_result.sweep_summary.ok_or_else(|| {
             "resonance search: solver did not produce a sweep summary".to_string()
         })?;
@@ -1311,7 +1346,9 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::exec_profile::StartupExecutionProbe;
-    use super::solve_session::{negative_resistance_warnings, SolverMode};
+    use super::solve_session::{
+        negative_resistance_warnings, run_negative_resistance_warnings, SolverMode,
+    };
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
@@ -1340,6 +1377,54 @@ mod tests {
             current: Complex64::new(1.0, 0.0),
             z_in: Complex64::new(z_re, -1122.0),
         }
+    }
+
+    /// FND-069: a sweep reports negative resistance once, counting the points;
+    /// a single frequency keeps the per-point sentence that names the segment.
+    #[test]
+    fn a_sweep_reports_negative_resistance_once() {
+        let (deck, segs) = deck_and_segs(BENT);
+        let z = [-5.9, 12.0, -3.1];
+        let per_point: Vec<Vec<String>> = z
+            .iter()
+            .map(|&r| negative_resistance_warnings(&[row(r)], &deck, &segs, SolverMode::Hallen))
+            .collect();
+        let mins: Vec<Option<f64>> = z.iter().map(|&r| Some(r)).collect();
+        let w =
+            run_negative_resistance_warnings(per_point, &mins, &deck, &segs, SolverMode::Hallen);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].starts_with("2 of 3 sweep points"), "{w:?}");
+
+        let one = vec![negative_resistance_warnings(
+            &[row(-5.9)],
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+        )];
+        let w =
+            run_negative_resistance_warnings(one, &[Some(-5.9)], &deck, &segs, SolverMode::Hallen);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("tag 1 segment 5"), "{w:?}");
+
+        // The pulse bases keep their own wording in the aggregate too.
+        let per_point: Vec<Vec<String>> = z
+            .iter()
+            .map(|&r| negative_resistance_warnings(&[row(r)], &deck, &segs, SolverMode::Pulse))
+            .collect();
+        let w = run_negative_resistance_warnings(per_point, &mins, &deck, &segs, SolverMode::Pulse);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("unvalidated solver"), "{w:?}");
+
+        // Nothing negative, nothing said.
+        let clean: Vec<Vec<String>> = vec![Vec::new(), Vec::new()];
+        let w = run_negative_resistance_warnings(
+            clean,
+            &[Some(70.0), Some(71.0)],
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+        );
+        assert!(w.is_empty(), "{w:?}");
     }
 
     #[test]

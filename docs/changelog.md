@@ -90,6 +90,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `derive-corpus-provenance.py` and `check-version-bump-docs.sh` took the first
   `version` line and split on quotes; both, and `check-release-tags.py`, now use
   `scripts/cargo_version.py` (`tomllib`).
+- **A CLI sweep reports negative feedpoint resistance once, not once per point
+  (FND-069).** A 50-point sweep over a junctioned deck printed 50 lines, each
+  with its own `Re Z`; the GUI and `fnec_py` already aggregated through the
+  shared producer. The local and the distributed sweep now print one line
+  ("N of M sweep points …"); a single frequency keeps the per-point sentence.
 
 - **The Hallén free-end rows use true segment lengths (FND-159).** The
   extrapolation weights assumed the end segment and its neighbour were equally

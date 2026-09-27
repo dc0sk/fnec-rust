@@ -114,6 +114,12 @@ pub(super) struct FrequencySolveResult {
     pub(super) diag_line: String,
     pub(super) bench: BenchRecord,
     pub(super) sweep_summary: Option<SweepPointSummary>,
+    /// This point's negative-resistance sentences, returned rather than printed
+    /// so a sweep can report them once (FND-069).
+    pub(super) negative_r: Vec<String>,
+    /// The lowest feedpoint resistance at this point, for the sweep aggregate;
+    /// `None` when nothing is priced (a receive deck).
+    pub(super) min_feed_re: Option<f64>,
 }
 
 pub(super) struct SweepPointSummary {
@@ -567,14 +573,64 @@ fn apply_pt_current_filter(
 ///
 /// Still skipped for `pulse`/`continuity`/`sinusoidal`, whose current-source corpus
 /// has documented negative-`R` values.
-fn warn_if_negative_resistance(
-    rows: &[FeedpointRow],
+/// The negative-resistance caveat for a whole run (FND-069).
+///
+/// A single frequency keeps the per-point sentence, which names the segment and
+/// its `Re Z`. A sweep gets ONE line: the per-point sentence embeds `Re Z`, so
+/// every point's text differs and a 50-point sweep over a junctioned deck printed
+/// 50 lines — the GUI and `fnec_py` aggregated through the shared producer, and
+/// this frontend did not. The local and the distributed sweep both come here.
+///
+/// `per_point` holds each point's own sentences and `min_feed_re` its lowest
+/// feedpoint resistance, both in frequency order.
+pub(super) fn run_negative_resistance_warnings(
+    per_point: Vec<Vec<String>>,
+    min_feed_re: &[Option<f64>],
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
     solver_mode: SolverMode,
-) {
-    for w in negative_resistance_warnings(rows, deck, segs, solver_mode) {
-        eprintln!("warning: {w}");
+) -> Vec<String> {
+    if per_point.len() <= 1 {
+        return per_point.into_iter().flatten().collect();
+    }
+    let z_res: Vec<f64> = min_feed_re.iter().filter_map(|z| *z).collect();
+    match solver_ctx(solver_mode) {
+        Some(ctx) => {
+            nec_solver::validate::swept_negative_resistance_caveat(&z_res, deck, segs, ctx)
+                .into_iter()
+                .collect()
+        }
+        None => {
+            let n = z_res
+                .iter()
+                .filter(|z| nec_solver::validate::is_negative_resistance(**z))
+                .count();
+            if n == 0 {
+                return Vec::new();
+            }
+            vec![format!(
+                "{n} of {} sweep points report negative feedpoint resistance, which is \
+                 physically impossible — the output of an unvalidated solver (FND-080)",
+                z_res.len()
+            )]
+        }
+    }
+}
+
+/// The shared validator's context for a mode; `None` for the pulse bases, whose
+/// negative resistance is the expected output of an unvalidated solver and gets
+/// its own wording (FND-080).
+fn solver_ctx(solver_mode: SolverMode) -> Option<nec_solver::validate::SolverContext<'static>> {
+    match solver_mode {
+        SolverMode::Hallen => Some(nec_solver::validate::SolverContext::cli_hallen()),
+        SolverMode::Mpie => Some(nec_solver::validate::SolverContext {
+            kind: nec_solver::validate::SolverKind::Mpie,
+            mpie_remedy: CLI_MPIE_REMEDY,
+        }),
+        // FND-081: sinusoidal is Hallén's matrix in a projected basis and as
+        // accurate, so it takes Hallén's wording.
+        SolverMode::Sinusoidal => Some(nec_solver::validate::SolverContext::cli_hallen()),
+        SolverMode::Pulse | SolverMode::Continuity => None,
     }
 }
 
@@ -586,22 +642,14 @@ pub(super) fn negative_resistance_warnings(
     segs: &[Segment],
     solver_mode: SolverMode,
 ) -> Vec<String> {
-    // The two arms are gone: `negative_resistance_cause` now takes the solver
-    // context and picks the cause itself, so the GUI's MPIE runs get the same
-    // "report it as a solver defect" wording this binary used to own alone.
-    let ctx = match solver_mode {
-        SolverMode::Hallen => nec_solver::validate::SolverContext::cli_hallen(),
-        SolverMode::Mpie => nec_solver::validate::SolverContext {
-            kind: nec_solver::validate::SolverKind::Mpie,
-            mpie_remedy: CLI_MPIE_REMEDY,
-        },
-        // FND-081: these were silent, including sinusoidal, which is Hallén's
-        // matrix in a projected basis and as accurate. A negative resistance is
-        // physically impossible whatever produced it, so every mode reports it.
-        // Sinusoidal takes Hallén's wording; the pulse bases get their own, since
-        // for them it is the expected output of an unvalidated solver (FND-080).
-        SolverMode::Sinusoidal => nec_solver::validate::SolverContext::cli_hallen(),
-        SolverMode::Pulse | SolverMode::Continuity => {
+    // `negative_resistance_cause` takes the solver context and picks the cause
+    // itself, so the GUI's MPIE runs get the same "report it as a solver defect"
+    // wording. FND-081: every mode reports a negative resistance, which is
+    // physically impossible whatever produced it; the pulse bases get their own
+    // wording, since for them it is the expected output of an unvalidated solver.
+    let ctx = match solver_ctx(solver_mode) {
+        Some(ctx) => ctx,
+        None => {
             return rows
                 .iter()
                 .filter(|r| r.z_in.re < 0.0)
@@ -1328,7 +1376,8 @@ pub(super) fn solve_frequency_point(
         // Stays here: only this frontend can make the request that gets declined.
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
-    warn_if_negative_resistance(&rows, deck, segs, solver_mode);
+    let negative_r = negative_resistance_warnings(&rows, deck, segs, solver_mode);
+    let min_feed_re = rows.iter().map(|r| r.z_in.re).reduce(f64::min);
 
     let current_table: Vec<CurrentRow> = segs
         .iter()
@@ -1547,6 +1596,8 @@ pub(super) fn solve_frequency_point(
         diag_line,
         bench,
         sweep_summary,
+        negative_r,
+        min_feed_re,
     })
 }
 
