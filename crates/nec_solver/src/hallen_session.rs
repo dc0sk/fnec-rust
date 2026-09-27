@@ -249,6 +249,190 @@ pub(crate) fn group_paths(
     (path_of, path_end_rows(segs, paths))
 }
 
+/// [`group_paths`] with each path split into straight sections and a bend row
+/// pair at every node between them (FND-162, stage 1) — for the delta-gap and
+/// current-source solves, whose source term is one smooth function along the
+/// path. The plane-wave solve keeps [`group_paths`]: its source term follows
+/// each segment's tangent and jumps at a bend, which these rows do not carry.
+pub(crate) fn group_sections(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+    freq_hz: f64,
+) -> PathGrouping {
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    match section_layout(segs, paths, k) {
+        Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
+        None => {
+            let (path_of, free_ends) = group_paths(segs, paths);
+            (path_of, free_ends, crate::linear::BendLayout::default())
+        }
+    }
+}
+
+/// The per-segment homogeneous group, the free-end rows and the bend rows of a
+/// conductor-path solve.
+pub(crate) type PathGrouping = (Vec<usize>, Vec<ConstraintRow>, crate::linear::BendLayout);
+
+/// Split each conductor path into straight sections — each with its own
+/// homogeneous `(C, D)` — and build the two rows at every bend (FND-162, stage 1
+/// of the reviewed design: bends only, without the corner term).
+///
+/// `None` when any section would be a single segment: its one collocation row
+/// cannot fix two constants, and the design review marked such sections as
+/// needing their own treatment, so the whole deck keeps one `(C, D)` per path.
+fn section_layout(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+    k: f64,
+) -> Option<(Vec<usize>, crate::linear::BendLayout)> {
+    let mut group_of = vec![0usize; segs.len()];
+    let mut bends = Vec::new();
+    let mut corner = Vec::new();
+    let mut next_group = 0usize;
+    for p in paths {
+        // Traversal tangent of each listed segment: its direction, flipped where
+        // the path walks it in reverse.
+        let tangent = |i: usize| {
+            let d = segs[p.segs[i]].direction;
+            [d[0] * p.signs[i], d[1] * p.signs[i], d[2] * p.signs[i]]
+        };
+        let mut starts = vec![0usize];
+        for i in 1..p.segs.len() {
+            let (a, b) = (tangent(i - 1), tangent(i));
+            if a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 1.0 - 1e-9 {
+                starts.push(i);
+            }
+        }
+        starts.push(p.segs.len());
+        if starts.windows(2).any(|w| w[1] - w[0] < 2) {
+            return None;
+        }
+        let first_group = next_group;
+        for (sec, w) in starts.windows(2).enumerate() {
+            for i in w[0]..w[1] {
+                group_of[p.segs[i]] = first_group + sec;
+            }
+        }
+        next_group += starts.len() - 1;
+        // Where each listed segment starts and ends in traversal order.
+        let fwd_end = |i: usize| {
+            let sg = &segs[p.segs[i]];
+            if p.signs[i] > 0.0 {
+                sg.end
+            } else {
+                sg.start
+            }
+        };
+        let fwd_start = |i: usize| {
+            let sg = &segs[p.segs[i]];
+            if p.signs[i] > 0.0 {
+                sg.start
+            } else {
+                sg.end
+            }
+        };
+        let nsec = starts.len() - 1;
+        // Each section's corner term is referenced at one node (FND-162 stage
+        // 1b): the first section at its end node, every other at its start node.
+        // `(s_ref, point_ref, tangent)` per section.
+        let refs: Vec<(f64, [f64; 3], [f64; 3])> = (0..nsec)
+            .map(|sec| {
+                let (first, last) = (starts[sec], starts[sec + 1] - 1);
+                let (s_ref, pt) = if sec == 0 {
+                    (
+                        p.s_mid[last] + segs[p.segs[last]].length / 2.0,
+                        fwd_end(last),
+                    )
+                } else {
+                    (
+                        p.s_mid[first] - segs[p.segs[first]].length / 2.0,
+                        fwd_start(first),
+                    )
+                };
+                (s_ref, pt, tangent(first))
+            })
+            .collect();
+        if nsec > 1 {
+            for (sec, &(s_ref, pt, tan)) in refs.iter().enumerate() {
+                let at = |s: f64| {
+                    [
+                        pt[0] + (s - s_ref) * tan[0],
+                        pt[1] + (s - s_ref) * tan[1],
+                        pt[2] + (s - s_ref) * tan[2],
+                    ]
+                };
+                for i in starts[sec]..starts[sec + 1] {
+                    let s_m = p.s_mid[i];
+                    for (j, src) in segs.iter().enumerate() {
+                        if crate::corner::parallel(tan, src) {
+                            continue;
+                        }
+                        let v = crate::corner::graded(s_ref, s_m, src.radius, |s| {
+                            crate::corner::f_n(at(s), tan, src, k) * (k * (s_m - s)).cos()
+                        });
+                        corner.push((p.segs[i], j, v * p.signs[i]));
+                    }
+                }
+            }
+        }
+        // A node between section `sec` and `sec + 1`: the far end of the last
+        // segment of `sec`, at path arc length s_mid + h/2.
+        for sec in 0..starts.len().saturating_sub(2) {
+            let (ea, ia) = (starts[sec + 1] - 1, starts[sec + 1] - 2);
+            let (eb, ib) = (starts[sec + 1], starts[sec + 1] + 1);
+            let h = |i: usize| segs[p.segs[i]].length;
+            let t_a = h(ea) / (h(ea) + h(ia));
+            let t_b = h(eb) / (h(eb) + h(ib));
+            // Path-frame current is sign·I; extrapolate each side to the node.
+            let continuity = vec![
+                (p.segs[ea], (1.0 + t_a) * p.signs[ea]),
+                (p.segs[ia], -t_a * p.signs[ia]),
+                (p.segs[eb], -(1.0 + t_b) * p.signs[eb]),
+                (p.segs[ib], t_b * p.signs[ib]),
+            ];
+            let s0 = p.s_mid[ea] + h(ea) / 2.0;
+            // Section `sec` referenced at its START node (not this one) carries
+            // its corner integral into this potential row; the first section is
+            // referenced here, so contributes nothing (FND-162 stage 1b).
+            let mut phi_currents = Vec::new();
+            if sec > 0 {
+                let (s_ref, pt, tan) = refs[sec];
+                let at = |s: f64| {
+                    [
+                        pt[0] + (s - s_ref) * tan[0],
+                        pt[1] + (s - s_ref) * tan[1],
+                        pt[2] + (s - s_ref) * tan[2],
+                    ]
+                };
+                for (j, src) in segs.iter().enumerate() {
+                    if crate::corner::parallel(tan, src) {
+                        continue;
+                    }
+                    let v = crate::corner::graded(s_ref, s0, src.radius, |s| {
+                        crate::corner::f_n(at(s), tan, src, k) * (k * (s0 - s)).sin()
+                    });
+                    phi_currents.push((j, v));
+                }
+            }
+            bends.push(crate::linear::BendRow {
+                continuity,
+                phi_currents,
+                group_a: first_group + sec,
+                group_b: first_group + sec + 1,
+                cos0: (k * s0).cos(),
+                sin0: (k * s0).sin(),
+            });
+        }
+    }
+    Some((
+        group_of,
+        crate::linear::BendLayout {
+            rows: bends,
+            corner,
+        },
+    ))
+}
+
 /// Solve an incident plane wave on a matrix that is **already stamped**.
 ///
 /// Split out of [`solve_hallen_routed`] because the receive-pattern sweep solves
@@ -501,7 +685,7 @@ fn solve_hallen_routed_inner(
     crate::stamps::stamp_hallen_load_columns(z_mat, segs, freq_hz, loads, paths.as_deref());
 
     // Path grouping, built once and shared by every arm below.
-    let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
+    let grouped = paths.as_ref().map(|ps| group_sections(segs, ps, freq_hz));
 
     let (networks, _) =
         crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
@@ -551,7 +735,7 @@ fn solve_delta_gap(
     freq_hz: f64,
     route: HallenRoute,
     paths: &Option<Vec<ConductorPath>>,
-    grouped: &Option<(Vec<usize>, Vec<ConstraintRow>)>,
+    grouped: &Option<PathGrouping>,
     networks: &crate::network::Networks,
 ) -> Result<HallenRouted, HallenSessionError> {
     let build_rhs = |d: &NecDeck| {
@@ -573,9 +757,9 @@ fn solve_delta_gap(
     };
     let solve = |r: &crate::excitation::HallenRhs| {
         match (grouped, &endpoints_and_junctions) {
-            (Some((path_of, free_ends)), _) => {
-                solve_hallen_paths(z_mat, &r.rhs, &r.cos_vec, &r.sin_vec, path_of, free_ends)
-            }
+            (Some((path_of, free_ends, bends)), _) => solve_hallen_paths(
+                z_mat, &r.rhs, &r.cos_vec, &r.sin_vec, path_of, free_ends, bends,
+            ),
             (None, Some((endpoints, junctions))) => {
                 solve_hallen(z_mat, &r.rhs, &r.cos_vec, &r.sin_vec, endpoints, junctions)
             }
@@ -590,7 +774,7 @@ fn solve_delta_gap(
         grouped,
         &endpoints_and_junctions,
     ) {
-        (Some((path_of, _)), _) => {
+        (Some((path_of, _, _)), _) => {
             crate::linear::hallen_homogeneous_paths(&r.cos_vec, &r.sin_vec, c, path_of)
         }
         (None, Some((endpoints, junctions))) => {
@@ -600,7 +784,7 @@ fn solve_delta_gap(
     };
     let sol = solve(&rhs)?;
     let grouping = match grouped {
-        Some((path_of, _)) => Err(path_of.clone()),
+        Some((path_of, _, _)) => Err(path_of.clone()),
         None => Ok(endpoints_and_junctions
             .as_ref()
             .expect("plain grouping")
@@ -721,11 +905,11 @@ fn solve_current_source(
     z_mat: &ZMatrix,
     freq_hz: f64,
     route: HallenRoute,
-    grouped: &Option<(Vec<usize>, Vec<ConstraintRow>)>,
+    grouped: &Option<PathGrouping>,
 ) -> Result<HallenRouted, HallenSessionError> {
     // The plain case keeps the existing pricing helper, which finds the source
     // card, builds the shape and prices the port in one step.
-    let Some((path_of, free_ends)) = grouped else {
+    let Some((path_of, free_ends, bends)) = grouped else {
         let fp = crate::current_source::solve_current_source_hallen(deck, segs, z_mat, freq_hz)
             .map_err(HallenSessionError::CurrentSource)?;
         return Ok(HallenRouted {
@@ -752,7 +936,7 @@ fn solve_current_source(
     // EX 0, a 6.4% split in FREE SPACE. The defect is not confined to ground; it
     // appears wherever the augmented system is inconsistent, and a bent conductor
     // does that too (FND-118).
-    let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &sin_vec, path_of, free_ends)
+    let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &sin_vec, path_of, free_ends, bends)
         .map_err(HallenSessionError::Solve)?;
     let (currents, port_voltage) =
         crate::current_source::scale_to_impressed_current(sol.currents, src_seg, i0, tag, seg)
@@ -855,14 +1039,16 @@ mod routing_tests {
         // offset on this off-centre, near-antiresonant feed, present on a straight
         // wire too, not a discretisation error. Pin the value, not the oracle.
         // FND-158 moved it again, to 344.58 + j530.33: the sin homogeneous term
-        // the path basis lacked. That is further from nec2c, not closer: with the
-        // missing term gone, what remains is the bend itself — Hallén's 1-D
-        // equation along a bent conductor is an approximation, 28% high on this
-        // steep split-V, 3.5% on a shallow one, exact on a straight path. The old
-        // 297.81 was that bend error partly cancelled by the missing term.
+        // the path basis lacked. What remained was the bend itself: Hallén's rows
+        // hold the tangential potential only, and at a corner the transverse
+        // divergence from the other arm was missing. FND-162 stage 1b adds it
+        // (per-section homogeneous terms, bend rows, the corner term), and the
+        // path basis now answers 270.43 + j443.20, 1.8 % from nec2c — so it is
+        // gated against the oracle again, not pinned.
+        let nec2c = Complex64::new(268.56, 452.26);
         assert!(
-            (z_paths.re - 344.58).abs() < 1.0 && (z_paths.im - 530.33).abs() < 1.0,
-            "path basis moved, got {z_paths}"
+            (z_paths - nec2c).norm() / nec2c.norm() < 0.03,
+            "path basis {z_paths} vs nec2c {nec2c}"
         );
         assert!(
             (z_plain.re - z_paths.re).abs() > 100.0,

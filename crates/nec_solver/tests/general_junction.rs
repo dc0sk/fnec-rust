@@ -46,7 +46,16 @@ fn solve_z_paths(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Complex64 {
         }
     }
     let free_ends = path_end_rows(&segs, &paths);
-    let sol = solve_hallen_paths(&z, &h.rhs, &h.cos_vec, &h.sin_vec, &path_of, &free_ends).unwrap();
+    let sol = solve_hallen_paths(
+        &z,
+        &h.rhs,
+        &h.cos_vec,
+        &h.sin_vec,
+        &path_of,
+        &free_ends,
+        &BendLayout::default(),
+    )
+    .unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)
@@ -407,8 +416,13 @@ fn a_bent_end_to_start_chain_takes_the_path_basis() {
         (end_to_start - start_to_start).norm() < 1e-9 * start_to_start.norm(),
         "end-to-start {end_to_start} vs start-to-start {start_to_start}"
     );
+    // The band is the discretisation error, measured converging: with the bend
+    // modelled (FND-162 stage 1b) this deck is 4.0 % from nec2c at 21 segments
+    // per arm, 3.0 % at 41 and 2.5 % at 81. (Before the bend rows it read 0.7 %
+    // here and DIVERGED under refinement — two errors cancelling at one mesh.)
+    let nec2c = Complex64::new(86.786, 197.230);
     assert!(
-        (end_to_start.re - 86.786).abs() < 3.0 && (end_to_start.im - 197.230).abs() < 5.0,
-        "{end_to_start:.3}, nec2c 86.786 + j197.230"
+        (end_to_start - nec2c).norm() / nec2c.norm() < 0.05,
+        "{end_to_start:.3}, nec2c {nec2c}"
     );
 }

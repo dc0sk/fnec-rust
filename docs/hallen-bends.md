@@ -7,64 +7,67 @@ last_updated: 2026-09-27
 
 # Hallén on bent conductors (FND-162)
 
-Hallén's conductor-path basis has no condition at a bend. A bent conductor
-therefore solves to a wrong answer, and it did so with no warning. Since
-2026-09-27, every frontend's Hallén path warns
-(`validate::bent_conductor_warning`) and points to `--solver mpie`, which models
-the bend. This note records what was measured, what was tried, and what remains.
+Hallén's rows hold the **tangential** vector potential of each segment and
+integrate `(∂²_s + k²) A_s = −jωμε V δ` along a straight run. A bent conductor
+breaks that in two ways. The homogeneous term cannot be one function across a
+corner. And at the corner the transverse divergence `∇⊥·A⊥` contributed by the
+other, non-parallel section (Mei 1965's curved-wire term) is missing.
 
-## Measured (14.2 MHz, arms of 21 and 41 segments)
+Since 2026-09-27 (stage 1b) the driven Hallén solve (delta gap and current
+source) models both:
 
-| deck | nec2c | Hallén | MPIE |
+- **Per-section homogeneous terms.** Each straight section of a conductor path
+  carries its own `(C, D)`.
+- **Two rows at every bend.** Path-current continuity (both sides extrapolated to
+  the node), and equal scalar potential, `∂A_s/∂s` equal on both sides.
+- **The corner term.** On each section the missing part of `A_s` is
+  `Q(s) = −∫_{s₀}^{s} F(s″) cos k(s − s″) ds″`, referenced at one node of the
+  section. It enters the matrix; `crates/nec_solver/src/corner.rs` holds `f_n`
+  and the graded quadrature. A section referenced at its other node carries its
+  integral into that bend's potential row.
+
+The formulation was worked out by the design review (Fable). It was prototyped in
+numpy and gated before any Rust: with the term off, the prototype reproduced the
+code's stage-1 numbers to 0.0005 %. The Rust then matched the prototype to every
+printed digit.
+
+## Measured (14.2 MHz)
+
+| deck | nec2c 1.3.1 | before (bend rows only) | now |
 |---|---|---|---|
-| inverted-V, fed next to the apex (21) | 86.786 + j197.230 | 87.710 + j197.997 | 84.765 + j193.431 |
-| inverted-V, fed next to the apex (41) | 87.501 + j198.130 | 85.312 + j193.519 | 85.830 + j194.788 |
-| inverted-V, fed ¼ up an arm (21) | 3578.6 − j1727.0 | 2311.3 − j2544.0 | 3682.1 − j2112.2 |
-| inverted-V, fed ¼ up an arm (41) | 3572.5 − j959.3 | 2747.6 − j2168.6 | 3678.6 − j1113.1 |
-| 90° L, fed mid-arm (21) | 60.537 − j118.240 | 84.965 − j50.208 | 62.672 − j123.367 |
-| 90° L, fed mid-arm (41) | 60.385 − j117.700 | 85.589 − j46.700 | 61.471 − j120.347 |
+| 90° L, 21 per arm | 60.537 − j118.240 | 84.649 − j50.199 | 59.409 − j125.053 (5.2 %) |
+| 90° L, 41 per arm | 60.385 − j117.700 | 85.272 − j46.716 | 59.754 − j121.716 (3.1 %) |
+| inverted-V fed ¼ up an arm, 21 | 3578.6 − j1727.0 | 2261.5 − j2484.1 | 3243.7 − j1869.9 (9.2 %) |
+| inverted-V fed ¼ up an arm, 41 | 3572.5 − j959.3 | 2664.5 − j2120.9 | 3438.2 − j1088.1 (5.0 %) |
+| inverted-V fed at the apex, 21 / 41 / 81 | 86.8 + j197.2 / 87.5 + j198.1 / 88.1 + j199.0 | 0.7 % / 3.0 % / 6.5 %, diverging | 4.0 % / 3.0 % / 2.5 %, converging |
+| two-bend U, 11 / 21 per wire | 14.39 − j219.22 / 14.31 − j218.18 | — | 14.16 − j221.40 / 14.18 − j219.57 (≈ 1 %) |
+| Z shape, 11 / 21 per wire | 45.41 − j565.43 / 44.62 − j559.29 | — | 43.30 − j567.62 / 43.42 − j560.83 (≈ 1 %) |
+| steep split-V (corpus) | 268.56 + j452.26 | 344.58 + j530.33 | 270.43 + j443.20 (1.8 %) |
 
-Hallén is close with the feed at the apex and far off away from it; MPIE tracks
-nec2c throughout. (Before FND-167 the end-to-start spelling of the first deck
-solved to −20.9 − j1274.6; that was a routing bug, not this limitation.)
+The apex-fed inverted-V is the case to remember. Without the corner term it read
+0.7 % from nec2c at 21 segments, and the error *grew* under refinement: two errors
+cancelling at one mesh. Every deck here is gated at two meshes
+(`crates/nec_solver/tests/bend_corner_nec2c.rs`), with the error required to
+shrink. Removing the corner term fails all three gates: the U at 88 %, the L at
+57 %, the inverted-V at 40 %.
 
-## Tried: stage 1 of the reviewed design — no gain
+## Stage 1 on its own measured no gain
 
-The design (reviewed by Fable, 2026-09-27, "sound with changes") gives each
-straight section of a path its own homogeneous `(C, D)` and closes every bend
-with two rows. One row makes the path current continuous (both sides
-extrapolated to the node). The other sets equal scalar potential,
-`∂A_s/∂s` equal on both sides, where the delta-gap source term cancels.
+Per-section `(C, D)` plus the two bend rows, *without* the corner term, left the
+L at 84.6 − j50.2 against nec2c's 60.5 − j118.2. That result refuted bend rows
+without the term, not the design. The review had predicted it: the omitted term is
+the same order as the jump the rows fix.
 
-It was built and measured, and it did not help:
+## Still open (FND-162)
 
-| deck | nec2c | before | stage 1 |
-|---|---|---|---|
-| inverted-V, apex (21) | 86.786 + j197.230 | 87.710 + j197.997 | 85.850 + j196.161 |
-| inverted-V, apex (41) | 87.501 + j198.130 | 85.312 + j193.519 | 84.312 + j192.528 |
-| inverted-V, ¼ up (21) | 3578.6 − j1727.0 | 2311.3 − j2544.0 | 2261.5 − j2484.1 |
-| L (21) | 60.537 − j118.240 | 84.965 − j50.208 | 84.649 − j50.199 |
-| L (41) | 60.385 − j117.700 | 85.589 − j46.700 | 85.272 − j46.716 |
-
-The review predicted why this could happen. Equal `∂A_s/∂s` is equal potential
-only when every section's vector potential is tangential to it. At a corner the
-transverse divergence `∇⊥·A⊥` from the other section adds a term `F_a` (Mei
-1965's curved-wire term), and that term is the same order as the jump the rows
-fix.
-
-**This refutes bend rows *without* that term.** It does not refute the design.
-The code is on the branch `feat/hallen-bend-nodes` (commit 1a92c8d), unmerged.
-
-## Remaining: stage 1b (parked)
-
-Add the corner term:
-
-- `F_a(node)` to each bend's potential row;
-- `Q_a(s) = −∫_node^s F_a cos k(s − s″) ds″` to each collocation row, built from
-  `∂G` integrals between non-parallel section pairs.
-
-Gate it on the decks above at two meshes (convergence direction, not one number).
-The same term is what would make perpendicular wires couple: Hallén's
-tangential kernel gives them exactly zero mutual terms. Degree-3 junctions and
-loops are later stages of the same design. The multi-day cost is why this is
-parked while MPIE answers these decks.
+- **Plane-wave receive on a bent conductor.** The receive solve's source term
+  follows each segment's tangent and jumps at a bend, which the bend rows do not
+  carry, so it keeps one homogeneous term per path. Measured on a 90° L, the
+  induced current at the corner is about 55 % off. Hallén warns on such a deck.
+- **Degree-3+ junctions and closed loops.** These are later stages of the same
+  design (Kirchhoff's law and equal potential at a node of degree d; the loop's
+  closure). They are warned about and pointed to `--solver mpie`.
+- **Perpendicular wires that share no node.** They do not couple, because
+  Hallén's tangential kernel gives them exactly zero mutual terms. The same `F`
+  term restores the coupling, but on the plain per-wire rows, which this stage
+  does not touch.

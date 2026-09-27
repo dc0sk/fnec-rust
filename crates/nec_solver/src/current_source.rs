@@ -128,9 +128,12 @@ pub fn solve_current_source_hallen(
             let (shape, cos_vec, sin_vec, src_seg) =
                 build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
                     .map_err(CurrentSourceError::Excitation)?;
-            let (path_of, free_ends) = crate::hallen_session::group_paths(segs, &paths);
-            let sol = solve_hallen_paths(z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends)
-                .map_err(CurrentSourceError::Solve)?;
+            let (path_of, free_ends, bends) =
+                crate::hallen_session::group_sections(segs, &paths, freq_hz);
+            let sol = solve_hallen_paths(
+                z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends, &bends,
+            )
+            .map_err(CurrentSourceError::Solve)?;
             let (currents, port_voltage) =
                 scale_to_impressed_current(sol.currents, src_seg, i0, cs.tag, cs.segment)?;
             return Ok(CurrentSourceFeedpoint {
