@@ -14,9 +14,8 @@
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_hallen_rhs_paths,
-    path_end_rows, solve_current_source_hallen, solve_hallen_paths, ConductorPath, ConstraintRow,
-    GroundModel, Segment,
+    assemble_z_matrix_with_ground, build_geometry, solve_current_source_hallen, GroundModel,
+    Segment,
 };
 use num_complex::Complex64;
 
@@ -37,40 +36,20 @@ fn ex(excitation_type: u32, tag: u32, seg: u32, v_re: f64, v_im: f64) -> ExCard 
     }
 }
 
-fn paths_index_vectors(
-    segs: &[Segment],
-    paths: &[ConductorPath],
-) -> (Vec<usize>, Vec<ConstraintRow>) {
-    let mut path_of = vec![0usize; segs.len()];
-    for (pi, p) in paths.iter().enumerate() {
-        for &m in &p.segs {
-            path_of[m] = pi;
-        }
-    }
-    (path_of, path_end_rows(segs, paths))
-}
-
-/// Voltage-source feedpoint impedance through the conductor-path delta-gap solver.
+/// Voltage-source feedpoint impedance through the production routed solve.
+///
+/// Through `solve_hallen_routed`, not the low-level path solver with a grouping
+/// built here: a bent path's solve includes its bend rows and corner term
+/// (FND-162), which a hand-built per-path grouping omits — and the current-source
+/// side of this identity already runs the production grouping.
 fn voltage_source_z(deck: &NecDeck, segs: &[Segment], feed_tag: u32, feed_seg: u32) -> Complex64 {
-    let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
-    let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
-    let h = build_hallen_rhs_paths(deck, segs, FREQ, &paths).unwrap();
-    let (path_of, free_ends) = paths_index_vectors(segs, &paths);
-    let sol = solve_hallen_paths(
-        &z,
-        &h.rhs,
-        &h.cos_vec,
-        &h.sin_vec,
-        &path_of,
-        &free_ends,
-        &[],
-    )
-    .unwrap();
+    let mut z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
+    let routed = nec_solver::solve_hallen_routed(deck, segs, &mut z, FREQ, &[]).unwrap();
     let idx = segs
         .iter()
         .position(|s| s.tag == feed_tag && s.tag_index == feed_seg)
         .unwrap();
-    Complex64::new(1.0, 0.0) / sol.currents[idx]
+    Complex64::new(1.0, 0.0) / routed.source_current(idx)
 }
 
 /// Current-source feedpoint impedance (Z = V_port/i0) + the forced feed current,

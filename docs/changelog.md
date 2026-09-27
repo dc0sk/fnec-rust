@@ -15,6 +15,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hallén models a bend (FND-162, stage 1b).** A bent conductor's driven solve
+  was up to 57 % off nec2c: Hallén's rows held the tangential potential only, and
+  at a corner the contribution of the other, non-parallel section was missing.
+  Each straight section now carries its own homogeneous term; every bend gets a
+  current-continuity row and an equal-potential row; and the corner term enters
+  the matrix. Measured against nec2c at two meshes each, converging: a 90° L
+  3.1 %, a two-bend U and a Z about 1 %, an inverted-V fed away from its apex
+  5.0 %, the corpus split-V 1.8 % (was 28 %). Every bent deck's impedance moves;
+  the corpus is re-pinned, with the split-V's nec2c band tightened from 30 % to
+  3 %. The bent-conductor caveat now fires only for plane-wave receive decks,
+  whose solve does not model the bend yet. Details: `docs/hallen-bends.md`.
+
 ## [0.19.0] — 2026-09-27 — One answer, however the deck is written
 
 Twenty-nine changes since v0.18.0 (#451–#479). **The Hallén solver's answers

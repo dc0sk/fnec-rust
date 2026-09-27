@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod basis;
+mod corner;
 pub mod current_source;
 pub mod excitation;
 pub mod farfield;
@@ -62,8 +63,8 @@ pub use linear::{
     sin_eligible, solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave,
     solve_hallen_planewave_paths, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
-    solve_with_sinusoidal_basis_per_wire, BendRow, ConstraintRow, CurrentSourceSolution,
-    HallenSolution, SolveError,
+    solve_with_sinusoidal_basis_per_wire, BendLayout, BendRow, ConstraintRow,
+    CurrentSourceSolution, HallenSolution, SolveError,
 };
 pub use loads::{
     add_laplace_loads, build_loads, laplace_impedance, ld_card_problem, LaplaceLoad, LoadWarning,

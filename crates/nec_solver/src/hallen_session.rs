@@ -264,14 +264,14 @@ pub(crate) fn group_sections(
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
         None => {
             let (path_of, free_ends) = group_paths(segs, paths);
-            (path_of, free_ends, Vec::new())
+            (path_of, free_ends, crate::linear::BendLayout::default())
         }
     }
 }
 
 /// The per-segment homogeneous group, the free-end rows and the bend rows of a
 /// conductor-path solve.
-pub(crate) type PathGrouping = (Vec<usize>, Vec<ConstraintRow>, Vec<crate::linear::BendRow>);
+pub(crate) type PathGrouping = (Vec<usize>, Vec<ConstraintRow>, crate::linear::BendLayout);
 
 /// Split each conductor path into straight sections — each with its own
 /// homogeneous `(C, D)` — and build the two rows at every bend (FND-162, stage 1
@@ -284,9 +284,10 @@ fn section_layout(
     segs: &[Segment],
     paths: &[ConductorPath],
     k: f64,
-) -> Option<(Vec<usize>, Vec<crate::linear::BendRow>)> {
+) -> Option<(Vec<usize>, crate::linear::BendLayout)> {
     let mut group_of = vec![0usize; segs.len()];
     let mut bends = Vec::new();
+    let mut corner = Vec::new();
     let mut next_group = 0usize;
     for p in paths {
         // Traversal tangent of each listed segment: its direction, flipped where
@@ -313,6 +314,67 @@ fn section_layout(
             }
         }
         next_group += starts.len() - 1;
+        // Where each listed segment starts and ends in traversal order.
+        let fwd_end = |i: usize| {
+            let sg = &segs[p.segs[i]];
+            if p.signs[i] > 0.0 {
+                sg.end
+            } else {
+                sg.start
+            }
+        };
+        let fwd_start = |i: usize| {
+            let sg = &segs[p.segs[i]];
+            if p.signs[i] > 0.0 {
+                sg.start
+            } else {
+                sg.end
+            }
+        };
+        let nsec = starts.len() - 1;
+        // Each section's corner term is referenced at one node (FND-162 stage
+        // 1b): the first section at its end node, every other at its start node.
+        // `(s_ref, point_ref, tangent)` per section.
+        let refs: Vec<(f64, [f64; 3], [f64; 3])> = (0..nsec)
+            .map(|sec| {
+                let (first, last) = (starts[sec], starts[sec + 1] - 1);
+                let (s_ref, pt) = if sec == 0 {
+                    (
+                        p.s_mid[last] + segs[p.segs[last]].length / 2.0,
+                        fwd_end(last),
+                    )
+                } else {
+                    (
+                        p.s_mid[first] - segs[p.segs[first]].length / 2.0,
+                        fwd_start(first),
+                    )
+                };
+                (s_ref, pt, tangent(first))
+            })
+            .collect();
+        if nsec > 1 {
+            for (sec, &(s_ref, pt, tan)) in refs.iter().enumerate() {
+                let at = |s: f64| {
+                    [
+                        pt[0] + (s - s_ref) * tan[0],
+                        pt[1] + (s - s_ref) * tan[1],
+                        pt[2] + (s - s_ref) * tan[2],
+                    ]
+                };
+                for i in starts[sec]..starts[sec + 1] {
+                    let s_m = p.s_mid[i];
+                    for (j, src) in segs.iter().enumerate() {
+                        if crate::corner::parallel(tan, src) {
+                            continue;
+                        }
+                        let v = crate::corner::graded(s_ref, s_m, src.radius, |s| {
+                            crate::corner::f_n(at(s), tan, src, k) * (k * (s_m - s)).cos()
+                        });
+                        corner.push((p.segs[i], j, v * p.signs[i]));
+                    }
+                }
+            }
+        }
         // A node between section `sec` and `sec + 1`: the far end of the last
         // segment of `sec`, at path arc length s_mid + h/2.
         for sec in 0..starts.len().saturating_sub(2) {
@@ -329,8 +391,32 @@ fn section_layout(
                 (p.segs[ib], t_b * p.signs[ib]),
             ];
             let s0 = p.s_mid[ea] + h(ea) / 2.0;
+            // Section `sec` referenced at its START node (not this one) carries
+            // its corner integral into this potential row; the first section is
+            // referenced here, so contributes nothing (FND-162 stage 1b).
+            let mut phi_currents = Vec::new();
+            if sec > 0 {
+                let (s_ref, pt, tan) = refs[sec];
+                let at = |s: f64| {
+                    [
+                        pt[0] + (s - s_ref) * tan[0],
+                        pt[1] + (s - s_ref) * tan[1],
+                        pt[2] + (s - s_ref) * tan[2],
+                    ]
+                };
+                for (j, src) in segs.iter().enumerate() {
+                    if crate::corner::parallel(tan, src) {
+                        continue;
+                    }
+                    let v = crate::corner::graded(s_ref, s0, src.radius, |s| {
+                        crate::corner::f_n(at(s), tan, src, k) * (k * (s0 - s)).sin()
+                    });
+                    phi_currents.push((j, v));
+                }
+            }
             bends.push(crate::linear::BendRow {
                 continuity,
+                phi_currents,
                 group_a: first_group + sec,
                 group_b: first_group + sec + 1,
                 cos0: (k * s0).cos(),
@@ -338,7 +424,13 @@ fn section_layout(
             });
         }
     }
-    Some((group_of, bends))
+    Some((
+        group_of,
+        crate::linear::BendLayout {
+            rows: bends,
+            corner,
+        },
+    ))
 }
 
 /// Solve an incident plane wave on a matrix that is **already stamped**.
@@ -947,14 +1039,16 @@ mod routing_tests {
         // offset on this off-centre, near-antiresonant feed, present on a straight
         // wire too, not a discretisation error. Pin the value, not the oracle.
         // FND-158 moved it again, to 344.58 + j530.33: the sin homogeneous term
-        // the path basis lacked. That is further from nec2c, not closer: with the
-        // missing term gone, what remains is the bend itself — Hallén's 1-D
-        // equation along a bent conductor is an approximation, 28% high on this
-        // steep split-V, 3.5% on a shallow one, exact on a straight path. The old
-        // 297.81 was that bend error partly cancelled by the missing term.
+        // the path basis lacked. What remained was the bend itself: Hallén's rows
+        // hold the tangential potential only, and at a corner the transverse
+        // divergence from the other arm was missing. FND-162 stage 1b adds it
+        // (per-section homogeneous terms, bend rows, the corner term), and the
+        // path basis now answers 270.43 + j443.20, 1.8 % from nec2c — so it is
+        // gated against the oracle again, not pinned.
+        let nec2c = Complex64::new(268.56, 452.26);
         assert!(
-            (z_paths.re - 344.58).abs() < 1.0 && (z_paths.im - 530.33).abs() < 1.0,
-            "path basis moved, got {z_paths}"
+            (z_paths - nec2c).norm() / nec2c.norm() < 0.03,
+            "path basis {z_paths} vs nec2c {nec2c}"
         );
         assert!(
             (z_plain.re - z_paths.re).abs() > 100.0,

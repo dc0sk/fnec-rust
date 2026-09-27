@@ -399,19 +399,31 @@ pub type ConstraintRow = (usize, Option<usize>, f64, f64);
 ///   a segment midpoint, never a node), so their derivatives cancel and the row
 ///   is `−C_a sin(ks₀) + D_a cos(ks₀) = −C_b sin(ks₀) + D_b cos(ks₀)`.
 ///
-/// Omitted, and recorded rather than hidden: the transverse term `∇⊥·A⊥` that
-/// non-parallel sections contribute at a corner (Mei 1965). Without it the rows
-/// improve a bend but are not expected to converge to nec2c exactly — the
-/// design review's stage 1.
+/// The transverse term `∇⊥·A⊥` that non-parallel sections contribute at a
+/// corner (Mei 1965) enters through [`BendLayout::corner`] (stage 1b). Each
+/// section's corner term is referenced at one of its nodes, where it adds nothing
+/// to the potential row; a section referenced at its OTHER node carries the
+/// integral into this row as `phi_currents`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BendRow {
     pub continuity: Vec<(usize, f64)>,
+    /// Extra current terms of the equal-potential row (see above).
+    pub phi_currents: Vec<(usize, Complex64)>,
     /// Homogeneous groups (sections) before and after the node, in traversal order.
     pub group_a: usize,
     pub group_b: usize,
     /// `cos(k·s₀)` and `sin(k·s₀)` at the node, in the path's arc-length coordinate.
     pub cos0: f64,
     pub sin0: f64,
+}
+
+/// Everything a bent conductor path adds to [`solve_hallen_paths`]: the bend
+/// rows, and the corner term as additive matrix entries `(row, col, value)`.
+/// Empty for a path without bends.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BendLayout {
+    pub rows: Vec<BendRow>,
+    pub corner: Vec<(usize, usize, Complex64)>,
 }
 
 /// The free-end boundary row: the wire current, extrapolated linearly from the end
@@ -1088,8 +1100,9 @@ pub fn solve_hallen_paths(
     sin_vec: &[f64],
     path_of_seg: &[usize],
     free_end_rows: &[ConstraintRow],
-    bends: &[BendRow],
+    bend_layout: &BendLayout,
 ) -> Result<HallenSolution, SolveError> {
+    let bends = &bend_layout.rows;
     let n = z.n;
     if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
         return Err(SolveError::HallenDimensionMismatch {
@@ -1118,6 +1131,13 @@ pub fn solve_hallen_paths(
         for c in 0..n {
             m[r][c] = z.get(r, c);
         }
+    }
+    // The corner term (FND-162 stage 1b): Hallén's tangential rows made whole at
+    // a bend. Additive, so a path without bends is untouched.
+    for &(r, c, v) in &bend_layout.corner {
+        m[r][c] += v;
+    }
+    for r in 0..n {
         let c_col = n + path_of_seg[r];
         m[r][c_col] = Complex64::new(-cos_vec[r], 0.0);
         if let Some(k) = sin_col[path_of_seg[r]] {
@@ -1145,6 +1165,9 @@ pub fn solve_hallen_paths(
             n + num_paths + sin_col[g].expect("a bend's sections carry a sin column (≥ 2 segments)")
         };
         let phi = &mut m[r + 1];
+        for &(seg, v) in &bend.phi_currents {
+            phi[seg] += v;
+        }
         phi[n + bend.group_a] += Complex64::new(-bend.sin0, 0.0);
         phi[d_col(bend.group_a)] += Complex64::new(bend.cos0, 0.0);
         phi[n + bend.group_b] += Complex64::new(bend.sin0, 0.0);

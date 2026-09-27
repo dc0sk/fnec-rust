@@ -215,7 +215,7 @@ fn bent_inverted_v_receive_reciprocity() {
         &h.sin_vec,
         &path_of,
         &free_ends,
-        &[],
+        &nec_solver::BendLayout::default(),
     )
     .unwrap();
 

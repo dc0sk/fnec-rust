@@ -78,6 +78,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
 | `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
+| `crates/nec_solver/tests/bend_corner_nec2c.rs` | 3 | Hallén on bent conductors vs nec2c at two meshes each — a 90° L, a two-bend U (the interior-section branch), an off-apex inverted-V; the error must shrink with refinement (FND-162 stage 1b) | FND-162 |
 | `crates/nec_solver/tests/collinear_merge.rs` | 7 | PH9-CHK-002 (collinear case): a straight conductor split across several GW cards must solve as one wire. | PH9-CHK-002 |
 | `crates/nec_solver/tests/conductor_path_corpus.rs` | 3 | FND-132 — the corpus must reach the conductor-path basis. | FND-121, FND-132, PH9-CHK-002 |
 | `crates/nec_solver/tests/current_source.rs` | 4 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
@@ -105,7 +106,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=566 --> **566** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=569 --> **569** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -130,7 +131,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=566 --> **566** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1139 --> **1139** = 566 unit + 566 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1142 --> **1142** = 566 unit + 569 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

@@ -1202,31 +1202,35 @@ pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
     (worst >= BEND_CAVEAT_DEG).then_some(worst)
 }
 
-/// The Hallén solve has no condition at a bend (FND-162), and gave a bent
-/// conductor a wrong answer with no warning at all.
+/// A bent conductor under an incident plane wave (FND-162).
 ///
-/// Measured against nec2c on 21- and 41-segment arms at 14.2 MHz: a 90° L is
-/// 40 % off in R and 58 % in X; an inverted-V fed a quarter of the way up an arm
-/// is 35 % off; the same inverted-V fed next to its apex is within 2 %. The MPIE
-/// solver tracks nec2c on all three (the L within 2–4 %). A reviewed design for
-/// Hallén bend rows exists; its first stage was built and measured no gain, and
-/// the remaining stage (the corner term) is parked in FND-162.
+/// The driven Hallén solve models a bend: each straight section carries its own
+/// homogeneous term, closed at the node by current continuity and equal
+/// potential, with the corner term that non-parallel sections contribute (stage
+/// 1b). Measured against nec2c it tracks bends to a few percent — a 90° L within
+/// 3 % at 41 segments, a U and a Z within about 1 %. The plane-wave RECEIVE solve
+/// does not have this yet: its source term follows each segment's tangent and
+/// jumps at a bend, which those rows do not carry, so it keeps one homogeneous
+/// term per path. Measured on a 90° L: the induced current at the corner is
+/// about 55 % off in magnitude.
 pub fn bent_conductor_warning(
     deck: &NecDeck,
     segs: &[Segment],
     mpie_remedy: &str,
 ) -> Option<String> {
+    if !crate::hallen_session::deck_has_plane_wave(deck) {
+        return None;
+    }
     let angle = largest_bend_deg(segs)?;
     let remedy = if mpie_compatible_deck(deck) {
         format!("{mpie_remedy}, which models the bend (PH9-CHK-007)")
     } else {
-        "support for this combination on a bent conductor is deferred (FND-162)".to_string()
+        "a bend-aware receive solve is deferred (FND-162)".to_string()
     };
     Some(format!(
-        "geometry contains a bent conductor (a {angle:.0}° bend); the Hallén solve has no \
-         condition at a bend, so the impedance, currents and pattern can be far off — \
-         measured 40 % in R on a 90° L, and 35 % on an inverted-V fed away from its apex \
-         (within 2 % fed at the apex) — {remedy}"
+        "geometry contains a bent conductor (a {angle:.0}° bend) under an incident plane \
+         wave; the Hallén RECEIVE solve does not model the bend, so the induced currents \
+         and pattern can be far off — measured about 55 % at the corner of a 90° L — {remedy}"
     ))
 }
 
@@ -1964,10 +1968,10 @@ mod tests {
     }
 
     #[test]
-    fn a_bent_conductor_is_warned_about_and_a_straight_one_is_not() {
-        // FND-162: Hallén has no bend condition, and a 90° L came out 40 % off
-        // in R with no warning. Checked through `diagnose`, which the GUI and the
-        // bindings call, so the arm there cannot drift from the CLI's producer.
+    fn a_bent_conductor_is_warned_about_only_under_a_plane_wave() {
+        // FND-162: driven Hallén solves model a bend (stage 1b); the plane-wave
+        // receive solve does not, and says so. Through `diagnose`, which the GUI
+        // and the bindings call, so its arm cannot drift from the CLI's producer.
         let ctx = SolverContext::cli_hallen();
         let warns = |text: &str| -> Vec<String> {
             let (deck, segs) = deck_and_segs(text);
@@ -1977,22 +1981,24 @@ mod tests {
                 .map(|d| d.message)
                 .collect()
         };
-        let l = warns("GW 1 21 0 0 0 0 0 5 .001\nGW 2 21 0 0 5 5 0 5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
-        assert!(l.iter().any(|w| w.contains("a 90° bend")), "{l:?}");
-        assert!(l.iter().any(|w| w.contains("--solver mpie")), "{l:?}");
-
-        for (what, text) in [
-            ("straight", "GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"),
-            // A collinear split walked start-to-start is straight, not bent.
-            ("collinear split", "GW 1 21 0 0 0 0 0 -5 .001\nGW 2 21 0 0 0 0 0 5 .001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"),
-        ] {
-            let w = warns(text);
-            assert!(!w.iter().any(|w| w.contains("bent conductor")), "{what}: {w:?}");
-        }
-        // A T junction has its own, stronger warning; the bend one does not pile on.
-        let t = warns("GW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\nGW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 3 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
-        assert!(t.iter().any(|w| w.contains("T/Y junction")), "{t:?}");
-        assert!(!t.iter().any(|w| w.contains("bent conductor")), "{t:?}");
+        let l = "GW 1 21 0 0 0 0 0 5 .001\nGW 2 21 0 0 5 5 0 5 .001\nGE 0\n";
+        let rx = warns(&format!("{l}EX 1 1 1 0 60 30 0\nFR 0 1 0 0 14.2 0\nEN\n"));
+        assert!(
+            rx.iter()
+                .any(|w| w.contains("a 90° bend") && w.contains("plane")),
+            "{rx:?}"
+        );
+        let tx = warns(&format!("{l}EX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"));
+        assert!(
+            !tx.iter().any(|w| w.contains("bent conductor")),
+            "driven: {tx:?}"
+        );
+        let straight =
+            warns("GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 1 1 1 0 60 30 0\nFR 0 1 0 0 14.2 0\nEN\n");
+        assert!(
+            !straight.iter().any(|w| w.contains("bent conductor")),
+            "{straight:?}"
+        );
     }
 
     #[test]
