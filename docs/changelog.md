@@ -62,6 +62,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A T/Y-junction deck is no longer solved on the GPU with the pairwise
+  junction rows (FND-166).** Such decks route to the plain basis, and the GPU
+  gates in the CLI and the worker asked only whether the path basis was needed,
+  so `--exec gpu` on a deck of 16 or more segments sent them to the device. The
+  route now records the unsupported topology, and one method,
+  `HallenRoute::gpu_resident_supported`, answers for both gates.
+
 - **A corpus re-pin merged on a later day than its branch commit no longer turns
   `main` red (FND-160).** The provenance freshness check compared each case's
   `last_produced_on` date, which a squash-merge changes without changing the data.

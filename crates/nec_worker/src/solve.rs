@@ -517,11 +517,10 @@ fn solve_inner(
 
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
-        // The device solves on the merged-straight-conductor basis. A bend, a
-        // start-to-start split or an apex feed needs the conductor-path basis,
-        // which the device does not implement — solving it here would reproduce
-        // on the GPU exactly the wrong answer the CPU path used to give.
-        && !route.paths
+        // The device solves the plain delta-gap route on the merged-straight
+        // basis only: no bend or split (the path basis), no T/Y or loop (FND-166),
+        // no other drive (FND-147) — one answer shared with the CLI's gate.
+        && route.gpu_resident_supported()
         && matches!(
             ground,
             GroundModel::FreeSpace | GroundModel::Deferred { .. }
@@ -530,13 +529,7 @@ fn solve_inner(
         // stamps. This gate was already value-based rather than a card-type list,
         // which is why it never had the CLI's NT hole (FND-023) — it now asks the
         // same question through the shared seam.
-        && stamps.is_identity()
-        // The device solves a delta-gap right-hand side from raw segment inputs,
-        // so it asks the route for exactly that drive — the question the CLI's
-        // twin gate asks. A current source needs a different solve entirely (it
-        // forces `I` and recovers `V`, FND-051), and this gate used to exclude
-        // only that, leaving any other drive to the device (FND-147).
-        && route.drive == nec_solver::HallenDrive::DeltaGap;
+        && stamps.is_identity();
 
     let (currents, exec_used) = if gpu_eligible {
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs

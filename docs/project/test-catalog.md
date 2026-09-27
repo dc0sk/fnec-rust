@@ -74,7 +74,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 231 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_solver` | 232 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 36 | main, exec_profile, sweep_config, warnings |
@@ -84,11 +84,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=564 --> **564** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=565 --> **565** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1136 --> **1136** = 564 unit + 565 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1137 --> **1137** = 565 unit + 565 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
