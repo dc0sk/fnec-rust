@@ -221,6 +221,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **One Rust toolchain pin, `rust-toolchain.toml` at 1.98.1, and CI moves to it
+  (FND-149).** CI pinned 1.97.1 in seven places and nothing pinned the host, so
+  the hooks linted with whatever clippy was installed. `check-toolchain-pin.py`
+  fails CI when a workflow names another version, and `check-all.sh` also when
+  the local `rustc` differs — a host without rustup is held to the pin that way.
+
 - **A plane-wave receive deck is refused by an impedance-only frontend with the
   reason and the route**, not "no driven feedpoint (EX voltage source) found in
   deck". The GUI's Solve tab points at its Currents tab, `fnec_py`

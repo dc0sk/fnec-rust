@@ -5,11 +5,12 @@ name: CI
 # core.hooksPath. Each job runs a single gate command directly (no pipes, no
 # `|| true`) so a non-zero exit fails the job.
 #
-# The Rust toolchain is PINNED (dtolnay/rust-toolchain@1.97.1) rather than
+# The Rust toolchain is PINNED (dtolnay/rust-toolchain@1.98.1) rather than
 # @stable: a `-D warnings` clippy gate on a rolling stable is not reproducible
 # — a new Rust release can turn CI red with no code change (e.g. 1.98.0 added
 # clippy::needless_late_init). Bump the pin deliberately in its own PR and fix
-# any new lints there.
+# any new lints there. The version lives in rust-toolchain.toml; every
+# `@<version>` below must match it, which the docs job checks (FND-149).
 
 on:
   push:
@@ -52,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt
       - run: cargo fmt --all --check
@@ -62,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -73,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo test --workspace
       # Lives in this job, not in `docs contract`, because it needs the compiled
@@ -87,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2
         with:
           tool: cargo-audit
@@ -98,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2
         with:
           tool: cargo-deny
@@ -111,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy, rustfmt
       # Pinned to the newest CPython pyo3 0.23 supports. A newer interpreter makes
@@ -193,6 +194,10 @@ jobs:
       # announced fnec_py 0.5.0 and published a wheel calling itself 0.4.0.
       - name: fnec_py wheel version matches its crate version
         run: python3 scripts/check-binding-version.py
+      # One toolchain pin: every `dtolnay/rust-toolchain@<version>` above names
+      # rust-toolchain.toml's channel (FND-149).
+      - name: Toolchain pin matches rust-toolchain.toml
+        run: python3 scripts/check-toolchain-pin.py
       # Five releases were cut without tags (FND-043), and v0.15.0 was first
       # tagged at a commit whose tree said fnec_py 0.4.0 (FND-044) — caught by
       # hand, minutes before publishing. `fetch-depth: 0` above is what makes the
@@ -213,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2

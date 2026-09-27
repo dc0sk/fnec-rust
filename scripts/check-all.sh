@@ -109,6 +109,9 @@ for c in check-changelog-headings check-findings-ledger check-path-inventory \
          check-release-tags check-binding-version; do
     run "$c" python3 "scripts/$c.py"
 done
+# Local too: the hooks and this script lint with the `rustc` on PATH, so a
+# host a version ahead of the pin gates with a clippy CI does not run (FND-149).
+run "toolchain pin (CI + local)" python3 scripts/check-toolchain-pin.py --local
 
 # The three CI enforces that this script did not, so a stale artifact could only
 # ever be caught after a push. All three are --check modes of generators, so the

@@ -1,0 +1,9 @@
+# The one Rust toolchain pin (FND-149). CI's `dtolnay/rust-toolchain@<version>`
+# steps must name this same version — `scripts/check-toolchain-pin.py` fails the
+# docs job and `check-all.sh` otherwise — and rustup users get it here
+# automatically. Hosts without rustup are held to it by that same check, which
+# refuses a local `rustc` of any other version rather than letting the hooks lint
+# with a clippy CI does not run. Bump it deliberately, in its own PR.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
