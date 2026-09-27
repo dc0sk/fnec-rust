@@ -63,7 +63,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 1 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=558 --> **558** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=559 --> **559** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -77,18 +77,18 @@ functions across the `tests/` binaries listed above.
 | `nec_solver` | 231 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 93 | app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 33 | main, exec_profile, sweep_config, warnings |
+| `apps/nec-cli` | 36 | main, exec_profile, sweep_config, warnings |
 | `nec_parser` | 30 | lib, template |
 | `nec_accel` | 26 | kernel_reference 20, lib 6 |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=558 --> **558** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=561 --> **561** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1123 --> **1123** = 558 unit + 558 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1127 --> **1127** = 561 unit + 559 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
