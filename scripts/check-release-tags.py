@@ -40,6 +40,9 @@ import time
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cargo_version as _cargo_version  # noqa: E402  (one parser, FND-067)
+
 CHANGELOG = Path("docs/changelog.md")
 
 # Anchored on purpose. `v0.2.0-phase2-pre-hallen-reform` matches an unanchored
@@ -92,26 +95,8 @@ def file_at_tag(tag: str, path: str) -> str | None:
     return git("show", f"{tag}:{path}")
 
 
-def declared_version(toml_text: str) -> str | None:
-    """The package version, wherever this era of the manifest keeps it.
-
-    Not a grep. At HEAD the workspace version lives under `[workspace.package]`;
-    older tags differ. A first-match `^version =` grep happens to work on every
-    tag today, which is exactly how a check earns false confidence — the sibling
-    `check-binding-version.py` exists because a grep was looking in the wrong
-    file entirely.
-    """
-    try:
-        data = tomllib.loads(toml_text)
-    except tomllib.TOMLDecodeError:
-        return None
-    for table in (("workspace", "package"), ("package",)):
-        node = data
-        for key in table:
-            node = node.get(key, {}) if isinstance(node, dict) else {}
-        if isinstance(node, dict) and isinstance(node.get("version"), str):
-            return node["version"]
-    return None
+# The one version parser, shared with the other scripts that need it (FND-067).
+declared_version = _cargo_version.declared_version
 
 
 def wheel_version(pyproject_text: str) -> str | None:
