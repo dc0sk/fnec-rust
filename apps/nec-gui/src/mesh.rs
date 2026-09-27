@@ -85,12 +85,6 @@ pub struct MeshData {
     pub vertices: Vec<LineVertex>,
 }
 
-impl MeshData {
-    pub fn segment_count(&self) -> usize {
-        self.vertices.len() / 2
-    }
-}
-
 const WIRE_COLOR: [f32; 4] = [0.90, 0.82, 0.24, 1.0];
 const GRID_COLOR: [f32; 4] = [0.30, 0.32, 0.36, 1.0];
 const AXIS_X: [f32; 4] = [0.85, 0.25, 0.25, 1.0];

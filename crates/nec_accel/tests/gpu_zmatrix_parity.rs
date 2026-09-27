@@ -14,8 +14,8 @@
 //! The test passes vacuously (prints a skip notice) when no wgpu adapter is
 //! available, matching the pattern used by other GPU gate tests in this crate.
 
-use nec_accel::fill_zmatrix_wgpu;
 use nec_accel::ZSegmentInput;
+use nec_accel::{fill_zmatrix_wgpu, hardware_adapter_present};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +85,11 @@ fn gpu_zmatrix_fill_matches_cpu_within_1e4_relative() {
     let gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
 
     let Some(gpu_flat) = gpu_result else {
+        // A skip only where there is no GPU (FND-163).
+        assert!(
+            !pollster::block_on(hardware_adapter_present()),
+            "G6: a hardware adapter is present but the GPU fill returned nothing"
+        );
         eprintln!("G6 gate: no hardware GPU adapter — parity gate skipped (software fallback)");
         return;
     };

@@ -46,7 +46,8 @@ use nec_model::deck::NecDeck;
 ///
 /// One name for a number that decides which solver runs, and therefore decides
 /// the physics. It was a bare `1e-6` at twelve call sites with no provenance
-/// anywhere (FND-084); this is the definition those call sites should import.
+/// anywhere (FND-084). `detect_wire_junctions` now reads it itself and takes
+/// no tolerance, so no call site can pass another (FND-079).
 pub const JUNCTION_TOL_M: f64 = 1e-6;
 
 /// How a deck's excitation is driven.
@@ -664,7 +665,7 @@ pub fn merged_grouping(segs: &[Segment]) -> MergedGrouping {
             *slot = ci;
         }
     }
-    let junctions = detect_wire_junctions(segs, &endpoints, JUNCTION_TOL_M)
+    let junctions = detect_wire_junctions(segs, &endpoints)
         .iter()
         .filter(|j| comp_of[j.seg_a] != comp_of[j.seg_b])
         .map(|j| (j.seg_a, j.seg_b, j.sign))

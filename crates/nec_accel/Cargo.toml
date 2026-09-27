@@ -21,6 +21,12 @@ wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
 pollster = { workspace = true }
+# The GPU tests import `wgpu_device`, which exists only with the `wgpu` feature.
+# Without this, `cargo test -p nec_accel` failed to compile them; it worked only
+# in a workspace run, where another member happens to turn the feature on
+# (FND-144). `required-features` would have made cargo skip them instead —
+# silently, which is worse than failing.
+nec_accel = { path = ".", features = ["wgpu"] }
 nec_solver = { workspace = true }
 nec_parser = { workspace = true }
 nec_model  = { workspace = true }

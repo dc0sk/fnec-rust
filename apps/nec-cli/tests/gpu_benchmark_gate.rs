@@ -94,6 +94,12 @@ fn gpu_exec_not_more_than_50_percent_slower_than_cpu() {
         // deck of >= 16 segments does take the resident solve. Keying the skip on
         // an untrue message worked by accident; it now keys on the warning that
         // is actually true.
+        assert!(
+            !(gpu.stderr.contains("no wgpu adapter available")
+                && pollster::block_on(nec_accel::hardware_adapter_present())),
+            "a hardware adapter is present but the GPU path found none:\n{}",
+            gpu.stderr
+        );
         if gpu.stderr.contains("no wgpu adapter available")
             || gpu.stderr.contains("cpu-fallback")
             || gpu

@@ -679,8 +679,8 @@ fn distributed_pre_solve_caveats(
 ///
 /// **It reports the fact and not a cause, deliberately.** The first version added
 /// "that host has no usable adapter", which the controller cannot know and which
-/// is often false: the worker also declines the device for a deck under 16
-/// segments, for anything but free-space or deferred ground, and for any live
+/// is often false: the worker also declines the device for a deck under
+/// `nec_accel::MIN_GPU_RESIDENT_SEGS` segments, for anything but free-space or deferred ground, and for any live
 /// `LD`/`TL`/`NT` stamp. PH7-CHK-004's own acceptance evidence is exactly that
 /// case — a loaded deck falling back on a GPU-capable node. Asserting an adapter
 /// fault there would print a wrong diagnosis, per point, on every worker of a

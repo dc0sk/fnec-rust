@@ -847,7 +847,7 @@ pub(super) fn build_hybrid_lane_plan(freq_count: usize) -> HybridLanePlan {
 /// Attempt the GPU-resident Hallén fill+solve (PH7-CHK-003) for the supported
 /// deck class. Returns `None` (caller uses the CPU `solve_hallen`) unless:
 /// `--exec gpu`, free-space/deferred ground, no LD/TL host matrix stamps, and at
-/// least `MIN_GPU_RESIDENT_SEGS` segments. Also returns `None` when no wgpu
+/// least `nec_accel::MIN_GPU_RESIDENT_SEGS` segments. Also returns `None` when no wgpu
 /// adapter is available.
 #[allow(clippy::too_many_arguments)]
 fn maybe_gpu_resident_hallen(
@@ -860,8 +860,7 @@ fn maybe_gpu_resident_hallen(
     execution_mode: ExecutionMode,
     freq_hz: f64,
 ) -> Option<nec_solver::HallenSolution> {
-    const MIN_GPU_RESIDENT_SEGS: usize = 16;
-    if execution_mode != ExecutionMode::Gpu || segs.len() < MIN_GPU_RESIDENT_SEGS {
+    if execution_mode != ExecutionMode::Gpu || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS {
         return None;
     }
     if !matches!(
@@ -910,7 +909,9 @@ fn maybe_gpu_resident_hallen(
             &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
         ),
         freq_hz,
-    ))?;
+    ))
+    // Every decline has already said why on stderr; the caller falls back.
+    .ok()?;
 
     let n = segs.len();
     if x.len() < n {

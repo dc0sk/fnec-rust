@@ -1393,6 +1393,45 @@ struct SolveParams {
     lambda: f32,
 }
 
+/// The smallest deck the CLI and the worker send to [`solve_hallen_gpu_resident`].
+///
+/// One value for both callers (FND-078: it was two independent `16`s). It is a
+/// floor, not a crossover: no size was ever measured at which the device solve
+/// beats the CPU — PH7-CHK-003 measured 0.04x-0.48x the CPU speed at every size
+/// tried — so below it the dispatch is pure overhead, and above it the path is
+/// taken for `--exec gpu` because the user asked for the device. The value
+/// itself has no recorded measurement behind it.
+pub const MIN_GPU_RESIDENT_SEGS: usize = 16;
+
+/// Why [`solve_hallen_gpu_resident`] returned no solution.
+///
+/// It was `None` for all of these, and every GPU gate read `None` as "no adapter,
+/// skip" — so a shader that had stopped converging passed as a skip on a machine
+/// that HAS a GPU (FND-163: zeroing the sin column in the shader failed nothing).
+/// A caller that falls back to the CPU treats them alike; a test must not.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GpuSolveDeclined {
+    /// No wgpu adapter. The only reason a gate may skip on.
+    NoAdapter,
+    /// An adapter exists but the device request, the device, or the readback
+    /// failed.
+    DeviceFailed,
+    /// The input is outside what the device solve takes (a size or shape the
+    /// shader does not handle); the CPU solve is the right answer, not a fault.
+    OutOfClass(&'static str),
+    /// The f32 solve ran and its residual check rejected the answer.
+    NotConverged { rel_residual: f64 },
+}
+
+/// Whether a hardware (non-CPU) wgpu adapter is present — for tests that must
+/// know whether a missing GPU result is a skip or a failure (FND-163).
+pub async fn hardware_adapter_present() -> bool {
+    enumerate_compute_adapters()
+        .await
+        .iter()
+        .any(|a| a.device_type != "Cpu")
+}
+
 /// Tikhonov regularization constant — matches `nec_solver::linear::solve_hallen`.
 const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
 
@@ -1411,9 +1450,11 @@ const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
 /// free-end extrapolation (FND-156) and the junction rows are built in one
 /// place and cannot drift from the CPU solve this reproduces.
 ///
-/// Returns `None` when no wgpu adapter is available (caller falls back to the
-/// f64 CPU solve). All GPU arithmetic is f32; the result is intended to be
-/// validated to the 2 Ω GPU-path tolerance, not the f64 corpus gate.
+/// Returns [`GpuSolveDeclined`] when there is no solution — no adapter, a device
+/// fault, an input the shader does not take, or an f32 answer that failed its
+/// residual check. A caller falls back to the f64 CPU solve on any of them; a
+/// gate may skip only on `NoAdapter`. All GPU arithmetic is f32; the result is
+/// intended to be validated to the 2 Ω GPU-path tolerance, not the f64 corpus gate.
 #[allow(clippy::too_many_arguments)] // the CPU solve's inputs, one for one
 pub async fn solve_hallen_gpu_resident(
     segments: &[ZSegmentInput],
@@ -1424,15 +1465,17 @@ pub async fn solve_hallen_gpu_resident(
     sin_eligible: &[bool],
     constraint_rows: &[(usize, Option<usize>, f64, f64)],
     freq_hz: f64,
-) -> Option<Vec<num_complex::Complex64>> {
+) -> Result<Vec<num_complex::Complex64>, GpuSolveDeclined> {
     use wgpu::util::DeviceExt;
 
     let n = segments.len();
     if n == 0 {
-        return Some(Vec::new());
+        return Ok(Vec::new());
     }
     if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n {
-        return None;
+        return Err(GpuSolveDeclined::OutOfClass(
+            "vector lengths differ from the segment count",
+        ));
     }
 
     // ---- host-side augmented-system metadata (mirrors solve_hallen) --------
@@ -1440,7 +1483,7 @@ pub async fn solve_hallen_gpu_resident(
     // endpoints; with no wires there is nothing consistent to build them from,
     // so leave that case to the CPU solve.
     if wire_endpoints.is_empty() {
-        return None;
+        return Err(GpuSolveDeclined::OutOfClass("no wires"));
     }
     let endpoints = wire_endpoints;
 
@@ -1452,7 +1495,9 @@ pub async fn solve_hallen_gpu_resident(
 
     let w = endpoints.len();
     if sin_eligible.len() != w {
-        return None;
+        return Err(GpuSolveDeclined::OutOfClass(
+            "sin_eligible has the wrong length",
+        ));
     }
     // The sin homogeneous column (FND-158) for the wires `sin_eligible` marks —
     // `nec_solver::sin_eligible`, the rule the CPU solve uses.
@@ -1471,7 +1516,9 @@ pub async fn solve_hallen_gpu_resident(
     // (`MAX_S` in hallen_normal_solve.wgsl). Larger systems fall back to CPU.
     const MAX_S: usize = 1024;
     if s > MAX_S {
-        return None;
+        return Err(GpuSolveDeclined::OutOfClass(
+            "system larger than the shader's MAX_S",
+        ));
     }
 
     let mut row_wire = vec![0u32; n];
@@ -1505,13 +1552,13 @@ pub async fn solve_hallen_gpu_resident(
             eprintln!(
                 "warning: solve_hallen_gpu_resident: no wgpu adapter available — falling back to CPU"
             );
-            return None;
+            return Err(GpuSolveDeclined::NoAdapter);
         }
         GpuAcquire::DeviceFailed => {
             eprintln!(
                 "warning: solve_hallen_gpu_resident: device request failed — falling back to CPU"
             );
-            return None;
+            return Err(GpuSolveDeclined::DeviceFailed);
         }
     };
     let (device, queue) = (&ctx.device, &ctx.queue);
@@ -1762,7 +1809,7 @@ pub async fn solve_hallen_gpu_resident(
         let _ = tx.send(r);
     });
     if !await_map(device, &rx) {
-        return None;
+        return Err(GpuSolveDeclined::DeviceFailed);
     }
     let raw = slice.get_mapped_range();
     let floats: &[f32] = bytemuck::cast_slice(&raw);
@@ -1793,8 +1840,8 @@ pub async fn solve_hallen_gpu_resident(
              (relative residual {rel:.3e} > {GPU_SOLVE_MAX_REL_RESIDUAL:.0e}) — \
              falling back to the f64 CPU solve"
         );
-        return None;
+        return Err(GpuSolveDeclined::NotConverged { rel_residual: rel });
     }
 
-    Some(solution)
+    Ok(solution)
 }

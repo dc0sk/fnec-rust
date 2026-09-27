@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-003-gpu-resident-solve.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # PH7-CHK-003: GPU-resident dense Hallén solve
@@ -81,8 +81,10 @@ Complex numbers are `vec2<f32>` (`.x` real, `.y` imag), matching
 ### Scope of the supported class
 
 The GPU-resident path is wired into `--exec gpu` for the Hallén solver on decks
-where the existing GPU Z-fill already applies (free-space / deferred ground,
-≥ `MIN_GPU_ZMATRIX_SEGS` segments). Loads / TL stamps are host-side matrix
+in free space or deferred ground with ≥ `nec_accel::MIN_GPU_RESIDENT_SEGS` (16)
+segments — one constant shared by the CLI and the worker. (This said
+`MIN_GPU_ZMATRIX_SEGS`, the Z-fill-only path's threshold of 128, which the
+resident path never used; FND-078.) Loads / TL stamps are host-side matrix
 modifications and remain CPU-only; ground-image models remain CPU-only. When the
 GPU path is unavailable or the deck is out of class, the solve falls back to the
 f64 CPU `solve_hallen`.

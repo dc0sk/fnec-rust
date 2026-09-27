@@ -38,7 +38,7 @@ fn solve_z(deck: &NecDeck, feed_tag: u32, feed_seg: u32) -> Complex64 {
             *slot = ci;
         }
     }
-    let jt: Vec<(usize, usize, f64)> = detect_wire_junctions(&segs, &merged, 1e-6)
+    let jt: Vec<(usize, usize, f64)> = detect_wire_junctions(&segs, &merged)
         .iter()
         .filter(|j| comp[j.seg_a] != comp[j.seg_b])
         .map(|j| (j.seg_a, j.seg_b, j.sign))

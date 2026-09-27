@@ -58,7 +58,9 @@ pub type DispatchOutcome = Result<(TaskResult, String), String>;
 /// A round-robin pool of worker handles.
 ///
 /// Workers are created via [`WorkerPool::new_local`] (N local subprocesses)
-/// or [`WorkerPool::new_ssh`] (N remote SSH workers from a config file).
+/// or [`WorkerPool::new_ssh_skip_failures`] (the reachable SSH workers from a
+/// config file). A fail-fast `new_ssh` existed with no caller anywhere, its
+/// error path untested; it was removed (FND-073).
 /// Dispatch picks the next worker in sequence; if a worker fails the error
 /// is returned immediately (no automatic retry).
 pub struct WorkerPool {
@@ -77,24 +79,6 @@ impl WorkerPool {
             let handle = LocalWorkerHandle::spawn(binary)
                 .map_err(|e| format!("failed to spawn local worker {i}/{count}: {e}"))?;
             workers.push(WorkerHandle::Local(handle));
-        }
-        Ok(Self {
-            workers,
-            next_worker: 0,
-        })
-    }
-
-    /// Create a pool of SSH workers from a slice of host entries.
-    ///
-    /// Each entry is connected to via `ssh <user>@<host> <binary> worker --stdio`.
-    /// If a connection fails, the error is returned — use
-    /// [`WorkerPool::new_ssh_skip_failures`] to skip unreachable hosts.
-    pub fn new_ssh(entries: &[HostEntry]) -> Result<Self, String> {
-        let mut workers = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let handle = SshWorkerHandle::connect(entry)
-                .map_err(|e| format!("failed to connect to worker '{}': {e}", entry.hostname))?;
-            workers.push(WorkerHandle::Ssh(handle));
         }
         Ok(Self {
             workers,

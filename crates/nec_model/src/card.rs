@@ -125,8 +125,10 @@ impl ExcitationKind {
     /// Deliberately a *classification* rather than a predicate: no single boolean
     /// serves every caller. A current source (type 4) is not a delta gap, but it
     /// *is* a feedpoint the CLI prices as `Z = V_port / i0` — corpus-pinned
-    /// under PH8-CHK-001 (`dipole-ex4-freesp-51seg`) — so a caller keyed on
-    /// [`Self::is_voltage_source`] would silently delete that row.
+    /// under PH8-CHK-001 (`dipole-ex4-freesp-51seg`) — so a caller keyed on a
+    /// voltage-source predicate would silently delete that row. That predicate,
+    /// `is_voltage_source`, existed with no caller and was removed rather than
+    /// left for one to find (FND-074).
     ///
     /// The match is exhaustive with no wildcard arm on purpose: a new
     /// `ExcitationKind` must force this decision rather than defaulting into
@@ -142,16 +144,6 @@ impl ExcitationKind {
             | ExcitationKind::PlaneWaveLeftElliptic => FeedpointRole::PlaneWave,
             ExcitationKind::Unknown(_) => FeedpointRole::Unknown,
         }
-    }
-
-    /// True for the voltage-source types: applied-field (0) and current-slope
-    /// discontinuity (5). fnec models both with its applied-field (delta-gap)
-    /// method; NEC's separate current-slope numerics for type 5 are not modelled.
-    pub fn is_voltage_source(self) -> bool {
-        matches!(
-            self,
-            ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope
-        )
     }
 
     /// True for the incident-plane-wave types (1, 2, 3).

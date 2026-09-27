@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-004-distributed-gpu-execution.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-09-27
 ---
 
 # PH7-CHK-004: distributed GPU execution via the SSH worker pool
@@ -34,10 +34,12 @@ observable:
 
 `solve.rs` gains `solve_deck_at_frequency_with_exec(deck, freq, basis, exec)`.
 When `exec == "gpu"` **and** the deck is in the GPU-resident supported class
-(free-space/deferred ground, no LD/TL host matrix stamps, ≥ 16 segments), it
-calls `nec_accel::solve_hallen_gpu_resident` (PH7-CHK-003) and reports
+(free-space/deferred ground, no LD/TL host matrix stamps, a delta-gap drive,
+≥ `nec_accel::MIN_GPU_RESIDENT_SEGS` = 16 segments), it calls
+`nec_accel::solve_hallen_gpu_resident` (PH7-CHK-003) and reports
 `exec_used = "gpu"`. Otherwise — out of class, or `solve_hallen_gpu_resident`
-returns `None` (no wgpu adapter) — it falls back to the f64 CPU `solve_hallen`
+declines (`GpuSolveDeclined`: no adapter, a device fault, or an f32 answer that
+failed its residual check) — it falls back to the f64 CPU `solve_hallen`
 and reports `exec_used = "cpu"`. The original `solve_deck_at_frequency` becomes a
 thin `exec = "cpu"` wrapper, preserving all existing callers.
 

@@ -16,20 +16,10 @@
 //!
 //! Skips vacuously when no wgpu adapter is available.
 
-use nec_accel::{solve_hallen_gpu_resident, ZSegmentInput};
+use nec_accel::{
+    hardware_adapter_present, solve_hallen_gpu_resident, GpuSolveDeclined, ZSegmentInput,
+};
 use num_complex::Complex64;
-
-/// Whether a HARDWARE adapter is present. `solve_hallen_gpu_resident` returns
-/// `None` both when there is no adapter and when its f32 solve fails its own
-/// accuracy check, so a gate that read every `None` as "no adapter, skip" passed
-/// a shader that had stopped converging: the FND-158 sabotage (sin column
-/// zeroed in the shader) failed nothing. With hardware present, `None` is a
-/// failure.
-fn hardware_adapter_present() -> bool {
-    pollster::block_on(nec_accel::wgpu_device::enumerate_compute_adapters())
-        .iter()
-        .any(|a| a.device_type != "Cpu")
-}
 
 fn build_dipole() -> (
     Vec<nec_solver::Segment>,
@@ -121,18 +111,18 @@ fn gpu_resident_hallen_solve_within_2_ohm_of_cpu() {
         ),
         freq_hz,
     )) {
-        Some(c) => c,
-        None => {
+        Ok(c) => c,
+        // The only decline a gate may skip on — and not on a host that has a GPU,
+        // where "no adapter" means the adapter selection itself broke.
+        Err(GpuSolveDeclined::NoAdapter) => {
             assert!(
-                !hardware_adapter_present(),
-                "PH7-CHK-003: a hardware adapter is present, so None means the device \
-                 solve failed, not that it was skipped"
+                !pollster::block_on(hardware_adapter_present()),
+                "PH7-CHK-003: a hardware adapter is present but the solve found none"
             );
-            eprintln!(
-                "PH7-CHK-003 gate: no hardware GPU adapter — gate skipped (software fallback)"
-            );
+            eprintln!("PH7-CHK-003 gate: no hardware GPU adapter — gate skipped");
             return;
         }
+        Err(other) => panic!("PH7-CHK-003: the device solve declined: {other:?}"),
     };
 
     // Full solution is length S = N + W; currents are the first N entries.
@@ -202,7 +192,7 @@ fn gpu_resident_solve_tracks_the_cpu_on_asymmetric_feeds() {
                 radius: s.radius,
             })
             .collect();
-        let Some(gpu) = pollster::block_on(solve_hallen_gpu_resident(
+        let gpu = match pollster::block_on(solve_hallen_gpu_resident(
             &z_inputs,
             &rhs.rhs,
             &rhs.cos_vec,
@@ -215,14 +205,17 @@ fn gpu_resident_solve_tracks_the_cpu_on_asymmetric_feeds() {
                 &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
             ),
             freq_hz,
-        )) else {
-            assert!(
-                !hardware_adapter_present(),
-                "L={len}: a hardware adapter is present, so None means the device solve \
-                 failed its accuracy check, not that it was skipped"
-            );
-            eprintln!("FND-158 GPU gate: no hardware GPU adapter — gate skipped");
-            return;
+        )) {
+            Ok(gpu) => gpu,
+            Err(GpuSolveDeclined::NoAdapter) => {
+                assert!(
+                    !pollster::block_on(hardware_adapter_present()),
+                    "L={len}: a hardware adapter is present but the solve found none"
+                );
+                eprintln!("FND-158 GPU gate: no hardware GPU adapter — gate skipped");
+                return;
+            }
+            Err(other) => panic!("L={len}: the device solve declined: {other:?}"),
         };
         let one = Complex64::new(1.0, 0.0);
         let (zc, zg) = (one / cpu, one / gpu[idx]);

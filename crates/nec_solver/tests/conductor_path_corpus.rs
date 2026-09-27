@@ -111,7 +111,7 @@ fn merged_and_raw_endpoints_differ_only_on_junctioned_geometry() {
         if raw != merged {
             differing += 1;
             assert!(
-                !nec_solver::detect_wire_junctions(segs, &raw, 1e-6).is_empty(),
+                !nec_solver::detect_wire_junctions(segs, &raw).is_empty(),
                 "{name}: merged endpoints differ from raw, but no junction was detected — \
                  the non-path plane-wave branch would then see two different endpoint lists \
                  depending on which caller reached it"

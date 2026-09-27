@@ -339,7 +339,11 @@ pub struct WireJunction {
 /// Detect physical wire junctions from segment geometry and wire endpoints.
 ///
 /// Two wire endpoints are considered a junction when the physical point
-/// represented by each endpoint is within `tol` metres of the other.
+/// represented by each endpoint is within
+/// [`crate::hallen_session::JUNCTION_TOL_M`] of the other. The tolerance is not a
+/// parameter: it decides which solver runs, and as a parameter it was a bare
+/// `1e-6` repeated at every call site (FND-079) — one change away from two
+/// callers disagreeing about whether two wires touch.
 /// For segment index `first`, the physical point is `segs[first].start`.
 /// For segment index `last`, the physical point is `segs[last].end`.
 ///
@@ -349,8 +353,8 @@ pub struct WireJunction {
 pub fn detect_wire_junctions(
     segs: &[Segment],
     wire_endpoints: &[(usize, usize)],
-    tol: f64,
 ) -> Vec<WireJunction> {
+    let tol = crate::hallen_session::JUNCTION_TOL_M;
     // Build the list of (segment_index, point, is_start) for every wire endpoint.
     // is_start = true  → this is the first segment of a wire; its physical node
     //                     is segs[seg].start.

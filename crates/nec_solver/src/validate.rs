@@ -458,7 +458,7 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
         return Vec::new();
     }
     let merged = merge_collinear_wire_endpoints(segs);
-    let junctions = detect_wire_junctions(segs, &merged, crate::hallen_session::JUNCTION_TOL_M);
+    let junctions = detect_wire_junctions(segs, &merged);
     if junctions.is_empty() {
         return Vec::new();
     }
@@ -670,7 +670,7 @@ pub fn negative_resistance_cause(
 /// straight wire sends the reader after a cause that is not present.
 pub fn has_wire_junction(segs: &[Segment]) -> bool {
     let merged = merge_collinear_wire_endpoints(segs);
-    !detect_wire_junctions(segs, &merged, 1e-6).is_empty()
+    !detect_wire_junctions(segs, &merged).is_empty()
 }
 
 /// PH9-CHK-006: an antenna **very low over finite ground** has only an approximate
