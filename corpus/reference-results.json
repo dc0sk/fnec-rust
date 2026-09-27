@@ -237,7 +237,7 @@
       },
       "status": "PH8-CHK-001: EX type 4 = current source; --solver pulse fails fast (current source requires --solver hallen).",
       "expected_hallen_error_contains": "requires --solver hallen",
-      "last_produced_on": "2026-09-26",
+      "last_produced_on": "2026-09-27",
       "last_produced_in": "0.18.0"
     },
     "dipole-ex5-freesp-51seg": {
