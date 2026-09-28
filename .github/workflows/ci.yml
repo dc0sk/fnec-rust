@@ -159,7 +159,9 @@ jobs:
       # a new case ships with no provenance at all, which is how the file came to
       # claim one engine version for 48 cases produced across six.
       - name: Corpus per-case provenance is derived and fresh
-        run: python3 scripts/derive-corpus-provenance.py --check
+        run: |
+          python3 scripts/test-derive-corpus-provenance.py
+          python3 scripts/derive-corpus-provenance.py --check
       # Findings ledger row shape: a deferred finding must name an owner, a fixed
       # one must cite the change that fixed it. Without this the states decay into
       # rows that only look resolved.
