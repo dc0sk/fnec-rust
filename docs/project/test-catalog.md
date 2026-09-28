@@ -22,7 +22,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 
 | Test file | # | Validates | Gates |
 |:----------|:--|:----------|:------|
-| `apps/nec-cli/tests/core_flags_contract.rs` | 18 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
+| `apps/nec-cli/tests/core_flags_contract.rs` | 19 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 10 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
@@ -31,7 +31,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
 | `apps/nec-cli/tests/exec_modes.rs` | 26 | `--exec` selection, drop-in alias resolution, sandbox paths | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
-| `apps/nec-cli/tests/geometry_diagnostics.rs` | 15 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
+| `apps/nec-cli/tests/geometry_diagnostics.rs` | 16 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 2 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 2 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
@@ -71,7 +71,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/worker_integration.rs` | 10 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
 | `apps/nec-cli/tests/worker_poison_budget.rs` | 2 | FND-102 — one task that kills workers must not kill the pool. | FND-102 |
 | `apps/nec-cli/tests/worker_task_fault.rs` | 1 | FND-117 — a task fault must not evict the worker that reported it. | FND-117 |
-| `apps/nec-gui/tests/gui_smoke.rs` | 131 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
+| `apps/nec-gui/tests/gui_smoke.rs` | 132 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 2 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163) | PH7-CHK-003 |
@@ -108,7 +108,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/straight_rule.rs` | 2 | One rule for "straight" (FND-172/175): a wire split into two cards with a rounded-coordinate kink equals the one-card wire and tracks nec2c; a stepped-radius element tracks nec2c at two meshes, converging | FND-172, FND-175 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=579 --> **579** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=582 --> **582** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -133,7 +133,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=569 --> **569** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1155 --> **1155** = 569 unit + 579 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1158 --> **1158** = 569 unit + 582 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

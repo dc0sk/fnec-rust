@@ -410,7 +410,6 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
 
     // --- geometry & excitation -------------------------------------------
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
-    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
 
     // --- frequency -------------------------------------------------------
@@ -430,6 +429,9 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
 
     // --- validation (before any solve) -----------------------------------
     let warnings = validate_deck(deck, &segs, &ground, freq_hz, &parsed.warnings, solver)?;
+    // After the refusals, as the CLI and the worker do: a deck with two faults
+    // names the same one on every frontend (FND-180).
+    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
 
     // --- impedance matrix ------------------------------------------------
     // Only the Hallén path consumes it. The MPIE builds its own system from the
@@ -705,13 +707,13 @@ impl SweepJob {
         let parsed = parse(deck_text).map_err(|e| e.to_string())?;
         let deck = parsed.deck;
         let segs = build_geometry(&deck).map_err(|e| e.to_string())?;
-        let v_vec = build_excitation(&deck, &segs).map_err(|e| e.to_string())?;
         let ground = ground_model_from_deck(&deck);
         // Reject geometry the solver cannot honestly take, before queueing a whole
-        // sweep of solves on it.
+        // sweep of solves on it — and before the excitation, in the CLI's order.
         if let Some(e) = validate::pre_solve_error(&deck, &segs, &ground) {
             return Err(e);
         }
+        let v_vec = build_excitation(&deck, &segs).map_err(|e| e.to_string())?;
         // ...and what the *chosen solver* cannot take. Without this an MPIE sweep
         // of a loaded deck would queue every point and fail on the first one.
         if solver == SolverKind::Mpie {
@@ -1025,13 +1027,13 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     let deck = &parsed.deck;
 
     let segs = build_geometry(deck).map_err(|e| e.to_string())?;
-    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
     // The currents/pattern views share this path; they must refuse the same decks
     // the impedance view does rather than draw a plausible-looking wrong pattern.
     if let Some(e) = validate::pre_solve_error(deck, &segs, &ground) {
         return Err(e);
     }
+    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     // No current-source refusal here any more: this path prices one now, through
     // the same `solve_currents` step the Solve tab uses (FND-045). The guard that
     // stood here existed because these views would otherwise have rendered zero

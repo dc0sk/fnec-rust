@@ -61,10 +61,13 @@ runtime. Opening its window is a manual check on a machine with a display.
 
 ```sh
 V=0.19.0; A=~/.cache/fnec-release-v$V
-python3 - <<'PY' > $A.notes.md
-import re, pathlib
+python3 - "$V" <<'PY' > $A.notes.md
+import re, sys, pathlib
+v = sys.argv[1]   # the heredoc is quoted, so $V must come in as an argument (FND-183)
 t = pathlib.Path("docs/releasenotes.md").read_text()
-m = re.search(r"^## 0\.19\.0[^\n]*\n(.*?)(?=^## \d|\Z)", t, re.M | re.S)
+m = re.search(rf"^## {re.escape(v)}[^\n]*\n(.*?)(?=^## \d|\Z)", t, re.M | re.S)
+if not m:
+    sys.exit(f"no '## {v}' section in docs/releasenotes.md")
 print(m.group(1).strip())
 PY
 gh release create v$V --verify-tag --title "v$V — <release title>" --notes-file $A.notes.md $A/*

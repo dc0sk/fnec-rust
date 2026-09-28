@@ -55,15 +55,30 @@ for d in "$out" "$build"; do
     case "$real" in
         "$repo"|"$repo"/*) echo "$d is inside the worktree; build output belongs outside it" >&2; exit 1 ;;
     esac
-    if [[ "$(df --output=fstype "$(dirname "$real")" 2>/dev/null | tail -1)" == "tmpfs" ]]; then
+    # The filesystem the directory will live on: the directory itself, or its
+    # nearest existing ancestor. Taking `dirname` let `--out /tmp` through, since
+    # `/` is on disk (FND-182).
+    probe="$real"
+    while [[ ! -e "$probe" ]]; do probe="$(dirname "$probe")"; done
+    if [[ "$(df --output=fstype "$probe" 2>/dev/null | tail -1)" == "tmpfs" ]]; then
         echo "$d is on a tmpfs; build output belongs on disk" >&2; exit 1
     fi
 done
+
+# The output directory is emptied before the assets are copied in, so it must be
+# one this script made: empty, or carrying the marker it leaves. `--out` naming a
+# directory with the user's own files in it would otherwise lose them (FND-182).
+marker="$out/.fnec-release-assets"
+if [[ -d "$out" && ! -e "$marker" && -n "$(ls -A "$out" 2>/dev/null)" ]]; then
+    echo "$out is not empty and was not made by this script; name an empty or new directory" >&2
+    exit 1
+fi
 
 engine="$(command -v podman || command -v docker || true)"
 [[ -n "$engine" ]] || { echo "neither podman nor docker is installed" >&2; exit 1; }
 
 mkdir -p "$out" "$build/target" "$build/cargo-home" "$build/wheel"
+touch "$out/.fnec-release-assets"
 rm -f "$build"/wheel/*.whl
 
 # shellcheck source=scripts/host-build-lock.sh
