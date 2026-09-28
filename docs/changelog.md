@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **An SSH host that cannot be reached no longer counts as a worker the task
+  killed (FND-176).** Each such host spent one of the task's two strikes, so two
+  unreachable hosts failed a healthy task with live workers untried. `ssh` exits
+  255 when it fails itself, and that is now reported as unreachable; a remote
+  worker that dies still counts. (#493)
+
 - **Six smaller findings from the 2026-09-28 review (FND-178 to FND-183).** A
   receive deck under `--hosts` is refused before any host is dialled. The
   bent-conductor caveat judges the segments the solve runs on, so a base doubled

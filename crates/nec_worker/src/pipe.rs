@@ -149,6 +149,24 @@ impl WorkerPipe {
         }
     }
 
+    /// The child's exit status, waiting up to `grace` for it to exit.
+    ///
+    /// For telling WHO closed the pipe after an EOF: stdout closes as the process
+    /// exits, so the status is normally there at once; a child still running
+    /// after `grace` reports `None`.
+    pub fn exit_status_within(&mut self, grace: Duration) -> Option<std::process::ExitStatus> {
+        let start = std::time::Instant::now();
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => return Some(status),
+                Ok(None) if start.elapsed() < grace => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                _ => return None,
+            }
+        }
+    }
+
     /// Kill the child. Closing its stdout is what ends the reader thread.
     pub fn kill(&mut self) {
         let _ = self.child.kill();
