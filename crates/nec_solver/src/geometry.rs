@@ -296,17 +296,11 @@ pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
     if base.len() < 2 {
         return base;
     }
-    const DIR_TOL: f64 = 1e-6;
     let mut merged: Vec<(usize, usize)> = Vec::new();
     let mut cur = base[0];
     for &next in &base[1..] {
-        let a = &segs[cur.1]; // last segment of the current (possibly merged) block
-        let b = &segs[next.0]; // first segment of the candidate block
-        let contiguous = cur.1 + 1 == next.0;
-        let connects = dist2(a.end, b.start) < MERGE_POS_TOL_M * MERGE_POS_TOL_M;
-        let collinear = dir_aligned(a.direction, b.direction, DIR_TOL);
-        let same_radius = (a.radius - b.radius).abs() < MERGE_POS_TOL_M;
-        if contiguous && connects && collinear && same_radius {
+        // last segment of the current (possibly merged) block, first of the candidate
+        if cur.1 + 1 == next.0 && continues_straight(&segs[cur.1], &segs[next.0]) {
             cur = (cur.0, next.1); // extend the merged chain
         } else {
             merged.push(cur);
@@ -315,6 +309,23 @@ pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
     }
     merged.push(cur);
     merged
+}
+
+/// Whether segment `b` continues segment `a` as the same straight conductor:
+/// `b` starts where `a` ends, points the same way, and has the same radius.
+///
+/// The ONE rule for "straight" (FND-172, FND-175). The collinear merge above and
+/// [`ConductorPath::is_trivial`] each had their own: the merge required the
+/// direction within 1e-6 rad and equal radii, `is_trivial` the direction within
+/// 4.5e-5 rad and no radius at all. A path between the two — a kink of 1e-6 to
+/// 4.5e-5 rad, which 4-decimal coordinates produce, or a stepped radius — was
+/// called trivial, then not merged, and took the plain basis's pairwise junction
+/// row: 0.32 − j930 Ω on a kinked 10 m wire where nec2c gives 119.8 − j71.1.
+pub(crate) fn continues_straight(a: &Segment, b: &Segment) -> bool {
+    const DIR_TOL: f64 = 1e-6;
+    dist2(a.end, b.start) < MERGE_POS_TOL_M * MERGE_POS_TOL_M
+        && dir_aligned(a.direction, b.direction, DIR_TOL)
+        && (a.radius - b.radius).abs() < MERGE_POS_TOL_M
 }
 
 fn dist2(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -480,16 +491,13 @@ impl ConductorPath {
         // trivial, took the plain per-wire basis with a pairwise junction row, and
         // came out as garbage (-20.9 - j1274.6 where nec2c and the same antenna
         // written start-to-start give 86.8 + j197.2).
-        self.segs.windows(2).all(|w| {
-            let (a, b) = (&segs[w[0]], &segs[w[1]]);
-            w[1] == w[0] + 1
-                && a.direction
-                    .iter()
-                    .zip(&b.direction)
-                    .map(|(x, y)| x * y)
-                    .sum::<f64>()
-                    > 1.0 - 1e-9
-        })
+        //
+        // And straight by the same rule the collinear merge uses, so a path is
+        // trivial exactly when the plain route would merge it into one conductor
+        // (FND-172, FND-175): see [`continues_straight`].
+        self.segs
+            .windows(2)
+            .all(|w| w[1] == w[0] + 1 && continues_straight(&segs[w[0]], &segs[w[1]]))
     }
 }
 

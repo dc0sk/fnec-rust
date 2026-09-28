@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/leeson-correction-feasibility.md
 status: living
-last_updated: 2026-08-22
+last_updated: 2026-09-28
 ---
 
 # Leeson stepped-diameter correction — feasibility & design (BL-IMPR-014)
@@ -139,10 +139,13 @@ into the solver and present its numbers as trustworthy.
    no junction loads) — a no-op for uniform-diameter antennas (the entire current
    corpus, dipoles, the unun vertical).
 
-Until step 1 is in hand, the honest interim guidance for users modelling tubing
-elements is the one already in the backlog: fnec cannot model stepped diameters —
-approximate the element with a single representative diameter and treat the result
-as indicative only.
+Until step 1 is in hand: since FND-175 (2026-09-28) the Hallén solve models a
+stepped-diameter element directly, as one conductor path through the steps. A
+4 mm / 8 mm / 4 mm half-wave element is 4.3 % from nec2c at 30/41/30 segments and
+converging. Before that fix it took the plain junction rows and returned garbage,
+which is why this page used to say fnec could not model stepped diameters. The
+Leeson correction remains the question of whether an equivalent *uniform*
+diameter reproduces that answer, which is what a design tool wants.
 
 ## References
 
