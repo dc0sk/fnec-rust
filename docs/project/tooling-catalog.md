@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/tooling-catalog.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-09-28
 ---
 
 # Helper & validation tooling catalog
@@ -19,6 +19,8 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `validate-doc-frontmatter.sh` | Thin alias delegating to the plural script | Doc contract |
 | `check-version-bump-docs.sh` | A `Cargo.toml` version bump must ship changelog + releasenotes + SBOM changes | Release contract |
 | `stamp-doc-last-updated.sh` | Stamp `last_updated` on changed docs for PR automation | Doc contract |
+| `build-release-assets.sh` | Build CLI, GUI, wheel (+ SBOM) in the pinned manylinux container; smoke-solve the reference dipole; run the platform check (FND-168). See `docs/release-process.md` | Release contract |
+| `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
 
 ## Benchmark harnesses (`scripts/`)
 

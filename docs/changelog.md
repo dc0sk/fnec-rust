@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 # Changelog
@@ -14,6 +14,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+### Fixed
+
+- **Release assets are built in a pinned manylinux container and refused if
+  their glibc floor rises (FND-168).** A host build ties each asset to the
+  host's glibc. 0.19.0's `sinh`/`cosh` calls would have made the wheel need
+  glibc 2.44, and the binaries had drifted 2.43 → 2.44 unnoticed.
+  `scripts/build-release-assets.sh` builds all four assets in the container
+  (binaries need 2.16, the wheel 2.14, same answers to the digit), and
+  `scripts/check-asset-platform.py` refuses anything above the committed 2.17
+  floor. Procedure: `docs/release-process.md`. (#PRNUM)
 
 ## [0.19.0] — 2026-09-27 — One answer, however the deck is written
 
