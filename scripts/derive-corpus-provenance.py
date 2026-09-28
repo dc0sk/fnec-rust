@@ -25,6 +25,13 @@ The version survives the squash (the merge commit carries the branch's
 `Cargo.toml`), so it is what the check can hold. The date is still written, and
 a case with no date at all still fails the check.
 
+The version alone cannot see a re-pin made within the release under development
+(FND-177): 39 of 51 cases were stamped 0.19.0 while `main` declared 0.19.0, and a
+case whose stored numbers changed kept its old stamp and passed. So each case
+also carries `last_produced_fingerprint`, the hash of its own data, and the check
+fails when the data no longer matches it. It is derived from the data alone, so
+a squash cannot move it.
+
 Usage:
   scripts/derive-corpus-provenance.py           # rewrite the file in place
   scripts/derive-corpus-provenance.py --check   # exit 1 if it is stale
@@ -42,7 +49,7 @@ from cargo_version import version_at  # noqa: E402  (one parser, FND-067)
 FILE = "corpus/reference-results.json"
 # Bookkeeping keys are provenance *about* the cases, not part of a case's data;
 # including them would make every case look changed whenever they are rewritten.
-PROVENANCE_KEYS = ("last_produced_on", "last_produced_in")
+PROVENANCE_KEYS = ("last_produced_on", "last_produced_in", "last_produced_fingerprint")
 
 
 def run(*args: str) -> str:
@@ -85,6 +92,26 @@ def derive() -> dict[str, tuple[str, str]]:
     return provenance
 
 
+def stale_cases(cases: dict, provenance: dict[str, tuple[str, str]]) -> list[str]:
+    """The cases whose stamp no longer describes them.
+
+    Stale when the date is missing, the version is not the one that last changed
+    the case, or the case's data no longer matches the fingerprint stamped with
+    it (FND-177). The date's value is informational: a squash-merge moves it
+    without changing the data, so only its presence is checked.
+    """
+    stale = []
+    for name, case in cases.items():
+        _date, version = provenance[name]
+        if (
+            not case.get("last_produced_on")
+            or case.get("last_produced_in") != version
+            or case.get("last_produced_fingerprint") != case_fingerprint(case)
+        ):
+            stale.append(name)
+    return stale
+
+
 def main() -> int:
     check = "--check" in sys.argv
     with open(FILE, encoding="utf-8") as fh:
@@ -96,15 +123,12 @@ def main() -> int:
         print(f"no history found for: {', '.join(sorted(missing))}", file=sys.stderr)
         return 1
 
-    stale = []
+    stale = stale_cases(doc["cases"], provenance)
     for name, case in doc["cases"].items():
         date, version = provenance[name]
-        # The date is informational: a squash-merge moves it without changing the
-        # data (see the module docstring), so only its presence is checked.
-        if not case.get("last_produced_on") or case.get("last_produced_in") != version:
-            stale.append(name)
         case["last_produced_on"] = date
         case["last_produced_in"] = version
+        case["last_produced_fingerprint"] = case_fingerprint(case)
 
     if check:
         if stale:

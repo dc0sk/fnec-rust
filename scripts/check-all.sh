@@ -133,6 +133,7 @@ run "corpus provenance fresh" python3 scripts/derive-corpus-provenance.py --chec
 # hand (FND-062). A gate whose own test runs somewhere else is a gate you trust
 # for reasons you cannot see locally.
 run "check-release-tags self-test" python3 scripts/test-check-release-tags.py
+run "corpus provenance self-test" python3 scripts/test-derive-corpus-provenance.py
 run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.py
 
 # Against the merge base, so it sees the doc-regression half — a doc comment can

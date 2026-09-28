@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The corpus provenance check sees a re-pin within the current release
+  (FND-177).** It compared only each case's version stamp, so a stored value
+  changed within the release under development passed with its old stamp. Each
+  case now carries a fingerprint of its own data, and the check fails when the
+  data no longer matches it; a committed self-test covers the case. (#491)
+
 - **A slanted wire over ground is warned about (FND-171).** Hallén couples a
   segment to another through the cosine of the angle between them, and a wire
   slanted near 45° is almost perpendicular to its own ground image: a 45° dipole
