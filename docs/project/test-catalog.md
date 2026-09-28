@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 # Test catalog
@@ -22,7 +22,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 
 | Test file | # | Validates | Gates |
 |:----------|:--|:----------|:------|
-| `apps/nec-cli/tests/core_flags_contract.rs` | 16 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors | NFR-005, PH2-CHK-008 |
+| `apps/nec-cli/tests/core_flags_contract.rs` | 18 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 10 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
@@ -106,7 +106,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=569 --> **569** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=571 --> **571** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -131,7 +131,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=566 --> **566** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1142 --> **1142** = 566 unit + 569 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1144 --> **1144** = 566 unit + 571 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

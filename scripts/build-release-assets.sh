@@ -90,9 +90,15 @@ cp "$build/target/release/fnec-gui" "$out/fnec-gui-v$version-x86_64-linux"
 cp "$build"/wheel/*.whl "$out/"
 cp SBOM.spdx.json "$out/SBOM-v$version.spdx.json"
 
-# The CLI must run and reproduce the corpus pin for the reference dipole. (There
-# is no `--version` to ask: the CLI prints its usage for it and exits 2, which a
-# first-line check read as a version report — FND-169.)
+# The CLI must say the version it is shipped as. Exit status first: before
+# FND-169 `--version` printed usage headed `fnec <version>` and exited 2, and a
+# first-line check read that as a version report.
+if ! reported="$("$out/fnec-v$version-x86_64-linux" --version)"; then
+    echo "the CLI's --version failed" >&2; exit 1
+fi
+[[ "$reported" == "fnec $version" ]] || { echo "the CLI reports '$reported', not 'fnec $version'" >&2; exit 1; }
+
+# And it must run and reproduce the corpus pin for the reference dipole.
 python3 - "$out/fnec-v$version-x86_64-linux" <<'PY'
 import json, subprocess, sys
 case = json.load(open("corpus/reference-results.json"))["cases"]["dipole-freesp-51seg"]

@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`fnec --version` and `fnec --help` answer (FND-169).** Both were "unknown
+  option": exit 2, with the usage on stderr, whose first line `fnec <version>`
+  read like a version report. `--version`/`-V` now print `fnec <version>` on
+  stdout and exit 0; `--help`/`-h` print the version and usage on stdout and
+  exit 0. (#484)
+
 - **Release assets are built in a pinned manylinux container and refused if
   their glibc floor rises (FND-168).** A host build ties each asset to the
   host's glibc. 0.19.0's `sinh`/`cosh` calls would have made the wheel need

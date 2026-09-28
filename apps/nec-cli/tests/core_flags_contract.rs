@@ -313,3 +313,49 @@ fn all_core_flags_combination_runs_successfully() {
         "expected report header in stdout, got:\n{stdout}"
     );
 }
+
+/// FND-169: `--version` used to print the usage text, whose first line reads
+/// `fnec <version>`, and exit 2 with "unknown option". A release smoke test took
+/// that first line as a version report. The version goes to stdout, alone, with
+/// exit 0 — and a script can tell it from an error.
+#[test]
+fn version_flag_prints_the_version_alone_and_exits_zero() {
+    for flag in ["--version", "-V"] {
+        let output = run_fnec(&[flag]);
+        assert_eq!(output.status.code(), Some(0), "{flag}: exit status");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            format!("fnec {}\n", env!("CARGO_PKG_VERSION")),
+            "{flag}: stdout"
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{flag}: stderr {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// Asked-for help is not an error: usage on stdout, exit 0. (It was "unknown
+/// option", exit 2, with the usage on stderr — the same defect as FND-169.)
+#[test]
+fn help_flag_prints_usage_to_stdout_and_exits_zero() {
+    for flag in ["--help", "-h"] {
+        let output = run_fnec(&[flag]);
+        assert_eq!(output.status.code(), Some(0), "{flag}: exit status");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.starts_with(&format!("fnec {}\n", env!("CARGO_PKG_VERSION"))),
+            "{flag}: stdout must open with the version:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>]"),
+            "{flag}: usage missing from stdout:\n{stdout}"
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{flag}: stderr {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

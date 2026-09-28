@@ -151,6 +151,22 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
+    // Asked-for version and help are answers, not errors: stdout, exit 0. Both
+    // used to be "unknown option", exit 2, with the usage on stderr — whose first
+    // line, `fnec <version>`, a release smoke test read as a version report (FND-169).
+    match args[1].as_str() {
+        "--version" | "-V" => {
+            println!("fnec {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
+        "--help" | "-h" => {
+            println!("fnec {}", env!("CARGO_PKG_VERSION"));
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        _ => {}
+    }
+
     // --- sweep subcommand ---------------------------------------------------
     if args.get(1).map(String::as_str) == Some("sweep") {
         return run_sweep_subcommand(&args);
