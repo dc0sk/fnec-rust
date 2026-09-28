@@ -53,7 +53,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
 | `apps/nec-cli/tests/receive_pattern.rs` | 2 | PH9-CHK-001: incident-plane-wave receive-pattern sweep. | PH9-CHK-001 |
 | `apps/nec-cli/tests/report_contract.rs` | 7 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
-| `apps/nec-cli/tests/resonance_contract.rs` | 3 | `--resonance` convergence, unbounded fail, missing-flag usage | FR-010, PH3-CHK-008 |
+| `apps/nec-cli/tests/resonance_contract.rs` | 4 | `--resonance` convergence, unbounded fail, missing-flag usage; refuses what every frontend refuses — unsupported load, negative frequency, crossing wires (FND-173) | FR-010, PH3-CHK-008 |
 | `apps/nec-cli/tests/rp_avg_power_gain.rs` | 2 | PH9-CHK-004: RP XNDA `A` digit — average power gain. | PH9-CHK-004 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
@@ -108,7 +108,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/straight_rule.rs` | 2 | One rule for "straight" (FND-172/175): a wire split into two cards with a rounded-coordinate kink equals the one-card wire and tracks nec2c; a stepped-radius element tracks nec2c at two meshes, converging | FND-172, FND-175 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=578 --> **578** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=579 --> **579** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -133,7 +133,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=568 --> **568** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1153 --> **1153** = 568 unit + 578 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1154 --> **1154** = 568 unit + 579 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

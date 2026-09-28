@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`fnec sweep --resonance` refuses what every other frontend refuses
+  (FND-173).** Its probe called none of the shared refusals: an unsupported `LD`
+  solved without the load and reported convergence, a negative frequency
+  converged, and crossing wires solved. It now runs `pre_solve_error` on every
+  substituted deck and prints the geometry caveats once. (#489)
+
 - **One rule decides whether two wire cards form one straight conductor
   (FND-172, FND-175).** The collinear merge and the path classifier each had
   their own, and a wire between them solved to garbage, silently: two cards with a

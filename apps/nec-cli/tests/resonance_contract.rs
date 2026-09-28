@@ -209,3 +209,56 @@ fn resonance_search_missing_resonance_flag_exits_with_usage_error() {
         "expected usage hint in stderr\nstderr: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FND-173: the probe refuses what every other frontend refuses
+// ---------------------------------------------------------------------------
+
+/// Run a resonance search over a dipole template with `extra` cards spliced in
+/// before `EX`, and `fr` as its frequency card.
+fn search(prefix: &str, extra: &str, fr: &str) -> std::process::Output {
+    let body = format!(
+        "[search]\nvar = \"HALF_LEN\"\nlo = 4.5\nhi = 6.0\ntarget_reactance_ohm = 0.0\n\
+         tolerance_ohm = 0.5\nmax_iter = 50\n\n[deck]\ntemplate = \"\"\"\n\
+         GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\n{extra}GE\nEX 0 1 26 0 1.0 0.0\n{fr}\nEN\n\"\"\"\n"
+    );
+    let file = temp_nec_toml(prefix, &body);
+    Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["sweep", "--resonance"])
+        .arg(file.path())
+        .output()
+        .expect("runs fnec")
+}
+
+/// The route called none of `pre_solve_error`'s refusals: an unsupported load
+/// solved WITHOUT the load and converged, a negative frequency converged, and
+/// crossing wires solved (FND-173). Each must now be refused, with the same
+/// sentence the main CLI gives. The unmodified template is the control.
+#[test]
+fn a_resonance_search_refuses_what_every_frontend_refuses() {
+    let fr = "FR 0 1 0 0 14.2 0";
+    let cases = [
+        ("ld", "LD 9 1 26 26 50 0 0\n", fr, "load type 9"),
+        ("negfr", "", "FR 0 1 0 0 -14.2 0", "not a usable frequency"),
+        ("cross", "GW 2 11 -3 0 0 3 0 0 0.001\n", fr, "intersecting"),
+    ];
+    for (name, extra, fr_card, needle) in cases {
+        let out = search(name, extra, fr_card);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "{name}: must be refused, got success"
+        );
+        assert!(stderr.contains(needle), "{name}: {stderr}");
+        assert_eq!(
+            field_value("CONVERGED", &String::from_utf8_lossy(&out.stdout)),
+            None,
+            "{name}: a refused search must not report convergence"
+        );
+    }
+    let control = search("control", "", fr);
+    assert!(
+        control.status.success(),
+        "the unmodified template must converge"
+    );
+}
