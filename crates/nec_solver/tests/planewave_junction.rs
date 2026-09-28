@@ -21,10 +21,9 @@
 use nec_model::card::{Card, ExCard, GwCard};
 use nec_model::deck::NecDeck;
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_hallen_rhs_paths,
-    build_planewave_hallen, build_planewave_hallen_paths, compute_radiation_pattern, path_end_rows,
-    solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    wire_endpoints_from_segs, ConductorPath, ConstraintRow, FarFieldPoint, GroundModel, Segment,
+    assemble_z_matrix_with_ground, build_conductor_paths, build_geometry, build_planewave_hallen,
+    compute_radiation_pattern, solve_hallen_planewave, solve_hallen_planewave_routed,
+    solve_hallen_routed, wire_endpoints_from_segs, FarFieldPoint, GroundModel, Segment,
 };
 use num_complex::Complex64;
 
@@ -46,29 +45,16 @@ fn plane_wave_card(theta_deg: f64, phi_deg: f64, eta_deg: f64) -> Card {
     })
 }
 
-/// Map paths → (path_of_seg, free-end rows), the two inputs the path
-/// solvers consume.
-fn path_index_vectors(
-    segs: &[Segment],
-    paths: &[ConductorPath],
-) -> (Vec<usize>, Vec<ConstraintRow>) {
-    let mut path_of = vec![0usize; segs.len()];
-    for (pi, p) in paths.iter().enumerate() {
-        for &m in &p.segs {
-            path_of[m] = pi;
-        }
-    }
-    (path_of, path_end_rows(segs, paths))
-}
-
-/// Receive solve through the general conductor-path plane-wave solver.
+/// Receive solve through the production seam, which routes a bent path through the
+/// section layout and the corner term (FND-162). Calling the path solver directly
+/// used to test a grouping no frontend uses.
 fn receive_currents_paths(deck: &NecDeck, segs: &[Segment]) -> Vec<Complex64> {
     let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
-    let paths = build_conductor_paths(segs).expect("supported degree-2 topology");
-    let pw = build_planewave_hallen_paths(deck, segs, FREQ, &paths).expect("planewave rhs");
-    let (path_of, free_ends) = path_index_vectors(segs, &paths);
-    solve_hallen_planewave_paths(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &path_of, &free_ends)
-        .expect("path receive solve")
+    assert!(
+        build_conductor_paths(segs).is_some(),
+        "supported degree-2 topology"
+    );
+    solve_hallen_planewave_routed(deck, segs, &z, FREQ).expect("path receive solve")
 }
 
 /// Receive solve through the existing per-wire plane-wave solver (validated path).
@@ -204,20 +190,15 @@ fn bent_inverted_v_receive_reciprocity() {
         .iter()
         .position(|s| s.tag == 1 && s.tag_index == 1)
         .unwrap();
-    let z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
-    let tx_paths = build_conductor_paths(&segs).unwrap();
-    let h = build_hallen_rhs_paths(&driven, &segs, FREQ, &tx_paths).unwrap();
-    let (path_of, free_ends) = path_index_vectors(&segs, &tx_paths);
-    let tx = solve_hallen_paths(
-        &z,
-        &h.rhs,
-        &h.cos_vec,
-        &h.sin_vec,
-        &path_of,
-        &free_ends,
-        &nec_solver::BendLayout::default(),
-    )
-    .unwrap();
+    // Through the production seam, like the receive side: both then model the bend
+    // (FND-162). With the old direct calls NEITHER side did, and this gate passed at
+    // 5 % while the receive currents were 55–120 % off nec2c at a bend.
+    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
+    let tx = solve_hallen_routed(&driven, &segs, &mut z, FREQ, &[]).unwrap();
+    assert!(
+        tx.route.paths,
+        "a bent apex-fed V takes the conductor-path basis"
+    );
 
     // Receive: illuminate from each θ (η=0, θ̂-polarised) and take the short-circuit
     // feed-segment current. |I_feed|²/G_θ must be constant across angles.
@@ -254,5 +235,24 @@ fn bent_inverted_v_receive_reciprocity() {
         max_dev < 0.05,
         "bent-antenna receive current does not track transmit pattern \
          (reciprocity spread {max_dev:.4} > 5%)"
+    );
+
+    // The spread alone is not a bend gate: with the receive solve put back on one
+    // homogeneous term per path it was still 0.18 % (0.15 % bend-aware), because a
+    // wrong receive current can be wrong by the same factor at every angle. The
+    // LEVEL is fixed absolutely by reciprocity: available power |V_oc|²/(8R) equals
+    // the incident density E₀²/(2η₀) times the aperture λ²G/(4π), so with
+    // I_sc = V_oc/Z, |I_sc|²/G = R·λ²·E₀²/(π·η₀·|Z|²), from the transmit solve.
+    // Measured: 6.535e-3 predicted, 6.52–6.54e-3 bend-aware, 6.00e-3 per-path (FND-162).
+    let z_in = Complex64::new(1.0, 0.0) / tx.currents[feed_idx];
+    let lambda = 299_792_458.0 / FREQ;
+    let eta0 = 376.730_313_668;
+    let predicted = z_in.re * lambda * lambda / (std::f64::consts::PI * eta0 * z_in.norm_sqr());
+    let level = (mean - predicted).abs() / predicted;
+    println!("reciprocity level: mean {mean:.4e}, predicted {predicted:.4e}, off {level:.4}");
+    assert!(
+        level < 0.01,
+        "receive current level {mean:.4e} vs {predicted:.4e} from the transmit Z ({:.2} % off)",
+        level * 100.0
     );
 }

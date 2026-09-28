@@ -17,6 +17,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The plane-wave receive solve models a bend (FND-162).** It kept one
+  homogeneous term per path, on the belief that its forcing jumps at a bend. The
+  forcing is a sum of delta-gap feeds and smooth at every node, so the receive
+  solve now uses the driven solve's section layout, bend rows and corner term.
+  Induced currents against nec2c at two meshes each: a 90° L from 106–122 % off
+  to 6.3 % / 3.6 %, the same L with one arm unlit 3.3 %, a two-bend U 1.1 %, an
+  inverted-V 1.1 %. The receive-pattern sweep plans the layout once per geometry,
+  so a 2701-direction pattern takes 10 s, not 264 s. The bent-conductor warning
+  now fires only where a bend is still unmodelled — a straight run one segment
+  long — for every drive (about 26 % off). The reciprocity test now checks the
+  absolute receive level from the transmit impedance; its angle spread alone had
+  passed with the bend unmodelled. (#485)
+
 - **`fnec --version` and `fnec --help` answer (FND-169).** Both were "unknown
   option": exit 2, with the usage on stderr, whose first line `fnec <version>`
   read like a version report. `--version`/`-V` now print `fnec <version>` on

@@ -1202,35 +1202,37 @@ pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
     (worst >= BEND_CAVEAT_DEG).then_some(worst)
 }
 
-/// A bent conductor under an incident plane wave (FND-162).
+/// A bent conductor whose bend the Hallén solve cannot model (FND-162).
 ///
-/// The driven Hallén solve models a bend: each straight section carries its own
+/// Hallén models a bend on every drive: each straight section carries its own
 /// homogeneous term, closed at the node by current continuity and equal
 /// potential, with the corner term that non-parallel sections contribute (stage
-/// 1b). Measured against nec2c it tracks bends to a few percent — a 90° L within
-/// 3 % at 41 segments, a U and a Z within about 1 %. The plane-wave RECEIVE solve
-/// does not have this yet: its source term follows each segment's tangent and
-/// jumps at a bend, which those rows do not carry, so it keeps one homogeneous
-/// term per path. Measured on a 90° L: the induced current at the corner is
-/// about 55 % off in magnitude.
+/// 1b). Against nec2c a driven 90° L is within 3 % at 41 segments per arm, and
+/// the plane-wave receive currents on the same L within 4 %. The one case left is
+/// a section only one segment long: its single row cannot fix two constants, so
+/// the whole deck falls back to one term per path and the bend goes unmodelled —
+/// measured about 26 % off in the currents on a U whose middle wire is one
+/// segment. The decision is [`crate::hallen_session::hallen_leaves_a_bend_unmodelled`],
+/// the same predicate the solver's layout uses, so the two cannot disagree.
 pub fn bent_conductor_warning(
     deck: &NecDeck,
     segs: &[Segment],
     mpie_remedy: &str,
 ) -> Option<String> {
-    if !crate::hallen_session::deck_has_plane_wave(deck) {
+    if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(segs) {
         return None;
     }
     let angle = largest_bend_deg(segs)?;
-    let remedy = if mpie_compatible_deck(deck) {
-        format!("{mpie_remedy}, which models the bend (PH9-CHK-007)")
+    let or_mpie = if mpie_compatible_deck(deck) {
+        format!(", or {mpie_remedy}, which models the bend (PH9-CHK-007)")
     } else {
-        "a bend-aware receive solve is deferred (FND-162)".to_string()
+        String::new()
     };
     Some(format!(
-        "geometry contains a bent conductor (a {angle:.0}° bend) under an incident plane \
-         wave; the Hallén RECEIVE solve does not model the bend, so the induced currents \
-         and pattern can be far off — measured about 55 % at the corner of a 90° L — {remedy}"
+        "geometry contains a bent conductor (a {angle:.0}° bend) with a straight run only \
+         one segment long; the Hallén solve cannot model a bend there, so the currents and \
+         feedpoint can be far off — measured about 26 % on the currents — give every \
+         straight run between bends at least two segments{or_mpie}"
     ))
 }
 
@@ -1968,10 +1970,11 @@ mod tests {
     }
 
     #[test]
-    fn a_bent_conductor_is_warned_about_only_under_a_plane_wave() {
-        // FND-162: driven Hallén solves model a bend (stage 1b); the plane-wave
-        // receive solve does not, and says so. Through `diagnose`, which the GUI
-        // and the bindings call, so its arm cannot drift from the CLI's producer.
+    fn a_bent_conductor_is_warned_about_only_where_the_bend_is_unmodelled() {
+        // FND-162: Hallén models a bend on every drive, driven and receive alike,
+        // unless a straight run is one segment long and the deck falls back.
+        // Through `diagnose`, which the GUI and the bindings call, so its arm
+        // cannot drift from the CLI's producer.
         let ctx = SolverContext::cli_hallen();
         let warns = |text: &str| -> Vec<String> {
             let (deck, segs) = deck_and_segs(text);
@@ -1981,24 +1984,27 @@ mod tests {
                 .map(|d| d.message)
                 .collect()
         };
+        let bent = |w: &[String]| w.iter().any(|m| m.contains("bent conductor"));
+        let fr = "FR 0 1 0 0 14.2 0\nEN\n";
         let l = "GW 1 21 0 0 0 0 0 5 .001\nGW 2 21 0 0 5 5 0 5 .001\nGE 0\n";
-        let rx = warns(&format!("{l}EX 1 1 1 0 60 30 0\nFR 0 1 0 0 14.2 0\nEN\n"));
-        assert!(
-            rx.iter()
-                .any(|w| w.contains("a 90° bend") && w.contains("plane")),
-            "{rx:?}"
-        );
-        let tx = warns(&format!("{l}EX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"));
-        assert!(
-            !tx.iter().any(|w| w.contains("bent conductor")),
-            "driven: {tx:?}"
-        );
-        let straight =
-            warns("GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 1 1 1 0 60 30 0\nFR 0 1 0 0 14.2 0\nEN\n");
-        assert!(
-            !straight.iter().any(|w| w.contains("bent conductor")),
-            "{straight:?}"
-        );
+        for ex in ["EX 1 1 1 0 60 30 0\n", "EX 0 1 11 0 1 0\n"] {
+            let w = warns(&format!("{l}{ex}{fr}"));
+            assert!(!bent(&w), "a modelled L must not warn ({ex:?}): {w:?}");
+        }
+        // A U whose middle run is one segment: the layout falls back, on both drives.
+        let u = "GW 1 21 0 0 0 0 0 5 .001\nGW 2 1 0 0 5 .3 0 5 .001\nGW 3 21 .3 0 5 .3 0 0 .001\nGE 0\n";
+        for ex in ["EX 1 1 1 0 45 0 0\n", "EX 0 1 11 0 1 0\n"] {
+            let w = warns(&format!("{u}{ex}{fr}"));
+            assert!(
+                w.iter()
+                    .any(|m| m.contains("a 90° bend") && m.contains("one segment long")),
+                "the fallback must warn ({ex:?}): {w:?}"
+            );
+        }
+        let straight = warns(&format!(
+            "GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 1 1 1 0 60 30 0\n{fr}"
+        ));
+        assert!(!bent(&straight), "{straight:?}");
     }
 
     #[test]

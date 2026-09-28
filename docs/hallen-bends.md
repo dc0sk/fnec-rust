@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -14,7 +14,7 @@ corner. And at the corner the transverse divergence `∇⊥·A⊥` contributed b
 other, non-parallel section (Mei 1965's curved-wire term) is missing.
 
 Since 2026-09-27 (stage 1b) the driven Hallén solve (delta gap and current
-source) models both:
+source) models both, and since 2026-09-28 the plane-wave receive solve too:
 
 - **Per-section homogeneous terms.** Each straight section of a conductor path
   carries its own `(C, D)`.
@@ -58,12 +58,43 @@ L at 84.6 − j50.2 against nec2c's 60.5 − j118.2. That result refuted bend ro
 without the term, not the design. The review had predicted it: the omitted term is
 the same order as the jump the rows fix.
 
+## The receive solve (2026-09-28)
+
+The receive solve had been kept on one `(C, D)` per path, on the belief that its
+forcing "jumps at a bend, which the bend rows do not carry". The forcing does not
+jump. It is the incident field's tangential part convolved with `sin(k|s − s′|)`,
+which is a sum of delta-gap right-hand sides, one per segment. Each of those is
+smooth at every node, so the bend rows written for a feed hold for it unchanged.
+A unit test in `planewave.rs` pins that identity to 1e-12. Routed through the same
+section layout, bend rows and corner term, the receive currents against nec2c
+(|ΔI| / peak |I|, at the middle of each run and both segments at the bend):
+
+| deck | per path, before | now, coarse → fine mesh |
+|---|---|---|
+| 90° L, θ = 45°, 21 / 41 per arm | 106 % / 122 % | 6.3 % → 3.6 % |
+| the same L lit edge-on (one arm sees no field) | 106 % / 121 % | 5.6 % → 3.3 % |
+| two-bend U, 11 / 21 per wire | 41 % / 51 % | 1.9 % → 1.1 % |
+| inverted-V, θ = 60°, 21 / 41 per arm | 8.6 % / 9.1 % | 1.7 % → 1.1 % |
+
+A straight wire is unchanged (5.6 %, the pulse basis's own error). Sections
+without the corner term gain nothing: the L stays at 121 % and the U reaches
+647 %. Gates: `crates/nec_solver/tests/bend_receive_nec2c.rs`, and the absolute
+reciprocity level in `planewave_junction.rs`. That level is `|I_sc|²/G =
+R·λ²/(π·η₀·|Z|²)` from the transmit solve, met to 0.09 %. The per-path receive
+misses it by 8 %, while the angle spread the test used to check was 0.18 % for
+both.
+
+The receive-pattern sweep builds the layout and corner term once per geometry
+(`plan_hallen_planewave`). Rebuilt per direction, a 37 × 73 pattern on a 41-per-arm
+L took 264 s. It now takes 10 s; the per-path solve took 6 s.
+
 ## Still open (FND-162)
 
-- **Plane-wave receive on a bent conductor.** The receive solve's source term
-  follows each segment's tangent and jumps at a bend, which the bend rows do not
-  carry, so it keeps one homogeneous term per path. Measured on a 90° L, the
-  induced current at the corner is about 55 % off. Hallén warns on such a deck.
+- **A straight run only one segment long.** Its single row cannot fix two
+  constants, so the whole deck falls back to one term per path and its bends go
+  unmodelled: about 26 % off in the currents on a U whose middle wire is one
+  segment. Hallén warns on exactly these decks, driven or receive, through the same
+  predicate the layout uses (`hallen_leaves_a_bend_unmodelled`).
 - **Degree-3+ junctions and closed loops.** These are later stages of the same
   design (Kirchhoff's law and equal potential at a node of degree d; the loop's
   closure). They are warned about and pointed to `--solver mpie`.
@@ -71,3 +102,6 @@ the same order as the jump the rows fix.
   Hallén's tangential kernel gives them exactly zero mutual terms. The same `F`
   term restores the coupling, but on the plain per-wire rows, which this stage
   does not touch.
+- **Receive over ground** is FND-170, not a bend problem: the receive forcing has
+  no ground-reflected wave, so even a straight dipole over perfect ground is about
+  55 % off.
