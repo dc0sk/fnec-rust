@@ -17,6 +17,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A slanted wire over ground is warned about (FND-171).** Hallén couples a
+  segment to another through the cosine of the angle between them, and a wire
+  slanted near 45° is almost perpendicular to its own ground image: a 45° dipole
+  10 m over perfect ground solved to the free-space value, to every digit, and
+  drifts further from nec2c as the mesh is refined (7.5 % at 45°, 13.5 % at 30°).
+  Every frontend now warns for a wire 15–75° from horizontal that stands clear of
+  the ground, and points to `--solver mpie`. Vertical, horizontal and grounded
+  wires converge and are not warned about. (#490)
+
 - **`fnec sweep --resonance` refuses what every other frontend refuses
   (FND-173).** Its probe called none of the shared refusals: an unsupported `LD`
   solved without the load and reported convergence, a negative frequency
