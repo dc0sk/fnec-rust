@@ -9,8 +9,8 @@ last_updated: 2026-09-27
 
 ## 0.19.0 — One answer, however the deck is written
 
-Twenty-nine changes since 0.18.0 (#451–#479). The Hallén solver's answers moved
-onto nec2c's, a common way of writing an inverted-V stopped producing garbage,
+Thirty changes since 0.18.0 (#451–#481). The Hallén solver's answers moved
+onto nec2c's, bent conductors are modelled rather than approximated, a common way of writing an inverted-V stopped producing garbage,
 wires on perfect ground solve, and what fnec still cannot model is refused or
 warned about by name. The findings ledger went from 149 findings / 33 open to
 **167 / 0 open**.
@@ -28,16 +28,26 @@ moves**, most by a few percent and some by a great deal:
 | same dipole, fed off-centre (segment 13) | 171.58 + j81.93 | 155.15 + j17.27 | 170.01 + j73.98 |
 | two dipoles 1 m apart, one fed | 6.28 + j37.74 | 3.31 − j14.54 | 5.40 + j32.54 |
 | collinear chain, 3 + 30 segments | 83.19 + j47.59 | 69.12 − j34.67 | 81.07 + j38.27 |
-| inverted-V written end-to-start, apex feed | 86.79 + j197.23 | **−24.06 − j1321.25** | 87.71 + j198.00 |
+| inverted-V written end-to-start, apex feed | 86.79 + j197.23 | **−24.06 − j1321.25** | 83.82 + j189.02 |
 | λ/4 monopole standing on PEC ground | 39.58 + j23.21 | refused | 39.29 + j21.37 |
 
 The causes, each a separate fix. The free-end rows modelled every wire one segment
 short (FND-156). The homogeneous solution carried `cos` alone, so an asymmetric
 current could not be represented (FND-158). Free ends used equal weights across
 unequal segments (FND-159). A fixed regularisation term biased small and coupled
-problems (FND-164: 4.7 % on a 2 cm dipole). And a bent chain written end-to-start
-was routed to the wrong basis entirely (FND-167). The residual against nec2c on the
+problems (FND-164: 4.7 % on a 2 cm dipole). A bent chain written end-to-start
+was routed to the wrong basis entirely (FND-167). And a bend had no condition at
+all (FND-162): each straight section now carries its own terms, every bend adds
+continuity and equal-potential rows, and the corner coupling between non-parallel
+sections enters the matrix. The residual against nec2c on the
 dipole is now 0.7 % in R and 8 % in X, first-order in segment length.
+
+On bent conductors the error now converges with the mesh: against nec2c, a 90° L
+is 3.1 % off at 41 segments per arm, a two-bend U about 1 %, an inverted-V fed
+away from its apex 5.0 %, and the apex-fed inverted-V in the table 4.0 / 3.0 / 2.5 %
+at 21 / 41 / 81 segments per arm. Before the bend was modelled, that inverted-V
+read 0.4 % at 21 segments, by two errors cancelling, and moved *away* from nec2c
+under refinement. Details are in `docs/hallen-bends.md`.
 
 *Migration.* Re-baseline any stored Hallén results. The corpus references were
 re-pinned against these changes and are gated against nec2c where one exists.
@@ -67,10 +77,9 @@ the old `TL` layout take the printed rewrite.
 
 ### Warned about, where 0.18.0 was silent
 
-- **A bent conductor on Hallén** (FND-162): Hallén has no condition at a bend. A
-  90° L is 40 % off in R, and an inverted-V fed away from its apex 35 %. Every
-  frontend now says so and points to `--solver mpie`, which tracks nec2c on these
-  decks. What was tried is in `docs/hallen-bends.md`.
+- **A plane-wave receive solve on a bent conductor** (FND-162): the driven solve
+  models a bend, the receive solve does not yet (~55 % off at an L's corner). Those
+  decks warn on every frontend and point to `--solver mpie`.
 - A CLI sweep reports negative feedpoint resistance **once**, counting the points
   (FND-069).
 
