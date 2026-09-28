@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **An incident plane wave over ground is refused (FND-170).** The receive
+  forcing has no ground-reflected wave, so over ground its induced currents were
+  wrong, silently: 55 % off nec2c on a straight dipole over perfect ground. No
+  solver here models the reflected wave, so every frontend now refuses the deck and
+  says to remove the `GN` card to solve in free space. (#486)
+
 - **The plane-wave receive solve models a bend (FND-162).** It kept one
   homogeneous term per path, on the belief that its forcing jumps at a bend. The
   forcing is a sum of delta-gap feeds and smooth at every node, so the receive
