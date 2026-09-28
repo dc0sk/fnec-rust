@@ -1,0 +1,10 @@
+# The minimum runtime platform every fnec release asset must run on (FND-168).
+#
+# scripts/check-asset-platform.py refuses an asset that requires a newer GLIBC
+# symbol version than this, or a wheel whose manylinux tag promises a newer one.
+# 2.17 is the manylinux2014 ceiling, which scripts/build-release-assets.sh's
+# container meets (0.19.0: binaries 2.16, wheel extension 2.14).
+#
+# Raising this is a decision: change it here in a commit, and say so in the
+# release notes. Never let an asset arrive above it.
+glibc_max = "2.17"
