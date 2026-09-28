@@ -1283,6 +1283,9 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 
     // Build a probe closure: substitutes the search variable into the template,
     // parses the deck, runs a single-frequency solve, and returns (z_re, z_im).
+    // The caveats describe the geometry, so they are printed once, on the first
+    // probe, not once per bisection step.
+    let caveats_shown = std::cell::Cell::new(false);
     let probe = |val: f64| -> Result<(f64, f64), String> {
         let mut vars = std::collections::HashMap::new();
         vars.insert(cfg.var.clone(), format!("{val:.9}"));
@@ -1292,8 +1295,14 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
         let deck = &result.deck;
 
         let segs = build_geometry(deck).map_err(|e| e.to_string())?;
-        let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
         let ground = ground_model_from_deck(deck);
+        // Every refusal the other frontends make, in the order the main CLI makes
+        // them. This route called none of them, so an unsupported load solved
+        // without the load and a negative frequency converged (FND-173).
+        if let Some(err) = nec_solver::validate::pre_solve_error(deck, &segs, &ground) {
+            return Err(err);
+        }
+        let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
         let wire_endpoints = wire_endpoints_from_segs(&segs);
         let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
@@ -1309,6 +1318,19 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             )
             .unwrap_or_else(|| "resonance search: no frequency".to_string())
         })?;
+
+        if !caveats_shown.replace(true) {
+            for w in nec_solver::validate::hallen_geometry_caveats(
+                deck,
+                &segs,
+                &ground,
+                freq_hz,
+                false,
+                solve_session::CLI_MPIE_REMEDY,
+            ) {
+                eprintln!("warning: {w}");
+            }
+        }
 
         let solve_result = solve_frequency_point(
             deck,
