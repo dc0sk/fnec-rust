@@ -1403,6 +1403,36 @@ pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -
         .or_else(|| frequency_error(deck))
         .or_else(|| network_card_error(deck, segs))
         .or_else(|| load_card_error(deck, segs))
+        .or_else(|| plane_wave_over_ground_error(deck, ground))
+}
+
+/// Refuse an incident plane wave over ground (FND-170).
+///
+/// The receive forcing is the direct wave alone: the matrix carries the ground's
+/// images, but the incident field has no ground-reflected part. A straight
+/// horizontal dipole 5 m over perfect ground, lit at θ = 45°, came out 55 % off
+/// nec2c in its induced currents, silently; in free space the same dipole is
+/// 5.6 %. No solver here has the reflected wave — the MPIE refuses plane waves —
+/// so there is nothing to point to but free space.
+///
+/// Exhaustive on purpose: a new ground model must decide here whether a plane
+/// wave over it is answerable. `Deferred` already solves in free space, and says
+/// so, so its receive answer is the free-space one it claims to be.
+pub fn plane_wave_over_ground_error(deck: &NecDeck, ground: &GroundModel) -> Option<String> {
+    if !crate::hallen_session::deck_has_plane_wave(deck) {
+        return None;
+    }
+    let which = match ground {
+        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return None,
+        GroundModel::PerfectConductor => "perfect ground",
+        GroundModel::SimpleFiniteGround { .. } => "finite ground",
+    };
+    Some(format!(
+        "an incident plane wave over {which} cannot be solved: the receive solve has no \
+         ground-reflected wave, so its induced currents are wrong — measured 55 % off nec2c \
+         on a straight dipole over perfect ground (FND-170). Remove the GN card to solve \
+         the antenna in free space"
+    ))
 }
 
 /// Refuse a deck with an `LD` card fnec cannot apply (FND-161): an unsupported
@@ -1887,6 +1917,40 @@ mod tests {
         // FND-031 fact this deck has always been used to pin.
         assert!(e.contains("tag 1 segment 26"), "{e}");
         assert!(e.contains("plane wave"), "{e}");
+    }
+
+    /// FND-170: a plane wave over ground is refused, through `pre_solve_error`,
+    /// which every frontend calls; the same deck in free space, and a driven deck
+    /// over ground, are not.
+    #[test]
+    fn a_plane_wave_over_ground_is_refused() {
+        let wire = "GW 1 42 -5 0 5 5 0 5 .001\n";
+        let refusal = |ground: &str, ex: &str| {
+            let (deck, segs) =
+                deck_and_segs(&format!("{wire}GE 1\n{ground}{ex}FR 0 1 0 0 14.2 0\nEN\n"));
+            let g = crate::geometry::ground_model_from_deck(&deck);
+            pre_solve_error(&deck, &segs, &g)
+        };
+        let rx = "EX 1 1 1 0 45 0 0\n";
+        for (gn, which) in [
+            ("GN 1\n", "perfect ground"),
+            ("GN 2 0 0 0 13 0.005\n", "finite ground"),
+        ] {
+            let e = refusal(gn, rx).unwrap_or_else(|| panic!("{gn:?} must be refused"));
+            assert!(e.contains(which) && e.contains("FND-170"), "{e}");
+        }
+        assert_eq!(
+            refusal("GN 1\n", "EX 0 1 21 0 1 0\n"),
+            None,
+            "a driven deck over ground"
+        );
+        let (deck, segs) = deck_and_segs(&format!("{wire}GE 0\n{rx}FR 0 1 0 0 14.2 0\nEN\n"));
+        let g = crate::geometry::ground_model_from_deck(&deck);
+        assert_eq!(
+            pre_solve_error(&deck, &segs, &g),
+            None,
+            "a receive deck in free space"
+        );
     }
 
     /// ...and a plane-wave-**only** deck is untouched. A receive deck is a
