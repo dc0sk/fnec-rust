@@ -24,7 +24,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `scripts/build-release-assets.sh` builds all four assets in the container
   (binaries need 2.16, the wheel 2.14, same answers to the digit), and
   `scripts/check-asset-platform.py` refuses anything above the committed 2.17
-  floor. Procedure: `docs/release-process.md`. (#PRNUM)
+  floor. Procedure: `docs/release-process.md`. (#483)
 
 ## [0.19.0] — 2026-09-27 — One answer, however the deck is written
 
