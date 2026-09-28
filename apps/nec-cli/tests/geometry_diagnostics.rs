@@ -443,6 +443,40 @@ fn distributed_run_refuses_a_receive_deck_before_contacting_any_host() {
     assert_eq!(out.status.code(), Some(1), "must exit 1");
 }
 
+/// FND-176: a host `ssh` cannot reach is unreachable, not a worker that died
+/// holding the task. It used to spend one of the task's two strikes, so three
+/// unresolvable hosts failed a healthy task after the second, the third never
+/// tried. `.invalid` never resolves (RFC 2606), and `ssh` then exits 255.
+#[test]
+fn unreachable_ssh_hosts_do_not_spend_the_tasks_strikes() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-three-invalid-hosts.toml",
+        "[[worker]]\nhostname = \"bad-a.invalid\"\n[[worker]]\nhostname = \"bad-b.invalid\"\n\
+         [[worker]]\nhostname = \"bad-c.invalid\"\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-freesp-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("has now killed"),
+        "an unreachable host must not count against the task:\n{stderr}"
+    );
+    for host in ["bad-a.invalid", "bad-b.invalid", "bad-c.invalid"] {
+        assert!(
+            stderr.contains(&format!("worker 'ssh:{host}' unreachable")),
+            "every host must be tried and found unreachable ({host}):\n{stderr}"
+        );
+    }
+    assert_eq!(out.status.code(), Some(1), "no worker could answer");
+}
+
 /// The negative control: the default solver is the one the worker implements, so
 /// a distributed Hallén run must still reach the hosts. Without this, refusing
 /// every solver would pass the test above.

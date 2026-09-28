@@ -179,7 +179,10 @@ impl SshWorkerHandle {
                 );
                 self.reconnect()?;
                 self.pipe.send(&json)?;
-                self.pipe.recv(self.deadline)?
+                match self.pipe.recv(self.deadline) {
+                    Ok(line) => line,
+                    Err(e) => return Err(self.who_closed_it(e)),
+                }
             }
         };
 
@@ -189,6 +192,37 @@ impl SshWorkerHandle {
             crate::DispatchError::Task(format!("unreadable result from worker: {e}"))
         })?;
         Ok(result)
+    }
+
+    /// Tell an unreachable host from a worker that died holding the task.
+    ///
+    /// Both close stdout, and the pool treats them differently: a death spends one
+    /// of the task's two strikes, an unreachable host does not. `ssh` exits 255
+    /// when IT fails — the name does not resolve, the connection or the
+    /// authentication fails — and then no worker ever received the task. Three
+    /// unresolvable hosts used to fail a healthy task after the second, with the
+    /// third never tried (FND-176). Any other status is the remote command's own,
+    /// so it stays a death, and a task that kills workers still runs out of
+    /// strikes.
+    fn who_closed_it(&mut self, e: crate::DispatchError) -> crate::DispatchError {
+        const SSH_OWN_FAILURE: i32 = 255;
+        match e {
+            crate::DispatchError::Worker(m) if m.contains("closed stdout") => {
+                match self
+                    .pipe
+                    .exit_status_within(std::time::Duration::from_secs(2))
+                {
+                    Some(status) if status.code() == Some(SSH_OWN_FAILURE) => {
+                        crate::DispatchError::Unreachable(format!(
+                            "ssh could not reach '{}' (exit 255)",
+                            self.hostname
+                        ))
+                    }
+                    _ => crate::DispatchError::Worker(m),
+                }
+            }
+            other => other,
+        }
     }
 
     /// Re-establish the SSH subprocess connection to the remote worker.
