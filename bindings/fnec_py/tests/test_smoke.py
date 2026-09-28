@@ -142,6 +142,20 @@ EN
 """
 
 
+CROSSING_WIRES_BAD_FEED = CROSSING_WIRES.replace("EX 0 1 6 0", "EX 0 1 999 0")
+
+
+def test_a_deck_with_two_faults_names_the_one_the_cli_names():
+    """FND-180: the refusals run before the excitation is built, on every frontend.
+
+    With crossing wires AND a feed on a segment that does not exist, the CLI and
+    the worker name the geometry; these bindings used to name the missing
+    segment, because they built the excitation first.
+    """
+    with pytest.raises(RuntimeError, match="intersecting-wire"):
+        fnec_py.solve_deck_str(CROSSING_WIRES_BAD_FEED)
+
+
 @pytest.mark.parametrize(
     "deck,fragment",
     [

@@ -88,10 +88,11 @@ fn solve_structure(
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
     }
-    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
 
-    // Same checks, in the same order, as the CLI and the GUI.
+    // Same checks, in the same order, as the CLI and the GUI: the refusals before
+    // the excitation is built, so a deck with two faults names the same one on
+    // every frontend (FND-180).
     let mut warnings = Vec::new();
     for d in validate::diagnose(deck, &segs, &ground, freq_hz, py_solver_context(solver)) {
         match d.level {
@@ -99,6 +100,7 @@ fn solve_structure(
             nec_model::DiagnosticLevel::Warning => warnings.push(d.message),
         }
     }
+    let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
 
     // The MPIE builds its own system from the geometry and reads neither the
     // assembled matrix nor the Hallén bookkeeping, so assembling them here would

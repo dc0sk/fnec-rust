@@ -3419,3 +3419,22 @@ fn a_failed_sweep_still_lists_the_points_it_computed() {
         "the table and the chart must draw from the same set"
     );
 }
+
+/// FND-180: a deck with two faults names the same one on every frontend. The GUI
+/// built the excitation before its refusals, so crossing wires with a feed on a
+/// segment that does not exist reported the missing segment, where the CLI and
+/// the worker report the geometry.
+#[test]
+fn a_deck_with_two_faults_names_the_geometry_first() {
+    const DECK: &str = "CE\nGW 1 11 -5 0 0 5 0 0 0.001\nGW 2 11 0 -5 0 0 5 0 0.001\nGE\n\
+                        EX 0 1 999 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let solve = solve_deck_str(DECK, nec_gui::solve::SolverKind::Hallen)
+        .expect_err("the deck must be refused");
+    assert!(solve.contains("intersecting"), "Solve tab: {solve}");
+    let currents = nec_gui::solve::load_currents_str(DECK, nec_gui::solve::SolverKind::Hallen)
+        .expect_err("the deck must be refused");
+    assert!(
+        currents.contains("intersecting"),
+        "Currents tab: {currents}"
+    );
+}

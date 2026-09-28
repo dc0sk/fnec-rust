@@ -352,23 +352,6 @@ fn main() -> ExitCode {
                 .unwrap_or_default()
         }
     }
-    let validators: Vec<&dyn DeckValidator> = vec![&NoExCardValidator];
-    let validator_diags = run_validators(deck, &validators);
-    let mut has_validator_error = false;
-    for diag in &validator_diags {
-        match diag.level {
-            DiagnosticLevel::Error => {
-                eprintln!("error: [validator] {}", diag.message);
-                has_validator_error = true;
-            }
-            DiagnosticLevel::Warning => {
-                eprintln!("warning: [validator] {}", diag.message);
-            }
-        }
-    }
-    if has_validator_error {
-        return ExitCode::FAILURE;
-    }
     // ----------------------------------------------------------------------
 
     // Every configuration file the run names is read and checked here, before
@@ -396,6 +379,27 @@ fn main() -> ExitCode {
     } else {
         frequencies_from_fr(deck)
     };
+    // After every configuration file is read (FND-150): a bad `--hosts` or
+    // `--sweep-config` path is reported even on an undriven deck, as the comment
+    // at the `--hosts` read promises (FND-181). Still ahead of the first deck
+    // refusal, the exec probe and the geometry build.
+    let validators: Vec<&dyn DeckValidator> = vec![&NoExCardValidator];
+    let validator_diags = run_validators(deck, &validators);
+    let mut has_validator_error = false;
+    for diag in &validator_diags {
+        match diag.level {
+            DiagnosticLevel::Error => {
+                eprintln!("error: [validator] {}", diag.message);
+                has_validator_error = true;
+            }
+            DiagnosticLevel::Warning => {
+                eprintln!("warning: [validator] {}", diag.message);
+            }
+        }
+    }
+    if has_validator_error {
+        return ExitCode::FAILURE;
+    }
     // This used to be `return ExitCode::SUCCESS` — a deck with no `FR` and no
     // `--sweep-config` exited 0 having written zero bytes to stdout AND stderr,
     // while the GUI and `fnec_py` refused the same deck (FND-070). A silent
@@ -515,6 +519,18 @@ fn main() -> ExitCode {
                 "error: --ground-solver sommerfeld is not supported with --hosts; \
                  the worker derives its ground model from the deck and never applies \
                  the surface-wave correction. Run without --hosts."
+            );
+            return ExitCode::FAILURE;
+        }
+        // The worker returns a feedpoint impedance and nothing else, so it refuses
+        // a receive deck — but only after the pool has dialled every host (N x 5 s)
+        // and once per frequency. Knowable from the deck before any connection,
+        // the same as the solver checks above (FND-018, FND-178).
+        if nec_solver::deck_has_plane_wave(deck) {
+            eprintln!(
+                "error: an incident plane wave is not supported with --hosts; the \
+                 distributed worker returns feedpoint impedances only and a receiving \
+                 antenna has none. Run without --hosts to get its induced currents."
             );
             return ExitCode::FAILURE;
         }

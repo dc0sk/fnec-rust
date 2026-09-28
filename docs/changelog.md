@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Six smaller findings from the 2026-09-28 review (FND-178 to FND-183).** A
+  receive deck under `--hosts` is refused before any host is dialled. The
+  bent-conductor caveat judges the segments the solve runs on, so a base doubled
+  by its ground image no longer warns falsely. The GUI and `fnec_py` refuse
+  before building the excitation, so a deck with two faults names the same one
+  on every frontend. A bad `--hosts` path is reported even for an undriven deck.
+  `build-release-assets.sh` refuses a tmpfs or a foreign non-empty `--out`
+  before deleting anything. The release doc's notes snippet takes its version
+  from `$V`. (#492)
+
 - **The corpus provenance check sees a re-pin within the current release
   (FND-177).** It compared only each case's version stamp, so a stored value
   changed within the release under development passed with its old stamp. Each

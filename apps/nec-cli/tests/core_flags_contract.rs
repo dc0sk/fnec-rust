@@ -286,6 +286,32 @@ fn a_bad_hosts_path_is_reported_even_when_the_deck_is_refused() {
     );
 }
 
+/// FND-181: ...and for a deck with no `EX` at all. The undriven-deck check ran
+/// before the hosts file was read, so a bad path went unreported, contradicting
+/// the comment at that read.
+#[test]
+fn a_bad_hosts_path_is_reported_even_for_an_undriven_deck() {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let deck = dir.join(format!("no-ex-{}.nec", std::process::id()));
+    std::fs::write(
+        &deck,
+        "CE\nGW 1 21 0 0 -5 0 0 5 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEN\n",
+    )
+    .expect("write deck");
+    let output = run_fnec(&[
+        "--hosts",
+        "/tmp/definitely-does-not-exist.toml",
+        deck.to_str().unwrap(),
+    ]);
+    let _ = std::fs::remove_file(&deck);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("IO error reading hosts config"),
+        "the bad --hosts path must be reported:\n{stderr}"
+    );
+}
+
 #[test]
 fn all_core_flags_combination_runs_successfully() {
     let deck = fixture_deck("dipole-freesp-51seg.nec");

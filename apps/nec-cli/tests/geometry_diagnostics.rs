@@ -413,6 +413,36 @@ fn distributed_run_refuses_a_non_hallen_solver_before_contacting_any_host() {
     assert_eq!(out.status.code(), Some(1), "must exit 1");
 }
 
+/// FND-178: a receive deck cannot be answered by the worker (it returns a feedpoint
+/// impedance only), and that is knowable from the deck — so it is refused before
+/// the pool dials any host, like the solver checks above.
+#[test]
+fn distributed_run_refuses_a_receive_deck_before_contacting_any_host() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-receive-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-ex1-freesp-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("plane wave is not supported with --hosts"),
+        "must say why:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains(UNREACHABLE_HOST),
+        "must fail BEFORE contacting any host:\n{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(1), "must exit 1");
+}
+
 /// The negative control: the default solver is the one the worker implements, so
 /// a distributed Hallén run must still reach the hosts. Without this, refusing
 /// every solver would pass the test above.

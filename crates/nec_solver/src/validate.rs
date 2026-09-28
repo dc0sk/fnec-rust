@@ -1295,7 +1295,18 @@ pub fn bent_conductor_warning(
     segs: &[Segment],
     mpie_remedy: &str,
 ) -> Option<String> {
-    if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(segs) {
+    // Judge the segments the solve runs on: a deck touching PEC ground is solved
+    // as its doubled image problem (FND-082), where a one-segment run at the
+    // ground becomes two and the bend IS modelled. Asked on the raw segments, a
+    // 1-segment vertical base warned "about 26 % off" at 1.274 + j23.96 against
+    // nec2c's 1.295 + j26.62 (FND-179). The same resolution as `hallen_route`.
+    let contact =
+        crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck));
+    let solved: &[Segment] = match &contact {
+        Ok(Some(img)) => &img.segs,
+        _ => segs,
+    };
+    if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(solved) {
         return None;
     }
     let angle = largest_bend_deg(segs)?;
@@ -2200,6 +2211,12 @@ mod tests {
                 "the fallback must warn ({ex:?}): {w:?}"
             );
         }
+        // On PEC ground a one-segment base is doubled by its image and the bend is
+        // modelled: the caveat must judge the solved segments (FND-179).
+        let grounded = warns(&format!(
+            "GW 1 1 0 0 0 0 0 0.5 .001\nGW 2 21 0 0 0.5 5 0 0.5 .001\nGE 1\nGN 1\nEX 0 1 1 0 1 0\n{fr}"
+        ));
+        assert!(!bent(&grounded), "an image-doubled base: {grounded:?}");
         let straight = warns(&format!(
             "GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 1 1 1 0 60 30 0\n{fr}"
         ));
