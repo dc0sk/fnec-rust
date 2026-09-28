@@ -749,7 +749,7 @@ pub fn hallen_geometry_caveats(
     surface_wave_modelled: bool,
     mpie_remedy: &str,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs, mpie_remedy);
+    let mut out = frequency_independent_caveats(deck, segs, ground, mpie_remedy);
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
         out.push(w);
     }
@@ -1158,7 +1158,7 @@ pub fn hallen_geometry_caveats_swept(
     surface_wave_modelled: bool,
     mpie_remedy: &str,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs, mpie_remedy);
+    let mut out = frequency_independent_caveats(deck, segs, ground, mpie_remedy);
     if let Some(w) = swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled) {
         out.push(w);
     }
@@ -1169,6 +1169,7 @@ pub fn hallen_geometry_caveats_swept(
 fn frequency_independent_caveats(
     deck: &NecDeck,
     segs: &[Segment],
+    ground: &GroundModel,
     mpie_remedy: &str,
 ) -> Vec<String> {
     let mut out = Vec::new();
@@ -1177,8 +1178,83 @@ fn frequency_independent_caveats(
     } else if let Some(w) = bent_conductor_warning(deck, segs, mpie_remedy) {
         out.push(w);
     }
+    if let Some(w) = slanted_over_ground_warning(deck, segs, ground, mpie_remedy) {
+        out.push(w);
+    }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
     out
+}
+
+/// The tilt band, in degrees from horizontal, in which a wire over ground loses
+/// its coupling to its own image (FND-171).
+const SLANT_CAVEAT_DEG: (f64, f64) = (15.0, 75.0);
+
+/// A slanted wire over ground (FND-171).
+///
+/// Hallén's kernel couples two segments through `cos α`, the cosine of the angle
+/// between them. A vertical wire's image is parallel to it and a horizontal
+/// wire's antiparallel, so both see their image in full; a slanted wire's image
+/// is tilted the other way, and at 45° it is perpendicular and contributes
+/// nothing. The ground's effect on a sloper then comes only from the other
+/// segments' images. Its real coupling to its image runs through the scalar
+/// potential, which the tangential kernel does not carry. A 45° dipole 10 m over
+/// perfect ground solved to the same value as in free space, to every digit.
+///
+/// Measured against nec2c on a dipole 10 m over `GN 1`: at 0–10° and 80–90° from
+/// horizontal the error shrinks with refinement, as for any wire. At 20–60° it
+/// GROWS: 5.3 % → 7.5 % at 45°, and 13.5 % at 30° three metres up. The same
+/// holds for the arms of an inverted-V (FND-174). `--solver mpie` models it.
+pub fn slanted_over_ground_warning(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    mpie_remedy: &str,
+) -> Option<String> {
+    let over = match ground {
+        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return None,
+        GroundModel::PerfectConductor => "perfect ground",
+        GroundModel::SimpleFiniteGround { .. } => "finite ground",
+    };
+    // A wire with an end on PEC ground is solved with its image as a real wire
+    // joined to it at a bend (FND-082), so the corner term does couple the two:
+    // a grounded 45° sloper converges on nec2c (10.4 → 7.0 → 5.4 %). Only wires
+    // that stand clear of the ground lose their image.
+    let tol = crate::hallen_session::JUNCTION_TOL_M;
+    let grounded: std::collections::HashSet<u32> = match ground {
+        GroundModel::PerfectConductor => segs
+            .iter()
+            .filter(|sg| sg.start[2].abs() < tol || sg.end[2].abs() < tol)
+            .map(|sg| sg.tag)
+            .collect(),
+        _ => std::collections::HashSet::new(),
+    };
+    let (lo, hi) = SLANT_CAVEAT_DEG;
+    let worst = segs
+        .iter()
+        .filter(|sg| !grounded.contains(&sg.tag))
+        .map(|sg| sg.direction[2].abs().clamp(0.0, 1.0).asin().to_degrees())
+        .filter(|tilt| (lo..=hi).contains(tilt))
+        .fold(None, |acc: Option<f64>, t| {
+            // The tilt nearest 45°, where the image is closest to perpendicular.
+            Some(acc.map_or(t, |a| {
+                if (t - 45.0).abs() < (a - 45.0).abs() {
+                    t
+                } else {
+                    a
+                }
+            }))
+        })?;
+    let remedy = if mpie_compatible_deck(deck) {
+        format!(" — {mpie_remedy}, which models it")
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "geometry contains a wire slanted {worst:.0}° from horizontal over {over}; the \
+         Hallén solve does not couple a slanted wire to its own ground image, so the \
+         feedpoint and currents drift away from nec2c as the mesh is refined — measured \
+         7.5 % at 45° and 13.5 % at 30° (FND-171){remedy}"
+    ))
 }
 
 /// A conductor path turns by at least this much before [`bent_conductor_warning`]
@@ -1951,6 +2027,65 @@ mod tests {
             None,
             "a receive deck in free space"
         );
+    }
+
+    /// FND-171: a wire slanted 15–75° over ground loses its own image, and the
+    /// error grows with refinement; vertical, horizontal, nearly level and grounded
+    /// wires converge and must not be warned about. Through `diagnose`, which the
+    /// GUI and the bindings call.
+    #[test]
+    fn a_slanted_wire_over_ground_is_warned_about() {
+        let ctx = SolverContext::cli_hallen();
+        let slant = |geo: &str, ground: &str, ex: &str| -> Option<String> {
+            let (deck, segs) = deck_and_segs(&format!("{geo}{ground}{ex}FR 0 1 0 0 14.2 0\nEN\n"));
+            let g = crate::geometry::ground_model_from_deck(&deck);
+            diagnose(&deck, &segs, &g, 14.2e6, ctx)
+                .into_iter()
+                .map(|d| d.message)
+                .find(|m| m.contains("slanted"))
+        };
+        let (gn1, free) = ("GE 1\nGN 1\n", "GE 0\n");
+        let ex = "EX 0 1 21 0 1 0\n";
+        let tilted = |deg: f64| {
+            let (a, l) = (deg.to_radians(), 5.282);
+            let (dx, dz) = (l * a.cos(), l * a.sin());
+            format!(
+                "GW 1 41 {:.4} 0 {:.4} {:.4} 0 {:.4} .001\n",
+                -dx,
+                10.0 - dz,
+                dx,
+                10.0 + dz
+            )
+        };
+        let w = slant(&tilted(45.0), gn1, ex).expect("a 45° dipole over PEC must warn");
+        assert!(
+            w.contains("45°") && w.contains("FND-171") && w.contains("mpie"),
+            "{w}"
+        );
+        assert!(
+            slant(&tilted(45.0), "GE 1\nGN 2 0 0 0 13 0.005\n", ex).is_some(),
+            "finite ground"
+        );
+        assert!(slant(&tilted(45.0), free, ex).is_none(), "free space");
+        for deg in [0.0, 10.0, 80.0, 90.0] {
+            assert!(
+                slant(&tilted(deg), gn1, ex).is_none(),
+                "{deg}° converges and must not warn"
+            );
+        }
+        let grounded = "GW 1 21 0 0 0 3.7477 0 3.7477 .001\n";
+        assert!(
+            slant(grounded, gn1, "EX 0 1 1 0 1 0\n").is_none(),
+            "a grounded sloper converges"
+        );
+        let vee = "GW 1 21 0 0 10 -3.7477 0 6.2523 .001\nGW 2 21 0 0 10 3.7477 0 6.2523 .001\n";
+        assert!(
+            slant(vee, gn1, "EX 0 1 1 0 1 0\n").is_some(),
+            "inverted-V arms over ground (FND-174)"
+        );
+        // A current source cannot take the MPIE, so the warning must not offer it.
+        let w4 = slant(&tilted(45.0), gn1, "EX 4 1 21 0 1 0\n").expect("EX 4 warns too");
+        assert!(!w4.contains("mpie"), "{w4}");
     }
 
     /// ...and a plane-wave-**only** deck is untouched. A receive deck is a
