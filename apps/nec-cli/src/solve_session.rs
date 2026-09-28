@@ -278,6 +278,9 @@ fn plane_wave_receive_sweep(
         return Ok(Vec::new());
     }
 
+    // The paths, section layout and corner term do not depend on the direction;
+    // built per direction they made a 2701-point pattern 44× slower (FND-162).
+    let plan = nec_solver::plan_hallen_planewave(segs, freq_hz);
     let mut raw: Vec<(f64, f64, f64)> = Vec::new(); // (θ, φ, peak|I|)
     for it in 0..n_theta {
         for ip in 0..n_phi {
@@ -300,8 +303,9 @@ fn plane_wave_receive_sweep(
             // The one copy of the plane-wave routing decision, shared with
             // `solve_hallen_routed`'s own arm. It borrows the matrix, so calling
             // it once per direction cannot re-stamp the load columns (FND-128).
-            let currents = nec_solver::solve_hallen_planewave_routed(&d, segs, z_mat, freq_hz)
-                .map_err(|e| e.to_string())?;
+            let currents =
+                nec_solver::solve_hallen_planewave_planned(&d, segs, z_mat, freq_hz, &plan)
+                    .map_err(|e| e.to_string())?;
             // Before the reduction, not after. `f64::max` returns the OTHER
             // operand when one side is NaN, so `fold(0.0, f64::max)` turns a
             // fully diverged solve into exactly 0.0 — printed as a -999.99 dB

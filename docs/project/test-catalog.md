@@ -79,6 +79,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
 | `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
 | `crates/nec_solver/tests/bend_corner_nec2c.rs` | 3 | Hallén on bent conductors vs nec2c at two meshes each — a 90° L, a two-bend U (the interior-section branch), an off-apex inverted-V; the error must shrink with refinement (FND-162 stage 1b) | FND-162 |
+| `crates/nec_solver/tests/bend_receive_nec2c.rs` | 5 | Plane-wave receive on bent conductors vs nec2c at two meshes each — a 90° L, the same L with one arm unlit (fed only through the bend), a two-bend U; error must shrink; planned == one-shot receive solve; the one-segment-run fallback predicate (FND-162) | FND-162 |
 | `crates/nec_solver/tests/collinear_merge.rs` | 7 | PH9-CHK-002 (collinear case): a straight conductor split across several GW cards must solve as one wire. | PH9-CHK-002 |
 | `crates/nec_solver/tests/conductor_path_corpus.rs` | 3 | FND-132 — the corpus must reach the conductor-path basis. | FND-121, FND-132, PH9-CHK-002 |
 | `crates/nec_solver/tests/current_source.rs` | 4 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
@@ -99,14 +100,14 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/near_field.rs` | 3 | PH9-CHK-004: near electric-field computation (NE card), validated against the far field it must reduce to at large range and by dipole symmetry. | PH9-CHK-004 |
 | `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
 | `crates/nec_solver/tests/nt_network.rs` | 2 | PH8-CHK-004: `NT` networks, read as the admittance parameters they are (FND-123). | FND-123, PH8-CHK-004 |
-| `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity 1.5% | PH9-CHK-002 |
+| `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve through the production seams: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity — angle spread AND the absolute level `R·λ²/(π·η₀·|Z|²)` from the transmit solve (0.09 %; the spread alone could not see a bend error) | PH9-CHK-002, FND-162 |
 | `crates/nec_solver/tests/planewave_nec2c.rs` | 10 | PH8-CHK-002: validate the incident-plane-wave Hallén solve. | PH8-CHK-002 |
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/regularisation_bias.rs` | 1 | FND-164 — the Hallén solve's Tikhonov term must not bias the answer. | FND-164 |
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=571 --> **571** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=576 --> **576** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -117,7 +118,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 233 | loads, geometry, excitation, linear, matrix, farfield, basis, tl |
+| `nec_solver` | 234 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 36 | main, exec_profile, sweep_config, warnings |
@@ -127,11 +128,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=566 --> **566** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=567 --> **567** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1144 --> **1144** = 566 unit + 571 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1150 --> **1150** = 567 unit + 576 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

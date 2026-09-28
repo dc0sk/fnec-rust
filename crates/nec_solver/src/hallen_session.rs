@@ -34,8 +34,7 @@ use crate::geometry::{
     Segment,
 };
 use crate::linear::{
-    solve_hallen, solve_hallen_paths, solve_hallen_planewave, solve_hallen_planewave_paths,
-    ConstraintRow, SolveError,
+    solve_hallen, solve_hallen_paths, solve_hallen_planewave, ConstraintRow, SolveError,
 };
 use crate::matrix::ZMatrix;
 use crate::planewave::{build_planewave_hallen, build_planewave_hallen_paths};
@@ -249,11 +248,13 @@ pub(crate) fn group_paths(
     (path_of, path_end_rows(segs, paths))
 }
 
-/// [`group_paths`] with each path split into straight sections and a bend row
-/// pair at every node between them (FND-162, stage 1) — for the delta-gap and
-/// current-source solves, whose source term is one smooth function along the
-/// path. The plane-wave solve keeps [`group_paths`]: its source term follows
-/// each segment's tangent and jumps at a bend, which these rows do not carry.
+/// [`group_paths`] with each path split into straight sections, a bend row pair
+/// at every node between them and the corner term (FND-162) — for every drive.
+/// The plane-wave forcing was once kept on [`group_paths`] because the incident
+/// field's tangential part jumps at a bend; but the forcing is its convolution
+/// with `sin(k|s − s′|)`, a superposition of delta-gap right-hand sides, smooth
+/// at the node — so the bend rows hold for it as for a feed. Measured: a 90° L's
+/// receive currents went from 122 % off nec2c to 3.6 % at 41 segments per arm.
 pub(crate) fn group_sections(
     segs: &[Segment],
     paths: &[ConductorPath],
@@ -267,6 +268,43 @@ pub(crate) fn group_sections(
             (path_of, free_ends, crate::linear::BendLayout::default())
         }
     }
+}
+
+/// Where each straight section of `p` starts, as indices into `p.segs`, closed by
+/// `p.segs.len()`: a new section begins wherever the traversal tangent turns.
+fn section_starts(segs: &[Segment], p: &ConductorPath) -> Vec<usize> {
+    let tangent = |i: usize| {
+        let d = segs[p.segs[i]].direction;
+        [d[0] * p.signs[i], d[1] * p.signs[i], d[2] * p.signs[i]]
+    };
+    let mut starts = vec![0usize];
+    for i in 1..p.segs.len() {
+        let (a, b) = (tangent(i - 1), tangent(i));
+        if a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 1.0 - 1e-9 {
+            starts.push(i);
+        }
+    }
+    starts.push(p.segs.len());
+    starts
+}
+
+/// Whether every section has the two segments its `(C, D)` needs. One that does
+/// not sends the whole deck back to one `(C, D)` per path ([`section_layout`]).
+fn sections_fit(starts: &[usize]) -> bool {
+    starts.windows(2).all(|w| w[1] - w[0] >= 2)
+}
+
+/// Whether the Hallén path solve leaves a bend unmodelled on this geometry: some
+/// section is a single segment, so [`section_layout`] falls back to one `(C, D)`
+/// per path, and some path does bend. The one predicate the bent-conductor caveat
+/// keys on, so the warning and the solver cannot disagree about which decks the
+/// bend rows and corner term reach (FND-162).
+pub fn hallen_leaves_a_bend_unmodelled(segs: &[Segment]) -> bool {
+    let Some(paths) = nontrivial_paths(segs) else {
+        return false;
+    };
+    let starts: Vec<Vec<usize>> = paths.iter().map(|p| section_starts(segs, p)).collect();
+    starts.iter().any(|s| !sections_fit(s)) && starts.iter().any(|s| s.len() > 2)
 }
 
 /// The per-segment homogeneous group, the free-end rows and the bend rows of a
@@ -296,15 +334,8 @@ fn section_layout(
             let d = segs[p.segs[i]].direction;
             [d[0] * p.signs[i], d[1] * p.signs[i], d[2] * p.signs[i]]
         };
-        let mut starts = vec![0usize];
-        for i in 1..p.segs.len() {
-            let (a, b) = (tangent(i - 1), tangent(i));
-            if a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 1.0 - 1e-9 {
-                starts.push(i);
-            }
-        }
-        starts.push(p.segs.len());
-        if starts.windows(2).any(|w| w[1] - w[0] < 2) {
+        let starts = section_starts(segs, p);
+        if !sections_fit(&starts) {
             return None;
         }
         let first_group = next_group;
@@ -454,24 +485,65 @@ pub fn solve_hallen_planewave_routed(
     z_mat: &ZMatrix,
     freq_hz: f64,
 ) -> Result<Vec<Complex64>, HallenSessionError> {
-    let paths = nontrivial_paths(segs);
-    let grouped = paths.as_ref().map(|ps| group_paths(segs, ps));
+    solve_hallen_planewave_planned(
+        deck,
+        segs,
+        z_mat,
+        freq_hz,
+        &plan_hallen_planewave(segs, freq_hz),
+    )
+}
 
-    let pw = match &paths {
+/// The direction-independent part of a plane-wave solve: the conductor paths and
+/// their section layout, bend rows and corner term. Built once per geometry and
+/// frequency by [`plan_hallen_planewave`] and reused by
+/// [`solve_hallen_planewave_planned`] for every incidence direction.
+///
+/// The corner term costs about n² · 1500 Green's-function evaluations, and it does
+/// not depend on the wave. Rebuilt per direction, a 37 × 73 receive pattern on a
+/// 41-per-arm L took 264 s instead of 6 s (FND-162).
+#[derive(Debug, Clone)]
+pub struct PlaneWavePlan {
+    paths: Option<Vec<ConductorPath>>,
+    grouped: Option<PathGrouping>,
+}
+
+/// Build the [`PlaneWavePlan`] for `segs` at `freq_hz`.
+pub fn plan_hallen_planewave(segs: &[Segment], freq_hz: f64) -> PlaneWavePlan {
+    let paths = nontrivial_paths(segs);
+    let grouped = paths.as_ref().map(|ps| group_sections(segs, ps, freq_hz));
+    PlaneWavePlan { paths, grouped }
+}
+
+/// [`solve_hallen_planewave_routed`] with the direction-independent work already
+/// done: `plan` must come from [`plan_hallen_planewave`] on the same `segs` and
+/// `freq_hz`.
+pub fn solve_hallen_planewave_planned(
+    deck: &NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    freq_hz: f64,
+    plan: &PlaneWavePlan,
+) -> Result<Vec<Complex64>, HallenSessionError> {
+    let PlaneWavePlan { paths, grouped } = plan;
+
+    let pw = match paths {
         Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps),
         None => build_planewave_hallen(deck, segs, freq_hz),
     }
     .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
 
-    match &grouped {
-        Some((path_of, free_ends)) => solve_hallen_planewave_paths(
+    match grouped {
+        Some((group_of, free_ends, bends)) => crate::linear::solve_hallen_paths(
             z_mat,
             &pw.rhs,
             &pw.cos_vec,
             &pw.sin_vec,
-            path_of,
+            group_of,
             free_ends,
-        ),
+            bends,
+        )
+        .map(|s| s.currents),
         None => solve_hallen_planewave(
             z_mat,
             &pw.rhs,

@@ -394,9 +394,10 @@ pub type ConstraintRow = (usize, Option<usize>, f64, f64);
 ///   is the same, `Σ coef·I[seg] = 0` (four terms, the free-end extrapolation of
 ///   [`free_end_row`] taken from both sides).
 /// - **Equal scalar potential:** `φ ∝ ∂A_s/∂s`, and on each section `A_s` is
-///   `C cos(ks) + D sin(ks)` plus the source term. The delta-gap and current-
-///   source terms are one function along the path, smooth at a node (a feed is
-///   a segment midpoint, never a node), so their derivatives cancel and the row
+///   `C cos(ks) + D sin(ks)` plus the source term. The delta-gap, current-
+///   source and plane-wave terms are each one function along the path, smooth at
+///   a node (a feed is a segment midpoint, never a node, and the plane-wave term
+///   is a sum of such feeds), so their derivatives cancel and the row
 ///   is `−C_a sin(ks₀) + D_a cos(ks₀) = −C_b sin(ks₀) + D_b cos(ks₀)`.
 ///
 /// The transverse term `∇⊥·A⊥` that non-parallel sections contribute at a
@@ -1266,85 +1267,6 @@ pub fn solve_hallen_planewave(
     let x = solve_normal_equations(&m, &y, cols)?;
     Ok(x[..n].to_vec())
 }
-
-/// Hallén solve for a **distributed** excitation over **conductor paths** — the
-/// general-junction receive solver (PH9-CHK-002).
-///
-/// This is to [`solve_hallen_planewave`] what [`solve_hallen_paths`] is to
-/// [`solve_hallen`]: it generalizes the asymmetric two-DOF (cos/sin) plane-wave
-/// solve from contiguous single wires to arbitrary degree-2 conductor chains
-/// (bends, start-to-start / end-to-end splits), so a *receiving* bent or connected
-/// antenna solves on one continuous current path across each junction.
-///
-/// The classical Hallén homogeneous solution on a continuous conductor is
-/// `C_cos·cos(k·s) + C_sin·sin(k·s)` in the path arc-length `s`; both DOF are
-/// needed because a distributed incident field induces a general asymmetric
-/// current. Each path therefore carries **two** homogeneous constants and gets the
-/// free-end boundary condition at its **two free ends only** — interior degree-2
-/// junctions flow continuously, exactly as inside a single wire.
-///
-/// - `path_of_seg[m]` assigns each segment to a logical conductor path; all
-///   segments on a path share the same two `C` columns (`n + 2·p` and `n + 2·p+1`).
-/// - `free_end_rows` are the free-end boundary rows (see [`free_end_row`]) — the two
-///   physical free ends of each open chain (two per path).
-///
-/// The caller must pass `cos_vec`, `sin_vec` and `rhs` already built with the path
-/// sign and signed-arc-length convention (see [`crate::build_planewave_hallen_paths`]):
-/// the current on segment `m` in its own NEC direction is `sign[m]·I_path(s_m)`, so
-/// `cos_vec[m] = sign[m]·cos(k·s_m)`, `sin_vec[m] = sign[m]·sin(k·s_m)`, and the
-/// forcing carries the same sign. For a single straight wire (`sign = +1`,
-/// arc-length = the wire axis) this reduces exactly to [`solve_hallen_planewave`].
-///
-/// Solved via regularized normal equations, mirroring [`solve_hallen_planewave`].
-/// Returns the segment currents.
-pub fn solve_hallen_planewave_paths(
-    z: &ZMatrix,
-    rhs: &[Complex64],
-    cos_vec: &[f64],
-    sin_vec: &[f64],
-    path_of_seg: &[usize],
-    free_end_rows: &[ConstraintRow],
-) -> Result<Vec<Complex64>, SolveError> {
-    let n = z.n;
-    if rhs.len() != n || cos_vec.len() != n || sin_vec.len() != n || path_of_seg.len() != n {
-        return Err(SolveError::HallenDimensionMismatch {
-            z_n: n,
-            rhs_len: rhs.len(),
-            cos_len: cos_vec.len().min(sin_vec.len()),
-        });
-    }
-
-    let num_paths = path_of_seg.iter().copied().max().map_or(0, |m| m + 1);
-    // Two homogeneous constants (cos, sin) per path.
-    let cols = n + 2 * num_paths;
-    // One free-end row per path terminal (two per open-chain path).
-    let constraint_rows = free_end_rows.len();
-    let rows = n + constraint_rows;
-    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; rows];
-    let mut y = vec![Complex64::new(0.0, 0.0); rows];
-
-    for r in 0..n {
-        for c in 0..n {
-            m[r][c] = z.get(r, c);
-        }
-        let p = path_of_seg[r];
-        m[r][n + 2 * p] = Complex64::new(-cos_vec[r], 0.0);
-        m[r][n + 2 * p + 1] = Complex64::new(-sin_vec[r], 0.0);
-        y[r] = rhs[r];
-    }
-
-    // Free-end rows (the open-chain terminals only), extrapolated to the physical
-    // end along the path — built by `path_end_rows`, which knows the path's
-    // traversal order, signs and segment lengths (FND-156).
-    write_constraint_rows(&mut m, n, free_end_rows, |seg, v, row| {
-        row[seg] += Complex64::new(v, 0.0);
-    });
-
-    // Regularized normal equations (mirrors solve_hallen_planewave).
-    let x = solve_normal_equations(&m, &y, cols)?;
-    Ok(x[..n].to_vec())
-}
-
 /// Result of a current-source Hallén solve (PH8-CHK-001).
 #[derive(Debug, Clone)]
 pub struct CurrentSourceSolution {

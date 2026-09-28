@@ -272,7 +272,10 @@ pub fn build_planewave_hallen(
 
 /// Build the plane-wave Hallén forcing + homogeneous columns over **conductor
 /// paths** — the general-junction receive path (PH9-CHK-002), consumed by
-/// [`crate::solve_hallen_planewave_paths`].
+/// [`crate::solve_hallen_paths`] with the section layout and corner term of a bent
+/// path (FND-162). The forcing is a superposition of delta-gap right-hand sides
+/// (a feed at each `s_p`, weighted by `E_path(s_p)·Δl_p`), so it is smooth at every
+/// bend and the driven solve's bend rows hold for it unchanged.
 ///
 /// This is the path-aware counterpart of [`build_planewave_hallen`], mirroring how
 /// [`crate::build_hallen_rhs_paths`] generalizes the delta-gap forcing. Instead of
@@ -362,4 +365,60 @@ pub fn build_planewave_hallen_paths(
         sin_vec,
         wave,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::excitation::build_hallen_rhs_paths;
+    use crate::geometry::{build_conductor_paths, build_geometry};
+
+    /// FND-162: the receive forcing is a superposition of delta-gap right-hand
+    /// sides — a unit feed at each segment `p`, weighted by the incident field's
+    /// tangential part there times `Δl_p`. That identity is why the bend rows,
+    /// written for a feed, hold for a plane wave; were either builder's kernel or
+    /// sign convention to drift, the receive solve would lose the bend silently.
+    #[test]
+    fn the_receive_forcing_is_a_sum_of_delta_gap_feeds() {
+        let geo = "CE\nGW 1 7 0 0 0 0 0 5 .001\nGW 2 7 0 0 5 5 0 5 .001\nGE 0\n";
+        let tail = "FR 0 1 0 0 14.2 0\nEN\n";
+        let freq = 14.2e6;
+        let rx = nec_parser::parse(&format!("{geo}EX 1 1 1 0 60 30 20\n{tail}"))
+            .expect("parses")
+            .deck;
+        let segs = build_geometry(&rx).expect("geometry");
+        let paths = build_conductor_paths(&segs).expect("one bent path");
+        let pw = build_planewave_hallen_paths(&rx, &segs, freq, &paths).expect("receive rhs");
+
+        let k = 2.0 * std::f64::consts::PI * freq / C0;
+        let (r_hat, pol) = (pw.wave.r_hat(), pw.wave.pol_hat());
+        let mut sum = vec![Complex64::new(0.0, 0.0); segs.len()];
+        for (j, &p) in paths[0].segs.iter().enumerate() {
+            let sg = &segs[p];
+            // The incident field along the path's traversal at `p`, times Δl_p.
+            let e_tan: Complex64 = (0..3).map(|c| pol[c] * sg.direction[c]).sum::<Complex64>()
+                * pw.wave.e0
+                * Complex64::from_polar(1.0, k * dot(r_hat, sg.midpoint))
+                * paths[0].signs[j];
+            let fed = nec_parser::parse(&format!(
+                "{geo}EX 0 {} {} 0 1 0\n{tail}",
+                sg.tag, sg.tag_index
+            ))
+            .expect("parses")
+            .deck;
+            let dg = build_hallen_rhs_paths(&fed, &segs, freq, &paths).expect("feed rhs");
+            for (m, v) in dg.rhs.iter().enumerate() {
+                sum[m] += *v * e_tan * sg.length;
+            }
+            assert_eq!(dg.cos_vec, pw.cos_vec, "the homogeneous columns must agree");
+            assert_eq!(dg.sin_vec, pw.sin_vec, "the homogeneous columns must agree");
+        }
+        let peak = pw.rhs.iter().map(|v| v.norm()).fold(0.0f64, f64::max);
+        for (m, (a, b)) in pw.rhs.iter().zip(&sum).enumerate() {
+            assert!(
+                (a - b).norm() <= 1e-12 * peak,
+                "row {m}: receive {a} vs sum of feeds {b}"
+            );
+        }
+    }
 }
