@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **One rule decides whether two wire cards form one straight conductor
+  (FND-172, FND-175).** The collinear merge and the path classifier each had
+  their own, and a wire between them solved to garbage, silently: two cards with a
+  2.7e-5 rad kink from 4-decimal coordinates gave 0.32 − j930 Ω (nec2c
+  119.8 − j71.1), and a stepped-radius element −7.35 − j1181. Both now solve on
+  the conductor-path basis: the kinked wire equals the one-card wire, and the
+  stepped element is 4.3 % from nec2c and converging. (#488)
+
 - **An incident plane wave over ground is refused (FND-170).** The receive
   forcing has no ground-reflected wave, so over ground its induced currents were
   wrong, silently: 55 % off nec2c on a straight dipole over perfect ground. No
