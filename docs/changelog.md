@@ -15,35 +15,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
-### Fixed
-
-- **Hallén models a bend (FND-162, stage 1b).** A bent conductor's driven solve
-  was up to 57 % off nec2c: Hallén's rows held the tangential potential only, and
-  at a corner the contribution of the other, non-parallel section was missing.
-  Each straight section now carries its own homogeneous term; every bend gets a
-  current-continuity row and an equal-potential row; and the corner term enters
-  the matrix. Measured against nec2c at two meshes each, converging: a 90° L
-  3.1 %, a two-bend U and a Z about 1 %, an inverted-V fed away from its apex
-  5.0 %, the corpus split-V 1.8 % (was 28 %). Every bent deck's impedance moves;
-  the corpus is re-pinned, with the split-V's nec2c band tightened from 30 % to
-  3 %. The bent-conductor caveat now fires only for plane-wave receive decks,
-  whose solve does not model the bend yet. Details: `docs/hallen-bends.md`. (#481)
-
 ## [0.19.0] — 2026-09-27 — One answer, however the deck is written
 
-Twenty-nine changes since v0.18.0 (#451–#479). **The Hallén solver's answers
+Thirty changes since v0.18.0 (#451–#481). **The Hallén solver's answers
 moved onto nec2c's**: a λ/2 dipole went from 74.24 + j13.90 Ω to 78.83 + j42.43
 (nec2c 79.35 + j46.22), after four fixes to how it models a wire's ends, its
 asymmetric currents, mixed segment lengths and its own regularisation
 (FND-156/158/159/164). An inverted-V written end-to-start, the usual spelling,
-went from −24.1 − j1321.3 Ω to 87.7 + j198.0 (FND-167). Wires standing on
+went from −24.1 − j1321.3 Ω to 83.8 + j189.0 (FND-167), and Hallén now models
+a bend, converging on nec2c with the mesh (FND-162). Wires standing on
 perfect ground now solve (FND-082), the Python bindings answer receive decks,
-and what fnec still cannot model — bent conductors on Hallén, unusable loads,
+and what fnec still cannot model — plane-wave receive on a bent conductor, unusable loads,
 the unvalidated pulse bases — is now refused or warned about by name.
 
 The findings ledger went from 149 findings / 33 open to **167 / 0 open**, one of
-them (FND-162, Hallén bend conditions) deferred with a design and a measured
-first stage. Every value quoted below and in the release notes was re-measured
+them (FND-162) deferred for its remaining stages — junctions of degree three or
+more, loops, perpendicular coupling and plane-wave receive on a bend — with the
+bend itself fixed. Every value quoted below and in the release notes was re-measured
 at the release commit.
 
 
@@ -94,13 +82,25 @@ at the release commit.
 
 ### Fixed
 
-- **A bent conductor on the Hallén solver is warned about (FND-162).** Hallén
-  has no bend condition: a 90° L came out 40 % off in R, and an inverted-V fed away
-  from its apex 35 %, with no warning at all. Every frontend now says so, with the
-  measured error, and points to `--solver mpie`, which tracks nec2c on these decks.
+- **A bent conductor under plane-wave receive is warned about (FND-162).** Hallén
+  had no bend condition, and every bent deck was solved without one, silently: a 90°
+  L came out 40 % off in R. The driven solve now models the bend (next entry); the
+  plane-wave receive solve does not yet (~55 % off at an L's corner), and for those
+  decks every frontend warns, with the measured error, and points to `--solver mpie`.
   The GUI and the Python bindings reach it too: `validate::diagnose` calls the
-  shared caveat producer instead of keeping its own list. What was tried and what
-  remains is in `docs/hallen-bends.md`. (#479)
+  shared caveat producer instead of keeping its own list. (#479, #481)
+
+- **Hallén models a bend (FND-162, stage 1b).** A bent conductor's driven solve
+  was up to 57 % off nec2c: Hallén's rows held the tangential potential only, and
+  at a corner the contribution of the other, non-parallel section was missing.
+  Each straight section now carries its own homogeneous term; every bend gets a
+  current-continuity row and an equal-potential row; and the corner term enters
+  the matrix. Measured against nec2c at two meshes each, converging: a 90° L
+  3.1 %, a two-bend U and a Z about 1 %, an inverted-V fed away from its apex
+  5.0 %, the corpus split-V 1.8 % (was 28 %). Every bent deck's impedance moves;
+  the corpus is re-pinned, with the split-V's nec2c band tightened from 30 % to
+  3 %. The bent-conductor caveat now fires only for plane-wave receive decks,
+  whose solve does not model the bend yet. Details: `docs/hallen-bends.md`. (#481)
 
 - **A bent chain written end-to-start is solved on the conductor-path basis
   (FND-167).** The route counted a path as "trivial" (straight) when its segments
