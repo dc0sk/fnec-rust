@@ -133,6 +133,9 @@ run "corpus provenance fresh" python3 scripts/derive-corpus-provenance.py --chec
 # hand (FND-062). A gate whose own test runs somewhere else is a gate you trust
 # for reasons you cannot see locally.
 run "check-release-tags self-test" python3 scripts/test-check-release-tags.py
+# On a scratch lock file, so it runs inside this gate while the gate holds the
+# real one (the re-entrancy it checks is what lets it).
+run "host-build-lock self-test" bash scripts/test-host-build-lock.sh
 run "corpus provenance self-test" python3 scripts/test-derive-corpus-provenance.py
 run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.py
 
