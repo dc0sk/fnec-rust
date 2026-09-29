@@ -123,13 +123,14 @@ pub fn solve_current_source_hallen(
     // reducible *and* carries junctions, so folding them together would send
     // `dipole-ex4-collinear-split-51seg.nec` — which solves today — down the
     // `UnsupportedTopology` path (FND-140).
-    match crate::hallen_session::classify_paths(segs) {
+    let ground = crate::ground_model_from_deck(deck);
+    match crate::hallen_session::classify_paths(segs, &ground) {
         crate::hallen_session::PathRoute::NonTrivial(paths) => {
             let (shape, cos_vec, sin_vec, src_seg) =
                 build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
                     .map_err(CurrentSourceError::Excitation)?;
             let (path_of, free_ends, bends) =
-                crate::hallen_session::group_sections(segs, &paths, freq_hz);
+                crate::hallen_session::group_sections(segs, &paths, freq_hz, &ground);
             let sol = solve_hallen_paths(
                 z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends, &bends,
             )

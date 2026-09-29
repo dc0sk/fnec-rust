@@ -142,8 +142,9 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
         segs,
         &crate::ground_model_from_deck(deck),
     ) {
-        Ok(Some(img)) => classify_paths(&img.segs),
-        _ => classify_paths(segs),
+        // The image problem is solved in free space: its images are real wires.
+        Ok(Some(img)) => classify_paths(&img.segs, &crate::GroundModel::FreeSpace),
+        _ => classify_paths(segs, &crate::ground_model_from_deck(deck)),
     };
     HallenRoute {
         drive,
@@ -177,20 +178,54 @@ pub(crate) enum PathRoute {
 }
 
 /// Classify a geometry for routing. The one copy of that decision.
-pub(crate) fn classify_paths(segs: &[Segment]) -> PathRoute {
+pub(crate) fn classify_paths(segs: &[Segment], ground: &crate::GroundModel) -> PathRoute {
     match build_conductor_paths(segs) {
-        Some(ps) if ps.iter().any(|p| !p.is_trivial(segs)) => PathRoute::NonTrivial(ps),
+        Some(ps)
+            if ps.iter().any(|p| !p.is_trivial(segs))
+                || needs_transverse_term(segs, &ps, ground) =>
+        {
+            PathRoute::NonTrivial(ps)
+        }
         Some(_) => PathRoute::Reducible,
         None => PathRoute::Unsupported,
     }
+}
+
+/// Whether straight conductors need the transverse-divergence term, which only
+/// the path basis carries (FND-162 stage 4, FND-171, FND-174): two conductors
+/// that are not parallel, or — over a ground whose images the matrix carries — a
+/// conductor not parallel to its own image (neither horizontal nor vertical).
+/// Hallén's tangential kernel couples such pairs through `cos α` alone and loses
+/// their scalar-potential coupling: perpendicular wires did not couple at all,
+/// and a 45° dipole over ground solved to its free-space value.
+fn needs_transverse_term(
+    segs: &[Segment],
+    paths: &[ConductorPath],
+    ground: &crate::GroundModel,
+) -> bool {
+    let dirs: Vec<[f64; 3]> = paths
+        .iter()
+        .filter_map(|p| p.segs.first().map(|&m| segs[m].direction))
+        .collect();
+    let parallel =
+        |a: [f64; 3], b: [f64; 3]| (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).abs() > 1.0 - 1e-9;
+    let crossing = dirs
+        .iter()
+        .enumerate()
+        .any(|(i, &a)| dirs[i + 1..].iter().any(|&b| !parallel(a, b)));
+    let images = matches!(
+        ground,
+        crate::GroundModel::PerfectConductor | crate::GroundModel::SimpleFiniteGround { .. }
+    );
+    crossing || (images && dirs.iter().any(|&d| !parallel(d, [d[0], d[1], -d[2]])))
 }
 
 /// The conductor paths, but only when at least one is non-trivial.
 ///
 /// A `None` here means "the plain basis will do", and deliberately does not say
 /// why — see [`PathRoute`] for the caller that must know.
-fn nontrivial_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
-    match classify_paths(segs) {
+fn nontrivial_paths(segs: &[Segment], ground: &crate::GroundModel) -> Option<Vec<ConductorPath>> {
+    match classify_paths(segs, ground) {
         PathRoute::NonTrivial(ps) => Some(ps),
         PathRoute::Reducible | PathRoute::Unsupported => None,
     }
@@ -259,9 +294,11 @@ pub(crate) fn group_sections(
     segs: &[Segment],
     paths: &[ConductorPath],
     freq_hz: f64,
+    ground: &crate::GroundModel,
 ) -> PathGrouping {
     let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
-    match section_layout(segs, paths, k) {
+    let sources = corner_sources(segs, ground, freq_hz);
+    match section_layout(segs, paths, k, &sources) {
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
         None => {
             let (path_of, free_ends) = group_paths(segs, paths);
@@ -299,12 +336,79 @@ fn sections_fit(starts: &[usize]) -> bool {
 /// per path, and some path does bend. The one predicate the bent-conductor caveat
 /// keys on, so the warning and the solver cannot disagree about which decks the
 /// bend rows and corner term reach (FND-162).
-pub fn hallen_leaves_a_bend_unmodelled(segs: &[Segment]) -> bool {
-    let Some(paths) = nontrivial_paths(segs) else {
-        return false;
-    };
+pub fn hallen_leaves_a_bend_unmodelled(segs: &[Segment], ground: &crate::GroundModel) -> bool {
+    hallen_section_fallback(segs, ground).is_some_and(|starts| starts.iter().any(|s| s.len() > 2))
+}
+
+/// When the path solve falls back to one `(C, D)` per path on this geometry —
+/// some straight run is a single segment — the section starts of every path, so
+/// a caller can ask what the fallback loses: a bend (the bend rows) or a
+/// non-parallel neighbour or image (the transverse term). `None` when the layout
+/// holds or the deck does not take the path basis. The one predicate both
+/// caveats key on (FND-162, FND-171).
+pub fn hallen_section_fallback(
+    segs: &[Segment],
+    ground: &crate::GroundModel,
+) -> Option<Vec<Vec<usize>>> {
+    let paths = nontrivial_paths(segs, ground)?;
     let starts: Vec<Vec<usize>> = paths.iter().map(|p| section_starts(segs, p)).collect();
-    starts.iter().any(|s| !sections_fit(s)) && starts.iter().any(|s| s.len() > 2)
+    starts.iter().any(|s| !sections_fit(s)).then_some(starts)
+}
+
+/// A source of the transverse-divergence (corner) term: a segment, the column its
+/// current lives in, and the weight that current carries.
+#[derive(Debug, Clone)]
+pub(crate) struct CornerSource {
+    pub(crate) seg: Segment,
+    pub(crate) col: usize,
+    pub(crate) weight: Complex64,
+}
+
+/// Every source the corner term sums over on `ground`: each real segment, and —
+/// over a ground whose images the matrix carries — each segment's image.
+///
+/// The image is the GEOMETRIC mirror (endpoints and direction reflected in
+/// z = 0) carrying `−Γ` times the real current, the convention `ground_contact`
+/// uses. The matrix's `image_segment` points its direction the other way from its
+/// own start → end, which is right for `∫G cos α` but gives the pulse-edge charge
+/// term in `corner::f_n` the wrong sign (FND-162 stage 4 design review). `Γ` is
+/// the matrix's own coefficient, so the two halves of `∇·A` stay consistent.
+pub(crate) fn corner_sources(
+    segs: &[Segment],
+    ground: &crate::GroundModel,
+    freq_hz: f64,
+) -> Vec<CornerSource> {
+    let one = Complex64::new(1.0, 0.0);
+    let mut out: Vec<CornerSource> = segs
+        .iter()
+        .enumerate()
+        .map(|(j, sg)| CornerSource {
+            seg: sg.clone(),
+            col: j,
+            weight: one,
+        })
+        .collect();
+    let gamma = match ground {
+        crate::GroundModel::FreeSpace | crate::GroundModel::Deferred { .. } => return out,
+        crate::GroundModel::PerfectConductor => one,
+        crate::GroundModel::SimpleFiniteGround { eps_r, sigma } => {
+            crate::matrix::fresnel_reflection_scalar(freq_hz, *eps_r, *sigma)
+        }
+    };
+    let flip = |p: [f64; 3]| [p[0], p[1], -p[2]];
+    for (j, sg) in segs.iter().enumerate() {
+        let mut m = sg.clone();
+        m.start = flip(sg.start);
+        m.end = flip(sg.end);
+        m.midpoint = flip(sg.midpoint);
+        m.direction = flip(sg.direction);
+        out.push(CornerSource {
+            seg: m,
+            col: j,
+            weight: -gamma,
+        });
+    }
+    out
 }
 
 /// The per-segment homogeneous group, the free-end rows and the bend rows of a
@@ -322,6 +426,7 @@ fn section_layout(
     segs: &[Segment],
     paths: &[ConductorPath],
     k: f64,
+    sources: &[CornerSource],
 ) -> Option<(Vec<usize>, crate::linear::BendLayout)> {
     let mut group_of = vec![0usize; segs.len()];
     let mut bends = Vec::new();
@@ -383,26 +488,37 @@ fn section_layout(
                 (s_ref, pt, tangent(first))
             })
             .collect();
-        if nsec > 1 {
-            for (sec, &(s_ref, pt, tan)) in refs.iter().enumerate() {
-                let at = |s: f64| {
-                    [
-                        pt[0] + (s - s_ref) * tan[0],
-                        pt[1] + (s - s_ref) * tan[1],
-                        pt[2] + (s - s_ref) * tan[2],
-                    ]
-                };
+        // Every section, a straight single-section path included: the transverse
+        // divergence of a non-parallel source does not need a shared node, only
+        // a reference on this section, and the section's own (C, D) absorbs the
+        // reference's constant (FND-162 stage 4, FND-171, FND-174).
+        for (sec, &(s_ref, pt, tan)) in refs.iter().enumerate() {
+            let at = |s: f64| {
+                [
+                    pt[0] + (s - s_ref) * tan[0],
+                    pt[1] + (s - s_ref) * tan[1],
+                    pt[2] + (s - s_ref) * tan[2],
+                ]
+            };
+            let sec_len: f64 = (starts[sec]..starts[sec + 1])
+                .map(|i| segs[p.segs[i]].length)
+                .sum();
+            for src in sources {
+                if crate::corner::parallel(tan, &src.seg) {
+                    continue;
+                }
+                let breaks: Vec<f64> =
+                    crate::corner::source_breaks(s_ref, pt, tan, &src.seg, 0.1 * sec_len)
+                        .into_iter()
+                        .flatten()
+                        .collect();
                 for i in starts[sec]..starts[sec + 1] {
                     let s_m = p.s_mid[i];
-                    for (j, src) in segs.iter().enumerate() {
-                        if crate::corner::parallel(tan, src) {
-                            continue;
-                        }
-                        let v = crate::corner::graded(s_ref, s_m, src.radius, |s| {
-                            crate::corner::f_n(at(s), tan, src, k) * (k * (s_m - s)).cos()
+                    let v =
+                        crate::corner::graded_breaks(s_ref, s_m, src.seg.radius, &breaks, |s| {
+                            crate::corner::f_n(at(s), tan, &src.seg, k) * (k * (s_m - s)).cos()
                         });
-                        corner.push((p.segs[i], j, v * p.signs[i]));
-                    }
+                    corner.push((p.segs[i], src.col, v * src.weight * p.signs[i]));
                 }
             }
         }
@@ -435,14 +551,22 @@ fn section_layout(
                         pt[2] + (s - s_ref) * tan[2],
                     ]
                 };
-                for (j, src) in segs.iter().enumerate() {
-                    if crate::corner::parallel(tan, src) {
+                let sec_len: f64 = (starts[sec]..starts[sec + 1])
+                    .map(|i| segs[p.segs[i]].length)
+                    .sum();
+                for src in sources {
+                    if crate::corner::parallel(tan, &src.seg) {
                         continue;
                     }
-                    let v = crate::corner::graded(s_ref, s0, src.radius, |s| {
-                        crate::corner::f_n(at(s), tan, src, k) * (k * (s0 - s)).sin()
+                    let breaks: Vec<f64> =
+                        crate::corner::source_breaks(s_ref, pt, tan, &src.seg, 0.1 * sec_len)
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                    let v = crate::corner::graded_breaks(s_ref, s0, src.seg.radius, &breaks, |s| {
+                        crate::corner::f_n(at(s), tan, &src.seg, k) * (k * (s0 - s)).sin()
                     });
-                    phi_currents.push((j, v));
+                    phi_currents.push((src.col, v * src.weight));
                 }
             }
             bends.push(crate::linear::BendRow {
@@ -510,8 +634,13 @@ pub struct PlaneWavePlan {
 
 /// Build the [`PlaneWavePlan`] for `segs` at `freq_hz`.
 pub fn plan_hallen_planewave(segs: &[Segment], freq_hz: f64) -> PlaneWavePlan {
-    let paths = nontrivial_paths(segs);
-    let grouped = paths.as_ref().map(|ps| group_sections(segs, ps, freq_hz));
+    // Free space by construction: a plane wave over ground is refused before any
+    // solve (FND-170), and `Deferred` ground solves in free space.
+    let free = crate::GroundModel::FreeSpace;
+    let paths = nontrivial_paths(segs, &free);
+    let grouped = paths
+        .as_ref()
+        .map(|ps| group_sections(segs, ps, freq_hz, &free));
     PlaneWavePlan { paths, grouped }
 }
 
@@ -742,8 +871,9 @@ fn solve_hallen_routed_inner(
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
     let route = hallen_route(deck, segs);
+    let ground = crate::ground_model_from_deck(deck);
     let paths = if route.paths {
-        nontrivial_paths(segs)
+        nontrivial_paths(segs, &ground)
     } else {
         None
     };
@@ -757,7 +887,9 @@ fn solve_hallen_routed_inner(
     crate::stamps::stamp_hallen_load_columns(z_mat, segs, freq_hz, loads, paths.as_deref());
 
     // Path grouping, built once and shared by every arm below.
-    let grouped = paths.as_ref().map(|ps| group_sections(segs, ps, freq_hz));
+    let grouped = paths
+        .as_ref()
+        .map(|ps| group_sections(segs, ps, freq_hz, &ground));
 
     let (networks, _) =
         crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
@@ -995,7 +1127,8 @@ fn solve_current_source(
 
     let (tag, seg, i0) = first_current_source(deck)
         .ok_or_else(|| HallenSessionError::Excitation("no current source in deck".into()))?;
-    let paths = nontrivial_paths(segs).expect("grouped implies non-trivial paths");
+    let paths = nontrivial_paths(segs, &crate::ground_model_from_deck(deck))
+        .expect("grouped implies non-trivial paths");
     let (shape, cos_vec, sin_vec, src_seg) =
         build_current_source_shape_paths(deck, segs, freq_hz, tag, seg, &paths)
             .map_err(|e| HallenSessionError::Excitation(e.to_string()))?;

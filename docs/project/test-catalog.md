@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-28
+last_updated: 2026-09-29
 ---
 
 # Test catalog
@@ -106,9 +106,10 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/regularisation_bias.rs` | 1 | FND-164 — the Hallén solve's Tikhonov term must not bias the answer. | FND-164 |
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_solver/tests/straight_rule.rs` | 2 | One rule for "straight" (FND-172/175): a wire split into two cards with a rounded-coordinate kink equals the one-card wire and tracks nec2c; a stepped-radius element tracks nec2c at two meshes, converging | FND-172, FND-175 |
+| `crates/nec_solver/tests/transverse_nec2c.rs` | 3 | The transverse-divergence term from sources sharing no node (FND-162 stage 4, FND-171, FND-174) vs nec2c at two meshes, converging: a 45° dipole over PEC, an inverted-V over PEC (== its explicit image in free space), a wire over a vertical dipole (antisymmetric at 0.7 m and 5 cm) | FND-162, FND-171, FND-174 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=583 --> **583** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=586 --> **586** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -133,7 +134,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=569 --> **569** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1159 --> **1159** = 569 unit + 583 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1162 --> **1162** = 569 unit + 586 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

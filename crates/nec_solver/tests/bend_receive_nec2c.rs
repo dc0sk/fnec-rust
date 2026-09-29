@@ -168,23 +168,25 @@ fn a_planned_receive_solve_equals_the_one_shot_solve() {
     }
 }
 
+/// The fallback predicate on a free-space deck.
+fn unmodelled(segs: &[nec_solver::Segment]) -> bool {
+    hallen_leaves_a_bend_unmodelled(segs, &nec_solver::GroundModel::FreeSpace)
+}
+
 /// A straight run one segment long cannot carry its own two constants, so the
 /// deck falls back and the bend goes unmodelled; the caveat keys on this.
 #[test]
 fn only_a_one_segment_run_leaves_a_bend_unmodelled() {
     let segs_of = |g: &str| build_geometry(&deck(g, "EX 1 1 1 0 45 0 0\n")).unwrap();
+    assert!(!unmodelled(&segs_of(&l(21))), "an L is modelled");
     assert!(
-        !hallen_leaves_a_bend_unmodelled(&segs_of(&l(21))),
-        "an L is modelled"
-    );
-    assert!(
-        hallen_leaves_a_bend_unmodelled(&segs_of(
+        unmodelled(&segs_of(
             "GW 1 21 0 0 0 0 0 5 .001\nGW 2 1 0 0 5 .3 0 5 .001\nGW 3 21 .3 0 5 .3 0 0 .001\n"
         )),
         "a U whose middle run is one segment falls back"
     );
     assert!(
-        !hallen_leaves_a_bend_unmodelled(&segs_of("GW 1 21 0 0 -5 0 0 5 .001\n")),
+        !unmodelled(&segs_of("GW 1 21 0 0 -5 0 0 5 .001\n")),
         "a straight wire has no bend"
     );
 }
