@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sommerfeld-level2-scope.md
 status: living
-last_updated: 2026-08-22
+last_updated: 2026-09-29
 ---
 
 # Sommerfeld–Norton "Level 2" — scoping the real remaining gap (BL-IMPR-015)
@@ -140,7 +140,8 @@ already inside fnec's ~5–8 % gate on both Z and currents without it.**
 4. **Phase 3:** Rust port — a `dcim` module (GPOF + pole filter + complex images)
    slotted into `assemble_z_matrix_with_ground` via a complex-distance Green's
    kernel (`exp(−jk r)/r`, complex `r`), replacing the ρ-grid quadrature; gate
-   feedpoint Z → currents → pattern vs nec2c GN2 (needs the reference tools back),
+   feedpoint Z → currents → pattern vs nec2c GN2 (the reference tools are back:
+   nec2c 1.3.1 is installed, re-checked 2026-09-29, FND-004),
    and lift the Hallén `--ground-solver sommerfeld` path from feedpoint-Z to full
    currents.
 
