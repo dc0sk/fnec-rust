@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GPU-resident solve is correct on NVIDIA GPUs, and faster than the CPU on
+  large decks (FND-185).** It ran in one workgroup and handed its matrix between
+  invocations through storage buffers; on an NVIDIA GTX 1080 Ti a write was not
+  visible to the other invocations after the barrier, and the solve returned
+  garbage (every answer fell back to the CPU, so none was wrong). It is rebuilt
+  with every hand-off at a dispatch boundary and factors the system directly:
+  residual 2e-7 to 1.2e-6 on that card, within 0.0003 Ω of the CPU up to 1001
+  segments, and 5x faster than the CPU at 1001 segments (0.90 s against 4.56 s).
+  The `--exec gpu` warning now says where it loses and where it wins. (#497)
+
 - **The host-wide build lock no longer deadlocks on a nested take (FND-184).**
   A shell that took the lock and then ran `scripts/check-all.sh` waited on its own
   parent forever, and every other project's build queued behind it. The helper

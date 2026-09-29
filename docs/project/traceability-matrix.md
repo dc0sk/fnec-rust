@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-29
 ---
 
 # Traceability matrix
@@ -152,7 +152,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 |:---|:----|:-------|:-----|:------|:-------|:-:|
 | PH7-CHK-001 | — | `ph7-chk-001-gpu-stub-retirement.md` | `nec_accel/kernel_reference.rs`, `lib.rs` | `nec_accel` unit | scaffold retired; no fake GPU time | ✅ |
 | PH7-CHK-002 | — | `ph7-chk-002-gpu-microbenchmark.md` | `wgpu_device.rs` (`microbench_*`) | `gpu_microbench.rs` | 61 ms init vs 268 µs dispatch; 10/10 | ✅ |
-| PH7-CHK-003 | CP-011 | `ph7-chk-003-gpu-resident-solve.md` | `hallen_normal_solve.wgsl`, `solve_hallen_gpu_resident` | `gpu_resident_solve.rs`, `gpu_resident_solve_cli.rs` | ΔR=0.012 Ω vs f64 CPU | ✅ |
+| PH7-CHK-003 | CP-011 | `ph7-chk-003-gpu-resident-solve.md` | `hallen_lu_solve.wgsl` (rebuilt for FND-185), `solve_hallen_gpu_resident` | `gpu_resident_solve.rs`, `gpu_resident_solve_cli.rs` | ΔR=0.012 Ω vs f64 CPU | ✅ |
 | PH7-CHK-004 | PRT-011, CP-011 | `ph7-chk-004-distributed-gpu-execution.md` | `nec_worker/protocol.rs`, `solve.rs` | `worker_gpu_exec.rs`, `gpu_exec.rs` | GPU node Δ≈0.009 Ω; CPU fallback | ✅ |
 | PH7-CHK-005 | DEC-008, CP-009 | `ph7-chk-005-real-gpu-benchmark.md` | `examples/gpu_crossover.rs` | benchmark artifact | ~240× Z-fill at 1536 seg | ✅ |
 | PH7-CHK-006 | DEC-008, CP-009 | `multi-vendor-gpu.md` | — | frontmatter gate | dated ROCm/SYCL deferral | ✅ |
