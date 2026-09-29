@@ -10,8 +10,8 @@
 //! them — the scheduling-seam warning and the GPU-resident solve warning — and
 //! the diagnostics label contains the third, so it skipped on every run on every
 //! host and never enforced anything. It could not honestly have done otherwise:
-//! the 51-segment deck takes the GPU-resident SOLVE, measured at 0.04x–0.48x the
-//! CPU, and even at 15 segments (no resident solve) each process pays wgpu's
+//! the 51-segment deck takes the GPU-resident SOLVE, then measured at 0.04x–0.48x
+//! the CPU (a crossover near 500 segments only since FND-185), and even at 15 segments (no resident solve) each process pays wgpu's
 //! device start-up, ~100 ms, which put the GPU run at 1.63x the CPU on its own.
 //!
 //! What G5's documentation always said it measured is the RP far-field kernel,

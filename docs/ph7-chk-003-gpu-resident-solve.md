@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-003-gpu-resident-solve.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-29
 ---
 
 # PH7-CHK-003: GPU-resident dense Hallén solve
@@ -191,3 +191,28 @@ and the solve is the part that loses.
 decisively; treat the GPU-resident solve as not-recommended until the LU is
 re-implemented across workgroups. It is already opt-in (`--exec gpu`) and already
 falls back to the CPU when the residual gate fires.
+
+## Rebuilt, 2026-09-29 (FND-185)
+
+The design above no longer runs. On an NVIDIA GTX 1080 Ti (Vulkan, driver
+580.178.04) the single-workgroup shader returned garbage: a storage write by one
+invocation was not visible to another after `storageBarrier`, so an invocation
+read an unscaled matrix entry another had already rescaled, and the pivots and
+the LU went wrong. It converged on the AMD integrated GPU it was built on, and
+from a harness with a pre-initialised buffer on the NVIDIA card too.
+
+`hallen_lu_solve.wgsl` replaces `hallen_normal_solve.wgsl`. Every hand-off
+between invocations is a dispatch boundary: column scaling, build, then per
+column a pivot search, a row swap and an elimination dispatched across the
+device, then the triangular solves (one invocation), two refinement steps and
+the residual. The shader has no storage barrier, and a test keeps it that way.
+It factors the column-scaled M directly — this route's system is square — so
+the condition number is no longer squared.
+
+Measured on the GTX 1080 Ti: relative residual 2e-7 to 1.2e-6 on 21 to 301
+segments, identical over 20 runs; impedance within 0.0003 Ω of the f64 CPU
+solve up to 1001 segments. The recommendation above is superseded: the
+elimination now uses the whole device, and the solve crosses over near 500
+segments (whole CLI run, 0.90 s against the CPU's 4.56 s at 1001 segments;
+0.18 s against 0.009 s at 101).
+

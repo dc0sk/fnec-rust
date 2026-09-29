@@ -68,10 +68,10 @@ pub(super) struct StartupExecutionProbe {
     /// It previously blamed PH7-CHK-004, which delivered different work
     /// (FND-064).
     ///
-    /// Renaming rather than wiring is deliberate: `warnings.rs` records the
-    /// GPU-resident solve at 0.04x–0.48x of the CPU at every tested size, so
-    /// declining it costs nothing. The defect here was the claim, not the
-    /// routing.
+    /// Renaming rather than wiring was deliberate when the GPU-resident solve
+    /// measured 0.04x–0.48x of the CPU at every size. Since FND-185 it crosses
+    /// over near 500 segments (`warnings.rs`), so declining the per-point route is
+    /// no longer free on large decks; the route has not been re-evaluated.
     pub(super) per_freq_gpu_dispatch: bool,
     /// As above, for the hybrid lane's GPU candidate.
     pub(super) hybrid_gpu_lane_dispatch: bool,

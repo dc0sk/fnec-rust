@@ -43,6 +43,14 @@ fn await_map<E>(device: &wgpu::Device, rx: &std::sync::mpsc::Receiver<Result<(),
 /// Relative-residual ceiling for the GPU-resident f32 solve, above which the
 /// answer is discarded and the caller falls back to the f64 CPU solve.
 ///
+/// **Re-measured on the rebuilt solve (FND-185, direct LU of the column-scaled M),
+/// NVIDIA GTX 1080 Ti, 20 runs each, identical every run:** 2.0e-7 (21 segments),
+/// 2.3e-7 (42), 6.3e-7 (51), 1.2e-6 (301) — at least 80x inside the ceiling, and
+/// the 301-segment deck that failed before now solves. The table below is the
+/// original derivation, on the single-workgroup normal-equations shader, whose
+/// marginal cases the ceiling was placed between; it is kept because it is why
+/// the value is 1e-4.
+///
 /// Derived from measurement, not picked. `||y - Mx|| / ||y||` against the f64 CPU
 /// solve on a λ/2 dipole, three frequency points each:
 ///
@@ -945,8 +953,9 @@ struct ZUniforms {
 /// The compiled WGSL Z-matrix fill shader source.
 const ZMATRIX_WGSL: &str = include_str!("shaders/zmatrix_fill.wgsl");
 
-/// The compiled WGSL GPU-resident Hallén normal-equations solve shader source.
-const HALLEN_SOLVE_WGSL: &str = include_str!("shaders/hallen_normal_solve.wgsl");
+/// The WGSL GPU-resident Hallén solve (direct LU of the column-scaled M, one
+/// dispatch per phase — FND-185).
+const HALLEN_SOLVE_WGSL: &str = include_str!("shaders/hallen_lu_solve.wgsl");
 
 /// Input segment data for [`fill_zmatrix_wgpu`].
 ///
@@ -1383,24 +1392,39 @@ pub async fn microbench_zmatrix_dispatch(
 // GPU-resident Hallén solve (gate PH7-CHK-003)
 // ---------------------------------------------------------------------------
 
-/// Uniform block for the Hallén solve shader: n, s, nc, lambda (16 bytes).
+/// Uniform block for the Hallén solve shader: n, s, nc (16 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct SolveParams {
     n: u32,
     s: u32,
     nc: u32,
-    lambda: f32,
+    _pad: u32,
 }
+
+/// Per-dispatch parameters of the solve (column, mode), one per dynamic offset.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SolveStep {
+    col: u32,
+    mode: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// Refinement steps after the direct LU solve. The design review's f32 replica
+/// measured a contraction of about ε·cond(M) ≈ 1e-4 per step, so one step is
+/// margin rather than necessity; two keep a noisier device inside the gate.
+const REFINE_STEPS: u32 = 2;
 
 /// The smallest deck the CLI and the worker send to [`solve_hallen_gpu_resident`].
 ///
 /// One value for both callers (FND-078: it was two independent `16`s). It is a
-/// floor, not a crossover: no size was ever measured at which the device solve
-/// beats the CPU — PH7-CHK-003 measured 0.04x-0.48x the CPU speed at every size
-/// tried — so below it the dispatch is pure overhead, and above it the path is
-/// taken for `--exec gpu` because the user asked for the device. The value
-/// itself has no recorded measurement behind it.
+/// floor, not a crossover. The single-workgroup solve measured 0.04x-0.48x the CPU
+/// at every size (PH7-CHK-003); the rebuilt one crosses over near 500 segments on
+/// a GTX 1080 Ti (FND-185). Below this floor the dispatch is pure overhead; above
+/// it the path is taken for `--exec gpu` because the user asked for the device.
+/// The value itself has no recorded measurement behind it.
 pub const MIN_GPU_RESIDENT_SEGS: usize = 16;
 
 /// Why [`solve_hallen_gpu_resident`] returned no solution.
@@ -1432,13 +1456,10 @@ pub async fn hardware_adapter_present() -> bool {
         .any(|a| a.device_type != "Cpu")
 }
 
-/// Tikhonov regularization constant — matches `nec_solver::linear::solve_hallen`.
-const HALLEN_SOLVE_LAMBDA: f32 = 1e-8;
-
 /// GPU-resident Hallén dense solve (PH7-CHK-003).
 ///
-/// Fills the N×N Hallén Z-matrix on the GPU and then solves the regularized
-/// normal-equations augmented system **on the device**, returning only the
+/// Fills the N×N Hallén Z-matrix on the GPU and then solves the square augmented
+/// system **on the device** by LU of its column-scaled form, returning only the
 /// length-`S` solution vector (`S = N + W`): `x[..N]` are the segment currents
 /// and `x[N..]` the per-wire homogeneous constants. The full matrix never
 /// leaves the GPU.
@@ -1511,9 +1532,16 @@ pub async fn solve_hallen_gpu_resident(
     }
     let s = next;
     let nc = constraints.len();
+    // The shader factors M itself, which needs it square. Straight wires with two
+    // free ends each give R = N + 2W = S; anything else goes to the CPU.
+    if n + nc != s {
+        return Err(GpuSolveDeclined::OutOfClass(
+            "the augmented system is not square",
+        ));
+    }
 
     // The solve shader holds per-column scratch in fixed-size workgroup arrays
-    // (`MAX_S` in hallen_normal_solve.wgsl). Larger systems fall back to CPU.
+    // (the dispatch count grows as 3S; the ceiling bounds it). Larger systems fall back to CPU.
     const MAX_S: usize = 1024;
     if s > MAX_S {
         return Err(GpuSolveDeclined::OutOfClass(
@@ -1609,7 +1637,7 @@ pub async fn solve_hallen_gpu_resident(
         n: n as u32,
         s: s as u32,
         nc: nc as u32,
-        lambda: HALLEN_SOLVE_LAMBDA,
+        _pad: 0,
     };
     let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("hallen-params"),
@@ -1621,27 +1649,77 @@ pub async fn solve_hallen_gpu_resident(
         contents: bytemuck::cast_slice(&meta),
         usage: wgpu::BufferUsages::STORAGE,
     });
-    // lu: one S×S complex matrix (scaled A', factored in place).
+    // lu: one S×S complex matrix (the column-scaled M, factored in place).
     let mat_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("hallen-lu"),
         size: (2 * s * s * std::mem::size_of::<f32>()) as u64,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
-    // vec_: 5 complex vectors of stride R = n + nc (x, gp, dx, t, out).
+    // vec_: 7 complex vectors of stride R + 1 (x, b, w, t, out, d, piv); index R
+    // of slot t carries the residual norms, where no invocation reads.
     let rows = n + nc;
+    let stride = rows + 1;
     let vec_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("hallen-vec"),
-        size: (10 * rows * std::mem::size_of::<f32>()) as u64,
+        size: (2 * 7 * stride * std::mem::size_of::<f32>()) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
-    // Read back slots 3 and 4 in one copy: SLOT_T[0] carries the residual scalars
+    // Read back slots 3 and 4 in one copy: SLOT_T[R] carries the residual scalars
     // the accuracy gate needs (.x = ||y - Mx||^2, .y = ||y||^2), and SLOT_OUT is the
     // full S-element solution (currents = x[..n], per-wire homogeneous constants =
     // x[n..]).
-    let out_slot_byte_offset = (2 * 3 * rows * std::mem::size_of::<f32>()) as u64;
-    let readback_size = (2 * 2 * rows * std::mem::size_of::<f32>()) as u64;
+    let out_slot_byte_offset = (2 * 3 * stride * std::mem::size_of::<f32>()) as u64;
+    let readback_size = (2 * 2 * stride * std::mem::size_of::<f32>()) as u64;
+
+    // Per-dispatch steps behind dynamic uniform offsets: index 0 is (0, set),
+    // 1 is (0, add), then one entry per column.
+    let align = device.limits().min_uniform_buffer_offset_alignment as usize;
+    let step_size = std::mem::size_of::<SolveStep>();
+    let slot = step_size.div_ceil(align) * align;
+    let mut steps = vec![0u8; slot * (s + 2)];
+    let put = |buf: &mut [u8], i: usize, st: SolveStep| {
+        buf[i * slot..i * slot + step_size].copy_from_slice(bytemuck::bytes_of(&st));
+    };
+    put(
+        &mut steps,
+        0,
+        SolveStep {
+            col: 0,
+            mode: 0,
+            _p0: 0,
+            _p1: 0,
+        },
+    );
+    put(
+        &mut steps,
+        1,
+        SolveStep {
+            col: 0,
+            mode: 1,
+            _p0: 0,
+            _p1: 0,
+        },
+    );
+    for c in 0..s {
+        put(
+            &mut steps,
+            c + 2,
+            SolveStep {
+                col: c as u32,
+                mode: 0,
+                _p0: 0,
+                _p1: 0,
+            },
+        );
+    }
+    let step_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("hallen-steps"),
+        contents: &steps,
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let step_at = |i: usize| (i * slot) as u32;
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("hallen-readback"),
         size: readback_size,
@@ -1716,11 +1794,24 @@ pub async fn solve_hallen_gpu_resident(
         ],
     });
 
-    // ---- solve pipeline ----------------------------------------------------
+    // ---- solve pipelines: one per phase (FND-185) ---------------------------
+    // Every hand-off between invocations is a dispatch boundary; see the header
+    // of hallen_lu_solve.wgsl for why a storage barrier inside one dispatch was
+    // not enough on an NVIDIA device.
     let solve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("hallen-solve-shader"),
         source: wgpu::ShaderSource::Wgsl(HALLEN_SOLVE_WGSL.into()),
     });
+    let step_entry = wgpu::BindGroupLayoutEntry {
+        binding: 5,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZeroU64::new(step_size as u64),
+        },
+        count: None,
+    };
     let solve_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("hallen-solve-bgl"),
         entries: &[
@@ -1729,6 +1820,7 @@ pub async fn solve_hallen_gpu_resident(
             storage_entry(2, true),
             storage_entry(3, false),
             storage_entry(4, false),
+            step_entry,
         ],
     });
     let solve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1736,14 +1828,27 @@ pub async fn solve_hallen_gpu_resident(
         bind_group_layouts: &[Some(&solve_bgl)],
         immediate_size: 0,
     });
-    let solve_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("hallen-solve-pipeline"),
-        layout: Some(&solve_layout),
-        module: &solve_shader,
-        entry_point: Some("cs_hallen_solve"),
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
-        cache: None,
-    });
+    let pipe = |entry: &'static str| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&solve_layout),
+            module: &solve_shader,
+            entry_point: Some(entry),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+    let p_col_scale = pipe("cs_col_scale");
+    let p_build = pipe("cs_build");
+    let p_pivot_search = pipe("cs_pivot_search");
+    let p_pivot_swap = pipe("cs_pivot_swap");
+    let p_eliminate = pipe("cs_eliminate");
+    let p_rhs = pipe("cs_rhs");
+    let p_solve = pipe("cs_solve");
+    let p_update_x = pipe("cs_update_x");
+    let p_residual = pipe("cs_residual");
+    let p_norms = pipe("cs_norms");
+    let p_copy_out = pipe("cs_copy_out");
     let solve_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("hallen-solve-bg"),
         layout: &solve_bgl,
@@ -1768,6 +1873,14 @@ pub async fn solve_hallen_gpu_resident(
                 binding: 4,
                 resource: vec_buf.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &step_buf,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(step_size as u64),
+                }),
+            },
         ],
     });
 
@@ -1789,9 +1902,37 @@ pub async fn solve_hallen_gpu_resident(
             label: Some("hallen-solve-pass"),
             timestamp_writes: None,
         });
-        cpass.set_pipeline(&solve_pipeline);
-        cpass.set_bind_group(0, &solve_bg, &[]);
-        cpass.dispatch_workgroups(1, 1, 1);
+        let groups = |count: usize| (count as u32).div_ceil(64);
+        let mut run = |p: &wgpu::ComputePipeline, step: usize, wgs: u32| {
+            cpass.set_pipeline(p);
+            cpass.set_bind_group(0, &solve_bg, &[step_at(step)]);
+            cpass.dispatch_workgroups(wgs, 1, 1);
+        };
+        // Scale and build M D⁻¹.
+        run(&p_col_scale, 0, groups(s));
+        run(&p_build, 0, groups(s * s));
+        // LU with partial pivoting: search, swap, eliminate per column.
+        for c in 0..s {
+            run(&p_pivot_search, c + 2, 1);
+            run(&p_pivot_swap, c + 2, groups(s));
+            if c + 1 < s {
+                run(&p_eliminate, c + 2, groups(s - c - 1));
+            }
+        }
+        // x = D⁻¹ (LU)⁻¹ P y.
+        run(&p_rhs, 0, groups(rows));
+        run(&p_solve, 0, 1);
+        run(&p_update_x, 0, groups(s));
+        // Refinement in M-space: t = y − Mx, x += D⁻¹ (LU)⁻¹ P t.
+        for _ in 0..REFINE_STEPS {
+            run(&p_residual, 0, groups(rows));
+            run(&p_solve, 0, 1);
+            run(&p_update_x, 1, groups(s));
+        }
+        // Final residual for the host's gate, then the solution.
+        run(&p_residual, 0, groups(rows));
+        run(&p_norms, 0, 1);
+        run(&p_copy_out, 0, groups(s));
     }
     encoder.copy_buffer_to_buffer(
         &vec_buf,
@@ -1813,10 +1954,10 @@ pub async fn solve_hallen_gpu_resident(
     }
     let raw = slice.get_mapped_range();
     let floats: &[f32] = bytemuck::cast_slice(&raw);
-    // Slot 3 first, then slot 4.
-    let res_sq = floats[0] as f64;
-    let rhs_sq = floats[1] as f64;
-    let out = &floats[2 * rows..];
+    // Slot 3 first (its entry R holds the norms), then slot 4.
+    let res_sq = floats[2 * rows] as f64;
+    let rhs_sq = floats[2 * rows + 1] as f64;
+    let out = &floats[2 * stride..];
     let solution: Vec<num_complex::Complex64> = (0..s)
         .map(|i| num_complex::Complex64::new(out[2 * i] as f64, out[2 * i + 1] as f64))
         .collect();
@@ -1824,8 +1965,8 @@ pub async fn solve_hallen_gpu_resident(
     readback_buf.unmap();
 
     // ---- accuracy gate -----------------------------------------------------
-    // The f32 normal-equations solve loses accuracy as S grows — A = MᴴM squares
-    // cond(M) — and a diverged solve is otherwise indistinguishable from a good one
+    // An f32 solve that went wrong (a device fault, or a regression of FND-185) is
+    // otherwise indistinguishable from a good one
     // once it reaches the report. See GPU_SOLVE_MAX_REL_RESIDUAL for the measured
     // split between the two. Reject the bad ones so the caller takes the f64 CPU
     // path instead of reporting a wrong number.

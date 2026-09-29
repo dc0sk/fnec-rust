@@ -36,8 +36,9 @@
 //! | `solve_hallen_gpu_resident` | `wgpu_device` | **Real wgpu** — GPU-resident fill + dense solve |
 //!
 //! **Known gaps:**
-//! - `solve_hallen_gpu_resident` is f32 (LU + Björck refinement); it matches the
-//!   f64 CPU solve to ~0.01 Ω on the reference dipole but the f64 CPU solve
+//! - `solve_hallen_gpu_resident` is f32 (direct LU of the column-scaled M, with
+//!   refinement, one dispatch per phase since FND-185); it matches the f64 CPU
+//!   solve to ~0.001 Ω on the reference dipole but the f64 CPU solve
 //!   remains the corpus-gate accuracy reference (see `docs/ph7-chk-003-gpu-resident-solve.md`).
 //! - `run_rp_farfield_wgpu` gain fields are hardcoded to sentinel `-999.99`;
 //!   only u_theta / u_phi are computed by the shader.
@@ -54,8 +55,10 @@
 //!
 //! - A **fully GPU-resident per-point** route is declined on measurement:
 //!   PH7-CHK-003 measured that solve at **0.04x-0.48x of the CPU at every size
-//!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). That
-//!   is a decision, not a backlog item.
+//!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). Since
+//!   FND-185 the solve dispatches its elimination across the device and crosses
+//!   over near 500 segments on a GTX 1080 Ti, so the decision's premise no longer
+//!   holds; it has not been re-evaluated.
 //! - A **fill-on-GPU, solve-on-CPU per-point** route is neither wired nor
 //!   measured through this lane. That recipe does win elsewhere — the Z-fill
 //!   kernel beats the CPU from N~32-64 and `--exec gpu` already uses it locally
@@ -113,7 +116,8 @@ pub enum DispatchDecision {
 /// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
 pub const GPU_DISPATCH_NOT_WIRED: &str =
     "per-frequency GPU dispatch is not wired: the fully-resident per-point route is \
-     declined on measurement (0.04x-0.48x of the CPU, no crossover), and the \
+     declined on the single-workgroup solve's measurement (0.04x-0.48x of the CPU; the \
+     rebuilt solve crosses over near 500 segments, FND-185, not yet re-evaluated), and the \
      fill-on-GPU/solve-on-CPU route has not been measured through this lane";
 
 /// Decide whether a single frequency point should run on the GPU.

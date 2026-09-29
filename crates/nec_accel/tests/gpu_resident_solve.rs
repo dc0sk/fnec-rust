@@ -227,3 +227,110 @@ fn gpu_resident_solve_tracks_the_cpu_on_asymmetric_feeds() {
         );
     }
 }
+
+/// Feedpoint impedance of an `nseg`-segment λ/2-ish dipole, CPU (f64) and GPU;
+/// `None` for the GPU only where no hardware adapter exists.
+fn dipole_cpu_gpu(nseg: u32) -> (Complex64, Option<Complex64>) {
+    use nec_model::card::{Card, ExCard, GwCard};
+    use nec_model::deck::NecDeck;
+    use nec_solver::{assemble_z_matrix, build_geometry, build_hallen_rhs, solve_hallen};
+
+    let freq_hz = 14.2e6_f64;
+    let mut deck = NecDeck::new();
+    deck.cards.push(Card::Gw(GwCard {
+        tag: 1,
+        segments: nseg,
+        start: [0.0, 0.0, -5.282],
+        end: [0.0, 0.0, 5.282],
+        radius: 0.001,
+    }));
+    deck.cards.push(Card::Ex(ExCard {
+        excitation_type: 0,
+        tag: 1,
+        segment: nseg / 2 + 1,
+        i4: 0,
+        voltage_real: 1.0,
+        voltage_imag: 0.0,
+        polarization_deg: 0.0,
+        polarization_ratio: 0.0,
+        theta_inc: 0.0,
+        phi_inc: 0.0,
+    }));
+    let segs = build_geometry(&deck).expect("geometry");
+    let rhs = build_hallen_rhs(&deck, &segs, freq_hz).expect("rhs");
+    let ep = vec![(0usize, segs.len() - 1)];
+    let feed = (nseg / 2) as usize;
+    let one = Complex64::new(1.0, 0.0);
+    let cpu = solve_hallen(
+        &assemble_z_matrix(&segs, freq_hz),
+        &rhs.rhs,
+        &rhs.cos_vec,
+        &rhs.sin_vec,
+        &ep,
+        &[],
+    )
+    .expect("CPU solve");
+    let z_inputs: Vec<ZSegmentInput> = segs
+        .iter()
+        .map(|s| ZSegmentInput {
+            midpoint: s.midpoint,
+            direction: s.direction,
+            length: s.length,
+            radius: s.radius,
+        })
+        .collect();
+    let gpu = match pollster::block_on(solve_hallen_gpu_resident(
+        &z_inputs,
+        &rhs.rhs,
+        &rhs.cos_vec,
+        &rhs.sin_vec,
+        &ep,
+        &nec_solver::sin_eligible(&ep, &[]),
+        &nec_solver::hallen_constraint_rows(
+            &ep,
+            &[],
+            &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+        ),
+        freq_hz,
+    )) {
+        Ok(x) => Some(one / x[feed]),
+        Err(GpuSolveDeclined::NoAdapter) => {
+            assert!(
+                !pollster::block_on(hardware_adapter_present()),
+                "a hardware adapter is present but the solve found none"
+            );
+            None
+        }
+        Err(other) => panic!("{nseg} segments: the device solve declined: {other:?}"),
+    };
+    (one / cpu.currents[feed], gpu)
+}
+
+/// FND-185: 301 segments is where the old normal-equations solve failed even on
+/// the AMD device it was built on (residual up to 0.43, negative R), because
+/// A = MᴴM squared cond(M) ≈ 2.7e3. Factoring M itself it must solve on the
+/// device — not be declined — and land within 2 Ω of the f64 CPU solve.
+#[test]
+fn a_301_segment_dipole_solves_on_the_device() {
+    let (cpu, gpu) = dipole_cpu_gpu(301);
+    let Some(gpu) = gpu else {
+        eprintln!("FND-185 gate: no hardware GPU adapter — skipped");
+        return;
+    };
+    eprintln!("301 segments: cpu {cpu:.4} gpu {gpu:.4}");
+    assert!((gpu - cpu).norm() < 2.0, "cpu {cpu} vs gpu {gpu}");
+}
+
+/// FND-185, structurally: the solve shader hands nothing between invocations
+/// through storage inside one dispatch — every hand-off is a dispatch boundary.
+/// A storage barrier is how that pattern is written, and on an NVIDIA device it
+/// did not make a write visible to the rest of the workgroup. This must stay
+/// true on devices this repository cannot test.
+#[test]
+fn the_solve_shader_uses_no_storage_barrier() {
+    const SHADER: &str = include_str!("../src/shaders/hallen_lu_solve.wgsl");
+    assert!(
+        !SHADER.contains("storageBarrier"),
+        "hallen_lu_solve.wgsl must not hand data between invocations through storage within a dispatch"
+    );
+}
