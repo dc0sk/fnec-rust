@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-09-28
+last_updated: 2026-09-29
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -88,6 +88,34 @@ The receive-pattern sweep builds the layout and corner term once per geometry
 (`plan_hallen_planewave`). Rebuilt per direction, a 37 × 73 pattern on a 41-per-arm
 L took 264 s. It now takes 10 s; the per-path solve took 6 s.
 
+## Sources that share no node (2026-09-29, FND-162 stage 4, FND-171, FND-174)
+
+The corner term's derivation never uses a shared node: `f_n` is the divergence
+of any non-parallel source's potential, and the reference constant it needs is
+absorbed by the observation section's own `(C, D)`. So it now sums over every
+non-parallel source — segments on other wires, and each segment's ground image
+(the geometric mirror carrying −Γ times the current, Γ the matrix's own
+coefficient). Straight conductors take the path basis whenever two are not
+parallel or one is not parallel to its own image, and every section carries the
+term, a single straight one included. The integration also refines toward a
+source endpoint that comes close to a section, not only toward the section's own
+nodes.
+
+| deck | before, coarse → fine | now | nec2c |
+|---|---|---|---|
+| 45° dipole 10 m over `GN 1`, 41 / 81 | 5.2 % → 7.4 % (free-space value) | 5.08 % → 2.94 % | 78.29 + j42.40 |
+| apex-fed inverted-V over `GN 1`, 21 / 41 / 81 per arm | 8.4 → 11.4 → 13.0 % | 8.6 → 5.8 → 4.7 % | 54.58 + j9.27 … |
+| wire 0.7 m over a fed vertical dipole, 21 / 41 | zero current | 11.0 → 6.2 % | 3.54e-4 A peak |
+
+The design review (Fable) prototyped it in numpy, calibrated with the term off to
+fnec's numbers to every printed digit, and set the kill criteria before any Rust;
+the Rust reproduces the prototype to the printed digit. The inverted-V over ground
+equals the same antenna with its image written out as wires in free space, to
+every digit. A crossing at 5 cm stays antisymmetric to 1e-6; graded only toward
+section ends it did not (centre 2.7e-4 of a 9.2e-4 peak). Gates:
+`crates/nec_solver/tests/transverse_nec2c.rs`; removing the images, the routing,
+the endpoint refinement or the image sign each fails them.
+
 ## Still open (FND-162)
 
 - **A straight run only one segment long.** Its single row cannot fix two
@@ -98,10 +126,6 @@ L took 264 s. It now takes 10 s; the per-path solve took 6 s.
 - **Degree-3+ junctions and closed loops.** These are later stages of the same
   design (Kirchhoff's law and equal potential at a node of degree d; the loop's
   closure). They are warned about and pointed to `--solver mpie`.
-- **Perpendicular wires that share no node.** They do not couple, because
-  Hallén's tangential kernel gives them exactly zero mutual terms. The same `F`
-  term restores the coupling, but on the plain per-wire rows, which this stage
-  does not touch.
 - **Receive over ground** is FND-170, not a bend problem: the receive forcing has
   no ground-reflected wave, so even a straight dipole over perfect ground is about
   55 % off.

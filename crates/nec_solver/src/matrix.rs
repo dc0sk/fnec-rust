@@ -308,7 +308,7 @@ fn image_segment(seg: &Segment) -> Segment {
 /// εr_complex = εr - j σ/(ω ε0)
 /// and a normal-incidence Fresnel factor:
 /// Γ = (sqrt(εr_complex) - 1) / (sqrt(εr_complex) + 1)
-fn fresnel_reflection_scalar(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
+pub(crate) fn fresnel_reflection_scalar(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
     let omega = 2.0 * std::f64::consts::PI * freq_hz;
     let eps_c = Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0));
     let sqrt_eps_c = eps_c.sqrt();

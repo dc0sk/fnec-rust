@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-28
+last_updated: 2026-09-29
 ---
 
 # Changelog
@@ -16,6 +16,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 ## [Unreleased]
 
 ### Fixed
+
+- **Hallén couples non-parallel wires and sees a slanted wire's ground image
+  (FND-162 stage 4, FND-171, FND-174).** The tangential kernel couples two
+  segments through the cosine of the angle between them and dropped the part of
+  `∇·A` a non-parallel source adds. So perpendicular wires did not couple at all, a
+  45° dipole over ground solved to its free-space value, and an inverted-V over
+  ground drifted from nec2c as the mesh was refined. The corner term of #481 needs
+  no shared node, so it now takes every non-parallel source, images included,
+  and straight conductors take the path basis when they need it. Against nec2c at
+  two meshes, converging: the 45° dipole 2.9 %, the inverted-V 4.7 %, the crossing
+  wire 6.2 % (was zero). Integration near a source's endpoint now refines there,
+  which keeps a crossing 5 cm apart antisymmetric. Decks of parallel, horizontal
+  or vertical wires are unchanged; the corpus does not move. (#495)
 
 - **An SSH host that cannot be reached no longer counts as a worker the task
   killed (FND-176).** Each such host spent one of the task's two strikes, so two

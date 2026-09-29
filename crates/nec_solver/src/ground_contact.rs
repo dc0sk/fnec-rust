@@ -108,7 +108,7 @@ pub fn pec_ground_contact(
     }));
 
     if matches!(
-        crate::hallen_session::classify_paths(&doubled),
+        crate::hallen_session::classify_paths(&doubled, &crate::GroundModel::FreeSpace),
         crate::hallen_session::PathRoute::Unsupported
     ) {
         return Err(

@@ -1215,6 +1215,16 @@ pub fn slanted_over_ground_warning(
         GroundModel::PerfectConductor => "perfect ground",
         GroundModel::SimpleFiniteGround { .. } => "finite ground",
     };
+    // Since the transverse term reached the images (FND-171, FND-174) a slanted
+    // wire is modelled — unless a straight run one segment long sends the layout
+    // back to one term per path, which drops the term with the bend rows. Asked of
+    // the problem the solve runs, as the bend caveat asks (FND-179).
+    let contact = crate::ground_contact::pec_ground_contact(deck, segs, ground);
+    let (solved, solved_ground): (&[Segment], GroundModel) = match &contact {
+        Ok(Some(img)) => (&img.segs, GroundModel::FreeSpace),
+        _ => (segs, ground.clone()),
+    };
+    crate::hallen_session::hallen_section_fallback(solved, &solved_ground)?;
     // A wire with an end on PEC ground is solved with its image as a real wire
     // joined to it at a bend (FND-082), so the corner term does couple the two:
     // a grounded 45° sloper converges on nec2c (10.4 → 7.0 → 5.4 %). Only wires
@@ -1250,10 +1260,11 @@ pub fn slanted_over_ground_warning(
         String::new()
     };
     Some(format!(
-        "geometry contains a wire slanted {worst:.0}° from horizontal over {over}; the \
-         Hallén solve does not couple a slanted wire to its own ground image, so the \
-         feedpoint and currents drift away from nec2c as the mesh is refined — measured \
-         7.5 % at 45° and 13.5 % at 30° (FND-171){remedy}"
+        "geometry contains a wire slanted {worst:.0}° from horizontal over {over}, and a \
+         straight run only one segment long; the Hallén solve then cannot couple a slanted \
+         wire to its own ground image, so the feedpoint and currents drift away from nec2c \
+         as the mesh is refined — measured 7.5 % at 45° and 13.5 % at 30° (FND-171). Give \
+         every straight run at least two segments{remedy}"
     ))
 }
 
@@ -1302,11 +1313,11 @@ pub fn bent_conductor_warning(
     // nec2c's 1.295 + j26.62 (FND-179). The same resolution as `hallen_route`.
     let contact =
         crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck));
-    let solved: &[Segment] = match &contact {
-        Ok(Some(img)) => &img.segs,
-        _ => segs,
+    let (solved, solved_ground): (&[Segment], GroundModel) = match &contact {
+        Ok(Some(img)) => (&img.segs, GroundModel::FreeSpace),
+        _ => (segs, crate::ground_model_from_deck(deck)),
     };
-    if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(solved) {
+    if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(solved, &solved_ground) {
         return None;
     }
     let angle = largest_bend_deg(segs)?;
@@ -2040,12 +2051,12 @@ mod tests {
         );
     }
 
-    /// FND-171: a wire slanted 15–75° over ground loses its own image, and the
-    /// error grows with refinement; vertical, horizontal, nearly level and grounded
-    /// wires converge and must not be warned about. Through `diagnose`, which the
+    /// FND-171/174: a slanted wire over ground is modelled now (the transverse term
+    /// reaches the images), so it warns only where the layout falls back — a
+    /// straight run one segment long drops the term. Through `diagnose`, which the
     /// GUI and the bindings call.
     #[test]
-    fn a_slanted_wire_over_ground_is_warned_about() {
+    fn a_slanted_wire_over_ground_warns_only_where_the_term_is_dropped() {
         let ctx = SolverContext::cli_hallen();
         let slant = |geo: &str, ground: &str, ex: &str| -> Option<String> {
             let (deck, segs) = deck_and_segs(&format!("{geo}{ground}{ex}FR 0 1 0 0 14.2 0\nEN\n"));
@@ -2055,47 +2066,41 @@ mod tests {
                 .map(|d| d.message)
                 .find(|m| m.contains("slanted"))
         };
-        let (gn1, free) = ("GE 1\nGN 1\n", "GE 0\n");
+        let gn1 = "GE 1\nGN 1\n";
         let ex = "EX 0 1 21 0 1 0\n";
-        let tilted = |deg: f64| {
-            let (a, l) = (deg.to_radians(), 5.282);
-            let (dx, dz) = (l * a.cos(), l * a.sin());
-            format!(
-                "GW 1 41 {:.4} 0 {:.4} {:.4} 0 {:.4} .001\n",
-                -dx,
-                10.0 - dz,
-                dx,
-                10.0 + dz
-            )
-        };
-        let w = slant(&tilted(45.0), gn1, ex).expect("a 45° dipole over PEC must warn");
+        let dipole45 = "GW 1 41 -3.7477 0 6.2523 3.7477 0 13.7477 .001\n";
+        let vee = "GW 1 21 0 0 10 -3.7477 0 6.2523 .001\nGW 2 21 0 0 10 3.7477 0 6.2523 .001\n";
+        // A one-segment run elsewhere in the deck sends the whole layout back.
+        let stub = "GW 9 1 20 0 5 20 0 5.5 .001\n";
         assert!(
-            w.contains("45°") && w.contains("FND-171") && w.contains("mpie"),
+            slant(dipole45, gn1, ex).is_none(),
+            "a 45° dipole over PEC is modelled"
+        );
+        assert!(
+            slant(vee, gn1, "EX 0 1 1 0 1 0\n").is_none(),
+            "inverted-V arms over ground are modelled"
+        );
+        let w = slant(&format!("{dipole45}{stub}"), gn1, ex).expect("the fallback must warn");
+        assert!(
+            w.contains("45°") && w.contains("one segment long") && w.contains("mpie"),
             "{w}"
         );
         assert!(
-            slant(&tilted(45.0), "GE 1\nGN 2 0 0 0 13 0.005\n", ex).is_some(),
+            slant(
+                &format!("{dipole45}{stub}"),
+                "GE 1\nGN 2 0 0 0 13 0.005\n",
+                ex
+            )
+            .is_some(),
             "finite ground"
         );
-        assert!(slant(&tilted(45.0), free, ex).is_none(), "free space");
-        for deg in [0.0, 10.0, 80.0, 90.0] {
-            assert!(
-                slant(&tilted(deg), gn1, ex).is_none(),
-                "{deg}° converges and must not warn"
-            );
-        }
-        let grounded = "GW 1 21 0 0 0 3.7477 0 3.7477 .001\n";
         assert!(
-            slant(grounded, gn1, "EX 0 1 1 0 1 0\n").is_none(),
-            "a grounded sloper converges"
-        );
-        let vee = "GW 1 21 0 0 10 -3.7477 0 6.2523 .001\nGW 2 21 0 0 10 3.7477 0 6.2523 .001\n";
-        assert!(
-            slant(vee, gn1, "EX 0 1 1 0 1 0\n").is_some(),
-            "inverted-V arms over ground (FND-174)"
+            slant(&format!("{dipole45}{stub}"), "GE 0\n", ex).is_none(),
+            "free space"
         );
         // A current source cannot take the MPIE, so the warning must not offer it.
-        let w4 = slant(&tilted(45.0), gn1, "EX 4 1 21 0 1 0\n").expect("EX 4 warns too");
+        let w4 =
+            slant(&format!("{dipole45}{stub}"), gn1, "EX 4 1 21 0 1 0\n").expect("EX 4 warns too");
         assert!(!w4.contains("mpie"), "{w4}");
     }
 

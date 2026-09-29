@@ -126,3 +126,57 @@ pub(crate) fn graded(from: f64, to: f64, a: f64, g: impl Fn(f64) -> Complex64) -
     }
     sgn * total
 }
+
+/// [`graded`] with the interval also split at `breaks`: each piece is graded
+/// toward both of its ends. The integrand peaks wherever a source segment's
+/// endpoint comes close to the section, which for a source on another wire (or
+/// an image) can be anywhere along it, not only at the section's own nodes. A
+/// crossing 5 cm apart left its peak inside one wide panel and broke the
+/// crossing's antisymmetry (FND-162 stage 4 design review). The sinh grading is
+/// logarithmic from `a` upward, so it resolves any peak width at a breakpoint.
+pub(crate) fn graded_breaks(
+    from: f64,
+    to: f64,
+    a: f64,
+    breaks: &[f64],
+    g: impl Fn(f64) -> Complex64,
+) -> Complex64 {
+    let (lo, hi, sgn) = if to >= from {
+        (from, to, 1.0)
+    } else {
+        (to, from, -1.0)
+    };
+    let mut cuts: Vec<f64> = breaks
+        .iter()
+        .copied()
+        .filter(|&b| b > lo + a && b < hi - a)
+        .collect();
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|x, y| (*x - *y).abs() <= a);
+    let mut edges = Vec::with_capacity(cuts.len() + 2);
+    edges.push(lo);
+    edges.extend(cuts);
+    edges.push(hi);
+    let total: Complex64 = edges.windows(2).map(|w| graded(w[0], w[1], a, &g)).sum();
+    sgn * total
+}
+
+/// Where along a section a source segment's endpoints fall, as arc lengths `s`:
+/// the projection of each endpoint onto the line through `pt` (at `s_ref`) with
+/// direction `tan`, kept only when the endpoint lies within `near` of that line.
+/// Those are the integrand's interior peaks ([`graded_breaks`]).
+pub(crate) fn source_breaks(
+    s_ref: f64,
+    pt: [f64; 3],
+    tan: [f64; 3],
+    src: &Segment,
+    near: f64,
+) -> [Option<f64>; 2] {
+    let at = |p: [f64; 3]| {
+        let d = dist(p, pt);
+        let along = dot(d, tan);
+        let perp2 = (dot(d, d) - along * along).max(0.0);
+        (perp2 < near * near).then_some(s_ref + along)
+    };
+    [at(src.start), at(src.end)]
+}
