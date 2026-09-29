@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/tooling-catalog.md
 status: living
-last_updated: 2026-09-28
+last_updated: 2026-09-29
 ---
 
 # Helper & validation tooling catalog
@@ -21,6 +21,7 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `stamp-doc-last-updated.sh` | Stamp `last_updated` on changed docs for PR automation | Doc contract |
 | `build-release-assets.sh` | Build CLI, GUI, wheel (+ SBOM) in the pinned manylinux container; smoke-solve the reference dipole; run the platform check (FND-168). See `docs/release-process.md` | Release contract |
 | `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
+| `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); self-test `test-host-build-lock.sh` | Host safety |
 
 ## Benchmark harnesses (`scripts/`)
 

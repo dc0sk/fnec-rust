@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The host-wide build lock no longer deadlocks on a nested take (FND-184).**
+  A shell that took the lock and then ran `scripts/check-all.sh` waited on its own
+  parent forever, and every other project's build queued behind it. The helper
+  now reuses the lock its process tree already holds (the inherited fd 9); an
+  unrelated process still waits. A committed self-test covers both. (#496)
+
 - **Hallén couples non-parallel wires and sees a slanted wire's ground image
   (FND-162 stage 4, FND-171, FND-174).** The tangential kernel couples two
   segments through the cosine of the angle between them and dropped the part of
