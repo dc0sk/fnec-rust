@@ -233,7 +233,7 @@ Both now go through named exports of the same decision rather than re-deriving i
 | 4 | Python bindings | `bindings/fnec_py/src/lib.rs` `solve_hallen_routed` | yes | `bindings/fnec_py/tests/test_smoke.py` |
 | 5 | Remote worker | `nec_worker/src/solve.rs` `solve_hallen_routed` | yes | `apps/nec-cli/tests/worker_integration.rs` |
 | 6 | Current-source drive, any frontend | `nec_solver::solve_current_source_hallen` | yes | `apps/nec-cli/tests/ex_cards.rs` |
-| 7 | Caveat suppression | `nec_solver::validate` `feedpoint_at_junction_warnings` | yes | `apps/nec-cli/tests/junction_feedpoint.rs` (`split_dipole_fed_away_does_not_warn`, `degree3_tee_junction_still_guarded`) |
+| 7 | Caveat suppression | `nec_solver::validate` `feedpoint_at_junction_warnings` | yes | `apps/nec-cli/tests/junction_feedpoint.rs` (`split_dipole_fed_away_does_not_warn`, `degree3_tee_junction_the_graph_refuses_is_still_guarded`, `degree3_tee_junction_fed_now_solves`) |
 
 Row 6 is the one that reads as redundant and is not. Its arm must tell
 `Reducible` from `Unsupported`: a collinear chain is reducible *and* carries a

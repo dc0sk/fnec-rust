@@ -7,9 +7,10 @@
 // on a continuous Hallén path — collinear splits, start-to-start splits, bends,
 // and inverted-V apex feeds all give a physical impedance and emit no warning.
 //
-// The PH9-CHK-005 guardrail remains for the still-deferred out-of-scope classes:
-// **degree-3+** (T/Y) junctions and closed loops. Feeding at such a node still
-// gives an unreliable per-segment V/I, so the CLI must still warn there.
+// FND-162 stages 2+3 solve **degree-3+** (T/Y) junctions and closed loops on a
+// section graph when the deck is delta-gap driven with no loads or networks. The
+// PH9-CHK-005 guardrail remains for what that solve refuses — here, a straight
+// run one segment long, whose one row cannot fix a section's two constants.
 
 use std::fs;
 use std::path::PathBuf;
@@ -78,10 +79,15 @@ const SINGLE_WIRE_DIPOLE: &str =
 const BENT_DIPOLE_FED_AWAY: &str =
     "GW 1 26 0 0 0 1.367 0 5.104 0.001\nGW 2 26 0 0 0 -1.367 0 -5.104 0.001\nGE 0\nEX 0 1 7 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
-// Three wires meeting at the origin (degree-3 T/Y), fed at the node — still out of
-// scope for the continuous-path fix, so the guardrail must still fire.
+// Three wires meeting at the origin (degree-3 T/Y), fed at the node. The section
+// graph solves it: nec2c 1.3.1 gives 45.46 + j13.77 Ω at this mesh, fnec
+// 46.39 + j7.95 (12.4 %), converging to 7.0 % at 25 and 4.1 % at 49 per wire.
 const TEE_JUNCTION_FED: &str =
     "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+// The same T with a stem one segment long, which the section graph refuses.
+const TEE_ONE_SEGMENT_STEM_FED: &str =
+    "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
 fn start_to_start_junction_fed_now_solves() {
@@ -140,17 +146,29 @@ fn single_wire_feedpoint_does_not_warn() {
 }
 
 #[test]
-fn degree3_tee_junction_still_guarded() {
-    // Degree-3 T/Y junction fed at the node: out of scope for PH9-CHK-002, so the
-    // PH9-CHK-005 guardrail must still warn (junction + unphysical negative R).
-    let (_stdout, stderr) = run(TEE_JUNCTION_FED, "tee-junction");
+fn degree3_tee_junction_fed_now_solves() {
+    let (stdout, stderr) = run(TEE_JUNCTION_FED, "tee-junction");
+    for w in ["wire junction", "T/Y junction", "negative resistance"] {
+        assert!(
+            !stderr.contains(w),
+            "a solved T must not warn {w:?}; stderr:\n{stderr}"
+        );
+    }
+    let r = feedpoint_r(&stdout);
+    assert!(
+        (r - 45.46).abs() < 2.0,
+        "the T must land near nec2c's 45.46 Ω at this mesh; got {r:.3}"
+    );
+}
+
+#[test]
+fn degree3_tee_junction_the_graph_refuses_is_still_guarded() {
+    // The one-segment stem sends it back to the per-wire basis, where a junction
+    // feed is still an unreliable V/I and the guardrail must fire.
+    let (_stdout, stderr) = run(TEE_ONE_SEGMENT_STEM_FED, "tee-one-seg");
     assert!(
         stderr.contains("wire junction") && stderr.contains("PH9-CHK-002"),
-        "a degree-3 T/Y junction feed must still warn; stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("negative resistance"),
-        "the still-deferred T/Y result is unphysical and must be flagged; stderr:\n{stderr}"
+        "a refused T/Y junction feed must still warn; stderr:\n{stderr}"
     );
     // The whole-geometry topology guard also flags the T/Y class explicitly.
     assert!(
@@ -160,19 +178,35 @@ fn degree3_tee_junction_still_guarded() {
 }
 
 // A 1λ square loop (perimeter ≈ λ at 14.2 MHz), fed mid-wire — away from every
-// corner junction. build_conductor_paths rejects the closed loop, so fnec falls
-// back to the per-wire basis and reports an unreliable impedance (≈20 − j1210 Ω
-// vs the nec2c truth ≈111 − j146 Ω). The feed is NOT on a junction, so only the
-// whole-geometry topology guard catches it.
+// corner junction. The per-wire basis reported ≈20 − j1210 Ω; the section graph
+// solves the loop as a cycle, 109.09 − j143.50 against nec2c's 111.01 − j146.27
+// (1.8 %; 1.1 % at 21 and 0.6 % at 41 per side).
 const SQUARE_LOOP_FED_MIDWIRE: &str =
     "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 11 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
+// The same loop with one side one segment long, which the section graph refuses.
+const SQUARE_LOOP_ONE_SEGMENT_SIDE: &str =
+    "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 1 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+#[test]
+fn closed_loop_now_solves() {
+    let (stdout, stderr) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
+    assert!(
+        !stderr.contains("closed loop") && !stderr.contains("negative resistance"),
+        "a solved loop must not warn; stderr:\n{stderr}"
+    );
+    let r = feedpoint_r(&stdout);
+    assert!(
+        (r - 111.01).abs() < 3.0,
+        "the loop must land near nec2c's 111.01 Ω at this mesh; got {r:.3}"
+    );
+}
+
 #[test]
 fn closed_loop_is_guarded() {
-    // Regression for the previously-silent closed-loop garbage: fnec must now warn
-    // that the loop geometry is unsupported, even though the feed is mid-wire (so
-    // the feedpoint-at-junction guard alone would miss it).
-    let (_stdout, stderr) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
+    // A loop the section graph refuses must still warn, even though the feed is
+    // mid-wire (so the feedpoint-at-junction guard alone would miss it).
+    let (_stdout, stderr) = run(SQUARE_LOOP_ONE_SEGMENT_SIDE, "square-loop-one-seg");
     assert!(
         stderr.contains("closed loop") && stderr.contains("--solver mpie"),
         "a closed loop must be flagged as unsupported and point to --solver mpie; \
@@ -197,19 +231,18 @@ FR 0 1 0 0 14.2 0
 EN
 ";
 
-/// An apex-fed inverted-V, which genuinely does have a junction.
-/// A Y junction fed on its stem: Hallén's unsupported degree-3 class (FND-162),
-/// which still solves to a negative resistance (Re Z = -1.83 Ω). This was an
-/// end-to-start inverted-V until FND-167 routed bent chains to the path basis
-/// and that deck stopped being wrong.
+/// A Y junction whose second arm is one segment long: a degree-3 junction the
+/// section graph refuses (FND-162), which still solves to a negative resistance
+/// (Re Z = -5.44 Ω). It was a stem-fed Y with three 11-segment arms until the
+/// section graph solved that, and an end-to-start inverted-V before FND-167.
 const JUNCTION_NEGATIVE_R: &str = "\
-CM Y junction fed on its stem
+CM Y junction with a one-segment arm
 CE
 GW 1 11 0 0 0 0 0 3 .001
-GW 2 11 0 0 3 -2 0 5 .001
+GW 2 1 0 0 3 -1 0 4 .001
 GW 3 11 0 0 3 2 0 5 .001
 GE 0
-EX 0 1 3 0 1.0 0.0
+EX 0 1 1 0 1.0 0.0
 FR 0 1 0 0 14.2 0
 EN
 ";

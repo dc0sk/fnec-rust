@@ -365,11 +365,13 @@ fn a_deck_with_no_frequency_at_all_is_refused_in_both_output_formats() {
 /// A single frequency keeps the per-point sentence, which names the segment.
 #[test]
 fn a_sweep_reports_negative_resistance_once() {
-    // A T junction fed low on its stem — Hallén's unsupported degree-3 class
-    // (FND-162) — which answers with Re Z < 0 at 10, 12, 14 and 16 MHz and > 0
-    // at 18 MHz. (This was a bent end-to-start chain until FND-167 fixed it.)
+    // A T junction fed low on its stem whose second arm is one segment long — a
+    // degree-3 junction the section graph refuses (FND-162) — which answers with
+    // Re Z < 0 at 10, 12, 14 and 16 MHz and > 0 at 18 MHz. (It had two 10-segment
+    // arms until the section graph solved that, and was a bent end-to-start
+    // chain until FND-167 fixed it.)
     let bent = "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-                GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
+                GW 3 1 0 0 5 -1 0 5 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
     let run = |name: &str, fr: &str| {
         let deck = write_temp(name, &format!("{bent}{fr}EN\n"));
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))

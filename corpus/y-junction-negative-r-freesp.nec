@@ -1,14 +1,16 @@
-CM Y junction fed on its stem: Hallen's unsupported degree-3 class (FND-162).
-CM It solves to a negative resistance (Re Z = -1.832 ohm at 14.2 MHz) - a fixture
-CM for the negative-resistance caveat and the infinite-VSWR worker path, which
-CM need a deck the solver still gets wrong. It replaces
-CM inverted-v-negative-r-freesp.nec, an end-to-start inverted-V that FND-167
-CM routed to the conductor-path basis, where it is no longer negative.
+CM Y junction whose second arm is one segment long: a degree-3 junction the
+CM section-graph Hallen solve refuses (FND-162), because a one-segment section
+CM has one collocation row for its two constants. It falls back to the per-wire
+CM basis and solves to a negative resistance (Re Z = -5.441 ohm at 14.2 MHz) - a
+CM fixture for the negative-resistance caveat and the infinite-VSWR worker path,
+CM which need a deck the solver still gets wrong. It replaces the stem-fed Y with
+CM three 11-segment arms, which the section graph now solves (20.74 - j1700 ohm
+CM against nec2c's 23.66 - j1756), and before that an inverted-V (FND-167).
 CE
 GW 1 11 0 0 0 0 0 3 .001
-GW 2 11 0 0 3 -2 0 5 .001
+GW 2 1 0 0 3 -1 0 4 .001
 GW 3 11 0 0 3 2 0 5 .001
 GE 0
-EX 0 1 3 0 1.0 0.0
+EX 0 1 1 0 1.0 0.0
 FR 0 1 0 0 14.2 0
 EN

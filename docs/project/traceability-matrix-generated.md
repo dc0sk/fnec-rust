@@ -33,6 +33,6 @@ The CAPABILITY that occupied them may still be wanted: selecting an arbitrary ta
 | NFR-001 | Primary runtime target Linux (Wayland), then macOS, then Windows | implemented | medium | review | review — Platform/deployment target — verified by build targets and CI runner, not a unit test. |
 | NFR-002 | CPU execution multithreaded and deterministic by default | implemented | high | review | review — Determinism is asserted across many solver tests; parallelism is a rayon config fact. |
 | NFR-003 | GPU acceleration optional at runtime with reliable CPU fallback | implemented | high | test | `apps/nec-cli/tests/exec_modes.rs:186` |
-| NFR-004 | Numerical compatibility measured against a reference with explicit per-metric tolerances | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:31`<br>`apps/nec-cli/tests/mpie_solver_cli.rs:306` |
+| NFR-004 | Numerical compatibility measured against a reference with explicit per-metric tolerances | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:31`<br>`apps/nec-cli/tests/mpie_solver_cli.rs:307` |
 | NFR-005 | CLI execution stable and script-friendly (predictable stdin/stdout/stderr) | implemented | high | test | `apps/nec-cli/tests/scriptability_contract.rs:135` |
 | NFR-006 | Usability competitive with incumbent tools for supported workflows | implemented | medium | review | review — Tracked via usability-benchmark docs; not reducible to a single automated assertion. |

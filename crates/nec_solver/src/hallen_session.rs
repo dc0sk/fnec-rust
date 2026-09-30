@@ -125,6 +125,62 @@ fn first_current_source(deck: &NecDeck) -> Option<(u32, u32, Complex64)> {
     })
 }
 
+/// The section graph this deck is solved on, when it takes one (FND-162 stages 2
+/// and 3): a junction of degree ≥ 3 or a closed loop, which the path
+/// decomposition refuses, driven by voltage sources only, with no loads or
+/// networks, clear of the ground's contact route. Everything else keeps its route.
+/// The one predicate for the route flags and the solve, so they cannot disagree.
+pub(crate) fn graph_route(
+    deck: &NecDeck,
+    segs: &[Segment],
+) -> Option<crate::section_graph::SectionGraph> {
+    if deck_has_plane_wave(deck) || deck_has_current_source(deck) {
+        return None;
+    }
+    let loaded = deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Ld(_) | Card::Tl(_) | Card::Nt(_)));
+    if loaded || graph_feeds(deck, segs).is_empty() {
+        return None;
+    }
+    let ground = crate::ground_model_from_deck(deck);
+    if matches!(
+        crate::ground_contact::pec_ground_contact(deck, segs, &ground),
+        Ok(Some(_)) | Err(_)
+    ) {
+        return None;
+    }
+    if !matches!(classify_paths(segs, &ground), PathRoute::Unsupported) {
+        return None;
+    }
+    crate::section_graph::build_section_graph(segs)
+        .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
+}
+
+/// The voltage feeds of a deck as global segment indices.
+fn graph_feeds(deck: &NecDeck, segs: &[Segment]) -> Vec<crate::section_graph::GraphFeed> {
+    deck.cards
+        .iter()
+        .filter_map(|c| match c {
+            Card::Ex(ex)
+                if matches!(
+                    ex.kind(),
+                    ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope
+                ) =>
+            {
+                segs.iter()
+                    .position(|sg| sg.tag == ex.tag && sg.tag_index == ex.segment)
+                    .map(|seg| crate::section_graph::GraphFeed {
+                        seg,
+                        volts: Complex64::new(ex.voltage_real, ex.voltage_imag),
+                    })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Decide which Hallén solve this deck needs. The one copy of that decision.
 pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
     let drive = if deck_has_plane_wave(deck) {
@@ -146,10 +202,13 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
         Ok(Some(img)) => classify_paths(&img.segs, &crate::GroundModel::FreeSpace),
         _ => classify_paths(segs, &crate::ground_model_from_deck(deck)),
     };
+    // A junction or loop driven by voltage sources takes the section graph: a
+    // path-basis solve (the device must decline it), no longer unsupported.
+    let graph = matches!(class, PathRoute::Unsupported) && graph_route(deck, segs).is_some();
     HallenRoute {
         drive,
-        paths: matches!(class, PathRoute::NonTrivial(_)),
-        unsupported_topology: matches!(class, PathRoute::Unsupported),
+        paths: matches!(class, PathRoute::NonTrivial(_)) || graph,
+        unsupported_topology: matches!(class, PathRoute::Unsupported) && !graph,
     }
 }
 
@@ -872,6 +931,30 @@ fn solve_hallen_routed_inner(
 ) -> Result<HallenRouted, HallenSessionError> {
     let route = hallen_route(deck, segs);
     let ground = crate::ground_model_from_deck(deck);
+    // `loads` is the per-segment load diagonal: all zeros, not empty, on an
+    // unloaded deck. The graph solve takes no loads yet (stage 5).
+    if loads.iter().all(|l| *l == Complex64::new(0.0, 0.0)) {
+        if let Some(graph) = graph_route(deck, segs) {
+            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+            let sources = corner_sources(segs, &ground, freq_hz);
+            let currents = crate::section_graph::solve_hallen_graph(
+                z_mat,
+                segs,
+                &graph,
+                &graph_feeds(deck, segs),
+                &sources,
+                k,
+            )
+            .map_err(HallenSessionError::Solve)?;
+            return Ok(HallenRouted {
+                currents,
+                port_voltage: None,
+                route,
+                residual_inputs: None,
+                network_branch: Vec::new(),
+            });
+        }
+    }
     let paths = if route.paths {
         nontrivial_paths(segs, &ground)
     } else {
@@ -1277,15 +1360,29 @@ mod gpu_route_tests {
     /// gate that asked only `!paths` sent it to the device, which solved it with
     /// the pairwise junction rows. The topology now vetoes it by name. This is the
     /// discriminating gate: sabotaging the veto fails it on any host.
+    ///
+    /// Loaded, because an unloaded delta-gap T takes the section graph
+    /// (FND-162 stages 2+3), a path-basis solve the device declines on `paths`
+    /// alone; the load keeps this on the plain basis, where only the veto stands.
     #[test]
     fn a_t_junction_is_not_offered_to_the_device() {
         let tee = route(
             "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nLD 4 2 10 10 50 0\nEX 0 1 10 0 1 0\n\
+             FR 0 1 0 0 14.2 0\nEN\n",
         );
         assert!(!tee.paths, "the T falls to the plain basis — the hole");
         assert!(tee.unsupported_topology);
         assert!(!tee.gpu_resident_supported());
+
+        // Unloaded, the same T is a graph solve: paths, not unsupported, and
+        // still not the device's.
+        let graph_tee = route(
+            "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
+             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nEX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        assert!(graph_tee.paths && !graph_tee.unsupported_topology);
+        assert!(!graph_tee.gpu_resident_supported());
 
         // The control: a straight dipole is exactly what the device implements.
         let dipole = route(
