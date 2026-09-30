@@ -43,6 +43,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   for byte; per-point warnings on stderr arrive in completion order.
   `RAYON_NUM_THREADS` bounds the parallelism, and with it memory (FND-187).
 
+### Fixed
+
+- **`--exec gpu` no longer crashes at 2048 segments, and takes decks past 1024
+  (FND-188, FND-189).** The Z-matrix fill dispatched N²/64 workgroups in one
+  dimension and panicked past the 65 535 limit (exit 101) on every free-space
+  deck of 2048 segments or more; the dense solve declined above 1024 unknowns,
+  silently. Dispatches are now 2-D grids, and the only size limit is the
+  device's storage binding (16 384 unknowns on a GTX 1080 Ti). A 2049-segment
+  dipole solves in 3.5 s on the device against 69 s on the CPU, 3001 segments in
+  7.6 s against 248 s, within 0.002 Ω of the CPU.
+- **Concurrent first use of the GPU crashed the process (FND-186).** Four threads
+  creating wgpu instances at once segfaulted on an NVIDIA driver, which is how a
+  `nec_accel` unit test failed intermittently with its name lost. Every wgpu
+  instance, adapter and device is now created under one lock, the shared device
+  is built once, and a failed device request prints the driver's reason.
+
 ## [0.20.0] — 2026-09-30 — Every wire sees the others
 
 Fifteen changes since v0.19.0 (#483–#497). **Hallén now couples every

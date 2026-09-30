@@ -119,8 +119,8 @@ fn gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu() {
 
     let gpu_result = pollster::block_on(fill_zmatrix_wgpu(&z_inputs, freq_hz));
 
-    let Some(gpu_elems) = gpu_result else {
-        // `None` is a skip only where there is no GPU to run on; with one, it
+    let Ok(gpu_elems) = gpu_result else {
+        // `Err` is a skip only where there is no GPU to run on; with one, it
         // is a device fault the gate must not wave through (FND-163).
         assert!(
             !pollster::block_on(hardware_adapter_present()),

@@ -143,9 +143,16 @@ fn vset(slot: u32, i: u32, v: vec2<f32>) {
 }
 
 // D_c = ‖column c of M‖ (one invocation per column).
+// The linear invocation index under a 2-D dispatch grid: the host splits a
+// workgroup count past the per-dimension limit (65535) into (x, y), so an index
+// read from the x id alone would repeat across the rows of the grid.
+fn linear(gid: vec3<u32>, nwg: vec3<u32>) -> u32 {
+    return gid.x + gid.y * nwg.x * 64u;
+}
+
 @compute @workgroup_size(64)
-fn cs_col_scale(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let c = gid.x;
+fn cs_col_scale(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let c = linear(gid, nwg);
     if c >= params.s { return; }
     var acc = 0.0;
     for (var r: u32 = 0u; r < rows(); r++) {
@@ -157,9 +164,9 @@ fn cs_col_scale(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // lu = M D⁻¹ (one invocation per entry).
 @compute @workgroup_size(64)
-fn cs_build(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn cs_build(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
     let s = params.s;
-    let p = gid.x;
+    let p = linear(gid, nwg);
     if p >= s * s { return; }
     let i = p / s;
     let j = p % s;
@@ -208,8 +215,8 @@ fn cs_pivot_search(@builtin(local_invocation_id) lid: vec3<u32>) {
 // Column `step.col`: swap the pivot row into place across all columns, one
 // invocation per column — each touches only its own two entries.
 @compute @workgroup_size(64)
-fn cs_pivot_swap(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let k = gid.x;
+fn cs_pivot_swap(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let k = linear(gid, nwg);
     let col = step.col;
     if k >= params.s { return; }
     let pv = u32(vget(SLOT_PIV, col).x);
@@ -224,10 +231,10 @@ fn cs_pivot_swap(@builtin(global_invocation_id) gid: vec3<u32>) {
 // invocation writes only its own row and reads the pivot row, which no one
 // writes in this dispatch.
 @compute @workgroup_size(64)
-fn cs_eliminate(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn cs_eliminate(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
     let s = params.s;
     let col = step.col;
-    let row = col + 1u + gid.x;
+    let row = col + 1u + linear(gid, nwg);
     if row >= s { return; }
     let mult = cdiv(lu_get(row, col), lu_get(col, col));
     lu_set(row, col, mult);
@@ -238,8 +245,8 @@ fn cs_eliminate(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // SLOT_B = y (the first solve's right-hand side).
 @compute @workgroup_size(64)
-fn cs_rhs(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+fn cs_rhs(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let i = linear(gid, nwg);
     if i >= rows() { return; }
     vset(SLOT_B, i, y_full(i));
 }
@@ -280,8 +287,8 @@ fn cs_solve() {
 
 // x = D⁻¹ w (step.mode == 0) or x += D⁻¹ w (step.mode == 1).
 @compute @workgroup_size(64)
-fn cs_update_x(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+fn cs_update_x(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let i = linear(gid, nwg);
     if i >= params.s { return; }
     let dz = vget(SLOT_W, i) * (1.0 / vget(SLOT_D, i).x);
     if step.mode == 0u {
@@ -293,8 +300,8 @@ fn cs_update_x(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // t = y − M x into SLOT_T, and into SLOT_B as the next correction's right-hand side.
 @compute @workgroup_size(64)
-fn cs_residual(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let r = gid.x;
+fn cs_residual(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let r = linear(gid, nwg);
     if r >= rows() { return; }
     var acc = y_full(r);
     for (var c: u32 = 0u; c < params.s; c++) {
@@ -328,8 +335,8 @@ fn cs_norms(@builtin(local_invocation_id) lid: vec3<u32>) {
 
 // SLOT_OUT = x, for the readback.
 @compute @workgroup_size(64)
-fn cs_copy_out(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+fn cs_copy_out(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let i = linear(gid, nwg);
     if i >= params.s { return; }
     vset(SLOT_OUT, i, vget(SLOT_X, i));
 }

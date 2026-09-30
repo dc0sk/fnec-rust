@@ -1055,7 +1055,7 @@ pub(super) fn solve_frequency_point(
                     })
                     .collect();
                 match pollster::block_on(nec_accel::fill_zmatrix_wgpu(&z_inputs, freq_hz)) {
-                    Some(elems) => {
+                    Ok(elems) => {
                         let n = segs.len();
                         let flat: Vec<Complex64> = elems
                             .iter()
@@ -1065,8 +1065,8 @@ pub(super) fn solve_frequency_point(
                         z.set_segments(segs);
                         z
                     }
-                    None => {
-                        eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU Z-matrix fill");
+                    Err(why) => {
+                        eprintln!("warning: --exec gpu: {why}; falling back to CPU Z-matrix fill");
                         assemble_z_matrix_with_ground(segs, freq_hz, ground)
                     }
                 }
