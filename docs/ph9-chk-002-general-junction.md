@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-30
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -30,11 +30,14 @@ conductor-path model also backs the forced-current solve (`solve_hallen_current_
 see [Current-source junctions](#current-source-junctions-ex-type-4) below.
 
 All three degree-2 excitation classes (transmit voltage delta-gap, plane-wave
-receive, current source) now solve on conductor paths. Still deferred to the
-remaining general work: **degree-3+** (T/Y) junctions and **closed loops** — see
-[Out-of-scope topologies](#out-of-scope-topologies-degree-3-and-closed-loops).
-These now warn for the *whole geometry* (2026-07-06), not only when the feed sits on
-the junction.
+receive, current source) now solve on conductor paths. **Degree-3+** (T/Y)
+junctions and **closed loops** are outside the conductor-path model — see
+[Out-of-scope topologies](#out-of-scope-topologies-degree-3-and-closed-loops). Since
+FND-162 stages 2 and 3 the voltage-driven Hallén solve takes them on a *section
+graph* instead (`docs/hallen-bends.md`); decks outside that route (loads, current
+source, plane wave, perfect-ground contact, one-segment sections, a wire end on
+another wire's interior) still fall back per wire and warn for the *whole geometry*
+(since 2026-07-06), not only when the feed sits on the junction.
 
 > **Correction (2026-09-26, FND-158):** this document said a voltage delta-gap (and
 > the EX-type-4 current source) "needs only one homogeneous constant" `cos(k·s)` per
@@ -139,8 +142,8 @@ across the bent cases is the independent physical check.
 
 Tests: `crates/nec_solver/tests/general_junction.rs` (split-recovers-single,
 inverted-V resistance vs nec2c, path-decomposition unit tests) and
-`apps/nec-cli/tests/junction_feedpoint.rs` (degree-2 now solves; degree-3 still
-guarded).
+`apps/nec-cli/tests/junction_feedpoint.rs` (degree-2 now solves; degree-3 and
+loops solve on the section graph, and one outside its scope is still guarded).
 
 ## Receive-side junctions (plane wave)
 
@@ -233,13 +236,16 @@ it previously failed fast.
 | bend / start-to-start / end-to-end (degree-2) — transmit (voltage delta-gap) | **solved** |
 | bend / start-to-start / end-to-end (degree-2) — plane-wave receive | **solved (CLI-wired)** |
 | bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
-| degree-3+ T/Y junction | deferred → **guarded (whole-geometry warning)** |
-| closed loop | deferred → **guarded (whole-geometry warning)** |
+| degree-3+ T/Y junction — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 2) |
+| closed loop — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 3) |
+| degree-3+ / closed loop — outside that scope (LD/TL/NT, EX 1–4, PEC ground contact, one-segment section, end on an interior) | **guarded (whole-geometry warning)** |
 
 ## Out-of-scope topologies (degree-3+ and closed loops)
 
-Two topology classes remain out of scope for the conductor-path solve, because the
-single-continuous-path model does not represent them:
+Two topology classes remain out of scope for the *conductor-path* solve, because the
+single-continuous-path model does not represent them (the section graph of FND-162
+stages 2 and 3 now solves both for in-scope voltage-driven decks —
+`docs/hallen-bends.md`; what follows describes the fallback outside that scope):
 
 - **Degree-3+ (T/Y) junctions** — where three or more wire ends meet, the current
   splits among the arms under a Kirchhoff constraint; there is no single path.
@@ -256,7 +262,8 @@ segment). Previously this was only surfaced when the *feed* sat on a junction
 and `warn_if_unsupported_topology` (`solve_session.rs`) emits a class-specific
 whole-geometry warning (`ClosedLoop` / `HighDegreeJunction`) so the limitation is
 always visible. Tests: `general_junction.rs` (classification units),
-`junction_feedpoint.rs::closed_loop_is_guarded` (loop fed mid-wire now warns).
+`junction_feedpoint.rs::closed_loop_is_guarded` (a loop outside the section-graph
+scope, fed mid-wire, still warns; `closed_loop_now_solves` for one inside it).
 
 **Closed-loop solve — prototyped, deferred.** A closed-loop Hallén solve was
 prototyped against a nec2c reference (1λ square loop, 111 − j146 Ω). Several discrete
@@ -265,3 +272,7 @@ symmetric-feed single-`cos` DOF) were tried and **none reproduced the reference*
 the loop's periodic Green's-function forcing and closure are materially different
 from the open-chain case, so this is a dedicated solver increment, not a small
 extension. It is deferred with the geometry guarded rather than shipped unvalidated.
+*(Superseded by FND-162 stage 3: on the section graph a loop is a cycle of sections
+closed by the same Kirchhoff and equal-potential node rows, and that 1λ square loop
+converges to nec2c 111.01 − j146.27 — 1.84 → 1.05 → 0.57 % at 11/21/41 segments per
+side.)*

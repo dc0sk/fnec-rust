@@ -15,6 +15,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **Hallén solves T/Y junctions and closed loops (FND-162 stages 2 and 3).** A
+  junction where three or more wires meet, and a conductor with no free end, fell
+  back to one term per wire with pairwise junction rows: a stem-fed Y answered
+  −1.83 − j1673 Ω against nec2c's 23.66 − j1756, a 1 λ square loop ≈ 17 − j1163
+  against 111.01 − j146.27, both behind a warning. They are now solved on a
+  section graph — every straight section with its own constants, each node closed
+  by Kirchhoff's current law and equal potential with the corner term — and
+  converge on nec2c: the Y 1.68 → 0.74 % and the loop 1.05 → 0.57 % at 21 → 41
+  segments per wire, a T fed on its node 7.0 → 4.1 %, the loop over perfect ground
+  0.81 → 0.44 %. Every frontend takes it, and the topology and junction-feed
+  warnings no longer fire for these decks. The graph takes voltage-driven decks
+  without loads or networks, clear of ground contact, whose straight runs are at
+  least two segments; anything else keeps the fallback and its warning. The
+  `dipole-loaded` corpus case moves 12.92 − j893.25 → 13.10 − j889.05 (its
+  top-hat loop now takes the graph; it converges on nec2c 0.78 → 0.17 %).
+
 ## [0.20.0] — 2026-09-30 — Every wire sees the others
 
 Fifteen changes since v0.19.0 (#483–#497). **Hallén now couples every

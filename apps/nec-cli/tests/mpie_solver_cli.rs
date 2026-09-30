@@ -198,11 +198,12 @@ fn guarded_topology_warning_recommends_mpie() {
     let deck = write_deck(
         "yguard",
         "\
-CM Y-junction on the default solver
+CM Y-junction on the default solver, one arm a single segment: the section
+CM graph refuses it (FND-162), so the default solve is still unreliable
 CE
 GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
 GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
-GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GW 3 1 0.0 0.0 0.0 -0.5 -0.866025 0.0 0.001
 GE 0
 FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0

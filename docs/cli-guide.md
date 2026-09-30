@@ -193,12 +193,23 @@ segment axis.
 
 Bent and junctioned geometry also solves: the augmented system enforces current
 continuity at wire junctions per connected conductor path, so an inverted-V, a
-top-hat-loaded vertical, or an end-to-end split solves rather than erroring. Two
-classes remain outside the Hallén formulation and are **warned about, not
-blocked** — degree-3 (T/Y) junctions, where the Kirchhoff current split is not
-modelled, and closed loops. Both solve correctly on `--solver mpie`, which the
-warning names. A negative feedpoint resistance is reported as an explicit
-warning, since a passive antenna cannot have one (PH9-CHK-005).
+top-hat-loaded vertical, or an end-to-end split solves rather than erroring.
+Degree-3+ (T/Y) junctions and closed loops solve on a **section graph**
+(FND-162 stages 2+3): every straight section has its own homogeneous constants,
+each node is closed by a Kirchhoff current row plus equal-scalar-potential rows
+(with the corner term), and a loop is a cycle of sections. Against nec2c 1.3.1
+at 11/21/41 segments per wire the feedpoint error falls 3.19 → 1.68 → 0.74 % on
+a stem-fed Y and 1.84 → 1.05 → 0.57 % on a 1 λ square loop
+(`crates/nec_solver/tests/graph_nec2c.rs`). The graph route takes a deck only
+when it is driven by voltage sources (EX 0/5) alone — no plane wave, no current
+source, no `LD`/`TL`/`NT` — does not touch perfect ground, has every straight
+section at least two segments long, and has no wire end on another wire's
+interior. Over `GN 2` it uses the usual reflection-coefficient ground (so the
+low-height caveats apply). A junction or loop deck outside that scope keeps the
+old per-wire fallback and is **warned about, not blocked**; the warning names
+`--solver mpie` where the MPIE takes the deck. A negative feedpoint resistance
+is reported as an explicit warning, since a passive antenna cannot have one
+(PH9-CHK-005).
 
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
@@ -242,18 +253,18 @@ Residual budget precedence:
 - `FNEC_SIN_FALLBACK_REL_MAX` environment variable
 - built-in default `1e-2`
 
-### `mpie` (second solver — reaches junctions, loops, near-ground currents)
+### `mpie` (second solver — junctions, loops, near-ground currents)
 
 Opt-in mixed-potential EFIE with a subsectional (triangle) current basis
 (PH9-CHK-007). Unlike the Hallen hybrid — which folds the scalar potential into a
 per-wire homogeneous term (`C·cos(ks) + D·sin(ks)`) and so cannot represent it — the MPIE carries the
-vector and scalar potentials separately. That lets it solve three geometry
-classes the Hallen path cannot:
+vector and scalar potentials separately. It solves:
 
 - **degree-3 (T/Y) junctions** — Kirchhoff's current law is satisfied by the
-  junction basis itself; the Hallen path returns unphysical junction-fed
-  impedance (e.g. a Y-junction reports R ≈ 8 Ω where the MPIE gives ≈ 64 Ω).
-- **closed loops** — a cyclic chain with no endpoint condition.
+  junction basis itself. The default Hallén solve now handles these too, on its
+  section graph (see `hallen` above); the MPIE is an independent alternative.
+- **closed loops** — a cyclic chain with no endpoint condition (likewise also
+  solved by the Hallén section graph).
 - **near-ground currents (Sommerfeld)** — with `GN`/finite ground, the reflected
   potential kernels put the surface wave into the current solution itself, for
   **any wire above ground**: horizontal, vertical, or tilted straight wires, and
@@ -782,7 +793,7 @@ Validated against nec2c: `TL 1 26 2 26 50.0 0.1` across two λ/2 dipoles 1 m apa
 ## Notes
 
 - Multi-source decks (multiple `EX` cards) are supported; one output line per source.
-- The Hallén solver handles collinear, bent, and degree-2 junctioned geometry. Degree-3 (T/Y) junctions and closed loops are *warned about*, not blocked — the warning names `--solver mpie`, which solves both correctly. `--allow-noncollinear-hallen` and `--ex3-i4-mode` are obsolete no-ops kept for backward compatibility.
+- The Hallén solver handles collinear, bent, and degree-2 junctioned geometry, and degree-3+ (T/Y) junctions and closed loops on its section graph when the deck is in scope (voltage sources only, no `LD`/`TL`/`NT`, no perfect-ground contact, sections ≥ 2 segments, no wire end on another wire's interior — see `hallen` above). A junction or loop deck outside that scope is *warned about*, not blocked, and the warning names `--solver mpie` where the MPIE takes the deck. `--allow-noncollinear-hallen` and `--ex3-i4-mode` are obsolete no-ops kept for backward compatibility.
 - `EX` type 0 is implemented on every solver path. Types 1–5 solve on `--solver hallen`; the plane-wave types (1, 2, 3) produce induced currents for a receiving antenna rather than a feedpoint impedance. See the card table above for the per-type geometry limits.
 - `--exec hybrid` runs split-lane FR scheduling (CPU-parallel lane plus GPU-candidate lane) and keeps output emitted in frequency order.
 - The per-frequency GPU *routing seam* (`nec_accel::dispatch_frequency_point`) is not wired, and deliberately so: PH7-CHK-003 measured the GPU-resident dense solve at 0.04x-0.48x of the CPU at every size tested with no crossover, so routing a frequency point to it would be slower. GPU-candidate lane points print an explicit warning and run on CPU. This is separate from the real wgpu kernels, which `--exec gpu` does use — see **GPU far-field acceleration** above.

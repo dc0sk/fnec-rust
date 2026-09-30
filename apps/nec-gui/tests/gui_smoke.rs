@@ -1738,11 +1738,11 @@ fn browse_messages_do_not_change_the_paths() {
 #[test]
 fn solve_warns_on_high_degree_junction() {
     const Y: &str = "\
-CM Y-junction
+CM Y-junction, one arm a single segment: the section graph refuses it (FND-162)
 CE
 GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
 GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
-GW 3 20 0.0 0.0 0.0 -2.5 -4.330127 0.0 0.001
+GW 3 1 0.0 0.0 0.0 -0.5 -0.866025 0.0 0.001
 GE 0
 FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0

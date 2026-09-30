@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-09-29
+last_updated: 2026-09-30
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -116,6 +116,38 @@ section ends it did not (centre 2.7e-4 of a 9.2e-4 peak). Gates:
 `crates/nec_solver/tests/transverse_nec2c.rs`; removing the images, the routing,
 the endpoint refinement or the image sign each fails them.
 
+## Junctions and loops (FND-162 stages 2 and 3)
+
+The same design, generalised from a path to a **section graph**
+(`crates/nec_solver/src/section_graph.rs`): every straight section carries its
+own `(C, D)`; a node of degree d is closed by one Kirchhoff row (the section
+currents, extrapolated to the node, sum to zero) and d − 1 equal-scalar-potential
+rows, each with the corner term; a closed loop is a cycle of sections and needs
+no endpoint condition. The route predicate is `graph_route` in
+`crates/nec_solver/src/hallen_session.rs`, and every frontend reaches it through
+`solve_hallen_routed`, so the T/Y-junction, closed-loop and junction-feed
+warnings no longer fire for these decks. Over `GN 2` it uses the usual
+reflection-coefficient ground.
+
+It takes a deck only when all hold: voltage (delta-gap, EX 0/5) sources, no plane
+wave and no current source; no `LD`, `TL` or `NT`; no contact with perfect
+ground; every straight section at least two segments; no wire end on another
+wire's interior. Anything else keeps the per-path fallback and its warning.
+
+Feedpoint error against nec2c 1.3.1 at 14.2 MHz:
+
+| deck | segments per wire | error |
+|---|---|---|
+| stem-fed Y (stem 0..3 m, arms to (±2, 0, 5)) | 11 / 21 / 41 | 3.19 → 1.68 → 0.74 % (before: −1.83 − j1673 Ω; nec2c 23.66 − j1756) |
+| stem-fed T (4 m stem, 3 m bar halves) | 11 / 21 / 41 | 6.45 → 2.23 → 1.33 % |
+| dipole with a 2 m centre stub, fed off-centre | 11 / 21 / 41 | 9.26 → 5.11 → 2.94 % |
+| 1 λ square loop (side 5.278 m) fed mid-side | 11 / 21 / 41 | 1.84 → 1.05 → 0.57 % (before ≈ 17 − j1163; nec2c 111.01 − j146.27) |
+| loop with a 2 m stub on its top side | 11 / 21 / 41 | 1.65 → 1.03 → 0.57 % |
+| T fed on the segment touching its node | 13 / 25 / 49 | 12.4 → 7.0 → 4.1 % |
+| square loop 3 m over `GN 1` | 13 / 25 / 49 | 1.42 → 0.81 → 0.44 % |
+
+Gate: `crates/nec_solver/tests/graph_nec2c.rs`.
+
 ## Still open (FND-162)
 
 - **A straight run only one segment long.** Its single row cannot fix two
@@ -123,9 +155,11 @@ the endpoint refinement or the image sign each fails them.
   unmodelled: about 26 % off in the currents on a U whose middle wire is one
   segment. Hallén warns on exactly these decks, driven or receive, through the same
   predicate the layout uses (`hallen_leaves_a_bend_unmodelled`).
-- **Degree-3+ junctions and closed loops.** These are later stages of the same
-  design (Kirchhoff's law and equal potential at a node of degree d; the loop's
-  closure). They are warned about and pointed to `--solver mpie`.
+- **Junction and loop decks outside the graph scope** — with loads (`LD`, `TL`,
+  `NT`), a current source, a plane wave, contact with perfect ground, a
+  one-segment section, or a wire end on another wire's interior. These keep the
+  per-path fallback, are warned about, and are pointed to `--solver mpie` where
+  it takes the deck.
 - **Receive over ground** is FND-170, not a bend problem: the receive forcing has
   no ground-reflected wave, so even a straight dipole over perfect ground is about
   55 % off.

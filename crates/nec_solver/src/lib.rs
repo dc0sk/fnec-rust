@@ -18,6 +18,7 @@ pub mod mpie;
 pub mod mpie_session;
 pub mod network;
 pub mod planewave;
+pub mod section_graph;
 pub mod sommerfeld;
 pub mod stamps;
 pub mod taper;

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/python-bindings.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-30
 ---
 
 # fnec Python Bindings (`fnec_py`)
@@ -80,9 +80,12 @@ print(result)
 
 `solver` selects the integral-equation formulation: `"hallen"` (default) or
 `"mpie"`. Any other value raises `ValueError`. The MPIE solver is the one to
-reach for on degree-3 junctions, closed loops, and near-ground geometry, where
-the Hallén formulation is documented as unreliable — see
-[mpie-solver-scope.md](mpie-solver-scope.md).
+reach for on near-ground geometry, where the Hallén formulation is documented as
+unreliable — see [mpie-solver-scope.md](mpie-solver-scope.md). Degree-3 (T/Y)
+junctions and closed loops solve on `"hallen"` too (its section-graph route,
+for voltage-source decks without loads or perfect-ground contact); `"mpie"` is
+an alternative there, and the one the warning names for a junction or loop deck
+outside that scope.
 
 Raises `RuntimeError` on parse or solver failure.
 

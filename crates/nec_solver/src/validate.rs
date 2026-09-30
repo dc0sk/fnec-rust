@@ -394,7 +394,9 @@ pub fn ge_ground_reflection_warning(deck: &NecDeck) -> Option<String> {
 }
 
 /// PH9-CHK-002 / PH9-CHK-005: a **closed loop** or a **degree-3+ (T/Y) junction**
-/// is outside the conductor-path Hallén solve. For these classes fnec falls back to
+/// that the section-graph solve refuses ([`crate::hallen_session::graph_route`]:
+/// a load, a current source, a plane wave, a network, ground contact, or a
+/// straight run one segment long). For these fnec falls back to
 /// the per-wire basis, which enforces neither the loop's periodic closure nor the
 /// Kirchhoff current split at a branching node, so the reported impedance, currents
 /// and pattern are unreliable for the *whole* geometry — not only a junction-fed
@@ -412,6 +414,12 @@ pub fn unsupported_topology_warning(
     segs: &[Segment],
     mpie_remedy: &str,
 ) -> Option<String> {
+    // A deck the section-graph solve takes is modelled: every junction closes
+    // with Kirchhoff and equal potential, and a loop is a cycle of sections
+    // (FND-162 stages 2+3). What is left here is the remainder it refuses.
+    if crate::hallen_session::graph_route(deck, segs).is_some() {
+        return None;
+    }
     let kind = match classify_unsupported_topology(segs)? {
         UnsupportedTopology::ClosedLoop => {
             "a closed loop (a conductor with no free end); the Hallén solve does not model \
@@ -1760,10 +1768,13 @@ mod tests {
             "an unrecognised EX type is not a feedpoint"
         );
         // Positive control on the same geometry: a real feed there must still warn,
-        // or this proves only that the check stopped firing.
+        // or this proves only that the check stopped firing. Loaded, because an
+        // unloaded delta-gap T takes the section graph, which models a junction
+        // feed and rightly stays silent (FND-162 stages 2+3).
         let (driven, driven_segs) = deck_and_segs(
-            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nLD 4 3 13 13 50.0 0.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
+        assert!(crate::hallen_session::graph_route(&driven, &driven_segs).is_none());
         assert!(
             !feedpoint_at_junction_warnings(&driven, &driven_segs).is_empty(),
             "a real feed on the junction must still warn"
@@ -2367,10 +2378,27 @@ mod tests {
     }
 
     #[test]
-    fn a_degree_three_junction_warns_and_recommends_the_mpie() {
+    fn a_degree_three_junction_the_graph_solve_takes_does_not_warn() {
+        // FND-162 stages 2+3: a delta-gap T is solved with Kirchhoff and equal
+        // potential at the node, so it is not "unreliable" any more.
         let (deck, segs) = deck_and_segs(
             "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
+        assert!(crate::hallen_session::graph_route(&deck, &segs).is_some());
+        assert_eq!(
+            unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_degree_three_junction_warns_and_recommends_the_mpie() {
+        // The stem is one segment long: its single row cannot fix a section's two
+        // constants, so the graph solve refuses the deck and it still warns.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
         let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
             .expect("T junction must warn");
         assert!(w.contains("three or more wires"), "{w}");

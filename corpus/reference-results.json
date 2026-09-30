@@ -1569,8 +1569,8 @@
       "ground": "none",
       "reference_source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
       "feedpoint_impedance": {
-        "real_ohm": 12.924437,
-        "imag_ohm": -893.245849
+        "real_ohm": 13.099069,
+        "imag_ohm": -889.04607
       },
       "external_reference_candidate": {
         "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
@@ -1583,12 +1583,12 @@
         "R_absolute_ohm": 0.5,
         "X_absolute_ohm": 5.0,
         "ExternalR_absolute_ohm": 2.0,
-        "ExternalX_absolute_ohm": 6.0
+        "ExternalX_absolute_ohm": 8.0
       },
-      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "7e76144998bf94d9dd09a8dcf314ce463544de8f248a52a40b31e076ce0d8e53"
+      "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-09-30 for FND-162 stages 2+3: the top-hat loop is a closed loop, which Hallén now solves as a cycle of sections (Kirchhoff and equal potential at each corner) instead of the per-wire basis; 12.92 - j893.25 -> 13.10 - j889.05. Against nec2c 1.3.1 with the loop kept at an odd segment count (an even one puts a segment boundary under the dipole tip and nec2c joins the two): 51/9 0.78 %, 153/27 0.29 %, 255/45 0.17 %, so the new answer converges. ExternalX widened 6 -> 8 ohm: at this mesh it is 7.0 ohm off the Wine NEC2DXS500 value, inside the discretisation error that refinement removes.",
+      "last_produced_on": "2026-09-30",
+      "last_produced_in": "0.20.0",
+      "last_produced_fingerprint": "b2ca99969400611961ac95965359d98d86eebd12084d66857843465cd83d2e1a"
     },
     "dipole-loaded-noncollinear-hallen": {
       "deck_file": "dipole-loaded.nec",
@@ -1604,8 +1604,8 @@
       "reference_source": "fnec Hallen solver (experimental non-collinear projection path regression lock)",
       "expected_warning_substrings": [],
       "feedpoint_impedance": {
-        "real_ohm": 12.924437,
-        "imag_ohm": -893.245849
+        "real_ohm": 13.099069,
+        "imag_ohm": -889.04607
       },
       "external_reference_candidate": {
         "source": "NEC2DXS500 via Wine (temporary XQ-inserted deck)",
@@ -1618,12 +1618,12 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "ExternalR_absolute_ohm": 2.0,
-        "ExternalX_absolute_ohm": 6.0
+        "ExternalX_absolute_ohm": 8.0
       },
-      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "fbe6f8ca4e8f1f1e49b4cf3772f81fb17a22da5da2f2805121e16143e67d03e5"
+      "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-09-30 for FND-162 stages 2+3: the top-hat loop is a closed loop, which Hallén now solves as a cycle of sections (Kirchhoff and equal potential at each corner) instead of the per-wire basis; 12.92 - j893.25 -> 13.10 - j889.05. Against nec2c 1.3.1 with the loop kept at an odd segment count (an even one puts a segment boundary under the dipole tip and nec2c joins the two): 51/9 0.78 %, 153/27 0.29 %, 255/45 0.17 %, so the new answer converges. ExternalX widened 6 -> 8 ohm: at this mesh it is 7.0 ohm off the Wine NEC2DXS500 value, inside the discretisation error that refinement removes.",
+      "last_produced_on": "2026-09-30",
+      "last_produced_in": "0.20.0",
+      "last_produced_fingerprint": "31889352268b8e5f50a8c98fc14346df140c0357a1d95db7c50ab93bf09b0faf"
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",

@@ -898,7 +898,7 @@ const HALLEN_TIKHONOV_REL: f64 = 1e-12;
 /// 0.000150 Ω — the `sin` column's diagonal is ≈ `N·(kL)²/12`), a coupled pair by
 /// 0.25 % (5.4119 vs 5.3982 Ω) and a λ/2 dipole by 0.009 Ω. (The GPU solve adds its λ absolutely too, but its Björck
 /// refinement converges on the unregularised residual, which removes the bias.)
-fn solve_normal_equations(
+pub(crate) fn solve_normal_equations(
     mat: &[Vec<Complex64>],
     y: &[Complex64],
     cols: usize,

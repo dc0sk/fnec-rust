@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/mpie-solver-scope.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-09-30
 ---
 
 # MPIE solver — scope
@@ -26,6 +26,14 @@ The Hallén solver stays the default and is untouched; the MPIE is opt-in
 (`--solver mpie`) and initially routes only the classes Hallén cannot do (or an
 explicit override for A/B testing), so there is **zero regression risk** to the
 validated corpus.
+
+> **Update (FND-162 stages 2 and 3).** Frontiers 2 and 3 are no longer Hallén-only
+> gaps: the default Hallén solve now handles degree-3+ junctions and closed loops on a
+> section graph (per-section `(C, D)`, a Kirchhoff row plus equal-scalar-potential rows
+> with the corner term at each node, a loop as a cycle of sections) for voltage-driven
+> decks without `LD`/`TL`/`NT` or perfect-ground contact — see `docs/hallen-bends.md`.
+> The MPIE remains an independent alternative for them. The "structurally cannot"
+> wording below records the reasoning at the time of this plan.
 
 ## Why MPIE, and why it is de-risked
 
@@ -167,5 +175,6 @@ already retire the degree-3 and closed-loop frontiers.
 
 - `docs/ph9-chk-006-sommerfeld-ground.md` — Sommerfeld ground, Levels 0–2, the
   validated MPIE result.
-- `docs/ph9-chk-002-general-junction.md` — degree-2 solved, degree-3/loop deferred.
+- `docs/ph9-chk-002-general-junction.md` — degree-2 solved; degree-3/loops later
+  solved on the Hallén section graph (`docs/hallen-bends.md`).
 - `studies/sommerfeld-ground/` — the validated Python prototypes.

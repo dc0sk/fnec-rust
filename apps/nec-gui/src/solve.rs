@@ -1083,7 +1083,7 @@ mod tests {
     // negative feedpoint resistance on the Hallén path, which is physically
     // impossible for a passive antenna. Before FND-014 the GUI reported that
     // number with no caveat at all.
-    const BENT_NEGATIVE_R: &str = "CM Y junction fed on its stem — Hallen's unsupported degree-3 class (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 11 0 0 3 -2 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 3 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     #[test]
@@ -1258,8 +1258,9 @@ mod tests {
         // sweep panel printed the same sentence twice on one screen.
         // A degree-3 T over GN 2 — a bend is merged into one conductor path and
         // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
-        // an empty strip and prove nothing.
-        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // an empty strip and prove nothing. Loaded, because an unloaded T takes the section graph
+        // (FND-162 stages 2+3) and earns no topology caveat either.
+        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nLD 4 3 13 13 50.0 0.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
         let strip = deck_warnings(LOW_TEE, SolverKind::Hallen);
         let panel = job.geometry_caveats();
@@ -1462,10 +1463,10 @@ mod tests {
         // A degree-3 junction must still be flagged, and must point at the MPIE
         // in *this* frontend's terms — a GUI user has a picker, not a flag.
         let tee = solve_deck_str(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
             SolverKind::Hallen,
         )
-        .expect("a T junction solves, unreliably");
+        .expect("a T junction the section graph refuses solves, unreliably");
         assert!(
             tee.warnings.iter().any(|w| w.contains(GUI_MPIE_REMEDY)),
             "missing the topology warning: {:?}",
@@ -1519,7 +1520,7 @@ mod tests {
     /// never saw: it says the numbers on screen are unreliable.
     #[test]
     fn deck_warnings_carries_the_unreliable_topology_caveat() {
-        let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
         let w = deck_warnings(tee, SolverKind::Hallen);
         assert!(
             w.iter().any(|m| m.contains(GUI_MPIE_REMEDY)),

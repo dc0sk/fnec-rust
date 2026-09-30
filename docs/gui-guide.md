@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-09-08
+last_updated: 2026-09-30
 ---
 
 # fnec-gui user guide
@@ -61,16 +61,19 @@ frequency, resistance, reactance, and |Z| are shown.
 > **Solver note.** The **Solver** picker above the tabs chooses between:
 >
 > - **Hallén** — the default, and the right answer for most decks.
-> - **MPIE** — the mixed-potential second solver, for the geometries Hallén does
->   not model accurately: junctions where three or more wires meet, closed loops,
->   and near-ground currents over finite ground.
+> - **MPIE** — the mixed-potential second solver, for near-ground currents over
+>   finite ground, which Hallén does not model accurately. It also solves
+>   junctions where three or more wires meet and closed loops — as does Hallén,
+>   on its section graph, for voltage-driven decks without loads, networks or
+>   perfect-ground contact.
 >
 > The choice applies to **every** tab — Solve, Sweep, Pattern and Currents — so
 > the impedance on screen and the pattern beside it always come from the same
 > solver. Changing it clears solved results, because the numbers showing were
 > produced by the other one.
 >
-> On Hallén, a deck with one of those geometries shows a warning naming the MPIE.
+> On Hallén, a near-ground deck, or a junction or loop deck outside the
+> section-graph scope, shows a warning naming the MPIE.
 > On MPIE, that warning is absent — the MPIE models those cases correctly — and
 > the caveat you may see instead is about **mixed wire radii**, since the MPIE
 > solves the whole geometry with the first wire's radius.
