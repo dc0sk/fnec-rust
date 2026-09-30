@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-09-30
 ---
 
 # Benchmarks
@@ -63,6 +63,12 @@ Total rows: $3 \times 3 \times 3 \times 3 = 81$.
 ## Mode Provenance
 
 Baseline three-target results in this document come from the exec sweep `cpu`, `hybrid`, `gpu`.
+
+Since 2026-09-30 `--exec cpu` and `--exec hybrid` solve a sweep's FR points in
+parallel (hybrid's GPU-candidate points no longer run one at a time after the
+rest). Rows measured before then are sequential for `cpu`. Per-point
+`elapsed_ms` is now wall time under contention with the other points in flight;
+`RAYON_NUM_THREADS=1 --exec cpu` is still the single-thread baseline.
 
 For explicit four-mode coverage, an additional local verification sweep was run on `corpus/frequency-sweep-dipole.nec` with `--solver hallen` and 3 repeats per mode:
 
