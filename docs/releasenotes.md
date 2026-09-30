@@ -2,10 +2,97 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-30
 ---
 
 # Release Notes
+
+## 0.20.0 — Every wire sees the others
+
+Fifteen changes since 0.19.0 (#483–#497). Hallén now couples wires that are not
+parallel — including a slanted wire and its own image in the ground — and models a
+bend under an incident plane wave; one rule decides which wire cards are one
+straight wire; and the GPU-resident solve works on NVIDIA hardware and beats the
+CPU on large decks. The findings ledger went from 167 findings / 0 open to
+**186 / 1 open**: a targeted review of 0.19.0 found thirteen, the new build host
+found three more; the open one (FND-186) is an intermittent unit-test failure
+seen once on that host, not yet named.
+
+Every value below was measured at the release commit (release builds, 14.2 MHz),
+0.19.0 with its published binary; the nec2c 1.3.1 references are the ones the test
+suite pins.
+
+### Answers that change
+
+| deck | nec2c 1.3.1 | fnec 0.19.0 | fnec 0.20.0 |
+|---|---|---|---|
+| 45° dipole 10 m over perfect ground, 81 segments | 78.44 + j42.59 | 80.00 + j48.96 (7.3 %) | 78.09 + j39.99 (2.9 %) |
+| inverted-V, apex 10 m over perfect ground, 81 per arm | 55.06 + j9.59 | 56.27 + j16.74 (13.0 %) | 53.14 + j7.83 (4.7 %) |
+| 10 m wire split into two cards, 4-decimal coordinates | 119.79 − j71.13 | **0.32 − j930.33** | 118.00 − j77.69 (4.9 %) |
+| stepped-radius element, 4 / 8 / 4 mm | 76.90 + j35.22 | **−7.31 − j1146.97** | 75.87 + j38.73 (4.3 %) |
+| wire 0.7 m over a fed vertical dipole: its peak current | 3.56e-4 A | **0** | 3.45e-4 A |
+| 90° L receiving a plane wave: current at the corner | — | 122 % of the peak off | 3.6 % |
+| λ/2 dipole, 51 segments (control) | 79.35 + j46.22 | 78.83 + j42.43 | 78.83 + j42.43 |
+
+The causes. Hallén couples two segments through the cosine of the angle between
+them, which drops the part of the scalar potential a non-parallel wire adds; the
+bend's corner term of 0.19.0 turned out not to need a shared node, so it now takes
+every non-parallel source, the ground images included (FND-171, FND-174, FND-162).
+The receive solve kept one term per path, on a belief that its source "jumps at a
+bend" — it is a sum of feeds and does not (FND-162). And two copies of "is this
+straight?" disagreed between 1e-6 and 4.5e-5 rad and on the radius, and the decks
+in between landed on the junction rows that give garbage (FND-172, FND-175). Each
+converges on nec2c as the mesh is refined.
+
+*Migration.* Re-baseline stored results for slanted wires over ground, bent receive
+decks, and decks with non-parallel wires. Decks of parallel, horizontal or vertical
+wires do not move; the corpus did not move.
+
+### Refused, where 0.19.0 answered
+
+- **An incident plane wave over ground** (FND-170): the receive source has no
+  ground-reflected wave, so over ground the induced currents were wrong — 55 % off
+  on a straight dipole over perfect ground. Remove the `GN` card to solve in free
+  space.
+- **`fnec sweep --resonance`** now refuses everything the other frontends refuse
+  (FND-173): an unsupported `LD` solved without the load and reported convergence;
+  a negative frequency converged.
+- A plane-wave deck under `--hosts` is refused before any host is dialled (FND-178).
+
+### Warned about
+
+- The bent-conductor and slanted-wire warnings now fire only where the bend or the
+  image is still unmodelled: a straight run one segment long (FND-162, FND-171).
+
+### GPU
+
+- **The GPU-resident solve is correct on NVIDIA GPUs** (FND-185). On a GTX 1080 Ti
+  it returned garbage — a write inside one workgroup was not visible to the rest
+  after the barrier — and every answer fell back to the CPU. It is rebuilt with
+  every hand-off at a dispatch boundary, and it factors the system directly.
+- **It is now faster than the CPU on large decks**: 1001 segments in 0.91 s against
+  the CPU's 4.60 s (0.19.0: 8.70 s on the GPU); below about 500 segments the CPU
+  is still faster. `--exec gpu` says so.
+
+### Other fixes
+
+- `fnec --version` and `fnec --help` print to stdout and exit 0 (FND-169).
+- A bad `--hosts` path is reported for an undriven deck too (FND-181); a deck with
+  two faults names the same one on every frontend (FND-180); an SSH host that
+  cannot be reached no longer counts as a worker the task killed (FND-176).
+
+### Project and CI
+
+- **Release assets are built in a pinned manylinux container** and refused if their
+  minimum glibc rises (FND-168): the binaries need glibc 2.16, the wheel 2.17.
+  `docs/release-process.md` records the steps.
+- The host-wide build lock is re-entrant within one process tree (FND-184); the
+  corpus provenance check sees a re-pin within the current release (FND-177).
+
+### Versions
+
+Workspace 0.19.0 → **0.20.0**; `fnec_py` 0.10.0 → **0.11.0**. No dependency left or
+arrived; the SBOM has 525 packages.
 
 ## 0.19.0 — One answer, however the deck is written
 
