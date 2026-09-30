@@ -130,11 +130,14 @@ FR 0 1 0 0 14.2 0.0
 EN
 """
 
-# Three wires meeting at the origin: a topology the Hallen solver mis-solves.
+# Three wires meeting at the origin, one of them a single segment long.
+# The stem is ONE segment: the section graph (FND-162 stages 2+3) solves an
+# ordinary T, and refuses a section too short for its two constants, so this
+# one keeps the per-wire fallback and its topology caveat.
 TEE_JUNCTION = """\
 GW 1 11 -5 0 0 0 0 0 0.001
 GW 2 11 0 0 0 5 0 0 0.001
-GW 3 11 0 0 0 0 0 5 0.001
+GW 3 1 0 0 0 0 0 0.5 0.001
 GE
 EX 0 1 6 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
@@ -414,16 +417,19 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
     text differs and dedup on message identity fails. A junctioned sweep raised one
     UserWarning per frequency; the GUI had aggregated and the bindings had not.
     """
-    # A Y junction fed on its stem, negative at every point (FND-162's class).
-    # This was a bent end-to-start chain, which FND-167 fixed; the test then
-    # passed with NO negative point at all, because it allowed "<= 1" and
-    # checked the text only "if" there was one. It now requires exactly one.
+    # A Y junction with a one-segment arm, negative at every point: the section
+    # graph refuses a section too short for its two constants, so it keeps the
+    # per-wire fallback (FND-162). The stem-fed Y with three 11-segment arms is
+    # solved correctly now, and before that this was a bent end-to-start chain
+    # (FND-167). The test once passed with NO negative point at all, because it
+    # allowed "<= 1" and checked the text only "if" there was one. It now
+    # requires exactly one.
     junction = (
-        "CM Y junction fed on its stem\nCE\n"
+        "CM Y junction with a one-segment arm\nCE\n"
         "GW 1 11 0 0 0 0 0 3 .001\n"
-        "GW 2 11 0 0 3 -2 0 5 .001\n"
+        "GW 2 1 0 0 3 -1 0 4 .001\n"
         "GW 3 11 0 0 3 2 0 5 .001\n"
-        "GE 0\nEX 0 1 3 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
+        "GE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
     )
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
