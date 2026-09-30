@@ -33,6 +33,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `dipole-loaded` corpus case moves 12.92 − j893.25 → 13.10 − j889.05 (its
   top-hat loop now takes the graph; it converges on nec2c 0.78 → 0.17 %).
 
+### Changed
+
+- **A CPU frequency sweep solves its points in parallel.** `--exec cpu` (the
+  default) took them one at a time, and `--exec hybrid` ran half of them in
+  parallel and then its GPU-candidate half one at a time on a single thread.
+  24 points of a 601-segment dipole: 12.2 s on `cpu` and 7.1 s on `hybrid`, now
+  3.7 s on either (301 segments: 1.75 s → 0.18 s). The report is unchanged, byte
+  for byte; per-point warnings on stderr arrive in completion order.
+  `RAYON_NUM_THREADS` bounds the parallelism, and with it memory (FND-187).
+
 ## [0.20.0] — 2026-09-30 — Every wire sees the others
 
 Fifteen changes since v0.19.0 (#483–#497). **Hallén now couples every

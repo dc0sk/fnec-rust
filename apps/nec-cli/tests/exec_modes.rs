@@ -1283,3 +1283,47 @@ fn dropin_alias_paths_are_unique_across_threads() {
         }
     });
 }
+
+/// A CPU sweep solves its points in parallel, so the reports must still walk the
+/// band in `FR` order, and the output must be the same, byte for byte, as a run
+/// on one thread — any state leaking between points would show up as a
+/// difference. Order has two guards: rayon's indexed `collect` keeps the input
+/// order, and the caller sorts by index anyway; removing the sort alone does not
+/// fail this test (measured), because the first guard still holds.
+#[test]
+fn cpu_sweep_is_ordered_and_identical_to_a_single_thread_run() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
+    let run = |threads: Option<&str>| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
+        cmd.args(["--solver", "hallen", "--exec", "cpu"])
+            .arg(&deck_path);
+        match threads {
+            Some(t) => cmd.env("RAYON_NUM_THREADS", t),
+            None => cmd.env_remove("RAYON_NUM_THREADS"),
+        };
+        let out = cmd.output().expect("run fnec");
+        assert!(
+            out.status.success(),
+            "fnec failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let parallel = run(Some("4"));
+    let mut cursor = 0usize;
+    for marker in [
+        "FREQ_MHZ 10.000000",
+        "FREQ_MHZ 12.000000",
+        "FREQ_MHZ 14.000000",
+        "FREQ_MHZ 16.000000",
+        "FREQ_MHZ 18.000000",
+    ] {
+        let rel = parallel[cursor..]
+            .find(marker)
+            .unwrap_or_else(|| panic!("'{marker}' missing or out of order in:\n{parallel}"));
+        cursor += rel + marker.len();
+    }
+    assert_eq!(parallel, run(Some("1")), "4 threads and 1 thread disagree");
+}
