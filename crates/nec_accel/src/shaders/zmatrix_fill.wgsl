@@ -88,9 +88,16 @@ fn green_k(r: f32, k: f32) -> vec2<f32> {
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
+// The linear invocation index under a 2-D dispatch grid: the host splits a
+// workgroup count past the per-dimension limit (65535) into (x, y), so an index
+// read from the x id alone would repeat across the rows of the grid.
+fn linear(gid: vec3<u32>, nwg: vec3<u32>) -> u32 {
+    return gid.x + gid.y * nwg.x * 64u;
+}
+
 @compute @workgroup_size(64)
-fn cs_zmatrix_fill(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let tid = gid.x;
+fn cs_zmatrix_fill(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let tid = linear(gid, nwg);
     let n   = uniforms.n;
     if tid >= n * n { return; }
 

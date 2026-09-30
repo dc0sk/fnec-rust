@@ -49,9 +49,16 @@ fn cmul(a_re: f32, a_im: f32, b_re: f32, b_im: f32) -> vec2<f32> {
     );
 }
 
+// The linear invocation index under a 2-D dispatch grid: the host splits a
+// workgroup count past the per-dimension limit (65535) into (x, y), so an index
+// read from the x id alone would repeat across the rows of the grid.
+fn linear(gid: vec3<u32>, nwg: vec3<u32>) -> u32 {
+    return gid.x + gid.y * nwg.x * 64u;
+}
+
 @compute @workgroup_size(64)
-fn cs_rp_farfield_batch(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+fn cs_rp_farfield_batch(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let idx = linear(gid, nwg);
     if idx >= uniforms.n_points { return; }
 
     let pi      = 3.14159265358979323846f;

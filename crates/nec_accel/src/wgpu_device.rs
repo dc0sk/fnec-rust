@@ -86,10 +86,12 @@ struct GpuContext {
 
 /// What an acquisition attempt produced. The two failure variants are kept
 /// separate so each caller can keep emitting its own distinct diagnostic.
+/// The failures carry the driver's own words, which used to be discarded — so
+/// an intermittent `request_device` failure (FND-186) could not be read.
 enum GpuAcquire {
     Ready(std::sync::Arc<GpuContext>),
-    NoAdapter,
-    DeviceFailed,
+    NoAdapter(String),
+    DeviceFailed(String),
 }
 
 /// Cache state. `Unavailable` is remembered too — on a host with no adapter,
@@ -98,11 +100,30 @@ enum GpuAcquire {
 enum GpuCache {
     Untried,
     Ready(std::sync::Arc<GpuContext>),
-    NoAdapter,
-    DeviceFailed,
+    NoAdapter(String),
+    DeviceFailed(String),
 }
 
 static GPU_CACHE: std::sync::Mutex<GpuCache> = std::sync::Mutex::new(GpuCache::Untried);
+
+/// Every wgpu instance, adapter enumeration, adapter request and device request in
+/// this process happens under this lock (FND-186).
+///
+/// Four threads each creating an `Instance` and enumerating adapters segfaulted
+/// the process in 5 of 5 runs on an NVIDIA GTX 1080 Ti (driver 580.178.04,
+/// Vulkan, wgpu 29); the same calls one after another, 0 of 5. Test binaries run
+/// their GPU tests on parallel threads, which is how `nec_accel`'s unit tests
+/// failed intermittently with the name lost — a segfault takes the whole binary.
+/// The crash is in the driver's first initialisation: the same four threads did
+/// not crash once another test had created a device (0 of 10). Creation is rare
+/// and cheap next to the work, so serialising all of it costs nothing.
+static WGPU_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn wgpu_init_guard() -> std::sync::MutexGuard<'static, ()> {
+    WGPU_INIT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// How many times a device has actually been created. The whole point of the
 /// cache is that this stays at 1 no matter how many kernels run, so it is exposed
@@ -137,69 +158,63 @@ fn invalidate_gpu_context() {
 /// `force_fallback_adapter: true` probes, which deliberately select the software
 /// adapter rather than the best one.
 async fn shared_gpu_context() -> GpuAcquire {
-    // Fast path: decided already.
-    match GPU_CACHE.lock() {
-        Ok(c) => match &*c {
-            GpuCache::Ready(ctx) => return GpuAcquire::Ready(ctx.clone()),
-            GpuCache::NoAdapter => return GpuAcquire::NoAdapter,
-            GpuCache::DeviceFailed => return GpuAcquire::DeviceFailed,
-            GpuCache::Untried => {}
-        },
-        // A poisoned lock must not take the GPU path down with it: fall back.
-        Err(_) => return GpuAcquire::DeviceFailed,
+    // Decided and built under one guard, so the first callers of a sweep's
+    // parallel points build ONE device instead of racing to build several
+    // (FND-186). The wgpu futures resolve synchronously on native backends, and
+    // `pollster` is a park loop, not an executor, so blocking here inside a
+    // caller's own `block_on` cannot deadlock; nothing below re-enters this lock.
+    let mut cache = GPU_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match &*cache {
+        GpuCache::Ready(ctx) => return GpuAcquire::Ready(ctx.clone()),
+        GpuCache::NoAdapter(why) => return GpuAcquire::NoAdapter(why.clone()),
+        GpuCache::DeviceFailed(why) => return GpuAcquire::DeviceFailed(why.clone()),
+        GpuCache::Untried => {}
     }
 
-    // Build outside the lock — `request_adapter`/`request_device` are awaits, and
-    // a std guard must not be held across one. A race just builds twice and drops
-    // the loser.
+    // Always taken after GPU_CACHE, never before it, so the two cannot deadlock.
+    let _init = wgpu_init_guard();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-    {
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    })) {
         Ok(a) => a,
-        Err(_) => {
-            if let Ok(mut c) = GPU_CACHE.lock() {
-                *c = GpuCache::NoAdapter;
-            }
-            return GpuAcquire::NoAdapter;
+        Err(e) => {
+            let why = e.to_string();
+            *cache = GpuCache::NoAdapter(why.clone());
+            return GpuAcquire::NoAdapter(why);
         }
     };
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
+    // The downlevel defaults cap a storage binding at 128 MiB, which is what
+    // bounds the dense solve's matrix; take what the adapter offers for the two
+    // limits the size checks read (2 GiB / 4 GiB on a GTX 1080 Ti).
+    let offered = adapter.limits();
+    let required_limits = wgpu::Limits {
+        max_storage_buffer_binding_size: offered.max_storage_buffer_binding_size,
+        max_buffer_size: offered.max_buffer_size,
+        ..wgpu::Limits::downlevel_defaults()
+    };
+    let (device, queue) =
+        match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("fnec-shared"),
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            required_limits,
             ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => {
-            if let Ok(mut c) = GPU_CACHE.lock() {
-                *c = GpuCache::DeviceFailed;
+        })) {
+            Ok(dq) => dq,
+            Err(e) => {
+                let why = e.to_string();
+                *cache = GpuCache::DeviceFailed(why.clone());
+                return GpuAcquire::DeviceFailed(why);
             }
-            return GpuAcquire::DeviceFailed;
-        }
-    };
+        };
 
     GPU_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let ctx = std::sync::Arc::new(GpuContext { device, queue });
-    match GPU_CACHE.lock() {
-        Ok(mut c) => {
-            // Another thread may have published first; prefer the published one so
-            // every caller shares a single device.
-            if let GpuCache::Ready(existing) = &*c {
-                return GpuAcquire::Ready(existing.clone());
-            }
-            *c = GpuCache::Ready(ctx.clone());
-            GpuAcquire::Ready(ctx)
-        }
-        Err(_) => GpuAcquire::Ready(ctx),
-    }
+    *cache = GpuCache::Ready(ctx.clone());
+    GpuAcquire::Ready(ctx)
 }
 
 /// Returns every compute-capable adapter visible to wgpu on this system.
@@ -207,11 +222,10 @@ async fn shared_gpu_context() -> GpuAcquire {
 /// The list may be empty on headless CI hosts without a software rasterizer;
 /// that is not an error.
 pub async fn enumerate_compute_adapters() -> Vec<AdapterInfo> {
+    let _init = wgpu_init_guard();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-    instance
-        .enumerate_adapters(wgpu::Backends::all())
-        .await
+    pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
         .into_iter()
         .map(|adapter| {
             let info = adapter.get_info();
@@ -250,31 +264,28 @@ fn cs_main() {}
 ///   not mandatory in bare-metal CI; gate G2 only requires the *code path* to
 ///   exist without panics.
 pub async fn run_noop_compute_pipeline() -> NoOpPipelineResult {
+    let init = wgpu_init_guard();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::None,
-            compatible_surface: None,
-            force_fallback_adapter: true,
-        })
-        .await
-    {
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::None,
+        compatible_surface: None,
+        force_fallback_adapter: true,
+    })) {
         Ok(a) => a,
         Err(_) => return NoOpPipelineResult::NoAdapterAvailable,
     };
 
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
+    let (device, queue) =
+        match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("fnec-noop"),
             required_limits: wgpu::Limits::downlevel_defaults(),
             ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => return NoOpPipelineResult::NoAdapterAvailable,
-    };
+        })) {
+            Ok(dq) => dq,
+            Err(_) => return NoOpPipelineResult::NoAdapterAvailable,
+        };
+    drop(init);
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("fnec-noop-shader"),
@@ -399,31 +410,28 @@ pub async fn run_rp_farfield_wgpu(
     phi_deg: f64,
 ) -> RpPipelineResult {
     // ---- device setup -------------------------------------------------------
+    let init = wgpu_init_guard();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-    let adapter = match instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::None,
-            compatible_surface: None,
-            force_fallback_adapter: true,
-        })
-        .await
-    {
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::None,
+        compatible_surface: None,
+        force_fallback_adapter: true,
+    })) {
         Ok(a) => a,
         Err(_) => return RpPipelineResult::NoAdapterAvailable,
     };
 
-    let (device, queue) = match adapter
-        .request_device(&wgpu::DeviceDescriptor {
+    let (device, queue) =
+        match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("fnec-rp"),
             required_limits: wgpu::Limits::downlevel_defaults(),
             ..Default::default()
-        })
-        .await
-    {
-        Ok(dq) => dq,
-        Err(_) => return RpPipelineResult::NoAdapterAvailable,
-    };
+        })) {
+            Ok(dq) => dq,
+            Err(_) => return RpPipelineResult::NoAdapterAvailable,
+        };
+    drop(init);
 
     let n = segments.len() as u32;
 
@@ -651,7 +659,7 @@ pub async fn run_rp_farfield_batch_wgpu(
     // ---- device setup (shared, built once per process) ----------------------
     let ctx = match shared_gpu_context().await {
         GpuAcquire::Ready(c) => c,
-        GpuAcquire::NoAdapter | GpuAcquire::DeviceFailed => return None,
+        GpuAcquire::NoAdapter(_) | GpuAcquire::DeviceFailed(_) => return None,
     };
     let (device, queue) = (&ctx.device, &ctx.queue);
 
@@ -838,7 +846,13 @@ pub async fn run_rp_farfield_batch_wgpu(
     });
 
     // ---- single dispatch + single readback ----------------------------------
-    let n_workgroups = n_points.div_ceil(64);
+    // No RP card reaches the per-dimension limit (361 × 181 points is 1022
+    // workgroups), but every dispatch the shaders index linearly goes through the
+    // one grid rule.
+    let (gx, gy) = linear_dispatch_grid(
+        n_points,
+        device.limits().max_compute_workgroups_per_dimension,
+    );
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("rp-batch-encoder"),
     });
@@ -849,7 +863,7 @@ pub async fn run_rp_farfield_batch_wgpu(
         });
         cpass.set_pipeline(&pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
-        cpass.dispatch_workgroups(n_workgroups, 1, 1);
+        cpass.dispatch_workgroups(gx, gy, 1);
     }
     encoder.copy_buffer_to_buffer(&out_buf, 0, &readback_buf, 0, out_size);
     queue.submit(std::iter::once(encoder.finish()));
@@ -978,16 +992,22 @@ pub struct ZElem {
 
 /// Fill the N×N Hallén A-matrix on the GPU using a single compute dispatch.
 ///
-/// Each thread computes one element Z[i,j].  Returns `None` when no wgpu
-/// adapter is available; the caller should fall back to the CPU path.
+/// Each thread computes one element Z[i,j].  Returns `Err` with the reason when
+/// the device cannot do it — no adapter, a failed device, or a matrix larger than
+/// its storage binding — and the caller falls back to the CPU path and says why.
+/// It used to return `None` for every one of those, and the CLI reported each as
+/// "no wgpu adapter".
 ///
 /// The returned `Vec<ZElem>` has length `n*n`, stored row-major so that
 /// `result[i * n + j]` gives Z[i,j].
-pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Option<Vec<ZElem>> {
+pub async fn fill_zmatrix_wgpu(
+    segments: &[ZSegmentInput],
+    freq_hz: f64,
+) -> Result<Vec<ZElem>, String> {
     use wgpu::util::DeviceExt;
 
     if segments.is_empty() {
-        return Some(Vec::new());
+        return Ok(Vec::new());
     }
 
     let n = segments.len();
@@ -996,18 +1016,17 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     // ---- adapter + device (shared, built once per process) -----------------
     let ctx = match shared_gpu_context().await {
         GpuAcquire::Ready(c) => c,
-        GpuAcquire::NoAdapter => {
-            eprintln!(
-                "warning: fill_zmatrix_wgpu: no wgpu adapter available — falling back to CPU"
-            );
-            return None;
-        }
-        GpuAcquire::DeviceFailed => {
-            eprintln!("warning: fill_zmatrix_wgpu: device request failed — falling back to CPU");
-            return None;
-        }
+        GpuAcquire::NoAdapter(why) => return Err(format!("no wgpu adapter available ({why})")),
+        GpuAcquire::DeviceFailed(why) => return Err(format!("device request failed ({why})")),
     };
     let (device, queue) = (&ctx.device, &ctx.queue);
+    let capacity = dense_matrix_capacity(&device.limits());
+    if n > capacity {
+        return Err(format!(
+            "{n} segments is more than the {capacity} a {} MiB storage binding holds",
+            device.limits().max_storage_buffer_binding_size >> 20
+        ));
+    }
 
     // ---- pack segment data (f64 → f32) ------------------------------------
     let seg_data: Vec<GpuSegmentZ> = segments
@@ -1137,8 +1156,10 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     });
 
     // ---- dispatch ----------------------------------------------------------
-    let total_threads = (n * n) as u32;
-    let workgroups = total_threads.div_ceil(64);
+    let (gx, gy) = linear_dispatch_grid(
+        (n * n) as u32,
+        device.limits().max_compute_workgroups_per_dimension,
+    );
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("zmatrix-encoder"),
@@ -1150,7 +1171,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
         });
         cpass.set_pipeline(&pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
-        cpass.dispatch_workgroups(workgroups, 1, 1);
+        cpass.dispatch_workgroups(gx, gy, 1);
     }
     encoder.copy_buffer_to_buffer(&output_buf, 0, &readback_buf, 0, output_size);
 
@@ -1163,7 +1184,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
         let _ = tx.send(r);
     });
     if !await_map(device, &rx) {
-        return None;
+        return Err("the device failed during the readback".to_string());
     }
     let raw = slice.get_mapped_range();
     let floats: &[f32] = bytemuck::cast_slice(&raw);
@@ -1176,7 +1197,7 @@ pub async fn fill_zmatrix_wgpu(segments: &[ZSegmentInput], freq_hz: f64) -> Opti
     drop(raw);
     readback_buf.unmap();
 
-    Some(results)
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------
@@ -1230,23 +1251,21 @@ pub async fn microbench_zmatrix_dispatch(
 
     // ---- timed device acquisition -----------------------------------------
     let t_dev = Instant::now();
+    let init = wgpu_init_guard();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-        .ok()?;
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("fnec-microbench"),
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            ..Default::default()
-        })
-        .await
-        .ok()?;
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .ok()?;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("fnec-microbench"),
+        required_limits: wgpu::Limits::downlevel_defaults(),
+        ..Default::default()
+    }))
+    .ok()?;
+    drop(init);
     let device_init_us = t_dev.elapsed().as_micros() as u64;
 
     // ---- build pipeline + buffers once ------------------------------------
@@ -1343,7 +1362,10 @@ pub async fn microbench_zmatrix_dispatch(
             },
         ],
     });
-    let workgroups = ((n * n) as u32).div_ceil(64);
+    let (gx, gy) = linear_dispatch_grid(
+        (n * n) as u32,
+        device.limits().max_compute_workgroups_per_dimension,
+    );
 
     let one_dispatch = || {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1356,7 +1378,7 @@ pub async fn microbench_zmatrix_dispatch(
             });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(workgroups, 1, 1);
+            cpass.dispatch_workgroups(gx, gy, 1);
         }
         queue.submit(std::iter::once(encoder.finish()));
         device
@@ -1445,6 +1467,65 @@ pub enum GpuSolveDeclined {
     OutOfClass(&'static str),
     /// The f32 solve ran and its residual check rejected the answer.
     NotConverged { rel_residual: f64 },
+}
+
+/// The dispatch grid for `total` invocations of a 64-wide kernel whose shader
+/// derives its linear index as `gid.x + gid.y * num_workgroups.x * 64`.
+///
+/// One dimension holds at most `max_per_dim` workgroups (65535 on common
+/// hardware), and a 1-D dispatch of an N×N fill passed it at N = 2048: wgpu
+/// panicked, `dispatch group size [65536,1,1] must be ≤ 65535`, and the process
+/// exited 101. The grid is (x, y) with x ≤ `max_per_dim` and x·y·64 ≥ `total`;
+/// the shaders' `idx < total` guards drop the overhang.
+pub fn linear_dispatch_grid(total: u32, max_per_dim: u32) -> (u32, u32) {
+    let groups = total.div_ceil(64);
+    if groups <= max_per_dim {
+        return (groups, 1);
+    }
+    let y = groups.div_ceil(max_per_dim);
+    (groups.div_ceil(y), y)
+}
+
+/// The largest system the device holds as one dense f32-complex matrix: the
+/// biggest `S` with `8·S²` bytes within both the storage-binding and the buffer
+/// size limit. It replaces a fixed `MAX_S = 1024`, whose reason (fixed-size
+/// workgroup arrays) the rebuilt solve shader no longer has; its only arrays are
+/// 64-wide. 4096 at the downlevel defaults' 128 MiB binding, 16384 at 2 GiB.
+pub fn dense_matrix_capacity(limits: &wgpu::Limits) -> usize {
+    let bytes = limits
+        .max_storage_buffer_binding_size
+        .min(limits.max_buffer_size);
+    let mut s = ((bytes / 8) as f64).sqrt() as u64;
+    while 8 * (s + 1) * (s + 1) <= bytes {
+        s += 1;
+    }
+    while s > 0 && 8 * s * s > bytes {
+        s -= 1;
+    }
+    s as usize
+}
+
+/// [`dense_matrix_capacity`] of the shared device — the ceiling the dense solve
+/// checks — or `None` where there is no device.
+pub fn shared_device_dense_capacity() -> Option<usize> {
+    match pollster::block_on(shared_gpu_context()) {
+        GpuAcquire::Ready(ctx) => Some(dense_matrix_capacity(&ctx.device.limits())),
+        GpuAcquire::NoAdapter(_) | GpuAcquire::DeviceFailed(_) => None,
+    }
+}
+
+/// Print a GPU decline once per process for each distinct reason. A GPU sweep
+/// asks at every point, and the reason — a deck too large for the device — does
+/// not change between them.
+fn warn_once(message: String) {
+    static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let mut seen = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !seen.contains(&message) {
+        eprintln!("{message}");
+        seen.push(message);
+    }
 }
 
 /// Whether a hardware (non-CPU) wgpu adapter is present — for tests that must
@@ -1540,15 +1621,6 @@ pub async fn solve_hallen_gpu_resident(
         ));
     }
 
-    // The solve shader holds per-column scratch in fixed-size workgroup arrays
-    // (the dispatch count grows as 3S; the ceiling bounds it). Larger systems fall back to CPU.
-    const MAX_S: usize = 1024;
-    if s > MAX_S {
-        return Err(GpuSolveDeclined::OutOfClass(
-            "system larger than the shader's MAX_S",
-        ));
-    }
-
     let mut row_wire = vec![0u32; n];
     for (wi, &(first, last)) in endpoints.iter().enumerate() {
         for rw in row_wire.iter_mut().take(last + 1).skip(first) {
@@ -1576,20 +1648,40 @@ pub async fn solve_hallen_gpu_resident(
     // ---- adapter + device (shared, built once per process) -----------------
     let ctx = match shared_gpu_context().await {
         GpuAcquire::Ready(c) => c,
-        GpuAcquire::NoAdapter => {
+        GpuAcquire::NoAdapter(why) => {
             eprintln!(
-                "warning: solve_hallen_gpu_resident: no wgpu adapter available — falling back to CPU"
+                "warning: solve_hallen_gpu_resident: no wgpu adapter available ({why}) — falling back to CPU"
             );
             return Err(GpuSolveDeclined::NoAdapter);
         }
-        GpuAcquire::DeviceFailed => {
+        GpuAcquire::DeviceFailed(why) => {
             eprintln!(
-                "warning: solve_hallen_gpu_resident: device request failed — falling back to CPU"
+                "warning: solve_hallen_gpu_resident: device request failed ({why}) — falling back to CPU"
             );
             return Err(GpuSolveDeclined::DeviceFailed);
         }
     };
     let (device, queue) = (&ctx.device, &ctx.queue);
+    let grid = |total: u32| {
+        linear_dispatch_grid(total, device.limits().max_compute_workgroups_per_dimension)
+    };
+
+    // The one size ceiling: the dense matrix must fit one storage binding. It was
+    // a fixed MAX_S = 1024, declined without a word — the diag label read
+    // `gpu(cpu-fallback)` either way — while the solve shader's only arrays are
+    // 64 wide. The serial triangular solve is the remaining cost at large S
+    // (about 0.7 s per pass at S = 2048 on a GTX 1080 Ti), not a limit.
+    let capacity = dense_matrix_capacity(&device.limits());
+    if s > capacity {
+        warn_once(format!(
+            "warning: solve_hallen_gpu_resident: a {s}-unknown system is more than the \
+             {capacity} a {} MiB storage binding holds — falling back to CPU",
+            device.limits().max_storage_buffer_binding_size >> 20
+        ));
+        return Err(GpuSolveDeclined::OutOfClass(
+            "system larger than the device's storage binding",
+        ));
+    }
 
     // ---- segment data for the fill kernel ---------------------------------
     let seg_data: Vec<GpuSegmentZ> = segments
@@ -1895,25 +1987,26 @@ pub async fn solve_hallen_gpu_resident(
         });
         cpass.set_pipeline(&fill_pipeline);
         cpass.set_bind_group(0, &fill_bg, &[]);
-        cpass.dispatch_workgroups(((n * n) as u32).div_ceil(64), 1, 1);
+        let (gx, gy) = grid((n * n) as u32);
+        cpass.dispatch_workgroups(gx, gy, 1);
     }
     {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("hallen-solve-pass"),
             timestamp_writes: None,
         });
-        let groups = |count: usize| (count as u32).div_ceil(64);
-        let mut run = |p: &wgpu::ComputePipeline, step: usize, wgs: u32| {
+        let groups = |count: usize| grid(count as u32);
+        let mut run = |p: &wgpu::ComputePipeline, step: usize, (gx, gy): (u32, u32)| {
             cpass.set_pipeline(p);
             cpass.set_bind_group(0, &solve_bg, &[step_at(step)]);
-            cpass.dispatch_workgroups(wgs, 1, 1);
+            cpass.dispatch_workgroups(gx, gy, 1);
         };
         // Scale and build M D⁻¹.
         run(&p_col_scale, 0, groups(s));
         run(&p_build, 0, groups(s * s));
         // LU with partial pivoting: search, swap, eliminate per column.
         for c in 0..s {
-            run(&p_pivot_search, c + 2, 1);
+            run(&p_pivot_search, c + 2, (1, 1));
             run(&p_pivot_swap, c + 2, groups(s));
             if c + 1 < s {
                 run(&p_eliminate, c + 2, groups(s - c - 1));
@@ -1921,17 +2014,17 @@ pub async fn solve_hallen_gpu_resident(
         }
         // x = D⁻¹ (LU)⁻¹ P y.
         run(&p_rhs, 0, groups(rows));
-        run(&p_solve, 0, 1);
+        run(&p_solve, 0, (1, 1));
         run(&p_update_x, 0, groups(s));
         // Refinement in M-space: t = y − Mx, x += D⁻¹ (LU)⁻¹ P t.
         for _ in 0..REFINE_STEPS {
             run(&p_residual, 0, groups(rows));
-            run(&p_solve, 0, 1);
+            run(&p_solve, 0, (1, 1));
             run(&p_update_x, 1, groups(s));
         }
         // Final residual for the host's gate, then the solution.
         run(&p_residual, 0, groups(rows));
-        run(&p_norms, 0, 1);
+        run(&p_norms, 0, (1, 1));
         run(&p_copy_out, 0, groups(s));
     }
     encoder.copy_buffer_to_buffer(

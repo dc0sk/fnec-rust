@@ -85,9 +85,10 @@ pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
 pub use wgpu_device::{
-    fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present,
-    microbench_zmatrix_dispatch, solve_hallen_gpu_resident, GpuMicrobench, GpuSolveDeclined, ZElem,
-    ZSegmentInput, MIN_GPU_RESIDENT_SEGS,
+    dense_matrix_capacity, fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present,
+    linear_dispatch_grid, microbench_zmatrix_dispatch, shared_device_dense_capacity,
+    solve_hallen_gpu_resident, GpuMicrobench, GpuSolveDeclined, ZElem, ZSegmentInput,
+    MIN_GPU_RESIDENT_SEGS,
 };
 
 pub use kernel_reference::{
@@ -216,7 +217,7 @@ mod wgpu_tests {
 
         let mut solved = 0usize;
         for _ in 0..4 {
-            if pollster::block_on(fill_zmatrix_wgpu(&segs, 14.2e6)).is_some() {
+            if pollster::block_on(fill_zmatrix_wgpu(&segs, 14.2e6)).is_ok() {
                 solved += 1;
             }
         }

@@ -12,12 +12,14 @@ rust-version.workspace = true
 
 [features]
 default = []
-wgpu = ["dep:wgpu", "dep:bytemuck"]
+wgpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
 
 [dependencies]
 num-complex = { workspace = true }
 bytemuck = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
+# The shared context builds its device synchronously under its lock (FND-186).
+pollster = { workspace = true, optional = true }
 
 [dev-dependencies]
 pollster = { workspace = true }

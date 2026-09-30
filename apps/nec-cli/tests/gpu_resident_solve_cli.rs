@@ -188,3 +188,58 @@ EN
         );
     }
 }
+
+/// 2049 segments, one past the first size whose Z-fill panicked: one dimension of
+/// its dispatch passed the 65535-workgroup limit, and `--exec gpu` exited 101 on
+/// every deck this large. It also sat above the old `MAX_S = 1024`, where the
+/// dense solve declined without a word. Both must now run on the device.
+///
+/// The CPU answer is pinned rather than re-run: it takes about 70 s here, the
+/// device about 3.5 s. Measured 2026-09-30, `--exec cpu`: 79.692336 + j46.433387.
+#[test]
+fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
+    if !pollster::block_on(nec_accel::hardware_adapter_present()) {
+        eprintln!("SKIP: no hardware GPU adapter");
+        return;
+    }
+    let path = std::env::temp_dir().join(format!("fnec-gpu-2049seg-{}.nec", std::process::id()));
+    std::fs::write(
+        &path,
+        "GW 1 2049 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 1025 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+    )
+    .expect("write deck");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["--solver", "hallen", "--exec", "gpu"])
+        .arg(&path)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
+    let _ = std::fs::remove_file(&path);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "fnec exited {:?}:\n{stderr}",
+        out.status.code()
+    );
+    for line in stderr.lines() {
+        assert!(
+            !line.contains("solve_hallen_gpu_resident:")
+                && !line.contains("falling back to CPU Z-matrix fill"),
+            "the device declined: {line}"
+        );
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let row = stdout
+        .lines()
+        .skip_while(|l| *l != "FEEDPOINTS")
+        .nth(2)
+        .expect("feedpoint row");
+    let f: Vec<f64> = row
+        .split_whitespace()
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    let (re, im) = (f[6], f[7]);
+    assert!(
+        (re - 79.692336).abs() < 2.0 && (im - 46.433387).abs() < 2.0,
+        "device {re} + j{im} against the CPU's 79.692336 + j46.433387"
+    );
+}
