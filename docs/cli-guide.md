@@ -2,10 +2,10 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-09-27
+last_updated: 2026-09-30
 ---
 
-# CLI Guide — fnec (v0.19.0)
+# CLI Guide — fnec (v0.20.0)
 
 `fnec` is the command-line frontend for fnec-rust.  It reads a NEC deck file,
 runs the configured solver, and prints a versioned text report to stdout
