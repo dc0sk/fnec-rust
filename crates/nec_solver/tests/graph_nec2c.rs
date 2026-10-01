@@ -29,7 +29,9 @@ fn solve(body: &str) -> (Vec<nec_solver::Segment>, Vec<Complex64>) {
         .deck;
     let segs = build_geometry(&deck).expect("geometry");
     let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    let routed = solve_hallen_routed(&deck, &segs, &mut z, FREQ, &[]).expect("solves");
+    // The deck's lumped loads, as every frontend passes them.
+    let loads = nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal;
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("solves");
     (segs, routed.currents)
 }
 
@@ -233,4 +235,107 @@ fn the_currents_meeting_at_a_y_node_sum_to_zero() {
     let mismatch = (stem - arms).norm() / stem.norm();
     println!("Y node: stem {stem:.4e}, arms {arms:.4e}, mismatch {mismatch:.2e}");
     assert!(mismatch < 0.02, "KCL at the node: {mismatch:.3e}");
+}
+
+// ---- FND-162 stage 5: lumped loads on the section graph ---------------------
+//
+// A load is a gap its own current drives, `V = −Z_L·I_p`: a column of the graph
+// system, the collocation rows of its section and that section's terms in the
+// equal-potential rows. Loaded junction and loop decks used to fall back to the
+// per-wire basis with pairwise junction rows. Expectations are nec2c 1.3.1,
+// captured 2026-10-01; each deck converges at the unloaded decks' rate.
+
+/// A Y with a 10 Ω + 1 µH series load mid-arm. Kill criterion: under 1 % at 41,
+/// shrinking. Measured 1.67 → 0.73 %. A regression gate only: the load moves Z
+/// by under 2 %, so a missing load passes it — the corner-loaded loop and the
+/// feed identity below are the tests that see one.
+#[test]
+fn a_loaded_y_converges_to_nec2c() {
+    let feed = |n: u32| (0.68 / 3.0 * f64::from(n)) as u32 + 1;
+    let deck = |n: u32| {
+        format!(
+            "{}LD 0 2 {m} {m} 10 1e-6 0\nEX 0 1 {} 0 1 0\n",
+            y(n),
+            feed(n),
+            m = n / 2 + 1
+        )
+    };
+    let e21 = rel(
+        z_in(&deck(21), (1, feed(21))),
+        Complex64::new(23.89, -1791.0),
+    );
+    let e41 = rel(
+        z_in(&deck(41), (1, feed(41))),
+        Complex64::new(22.69, -1633.0),
+    );
+    assert_converges("loaded Y", e21, e41, 0.01);
+}
+
+/// A T with a 1 µH coil on the arm segment that touches the node, where the
+/// load's term in the equal-potential rows is largest. Kill criterion: under
+/// 2 % at 41, shrinking. Measured 2.21 → 1.35 %. It sees a load with the wrong
+/// sign, not a missing one (the coil moves Z by about 2 %).
+#[test]
+fn a_t_with_a_coil_at_its_node_converges_to_nec2c() {
+    let deck = |n: u32| {
+        format!(
+            "{}LD 0 2 1 1 0 1e-6 0\nEX 0 1 {} 0 1 0\n",
+            tee(n),
+            feed_t(n)
+        )
+    };
+    let e21 = rel(
+        z_in(&deck(21), (1, feed_t(21))),
+        Complex64::new(29.70, -1592.6),
+    );
+    let e41 = rel(
+        z_in(&deck(41), (1, feed_t(41))),
+        Complex64::new(28.98, -1636.3),
+    );
+    assert_converges("T, coil at the node", e21, e41, 0.02);
+}
+
+fn feed_t(n: u32) -> u32 {
+    (0.68 / 4.0 * f64::from(n)) as u32 + 1
+}
+
+/// A 1 λ square loop with a 100 Ω + 2 µH load on the segment beside a corner.
+/// The load moves Z by about 85 Ω (unloaded 110 − j146), so this deck sees a
+/// load that is wrong or missing. Kill criterion: under 2 % at 41, shrinking.
+/// Measured 2.05 → 1.43 %.
+#[test]
+fn a_loop_loaded_at_a_corner_converges_to_nec2c() {
+    let deck = |n: u32| {
+        format!(
+            "{}GE 0\nLD 0 2 1 1 100 2e-6 0\nEX 0 1 {} 0 1 0\n",
+            square_loop(n, 0.0),
+            n / 2 + 1
+        )
+    };
+    let e21 = rel(z_in(&deck(21), (1, 11)), Complex64::new(191.06, -140.79));
+    let e41 = rel(z_in(&deck(41), (1, 21)), Complex64::new(194.48, -138.97));
+    assert_converges("loop loaded at a corner", e21, e41, 0.02);
+}
+
+/// The port identity, which needs no reference: a load on the feed segment
+/// raises the input impedance by exactly Z_L, whatever the rest of the system.
+/// Measured to 4e-5 Ω on a T-dipole.
+#[test]
+fn a_load_at_the_feed_adds_exactly_its_impedance() {
+    let n = 21;
+    let feed = (1.0 / 5.25 * f64::from(n)) as u32 + 1;
+    let wires = format!(
+        "GW 1 {n} -5.25 0 0 0 0 0 .001\nGW 2 {n} 0 0 0 5.25 0 0 .001\nGW 3 {n} 0 0 0 0 0 -2 .001\nGE 0\n"
+    );
+    let unloaded = z_in(&format!("{wires}EX 0 2 {feed} 0 1 0\n"), (2, feed));
+    let loaded = z_in(
+        &format!("{wires}LD 0 2 {feed} {feed} 50 5e-6 0\nEX 0 2 {feed} 0 1 0\n"),
+        (2, feed),
+    );
+    let z_l = Complex64::new(50.0, 2.0 * std::f64::consts::PI * FREQ * 5e-6);
+    assert!(
+        ((loaded - unloaded) - z_l).norm() < 1e-3,
+        "loaded − unloaded = {} against Z_L = {z_l}",
+        loaded - unloaded
+    );
 }

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph9-chk-002-general-junction.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # PH9-CHK-002: general junction basis — degree-2 conductor paths
@@ -238,7 +238,7 @@ it previously failed fast.
 | bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
 | degree-3+ T/Y junction — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 2) |
 | closed loop — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 3) |
-| degree-3+ / closed loop — outside that scope (LD/TL/NT, EX 1–4, PEC ground contact, one-segment section, end on an interior) | **guarded (whole-geometry warning)** |
+| degree-3+ / closed loop — outside that scope (TL/NT, EX 1–4, PEC ground contact, one-segment section, end on an interior) | **guarded (whole-geometry warning)** |
 
 ## Out-of-scope topologies (degree-3+ and closed loops)
 

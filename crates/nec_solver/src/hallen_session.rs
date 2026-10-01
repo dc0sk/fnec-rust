@@ -156,8 +156,9 @@ fn first_current_source(deck: &NecDeck) -> Option<(u32, u32, Complex64)> {
 
 /// The section graph this deck is solved on, when it takes one (FND-162 stages 2
 /// and 3): a junction of degree ≥ 3 or a closed loop, which the path
-/// decomposition refuses, driven by voltage sources only, with no loads or
-/// networks, clear of the ground's contact route. Everything else keeps its route.
+/// decomposition refuses, driven by voltage sources only, with no networks,
+/// clear of the ground's contact route. Lumped loads (`LD`, and Laplace loads)
+/// are columns of the graph system (FND-162 stage 5). Everything else keeps its route.
 /// The one predicate for the route flags and the solve, so they cannot disagree.
 pub(crate) fn graph_route(
     deck: &NecDeck,
@@ -166,11 +167,11 @@ pub(crate) fn graph_route(
     if deck_has_plane_wave(deck) || deck_has_current_source(deck) {
         return None;
     }
-    let loaded = deck
+    let networked = deck
         .cards
         .iter()
-        .any(|c| matches!(c, Card::Ld(_) | Card::Tl(_) | Card::Nt(_)));
-    if loaded || graph_feeds(deck, segs).is_empty() {
+        .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)));
+    if networked || graph_feeds(deck, segs).is_empty() {
         return None;
     }
     let ground = crate::ground_model_from_deck(deck);
@@ -960,29 +961,30 @@ fn solve_hallen_routed_inner(
 ) -> Result<HallenRouted, HallenSessionError> {
     let route = hallen_route(deck, segs);
     let ground = crate::ground_model_from_deck(deck);
-    // `loads` is the per-segment load diagonal: all zeros, not empty, on an
-    // unloaded deck. The graph solve takes no loads yet (stage 5).
-    if loads.iter().all(|l| *l == Complex64::new(0.0, 0.0)) {
-        if let Some(graph) = graph_route(deck, segs) {
-            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
-            let sources = corner_sources(segs, &ground, freq_hz);
-            let currents = crate::section_graph::solve_hallen_graph(
-                z_mat,
-                segs,
-                &graph,
-                &graph_feeds(deck, segs),
-                &sources,
-                k,
-            )
+    // The graph solve takes the lumped loads as columns of its own system — the
+    // gap each load's current drives — and returns before the path basis stamps
+    // them into `z_mat` (FND-162 stage 5). `loads` is the per-segment diagonal:
+    // all zeros, not empty, on an unloaded deck.
+    if let Some(graph) = graph_route(deck, segs) {
+        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+        let sources = corner_sources(segs, &ground, freq_hz);
+        let mut system = crate::section_graph::GraphSystem::build(z_mat, segs, &graph, &sources, k)
             .map_err(HallenSessionError::Solve)?;
-            return Ok(HallenRouted {
-                currents,
-                port_voltage: None,
-                route,
-                residual_inputs: None,
-                network_branch: Vec::new(),
-            });
+        for (p, z_l) in loads.iter().enumerate() {
+            if *z_l != Complex64::new(0.0, 0.0) {
+                system.add_load(p, *z_l);
+            }
         }
+        let currents = system
+            .solve(&graph_feeds(deck, segs))
+            .map_err(HallenSessionError::Solve)?;
+        return Ok(HallenRouted {
+            currents,
+            port_voltage: None,
+            route,
+            residual_inputs: None,
+            network_branch: Vec::new(),
+        });
     }
     let paths = if route.paths {
         nontrivial_paths(segs, &ground)
@@ -1390,14 +1392,14 @@ mod gpu_route_tests {
     /// the pairwise junction rows. The topology now vetoes it by name. This is the
     /// discriminating gate: sabotaging the veto fails it on any host.
     ///
-    /// Loaded, because an unloaded delta-gap T takes the section graph
-    /// (FND-162 stages 2+3), a path-basis solve the device declines on `paths`
-    /// alone; the load keeps this on the plain basis, where only the veto stands.
+    /// With a TL, because a delta-gap T without one takes the section graph
+    /// (FND-162), a path-basis solve the device declines on `paths` alone; the
+    /// network keeps this on the plain basis, where only the veto stands.
     #[test]
     fn a_t_junction_is_not_offered_to_the_device() {
         let tee = route(
             "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nLD 4 2 10 10 50 0\nEX 0 1 10 0 1 0\n\
+             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nTL 2 5 3 5 50 1\nEX 0 1 10 0 1 0\n\
              FR 0 1 0 0 14.2 0\nEN\n",
         );
         assert!(!tee.paths, "the T falls to the plain basis — the hole");
