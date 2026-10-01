@@ -251,10 +251,10 @@ fn cs_rhs(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups
     vset(SLOT_B, i, y_full(i));
 }
 
-// SLOT_W = (LU)⁻¹ P SLOT_B, by one invocation: the triangular solves are serial,
-// and a single invocation hands nothing to another.
+// SLOT_W = P SLOT_B: the recorded row swaps, applied in the order they were made.
+// One invocation — the swaps compose sequentially, and the pass is O(S).
 @compute @workgroup_size(1)
-fn cs_solve() {
+fn cs_permute() {
     let s = params.s;
     for (var i: u32 = 0u; i < s; i++) { vset(SLOT_W, i, vget(SLOT_B, i)); }
     for (var col: u32 = 0u; col < s; col++) {
@@ -266,23 +266,39 @@ fn cs_solve() {
             vset(SLOT_W, p, a);
         }
     }
-    for (var i: u32 = 0u; i < s; i++) {
-        var sum = vget(SLOT_W, i);
-        for (var j: u32 = 0u; j < i; j++) {
-            sum -= cmul(lu_get(i, j), vget(SLOT_W, j));
-        }
-        vset(SLOT_W, i, sum);
-    }
-    var i = s;
-    loop {
-        if i == 0u { break; }
-        i -= 1u;
-        var sum = vget(SLOT_W, i);
-        for (var j: u32 = i + 1u; j < s; j++) {
-            sum -= cmul(lu_get(i, j), vget(SLOT_W, j));
-        }
-        vset(SLOT_W, i, cdiv(sum, lu_get(i, i)));
-    }
+}
+
+// Forward substitution, column `step.col` (L is unit lower): every row below it
+// subtracts its share of W[col]. W[col] is final — the dispatches for the columns
+// before it have run — and no invocation here writes it; each writes only its own
+// row's entry.
+@compute @workgroup_size(64)
+fn cs_forward(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let col = step.col;
+    let row = col + 1u + linear(gid, nwg);
+    if row >= params.s { return; }
+    vset(SLOT_W, row, vget(SLOT_W, row) - cmul(lu_get(row, col), vget(SLOT_W, col)));
+}
+
+// Back substitution, column `step.col`: every row above it subtracts
+// U[row][col] · x[col], where x[col] = W[col] / U[col][col] is computed by each
+// reader rather than written in place — so no invocation writes the entry the
+// others read. `cs_divide_diag` makes the division for every row afterwards.
+@compute @workgroup_size(64)
+fn cs_backward(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let col = step.col;
+    let row = linear(gid, nwg);
+    if row >= col { return; }
+    let x_col = cdiv(vget(SLOT_W, col), lu_get(col, col));
+    vset(SLOT_W, row, vget(SLOT_W, row) - cmul(lu_get(row, col), x_col));
+}
+
+// W[i] /= U[i][i]: the back substitution's divisions, all at once.
+@compute @workgroup_size(64)
+fn cs_divide_diag(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let i = linear(gid, nwg);
+    if i >= params.s { return; }
+    vset(SLOT_W, i, cdiv(vget(SLOT_W, i), lu_get(i, i)));
 }
 
 // x = D⁻¹ w (step.mode == 0) or x += D⁻¹ w (step.mode == 1).

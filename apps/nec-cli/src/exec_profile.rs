@@ -53,17 +53,22 @@ pub(super) enum CompatibilityProfile {
 
 /// The smallest deck the automatic pick sends to the GPU for one frequency point.
 ///
-/// Measured 2026-09-30 on an NVIDIA GTX 1080 Ti against a 24-thread CPU, a λ/2
-/// dipole, whole process: 501 segments 0.30 s CPU / 0.35 s GPU, 601 segments
-/// 0.51 / 0.42. The device pays a fixed ≈ 0.18 s to start, the CPU grows as N³.
-pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 600;
+/// Measured 2026-10-01 on an NVIDIA GTX 1080 Ti against a 24-thread CPU, a λ/2
+/// dipole, whole process, best of 3, with the triangular solves one dispatch per
+/// column: 401 segments 0.17 s CPU / 0.22 s GPU, 451 0.235 / 0.224 (a tie), 501
+/// 0.31 / 0.25, 601 0.52 / 0.27. Set at the first clear GPU win, 501. The device
+/// pays a fixed ≈ 0.18 s to start, the CPU grows as N³. (It was 600 when the
+/// triangular solves ran in one invocation.)
+pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 500;
 
 /// The same for a sweep, where the CPU solves its points in parallel and the GPU
-/// in turn. 24 points: 701 segments 7.4 s CPU / 8.6 s GPU, 801 11.6 / 11.3, 901
-/// 17.2 / 14.3. It moves with the controller's thread count — fewer cores, a
-/// lower crossover — and is not modelled: guessing high errs toward the CPU, which
-/// was the default before this pick existed, so the pick is never slower than it.
-pub(super) const AUTO_GPU_MIN_SEGS_SWEEP: usize = 800;
+/// in turn. 24 points, measured as above: 401 segments 0.40 s CPU / 1.20 s GPU,
+/// 501 1.24 / 1.64, 551 2.65 / 1.89, 601 3.71 / 2.20, 701 6.79 / 2.95 (it was 800
+/// with the serial triangular solves). It moves with the controller's thread count
+/// — fewer cores, a lower crossover — and is not modelled: guessing high errs
+/// toward the CPU, which was the default before this pick existed, so the pick is
+/// never slower than it.
+pub(super) const AUTO_GPU_MIN_SEGS_SWEEP: usize = 550;
 
 /// What `--exec` resolves to when it is not given, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]

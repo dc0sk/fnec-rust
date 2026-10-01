@@ -1443,7 +1443,7 @@ const REFINE_STEPS: u32 = 2;
 ///
 /// One value for both callers (FND-078: it was two independent `16`s). It is a
 /// floor, not a crossover. The single-workgroup solve measured 0.04x-0.48x the CPU
-/// at every size (PH7-CHK-003); the rebuilt one crosses over near 600 segments for
+/// at every size (PH7-CHK-003); the rebuilt one crosses over near 500 segments for
 /// one point on a GTX 1080 Ti (FND-185), which is where the CLI's automatic pick
 /// sends a deck. Below this floor the dispatch is pure overhead; between it and
 /// the crossover the path is taken only for an explicit `--exec gpu`.
@@ -1671,7 +1671,7 @@ pub async fn solve_hallen_gpu_resident(
     // a fixed MAX_S = 1024, declined without a word — the diag label read
     // `gpu(cpu-fallback)` either way — while the solve shader's only arrays are
     // 64 wide. The serial triangular solve is the remaining cost at large S
-    // (about 0.7 s per pass at S = 2048 on a GTX 1080 Ti), not a limit.
+    // (a 2049-segment dipole solves in about 1.3 s on a GTX 1080 Ti), not a limit.
     let capacity = dense_matrix_capacity(&device.limits());
     if s > capacity {
         warn_once(format!(
@@ -1937,7 +1937,10 @@ pub async fn solve_hallen_gpu_resident(
     let p_pivot_swap = pipe("cs_pivot_swap");
     let p_eliminate = pipe("cs_eliminate");
     let p_rhs = pipe("cs_rhs");
-    let p_solve = pipe("cs_solve");
+    let p_permute = pipe("cs_permute");
+    let p_forward = pipe("cs_forward");
+    let p_backward = pipe("cs_backward");
+    let p_divide_diag = pipe("cs_divide_diag");
     let p_update_x = pipe("cs_update_x");
     let p_residual = pipe("cs_residual");
     let p_norms = pipe("cs_norms");
@@ -2002,6 +2005,22 @@ pub async fn solve_hallen_gpu_resident(
             cpass.set_bind_group(0, &solve_bg, &[step_at(step)]);
             cpass.dispatch_workgroups(gx, gy, 1);
         };
+        // W = (LU)⁻¹ P B, one dispatch per column each way: every hand-off between
+        // the columns is a dispatch boundary (FND-185). It was one invocation
+        // doing all of it — 0.73 s per pass at S = 2048, three passes a solve; a
+        // 2049-segment dipole went from 3.5 s to 1.3 s.
+        macro_rules! triangular_solve {
+            () => {
+                run(&p_permute, 0, (1, 1));
+                for c in 0..s.saturating_sub(1) {
+                    run(&p_forward, c + 2, groups(s - c - 1));
+                }
+                for c in (1..s).rev() {
+                    run(&p_backward, c + 2, groups(c));
+                }
+                run(&p_divide_diag, 0, groups(s));
+            };
+        }
         // Scale and build M D⁻¹.
         run(&p_col_scale, 0, groups(s));
         run(&p_build, 0, groups(s * s));
@@ -2015,12 +2034,12 @@ pub async fn solve_hallen_gpu_resident(
         }
         // x = D⁻¹ (LU)⁻¹ P y.
         run(&p_rhs, 0, groups(rows));
-        run(&p_solve, 0, (1, 1));
+        triangular_solve!();
         run(&p_update_x, 0, groups(s));
         // Refinement in M-space: t = y − Mx, x += D⁻¹ (LU)⁻¹ P t.
         for _ in 0..REFINE_STEPS {
             run(&p_residual, 0, groups(rows));
-            run(&p_solve, 0, (1, 1));
+            triangular_solve!();
             run(&p_update_x, 1, groups(s));
         }
         // Final residual for the host's gate, then the solution.
