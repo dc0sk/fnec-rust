@@ -99,6 +99,35 @@ impl HallenRoute {
     }
 }
 
+/// The frequency-free class the GPU-resident solve takes (PH7-CHK-003), or why a
+/// deck is outside it: the plain delta-gap route on the merged-straight basis
+/// (no bend, split, junction or loop; no other drive — FND-147, FND-166), in free
+/// space. The one copy of that question for the CLI's solve, the worker's solve
+/// and the CLI's automatic pick, which had three (FND-147's lineage).
+///
+/// What it does not ask, because the answer depends on more than the deck: the
+/// device's own size floor and capacity, and whether the matrix carries stamps at
+/// a given frequency (asked of the values, FND-023).
+pub fn gpu_resident_class(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &crate::geometry::GroundModel,
+) -> Result<(), &'static str> {
+    if !hallen_route(deck, segs).gpu_resident_supported() {
+        return Err(
+            "the deck needs a Hallén route the device does not implement \
+                    (a bend, split, junction, loop, or a drive other than a voltage gap)",
+        );
+    }
+    if !matches!(
+        ground,
+        crate::geometry::GroundModel::FreeSpace | crate::geometry::GroundModel::Deferred { .. }
+    ) {
+        return Err("the device solves free space only");
+    }
+    Ok(())
+}
+
 /// True if the deck carries an incident-plane-wave `EX` card (NEC-2 types 1/2/3).
 pub fn deck_has_plane_wave(deck: &NecDeck) -> bool {
     deck.cards

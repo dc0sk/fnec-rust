@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/ph7-chk-003-gpu-resident-solve.md
 status: living
-last_updated: 2026-09-29
+last_updated: 2026-10-01
 ---
 
 # PH7-CHK-003: GPU-resident dense Hallén solve
@@ -160,6 +160,13 @@ is no crossover.** It trends toward parity as N grows (0.04 → 0.48) but at 512
 #373 accuracy gate rejects it — relative residual 0.24 — so it stops producing a
 usable answer before it stops being slower. It is slower where it is accurate and
 inaccurate where it might have become faster.
+
+> **Superseded (2026-10-01).** That was the single-workgroup solve. Its rebuild
+> (FND-185, #497) dispatches the elimination across the device, removed its
+> 1024 ceiling and its 2048-segment dispatch panic (FND-188/189, #501), and crosses
+> over: on a GTX 1080 Ti about 600 segments for one point and 800 for a 24-point
+> sweep, 3001 segments in 7.6 s against the CPU's 248 s. The CLI now picks the GPU
+> itself above those sizes when `--exec` is not given (`docs/cli-guide.md`).
 
 ### Why, and why more GPU will not fix it
 

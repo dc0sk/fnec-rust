@@ -1,4 +1,3 @@
-use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
 use std::path::Path;
 
 const FOURNEC2_DROPIN_KERNEL_STEMS: &[&str] = &[
@@ -52,29 +51,76 @@ pub(super) enum CompatibilityProfile {
     FourNec2DropIn,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct StartupExecutionProbe {
-    pub(super) cpu_threads: usize,
-    pub(super) freq_points: usize,
-    /// Whether the PER-FREQUENCY GPU dispatch seam will take work.
-    ///
-    /// Named for what it measures. It was `gpu_available`, which read as "this
-    /// machine has no GPU" — false on a host whose GPU fnec's wgpu far-field
-    /// kernels do use. What it actually reports is
-    /// `nec_accel::dispatch_frequency_point`, which is an unconditional
-    /// `FallbackToCpu` because that seam is deliberately not wired (the
-    /// GPU-resident solve measures slower than the CPU at every size), so the
-    /// value is a compile-time constant presented as a probe result (FND-105).
-    /// It previously blamed PH7-CHK-004, which delivered different work
-    /// (FND-064).
-    ///
-    /// Renaming rather than wiring was deliberate when the GPU-resident solve
-    /// measured 0.04x–0.48x of the CPU at every size. Since FND-185 it crosses
-    /// over near 500 segments (`warnings.rs`), so declining the per-point route is
-    /// no longer free on large decks; the route has not been re-evaluated.
-    pub(super) per_freq_gpu_dispatch: bool,
-    /// As above, for the hybrid lane's GPU candidate.
-    pub(super) hybrid_gpu_lane_dispatch: bool,
+/// The smallest deck the automatic pick sends to the GPU for one frequency point.
+///
+/// Measured 2026-09-30 on an NVIDIA GTX 1080 Ti against a 24-thread CPU, a λ/2
+/// dipole, whole process: 501 segments 0.30 s CPU / 0.35 s GPU, 601 segments
+/// 0.51 / 0.42. The device pays a fixed ≈ 0.18 s to start, the CPU grows as N³.
+pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 600;
+
+/// The same for a sweep, where the CPU solves its points in parallel and the GPU
+/// in turn. 24 points: 701 segments 7.4 s CPU / 8.6 s GPU, 801 11.6 / 11.3, 901
+/// 17.2 / 14.3. It moves with the controller's thread count — fewer cores, a
+/// lower crossover — and is not modelled: guessing high errs toward the CPU, which
+/// was the default before this pick existed, so the pick is never slower than it.
+pub(super) const AUTO_GPU_MIN_SEGS_SWEEP: usize = 800;
+
+/// What `--exec` resolves to when it is not given, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct AutoExecChoice {
+    pub(super) mode: ExecutionMode,
+    pub(super) reason: String,
+}
+
+/// Pick the CPU or the GPU for a run without `--exec`.
+///
+/// `deck_class` is whether the deck is one the device solves (the shared class,
+/// and no stamps of any kind); `device_capacity` is asked only once the deck
+/// qualifies on everything else, so a small or ineligible deck never touches the
+/// GPU. It returns the device's dense capacity, or `None` without a hardware
+/// adapter.
+///
+/// Only ever `Cpu` or `Gpu`. It used to pick `Hybrid` for every multi-point run,
+/// which since the parallel CPU sweep is the CPU path plus a warning about a lane
+/// nobody asked for.
+pub(super) fn auto_select_execution_mode(
+    segments: usize,
+    unknowns: usize,
+    freq_points: usize,
+    deck_class: Result<(), &str>,
+    device_capacity: impl FnOnce() -> Option<usize>,
+) -> AutoExecChoice {
+    let cpu = |reason: String| AutoExecChoice {
+        mode: ExecutionMode::Cpu,
+        reason,
+    };
+    if let Err(why) = deck_class {
+        return cpu(format!("not a deck the GPU solves: {why}"));
+    }
+    let (threshold, what) = if freq_points > 1 {
+        (AUTO_GPU_MIN_SEGS_SWEEP, "a sweep")
+    } else {
+        (AUTO_GPU_MIN_SEGS_ONE_POINT, "one point")
+    };
+    if segments < threshold {
+        return cpu(format!(
+            "{segments} segments, below the GPU crossover for {what} ({threshold})"
+        ));
+    }
+    match device_capacity() {
+        None => cpu("no hardware GPU".to_string()),
+        Some(capacity) if unknowns > capacity => cpu(format!(
+            "{unknowns} unknowns, more than the GPU holds ({capacity})"
+        )),
+        Some(_) => AutoExecChoice {
+            mode: ExecutionMode::Gpu,
+            reason: format!(
+                "{segments} segments, at or above the GPU crossover for {what} ({threshold}); \
+                 the device solve is f32, residual-checked, and within 2 Ω of the CPU — \
+                 pass --exec cpu for the CPU's digits"
+            ),
+        },
+    }
 }
 
 pub(super) fn detect_compatibility_profile(argv0: &str) -> CompatibilityProfile {
@@ -131,45 +177,4 @@ pub(super) fn warn_compatibility_profile(
             effective_execution_mode.as_diag_str()
         );
     }
-}
-
-pub(super) fn startup_execution_probe(freq_points: usize) -> StartupExecutionProbe {
-    let cpu_threads = std::thread::available_parallelism()
-        .map(std::num::NonZeroUsize::get)
-        .unwrap_or(1);
-    let per_freq_gpu_dispatch = matches!(
-        dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6),
-        DispatchDecision::RunOnGpu
-    );
-    let hybrid_gpu_lane_dispatch = matches!(
-        dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6),
-        DispatchDecision::RunOnGpu
-    );
-
-    StartupExecutionProbe {
-        cpu_threads,
-        freq_points,
-        per_freq_gpu_dispatch,
-        hybrid_gpu_lane_dispatch,
-    }
-}
-
-pub(super) fn auto_select_execution_mode(
-    suggested_default: ExecutionMode,
-    probe: StartupExecutionProbe,
-) -> ExecutionMode {
-    // For single-point solves CPU is typically best today due scheduling overhead.
-    let cpu_multithread_viable = probe.cpu_threads > 1 && probe.freq_points > 1;
-
-    if probe.per_freq_gpu_dispatch && probe.hybrid_gpu_lane_dispatch && cpu_multithread_viable {
-        return ExecutionMode::Hybrid;
-    }
-    if probe.per_freq_gpu_dispatch {
-        return ExecutionMode::Gpu;
-    }
-    if cpu_multithread_viable {
-        return ExecutionMode::Hybrid;
-    }
-
-    suggested_default
 }

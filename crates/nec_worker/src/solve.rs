@@ -263,7 +263,7 @@ mod tests {
 
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, detect_wire_junctions,
-    ground_model_from_deck, solve_hallen, wire_endpoints_from_segs, GroundModel,
+    ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
 };
 use num_complex::Complex64;
 
@@ -513,18 +513,12 @@ fn solve_inner(
     // it is the same decision every frontend makes (FND-121). The device path
     // below implements exactly one of them — the plain delta-gap solve — so it
     // must ask, rather than assume.
-    let route = nec_solver::hallen_route(&deck, &segs);
-
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
         // The device solves the plain delta-gap route on the merged-straight
-        // basis only: no bend or split (the path basis), no T/Y or loop (FND-166),
-        // no other drive (FND-147) — one answer shared with the CLI's gate.
-        && route.gpu_resident_supported()
-        && matches!(
-            ground,
-            GroundModel::FreeSpace | GroundModel::Deferred { .. }
-        )
+        // basis, in free space — the one class shared with the CLI's solve and
+        // its automatic pick.
+        && nec_solver::gpu_resident_class(&deck, &segs, &ground).is_ok()
         // The device re-solves from raw segment inputs, discarding host-side
         // stamps. This gate was already value-based rather than a card-type list,
         // which is why it never had the CLI's NT hole (FND-023) — it now asks the

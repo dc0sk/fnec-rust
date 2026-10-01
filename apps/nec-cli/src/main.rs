@@ -15,9 +15,8 @@ mod warnings;
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
 use cli_args::{parse_args, OutputFormat, ParsedArgs, USAGE};
 use exec_profile::{
-    auto_select_execution_mode, detect_compatibility_profile, startup_execution_probe,
-    steer_execution_mode_by_profile, warn_compatibility_profile, CompatibilityProfile,
-    ExecutionMode,
+    auto_select_execution_mode, detect_compatibility_profile, steer_execution_mode_by_profile,
+    warn_compatibility_profile, CompatibilityProfile, ExecutionMode,
 };
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
@@ -422,20 +421,6 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
-        let probe = startup_execution_probe(freqs_hz.len());
-        let auto_mode = auto_select_execution_mode(execution_mode, probe);
-        eprintln!(
-            "info: startup exec probe: cpu_threads={} freq_points={} per_freq_gpu_dispatch={} hybrid_gpu_lane_dispatch={} selected_exec={}",
-            probe.cpu_threads,
-            probe.freq_points,
-            probe.per_freq_gpu_dispatch,
-            probe.hybrid_gpu_lane_dispatch,
-            auto_mode.as_cli_str(),
-        );
-        execution_mode = auto_mode;
-    }
-
     warn_execution_mode_fallback(execution_mode);
 
     // --- geometry + pre-solve validation, shared by BOTH solve paths --------
@@ -557,6 +542,47 @@ fn main() -> ExitCode {
             &path,
         );
     }
+
+    // Without `--exec`, the deck decides between the CPU and the GPU. Local runs
+    // only, so it sits below the `--hosts` branch: a worker is told `gpu` only
+    // when the user said so (FND-040), never by a pick made from the controller's
+    // hardware.
+    if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
+        let stamped = deck.cards.iter().any(|c| {
+            matches!(
+                c,
+                nec_model::card::Card::Ld(_)
+                    | nec_model::card::Card::Tl(_)
+                    | nec_model::card::Card::Nt(_)
+            )
+        });
+        let deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
+            Err("the device solves the Hallén basis only")
+        } else if stamped || !laplace_loads.is_empty() {
+            Err("the deck stamps loads or networks into the matrix, which the device does not see")
+        } else {
+            nec_solver::gpu_resident_class(deck, &segs, &ground)
+        };
+        // Two homogeneous unknowns per straight wire with two free ends: the
+        // system the device holds is S = N + 2W.
+        let unknowns = segs.len() + 2 * nec_solver::merged_grouping(&segs).0.len();
+        let choice =
+            auto_select_execution_mode(segs.len(), unknowns, freqs_hz.len(), deck_class, || {
+                // Hardware first: on a host with only a software adapter the
+                // capacity query would build a device on it.
+                if pollster::block_on(nec_accel::hardware_adapter_present()) {
+                    nec_accel::shared_device_dense_capacity()
+                } else {
+                    None
+                }
+            });
+        eprintln!(
+            "info: exec auto: selected_exec={} ({})",
+            choice.mode.as_cli_str(),
+            choice.reason
+        );
+        execution_mode = choice.mode;
+    }
     // ------------------------------------------------------------------
 
     // Per-wire basis solve requires every wire to have >= 2 segments.
@@ -613,7 +639,19 @@ fn main() -> ExitCode {
 
     if gpu_fallback_count > 0 {
         eprintln!(
-            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not wired (the GPU-resident dense solve measures slower than the CPU at every size tested); running those points on CPU fallback"
+            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not wired (a GPU lane beside the CPU pool needs a shared work index); running those points on CPU fallback. Without --exec, a deck large enough for the GPU to win runs every point on it"
+        );
+    }
+    // A GPU sweep says how many points the device actually solved: each one can
+    // decline on its own (a stamp at that frequency, a rejected f32 answer).
+    if execution_mode == ExecutionMode::Gpu && solved.len() > 1 {
+        let on_device = solved
+            .iter()
+            .filter(|(_, r, _)| r.as_ref().is_ok_and(|p| p.ran_on_gpu))
+            .count();
+        eprintln!(
+            "info: {on_device} of {} sweep points solved on the GPU",
+            solved.len()
         );
     }
 
@@ -1065,6 +1103,7 @@ fn run_distributed_solve(
                     sweep_summary,
                     negative_r,
                     min_feed_re: Some(impedance.re_ohm),
+                    ran_on_gpu: exec_used == "gpu",
                 })
             }
             Ok((
@@ -1408,7 +1447,6 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::exec_profile::StartupExecutionProbe;
     use super::solve_session::{
         negative_resistance_warnings, run_negative_resistance_warnings, SolverMode,
     };
@@ -1962,59 +2000,47 @@ mod tests {
         );
     }
 
+    /// The pick's boundaries, with the GPU's capacity injected: 599 / 600 for one
+    /// point, 799 / 800 for a sweep. Never `Hybrid`.
     #[test]
-    fn auto_probe_prefers_cpu_for_single_point_workloads() {
-        let probe = StartupExecutionProbe {
-            cpu_threads: 16,
-            freq_points: 1,
-            per_freq_gpu_dispatch: false,
-            hybrid_gpu_lane_dispatch: false,
+    fn auto_pick_crosses_over_at_the_measured_sizes() {
+        let gpu = || Some(16_384);
+        let pick = |n: usize, points: usize| {
+            auto_select_execution_mode(n, n + 2, points, Ok(()), gpu).mode
         };
-        assert_eq!(
-            auto_select_execution_mode(ExecutionMode::Cpu, probe),
-            ExecutionMode::Cpu
-        );
+        assert_eq!(pick(599, 1), ExecutionMode::Cpu);
+        assert_eq!(pick(600, 1), ExecutionMode::Gpu);
+        assert_eq!(pick(799, 24), ExecutionMode::Cpu);
+        assert_eq!(pick(800, 24), ExecutionMode::Gpu);
+        // A sweep below its own crossover stays on the CPU even above the
+        // single-point one.
+        assert_eq!(pick(700, 2), ExecutionMode::Cpu);
     }
 
     #[test]
-    fn auto_probe_prefers_hybrid_for_multifrequency_multicore_cpu() {
-        let probe = StartupExecutionProbe {
-            cpu_threads: 8,
-            freq_points: 5,
-            per_freq_gpu_dispatch: false,
-            hybrid_gpu_lane_dispatch: false,
-        };
-        assert_eq!(
-            auto_select_execution_mode(ExecutionMode::Cpu, probe),
-            ExecutionMode::Hybrid
-        );
-    }
+    fn auto_pick_stays_on_the_cpu_without_a_gpu_or_a_deck_it_solves() {
+        let none = auto_select_execution_mode(2000, 2002, 1, Ok(()), || None);
+        assert_eq!(none.mode, ExecutionMode::Cpu);
+        assert!(none.reason.contains("no hardware GPU"), "{}", none.reason);
 
-    #[test]
-    fn auto_probe_prefers_gpu_when_gpu_is_available_without_cpu_multithread_gain() {
-        let probe = StartupExecutionProbe {
-            cpu_threads: 1,
-            freq_points: 1,
-            per_freq_gpu_dispatch: true,
-            hybrid_gpu_lane_dispatch: true,
-        };
-        assert_eq!(
-            auto_select_execution_mode(ExecutionMode::Cpu, probe),
-            ExecutionMode::Gpu
+        let full = auto_select_execution_mode(2000, 2002, 1, Ok(()), || Some(1000));
+        assert_eq!(full.mode, ExecutionMode::Cpu);
+        assert!(
+            full.reason.contains("more than the GPU holds"),
+            "{}",
+            full.reason
         );
-    }
 
-    #[test]
-    fn auto_probe_prefers_hybrid_when_gpu_and_cpu_multithread_are_available() {
-        let probe = StartupExecutionProbe {
-            cpu_threads: 8,
-            freq_points: 9,
-            per_freq_gpu_dispatch: true,
-            hybrid_gpu_lane_dispatch: true,
-        };
-        assert_eq!(
-            auto_select_execution_mode(ExecutionMode::Cpu, probe),
-            ExecutionMode::Hybrid
-        );
+        let class = auto_select_execution_mode(2000, 2002, 1, Err("a bend"), || {
+            panic!("an ineligible deck must not touch the GPU")
+        });
+        assert_eq!(class.mode, ExecutionMode::Cpu);
+        assert!(class.reason.contains("a bend"), "{}", class.reason);
+
+        // Below the crossover the device is not even asked about.
+        let small = auto_select_execution_mode(51, 53, 1, Ok(()), || {
+            panic!("a small deck must not touch the GPU")
+        });
+        assert_eq!(small.mode, ExecutionMode::Cpu);
     }
 }

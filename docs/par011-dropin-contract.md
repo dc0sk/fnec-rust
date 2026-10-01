@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-contract.md
 status: living
-last_updated: 2026-05-30
+last_updated: 2026-10-01
 ---
 
 # PAR-011 4nec2 Drop-In Contract
@@ -113,7 +113,7 @@ When the drop-in profile is active, stderr warning classes are fixed to two case
 Diagnostic expectations:
 
 - the warning is emitted on stderr, not stdout
-- the normal `diag:` line still reflects the effective execution mode (`exec=hybrid`, `exec=cpu`, or `exec=gpu(cpu-fallback)`)
+- the normal `diag:` line still reflects the effective execution mode (`exec=hybrid`, `exec=cpu`, `exec=gpu` when the device solved the point, or `exec=gpu(cpu-fallback)` when it fell back)
 - no additional drop-in-specific stdout markers are introduced in the current scaffold
 
 ### File side-effect and lifecycle constraints

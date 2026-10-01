@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Test catalog
@@ -29,6 +29,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
+| `apps/nec-cli/tests/exec_auto.rs` | 7 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
 | `apps/nec-cli/tests/exec_modes.rs` | 27 | `--exec` selection, drop-in alias resolution, sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 17 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
@@ -113,7 +114,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/graph_nec2c.rs` | 8 | Hallén on the section graph (FND-162 stages 2+3) vs nec2c at two meshes, converging: a stem-fed Y and T, a T fed on its node, a dipole with a centre stub (a regression gate — the fallback passes it too), a 1 λ square loop, a loop with a stub, the loop over PEC; and Kirchhoff at the Y's node read off the solved currents (1e-9) | FND-162 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=607 --> **607** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=614 --> **614** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -127,18 +128,18 @@ functions across the `tests/` binaries listed above.
 | `nec_solver` | 237 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 39 | main, exec_profile, sweep_config, warnings, solve_session (the sweep solves CPU and hybrid points concurrently, GPU points in turn) |
+| `apps/nec-cli` | 37 | main, exec_profile, sweep_config, warnings, solve_session (the sweep solves CPU and hybrid points concurrently, GPU points in turn) |
 | `nec_parser` | 30 | lib, template |
 | `nec_accel` | 26 | kernel_reference 20, lib 6 |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=573 --> **573** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=571 --> **571** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1187 --> **1187** = 573 unit + 607 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1192 --> **1192** = 571 unit + 614 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

@@ -137,8 +137,5 @@ fn exec_gpu_rp_output_matches_cpu_or_falls_back_gracefully() {
 #[test]
 fn exec_gpu_diag_line_shows_gpu_exec_mode() {
     let (_stdout, stderr) = run_fnec(&["--exec", "gpu"]);
-    assert!(
-        stderr.contains("exec=gpu(cpu-fallback)"),
-        "expected exec=gpu(cpu-fallback) in diag line\nstderr:\n{stderr}"
-    );
+    common::assert_gpu_exec_label(&stderr);
 }

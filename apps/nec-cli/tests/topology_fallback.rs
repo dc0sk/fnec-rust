@@ -300,7 +300,7 @@ fn hybrid_exec_is_reflected_without_fallback_warning_and_gpu_warns_cpu_fallback(
         gpu_stderr.contains("warning: --exec gpu requested"),
         "expected gpu fallback warning in stderr, got:\n{gpu_stderr}"
     );
-    assert_diag_field(&gpu_stderr, "exec", "gpu(cpu-fallback)");
+    common::assert_gpu_exec_label(&gpu_stderr);
 }
 
 #[test]

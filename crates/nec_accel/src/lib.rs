@@ -57,8 +57,10 @@
 //!   PH7-CHK-003 measured that solve at **0.04x-0.48x of the CPU at every size
 //!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). Since
 //!   FND-185 the solve dispatches its elimination across the device and crosses
-//!   over near 500 segments on a GTX 1080 Ti, so the decision's premise no longer
-//!   holds; it has not been re-evaluated.
+//!   over (≈ 600 segments for one point, ≈ 800 for a 24-point sweep on a GTX
+//!   1080 Ti). The CLI now acts on that per DECK, not per point: without `--exec`
+//!   it sends a whole run to the GPU above the crossover. A per-point lane beside
+//!   the CPU pool would need a shared work index, and is not built.
 //! - A **fill-on-GPU, solve-on-CPU per-point** route is neither wired nor
 //!   measured through this lane. That recipe does win elsewhere — the Z-fill
 //!   kernel beats the CPU from N~32-64 and `--exec gpu` already uses it locally
@@ -116,10 +118,9 @@ pub enum DispatchDecision {
 
 /// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
 pub const GPU_DISPATCH_NOT_WIRED: &str =
-    "per-frequency GPU dispatch is not wired: the fully-resident per-point route is \
-     declined on the single-workgroup solve's measurement (0.04x-0.48x of the CPU; the \
-     rebuilt solve crosses over near 500 segments, FND-185, not yet re-evaluated), and the \
-     fill-on-GPU/solve-on-CPU route has not been measured through this lane";
+    "per-frequency GPU dispatch is not wired: the GPU is chosen per deck instead — \
+     without --exec, a run above the measured crossover goes to it whole — and a GPU \
+     lane beside the CPU pool would need a shared work index";
 
 /// Decide whether a single frequency point should run on the GPU.
 ///
