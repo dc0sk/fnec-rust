@@ -1443,9 +1443,10 @@ const REFINE_STEPS: u32 = 2;
 ///
 /// One value for both callers (FND-078: it was two independent `16`s). It is a
 /// floor, not a crossover. The single-workgroup solve measured 0.04x-0.48x the CPU
-/// at every size (PH7-CHK-003); the rebuilt one crosses over near 500 segments on
-/// a GTX 1080 Ti (FND-185). Below this floor the dispatch is pure overhead; above
-/// it the path is taken for `--exec gpu` because the user asked for the device.
+/// at every size (PH7-CHK-003); the rebuilt one crosses over near 600 segments for
+/// one point on a GTX 1080 Ti (FND-185), which is where the CLI's automatic pick
+/// sends a deck. Below this floor the dispatch is pure overhead; between it and
+/// the crossover the path is taken only for an explicit `--exec gpu`.
 /// The value itself has no recorded measurement behind it.
 pub const MIN_GPU_RESIDENT_SEGS: usize = 16;
 

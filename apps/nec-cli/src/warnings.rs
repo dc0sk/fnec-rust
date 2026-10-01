@@ -81,23 +81,27 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 // PT cards are applied to the current output in solve_session (PH9-CHK-004);
 // no deferred-support warning is emitted.
 
-/// Say where the GPU-resident dense solve loses to the CPU and where it wins.
+/// Say so when an explicit `--exec gpu` sends a deck below the crossover to the
+/// GPU-resident dense solve.
 ///
 /// PH7-CHK-003 measured the single-workgroup solve at **0.04x-0.48x** the CPU at
-/// every size, a structural cap: the LU ran on one compute unit (FND-009). Since
-/// FND-185 the elimination is dispatched across the device, and the solve crosses
-/// over: measured after FND-185 on an NVIDIA GTX 1080 Ti, whole CLI run: 0.18 s against the CPU's 0.009 s at 101 segments, 0.90 s against 4.56 s at 1001. Below the crossover (near 500 segments on that card) device
-/// start-up and dispatch overhead dominate.
-///
-/// A warning rather than a removal: the Z-fill and RP kernels on the same flag
-/// earn their place decisively (100-290x and 56-234x), so `--exec gpu` is worth
-/// asking for. It is the dense solve alone that loses, and the honest thing is
-/// to say which part.
-pub(super) fn warn_gpu_resident_solve_is_slower() {
-    eprintln!(
-        "warning: the GPU-resident dense solve is slower than the CPU on small decks \
-and faster on large ones: on an NVIDIA GTX 1080 Ti it took 0.18 s against the CPU's \
-0.009 s at 101 segments and 0.90 s against 4.6 s at 1001, crossing over near 500 \
-(FND-185). Use --exec cpu for small decks if wall-clock matters."
-    );
+/// every size (FND-009). Since FND-185 it crosses over: on an NVIDIA GTX 1080 Ti,
+/// whole CLI run, 0.18 s against the CPU's 0.009 s at 101 segments and 0.90 s
+/// against 4.56 s at 1001, near 600 for one point. Without `--exec` fnec now picks
+/// the faster side itself, so this fires only when the user forced the device
+/// onto a deck where it loses — once per process, not once per sweep point.
+pub(super) fn warn_gpu_resident_solve_is_slower(segments: usize) {
+    use super::exec_profile::AUTO_GPU_MIN_SEGS_ONE_POINT;
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if segments >= AUTO_GPU_MIN_SEGS_ONE_POINT {
+        return;
+    }
+    ONCE.call_once(|| {
+        eprintln!(
+            "warning: --exec gpu on a {segments}-segment deck: the GPU-resident dense solve \
+             is slower than the CPU below about {AUTO_GPU_MIN_SEGS_ONE_POINT} segments \
+             (GTX 1080 Ti: 0.18 s against 0.009 s at 101). Without --exec, fnec picks the \
+             faster one"
+        );
+    });
 }

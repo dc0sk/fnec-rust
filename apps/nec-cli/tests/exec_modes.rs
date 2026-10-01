@@ -253,7 +253,7 @@ fn gpu_exec_mode_emits_no_stub_emulation_warning() {
         !stderr.contains("accelerator stub backend") && !stderr.contains("CPU emulation"),
         "did not expect any 'stub backend' / 'CPU emulation' wording, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "gpu(cpu-fallback)");
+    common::assert_gpu_exec_label(&stderr);
 }
 
 #[test]

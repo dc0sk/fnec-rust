@@ -147,6 +147,17 @@ pub(super) struct FrequencySolveResult {
     /// The lowest feedpoint resistance at this point, for the sweep aggregate;
     /// `None` when nothing is priced (a receive deck).
     pub(super) min_feed_re: Option<f64>,
+    /// Whether the device solved this point (a GPU sweep reports the count).
+    pub(super) ran_on_gpu: bool,
+}
+
+/// The `exec` a point actually ran: `gpu` only when the device solved it.
+pub(super) fn exec_label(mode: ExecutionMode, ran_on_gpu: bool) -> &'static str {
+    match (mode, ran_on_gpu) {
+        (ExecutionMode::Gpu, true) => "gpu",
+        (ExecutionMode::Gpu, false) => "gpu(cpu-fallback)",
+        (mode, _) => mode.as_cli_str(),
+    }
 }
 
 pub(super) struct SweepPointSummary {
@@ -914,17 +925,12 @@ fn maybe_gpu_resident_hallen(
     hallen_rhs: &nec_solver::HallenRhs,
     wire_endpoints: &[(usize, usize)],
     junctions: &[(usize, usize, f64)],
-    ground: &GroundModel,
     execution_mode: ExecutionMode,
     freq_hz: f64,
 ) -> Option<nec_solver::HallenSolution> {
+    // The deck class (route and ground) is the caller's, through
+    // `nec_solver::gpu_resident_class`.
     if execution_mode != ExecutionMode::Gpu || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS {
-        return None;
-    }
-    if !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    ) {
         return None;
     }
     // The device re-fills and solves from raw segment inputs, so anything stamped
@@ -949,10 +955,8 @@ fn maybe_gpu_resident_hallen(
         })
         .collect();
 
-    // Measured slower than the CPU at every tested size, for a structural reason
-    // (FND-009). Said once, here, where the path is actually taken — a note in a
-    // design document is not something a user running the flag ever sees.
-    crate::warnings::warn_gpu_resident_solve_is_slower();
+    // Said here, where the path is actually taken, and only below the crossover.
+    crate::warnings::warn_gpu_resident_solve_is_slower(segs.len());
 
     let x = pollster::block_on(nec_accel::solve_hallen_gpu_resident(
         &z_inputs,
@@ -1171,6 +1175,10 @@ pub(super) fn solve_frequency_point(
     // The current each source delivers where it differs from its wire current: a
     // driven segment that is also a TL/NT port feeds the network in parallel.
     let mut network_branch: Vec<(usize, Complex64)> = Vec::new();
+    // Whether the device produced this point's currents. `--exec gpu` alone does
+    // not say: the label read `gpu(cpu-fallback)` on every point, including the
+    // ones the device solved.
+    let mut ran_on_gpu = false;
     let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
         SolverMode::Hallen => {
             // One decision, shared with the GUI, the bindings and the worker
@@ -1179,11 +1187,12 @@ pub(super) fn solve_frequency_point(
             // this frontend used conductor paths: 264.88 + j410.86 here against
             // 9.15 - j767.60 from the worker on the same deck, both silent.
             //
-            // The GPU-resident fill+solve implements exactly one route — the
-            // plain delta-gap solve — so it asks `hallen_route` rather than
-            // assuming, and declines anything else.
-            let route = nec_solver::hallen_route(deck, segs);
-            let gpu_sol = if route.gpu_resident_supported() && laplace_loads.is_empty() {
+            // The GPU-resident fill+solve implements exactly one class — the
+            // plain delta-gap route in free space — so it asks the shared
+            // predicate rather than assuming, and declines anything else.
+            let gpu_sol = if nec_solver::gpu_resident_class(deck, segs, ground).is_ok()
+                && laplace_loads.is_empty()
+            {
                 let hallen_rhs =
                     build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
                 let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
@@ -1193,7 +1202,6 @@ pub(super) fn solve_frequency_point(
                     &hallen_rhs,
                     &merged_endpoints,
                     &junction_tuples,
-                    ground,
                     execution_mode,
                     freq_hz,
                 )
@@ -1203,6 +1211,7 @@ pub(super) fn solve_frequency_point(
             };
 
             if let Some((sol, hallen_rhs, merged_endpoints, junction_tuples)) = gpu_sol {
+                ran_on_gpu = true;
                 // This arm exists because it bypasses `solve_hallen_routed`, so
                 // the guard there does not reach it (FND-126).
                 nec_solver::check_currents_finite(&sol.currents).map_err(|e| e.to_string())?;
@@ -1578,7 +1587,7 @@ pub(super) fn solve_frequency_point(
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e}",
         pulse_rhs_mode,
-        execution_mode.as_diag_str(),
+        exec_label(execution_mode, ran_on_gpu),
         freq_hz / 1e6,
         diag_abs,
         diag_rel,
@@ -1590,7 +1599,7 @@ pub(super) fn solve_frequency_point(
     let bench = BenchRecord {
         mode: diag_label.to_string(),
         pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
-        exec: execution_mode.as_diag_str().to_string(),
+        exec: exec_label(execution_mode, ran_on_gpu).to_string(),
         freq_mhz: freq_hz / 1e6,
         abs_res: diag_abs,
         rel_res: diag_rel,
@@ -1605,6 +1614,7 @@ pub(super) fn solve_frequency_point(
         sweep_summary,
         negative_r,
         min_feed_re,
+        ran_on_gpu,
     })
 }
 

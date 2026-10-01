@@ -114,3 +114,29 @@ impl Drop for TempDeck {
         let _ = std::fs::remove_file(&self.path);
     }
 }
+
+/// Assert the `exec` label of an `--exec gpu` run of a deck the device solves:
+/// `gpu` where a hardware adapter is present, `gpu(cpu-fallback)` where none is.
+/// The label used to read `gpu(cpu-fallback)` on every point, including the ones
+/// the device solved — so tests that asserted it were false on a GPU host.
+///
+/// One fallback is accepted on a GPU host, and only with its reason on stderr:
+/// the driver losing the device under the process (FND-190). On the GTX 1080 Ti
+/// host the NVIDIA driver raises Xid 13 during GPU initialisation — logged even
+/// for a probe that only enumerated adapters — and a process using the GPU at that
+/// moment gets "Parent device is lost". fnec falls back to the CPU and says so,
+/// which is the behaviour to test; any OTHER decline still fails.
+pub fn assert_gpu_exec_label(stderr: &str) {
+    if !pollster::block_on(nec_accel::hardware_adapter_present()) {
+        assert_diag_field(stderr, "exec", "gpu(cpu-fallback)");
+        return;
+    }
+    if diag_field(stderr, "exec") == Some("gpu(cpu-fallback)") && stderr.contains("device is lost")
+    {
+        eprintln!(
+            "NOTE: the driver lost the GPU device under this run (FND-190); fallback accepted"
+        );
+        return;
+    }
+    assert_diag_field(stderr, "exec", "gpu");
+}

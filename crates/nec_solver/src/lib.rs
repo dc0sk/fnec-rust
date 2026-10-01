@@ -55,10 +55,11 @@ pub use geometry::{
 // they are `pub(crate)`, because nothing outside this crate consumes them and a
 // public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, hallen_leaves_a_bend_unmodelled, hallen_route,
-    merged_grouping, path_end_rows, plan_hallen_planewave, solve_hallen_planewave_planned,
-    solve_hallen_planewave_routed, solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted,
-    HallenSessionError, PlaneWavePlan, ResidualInputs, JUNCTION_TOL_M,
+    deck_has_current_source, deck_has_plane_wave, gpu_resident_class,
+    hallen_leaves_a_bend_unmodelled, hallen_route, merged_grouping, path_end_rows,
+    plan_hallen_planewave, solve_hallen_planewave_planned, solve_hallen_planewave_routed,
+    solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted, HallenSessionError, PlaneWavePlan,
+    ResidualInputs, JUNCTION_TOL_M,
 };
 pub use linear::{
     free_end_row, hallen_constraint_rows, hallen_homogeneous, hallen_homogeneous_paths,

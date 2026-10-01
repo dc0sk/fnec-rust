@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Changelog
@@ -35,6 +35,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **Without `--exec`, fnec picks the GPU for a large enough deck.** A free-space,
+  voltage-driven Hallén deck on the plain basis, with no loads or networks, goes to
+  the GPU at 600 segments or more for one frequency (601 segments: 0.42 s against
+  the CPU's 0.51 s) and 800 or more for a sweep (24 points of 1501 segments: 41 s
+  against 86 s), when a hardware GPU is present; everything else, and every
+  distributed run, stays on the CPU. One `info: exec auto:` line names the choice
+  and why. The device solve is f32 and within 2 Ω of the CPU (≤ 0.002 Ω measured),
+  so its last digits differ; `--exec cpu` gives the CPU's. The pick no longer
+  chooses `hybrid` for every multi-point run.
+- **`exec=` says what ran.** It read `gpu(cpu-fallback)` on every point of
+  `--exec gpu`, including the ones the device solved; it now reads `gpu` there, and
+  a GPU sweep reports how many of its points the device solved. The small-deck
+  "slower than the CPU" warning fires only below the crossover, and once per run
+  instead of once per sweep point.
 - **A CPU frequency sweep solves its points in parallel.** `--exec cpu` (the
   default) took them one at a time, and `--exec hybrid` ran half of them in
   parallel and then its GPU-candidate half one at a time on a single thread.
