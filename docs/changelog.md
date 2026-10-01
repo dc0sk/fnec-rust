@@ -35,11 +35,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The GPU solve is about three times faster on large decks.** Its triangular
+  solves ran in a single GPU invocation, three times per solve (0.73 s each at
+  2048 unknowns); they now take one dispatch per column. A 2049-segment dipole
+  solves in 1.3 s on a GTX 1080 Ti (was 3.5 s; the CPU takes 69 s), 3001 segments
+  in 2.8 s (was 7.6 s), within 0.0015 Ω of the CPU. The automatic pick follows the
+  new crossover: 500 segments for one frequency (was 600), 550 for a sweep (was 800).
 - **Without `--exec`, fnec picks the GPU for a large enough deck.** A free-space,
   voltage-driven Hallén deck on the plain basis, with no loads or networks, goes to
-  the GPU at 600 segments or more for one frequency (601 segments: 0.42 s against
-  the CPU's 0.51 s) and 800 or more for a sweep (24 points of 1501 segments: 41 s
-  against 86 s), when a hardware GPU is present; everything else, and every
+  the GPU at 500 segments or more for one frequency (601 segments: 0.27 s against
+  the CPU's 0.52 s) and 550 or more for a sweep (24 points of 701 segments: 2.9 s
+  against 6.8 s), when a hardware GPU is present; everything else, and every
   distributed run, stays on the CPU. One `info: exec auto:` line names the choice
   and why. The device solve is f32 and within 2 Ω of the CPU (≤ 0.002 Ω measured),
   so its last digits differ; `--exec cpu` gives the CPU's. The pick no longer

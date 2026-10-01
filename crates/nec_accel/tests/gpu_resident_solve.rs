@@ -334,3 +334,29 @@ fn the_solve_shader_uses_no_storage_barrier() {
         "hallen_lu_solve.wgsl must not hand data between invocations through storage within a dispatch"
     );
 }
+
+/// The triangular solves run one dispatch per column. They were one invocation
+/// (`@workgroup_size(1)`) walking the whole factor — 0.73 s per pass at S = 2048,
+/// three passes a solve. A serial triangular solve has to read the factor from
+/// that one invocation, so no single-invocation entry point may read it; the
+/// permutation pass (`cs_permute`) reads only vectors.
+#[test]
+fn no_single_invocation_entry_point_reads_the_factor() {
+    const SHADER: &str = include_str!("../src/shaders/hallen_lu_solve.wgsl");
+    let mut checked = 0;
+    for (at, _) in SHADER.match_indices("@workgroup_size(1)") {
+        let body_start = at + SHADER[at..].find('{').expect("entry body");
+        // The entry's body ends at the first line that is exactly "}".
+        let body_end = body_start + SHADER[body_start..].find("\n}\n").expect("body end");
+        let body = &SHADER[body_start..body_end];
+        assert!(
+            !body.contains("lu_get("),
+            "a single-invocation entry point reads the factor:\n{body}"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "no single-invocation entry point found — the scan is broken"
+    );
+}

@@ -2000,21 +2000,21 @@ mod tests {
         );
     }
 
-    /// The pick's boundaries, with the GPU's capacity injected: 599 / 600 for one
-    /// point, 799 / 800 for a sweep. Never `Hybrid`.
+    /// The pick's boundaries, with the GPU's capacity injected: 499 / 500 for one
+    /// point, 549 / 550 for a sweep. Never `Hybrid`.
     #[test]
     fn auto_pick_crosses_over_at_the_measured_sizes() {
         let gpu = || Some(16_384);
         let pick = |n: usize, points: usize| {
             auto_select_execution_mode(n, n + 2, points, Ok(()), gpu).mode
         };
-        assert_eq!(pick(599, 1), ExecutionMode::Cpu);
-        assert_eq!(pick(600, 1), ExecutionMode::Gpu);
-        assert_eq!(pick(799, 24), ExecutionMode::Cpu);
-        assert_eq!(pick(800, 24), ExecutionMode::Gpu);
+        assert_eq!(pick(499, 1), ExecutionMode::Cpu);
+        assert_eq!(pick(500, 1), ExecutionMode::Gpu);
+        assert_eq!(pick(549, 24), ExecutionMode::Cpu);
+        assert_eq!(pick(550, 24), ExecutionMode::Gpu);
         // A sweep below its own crossover stays on the CPU even above the
         // single-point one.
-        assert_eq!(pick(700, 2), ExecutionMode::Cpu);
+        assert_eq!(pick(520, 2), ExecutionMode::Cpu);
     }
 
     #[test]

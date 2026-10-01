@@ -57,7 +57,7 @@
 //!   PH7-CHK-003 measured that solve at **0.04x-0.48x of the CPU at every size
 //!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). Since
 //!   FND-185 the solve dispatches its elimination across the device and crosses
-//!   over (≈ 600 segments for one point, ≈ 800 for a 24-point sweep on a GTX
+//!   over (≈ 500 segments for one point, ≈ 550 for a 24-point sweep on a GTX
 //!   1080 Ti). The CLI now acts on that per DECK, not per point: without `--exec`
 //!   it sends a whole run to the GPU above the crossover. A per-point lane beside
 //!   the CPU pool would need a shared work index, and is not built.

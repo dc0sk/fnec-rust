@@ -164,8 +164,9 @@ inaccurate where it might have become faster.
 > **Superseded (2026-10-01).** That was the single-workgroup solve. Its rebuild
 > (FND-185, #497) dispatches the elimination across the device, removed its
 > 1024 ceiling and its 2048-segment dispatch panic (FND-188/189, #501), and crosses
-> over: on a GTX 1080 Ti about 600 segments for one point and 800 for a 24-point
-> sweep, 3001 segments in 7.6 s against the CPU's 248 s. The CLI now picks the GPU
+> over: on a GTX 1080 Ti about 500 segments for one point and 550 for a 24-point
+> sweep (with the triangular solves one dispatch per column), 3001 segments in
+> 2.8 s against the CPU's 248 s. The CLI now picks the GPU
 > itself above those sizes when `--exec` is not given (`docs/cli-guide.md`).
 
 ### Why, and why more GPU will not fix it

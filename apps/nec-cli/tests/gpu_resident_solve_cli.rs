@@ -195,7 +195,7 @@ EN
 /// dense solve declined without a word. Both must now run on the device.
 ///
 /// The CPU answer is pinned rather than re-run: it takes about 70 s here, the
-/// device about 3.5 s. Measured 2026-09-30, `--exec cpu`: 79.692336 + j46.433387.
+/// device about 1.3 s (3.5 s before the triangular solves ran per column). Measured 2026-09-30, `--exec cpu`: 79.692336 + j46.433387.
 #[test]
 fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
     if !pollster::block_on(nec_accel::hardware_adapter_present()) {

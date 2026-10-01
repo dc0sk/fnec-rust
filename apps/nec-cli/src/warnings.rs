@@ -87,7 +87,7 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 /// PH7-CHK-003 measured the single-workgroup solve at **0.04x-0.48x** the CPU at
 /// every size (FND-009). Since FND-185 it crosses over: on an NVIDIA GTX 1080 Ti,
 /// whole CLI run, 0.18 s against the CPU's 0.009 s at 101 segments and 0.90 s
-/// against 4.56 s at 1001, near 600 for one point. Without `--exec` fnec now picks
+/// against 4.56 s at 1001; near 500 for one point since the triangular solves run per column. Without `--exec` fnec now picks
 /// the faster side itself, so this fires only when the user forced the device
 /// onto a deck where it loses — once per process, not once per sweep point.
 pub(super) fn warn_gpu_resident_solve_is_slower(segments: usize) {
