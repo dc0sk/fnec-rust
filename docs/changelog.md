@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **Loaded junction and loop decks solve on the section graph (FND-162 stage 5).**
+  A T, Y or loop with `LD` loads (a trap, a loading coil) fell back to the per-wire
+  basis, unreliable and warned. A load is now a column of the graph system — the
+  gap its own current drives — and these decks converge on nec2c like the unloaded
+  ones: a 1 λ loop with 100 Ω + 2 µH beside a corner 2.05 → 1.43 % at 21 → 41
+  segments per side, a loaded Y 1.67 → 0.73 %.
 - **Hallén solves T/Y junctions and closed loops (FND-162 stages 2 and 3).** A
   junction where three or more wires meet, and a conductor with no free end, fell
   back to one term per wire with pairwise junction rows: a stem-fed Y answered

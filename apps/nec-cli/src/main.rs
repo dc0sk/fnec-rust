@@ -1623,10 +1623,11 @@ mod tests {
     // A dipole 0.03 λ over GN 2 — low enough to trip the near-ground caveat — whose
     // two wires meet at a T, so the feed also sits on a junction. It earns three
     // separate pre-solve caveats, which is what makes it useful: a deck earning one
-    // cannot tell a complete set from a lucky one. The load on the stem keeps it
-    // off the section-graph solve (FND-162 stages 2+3), which models the T and so
-    // earns neither the topology nor the junction-feed caveat.
-    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nLD 4 3 13 13 50.0 0.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    // cannot tell a complete set from a lucky one. The TL between the bar halves
+    // keeps it off the section-graph solve, which models the T and so earns
+    // neither the topology nor the junction-feed caveat; it takes networks only
+    // from FND-162 stage 5's network PR, and then this fixture must move.
+    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nTL 1 7 2 7 50.0 1.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
     #[test]
     fn the_distributed_caveats_come_from_the_shared_producer() {

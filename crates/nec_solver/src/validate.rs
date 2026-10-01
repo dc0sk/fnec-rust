@@ -1768,11 +1768,11 @@ mod tests {
             "an unrecognised EX type is not a feedpoint"
         );
         // Positive control on the same geometry: a real feed there must still warn,
-        // or this proves only that the check stopped firing. Loaded, because an
-        // unloaded delta-gap T takes the section graph, which models a junction
-        // feed and rightly stays silent (FND-162 stages 2+3).
+        // or this proves only that the check stopped firing. With a TL, because a
+        // delta-gap T without one takes the section graph, which models a
+        // junction feed and rightly stays silent (FND-162).
         let (driven, driven_segs) = deck_and_segs(
-            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nLD 4 3 13 13 50.0 0.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nTL 1 7 2 7 50.0 1.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert!(crate::hallen_session::graph_route(&driven, &driven_segs).is_none());
         assert!(
@@ -2419,8 +2419,11 @@ mod tests {
         // The MPIE rejects LD loads, so recommending it here would send the user
         // to a solver that refuses the deck.
         let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 11 0 0 0 0 0 5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nTL 2 3 3 3 50.0 1.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
+        // The load alone no longer refuses the section graph (FND-162 stage 5);
+        // the TL does, until networks join it.
+        assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
         assert!(!mpie_compatible_deck(&deck));
         let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
             .expect("still an unsupported topology");

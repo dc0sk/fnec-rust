@@ -134,8 +134,16 @@ fn a_fill_past_the_old_dispatch_limit_runs_on_the_device() {
         return;
     }
     let n = 2049;
-    let z = pollster::block_on(fill_zmatrix_wgpu(&straight_wire(n), 14.2e6))
-        .unwrap_or_else(|why| panic!("a GPU is present and the fill declined: {why}"));
+    let z = match pollster::block_on(fill_zmatrix_wgpu(&straight_wire(n), 14.2e6)) {
+        Ok(z) => z,
+        // The host driver can lose the device under any process (FND-190); that
+        // decline names itself and is not this test's subject.
+        Err(why) if why.contains("device is lost") => {
+            eprintln!("NOTE: the driver lost the device (FND-190): {why}");
+            return;
+        }
+        Err(why) => panic!("a GPU is present and the fill declined: {why}"),
+    };
     assert_eq!(z.len(), n * n);
     // The last row was the part a 1-D grid could not reach; its self term (the
     // diagonal) is the largest entry of its row, so it cannot be zero or NaN.
@@ -158,7 +166,12 @@ fn a_system_past_the_device_capacity_declines_with_its_reason() {
         return;
     }
     // A straight wire with two free ends is square: S = N + 2.
-    let n = shared_device_dense_capacity().expect("a GPU is present") - 1;
+    // `None` with a GPU present is the driver losing the device (FND-190).
+    let Some(capacity) = shared_device_dense_capacity() else {
+        eprintln!("NOTE: no shared device although an adapter is present (FND-190)");
+        return;
+    };
+    let n = capacity - 1;
     let segs = straight_wire(n);
     let zeros = vec![num_complex::Complex64::new(0.0, 0.0); n];
     let cos = vec![0.0; n];

@@ -1258,9 +1258,9 @@ mod tests {
         // sweep panel printed the same sentence twice on one screen.
         // A degree-3 T over GN 2 — a bend is merged into one conductor path and
         // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
-        // an empty strip and prove nothing. Loaded, because an unloaded T takes the section graph
-        // (FND-162 stages 2+3) and earns no topology caveat either.
-        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nLD 4 3 13 13 50.0 0.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // an empty strip and prove nothing. With a TL, because a T without one takes the section
+        // graph (FND-162) and earns no topology caveat either.
+        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 13 0 0 0.634 0 0 5.916 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nTL 1 7 2 7 50.0 1.0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
         let strip = deck_warnings(LOW_TEE, SolverKind::Hallen);
         let panel = job.geometry_caveats();

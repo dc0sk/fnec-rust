@@ -331,121 +331,91 @@ pub struct GraphFeed {
     pub volts: Complex64,
 }
 
-/// Solve the Hallén system on a section graph for voltage (delta-gap) feeds.
+/// The section-graph Hallén system of one matrix, without its forcing.
 ///
-/// `z` is the assembled matrix (ground images included); `sources` the corner
-/// sources on the same ground (`hallen_session::corner_sources`). Returns the
-/// segment currents.
-pub(crate) fn solve_hallen_graph(
-    z: &ZMatrix,
-    segs: &[Segment],
-    graph: &SectionGraph,
-    feeds: &[GraphFeed],
-    sources: &[CornerSource],
+/// Everything a set of gap sources does not change is built once: the
+/// collocation rows with their (C, D) columns and the corner term, and the node
+/// rows. The forcing is linear in the gaps — each a particular solution on its
+/// own section plus that section's constant in the equal-potential rows — so one
+/// system serves any number of forcings (the unit-gap solves of a network, the
+/// gaps of a plane wave), and a lumped load is a column: the gap its own current
+/// drives through it.
+/// A node end: a section, and whether it is that section's end (not its start).
+type NodeEnd = (usize, bool);
+
+pub(crate) struct GraphSystem {
+    graph: SectionGraph,
+    /// Section and position along it of every segment.
+    at: Vec<(usize, usize)>,
+    m: Vec<Vec<Complex64>>,
+    /// For each row past the collocation rows, the two node ends whose
+    /// potentials it differences; `None` for a free-end or Kirchhoff row.
+    phi_pairs: Vec<Option<(NodeEnd, NodeEnd)>>,
+    n: usize,
+    cols: usize,
     k: f64,
-) -> Result<Vec<Complex64>, SolveError> {
-    let n = z.n;
-    let ns = graph.sections.len();
-    let cols = n + 2 * ns;
-    let c_col = |j: usize| n + j;
-    let d_col = |j: usize| n + ns + j;
-    let scale = 2.0 * std::f64::consts::PI / ETA0;
-    let at = locate(graph, n);
-    if at.iter().any(|&(j, _)| j == usize::MAX) {
-        return Err(SolveError::HallenDimensionMismatch {
-            z_n: n,
-            rhs_len: 0,
-            cos_len: 0,
-        });
-    }
+}
 
-    // The corner reference of each section: its start node unless that is a free
-    // end (then its end node) — the rule that reproduces the path solve.
-    let ref_at_end: Vec<bool> = graph
-        .sections
-        .iter()
-        .map(|s| graph.nodes[s.start_node].ends.len() < 2)
-        .collect();
-    let ref_s = |j: usize| {
-        if ref_at_end[j] {
-            graph.sections[j].length
-        } else {
-            0.0
+impl GraphSystem {
+    /// Build the system: `z` with ground images, `sources` the corner sources.
+    pub(crate) fn build(
+        z: &ZMatrix,
+        segs: &[Segment],
+        graph: &SectionGraph,
+        sources: &[CornerSource],
+        k: f64,
+    ) -> Result<Self, SolveError> {
+        let n = z.n;
+        let ns = graph.sections.len();
+        let cols = n + 2 * ns;
+        let c_col = |j: usize| n + j;
+        let d_col = |j: usize| n + ns + j;
+        let at = locate(graph, n);
+        if at.iter().any(|&(j, _)| j == usize::MAX) {
+            return Err(SolveError::HallenDimensionMismatch {
+                z_n: n,
+                rhs_len: 0,
+                cos_len: 0,
+            });
         }
-    };
-    let ref_pt = |j: usize| {
-        let s = &graph.sections[j];
-        graph.nodes[if ref_at_end[j] {
-            s.end_node
-        } else {
-            s.start_node
-        }]
-        .point
-    };
 
-    let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; n];
-    let mut y = vec![Complex64::new(0.0, 0.0); n];
-    for r in 0..n {
-        for (c, cell) in m[r].iter_mut().enumerate().take(n) {
-            *cell = z.get(r, c);
-        }
-        let (j, i) = at[r];
-        let sec = &graph.sections[j];
-        let (sg, s) = (sec.signs[i], sec.s_mid[i]);
-        m[r][c_col(j)] = Complex64::new(-sg * (k * s).cos(), 0.0);
-        m[r][d_col(j)] = Complex64::new(-sg * (k * s).sin(), 0.0);
-    }
-    // Forcing on each fed section only (a sum over feeds).
-    for f in feeds {
-        let (jf, fi) = at[f.seg];
-        let sec = &graph.sections[jf];
-        let (sf, sgf) = (sec.s_mid[fi], sec.signs[fi]);
-        for (i, &r) in sec.segs.iter().enumerate() {
-            let p =
-                Complex64::new(0.0, -scale) * f.volts * sgf * (k * (sec.s_mid[i] - sf).abs()).sin();
-            y[r] += p * sec.signs[i];
-        }
-    }
-    // The corner term on every section, from every non-parallel source.
-    for (j, sec) in graph.sections.iter().enumerate() {
-        let (s0, p0, tan) = (ref_s(j), ref_pt(j), sec.tangent);
-        let at_s = |s: f64| {
-            [
-                p0[0] + (s - s0) * tan[0],
-                p0[1] + (s - s0) * tan[1],
-                p0[2] + (s - s0) * tan[2],
-            ]
+        // The corner reference of each section: its start node unless that is a free
+        // end (then its end node) — the rule that reproduces the path solve.
+        let ref_at_end: Vec<bool> = graph
+            .sections
+            .iter()
+            .map(|s| graph.nodes[s.start_node].ends.len() < 2)
+            .collect();
+        let ref_s = |j: usize| {
+            if ref_at_end[j] {
+                graph.sections[j].length
+            } else {
+                0.0
+            }
         };
-        for src in sources {
-            if crate::corner::parallel(tan, &src.seg) {
-                continue;
-            }
-            let breaks: Vec<f64> =
-                crate::corner::source_breaks(s0, p0, tan, &src.seg, 0.1 * sec.length)
-                    .into_iter()
-                    .flatten()
-                    .collect();
-            for (i, &r) in sec.segs.iter().enumerate() {
-                let sm = sec.s_mid[i];
-                let v = crate::corner::graded_breaks(s0, sm, src.seg.radius, &breaks, |s| {
-                    crate::corner::f_n(at_s(s), tan, &src.seg, k) * (k * (sm - s)).cos()
-                });
-                m[r][src.col] += v * src.weight * sec.signs[i];
-            }
-        }
-    }
+        let ref_pt = |j: usize| {
+            let s = &graph.sections[j];
+            graph.nodes[if ref_at_end[j] {
+                s.end_node
+            } else {
+                s.start_node
+            }]
+            .point
+        };
 
-    // Node rows.
-    let mut extra: Vec<(Vec<Complex64>, Complex64)> = Vec::new();
-    // Φ_j at the node, as (row coefficients, constant) in section j's frame.
-    let phi = |j: usize, at_end: bool| -> (Vec<Complex64>, Complex64) {
-        let sec = &graph.sections[j];
-        let sigma = if at_end { sec.length } else { 0.0 };
-        let mut row = vec![Complex64::new(0.0, 0.0); cols];
-        row[c_col(j)] = Complex64::new(-(k * sigma).sin(), 0.0);
-        row[d_col(j)] = Complex64::new((k * sigma).cos(), 0.0);
-        // The corner integral of a section referenced at its OTHER node.
-        if at_end != ref_at_end[j] {
+        let mut m = vec![vec![Complex64::new(0.0, 0.0); cols]; n];
+        for r in 0..n {
+            for (c, cell) in m[r].iter_mut().enumerate().take(n) {
+                *cell = z.get(r, c);
+            }
+            let (j, i) = at[r];
+            let sec = &graph.sections[j];
+            let (sg, s) = (sec.signs[i], sec.s_mid[i]);
+            m[r][c_col(j)] = Complex64::new(-sg * (k * s).cos(), 0.0);
+            m[r][d_col(j)] = Complex64::new(-sg * (k * s).sin(), 0.0);
+        }
+        // The corner term on every section, from every non-parallel source.
+        for (j, sec) in graph.sections.iter().enumerate() {
             let (s0, p0, tan) = (ref_s(j), ref_pt(j), sec.tangent);
             let at_s = |s: f64| {
                 [
@@ -463,57 +433,155 @@ pub(crate) fn solve_hallen_graph(
                         .into_iter()
                         .flatten()
                         .collect();
-                let v = crate::corner::graded_breaks(s0, sigma, src.seg.radius, &breaks, |s| {
-                    crate::corner::f_n(at_s(s), tan, &src.seg, k) * (k * (sigma - s)).sin()
-                });
-                row[src.col] += v * src.weight;
+                for (i, &r) in sec.segs.iter().enumerate() {
+                    let sm = sec.s_mid[i];
+                    let v = crate::corner::graded_breaks(s0, sm, src.seg.radius, &breaks, |s| {
+                        crate::corner::f_n(at_s(s), tan, &src.seg, k) * (k * (sm - s)).cos()
+                    });
+                    m[r][src.col] += v * src.weight * sec.signs[i];
+                }
             }
         }
-        // The fed section's particular solution: P′(σ)/k.
-        let mut constant = Complex64::new(0.0, 0.0);
-        for f in feeds {
-            let (jf, fi) = at[f.seg];
-            if jf != j {
+
+        // Node rows.
+        let mut extra: Vec<Vec<Complex64>> = Vec::new();
+        let mut phi_pairs = Vec::new();
+        // Φ_j at the node, as (row coefficients, constant) in section j's frame.
+        let phi = |j: usize, at_end: bool| -> Vec<Complex64> {
+            let sec = &graph.sections[j];
+            let sigma = if at_end { sec.length } else { 0.0 };
+            let mut row = vec![Complex64::new(0.0, 0.0); cols];
+            row[c_col(j)] = Complex64::new(-(k * sigma).sin(), 0.0);
+            row[d_col(j)] = Complex64::new((k * sigma).cos(), 0.0);
+            // The corner integral of a section referenced at its OTHER node.
+            if at_end != ref_at_end[j] {
+                let (s0, p0, tan) = (ref_s(j), ref_pt(j), sec.tangent);
+                let at_s = |s: f64| {
+                    [
+                        p0[0] + (s - s0) * tan[0],
+                        p0[1] + (s - s0) * tan[1],
+                        p0[2] + (s - s0) * tan[2],
+                    ]
+                };
+                for src in sources {
+                    if crate::corner::parallel(tan, &src.seg) {
+                        continue;
+                    }
+                    let breaks: Vec<f64> =
+                        crate::corner::source_breaks(s0, p0, tan, &src.seg, 0.1 * sec.length)
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                    let v = crate::corner::graded_breaks(s0, sigma, src.seg.radius, &breaks, |s| {
+                        crate::corner::f_n(at_s(s), tan, &src.seg, k) * (k * (sigma - s)).sin()
+                    });
+                    row[src.col] += v * src.weight;
+                }
+            }
+            row
+        };
+        for node in &graph.nodes {
+            if node.ends.len() == 1 {
+                let (j, at_end) = node.ends[0];
+                let mut row = vec![Complex64::new(0.0, 0.0); cols];
+                for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
+                    row[seg] += Complex64::new(c, 0.0);
+                }
+                extra.push(row);
+                phi_pairs.push(None);
                 continue;
             }
+            // Kirchhoff: current flowing into the node sums to zero.
+            let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
+            for &(j, at_end) in &node.ends {
+                let inflow = if at_end { 1.0 } else { -1.0 };
+                for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
+                    kcl[seg] += Complex64::new(inflow * c, 0.0);
+                }
+            }
+            extra.push(kcl);
+            phi_pairs.push(None);
+            // Equal potential against the first section at the node.
+            let row0 = phi(node.ends[0].0, node.ends[0].1);
+            for &(j, at_end) in &node.ends[1..] {
+                let rj = phi(j, at_end);
+                extra.push(row0.iter().zip(&rj).map(|(a, b)| a - b).collect());
+                phi_pairs.push(Some((node.ends[0], (j, at_end))));
+            }
+        }
+        m.extend(extra);
+        Ok(GraphSystem {
+            graph: graph.clone(),
+            at,
+            m,
+            phi_pairs,
+            n,
+            cols,
+            k,
+        })
+    }
+
+    /// The right-hand side of a set of gap sources: each one's particular
+    /// solution on its own section, and that section's term in the
+    /// equal-potential rows (P′(σ)/k at the node end).
+    pub(crate) fn rhs(&self, gaps: &[GraphFeed]) -> Vec<Complex64> {
+        let (n, k) = (self.n, self.k);
+        let scale = 2.0 * std::f64::consts::PI / ETA0;
+        let mut y = vec![Complex64::new(0.0, 0.0); self.m.len()];
+        for f in gaps {
+            let (jf, fi) = self.at[f.seg];
+            let sec = &self.graph.sections[jf];
             let (sf, sgf) = (sec.s_mid[fi], sec.signs[fi]);
-            let sgn = if sigma > sf { 1.0 } else { -1.0 };
-            constant +=
-                Complex64::new(0.0, -scale) * f.volts * sgf * (k * (sigma - sf)).cos() * sgn;
-        }
-        (row, constant)
-    };
-    for node in &graph.nodes {
-        if node.ends.len() == 1 {
-            let (j, at_end) = node.ends[0];
-            let mut row = vec![Complex64::new(0.0, 0.0); cols];
-            for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
-                row[seg] += Complex64::new(c, 0.0);
-            }
-            extra.push((row, Complex64::new(0.0, 0.0)));
-            continue;
-        }
-        // Kirchhoff: current flowing into the node sums to zero.
-        let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
-        for &(j, at_end) in &node.ends {
-            let inflow = if at_end { 1.0 } else { -1.0 };
-            for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
-                kcl[seg] += Complex64::new(inflow * c, 0.0);
+            for (i, &r) in sec.segs.iter().enumerate() {
+                let p = Complex64::new(0.0, -scale)
+                    * f.volts
+                    * sgf
+                    * (k * (sec.s_mid[i] - sf).abs()).sin();
+                y[r] += p * sec.signs[i];
             }
         }
-        extra.push((kcl, Complex64::new(0.0, 0.0)));
-        // Equal potential against the first section at the node.
-        let (row0, c0) = phi(node.ends[0].0, node.ends[0].1);
-        for &(j, at_end) in &node.ends[1..] {
-            let (rj, cj) = phi(j, at_end);
-            let row: Vec<Complex64> = row0.iter().zip(&rj).map(|(a, b)| a - b).collect();
-            extra.push((row, cj - c0));
+        // Φ_j's constant at a node end: the fed sections' P′(σ)/k.
+        let constant = |j: usize, at_end: bool| {
+            let sec = &self.graph.sections[j];
+            let sigma = if at_end { sec.length } else { 0.0 };
+            let mut c = Complex64::new(0.0, 0.0);
+            for f in gaps {
+                let (jf, fi) = self.at[f.seg];
+                if jf != j {
+                    continue;
+                }
+                let (sf, sgf) = (sec.s_mid[fi], sec.signs[fi]);
+                let sgn = if sigma > sf { 1.0 } else { -1.0 };
+                c += Complex64::new(0.0, -scale) * f.volts * sgf * (k * (sigma - sf)).cos() * sgn;
+            }
+            c
+        };
+        for (row, pair) in self.phi_pairs.iter().enumerate() {
+            if let Some(((j0, e0), (jr, er))) = *pair {
+                y[n + row] = constant(jr, er) - constant(j0, e0);
+            }
+        }
+        y
+    }
+
+    /// Stamp a lumped series load `z_l` (ohms) on segment `p`. A load is a gap
+    /// its own current drives, `V = −z_l·I_p`; the forcing is linear in the gap
+    /// voltage, so moving it to the left adds `z_l` times a unit gap's
+    /// right-hand side to column `p` — the collocation rows of `p`'s section and
+    /// that section's terms in the equal-potential rows alike.
+    pub(crate) fn add_load(&mut self, p: usize, z_l: Complex64) {
+        let unit = self.rhs(&[GraphFeed {
+            seg: p,
+            volts: Complex64::new(1.0, 0.0),
+        }]);
+        for (row, u) in self.m.iter_mut().zip(&unit) {
+            row[p] += z_l * u;
         }
     }
-    for (row, rhs) in extra {
-        m.push(row);
-        y.push(rhs);
+
+    /// Solve for a set of gap sources; returns the segment currents.
+    pub(crate) fn solve(&self, gaps: &[GraphFeed]) -> Result<Vec<Complex64>, SolveError> {
+        let x = crate::linear::solve_normal_equations(&self.m, &self.rhs(gaps), self.cols)?;
+        Ok(x[..self.n].to_vec())
     }
-    let x = crate::linear::solve_normal_equations(&m, &y, cols)?;
-    Ok(x[..n].to_vec())
 }

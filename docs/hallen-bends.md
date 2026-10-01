@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -130,7 +130,8 @@ warnings no longer fire for these decks. Over `GN 2` it uses the usual
 reflection-coefficient ground.
 
 It takes a deck only when all hold: voltage (delta-gap, EX 0/5) sources, no plane
-wave and no current source; no `LD`, `TL` or `NT`; no contact with perfect
+wave and no current source; no `TL` or `NT` (lumped `LD` loads are columns of the
+graph system since stage 5); no contact with perfect
 ground; every straight section at least two segments; no wire end on another
 wire's interior. Anything else keeps the per-path fallback and its warning.
 
