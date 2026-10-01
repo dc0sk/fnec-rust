@@ -35,6 +35,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **`--exec hybrid` runs a real GPU lane beside the CPU pool.** Its "GPU-candidate
+  lane" was a stub that sent every point back to the CPU with a warning. Now one
+  thread solves points on the GPU while the CPU workers solve the rest, all taking
+  the next point from one counter; each point's `exec=` says which, and a lost
+  device (FND-190) stops the lane rather than failing points. It pays on long
+  sweeps: 200 points of 601 segments 14.9 s against 17.2 s on the GPU alone and
+  29.5 s on the CPU. It does not on short ones — 24 points of 801 segments took
+  10.3 s against 3.8 s on the GPU, because every CPU worker takes a point at once —
+  so the automatic pick never chooses it. The per-frequency dispatch seam and its
+  warning are removed, and `exec=` under `hybrid` names `cpu` or `gpu`.
 - **The GPU solve is about three times faster on large decks.** Its triangular
   solves ran in a single GPU invocation, three times per solve (0.73 s each at
   2048 unknowns); they now take one dispatch per column. A 2049-segment dipole

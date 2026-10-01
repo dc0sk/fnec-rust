@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/requirements-register.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-10-01
 ---
 
 # Requirements register
@@ -55,7 +55,7 @@ canonical list.
 | NFR-001 | Linux-first (Wayland), then macOS, then Windows | CI/dev on Linux; portability via `wgpu`/`iced` |
 | NFR-001a | Raspberry Pi 4/5 as in-scope acceleration reference | `scripts/pi-*`, benchmark matrix |
 | NFR-002 | CPU execution multithreaded and deterministic | rayon paths; `RAYON_NUM_THREADS` benchmark mode |
-| NFR-003 | GPU optional with reliable CPU fallback | Phase 5–7; `dispatch_frequency_point` fallback |
+| NFR-003 | GPU optional with reliable CPU fallback | Phase 5–7; every device decline falls back to the CPU and says why (`exec=gpu(cpu-fallback)`); hybrid's GPU lane stops on a fallback |
 | NFR-004 | Numerical compatibility measured with per-metric tolerance | Corpus + `reference-results.json` gates |
 | NFR-005 | Script-friendly stable stdin/stdout/stderr | Phase 2 scriptability contract (PH2-CHK-008) |
 | NFR-006 | Usability competitive with incumbents | Phase 3 usability benchmark (PH3-CHK-012) |

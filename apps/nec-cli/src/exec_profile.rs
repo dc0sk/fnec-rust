@@ -35,14 +35,6 @@ impl ExecutionMode {
             ExecutionMode::Gpu => "gpu",
         }
     }
-
-    pub(crate) fn as_diag_str(self) -> &'static str {
-        match self {
-            ExecutionMode::Cpu => "cpu",
-            ExecutionMode::Hybrid => "hybrid",
-            ExecutionMode::Gpu => "gpu(cpu-fallback)",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,12 +166,12 @@ pub(super) fn warn_compatibility_profile(
     if exec_flag_explicitly_set {
         eprintln!(
             "warning: 4nec2 drop-in compatibility profile detected by binary name; preserving explicit --exec={}",
-            requested_execution_mode.as_diag_str()
+            requested_execution_mode.as_cli_str()
         );
     } else {
         eprintln!(
             "warning: 4nec2 drop-in compatibility profile detected by binary name; default execution path steered to exec={}",
-            effective_execution_mode.as_diag_str()
+            effective_execution_mode.as_cli_str()
         );
     }
 }

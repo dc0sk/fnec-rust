@@ -275,7 +275,7 @@ fn exec_mode_defaults_to_cpu_in_diag_field() {
 }
 
 #[test]
-fn hybrid_exec_is_reflected_without_fallback_warning_and_gpu_warns_cpu_fallback() {
+fn hybrid_and_gpu_points_say_what_ran_without_a_seam_warning() {
     let hybrid = run_solver_on_reference_dipole_with_exec("hallen", "hybrid");
     assert!(
         hybrid.status.success(),
@@ -287,7 +287,7 @@ fn hybrid_exec_is_reflected_without_fallback_warning_and_gpu_warns_cpu_fallback(
         !hybrid_stderr.contains("warning: --exec hybrid requested"),
         "did not expect hybrid fallback warning in stderr, got:\n{hybrid_stderr}"
     );
-    assert_diag_field(&hybrid_stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&hybrid_stderr);
 
     let gpu = run_solver_on_reference_dipole_with_exec("hallen", "gpu");
     assert!(
@@ -296,9 +296,11 @@ fn hybrid_exec_is_reflected_without_fallback_warning_and_gpu_warns_cpu_fallback(
         String::from_utf8_lossy(&gpu.stderr)
     );
     let gpu_stderr = String::from_utf8_lossy(&gpu.stderr);
+    // The per-frequency scheduling seam and its warning are gone: the GPU is
+    // chosen per deck, and the point's label says whether it ran there.
     assert!(
-        gpu_stderr.contains("warning: --exec gpu requested"),
-        "expected gpu fallback warning in stderr, got:\n{gpu_stderr}"
+        !gpu_stderr.contains("scheduling seam"),
+        "the removed seam warning came back:\n{gpu_stderr}"
     );
     common::assert_gpu_exec_label(&gpu_stderr);
 }

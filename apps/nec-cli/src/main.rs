@@ -36,8 +36,8 @@ use solve_session::{
 use std::process::ExitCode;
 use std::time::Instant;
 use warnings::{
-    warn_deferred_ground_model, warn_execution_mode_fallback, warn_ge_ground_reflection_flag,
-    warn_mpie_mixed_radius, warn_pulse_mode_experimental,
+    warn_deferred_ground_model, warn_ge_ground_reflection_flag, warn_mpie_mixed_radius,
+    warn_pulse_mode_experimental,
 };
 
 /// Print every point a sweep computed, and report the ones that failed.
@@ -421,8 +421,6 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    warn_execution_mode_fallback(execution_mode);
-
     // --- geometry + pre-solve validation, shared by BOTH solve paths --------
     //
     // This block sits ABOVE the `--hosts` branch deliberately. It used to sit
@@ -543,39 +541,46 @@ fn main() -> ExitCode {
         );
     }
 
-    // Without `--exec`, the deck decides between the CPU and the GPU. Local runs
-    // only, so it sits below the `--hosts` branch: a worker is told `gpu` only
-    // when the user said so (FND-040), never by a pick made from the controller's
-    // hardware.
-    if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
-        let stamped = deck.cards.iter().any(|c| {
-            matches!(
-                c,
-                nec_model::card::Card::Ld(_)
-                    | nec_model::card::Card::Tl(_)
-                    | nec_model::card::Card::Nt(_)
-            )
-        });
-        let deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
-            Err("the device solves the Hallén basis only")
-        } else if stamped || !laplace_loads.is_empty() {
-            Err("the deck stamps loads or networks into the matrix, which the device does not see")
+    // The deck class the device takes, and whether the system fits it: one
+    // answer for the automatic pick and for hybrid's GPU lane, so they cannot
+    // disagree. Local runs only, so it sits below the `--hosts` branch: a worker
+    // is told `gpu` only when the user said so (FND-040), never by a pick made
+    // from the controller's hardware.
+    let stamped = deck.cards.iter().any(|c| {
+        matches!(
+            c,
+            nec_model::card::Card::Ld(_)
+                | nec_model::card::Card::Tl(_)
+                | nec_model::card::Card::Nt(_)
+        )
+    });
+    let gpu_deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
+        Err("the device solves the Hallén basis only")
+    } else if stamped || !laplace_loads.is_empty() {
+        Err("the deck stamps loads or networks into the matrix, which the device does not see")
+    } else {
+        nec_solver::gpu_resident_class(deck, &segs, &ground)
+    };
+    // Two homogeneous unknowns per straight wire with two free ends: the system
+    // the device holds is S = N + 2W.
+    let unknowns = segs.len() + 2 * nec_solver::merged_grouping(&segs).0.len();
+    let device_capacity = || {
+        // Hardware first: on a host with only a software adapter the capacity
+        // query would build a device on it.
+        if pollster::block_on(nec_accel::hardware_adapter_present()) {
+            nec_accel::shared_device_dense_capacity()
         } else {
-            nec_solver::gpu_resident_class(deck, &segs, &ground)
-        };
-        // Two homogeneous unknowns per straight wire with two free ends: the
-        // system the device holds is S = N + 2W.
-        let unknowns = segs.len() + 2 * nec_solver::merged_grouping(&segs).0.len();
-        let choice =
-            auto_select_execution_mode(segs.len(), unknowns, freqs_hz.len(), deck_class, || {
-                // Hardware first: on a host with only a software adapter the
-                // capacity query would build a device on it.
-                if pollster::block_on(nec_accel::hardware_adapter_present()) {
-                    nec_accel::shared_device_dense_capacity()
-                } else {
-                    None
-                }
-            });
+            None
+        }
+    };
+    if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
+        let choice = auto_select_execution_mode(
+            segs.len(),
+            unknowns,
+            freqs_hz.len(),
+            gpu_deck_class,
+            device_capacity,
+        );
         eprintln!(
             "info: exec auto: selected_exec={} ({})",
             choice.mode.as_cli_str(),
@@ -583,6 +588,24 @@ fn main() -> ExitCode {
         );
         execution_mode = choice.mode;
     }
+    // Hybrid's GPU lane opens on the same terms; without it hybrid is the CPU
+    // pool, and says why.
+    let gpu_lane = execution_mode == ExecutionMode::Hybrid && freqs_hz.len() > 1 && {
+        let why = match gpu_deck_class {
+            Err(why) => Some(format!("not a deck the GPU solves: {why}")),
+            Ok(()) => match device_capacity() {
+                None => Some("no hardware GPU".to_string()),
+                Some(cap) if unknowns > cap => Some(format!(
+                    "{unknowns} unknowns, more than the GPU holds ({cap})"
+                )),
+                Some(_) => None,
+            },
+        };
+        if let Some(why) = &why {
+            eprintln!("info: --exec hybrid runs on the CPU only: {why}");
+        }
+        why.is_none()
+    };
     // ------------------------------------------------------------------
 
     // Per-wire basis solve requires every wire to have >= 2 segments.
@@ -614,7 +637,7 @@ fn main() -> ExitCode {
         .flatten()
         .collect();
 
-    let solve_one = |freq_hz: f64| {
+    let solve_one = |freq_hz: f64, point_mode: ExecutionMode| {
         solve_frequency_point(
             deck,
             &segs,
@@ -625,7 +648,7 @@ fn main() -> ExitCode {
             &pattern_points,
             solver_mode,
             pulse_rhs_mode,
-            execution_mode,
+            point_mode,
             sin_fallback_rel_max,
             freq_hz,
             ground_solver,
@@ -633,18 +656,13 @@ fn main() -> ExitCode {
         )
     };
 
-    let (mut solved, gpu_fallback_count) =
-        execute_frequency_sweep(&freqs_hz, execution_mode, solve_one);
+    let mut solved = execute_frequency_sweep(&freqs_hz, execution_mode, gpu_lane, solve_one);
     solved.sort_by_key(|(idx, _, _)| *idx);
 
-    if gpu_fallback_count > 0 {
-        eprintln!(
-            "warning: --exec hybrid scheduled {gpu_fallback_count} frequency point(s) for the GPU-candidate lane, but per-frequency GPU dispatch is not wired (a GPU lane beside the CPU pool needs a shared work index); running those points on CPU fallback. Without --exec, a deck large enough for the GPU to win runs every point on it"
-        );
-    }
-    // A GPU sweep says how many points the device actually solved: each one can
-    // decline on its own (a stamp at that frequency, a rejected f32 answer).
-    if execution_mode == ExecutionMode::Gpu && solved.len() > 1 {
+    // A GPU or hybrid sweep says how many points the device actually solved:
+    // each one can decline on its own (a stamp at that frequency, a rejected f32
+    // answer, a lost device).
+    if (execution_mode == ExecutionMode::Gpu || gpu_lane) && solved.len() > 1 {
         let on_device = solved
             .iter()
             .filter(|(_, r, _)| r.as_ref().is_ok_and(|p| p.ran_on_gpu))

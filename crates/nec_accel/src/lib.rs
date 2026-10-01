@@ -46,27 +46,11 @@
 //!
 //! # Dispatch policy
 //!
-//! [`dispatch_frequency_point`] is the per-frequency scheduling seam used by the
-//! CLI hybrid sweep lane.  It always returns [`DispatchDecision::FallbackToCpu`].
-//!
-//! **Two different routes could be sent through it, and they do not have the same
-//! evidence.** Saying flatly "not wired, because it is slower" over-claims, and
-//! saying "not YET wired" under-claims:
-//!
-//! - A **fully GPU-resident per-point** route is declined on measurement:
-//!   PH7-CHK-003 measured that solve at **0.04x-0.48x of the CPU at every size
-//!   tested, with no crossover** (`docs/ph7-chk-003-gpu-resident-solve.md`). Since
-//!   FND-185 the solve dispatches its elimination across the device and crosses
-//!   over (≈ 500 segments for one point, ≈ 550 for a 24-point sweep on a GTX
-//!   1080 Ti). The CLI now acts on that per DECK, not per point: without `--exec`
-//!   it sends a whole run to the GPU above the crossover. A per-point lane beside
-//!   the CPU pool would need a shared work index, and is not built.
-//! - A **fill-on-GPU, solve-on-CPU per-point** route is neither wired nor
-//!   measured through this lane. That recipe does win elsewhere — the Z-fill
-//!   kernel beats the CPU from N~32-64 and `--exec gpu` already uses it locally
-//!   at >= 128 segments — so its absence here is an open question, not a settled
-//!   one. What is unmeasured is a single shared device against the CPU-parallel
-//!   lane.
+//! The GPU is chosen per DECK, by the CLI (`--exec`, or its automatic pick above
+//! the measured crossover), and a sweep's hybrid mode runs a GPU lane beside the
+//! CPU pool, both pulling points from one counter. There is no per-frequency
+//! seam here: it existed as `dispatch_frequency_point`, always answered "CPU",
+//! and was removed once the per-deck pick and the hybrid lane replaced it.
 //!
 //! Either way PH7-CHK-004 is not the tracker: it is Done and delivered the
 //! *distributed* path — `--exec gpu` through the SSH worker pool — which is
@@ -97,70 +81,6 @@ pub use kernel_reference::{
     compute_hallen_fr_batch_cpu, compute_hallen_fr_point_cpu, compute_hallen_fr_point_with_timing,
     HallenFrReferenceKernel, KernelTiming,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AccelRequestKind {
-    HybridGpuCandidate,
-    GpuOnly,
-}
-
-/// Per-frequency scheduling decision for the CLI hybrid sweep lane.
-///
-/// `RunOnGpu` is the arm this seam does not currently take:
-/// [`dispatch_frequency_point`] always returns `FallbackToCpu`, for the measured
-/// reason in the crate docs. It is kept so the decision stays expressible rather
-/// than assumed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DispatchDecision {
-    RunOnGpu,
-    FallbackToCpu { reason: &'static str },
-}
-
-/// Reason returned by [`dispatch_frequency_point`] for the CPU-fallback path.
-pub const GPU_DISPATCH_NOT_WIRED: &str =
-    "per-frequency GPU dispatch is not wired: the GPU is chosen per deck instead — \
-     without --exec, a run above the measured crossover goes to it whole — and a GPU \
-     lane beside the CPU pool would need a shared work index";
-
-/// Decide whether a single frequency point should run on the GPU.
-///
-/// Always [`DispatchDecision::FallbackToCpu`], for a measured reason rather than
-/// a pending one — see the crate docs. This is an honest seam: it never reports
-/// CPU work as GPU work.
-pub fn dispatch_frequency_point(_request: AccelRequestKind, _freq_hz: f64) -> DispatchDecision {
-    DispatchDecision::FallbackToCpu {
-        reason: GPU_DISPATCH_NOT_WIRED,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        dispatch_frequency_point, AccelRequestKind, DispatchDecision, GPU_DISPATCH_NOT_WIRED,
-    };
-
-    #[test]
-    fn hybrid_gpu_candidate_dispatch_falls_back_to_cpu_for_now() {
-        let decision = dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, 14.2e6);
-        assert!(matches!(
-            decision,
-            DispatchDecision::FallbackToCpu {
-                reason: GPU_DISPATCH_NOT_WIRED
-            }
-        ));
-    }
-
-    #[test]
-    fn gpu_only_dispatch_falls_back_to_cpu_for_now() {
-        let decision = dispatch_frequency_point(AccelRequestKind::GpuOnly, 14.2e6);
-        assert!(matches!(
-            decision,
-            DispatchDecision::FallbackToCpu {
-                reason: GPU_DISPATCH_NOT_WIRED
-            }
-        ));
-    }
-}
 
 #[cfg(all(test, feature = "wgpu"))]
 mod wgpu_tests {
