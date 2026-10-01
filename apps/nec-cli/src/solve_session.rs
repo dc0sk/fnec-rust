@@ -1618,63 +1618,109 @@ pub(super) fn solve_frequency_point(
     })
 }
 
-/// Execute a frequency sweep: every point in parallel on the CPU, or in turn on
-/// the one GPU device.
+/// What the sweep executor needs to know about one point's result: whether the
+/// device solved it. Generic so the executor's tests need no real solve.
+pub(super) trait LaneResult {
+    fn ran_on_gpu(&self) -> bool;
+}
+
+impl LaneResult for Result<FrequencySolveResult, String> {
+    fn ran_on_gpu(&self) -> bool {
+        self.as_ref().is_ok_and(|p| p.ran_on_gpu)
+    }
+}
+
+/// Execute a frequency sweep.
 ///
-/// The points are independent, so `--exec cpu` and `--exec hybrid` solve them
-/// all in one `par_iter` (rayon's pool; `RAYON_NUM_THREADS` bounds it). It was
-/// sequential for `cpu` and half-sequential for `hybrid`: 24 points of a
-/// 601-segment dipole took 12.2 s on `cpu` and 7.1 s on `hybrid`, now 3.7 s.
-/// Per-point warnings are single lines but reach stderr in completion order.
+/// - `cpu`: every point in parallel in one rayon `par_iter` (`RAYON_NUM_THREADS`
+///   bounds it, and with it memory — FND-187).
+/// - `gpu`: the points in turn on the one device.
+/// - `hybrid` with `gpu_lane`: both at once. One dedicated thread solves points on
+///   the device while every rayon worker solves points on the CPU, all pulling
+///   the next index from one counter, so the split follows their real speeds.
+///   A device point that comes back from the CPU means device trouble — the
+///   caller only opens the lane for decks the device takes, with no stamps — so
+///   the lane says so once and stops, rather than rebuilding a lost device for
+///   every remaining point. Without `gpu_lane`, `hybrid` is `cpu`.
 ///
-/// Hybrid's GPU-candidate lane still consults the dispatch seam first, so the
-/// CLI can say honestly that none of its points ran on a GPU; every candidate
-/// falls back and joins the same parallel pass.
+/// The GPU lane is a `std::thread`, never a rayon worker: its solve parks in
+/// `pollster::block_on`, and a parked worker would shrink the pool.
 ///
-/// Returns results indexed by frequency position, unsorted. The caller is responsible
-/// for sorting by index and emitting per-result warnings.
+/// Returns results indexed by frequency position, unsorted. The caller is
+/// responsible for sorting by index and emitting per-result warnings.
 #[allow(clippy::type_complexity)]
-pub(super) fn execute_frequency_sweep<F>(
+pub(super) fn execute_frequency_sweep<R, F>(
     freqs_hz: &[f64],
     execution_mode: ExecutionMode,
+    gpu_lane: bool,
     solve_one: F,
-) -> (
-    Vec<(usize, Result<FrequencySolveResult, String>, u128)>,
-    usize,
-)
+) -> Vec<(usize, R, u128)>
 where
-    F: Fn(f64) -> Result<FrequencySolveResult, String> + Sync,
+    R: LaneResult + Send,
+    F: Fn(f64, ExecutionMode) -> R + Sync,
 {
-    use nec_accel::{dispatch_frequency_point, AccelRequestKind, DispatchDecision};
     use rayon::prelude::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    let timed = |idx: usize| {
+    let timed = |idx: usize, mode: ExecutionMode| {
         let t0 = std::time::Instant::now();
-        let result = solve_one(freqs_hz[idx]);
+        let result = solve_one(freqs_hz[idx], mode);
         (idx, result, t0.elapsed().as_millis())
     };
 
-    let mut gpu_fallback_count = 0usize;
-    if matches!(execution_mode, ExecutionMode::Hybrid) && freqs_hz.len() > 1 {
-        // The candidate lane is every other point, so it keeps a broad spread
-        // of the band.
-        for idx in (1..freqs_hz.len()).step_by(2) {
-            match dispatch_frequency_point(AccelRequestKind::HybridGpuCandidate, freqs_hz[idx]) {
-                DispatchDecision::FallbackToCpu { .. } => gpu_fallback_count += 1,
-                // The seam's other arm: real per-frequency GPU dispatch would
-                // need its own lane, fed from a shared work index.
-                DispatchDecision::RunOnGpu => {}
-            }
-        }
-    }
-
-    let solved = if matches!(execution_mode, ExecutionMode::Gpu) {
+    match execution_mode {
         // One device: a GPU sweep takes its points in turn.
-        (0..freqs_hz.len()).map(timed).collect()
-    } else {
-        (0..freqs_hz.len()).into_par_iter().map(timed).collect()
-    };
-    (solved, gpu_fallback_count)
+        ExecutionMode::Gpu => (0..freqs_hz.len())
+            .map(|i| timed(i, ExecutionMode::Gpu))
+            .collect(),
+        ExecutionMode::Hybrid if gpu_lane && freqs_hz.len() > 1 => {
+            let next = AtomicUsize::new(0);
+            let lane_open = AtomicBool::new(true);
+            let solved = std::sync::Mutex::new(Vec::with_capacity(freqs_hz.len()));
+            let take = || {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                (i < freqs_hz.len()).then_some(i)
+            };
+            let keep = |point| {
+                solved
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(point);
+            };
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    while lane_open.load(Ordering::Relaxed) {
+                        let Some(i) = take() else { break };
+                        let point = timed(i, ExecutionMode::Gpu);
+                        if !point.1.ran_on_gpu() {
+                            lane_open.store(false, Ordering::Relaxed);
+                            eprintln!(
+                                "warning: --exec hybrid: a point the GPU lane took came back \
+                                 from the CPU, so the lane stopped; the rest of the sweep runs \
+                                 on the CPU"
+                            );
+                        }
+                        keep(point);
+                    }
+                });
+                (0..rayon::current_num_threads())
+                    .into_par_iter()
+                    .for_each(|_| {
+                        while let Some(i) = take() {
+                            keep(timed(i, ExecutionMode::Cpu));
+                        }
+                    });
+            });
+            solved
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        }
+        // Every point is independent, and the caller re-sorts by index.
+        _ => (0..freqs_hz.len())
+            .into_par_iter()
+            .map(|i| timed(i, ExecutionMode::Cpu))
+            .collect(),
+    }
 }
 
 /// The pulse solvers' right-hand-side scaling, as one function so the source
@@ -1689,24 +1735,47 @@ fn scale_pulse_rhs(v: &[Complex64], mode: PulseRhsMode, freq_hz: f64) -> Vec<Com
 
 #[cfg(test)]
 mod sweep_tests {
-    use super::{execute_frequency_sweep, ExecutionMode};
+    use super::{execute_frequency_sweep, ExecutionMode, LaneResult};
     use std::sync::{Condvar, Mutex};
     use std::time::Duration;
 
-    /// Whether two points of one sweep were ever in flight at once. The first
-    /// point to arrive waits up to 2 s for a second; a sequential sweep never
-    /// sends one, so the wait times out. Every point reports its own frequency
-    /// back through the error string, which lets the caller check the index.
-    fn overlapped(mode: ExecutionMode, freqs: &[f64]) -> (bool, Vec<(usize, f64)>) {
+    /// A point's stand-in result: its frequency, and the lane that solved it.
+    #[derive(Debug, Clone, Copy)]
+    struct Point {
+        freq: f64,
+        mode: ExecutionMode,
+        on_gpu: bool,
+    }
+
+    impl LaneResult for Point {
+        fn ran_on_gpu(&self) -> bool {
+            self.on_gpu
+        }
+    }
+
+    const FREQS: [f64; 8] = [10e6, 11e6, 12e6, 13e6, 14e6, 15e6, 16e6, 17e6];
+
+    fn in_pool<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .expect("pool")
+            .install(f)
+    }
+
+    /// Run a sweep whose first two arrivals rendezvous: the first waits up to
+    /// 2 s for a second. Returns whether they met, and the points.
+    fn sweep(
+        mode: ExecutionMode,
+        gpu_lane: bool,
+        freqs: &[f64],
+        device_ok: bool,
+    ) -> (bool, Vec<(usize, Point)>) {
         let arrived = Mutex::new(0usize);
         let cv = Condvar::new();
         let met = Mutex::new(false);
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(4)
-            .build()
-            .expect("pool");
-        let (solved, _) = pool.install(|| {
-            execute_frequency_sweep(freqs, mode, |f| {
+        let solved = in_pool(|| {
+            execute_frequency_sweep(freqs, mode, gpu_lane, |freq, mode| {
                 let mut n = arrived.lock().unwrap();
                 *n += 1;
                 if *n == 1 {
@@ -1718,56 +1787,95 @@ mod sweep_tests {
                     }
                 } else {
                     cv.notify_all();
+                    drop(n);
                 }
-                Err(f.to_string())
+                // A CPU point is slower than a device point, as on real decks
+                // past the crossover; instant CPU points would let the pool
+                // drain the sweep before the GPU thread had started.
+                if mode == ExecutionMode::Cpu {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Point {
+                    freq,
+                    mode,
+                    on_gpu: mode == ExecutionMode::Gpu && device_ok,
+                }
             })
         });
-        let points = solved
-            .into_iter()
-            .map(|(idx, r, _)| match r {
-                Err(f) => (idx, f.parse::<f64>().unwrap()),
-                Ok(_) => unreachable!("every injected point fails"),
-            })
-            .collect();
         let met = *met.lock().unwrap();
-        (met, points)
+        (met, solved.into_iter().map(|(i, p, _)| (i, p)).collect())
     }
 
-    fn assert_each_point_once(freqs: &[f64], mut points: Vec<(usize, f64)>) {
+    fn assert_each_point_once(freqs: &[f64], mut points: Vec<(usize, Point)>) -> Vec<Point> {
         points.sort_by_key(|p| p.0);
         assert_eq!(points.len(), freqs.len());
-        for (i, (idx, f)) in points.into_iter().enumerate() {
-            assert_eq!(idx, i, "indices must be a permutation of 0..n");
-            assert_eq!(f, freqs[idx], "point {idx} solved the wrong frequency");
-        }
+        points
+            .into_iter()
+            .enumerate()
+            .map(|(i, (idx, p))| {
+                assert_eq!(idx, i, "indices must be a permutation of 0..n");
+                assert_eq!(p.freq, freqs[idx], "point {idx} solved the wrong frequency");
+                p
+            })
+            .collect()
     }
 
-    const FREQS: [f64; 8] = [10e6, 11e6, 12e6, 13e6, 14e6, 15e6, 16e6, 17e6];
-
     #[test]
-    fn a_cpu_sweep_solves_its_points_concurrently() {
-        let (met, points) = overlapped(ExecutionMode::Cpu, &FREQS);
+    fn a_cpu_sweep_solves_its_points_concurrently_on_the_cpu() {
+        let (met, points) = sweep(ExecutionMode::Cpu, false, &FREQS, true);
         assert!(
             met,
             "no two points were in flight at once: the sweep is sequential"
         );
-        assert_each_point_once(&FREQS, points);
-    }
-
-    #[test]
-    fn a_hybrid_sweep_solves_its_points_concurrently() {
-        // Its GPU-candidate lane falls back to the CPU; it must not run those
-        // points one at a time after the rest, which made hybrid slower than cpu.
-        let (met, points) = overlapped(ExecutionMode::Hybrid, &FREQS);
-        assert!(met, "no two points were in flight at once");
-        assert_each_point_once(&FREQS, points);
+        let points = assert_each_point_once(&FREQS, points);
+        assert!(points.iter().all(|p| p.mode == ExecutionMode::Cpu));
     }
 
     #[test]
     fn a_gpu_sweep_takes_its_points_in_turn() {
         // One device. The first point waits the full 2 s and nobody arrives.
-        let (met, points) = overlapped(ExecutionMode::Gpu, &FREQS[..2]);
+        let (met, points) = sweep(ExecutionMode::Gpu, false, &FREQS[..2], true);
         assert!(!met, "a GPU sweep must not overlap its points");
-        assert_each_point_once(&FREQS[..2], points);
+        let points = assert_each_point_once(&FREQS[..2], points);
+        assert!(points.iter().all(|p| p.mode == ExecutionMode::Gpu));
+    }
+
+    /// Both lanes take points, at once, and every point is solved exactly once.
+    #[test]
+    fn a_hybrid_sweep_runs_both_lanes_at_once() {
+        let (met, points) = sweep(ExecutionMode::Hybrid, true, &FREQS, true);
+        assert!(met, "no two points were in flight at once");
+        let points = assert_each_point_once(&FREQS, points);
+        let on_gpu = points
+            .iter()
+            .filter(|p| p.mode == ExecutionMode::Gpu)
+            .count();
+        assert!(on_gpu >= 1, "the GPU lane took no point");
+        assert!(on_gpu < FREQS.len(), "the CPU pool took no point");
+    }
+
+    /// Without a GPU lane (an ineligible deck, no device), hybrid is the CPU.
+    #[test]
+    fn a_hybrid_sweep_without_a_gpu_lane_is_the_cpu() {
+        let (_, points) = sweep(ExecutionMode::Hybrid, false, &FREQS, true);
+        let points = assert_each_point_once(&FREQS, points);
+        assert!(points.iter().all(|p| p.mode == ExecutionMode::Cpu));
+    }
+
+    /// A device point that came back from the CPU retires the lane: no point
+    /// after it is sent to the device.
+    #[test]
+    fn a_failing_gpu_lane_stops_after_its_first_fallback() {
+        let freqs: Vec<f64> = (0..64).map(|i| 1e6 * f64::from(i + 1)).collect();
+        let (_, points) = sweep(ExecutionMode::Hybrid, true, &freqs, false);
+        let points = assert_each_point_once(&freqs, points);
+        let to_gpu = points
+            .iter()
+            .filter(|p| p.mode == ExecutionMode::Gpu)
+            .count();
+        assert_eq!(
+            to_gpu, 1,
+            "the lane kept pulling after a fallback: {to_gpu} points"
+        );
     }
 }

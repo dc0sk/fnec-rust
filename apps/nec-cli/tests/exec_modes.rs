@@ -149,15 +149,8 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
         "expected 5 FREQ_MHZ headers, got {freq_headers}"
     );
 
-    assert!(
-        stderr.contains("warning: --exec hybrid scheduled"),
-        "expected hybrid lane fallback warning in stderr, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("GPU-candidate lane"),
-        "expected GPU-candidate lane warning details in stderr, got:\n{stderr}"
-    );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_hybrid_lane_reported(&stderr, 5);
+    common::assert_points_say_what_ran(&stderr);
 
     // Verify report ordering remains ascending by FR sweep points.
     let expected_order = [
@@ -177,14 +170,13 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     }
 }
 
-// PH7-CHK-001: the GPU-candidate lane has no CPU-emulation "stub backend".
-// While per-frequency GPU dispatch stays unwired (a measured decision, not a
-// pending item — see `nec_accel` crate docs), a hybrid sweep routes
-// its GPU-candidate points to CPU fallback and says so honestly — it never
-// reports CPU work as GPU emulation.
+// PH7-CHK-001: the GPU lane has no CPU-emulation "stub backend". A hybrid
+// sweep runs a real GPU lane beside the CPU pool where there is a hardware GPU,
+// and says it is CPU-only where there is none — it never reports CPU work as GPU
+// work, and every point names what solved it.
 #[test]
 // VERIFIES: NFR-003 (GPU optional with reliable CPU fallback)
-fn hybrid_exec_mode_routes_gpu_candidate_lane_to_cpu_fallback() {
+fn hybrid_exec_mode_runs_a_real_gpu_lane_or_says_it_is_cpu_only() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
 
@@ -206,15 +198,12 @@ fn hybrid_exec_mode_routes_gpu_candidate_lane_to_cpu_fallback() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(
-        stderr.contains("GPU-candidate lane"),
-        "expected honest GPU-candidate CPU-fallback warning in stderr, got:\n{stderr}"
-    );
+    common::assert_hybrid_lane_reported(&stderr, 5);
     assert!(
         !stderr.contains("accelerator stub backend") && !stderr.contains("CPU emulation"),
         "did not expect any 'stub backend' / 'CPU emulation' wording, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&stderr);
 
     // Contract remains unchanged: one ordered report block per FR point.
     assert_eq!(stdout.matches("FNEC FEEDPOINT REPORT").count(), 5);
@@ -287,7 +276,7 @@ fn filename_steering_sets_default_exec_for_dropin_alias() {
         stderr.contains("drop-in compatibility profile detected by binary name"),
         "expected compatibility-profile warning in stderr, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&stderr);
 }
 
 #[test]
@@ -357,7 +346,7 @@ fn filename_steering_also_detects_4nec2_alias_names() {
         stderr.contains("drop-in compatibility profile detected by binary name"),
         "expected compatibility-profile warning in stderr, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&stderr);
 }
 
 #[test]
@@ -405,7 +394,7 @@ fn dropin_alias_keeps_report_on_stdout_and_warning_on_stderr() {
         !stderr.contains("FNEC FEEDPOINT REPORT"),
         "stderr must not contain report output, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&stderr);
 }
 
 #[test]
@@ -780,7 +769,7 @@ fn fournec2_alias_keeps_report_on_stdout_and_warning_on_stderr() {
         !stderr.contains("FNEC FEEDPOINT REPORT"),
         "stderr must not contain report output, got:\n{stderr}"
     );
-    assert_diag_field(&stderr, "exec", "hybrid");
+    common::assert_points_say_what_ran(&stderr);
 }
 
 #[test]
@@ -908,7 +897,7 @@ fn nec2mp_alias_matrix_filename_steering_sets_default_exec() {
             stderr.contains("drop-in compatibility profile detected by binary name"),
             "expected compatibility-profile warning in stderr for alias '{alias_name}', got:\n{stderr}"
         );
-        assert_diag_field(&stderr, "exec", "hybrid");
+        common::assert_points_say_what_ran(&stderr);
     }
 }
 
@@ -990,7 +979,7 @@ fn nec2mp_alias_matrix_keeps_report_on_stdout_and_warning_on_stderr() {
             !stderr.contains("FNEC FEEDPOINT REPORT"),
             "stderr must not contain report output for alias '{alias_name}', got:\n{stderr}"
         );
-        assert_diag_field(&stderr, "exec", "hybrid");
+        common::assert_points_say_what_ran(&stderr);
     }
 }
 

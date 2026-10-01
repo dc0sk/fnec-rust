@@ -113,7 +113,7 @@ When the drop-in profile is active, stderr warning classes are fixed to two case
 Diagnostic expectations:
 
 - the warning is emitted on stderr, not stdout
-- the normal `diag:` line still reflects the effective execution mode (`exec=hybrid`, `exec=cpu`, `exec=gpu` when the device solved the point, or `exec=gpu(cpu-fallback)` when it fell back)
+- the normal `diag:` line's `exec=` says what solved each point: `exec=cpu`, `exec=gpu` when the device solved it, or `exec=gpu(cpu-fallback)` when it fell back — under the steered `hybrid` too, whose points run on the CPU pool or its GPU lane
 - no additional drop-in-specific stdout markers are introduced in the current scaffold
 
 ### File side-effect and lifecycle constraints

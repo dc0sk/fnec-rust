@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/multi-vendor-gpu.md
 status: living
-last_updated: 2026-06-27
+last_updated: 2026-10-01
 ---
 
 # Multi-Vendor GPU Backend Matrix
@@ -156,9 +156,10 @@ No workarounds or backend-specific flags were required on any machine.
 | `gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu` | ✓ pass | Hallén path clean |
 | All other 12 tests | ✓ pass | No V3DV- or aarch64-specific deltas observed |
 
-**Dispatch note (updated 2026-06-27)**: the per-frequency `dispatch_frequency_point`
-seam still returns `FallbackToCpu` (that lane is tracked separately), but the GPU
-kernels themselves are now really dispatched to the device: `--exec gpu` runs the
+**Dispatch note (updated 2026-10-01)**: the per-frequency `dispatch_frequency_point`
+seam is gone — the GPU is chosen per deck (`--exec`, or the CLI's automatic pick),
+and `--exec hybrid` runs a real GPU lane beside the CPU pool. The GPU kernels are
+really dispatched to the device: `--exec gpu` runs the
 RP far-field and Z-matrix-fill WGSL kernels, and — since PH7-CHK-003 — the
 GPU-resident Hallén solve (fill → LU → refinement entirely on the GPU). On this
 AMD Renoir/RADV target PH7-CHK-005 measured those real kernels (Z-fill ~200×

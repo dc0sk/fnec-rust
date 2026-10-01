@@ -128,9 +128,9 @@ functions across the `tests/` binaries listed above.
 | `nec_solver` | 237 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 37 | main, exec_profile, sweep_config, warnings, solve_session (the sweep solves CPU and hybrid points concurrently, GPU points in turn) |
+| `apps/nec-cli` | 39 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |
 | `nec_parser` | 30 | lib, template |
-| `nec_accel` | 26 | kernel_reference 20, lib 6 |
+| `nec_accel` | 24 | kernel_reference 20, lib 4 |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |

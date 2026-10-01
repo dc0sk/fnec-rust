@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Benchmarks
@@ -68,7 +68,9 @@ Since 2026-09-30 `--exec cpu` and `--exec hybrid` solve a sweep's FR points in
 parallel (hybrid's GPU-candidate points no longer run one at a time after the
 rest). Rows measured before then are sequential for `cpu`. Per-point
 `elapsed_ms` is now wall time under contention with the other points in flight;
-`RAYON_NUM_THREADS=1 --exec cpu` is still the single-thread baseline.
+`RAYON_NUM_THREADS=1 --exec cpu` is still the single-thread baseline. Since 2026-10-01
+`--exec hybrid` also runs a GPU lane beside the CPU pool on decks the GPU solves,
+so a hybrid row is no longer a CPU-only number (see `docs/cli-guide.md`).
 
 For explicit four-mode coverage, an additional local verification sweep was run on `corpus/frequency-sweep-dipole.nec` with `--solver hallen` and 3 repeats per mode:
 

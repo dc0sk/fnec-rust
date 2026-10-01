@@ -140,3 +140,37 @@ pub fn assert_gpu_exec_label(stderr: &str) {
     }
     assert_diag_field(stderr, "exec", "gpu");
 }
+
+/// Every `exec=` field of a hybrid run names what solved its point — `cpu`, or
+/// `gpu` / `gpu(cpu-fallback)` from the GPU lane — never the requested `hybrid`.
+pub fn assert_points_say_what_ran(stderr: &str) {
+    let labels: Vec<&str> = stderr
+        .lines()
+        .filter(|l| l.starts_with("diag:"))
+        .filter_map(|l| l.split_whitespace().find_map(|f| f.strip_prefix("exec=")))
+        .collect();
+    assert!(!labels.is_empty(), "no diag lines in:\n{stderr}");
+    for l in labels {
+        assert!(
+            matches!(l, "cpu" | "gpu" | "gpu(cpu-fallback)"),
+            "exec={l}: a point must say what ran\n{stderr}"
+        );
+    }
+}
+
+/// A multi-point `--exec hybrid` run on a deck the GPU solves: with a hardware
+/// GPU the lane runs and reports how many points it solved; without one the run
+/// says it is CPU-only, and why.
+pub fn assert_hybrid_lane_reported(stderr: &str, points: usize) {
+    if pollster::block_on(nec_accel::hardware_adapter_present()) {
+        assert!(
+            stderr.contains(&format!("of {points} sweep points solved on the GPU")),
+            "a GPU is present and the hybrid run reported no lane:\n{stderr}"
+        );
+    } else {
+        assert!(
+            stderr.contains("--exec hybrid runs on the CPU only: no hardware GPU"),
+            "no GPU, and the hybrid run did not say it is CPU-only:\n{stderr}"
+        );
+    }
+}
