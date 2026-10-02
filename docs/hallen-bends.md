@@ -168,6 +168,8 @@ Gate: `crates/nec_solver/tests/graph_nec2c.rs`.
   Lumped loads, current sources, networks, plane waves (receive; with `LD` loads
   refused) and perfect-ground contact are in scope since stage 5, and a wire
   end or a crossing at another wire's interior joint is a connection (FND-192).
-- **Receive over ground** is FND-170, not a bend problem: the receive forcing has
-  no ground-reflected wave, so even a straight dipole over perfect ground is about
-  55 % off.
+- **Receive over ground** was FND-170, not a bend problem: the receive forcing had
+  no ground-reflected wave, so even a straight dipole over perfect ground was about
+  55 % off. Over perfect ground it now has it, and the bend's corner term takes the
+  ground images on the receive side too (an inverted-V over `GN 1`: 7.95 → 4.61 %
+  at 21 → 41 per arm); finite ground is still refused.

@@ -244,7 +244,7 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
         _ if deck_has_plane_wave(deck) => {
             !deck.cards.iter().any(|c| matches!(c, Card::Ld(_)))
                 && matches!(
-                    classify_paths(segs, &crate::GroundModel::FreeSpace),
+                    classify_paths(segs, &crate::ground_model_from_deck(deck)),
                     PathRoute::Unsupported
                 )
                 && crate::section_graph::build_section_graph(segs)
@@ -770,7 +770,7 @@ pub fn solve_hallen_planewave_routed(
         segs,
         z_mat,
         freq_hz,
-        &plan_hallen_planewave(segs, freq_hz),
+        &plan_hallen_planewave(segs, freq_hz, &crate::ground_model_from_deck(deck)),
     )
 }
 
@@ -791,28 +791,94 @@ pub struct PlaneWavePlan {
     /// incidence direction after, the same saving as the path layout's.
     graph: Option<crate::section_graph::SectionGraph>,
     system: std::sync::OnceLock<Result<crate::section_graph::GraphSystem, String>>,
+    /// The ground the matrix was built over: the paths' corner terms take its
+    /// images, and the incident field its reflected wave (FND-170).
+    ground: crate::GroundModel,
 }
 
-/// Build the [`PlaneWavePlan`] for `segs` at `freq_hz`.
-pub fn plan_hallen_planewave(segs: &[Segment], freq_hz: f64) -> PlaneWavePlan {
-    // Free space by construction: a plane wave over ground is refused before any
-    // solve (FND-170), and `Deferred` ground solves in free space.
-    let free = crate::GroundModel::FreeSpace;
-    let graph = if matches!(classify_paths(segs, &free), PathRoute::Unsupported) {
+/// Why a plane wave over `ground` cannot be solved, or `None` (FND-170). The one
+/// copy, at the seam every receive solve and sweep row passes, and behind
+/// `pre_solve_error`'s message:
+///
+/// - **Finite ground**: its reflected wave is built but not yet gated against
+///   nec2c, so it stays refused.
+/// - **A wave from below the ground plane** (θ > 90°): nec2c computes it, but the
+///   result is unphysical — over finite ground |rrv| reaches 2.1 at 135° — and
+///   nec2c's own pattern skips θ > 90.01° over ground. θ = 90° (grazing) solves.
+/// - **Wires touching perfect ground**: the doubled-image solve needs the
+///   reflected wave on the image half, which is not built yet.
+pub(crate) fn plane_wave_ground_problem(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &crate::GroundModel,
+) -> Option<String> {
+    if !deck_has_plane_wave(deck) {
+        return None;
+    }
+    let which = match ground {
+        crate::GroundModel::FreeSpace | crate::GroundModel::Deferred { .. } => return None,
+        crate::GroundModel::SimpleFiniteGround { .. } => {
+            return Some(
+                "an incident plane wave over finite ground is not supported yet: its \
+                 ground-reflected wave is not gated against nec2c (FND-170). Use perfect \
+                 ground (GN 1), or remove the GN card to solve in free space"
+                    .to_string(),
+            )
+        }
+        crate::GroundModel::PerfectConductor => "perfect ground",
+    };
+    if let Some(theta) = plane_wave_thetas(deck).find(|t| t.to_radians().cos() < -1e-9) {
+        return Some(format!(
+            "an incident plane wave from θ = {theta}° arrives from below the {which} plane; \
+             over ground the arrival angle must be 0°–90° (FND-170)"
+        ));
+    }
+    match crate::ground_contact::pec_ground_contact(deck, segs, ground) {
+        Ok(None) => None,
+        Ok(Some(_)) => Some(
+            "an incident plane wave on wires touching the ground plane is not supported yet: \
+             the doubled-image solve has no reflected wave on its image half (FND-170)"
+                .to_string(),
+        ),
+        Err(e) => Some(e),
+    }
+}
+
+/// Every arrival θ a deck's plane-wave card asks for: the first, and, for a
+/// receive sweep, each row `θ₀ + i·Δθ`.
+fn plane_wave_thetas(deck: &NecDeck) -> impl Iterator<Item = f64> + '_ {
+    deck.cards.iter().flat_map(|c| match c {
+        Card::Ex(ex) if ex.kind().is_plane_wave() => {
+            let (t0, dt, n) = (ex.voltage_real, ex.theta_inc, ex.tag.max(1));
+            (0..n).map(|i| t0 + f64::from(i) * dt).collect::<Vec<_>>()
+        }
+        _ => Vec::new(),
+    })
+}
+
+/// Build the [`PlaneWavePlan`] for `segs` at `freq_hz` over `ground` — the ground
+/// the matrix was assembled with.
+pub fn plan_hallen_planewave(
+    segs: &[Segment],
+    freq_hz: f64,
+    ground: &crate::GroundModel,
+) -> PlaneWavePlan {
+    let graph = if matches!(classify_paths(segs, ground), PathRoute::Unsupported) {
         crate::section_graph::build_section_graph(segs)
             .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
     } else {
         None
     };
-    let paths = nontrivial_paths(segs, &free);
+    let paths = nontrivial_paths(segs, ground);
     let grouped = paths
         .as_ref()
-        .map(|ps| group_sections(segs, ps, freq_hz, &free));
+        .map(|ps| group_sections(segs, ps, freq_hz, ground));
     PlaneWavePlan {
         paths,
         grouped,
         graph,
         system: std::sync::OnceLock::new(),
+        ground: ground.clone(),
     }
 }
 
@@ -831,7 +897,11 @@ pub fn solve_hallen_planewave_planned(
         grouped,
         graph,
         system,
+        ground,
     } = plan;
+    if let Some(why) = plane_wave_ground_problem(deck, segs, ground) {
+        return Err(HallenSessionError::PlaneWave(why));
+    }
 
     // A junction or loop: the wave is a gap on every segment of the graph system.
     if let Some(graph) = graph {
@@ -848,12 +918,11 @@ pub fn solve_hallen_planewave_planned(
         }
         let built = system.get_or_init(|| {
             let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
-            let free = crate::GroundModel::FreeSpace;
             crate::section_graph::GraphSystem::build(
                 z_mat,
                 segs,
                 graph,
-                &corner_sources(segs, &free, freq_hz),
+                &corner_sources(segs, ground, freq_hz),
                 k,
             )
             .map_err(|e| e.to_string())
@@ -861,7 +930,7 @@ pub fn solve_hallen_planewave_planned(
         let system = built
             .as_ref()
             .map_err(|e| HallenSessionError::PlaneWave(e.clone()))?;
-        let gaps = crate::planewave::planewave_gaps(deck, segs, freq_hz)
+        let gaps = crate::planewave::planewave_gaps(deck, segs, freq_hz, ground)
             .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
         let currents = system.solve(&gaps).map_err(HallenSessionError::Solve)?;
         crate::check_currents_finite(&currents).map_err(HallenSessionError::NonFiniteCurrents)?;
@@ -869,8 +938,8 @@ pub fn solve_hallen_planewave_planned(
     }
 
     let pw = match paths {
-        Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps),
-        None => build_planewave_hallen(deck, segs, freq_hz),
+        Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps, ground),
+        None => build_planewave_hallen(deck, segs, freq_hz, ground),
     }
     .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
 

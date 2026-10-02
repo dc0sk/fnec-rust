@@ -1517,36 +1517,23 @@ pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -
         .or_else(|| frequency_error(deck))
         .or_else(|| network_card_error(deck, segs))
         .or_else(|| load_card_error(deck, segs))
-        .or_else(|| plane_wave_over_ground_error(deck, ground))
+        .or_else(|| plane_wave_over_ground_error(deck, segs, ground))
 }
 
-/// Refuse an incident plane wave over ground (FND-170).
+/// Refuse an incident plane wave over ground where fnec cannot answer it
+/// (FND-170): over finite ground, from below the ground plane, or on wires
+/// touching it. Over perfect ground the receive forcing now carries the
+/// ground-reflected wave and solves.
 ///
-/// The receive forcing is the direct wave alone: the matrix carries the ground's
-/// images, but the incident field has no ground-reflected part. A straight
-/// horizontal dipole 5 m over perfect ground, lit at θ = 45°, came out 55 % off
-/// nec2c in its induced currents, silently; in free space the same dipole is
-/// 5.6 %. No solver here has the reflected wave — the MPIE refuses plane waves —
-/// so there is nothing to point to but free space.
-///
-/// Exhaustive on purpose: a new ground model must decide here whether a plane
-/// wave over it is answerable. `Deferred` already solves in free space, and says
-/// so, so its receive answer is the free-space one it claims to be.
-pub fn plane_wave_over_ground_error(deck: &NecDeck, ground: &GroundModel) -> Option<String> {
-    if !crate::hallen_session::deck_has_plane_wave(deck) {
-        return None;
-    }
-    let which = match ground {
-        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return None,
-        GroundModel::PerfectConductor => "perfect ground",
-        GroundModel::SimpleFiniteGround { .. } => "finite ground",
-    };
-    Some(format!(
-        "an incident plane wave over {which} cannot be solved: the receive solve has no \
-         ground-reflected wave, so its induced currents are wrong — measured 55 % off nec2c \
-         on a straight dipole over perfect ground (FND-170). Remove the GN card to solve \
-         the antenna in free space"
-    ))
+/// The rule itself is [`crate::hallen_session::plane_wave_ground_problem`], the
+/// copy the receive seam enforces per solve and per sweep row; this is the
+/// pre-solve message every frontend shows.
+pub fn plane_wave_over_ground_error(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+) -> Option<String> {
+    crate::hallen_session::plane_wave_ground_problem(deck, segs, ground)
 }
 
 /// Refuse a deck with an `LD` card fnec cannot apply (FND-161): an unsupported
@@ -2036,11 +2023,12 @@ mod tests {
         assert!(e.contains("plane wave"), "{e}");
     }
 
-    /// FND-170: a plane wave over ground is refused, through `pre_solve_error`,
-    /// which every frontend calls; the same deck in free space, and a driven deck
-    /// over ground, are not.
+    /// FND-170: through `pre_solve_error`, which every frontend calls, a plane
+    /// wave over perfect ground now passes (its reflected wave is modelled) while
+    /// one over finite ground is still refused; the same deck in free space, and a
+    /// driven deck over ground, pass.
     #[test]
-    fn a_plane_wave_over_ground_is_refused() {
+    fn a_plane_wave_over_finite_ground_is_refused_and_over_perfect_ground_is_not() {
         let wire = "GW 1 42 -5 0 5 5 0 5 .001\n";
         let refusal = |ground: &str, ex: &str| {
             let (deck, segs) =
@@ -2049,13 +2037,9 @@ mod tests {
             pre_solve_error(&deck, &segs, &g)
         };
         let rx = "EX 1 1 1 0 45 0 0\n";
-        for (gn, which) in [
-            ("GN 1\n", "perfect ground"),
-            ("GN 2 0 0 0 13 0.005\n", "finite ground"),
-        ] {
-            let e = refusal(gn, rx).unwrap_or_else(|| panic!("{gn:?} must be refused"));
-            assert!(e.contains(which) && e.contains("FND-170"), "{e}");
-        }
+        let e = refusal("GN 2 0 0 0 13 0.005\n", rx).expect("finite ground is refused");
+        assert!(e.contains("finite ground") && e.contains("FND-170"), "{e}");
+        assert_eq!(refusal("GN 1\n", rx), None, "perfect ground solves");
         assert_eq!(
             refusal("GN 1\n", "EX 0 1 21 0 1 0\n"),
             None,

@@ -17,6 +17,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **An incident plane wave over perfect ground solves** (FND-170). The receive
+  forcing now carries the ground-reflected wave as nec2c's `etmns` does — evaluated
+  at each segment's mirror point, the mirrored polarization scaled by the
+  reflection coefficients — on every receive route: straight wires, bent paths
+  and the junction/loop graph, whose corner terms now take the ground images too.
+  Against nec2c over `GN 1`, at 21 → 41 segments per wire, a horizontal dipole is
+  10.9 → 5.9 % off (55 % before), a vertical dipole 9.8 → 5.4 %, an inverted-V
+  8.0 → 4.6 % — each within a point of the same deck's free-space error — and a T
+  1.05 → 0.56 %. Still refused, by name: finite ground (its reflected wave is
+  built but not yet gated), a wave from below the ground plane (θ > 90°, single or
+  as a receive-sweep row), and wires touching the ground.
+
 - The standard wgpu environment switches now take effect on every GPU route:
   `WGPU_BACKEND` restricts the backend, `WGPU_VALIDATION=1` requests the Vulkan
   validation layer, and `RUST_LOG` prints wgpu's log and the chosen adapter to
