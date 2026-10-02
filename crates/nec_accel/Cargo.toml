@@ -12,7 +12,7 @@ rust-version.workspace = true
 
 [features]
 default = []
-wgpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
+wgpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster", "dep:log"]
 
 [dependencies]
 num-complex = { workspace = true }
@@ -20,6 +20,9 @@ bytemuck = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
 # The shared context builds its device synchronously under its lock (FND-186).
 pollster = { workspace = true, optional = true }
+# wgpu reports through `log`; `wgpu_device` installs a stderr logger when
+# RUST_LOG is set (FND-190).
+log = { workspace = true, optional = true }
 
 [dev-dependencies]
 pollster = { workspace = true }

@@ -132,16 +132,16 @@ functions across the `tests/` binaries listed above.
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 39 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |
 | `nec_parser` | 30 | lib, template |
-| `nec_accel` | 24 | kernel_reference 20, lib 4 |
+| `nec_accel` | 27 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190) |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=572 --> **572** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=575 --> **575** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1213 --> **1213** = 572 unit + 634 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1216 --> **1216** = 575 unit + 634 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

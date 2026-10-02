@@ -119,6 +119,112 @@ static GPU_CACHE: std::sync::Mutex<GpuCache> = std::sync::Mutex::new(GpuCache::U
 /// and cheap next to the work, so serialising all of it costs nothing.
 static WGPU_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Every wgpu instance in this crate, built from the environment, so the
+/// standard wgpu switches work on every route: `WGPU_BACKEND` (`vulkan`, `gl`,
+/// …), `WGPU_VALIDATION=1` (the Vulkan validation layer, when installed) and
+/// `WGPU_DEBUG` (and the other `WGPU_*` switches wgpu-types reads). Unset, they
+/// leave wgpu's defaults. `new_without_display_handle()`
+/// reads none of them — `WGPU_BACKEND=gl` silently ran Vulkan (FND-190).
+///
+/// Also installs [`EnvLogger`] when `RUST_LOG` is set, so wgpu's own messages —
+/// validation errors among them — reach stderr; nothing in the workspace
+/// installed a logger, so they were dropped.
+fn new_instance() -> wgpu::Instance {
+    install_env_logger();
+    wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env())
+}
+
+/// A minimal stderr logger for wgpu's diagnostics, filtered by `RUST_LOG`:
+/// comma-separated items, each a level (`warn`) or `target=level`
+/// (`wgpu_hal=debug`); the longest matching target prefix wins.
+struct EnvLogger {
+    default: log::LevelFilter,
+    targets: Vec<(String, log::LevelFilter)>,
+}
+
+impl EnvLogger {
+    fn parse(spec: &str) -> (Self, Vec<String>) {
+        let mut logger = EnvLogger {
+            default: log::LevelFilter::Off,
+            targets: Vec::new(),
+        };
+        let mut rejected = Vec::new();
+        for item in spec.split(',').map(str::trim).filter(|i| !i.is_empty()) {
+            let (target, level) = match item.split_once('=') {
+                Some((t, l)) => (Some(t.trim()), l.trim()),
+                None => (None, item),
+            };
+            match (target, level.parse::<log::LevelFilter>()) {
+                (Some(t), Ok(l)) => logger.targets.push((t.to_owned(), l)),
+                (None, Ok(l)) => logger.default = l,
+                (_, Err(_)) => rejected.push(item.to_owned()),
+            }
+        }
+        (logger, rejected)
+    }
+
+    fn level_for(&self, target: &str) -> log::LevelFilter {
+        self.targets
+            .iter()
+            .filter(|(t, _)| {
+                target == t
+                    || target
+                        .strip_prefix(t.as_str())
+                        .is_some_and(|rest| rest.starts_with("::"))
+            })
+            .max_by_key(|(t, _)| t.len())
+            .map_or(self.default, |&(_, l)| l)
+    }
+
+    fn max_level(&self) -> log::LevelFilter {
+        self.targets
+            .iter()
+            .map(|&(_, l)| l)
+            .fold(self.default, std::cmp::max)
+    }
+}
+
+impl log::Log for EnvLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= self.level_for(metadata.target())
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            // Not `eprintln!`, which panics when stderr is closed — a worker
+            // whose parent has gone would abort inside wgpu's own logging.
+            use std::io::Write as _;
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "[{} {}] {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+fn install_env_logger() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let Ok(spec) = std::env::var("RUST_LOG") else {
+            return;
+        };
+        let (logger, rejected) = EnvLogger::parse(&spec);
+        for item in rejected {
+            eprintln!("warning: RUST_LOG item '{item}' is not a level or target=level; ignored");
+        }
+        let max = logger.max_level();
+        // Fails only if the host program installed a logger first; then it is used.
+        if log::set_logger(Box::leak(Box::new(logger))).is_ok() {
+            log::set_max_level(max);
+        }
+    });
+}
+
 fn wgpu_init_guard() -> std::sync::MutexGuard<'static, ()> {
     WGPU_INIT
         .lock()
@@ -175,7 +281,7 @@ async fn shared_gpu_context() -> GpuAcquire {
 
     // Always taken after GPU_CACHE, never before it, so the two cannot deadlock.
     let _init = wgpu_init_guard();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = new_instance();
     let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
@@ -188,6 +294,16 @@ async fn shared_gpu_context() -> GpuAcquire {
             return GpuAcquire::NoAdapter(why);
         }
     };
+    let info = adapter.get_info();
+    log::info!(
+        target: "nec_accel",
+        "GPU adapter: {} ({:?}, {:?}, driver {} {})",
+        info.name,
+        info.backend,
+        info.device_type,
+        info.driver,
+        info.driver_info
+    );
     // The downlevel defaults cap a storage binding at 128 MiB, which is what
     // bounds the dense solve's matrix; take what the adapter offers for the two
     // limits the size checks read (2 GiB / 4 GiB on a GTX 1080 Ti).
@@ -223,7 +339,7 @@ async fn shared_gpu_context() -> GpuAcquire {
 /// that is not an error.
 pub async fn enumerate_compute_adapters() -> Vec<AdapterInfo> {
     let _init = wgpu_init_guard();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = new_instance();
 
     pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
         .into_iter()
@@ -265,7 +381,7 @@ fn cs_main() {}
 ///   exist without panics.
 pub async fn run_noop_compute_pipeline() -> NoOpPipelineResult {
     let init = wgpu_init_guard();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = new_instance();
 
     let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::None,
@@ -411,7 +527,7 @@ pub async fn run_rp_farfield_wgpu(
 ) -> RpPipelineResult {
     // ---- device setup -------------------------------------------------------
     let init = wgpu_init_guard();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = new_instance();
 
     let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::None,
@@ -1252,7 +1368,7 @@ pub async fn microbench_zmatrix_dispatch(
     // ---- timed device acquisition -----------------------------------------
     let t_dev = Instant::now();
     let init = wgpu_init_guard();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let instance = new_instance();
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
@@ -2098,4 +2214,41 @@ pub async fn solve_hallen_gpu_resident(
     }
 
     Ok(solution)
+}
+
+#[cfg(test)]
+mod env_logger_tests {
+    use super::EnvLogger;
+    use log::LevelFilter;
+
+    #[test]
+    fn the_longest_matching_target_wins_and_a_prefix_must_end_at_a_path_boundary() {
+        let (l, rejected) =
+            EnvLogger::parse("warn, wgpu_core=debug,wgpu_hal=trace,wgpu_hal::vulkan=error");
+        assert!(rejected.is_empty(), "{rejected:?}");
+        assert_eq!(l.level_for("nec_accel"), LevelFilter::Warn);
+        assert_eq!(l.level_for("wgpu_core"), LevelFilter::Debug);
+        assert_eq!(l.level_for("wgpu_core::device"), LevelFilter::Debug);
+        assert_eq!(l.level_for("wgpu_hal::gles"), LevelFilter::Trace);
+        assert_eq!(
+            l.level_for("wgpu_hal::vulkan::instance"),
+            LevelFilter::Error
+        );
+        // `wgpu_core_x` is not inside `wgpu_core`.
+        assert_eq!(l.level_for("wgpu_core_x"), LevelFilter::Warn);
+        assert_eq!(l.max_level(), LevelFilter::Trace);
+    }
+
+    #[test]
+    fn an_unparseable_item_is_reported_not_dropped() {
+        let (l, rejected) = EnvLogger::parse("wgpu_hal=loud,info");
+        assert_eq!(rejected, vec!["wgpu_hal=loud".to_owned()]);
+        assert_eq!(l.level_for("wgpu_hal"), LevelFilter::Info);
+    }
+
+    #[test]
+    fn with_no_level_given_nothing_is_logged() {
+        let (l, _) = EnvLogger::parse("wgpu_hal=debug");
+        assert_eq!(l.level_for("nec_accel"), LevelFilter::Off);
+    }
 }
