@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Changelog
@@ -17,6 +17,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **Junction and loop decks touching perfect ground solve (FND-162 stage 5).** A
+  folded monopole (grounded at both legs) and a top-hat monopole were refused
+  ("cannot represent"); doubled by their images they are section graphs. The
+  folded monopole converges on nec2c 0.73 → 0.49 %. A top-hat monopole is 12 % from
+  nec2c — a junction-condition difference (FND-191, below), not an error: fnec's
+  MPIE agrees with it within 0.6 %.
+- **FND-191, a documented difference from nec2c.** Where a stem meets charged hats
+  at both ends (an H, a grounded top-hat, a double-Y), fnec's equal-potential
+  junction condition and NEC-2's Wu–King condition converge to answers 12–20 %
+  apart; on T, Y and T-dipole decks they agree within 2 %. fnec keeps its condition
+  (the maintainer's decision, with the ablation evidence in the ledger).
 - **Loaded junction and loop decks solve on the section graph (FND-162 stage 5).**
   A T, Y or loop with `LD` loads (a trap, a loading coil) fell back to the per-wire
   basis, unreliable and warned. A load is now a column of the graph system — the

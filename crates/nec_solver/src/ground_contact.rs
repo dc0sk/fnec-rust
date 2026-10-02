@@ -61,10 +61,12 @@ pub fn touches_ground(segs: &[Segment]) -> bool {
 /// - a wire below the ground (truly buried);
 /// - a segment lying in the ground plane (its image coincides with it; nec2c
 ///   refuses this too);
-/// - a contact that, doubled, is not a set of simple conductor paths — a wire
-///   grounded at both ends (a closed loop with its image), or several wires
-///   meeting at one ground point. Those would fall to the junction class that
-///   Hallén cannot solve (FND-162).
+/// - a contact that, doubled, is neither a set of simple conductor paths nor a
+///   section graph. A wire grounded at both ends (a closed loop with its image)
+///   and a junction above the ground (a top-hat) are section graphs and solve
+///   (FND-162 stage 5); what stays refused is a doubled structure the graph
+///   builder rejects (a one-segment straight run, a wire end on another wire's
+///   interior).
 pub fn pec_ground_contact(
     deck: &NecDeck,
     segs: &[Segment],
@@ -110,11 +112,12 @@ pub fn pec_ground_contact(
     if matches!(
         crate::hallen_session::classify_paths(&doubled, &crate::GroundModel::FreeSpace),
         crate::hallen_session::PathRoute::Unsupported
-    ) {
+    ) && crate::section_graph::build_section_graph(&doubled).is_none()
+    {
         return Err(
-            "this ground contact makes a junction or a closed loop with its image (a wire \
-             grounded at both ends, or several wires meeting at one ground point), which \
-             fnec's Hallén solver cannot represent (FND-162)"
+            "this ground contact makes a junction or a closed loop with its image that \
+             fnec's Hallén solver cannot represent: a straight run one segment long, or a \
+             wire end on another wire's interior (FND-162)"
                 .to_string(),
         );
     }

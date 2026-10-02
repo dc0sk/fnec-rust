@@ -108,15 +108,12 @@ fn unrepresentable_contacts_are_refused() {
         ("GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nGN 1\n", "ground plane"),
         // Below it.
         ("GW 1 21 0 0 -1 0 0 5 0.001\nGE 1\nGN 1\n", "below the ground"),
-        // Grounded at both ends: a closed loop with its image.
+        // A junction above the ground with an arm one segment long: doubled, a
+        // section graph the builder refuses (one row cannot fix a section's two
+        // constants).
         (
-            "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 10 0 0 3 3 0 3 0.001\nGW 3 10 3 0 3 3 0 0 0.001\nGE 1\nGN 1\n",
-            "closed loop",
-        ),
-        // Two wires meeting at one ground point.
-        (
-            "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 10 0 0 0 2 0 3 0.001\nGE 1\nGN 1\n",
-            "closed loop",
+            "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 1 0 0 3 0.3 0 3 0.001\nGW 3 10 0 0 3 -3 0 3 0.001\nGE 1\nGN 1\n",
+            "one segment long",
         ),
         // Finite ground has no trustworthy contact model.
         ("GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 2 0 0 0 13 0.005\n", "PERFECT ground"),
@@ -124,6 +121,22 @@ fn unrepresentable_contacts_are_refused() {
         let err = solve(&format!("CE\n{geometry}EX 0 1 2 0 1.0 0.0\n{TAIL}"), (1, 2))
             .expect_err(geometry);
         assert!(err.contains(needle), "{geometry}: {err}");
+    }
+}
+
+/// A wire grounded at both ends (doubled, a closed loop) and two wires meeting
+/// at one ground point (doubled, a degree-4 node) were refused as "cannot
+/// represent"; they are section graphs and solve (FND-162 stage 5). Their
+/// accuracy is gated in `graph_nec2c.rs` (the folded monopole against nec2c).
+#[test]
+fn grounded_loops_and_ground_point_junctions_solve() {
+    for geometry in [
+        "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 10 0 0 3 3 0 3 0.001\nGW 3 10 3 0 3 3 0 0 0.001\nGE 1\nGN 1\n",
+        "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 10 0 0 0 2 0 3 0.001\nGE 1\nGN 1\n",
+    ] {
+        let z = solve(&format!("CE\n{geometry}EX 0 1 2 0 1.0 0.0\n{TAIL}"), (1, 2))
+            .unwrap_or_else(|e| panic!("{geometry}: {e}"));
+        assert!(z.re > 0.0 && z.re.is_finite() && z.im.is_finite(), "{geometry}: {z}");
     }
 }
 

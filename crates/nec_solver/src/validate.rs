@@ -417,7 +417,7 @@ pub fn unsupported_topology_warning(
     // A deck the section-graph solve takes is modelled: every junction closes
     // with Kirchhoff and equal potential, and a loop is a cycle of sections
     // (FND-162 stages 2+3). What is left here is the remainder it refuses.
-    if crate::hallen_session::graph_route(deck, segs).is_some() {
+    if crate::hallen_session::takes_graph(deck, segs) {
         return None;
     }
     let kind = match classify_unsupported_topology(segs)? {

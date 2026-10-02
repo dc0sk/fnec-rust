@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Test catalog
@@ -92,7 +92,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/finite_ground_rp.rs` | 5 | PH8-CHK-006: radiation pattern over finite ground via the Fresnel reflection-coefficient far field. | PH8-CHK-006 |
 | `crates/nec_solver/tests/general_junction.rs` | 10 | PH9-CHK-002 (general junction case): a single physical conductor whose two arms meet at a degree-2 junction — start-to-start splits and bent inverted-V feeds — must solve to a p… | PH9-CHK-002 |
 | `crates/nec_solver/tests/gm_nec2c.rs` | 8 | FND-119 — the `GM` card, pinned against `nec2c`. | FND-119 |
-| `crates/nec_solver/tests/ground_contact.rs` | 6 | Wires on PEC ground by explicit images: monopole and grounded array vs nec2c, identity with the doubled free-space deck, base-load identity, unrepresentable contacts and unmirrored drives refused (FND-082) | NFR-004 |
+| `crates/nec_solver/tests/ground_contact.rs` | 7 | Wires on PEC ground by explicit images: monopole and grounded array vs nec2c, identity with the doubled free-space deck, base-load identity, unrepresentable contacts and unmirrored drives refused (FND-082) | NFR-004 |
 | `crates/nec_solver/tests/ground_impedance.rs` | 3 | Near-ground impedance: ground ΔZ vs nec2c — horizontal (R drops), vertical near-ground (R rises +18Ω), and 0.25λ vs Sommerfeld truth | PH9-CHK-006 |
 | `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
 | `crates/nec_solver/tests/mpie_farfield.rs` | 3 | PH9-CHK-007 MPIE Phase C — far-field from the recovered MPIE currents. | PH9-CHK-007 |
@@ -111,10 +111,10 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
 | `crates/nec_solver/tests/straight_rule.rs` | 2 | One rule for "straight" (FND-172/175): a wire split into two cards with a rounded-coordinate kink equals the one-card wire and tracks nec2c; a stepped-radius element tracks nec2c at two meshes, converging | FND-172, FND-175 |
 | `crates/nec_solver/tests/transverse_nec2c.rs` | 3 | The transverse-divergence term from sources sharing no node (FND-162 stage 4, FND-171, FND-174) vs nec2c at two meshes, converging: a 45° dipole over PEC, an inverted-V over PEC (== its explicit image in free space), a wire over a vertical dipole (antisymmetric at 0.7 m and 5 cm) | FND-162, FND-171, FND-174 |
-| `crates/nec_solver/tests/graph_nec2c.rs` | 12 | Hallén on the section graph (FND-162 stages 2+3) vs nec2c at two meshes, converging: a stem-fed Y and T, a T fed on its node, a dipole with a centre stub (a regression gate — the fallback passes it too), a 1 λ square loop, a loop with a stub, the loop over PEC; and Kirchhoff at the Y's node read off the solved currents (1e-9); stage 5: a loaded Y, a T with a coil on its node segment, a loop loaded beside a corner, and the exact feed-load identity | FND-162 |
+| `crates/nec_solver/tests/graph_nec2c.rs` | 16 | Hallén on the section graph (FND-162 stages 2+3) vs nec2c at two meshes, converging: a stem-fed Y and T, a T fed on its node, a dipole with a centre stub (a regression gate — the fallback passes it too), a 1 λ square loop, a loop with a stub, the loop over PEC; and Kirchhoff at the Y's node read off the solved currents (1e-9); stage 5: a loaded Y, a T with a coil on its node segment, a loop loaded beside a corner, and the exact feed-load identity; on PEC ground: a top-hat monopole equals its free-space H, the H against the MPIE with its FND-191 gap to nec2c pinned, a folded monopole against nec2c, and neither flagged nor warned | FND-162 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=619 --> **619** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=624 --> **624** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -139,7 +139,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=571 --> **571** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1197 --> **1197** = 571 unit + 619 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1202 --> **1202** = 571 unit + 624 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
