@@ -30,7 +30,6 @@ use crate::geometry::{GroundModel, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
-const EPS0: f64 = 8.854_187_817e-12; // F/m
 
 // ---------------------------------------------------------------------------
 // 4-point Gauss-Legendre quadrature nodes and weights on [-1, 1]
@@ -304,13 +303,12 @@ fn image_segment(seg: &Segment) -> Segment {
 
 /// Simple scalar reflection coefficient used by GN type 0 ground.
 ///
-/// Uses a complex relative permittivity model:
-/// εr_complex = εr - j σ/(ω ε0)
-/// and a normal-incidence Fresnel factor:
+/// Uses the complex relative permittivity of
+/// [`crate::sommerfeld::complex_permittivity`] (εr − j σ/(ω ε0), or εr − j|σ| for
+/// a negative σ) and a normal-incidence Fresnel factor:
 /// Γ = (sqrt(εr_complex) - 1) / (sqrt(εr_complex) + 1)
 pub(crate) fn fresnel_reflection_scalar(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
-    let omega = 2.0 * std::f64::consts::PI * freq_hz;
-    let eps_c = Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0));
+    let eps_c = crate::sommerfeld::complex_permittivity(freq_hz, eps_r, sigma);
     let sqrt_eps_c = eps_c.sqrt();
     (sqrt_eps_c - Complex64::new(1.0, 0.0)) / (sqrt_eps_c + Complex64::new(1.0, 0.0))
 }

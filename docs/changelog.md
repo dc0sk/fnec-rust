@@ -38,6 +38,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   shader) and both, and the first validation run found FND-193 (naga 29 emits
   SPIR-V the validation layer rejects; not the Xid cause).
 
+### Fixed
+
+- **A `GN` card with a negative conductivity solved over the wrong ground**
+  (FND-194). NEC reads a negative `SIG` as the imaginary part of the relative
+  permittivity itself (εc = εr − j·|SIG|): nec2c takes `GN 2 0 0 0 13 -5` at
+  14.2 MHz as 3.95 mS/m. fnec clamped it to σ = 0 in the matrix — the lossless
+  ground's answer, 70.59 − j26.56 Ω instead of 72.51 − j26.71 Ω on a dipole 5 m
+  up — and used it with the sign flipped in the far field. One function now
+  turns a ground card into its complex permittivity, and the matrix, the far
+  field and the incident plane wave all take it from there.
+
 ## [0.20.0] — 2026-10-02 — Every wire sees the others
 
 Twenty-six changes since v0.19.0 (#483–#509). **Hallén now couples every

@@ -33,7 +33,6 @@ use crate::geometry::{ConductorPath, GroundModel, Segment};
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
-const EPS0: f64 = 1.0 / (MU0 * C0 * C0); // F/m
 
 /// An incident plane wave parsed from an EX type 1/2/3 card.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -181,8 +180,7 @@ fn reflection_coefficients(
             Some((Complex64::new(-1.0, 0.0), Complex64::new(-1.0, 0.0)))
         }
         GroundModel::SimpleFiniteGround { eps_r, sigma } => {
-            let omega = 2.0 * std::f64::consts::PI * freq_hz;
-            let eps_c = Complex64::new(*eps_r, -sigma / (omega * EPS0));
+            let eps_c = crate::sommerfeld::complex_permittivity(freq_hz, *eps_r, *sigma);
             let zrati = Complex64::new(1.0, 0.0) / eps_c.sqrt();
             let t = wave.theta_deg.to_radians();
             let (cth, sth) = (t.cos(), t.sin());
