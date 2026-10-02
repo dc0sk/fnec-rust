@@ -15,6 +15,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- The standard wgpu environment switches now take effect on every GPU route:
+  `WGPU_BACKEND` restricts the backend, `WGPU_VALIDATION=1` requests the Vulkan
+  validation layer, and `RUST_LOG` prints wgpu's log and the chosen adapter to
+  stderr. fnec built its wgpu instance without reading the environment and
+  installed no logger, so all three were silently ignored. With them, FND-190's
+  GPU Xids were measured at the same rate on Vulkan only, GL only (which runs no
+  shader) and both, and the first validation run found FND-193 (naga 29 emits
+  SPIR-V the validation layer rejects; not the Xid cause).
+
 ## [0.20.0] — 2026-10-02 — Every wire sees the others
 
 Twenty-six changes since v0.19.0 (#483–#509). **Hallén now couples every

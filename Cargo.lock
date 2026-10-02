@@ -2376,6 +2376,7 @@ name = "nec_accel"
 version = "0.20.0"
 dependencies = [
  "bytemuck",
+ "log",
  "nec_accel",
  "nec_model",
  "nec_parser",

@@ -396,6 +396,23 @@ bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,halle
 
 When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix.
 
+### GPU diagnostics (environment)
+
+The standard wgpu switches apply to every route that uses the GPU — the CLI,
+`fnec worker`, and the tests. (The Python binding and the GUI's solves do not use
+fnec's GPU code.)
+
+| Variable | Effect |
+|---|---|
+| `WGPU_BACKEND` | Restrict the backends wgpu may use, comma-separated: `vulkan` (`vk`), `gl` (`gles`, `opengl`), `dx12`, `metal`, `webgpu`, `noop`. Default: all. An unknown name is dropped — and if none is left there is no backend, so every GPU solve falls back to the CPU (`RUST_LOG=warn` shows wgpu's "unknown backend string"). On an NVIDIA host `gl` gets a GL 3.3 context, which has no compute shaders: the device request fails ("Parent device is lost"; wgpu logs that the version lacks `COMPUTE_SHADER`) and the solve falls back to the CPU. |
+| `WGPU_VALIDATION=1` `WGPU_DEBUG=1` | Request the Vulkan validation layer and register wgpu's message channel for it; with `RUST_LOG=warn` its errors and warnings reach stderr as `[ERROR wgpu_hal::vulkan::instance] VALIDATION …`. Debug builds set both by default. Needs the layer installed (`vulkan-validationlayers` on Debian/Ubuntu); without it the request is skipped silently. With `WGPU_VALIDATION=1` alone the layer prints on **stdout**, mixed into the results. wgpu's channel deliberately hides one message, `VUID-StandaloneSpirv-None-10684` (a known naga bug, gfx-rs/wgpu#7696; FND-193), which the stdout route shows. |
+| `RUST_LOG` | Print wgpu's log and fnec's GPU log to stderr: a level (`info`), `target=level` items, or both, comma-separated; the longest matching target wins, and a target matches only whole path segments — the targets are `wgpu_core`, `wgpu_hal`, `naga` and `nec_accel` (`wgpu=debug` matches none of them). `info` names the adapter fnec chose: `GPU adapter: NVIDIA GeForce GTX 1080 Ti (Vulkan, DiscreteGpu, driver NVIDIA 580.178.04)`. |
+
+The other `WGPU_*` switches wgpu-types 29 reads (`WGPU_NOOP_BACKEND`,
+`WGPU_GLES_MINOR_VERSION`, `WGPU_GPU_BASED_VALIDATION`, …) apply as well. Before
+FND-190's investigation none of these took effect: fnec built its wgpu instance
+without reading the environment, and nothing installed a logger.
+
 The relative residual is defined as:
 $$\mathrm{rel\_res} = \frac{\lVert Ax-b\rVert_2}{\lVert b\rVert_2}$$
 
