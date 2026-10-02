@@ -122,7 +122,8 @@ fn solve_plane_wave(theta_deg: f64, phi_deg: f64, eta_deg: f64) -> Vec<Complex64
         .push(plane_wave_card(theta_deg, phi_deg, eta_deg));
     let segs = build_geometry(&deck).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
-    let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ).expect("planewave rhs");
+    let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ, &GroundModel::FreeSpace)
+        .expect("planewave rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
     solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve")
 }
@@ -331,7 +332,8 @@ fn solve_ex_on(geom: GwCard, ex: Card) -> Vec<Complex64> {
     deck.cards.push(ex);
     let segs = build_geometry(&deck).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ_HZ, &GroundModel::FreeSpace);
-    let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ).expect("planewave rhs");
+    let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ, &GroundModel::FreeSpace)
+        .expect("planewave rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
     solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve")
 }
@@ -495,7 +497,7 @@ fn two_wire_currents() -> Vec<Complex64> {
     let freq = 28.0e6;
     let segs = build_geometry(&deck).unwrap();
     let z = assemble_z_matrix_with_ground(&segs, freq, &GroundModel::FreeSpace);
-    let pw = build_planewave_hallen(&deck, &segs, freq).unwrap();
+    let pw = build_planewave_hallen(&deck, &segs, freq, &GroundModel::FreeSpace).unwrap();
     let endpoints = wire_endpoints_from_segs(&segs);
     solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap()
 }
@@ -524,7 +526,7 @@ fn planewave_two_wire_symmetric_broadside_currents_are_equal() {
     let freq = 28.0e6;
     let segs = build_geometry(&deck).unwrap();
     let z = assemble_z_matrix_with_ground(&segs, freq, &GroundModel::FreeSpace);
-    let pw = build_planewave_hallen(&deck, &segs, freq).unwrap();
+    let pw = build_planewave_hallen(&deck, &segs, freq, &GroundModel::FreeSpace).unwrap();
     let endpoints = wire_endpoints_from_segs(&segs);
     let cur = solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap();
     let peak = cur[10].norm().max(1e-30);
@@ -559,7 +561,7 @@ fn planewave_junctioned_geometry_is_rejected() {
     }));
     deck.cards.push(ex_card(1, 30.0, 0.0, 0.0, 0.0));
     let segs = build_geometry(&deck).expect("geometry");
-    let r = build_planewave_hallen(&deck, &segs, 14.2e6);
+    let r = build_planewave_hallen(&deck, &segs, 14.2e6, &GroundModel::FreeSpace);
     assert!(matches!(
         r,
         Err(nec_solver::PlaneWaveError::JunctionedGeometryNotSupported)

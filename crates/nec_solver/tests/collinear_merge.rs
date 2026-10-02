@@ -318,7 +318,7 @@ fn a_bent_junction_is_still_refused_on_the_plane_wave_path() {
         wire_endpoints_from_segs(&segs),
         "a bend is not a collinear continuation, so the merge must be a no-op here"
     );
-    let err = build_planewave_hallen(&bent, &segs, FREQ)
+    let err = build_planewave_hallen(&bent, &segs, FREQ, &nec_solver::GroundModel::FreeSpace)
         .expect_err("a bent junction is not modelled by the per-conductor basis");
     assert_eq!(err, PlaneWaveError::JunctionedGeometryNotSupported);
 }

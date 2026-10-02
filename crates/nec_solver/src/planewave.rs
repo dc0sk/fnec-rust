@@ -28,11 +28,12 @@ use num_complex::Complex64;
 use nec_model::card::Card;
 use nec_model::deck::NecDeck;
 
-use crate::geometry::{ConductorPath, Segment};
+use crate::geometry::{ConductorPath, GroundModel, Segment};
 
 const C0: f64 = 299_792_458.0; // m/s
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
+const EPS0: f64 = 1.0 / (MU0 * C0 * C0); // F/m
 
 /// An incident plane wave parsed from an EX type 1/2/3 card.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,6 +105,95 @@ impl IncidentPlaneWave {
     }
 }
 
+/// The incident field of a plane wave at any point: the direct wave plus, over a
+/// ground, the ground-reflected wave — nec2c's `etmns` (FND-170).
+///
+/// The reflected wave is evaluated at the point's mirror image `(x, y, −z)`, and
+/// its field vector is the mirrored polarization with the vertical part scaled by
+/// `rrv` and the horizontal (φ̂) part by `rrh`:
+/// `c = rrv·M p + (p·φ̂)(rrh − rrv)·φ̂`, `M = diag(1, 1, −1)`.
+/// Perfect ground: `rrv = rrh = −1`, so the tangential field vanishes at `z = 0`.
+/// Finite ground: nec2c's coefficients with `zrati = 1/√ε_c` — `rrv` is minus, and
+/// `rrh` equal to, the standard Fresnel Γ_v, Γ_h of [`crate::farfield`].
+///
+/// The ground is a parameter, never read from the deck: the PEC-contact solve's
+/// image deck has its `GN` card stripped, and a field keyed on it would be the
+/// direct wave alone on a doubled wire — wrong and unrefused.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IncidentField {
+    k: f64,
+    r_hat: [f64; 3],
+    pol: [Complex64; 3],
+    /// The reflected wave's field vector `c`, absent without a reflecting ground.
+    reflected: Option<[Complex64; 3]>,
+}
+
+impl IncidentField {
+    pub(crate) fn new(wave: &IncidentPlaneWave, ground: &GroundModel, freq_hz: f64) -> Self {
+        let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+        let pol = wave.pol_hat().map(|c| c * wave.e0);
+        let reflected = reflection_coefficients(wave, ground, freq_hz).map(|(rrv, rrh)| {
+            let p = wave.phi_deg.to_radians();
+            let phi_hat = [-p.sin(), p.cos(), 0.0];
+            let p_phi: Complex64 = (0..3).map(|c| pol[c] * phi_hat[c]).sum();
+            let mirrored = [pol[0], pol[1], -pol[2]];
+            std::array::from_fn(|c| rrv * mirrored[c] + p_phi * (rrh - rrv) * phi_hat[c])
+        });
+        IncidentField {
+            k,
+            r_hat: wave.r_hat(),
+            pol,
+            reflected,
+        }
+    }
+
+    /// The incident electric field vector at `r`.
+    pub(crate) fn at(&self, r: [f64; 3]) -> [Complex64; 3] {
+        let direct = Complex64::from_polar(1.0, self.k * dot(self.r_hat, r));
+        let mut e = self.pol.map(|c| c * direct);
+        if let Some(c) = self.reflected {
+            let image = Complex64::from_polar(1.0, self.k * dot(self.r_hat, [r[0], r[1], -r[2]]));
+            for i in 0..3 {
+                e[i] += c[i] * image;
+            }
+        }
+        e
+    }
+
+    /// The incident field along unit direction `d` at `r`.
+    pub(crate) fn tangential(&self, r: [f64; 3], d: [f64; 3]) -> Complex64 {
+        let e = self.at(r);
+        (0..3).map(|c| e[c] * d[c]).sum()
+    }
+}
+
+/// nec2c's `(rrv, rrh)` for the wave's incidence angle (`etmns`, matrix.c), or
+/// `None` where nothing reflects: free space, and `Deferred` ground, which solves
+/// in free space and says so.
+fn reflection_coefficients(
+    wave: &IncidentPlaneWave,
+    ground: &GroundModel,
+    freq_hz: f64,
+) -> Option<(Complex64, Complex64)> {
+    match ground {
+        GroundModel::FreeSpace | GroundModel::Deferred { .. } => None,
+        GroundModel::PerfectConductor => {
+            Some((Complex64::new(-1.0, 0.0), Complex64::new(-1.0, 0.0)))
+        }
+        GroundModel::SimpleFiniteGround { eps_r, sigma } => {
+            let omega = 2.0 * std::f64::consts::PI * freq_hz;
+            let eps_c = Complex64::new(*eps_r, -sigma / (omega * EPS0));
+            let zrati = Complex64::new(1.0, 0.0) / eps_c.sqrt();
+            let t = wave.theta_deg.to_radians();
+            let (cth, sth) = (t.cos(), t.sin());
+            let root = (Complex64::new(1.0, 0.0) - zrati * zrati * (sth * sth)).sqrt();
+            let rrh = (zrati * cth - root) / (zrati * cth + root);
+            let rrv = -(cth - zrati * root) / (cth + zrati * root);
+            Some((rrv, rrh))
+        }
+    }
+}
+
 /// Hallén system data for a plane-wave excitation: the forcing RHS plus the two
 /// homogeneous columns (`cos`/`sin`) consumed by
 /// [`crate::solve_hallen_planewave`].
@@ -167,6 +257,7 @@ pub fn build_planewave_hallen(
     deck: &NecDeck,
     segs: &[Segment],
     freq_hz: f64,
+    ground: &GroundModel,
 ) -> Result<PlaneWaveHallen, PlaneWaveError> {
     let wave = deck
         .cards
@@ -197,8 +288,7 @@ pub fn build_planewave_hallen(
     }
 
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let r_hat = wave.r_hat();
-    let pol_hat = wave.pol_hat();
+    let field = IncidentField::new(&wave, ground, freq_hz);
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     // Map each segment to its wire index (from the endpoint ranges) and cache
@@ -226,7 +316,8 @@ pub fn build_planewave_hallen(
         .collect();
 
     // Per-segment along-wire coordinate s (from its wire's midpoint) and the
-    // complex tangential incident field E_t(s) = (ê·û)·E₀·exp(+j k r̂·r).
+    // complex tangential incident field E_t(s) along the wire axis û — the direct
+    // wave (ê·û)·E₀·exp(+j k r̂·r) plus, over ground, the reflected one.
     let mut s_coord = vec![0.0f64; n];
     let mut e_tan = vec![Complex64::new(0.0, 0.0); n];
     for (i, seg) in segs.iter().enumerate() {
@@ -238,9 +329,7 @@ pub fn build_planewave_hallen(
             seg.midpoint[2] - wire_mid[w][2],
         ];
         s_coord[i] = dot(d, dir);
-        let coupling: Complex64 = (0..3).map(|c| pol_hat[c] * dir[c]).sum::<Complex64>() * wave.e0;
-        let phase = k * dot(r_hat, seg.midpoint); // +j k r̂·r
-        e_tan[i] = coupling * Complex64::from_polar(1.0, phase);
+        e_tan[i] = field.tangential(seg.midpoint, dir);
     }
 
     // Hallén forcing per wire: rhs(sₘ) = −j·(2π/η₀)·Σ_{p∈wire(m)} E_t(s_p)·
@@ -279,6 +368,7 @@ pub(crate) fn planewave_gaps(
     deck: &NecDeck,
     segs: &[Segment],
     freq_hz: f64,
+    ground: &GroundModel,
 ) -> Result<Vec<crate::section_graph::GraphFeed>, PlaneWaveError> {
     let wave = deck
         .cards
@@ -288,21 +378,13 @@ pub(crate) fn planewave_gaps(
             _ => None,
         })
         .ok_or(PlaneWaveError::NoPlaneWaveCard)?;
-    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let (r_hat, pol_hat) = (wave.r_hat(), wave.pol_hat());
+    let field = IncidentField::new(&wave, ground, freq_hz);
     Ok(segs
         .iter()
         .enumerate()
-        .map(|(seg, s)| {
-            let coupling: Complex64 = (0..3)
-                .map(|c| pol_hat[c] * s.direction[c])
-                .sum::<Complex64>()
-                * wave.e0;
-            let phase = k * dot(r_hat, s.midpoint);
-            crate::section_graph::GraphFeed {
-                seg,
-                volts: coupling * Complex64::from_polar(1.0, phase) * s.length,
-            }
+        .map(|(seg, s)| crate::section_graph::GraphFeed {
+            seg,
+            volts: field.tangential(s.midpoint, s.direction) * s.length,
         })
         .collect())
 }
@@ -337,6 +419,7 @@ pub fn build_planewave_hallen_paths(
     segs: &[Segment],
     freq_hz: f64,
     paths: &[ConductorPath],
+    ground: &GroundModel,
 ) -> Result<PlaneWaveHallen, PlaneWaveError> {
     let wave = deck
         .cards
@@ -349,8 +432,7 @@ pub fn build_planewave_hallen_paths(
 
     let n = segs.len();
     let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let r_hat = wave.r_hat();
-    let pol_hat = wave.pol_hat();
+    let field = IncidentField::new(&wave, ground, freq_hz);
     let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     // Per-segment path index, traversal sign, and signed arc-length from the paths.
@@ -366,15 +448,10 @@ pub fn build_planewave_hallen_paths(
     }
 
     // Incident tangential field in the path-traversal direction at each segment:
-    // E_path(s_p) = sign[p]·(ê·d̂_p)·E₀·exp(+j k r̂·r_p).
+    // E_path(s_p) = sign[p]·E_t(r_p) along d̂_p, direct plus, over ground, reflected.
     let mut e_path = vec![Complex64::new(0.0, 0.0); n];
     for (p, seg) in segs.iter().enumerate() {
-        let coupling: Complex64 = (0..3)
-            .map(|c| pol_hat[c] * seg.direction[c])
-            .sum::<Complex64>()
-            * wave.e0;
-        let phase = k * dot(r_hat, seg.midpoint); // +j k r̂·r
-        e_path[p] = coupling * Complex64::from_polar(1.0, phase) * sign_of[p];
+        e_path[p] = field.tangential(seg.midpoint, seg.direction) * sign_of[p];
     }
 
     // Hallén forcing per path: rhs(sₘ) = sign[m]·(−j·2π/η₀)·Σ_{p∈path(m)} E_path(s_p)·
@@ -425,7 +502,8 @@ mod tests {
             .deck;
         let segs = build_geometry(&rx).expect("geometry");
         let paths = build_conductor_paths(&segs).expect("one bent path");
-        let pw = build_planewave_hallen_paths(&rx, &segs, freq, &paths).expect("receive rhs");
+        let pw = build_planewave_hallen_paths(&rx, &segs, freq, &paths, &GroundModel::FreeSpace)
+            .expect("receive rhs");
 
         let k = 2.0 * std::f64::consts::PI * freq / C0;
         let (r_hat, pol) = (pw.wave.r_hat(), pw.wave.pol_hat());

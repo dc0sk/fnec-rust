@@ -60,7 +60,8 @@ fn receive_currents_paths(deck: &NecDeck, segs: &[Segment]) -> Vec<Complex64> {
 /// Receive solve through the existing per-wire plane-wave solver (validated path).
 fn receive_currents_per_wire(deck: &NecDeck, segs: &[Segment]) -> Vec<Complex64> {
     let z = assemble_z_matrix_with_ground(segs, FREQ, &GroundModel::FreeSpace);
-    let pw = build_planewave_hallen(deck, segs, FREQ).expect("planewave rhs");
+    let pw =
+        build_planewave_hallen(deck, segs, FREQ, &GroundModel::FreeSpace).expect("planewave rhs");
     let endpoints = wire_endpoints_from_segs(segs);
     solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve")
 }
