@@ -270,6 +270,43 @@ pub fn build_planewave_hallen(
     })
 }
 
+/// The incident plane wave as a delta gap on every segment, `V_p = E_t(p)·Δl_p`
+/// with `E_t` the incident field along the segment's own direction — the form the
+/// section-graph solve takes its forcing in (FND-162 stage 5). The per-wire
+/// builders above sum the same terms against `sin(k|s_m − s_p|)`; the graph does
+/// that itself, section by section.
+pub(crate) fn planewave_gaps(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+) -> Result<Vec<crate::section_graph::GraphFeed>, PlaneWaveError> {
+    let wave = deck
+        .cards
+        .iter()
+        .find_map(|card| match card {
+            Card::Ex(ex) if ex.kind().is_plane_wave() => Some(IncidentPlaneWave::from_ex_card(ex)),
+            _ => None,
+        })
+        .ok_or(PlaneWaveError::NoPlaneWaveCard)?;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let (r_hat, pol_hat) = (wave.r_hat(), wave.pol_hat());
+    Ok(segs
+        .iter()
+        .enumerate()
+        .map(|(seg, s)| {
+            let coupling: Complex64 = (0..3)
+                .map(|c| pol_hat[c] * s.direction[c])
+                .sum::<Complex64>()
+                * wave.e0;
+            let phase = k * dot(r_hat, s.midpoint);
+            crate::section_graph::GraphFeed {
+                seg,
+                volts: coupling * Complex64::from_polar(1.0, phase) * s.length,
+            }
+        })
+        .collect())
+}
+
 /// Build the plane-wave Hallén forcing + homogeneous columns over **conductor
 /// paths** — the general-junction receive path (PH9-CHK-002), consumed by
 /// [`crate::solve_hallen_paths`] with the section layout and corner term of a bent

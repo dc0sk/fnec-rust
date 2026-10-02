@@ -239,6 +239,17 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
         &crate::ground_model_from_deck(deck),
     ) {
         Ok(Some(img)) => graph_route(&img.deck, &img.segs).is_some(),
+        // A plane wave is a gap on every segment of the graph system — without
+        // LD loads (refused there).
+        _ if deck_has_plane_wave(deck) => {
+            !deck.cards.iter().any(|c| matches!(c, Card::Ld(_)))
+                && matches!(
+                    classify_paths(segs, &crate::GroundModel::FreeSpace),
+                    PathRoute::Unsupported
+                )
+                && crate::section_graph::build_section_graph(segs)
+                    .is_some_and(|g| g.has_junction_or_loop())
+        }
         // A current source is solved as its unit gap on the graph.
         _ if deck_has_current_source(deck) => graph_geometry(deck, segs).is_some(),
         _ => graph_route(deck, segs).is_some(),
@@ -775,6 +786,11 @@ pub fn solve_hallen_planewave_routed(
 pub struct PlaneWavePlan {
     paths: Option<Vec<ConductorPath>>,
     grouped: Option<PathGrouping>,
+    /// A junction or loop takes the section graph (FND-162 stage 5). Its system
+    /// is built on the first solve — it needs the matrix — and reused for every
+    /// incidence direction after, the same saving as the path layout's.
+    graph: Option<crate::section_graph::SectionGraph>,
+    system: std::sync::OnceLock<Result<crate::section_graph::GraphSystem, String>>,
 }
 
 /// Build the [`PlaneWavePlan`] for `segs` at `freq_hz`.
@@ -782,11 +798,22 @@ pub fn plan_hallen_planewave(segs: &[Segment], freq_hz: f64) -> PlaneWavePlan {
     // Free space by construction: a plane wave over ground is refused before any
     // solve (FND-170), and `Deferred` ground solves in free space.
     let free = crate::GroundModel::FreeSpace;
+    let graph = if matches!(classify_paths(segs, &free), PathRoute::Unsupported) {
+        crate::section_graph::build_section_graph(segs)
+            .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
+    } else {
+        None
+    };
     let paths = nontrivial_paths(segs, &free);
     let grouped = paths
         .as_ref()
         .map(|ps| group_sections(segs, ps, freq_hz, &free));
-    PlaneWavePlan { paths, grouped }
+    PlaneWavePlan {
+        paths,
+        grouped,
+        graph,
+        system: std::sync::OnceLock::new(),
+    }
 }
 
 /// [`solve_hallen_planewave_routed`] with the direction-independent work already
@@ -799,7 +826,47 @@ pub fn solve_hallen_planewave_planned(
     freq_hz: f64,
     plan: &PlaneWavePlan,
 ) -> Result<Vec<Complex64>, HallenSessionError> {
-    let PlaneWavePlan { paths, grouped } = plan;
+    let PlaneWavePlan {
+        paths,
+        grouped,
+        graph,
+        system,
+    } = plan;
+
+    // A junction or loop: the wave is a gap on every segment of the graph system.
+    if let Some(graph) = graph {
+        // Lumped loads would be columns of the graph system, but the routed solve
+        // stamps them into the matrix in the plain basis's form before reaching
+        // here, so a loaded receive deck on the graph is refused, not solved
+        // with misplaced loads.
+        if deck.cards.iter().any(|c| matches!(c, Card::Ld(_))) {
+            return Err(HallenSessionError::PlaneWave(
+                "a plane wave on a junction or loop deck with LD loads is not supported \
+                 (FND-162 stage 5)"
+                    .to_string(),
+            ));
+        }
+        let built = system.get_or_init(|| {
+            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+            let free = crate::GroundModel::FreeSpace;
+            crate::section_graph::GraphSystem::build(
+                z_mat,
+                segs,
+                graph,
+                &corner_sources(segs, &free, freq_hz),
+                k,
+            )
+            .map_err(|e| e.to_string())
+        });
+        let system = built
+            .as_ref()
+            .map_err(|e| HallenSessionError::PlaneWave(e.clone()))?;
+        let gaps = crate::planewave::planewave_gaps(deck, segs, freq_hz)
+            .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
+        let currents = system.solve(&gaps).map_err(HallenSessionError::Solve)?;
+        crate::check_currents_finite(&currents).map_err(HallenSessionError::NonFiniteCurrents)?;
+        return Ok(currents);
+    }
 
     let pw = match paths {
         Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps),

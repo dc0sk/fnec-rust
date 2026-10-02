@@ -17,6 +17,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A plane wave on a junction or loop deck solves (FND-162 stage 5).** The receive
+  solve refused T, Y and loop decks; the wave is now a gap on every segment of the
+  section-graph system, built once per frequency and reused for every incidence
+  direction. A 1 λ loop and a T converge on nec2c's current table within 0.6 % at 41
+  segments per wire. With this, every junction and loop deck either solves or is
+  refused with its reason named.
 - **TL and NT networks on a junction or loop deck solve (FND-162 stage 5).** A
   quad's phasing line, or a line across a Y, used to keep the deck on the
   unreliable per-wire fallback. They are superposed over the section-graph solve,
