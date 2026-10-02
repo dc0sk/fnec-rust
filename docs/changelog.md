@@ -25,9 +25,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   Against nec2c over `GN 1`, at 21 → 41 segments per wire, a horizontal dipole is
   10.9 → 5.9 % off (55 % before), a vertical dipole 9.8 → 5.4 %, an inverted-V
   8.0 → 4.6 % — each within a point of the same deck's free-space error — and a T
-  1.05 → 0.56 %. Still refused, by name: finite ground (its reflected wave is
-  built but not yet gated), a wave from below the ground plane (θ > 90°, single or
-  as a receive-sweep row), and wires touching the ground.
+  1.05 → 0.56 %. **Over finite ground** (`GN 0`, `GN 2`) the reflected wave takes
+  nec2c's Fresnel coefficients: 3 λ up, the ratio of the current over ground to
+  the same deck's free-space current matches nec2c's to 0.27 → 0.16 % in both
+  polarizations; at 0.24 λ it is 2.4 % off, which is fnec's finite-ground matrix
+  model, not the wave. `--ground-solver sommerfeld` cannot apply to a receive
+  solve (it corrects a feedpoint impedance) and now says so instead of passing
+  over it. Still refused, by name: a wave from below the ground plane (θ > 90°,
+  single or as a receive-sweep row) and wires touching the ground.
 
 - The standard wgpu environment switches now take effect on every GPU route:
   `WGPU_BACKEND` restricts the backend, `WGPU_VALIDATION=1` requests the Vulkan

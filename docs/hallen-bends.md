@@ -172,4 +172,4 @@ Gate: `crates/nec_solver/tests/graph_nec2c.rs`.
   no ground-reflected wave, so even a straight dipole over perfect ground was about
   55 % off. Over perfect ground it now has it, and the bend's corner term takes the
   ground images on the receive side too (an inverted-V over `GN 1`: 7.95 → 4.61 %
-  at 21 → 41 per arm); finite ground is still refused.
+  at 21 → 41 per arm), and over finite ground with nec2c's Fresnel coefficients.

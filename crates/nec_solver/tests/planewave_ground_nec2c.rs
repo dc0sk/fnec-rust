@@ -261,8 +261,8 @@ fn a_deferred_ground_receives_exactly_as_free_space() {
 }
 
 /// Still refused, each with its reason: a wave from below the ground plane —
-/// single or as a receive-sweep row — wires touching the ground, and finite
-/// ground. Grazing incidence (θ = 90°) solves.
+/// single or as a receive-sweep row, over perfect or finite ground — and wires
+/// touching the ground. Grazing incidence (θ = 90°) solves.
 #[test]
 fn what_fnec_cannot_answer_over_ground_is_refused_by_name() {
     let below = receive(&dipole(21), PEC, "EX 1 1 1 0 135 0 0\n").unwrap_err();
@@ -279,11 +279,13 @@ fn what_fnec_cannot_answer_over_ground_is_refused_by_name() {
     let contact = receive(monopole, PEC, "EX 1 1 1 0 45 0 0\n").unwrap_err();
     assert!(contact.contains("touching"), "{contact}");
 
-    let finite = receive(
+    // Over finite ground the reflected wave is modelled
+    // (planewave_finite_ground_nec2c.rs), but a wave from below is refused there too.
+    let below_finite = receive(
         &dipole(21),
         "GE 1\nGN 2 0 0 0 13 0.005\n",
-        "EX 1 1 1 0 45 0 0\n",
+        "EX 1 1 1 0 135 0 0\n",
     )
     .unwrap_err();
-    assert!(finite.contains("finite ground"), "{finite}");
+    assert!(below_finite.contains("below"), "{below_finite}");
 }

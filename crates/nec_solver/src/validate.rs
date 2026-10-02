@@ -2024,11 +2024,11 @@ mod tests {
     }
 
     /// FND-170: through `pre_solve_error`, which every frontend calls, a plane
-    /// wave over perfect ground now passes (its reflected wave is modelled) while
-    /// one over finite ground is still refused; the same deck in free space, and a
-    /// driven deck over ground, pass.
+    /// wave over perfect and finite ground passes (its reflected wave is
+    /// modelled), one from below the ground plane is refused; the same deck in
+    /// free space, and a driven deck over ground, pass.
     #[test]
-    fn a_plane_wave_over_finite_ground_is_refused_and_over_perfect_ground_is_not() {
+    fn a_plane_wave_over_ground_passes_unless_it_arrives_from_below() {
         let wire = "GW 1 42 -5 0 5 5 0 5 .001\n";
         let refusal = |ground: &str, ex: &str| {
             let (deck, segs) =
@@ -2037,9 +2037,14 @@ mod tests {
             pre_solve_error(&deck, &segs, &g)
         };
         let rx = "EX 1 1 1 0 45 0 0\n";
-        let e = refusal("GN 2 0 0 0 13 0.005\n", rx).expect("finite ground is refused");
-        assert!(e.contains("finite ground") && e.contains("FND-170"), "{e}");
+        assert_eq!(
+            refusal("GN 2 0 0 0 13 0.005\n", rx),
+            None,
+            "finite ground solves"
+        );
         assert_eq!(refusal("GN 1\n", rx), None, "perfect ground solves");
+        let e = refusal("GN 2 0 0 0 13 0.005\n", "EX 1 1 1 0 135 0 0\n").expect("from below");
+        assert!(e.contains("below") && e.contains("FND-170"), "{e}");
         assert_eq!(
             refusal("GN 1\n", "EX 0 1 21 0 1 0\n"),
             None,
