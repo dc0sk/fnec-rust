@@ -238,7 +238,7 @@ it previously failed fast.
 | bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
 | degree-3+ T/Y junction — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 2) |
 | closed loop — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 3) |
-| degree-3+ / closed loop — outside that scope (TL/NT, EX 1–4, one-segment section, end on an interior) | **guarded (whole-geometry warning)** |
+| degree-3+ / closed loop — outside that scope (TL/NT, EX 1–4, one-segment section) | **guarded (whole-geometry warning)** |
 
 ## Out-of-scope topologies (degree-3+ and closed loops)
 

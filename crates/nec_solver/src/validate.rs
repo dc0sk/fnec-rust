@@ -440,7 +440,15 @@ pub fn unsupported_topology_warning(
          (support for this combination is deferred — see PH9-CHK-002)"
             .to_string()
     };
-    Some(format!("geometry contains {kind}, {remedy}"))
+    // When the junction solve refuses the geometry itself, say where and what to
+    // change: the fix is usually one edit to the deck (FND-162 stage 5).
+    let fix = match crate::section_graph::section_graph(segs) {
+        Err(refusal @ crate::section_graph::GraphRefusal::OneSegmentRun { .. }) => {
+            format!(". fnec's junction solve takes this geometry once fixed: {refusal}")
+        }
+        _ => String::new(),
+    };
+    Some(format!("geometry contains {kind}, {remedy}{fix}"))
 }
 
 /// PH9-CHK-002: one warning per driven segment that sits on a genuine wire junction,
@@ -2411,6 +2419,23 @@ mod tests {
         assert_eq!(
             unsupported_topology_warning(&d2, &s2, "re-run with `--solver mpie`"),
             None
+        );
+    }
+
+    /// The junction solve's own refusals name the place and the edit: a folded
+    /// dipole with one-segment end jumpers is a closed loop the graph refuses
+    /// for its one-segment run (FND-162 stage 5: carrying the current unchanged
+    /// across it stayed 10.5 % off nec2c at 81 segments, so it stays refused).
+    #[test]
+    fn a_one_segment_run_is_named_with_its_fix() {
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 -5.25 0 0 5.25 0 0 .001\nGW 2 1 5.25 0 0 5.25 0 .1 .001\nGW 3 21 5.25 0 .1 -5.25 0 .1 .001\nGW 4 1 -5.25 0 .1 -5.25 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        );
+        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+            .expect("a refused loop must warn");
+        assert!(
+            w.contains("tag 2 segment 1 is one segment long") && w.contains("two segments"),
+            "{w}"
         );
     }
 
