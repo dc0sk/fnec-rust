@@ -800,8 +800,6 @@ pub struct PlaneWavePlan {
 /// copy, at the seam every receive solve and sweep row passes, and behind
 /// `pre_solve_error`'s message:
 ///
-/// - **Finite ground**: its reflected wave is built but not yet gated against
-///   nec2c, so it stays refused.
 /// - **A wave from below the ground plane** (θ > 90°): nec2c computes it, but the
 ///   result is unphysical — over finite ground |rrv| reaches 2.1 at 135° — and
 ///   nec2c's own pattern skips θ > 90.01° over ground. θ = 90° (grazing) solves.
@@ -817,14 +815,7 @@ pub(crate) fn plane_wave_ground_problem(
     }
     let which = match ground {
         crate::GroundModel::FreeSpace | crate::GroundModel::Deferred { .. } => return None,
-        crate::GroundModel::SimpleFiniteGround { .. } => {
-            return Some(
-                "an incident plane wave over finite ground is not supported yet: its \
-                 ground-reflected wave is not gated against nec2c (FND-170). Use perfect \
-                 ground (GN 1), or remove the GN card to solve in free space"
-                    .to_string(),
-            )
-        }
+        crate::GroundModel::SimpleFiniteGround { .. } => "ground",
         crate::GroundModel::PerfectConductor => "perfect ground",
     };
     if let Some(theta) = plane_wave_thetas(deck).find(|t| t.to_radians().cos() < -1e-9) {

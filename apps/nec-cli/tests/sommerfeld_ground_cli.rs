@@ -173,3 +173,22 @@ fn declined_sommerfeld_geometry_is_reported_not_silent() {
         "an applied correction must not report a decline:\n{straight_somm}"
     );
 }
+
+/// A plane-wave receive deck over finite ground with `--ground-solver sommerfeld`:
+/// the correction is a feedpoint-impedance delta and a receive solve has no
+/// feedpoint, so it cannot apply — and since plane waves over finite ground solve
+/// (FND-170), that decline must be said, not passed over as "not requested".
+#[test]
+fn a_receive_deck_says_the_sommerfeld_correction_does_not_apply() {
+    const RECEIVE: &str = "GW 1 21 -5 0 5 5 0 5 0.001\nGE 1\nGN 2 0 0 0 13 0.005\n\
+                           EX 1 1 1 0 45 0 0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    const RECEIVE_DECLINED: &str = "a plane-wave receive solve has none";
+    let somm = stderr_of(&["--ground-solver", "sommerfeld"], RECEIVE);
+    assert!(somm.contains(RECEIVE_DECLINED), "{somm}");
+    assert!(
+        !somm.contains(DECLINED),
+        "not the bent-geometry reason:\n{somm}"
+    );
+    let rcm = stderr_of(&["--ground-solver", "rcm"], RECEIVE);
+    assert!(!rcm.contains(RECEIVE_DECLINED), "rcm asked nothing:\n{rcm}");
+}

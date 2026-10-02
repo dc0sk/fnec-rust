@@ -729,12 +729,24 @@ pub(super) enum SommerfeldOutcome {
     /// Selected over finite ground but declined by the geometry (bent or mixed
     /// wire directions); the reported `Z` is the unchanged scalar-Γ (`rcm`) value.
     Declined,
+    /// Selected over finite ground on a plane-wave receive deck: the correction
+    /// is a feedpoint-impedance delta, and a receive solve has no feedpoint, so
+    /// its currents are the reflection-coefficient result (FND-170).
+    DeclinedReceive,
 }
 
 /// PH9-CHK-006: `--ground-solver sommerfeld` covers straight wires only, and used
 /// to decline everything else in silence — leaving the user believing they had the
 /// surface wave when they had the reflection-coefficient result. Say so.
 fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
+    if outcome == SommerfeldOutcome::DeclinedReceive {
+        eprintln!(
+            "warning: --ground-solver sommerfeld corrects a feedpoint impedance, and a \
+             plane-wave receive solve has none; the induced currents use the \
+             reflection-coefficient ground model (rcm) — the matrix's normal-incidence \
+             image and the wave's own Fresnel reflection (FND-170)"
+        );
+    }
     if outcome == SommerfeldOutcome::Declined {
         eprintln!(
             "warning: --ground-solver sommerfeld covers straight wires (horizontal, vertical \
@@ -861,10 +873,15 @@ pub(super) fn build_feedpoint_rows(
         });
     }
 
-    // A deck with no feedpoint at all (e.g. a plane-wave-only receive run) never
-    // asked the correction anything — that is not a decline.
+    // A deck with no feedpoint never asked the correction anything. A plane-wave
+    // receive deck over finite ground did get a ground — without the surface wave
+    // the user asked for — so it is a decline of its own kind and says so.
     if rows.is_empty() && sommerfeld_outcome == SommerfeldOutcome::Declined {
-        sommerfeld_outcome = SommerfeldOutcome::NotRequested;
+        sommerfeld_outcome = if deck_has_plane_wave(deck) {
+            SommerfeldOutcome::DeclinedReceive
+        } else {
+            SommerfeldOutcome::NotRequested
+        };
     }
 
     Ok((rows, sommerfeld_outcome))
