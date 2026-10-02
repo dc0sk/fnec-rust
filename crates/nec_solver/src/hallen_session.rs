@@ -188,6 +188,22 @@ pub(crate) fn graph_route(
         .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
 }
 
+/// Whether the solve that runs for this deck is a section-graph solve: the deck's
+/// own graph, or — touching PEC ground — its doubled image problem's, which is
+/// what `solve_hallen_routed` solves (FND-162 stage 5). The one answer for the
+/// route flags and the topology caveat, so neither calls a correct image-graph
+/// answer unsupported.
+pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
+    match crate::ground_contact::pec_ground_contact(
+        deck,
+        segs,
+        &crate::ground_model_from_deck(deck),
+    ) {
+        Ok(Some(img)) => graph_route(&img.deck, &img.segs).is_some(),
+        _ => graph_route(deck, segs).is_some(),
+    }
+}
+
 /// The voltage feeds of a deck as global segment indices.
 fn graph_feeds(deck: &NecDeck, segs: &[Segment]) -> Vec<crate::section_graph::GraphFeed> {
     deck.cards
@@ -223,18 +239,17 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
     // A deck touching PEC ground is solved as its doubled image problem (FND-082),
     // and the route must describe what runs: the base joins its image, so the
     // doubled structure is what decides the path basis.
-    let class = match crate::ground_contact::pec_ground_contact(
-        deck,
-        segs,
-        &crate::ground_model_from_deck(deck),
-    ) {
+    let image =
+        crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck));
+    let class = match &image {
         // The image problem is solved in free space: its images are real wires.
         Ok(Some(img)) => classify_paths(&img.segs, &crate::GroundModel::FreeSpace),
         _ => classify_paths(segs, &crate::ground_model_from_deck(deck)),
     };
     // A junction or loop driven by voltage sources takes the section graph: a
-    // path-basis solve (the device must decline it), no longer unsupported.
-    let graph = matches!(class, PathRoute::Unsupported) && graph_route(deck, segs).is_some();
+    // path-basis solve (the device must decline it), no longer unsupported. For
+    // a deck on PEC ground it is the image problem that takes it.
+    let graph = matches!(class, PathRoute::Unsupported) && takes_graph(deck, segs);
     HallenRoute {
         drive,
         paths: matches!(class, PathRoute::NonTrivial(_)) || graph,

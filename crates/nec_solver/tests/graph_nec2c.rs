@@ -339,3 +339,117 @@ fn a_load_at_the_feed_adds_exactly_its_impedance() {
         loaded - unloaded
     );
 }
+
+// ---- FND-162 stage 5: junctions and loops touching perfect ground ------------
+//
+// A deck touching PEC ground is solved as its doubled image problem (FND-082).
+// Doubled, a top-hat monopole is an H and a folded monopole a closed loop; both
+// were refused ("cannot represent"), and both are section graphs.
+
+fn top_hat_on_ground(n: u32, m: u32) -> String {
+    format!(
+        "GW 1 {n} 0 0 0 0 0 5 .001\nGW 2 {m} 0 0 5 -3 0 5 .001\nGW 3 {m} 0 0 5 3 0 5 .001\n\
+         GE 1\nGN 1\nEX 0 1 1 0 1 0\n"
+    )
+}
+
+/// The top-hat with its image written out: a 10 m stem with a hat at each end,
+/// fed across the joint by the gap and its image (1 V each).
+fn h_in_free_space(n: u32, m: u32) -> String {
+    format!(
+        "GW 1 {} 0 0 -5 0 0 5 .001\nGW 2 {m} 0 0 5 -3 0 5 .001\nGW 3 {m} 0 0 5 3 0 5 .001\n\
+         GW 4 {m} 0 0 -5 -3 0 -5 .001\nGW 5 {m} 0 0 -5 3 0 -5 .001\nGE 0\n\
+         EX 0 1 {n} 0 1 0\nEX 0 1 {} 0 1 0\n",
+        2 * n,
+        n + 1
+    )
+}
+
+fn z_at_7mhz(body: &str, feed: (u32, u32)) -> Complex64 {
+    let deck = nec_parser::parse(&format!("CE\n{body}FR 0 1 0 0 7.1 0\nEN\n"))
+        .expect("parses")
+        .deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let f = 7.1e6;
+    let mut z = assemble_z_matrix_with_ground(&segs, f, &ground_model_from_deck(&deck));
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, f, &[]).expect("solves");
+    let idx = segs
+        .iter()
+        .position(|s| s.tag == feed.0 && s.tag_index == feed.1)
+        .expect("feed");
+    Complex64::new(1.0, 0.0) / routed.currents[idx]
+}
+
+/// The image problem IS the doubled structure: a top-hat monopole on PEC ground
+/// equals its H drawn in free space, to every digit.
+#[test]
+fn a_grounded_top_hat_equals_its_image_h() {
+    let grounded = z_at_7mhz(&top_hat_on_ground(21, 13), (1, 1));
+    let explicit = z_at_7mhz(&h_in_free_space(21, 13), (1, 21));
+    assert!(
+        rel(grounded, explicit) < 1e-9,
+        "grounded {grounded} against its image H {explicit}"
+    );
+}
+
+/// FND-191: the H is where fnec and nec2c take different junction conditions.
+/// fnec closes a degree-3 node with equal scalar potential; NEC-2 with Wu–King's
+/// equal charge density. Where a near-uniform stem current meets charged hats at
+/// both ends they converge to different answers: nec2c 16.47 − j57.43 at 41/25,
+/// fnec 16.69 − j50.31, 12 % apart at every mesh and every radius. fnec's MPIE —
+/// separate code with no imposed junction condition — agrees with the Hallén
+/// graph, so the H is gated against the MPIE (its port is the two gaps in
+/// series: twice the per-gap impedance), and the nec2c gap is pinned as a band so
+/// a change in either solver shows. The maintainer's decision, 2026-10-02.
+#[test]
+fn the_h_agrees_with_the_mpie_and_keeps_its_measured_gap_to_nec2c() {
+    let hallen = z_at_7mhz(&h_in_free_space(41, 25), (1, 41));
+    let mpie = Complex64::new(33.386_903, -100.004_424);
+    let e_mpie = rel(hallen * 2.0, mpie);
+    assert!(
+        e_mpie < 0.01,
+        "Hallén {hallen} against the MPIE's {mpie}/2: {e_mpie:.4}"
+    );
+    let gap = rel(hallen, Complex64::new(16.468, -57.426));
+    assert!(
+        (0.10..0.14).contains(&gap),
+        "the junction-condition gap to nec2c moved: {:.2} % (was 11.9 %)",
+        gap * 100.0
+    );
+}
+
+/// A folded monopole, both legs grounded: doubled, a closed loop. No degree-3
+/// node, so no junction-condition gap; against nec2c GN 1, 0.73 → 0.49 % at
+/// 21/5 → 41/9. Kill criterion: under 1 % at 41, shrinking.
+#[test]
+fn a_folded_monopole_on_ground_converges_to_nec2c() {
+    let deck = |n: u32, m: u32| {
+        format!(
+            "GW 1 {n} 0 0 0 0 0 5 .001\nGW 2 {m} 0 0 5 1 0 5 .001\nGW 3 {n} 1 0 5 1 0 0 .001\n\
+             GE 1\nGN 1\nEX 0 1 1 0 1 0\n"
+        )
+    };
+    let e21 = rel(z_in(&deck(21, 5), (1, 1)), Complex64::new(172.38, 103.84));
+    let e41 = rel(z_in(&deck(41, 9), (1, 1)), Complex64::new(174.54, 102.49));
+    assert_converges("folded monopole on GN 1", e21, e41, 0.01);
+}
+
+/// The route flags and the topology caveat ask about the solve that runs — the
+/// image problem's graph — so a correct grounded top-hat is neither flagged
+/// unsupported (the GPU gate reads that flag) nor warned about.
+#[test]
+fn a_grounded_top_hat_is_neither_flagged_nor_warned() {
+    let deck = nec_parser::parse(&format!(
+        "CE\n{}FR 0 1 0 0 7.1 0\nEN\n",
+        top_hat_on_ground(21, 13)
+    ))
+    .expect("parses")
+    .deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let route = nec_solver::hallen_route(&deck, &segs);
+    assert!(!route.unsupported_topology, "{route:?}");
+    assert_eq!(
+        nec_solver::validate::unsupported_topology_warning(&deck, &segs, "re-run with mpie"),
+        None
+    );
+}

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # NEC Card Support Matrix
@@ -43,7 +43,7 @@ others are **recognized** (classified per NEC2 and given an accurate, category-n
 diagnostic) but fail fast until their runtime semantics land in Phase 8 — they are
 no longer silently treated as EX type 0.
 
-| EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal, mpie). The default Hallen path solves **degree-3+ (T/Y) junctions** and **closed loops** on its section graph (FND-162 stages 2+3) when the deck has voltage sources only, no TL/NT (LD loads are allowed), no perfect-ground contact, every straight section ≥ 2 segments and no wire end on another wire's interior; outside that scope it falls back per wire and warns. `--solver mpie` (PH9-CHK-007) also solves junctions and loops, and gives near-ground currents over Sommerfeld ground; it feeds the graph node nearest the driven segment |
+| EX type 0 | Full | Applied-field voltage-gap source; supported across all solver paths (Hallen, pulse, continuity, sinusoidal, mpie). The default Hallen path solves **degree-3+ (T/Y) junctions** and **closed loops** on its section graph (FND-162 stages 2+3) when the deck has voltage sources only, no TL/NT (LD loads are allowed), perfect-ground contact through the image problem, every straight section ≥ 2 segments and no wire end on another wire's interior; outside that scope it falls back per wire and warns. `--solver mpie` (PH9-CHK-007) also solves junctions and loops, and gives near-ground currents over Sommerfeld ground; it feeds the graph node nearest the driven segment |
 | EX type 1 | Partial | Incident plane wave, linear polarization. **Solves** on `--solver hallen` for a single straight wire (receiving antenna → induced `CURRENTS`, no feedpoint); validated vs nec2c shape + reciprocity (PH8-CHK-002). Straight non-junctioned multi-wire (parallel arrays) supported; **degree-2 junctioned geometry** (bends, start-to-start / end-to-end splits, inverted-V) now solves on continuous conductor paths (PH9-CHK-002 receive side); since FND-162 a bend is modelled (per-section terms, bend rows, corner term) and the induced currents track nec2c at a bend (90° L 3.6 %, U 1.1 %), gated at two meshes and by the absolute reciprocity level. **Over ground a plane wave is refused** (FND-170): the receive forcing has no ground-reflected wave, which made the currents 55 % off on a straight dipole over perfect ground; degree-3+ (T/Y), closed loops, and `--solver pulse` fail fast. NTHETA×NPHI incidence-angle sweeps emit a `RECEIVE_PATTERN` (PH9-CHK-001) |
 | EX type 2 | Partial | Incident plane wave, right-hand elliptic. **Solves** on `--solver hallen` for a single straight wire via the complex polarization vector (axial ratio F6); reduces to linear for a z-wire / AR=0; tilted-wire currents match nec2c (PH8-CHK-002). Non-junctioned multi-wire supported |
 | EX type 3 | Partial | Incident plane wave, left-hand elliptic. Same as type 2 with opposite handedness. The legacy `--ex3-i4-mode` flag is an obsolete no-op |
