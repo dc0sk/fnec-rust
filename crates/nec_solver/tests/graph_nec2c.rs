@@ -32,7 +32,10 @@ fn solve(body: &str) -> (Vec<nec_solver::Segment>, Vec<Complex64>) {
     // The deck's lumped loads, as every frontend passes them.
     let loads = nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal;
     let routed = solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("solves");
-    (segs, routed.currents)
+    // The source currents: the wire current plus any TL/NT branch in parallel at
+    // a driven segment, which is what a feedpoint impedance divides by (as every
+    // frontend does). Equal to the wire currents on a deck without networks.
+    (segs, routed.source_currents())
 }
 
 fn current(segs: &[nec_solver::Segment], currents: &[Complex64], tag: u32, seg: u32) -> Complex64 {
@@ -452,4 +455,119 @@ fn a_grounded_top_hat_is_neither_flagged_nor_warned() {
         nec_solver::validate::unsupported_topology_warning(&deck, &segs, "re-run with mpie"),
         None
     );
+}
+
+// ---- FND-162 stage 5: current sources on the section graph -------------------
+//
+// A current source is the unit-gap voltage solve scaled to its impressed current,
+// exactly (Z = V/i0 is a port property). nec2c cannot arbitrate — its EX 4 is a
+// Hertzian point source — so the gate is that property: the current-source
+// impedance equals the voltage-gap impedance at the same segment, which the decks
+// above already gate against nec2c. They were refused ("unsupported topology").
+
+/// Z = V/i0 of a current source at `feed`, through the library's current-source
+/// solve, and the warning set.
+fn z_current_source(body: &str, feed: (u32, u32)) -> (Complex64, Option<String>) {
+    let deck = nec_parser::parse(&format!(
+        "CE\n{body}EX 4 {} {} 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        feed.0, feed.1
+    ))
+    .expect("parses")
+    .deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+    let cs = nec_solver::solve_current_source_hallen(&deck, &segs, &z, FREQ).expect("solves");
+    (
+        cs.port_voltage / Complex64::new(1.0, 0.0),
+        nec_solver::validate::unsupported_topology_warning(&deck, &segs, "mpie"),
+    )
+}
+
+#[test]
+fn a_current_source_on_a_graph_deck_is_its_voltage_gap() {
+    for (name, wires, feed, ld) in [
+        ("Y", y(21), (1, 5), ""),
+        (
+            "loop",
+            format!("{}GE 0\n", square_loop(21, 0.0)),
+            (1, 11),
+            "",
+        ),
+        (
+            "loaded T",
+            tee(21),
+            (1, feed_t(21)),
+            "LD 0 2 1 1 0 1e-6 0\n",
+        ),
+    ] {
+        let (z_cs, warning) = z_current_source(&format!("{wires}{ld}"), feed);
+        let z_v = z_in(
+            &format!("{wires}{ld}EX 0 {} {} 0 1 0\n", feed.0, feed.1),
+            feed,
+        );
+        assert!(
+            rel(z_cs, z_v) < 1e-9,
+            "{name}: current source {z_cs} against gap {z_v}"
+        );
+        assert_eq!(warning, None, "{name}: a solved deck must not warn");
+    }
+}
+
+// ---- FND-162 stage 5: TL/NT networks on the section graph --------------------
+//
+// Networks are superposed over unit-gap solves of the same graph system (exact:
+// the least-squares solution is linear in the forcing for a fixed matrix).
+// Junction and loop decks with a TL or NT card were refused.
+
+/// A Y with a 300 Ω TL between its arms' midpoints. Kill criterion: under 1 % at
+/// 41, shrinking. Measured 1.88 → 0.84 %.
+#[test]
+fn a_y_with_a_line_between_its_arms_converges_to_nec2c() {
+    let deck = |n: u32| {
+        let m = n / 2 + 1;
+        format!(
+            "{}TL 2 {m} 3 {m} 300 2.5\nEX 0 1 {} 0 1 0\n",
+            y(n),
+            (0.68 / 3.0 * f64::from(n)) as u32 + 1
+        )
+    };
+    let feed = |n: u32| (0.68 / 3.0 * f64::from(n)) as u32 + 1;
+    let e21 = rel(
+        z_in(&deck(21), (1, feed(21))),
+        Complex64::new(18.201, -1862.9),
+    );
+    let e41 = rel(
+        z_in(&deck(41), (1, feed(41))),
+        Complex64::new(17.321, -1702.0),
+    );
+    assert_converges("Y with a TL", e21, e41, 0.01);
+}
+
+/// Two 1 λ square loops 2.5 m apart, the second fed only through a 50 Ω phasing
+/// line from the first's feed. The line moves the input from about 110 − j146 Ω
+/// to 9.4 − j22, so a missing network cannot pass. Kill criterion: under 1 % at
+/// 41, shrinking. Measured 1.54 → 0.83 %.
+#[test]
+fn two_loops_on_a_phasing_line_converge_to_nec2c() {
+    let a = 5.278;
+    let deck = |n: u32| {
+        let lp = |t: u32, y: f64| {
+            format!(
+                "GW {t} {n} 0 {y} 0 {a} {y} 0 .001\nGW {} {n} {a} {y} 0 {a} {y} {a} .001\n\
+                 GW {} {n} {a} {y} {a} 0 {y} {a} .001\nGW {} {n} 0 {y} {a} 0 {y} 0 .001\n",
+                t + 1,
+                t + 2,
+                t + 3
+            )
+        };
+        format!(
+            "{}{}GE 0\nTL 1 {m} 5 {m} 50 3.0\nEX 0 1 {m} 0 1 0\n",
+            lp(1, 0.0),
+            lp(5, 2.5),
+            m = n / 2 + 1
+        )
+    };
+    let e21 = rel(z_in(&deck(21), (1, 11)), Complex64::new(9.3873, -21.997));
+    let e41 = rel(z_in(&deck(41), (1, 21)), Complex64::new(9.3596, -21.951));
+    assert_converges("two loops on a phasing line", e21, e41, 0.01);
 }
