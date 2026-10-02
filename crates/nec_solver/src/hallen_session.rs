@@ -164,14 +164,23 @@ pub(crate) fn graph_route(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Option<crate::section_graph::SectionGraph> {
-    if deck_has_plane_wave(deck) || deck_has_current_source(deck) {
+    if deck_has_current_source(deck) || graph_feeds(deck, segs).is_empty() {
         return None;
     }
-    let networked = deck
-        .cards
-        .iter()
-        .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)));
-    if networked || graph_feeds(deck, segs).is_empty() {
+    graph_geometry(deck, segs)
+}
+
+/// The section graph of a deck whose geometry and cards the graph solve takes,
+/// whatever drives it: no plane wave, clear of PEC ground contact (TL/NT networks
+/// are superposed over its unit-gap solves),
+/// and a junction or loop the builder accepts. [`graph_route`] adds the drive
+/// (voltage feeds); a current-source deck asks this directly and solves the unit
+/// gap at its source (FND-162 stage 5).
+pub(crate) fn graph_geometry(
+    deck: &NecDeck,
+    segs: &[Segment],
+) -> Option<crate::section_graph::SectionGraph> {
+    if deck_has_plane_wave(deck) {
         return None;
     }
     let ground = crate::ground_model_from_deck(deck);
@@ -188,6 +197,36 @@ pub(crate) fn graph_route(
         .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
 }
 
+/// The currents of `graph`'s system driven by a 1 V gap at segment `src`, with
+/// the deck's lumped loads as columns: what a current source scales to its
+/// impressed current (`current_source::scale_to_impressed_current`).
+pub(crate) fn solve_graph_unit_gap(
+    deck: &NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    freq_hz: f64,
+    graph: &crate::section_graph::SectionGraph,
+    src: usize,
+) -> Result<Vec<Complex64>, crate::linear::SolveError> {
+    let ground = crate::ground_model_from_deck(deck);
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let sources = corner_sources(segs, &ground, freq_hz);
+    let mut system = crate::section_graph::GraphSystem::build(z_mat, segs, graph, &sources, k)?;
+    for (p, z_l) in crate::build_deck_stamps(deck, segs, freq_hz)
+        .diagonal
+        .iter()
+        .enumerate()
+    {
+        if *z_l != Complex64::new(0.0, 0.0) {
+            system.add_load(p, *z_l);
+        }
+    }
+    system.solve(&[crate::section_graph::GraphFeed {
+        seg: src,
+        volts: Complex64::new(1.0, 0.0),
+    }])
+}
+
 /// Whether the solve that runs for this deck is a section-graph solve: the deck's
 /// own graph, or — touching PEC ground — its doubled image problem's, which is
 /// what `solve_hallen_routed` solves (FND-162 stage 5). The one answer for the
@@ -200,6 +239,8 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
         &crate::ground_model_from_deck(deck),
     ) {
         Ok(Some(img)) => graph_route(&img.deck, &img.segs).is_some(),
+        // A current source is solved as its unit gap on the graph.
+        _ if deck_has_current_source(deck) => graph_geometry(deck, segs).is_some(),
         _ => graph_route(deck, segs).is_some(),
     }
 }
@@ -993,12 +1034,45 @@ fn solve_hallen_routed_inner(
         let currents = system
             .solve(&graph_feeds(deck, segs))
             .map_err(HallenSessionError::Solve)?;
+        // TL/NT networks by superposition (FND-123): the response to a unit gap
+        // at each undriven port, from the same system — exact, because the
+        // least-squares solution is linear in the forcing for a fixed matrix.
+        let (networks, _) = crate::network::build_networks(deck, segs, freq_hz)
+            .map_err(HallenSessionError::Network)?;
+        if networks.is_empty() {
+            return Ok(HallenRouted {
+                currents,
+                port_voltage: None,
+                route,
+                residual_inputs: None,
+                network_branch: Vec::new(),
+            });
+        }
+        let driven: Vec<(usize, Complex64)> = graph_feeds(deck, segs)
+            .iter()
+            .map(|f| (f.seg, f.volts))
+            .collect();
+        let net = crate::network::solve_with_networks(&networks, &driven, &currents, |q| {
+            system
+                .solve(&[crate::section_graph::GraphFeed {
+                    seg: q,
+                    volts: Complex64::new(1.0, 0.0),
+                }])
+                .map_err(HallenSessionError::Solve)
+        })
+        .map_err(|e| match e {
+            crate::network::NetworkSolveError::Solve(e) => e,
+            crate::network::NetworkSolveError::Singular => HallenSessionError::Network(
+                "the TL/NT networks leave a port voltage undetermined (singular port system)"
+                    .to_string(),
+            ),
+        })?;
         return Ok(HallenRouted {
-            currents,
+            currents: net.currents,
             port_voltage: None,
             route,
             residual_inputs: None,
-            network_branch: Vec::new(),
+            network_branch: net.driven_branch,
         });
     }
     let paths = if route.paths {
@@ -1407,14 +1481,14 @@ mod gpu_route_tests {
     /// the pairwise junction rows. The topology now vetoes it by name. This is the
     /// discriminating gate: sabotaging the veto fails it on any host.
     ///
-    /// With a TL, because a delta-gap T without one takes the section graph
-    /// (FND-162), a path-basis solve the device declines on `paths` alone; the
-    /// network keeps this on the plain basis, where only the veto stands.
+    /// One arm is a single segment, because a T the section graph takes (FND-162)
+    /// is a path-basis solve the device declines on `paths` alone; the
+    /// one-segment run keeps this on the plain basis, where only the veto stands.
     #[test]
     fn a_t_junction_is_not_offered_to_the_device() {
         let tee = route(
             "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-             GW 3 10 0 0 5 -2.5 0 5 0.001\nGE 0\nTL 2 5 3 5 50 1\nEX 0 1 10 0 1 0\n\
+             GW 3 1 0 0 5 -0.5 0 5 0.001\nGE 0\nEX 0 1 10 0 1 0\n\
              FR 0 1 0 0 14.2 0\nEN\n",
         );
         assert!(!tee.paths, "the T falls to the plain basis — the hole");

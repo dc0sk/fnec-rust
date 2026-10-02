@@ -17,6 +17,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **TL and NT networks on a junction or loop deck solve (FND-162 stage 5).** A
+  quad's phasing line, or a line across a Y, used to keep the deck on the
+  unreliable per-wire fallback. They are superposed over the section-graph solve,
+  as on every other deck: two 1 λ loops fed through a 50 Ω phasing line converge
+  on nec2c 1.54 → 0.83 %.
+- **A current source (EX 4) on a junction or loop deck solves (FND-162 stage 5).**
+  It was refused as an unsupported topology. A current source is the voltage solve
+  scaled to its impressed current, so it takes the same section-graph solve, loads
+  included; its `Z = V/i0` equals the voltage-gap impedance at the same segment.
 - **Junction and loop decks touching perfect ground solve (FND-162 stage 5).** A
   folded monopole (grounded at both legs) and a top-hat monopole were refused
   ("cannot represent"); doubled by their images they are section graphs. The

@@ -146,6 +146,27 @@ pub fn solve_current_source_hallen(
         }
         crate::hallen_session::PathRoute::Reducible => {}
         crate::hallen_session::PathRoute::Unsupported => {
+            // A junction or loop the section graph takes: a current source is the
+            // unit-gap voltage solve scaled to its impressed current, exactly, so
+            // the graph solve serves it unchanged (FND-162 stage 5).
+            if let Some(graph) = crate::hallen_session::graph_geometry(deck, segs) {
+                let src_seg = segs
+                    .iter()
+                    .position(|s| s.tag == cs.tag && s.tag_index == cs.segment)
+                    .ok_or(CurrentSourceError::NoCurrentSource)?;
+                let unit = crate::hallen_session::solve_graph_unit_gap(
+                    deck, segs, z_mat, freq_hz, &graph, src_seg,
+                )
+                .map_err(CurrentSourceError::Solve)?;
+                let (currents, port_voltage) =
+                    scale_to_impressed_current(unit, src_seg, i0, cs.tag, cs.segment)?;
+                return Ok(CurrentSourceFeedpoint {
+                    currents,
+                    port_voltage,
+                    source_tag: cs.tag,
+                    source_segment: cs.segment,
+                });
+            }
             if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs)).is_empty() {
                 // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
                 return Err(CurrentSourceError::UnsupportedTopology);
