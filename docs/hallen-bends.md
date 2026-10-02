@@ -133,8 +133,11 @@ It takes a deck only when all hold: voltage (delta-gap, EX 0/5) sources, no plan
 wave and no current source; no `TL` or `NT` (lumped `LD` loads are columns of the
 graph system since stage 5); contact with perfect ground is solved as the doubled
 image problem (a top-hat or folded monopole) — but see FND-191 for the H-shaped
-image of a top-hat; every straight section at least two segments; no wire end on another
-wire's interior. Anything else keeps the per-path fallback and its warning.
+image of a top-hat; every straight section at least two segments. Anything else keeps the per-path fallback and its warning, which
+names the one-segment run or the wire to split. (A one-segment run with its current
+carried unchanged across it was measured: 10.5 % off nec2c at 81 segments on a
+folded dipole's jumpers, against 0.9 % with two-segment jumpers — so it stays
+refused.)
 
 Feedpoint error against nec2c 1.3.1 at 14.2 MHz:
 
@@ -157,11 +160,12 @@ Gate: `crates/nec_solver/tests/graph_nec2c.rs`.
   unmodelled: about 26 % off in the currents on a U whose middle wire is one
   segment. Hallén warns on exactly these decks, driven or receive, through the same
   predicate the layout uses (`hallen_leaves_a_bend_unmodelled`).
-- **Junction and loop decks outside the graph scope** — with loads (`LD`, `TL`,
-  `NT`), a current source, a plane wave, contact with perfect ground, a
-  one-segment section, or a wire end on another wire's interior. These keep the
-  per-path fallback, are warned about, and are pointed to `--solver mpie` where
-  it takes the deck.
+- **Junction and loop decks outside the graph scope** — with networks (`TL`,
+  `NT`), a current source, a plane wave, or a one-segment section (measured and
+  kept refused; the warning names it). These keep the per-path fallback, are
+  warned about, and are pointed to `--solver mpie` where it takes the deck.
+  Lumped loads and perfect-ground contact are in scope since stage 5, and a wire
+  end or a crossing at another wire's interior joint is a connection (FND-192).
 - **Receive over ground** is FND-170, not a bend problem: the receive forcing has
   no ground-reflected wave, so even a straight dipole over perfect ground is about
   55 % off.

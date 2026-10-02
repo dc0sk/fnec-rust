@@ -52,6 +52,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **A junction or loop deck fnec's junction solve refuses now says what to change.**
+  The topology warning ends with the place and the edit — "the straight run at tag
+  2 segment 1 is one segment long; give it at least two segments". One-segment runs stay
+  refused: carrying the current unchanged across one was measured and stayed
+  10.5 % off nec2c at 81 segments (a folded dipole's jumpers; two-segment jumpers
+  converge to 0.9 %).
 - **`--exec hybrid` runs a real GPU lane beside the CPU pool.** Its "GPU-candidate
   lane" was a stub that sent every point back to the CPU with a warning. Now one
   thread solves points on the GPU while the CPU workers solve the rest, all taking
@@ -92,6 +98,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A T drawn with its stem standing on a bar joint is a T (FND-192).** NEC connects
+  coincident segment ends wherever they are; fnec connected only wire ends, so the
+  common way of drawing a T — a bar plus a stem ending on one of its joints — was
+  solved as two unconnected wires, silently: 12.3 − j1123 Ω where nec2c gives
+  23.0 − j66.9. Two wires crossing at a shared joint were likewise unconnected.
+  Both are now connections for every solve route; the T converges on nec2c (1.7 %
+  at 41 segments) and equals the same T drawn as two halves.
 - **`--exec gpu` no longer crashes at 2048 segments, and takes decks past 1024
   (FND-188, FND-189).** The Z-matrix fill dispatched N²/64 workgroups in one
   dimension and panicked past the 65 535 limit (exit 101) on every free-space

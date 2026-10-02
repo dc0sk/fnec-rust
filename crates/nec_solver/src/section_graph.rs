@@ -109,14 +109,46 @@ impl SectionGraph {
     }
 }
 
+/// Why the section-graph builder refused a geometry, naming the place, so a
+/// caveat can say what to change rather than only that the deck is unreliable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphRefusal {
+    /// No wires at all.
+    Empty,
+    /// A straight run one segment long, at this tag and segment: its single row
+    /// cannot fix a section's two constants. Carrying its current unchanged to
+    /// both ends was measured and rejected: a folded dipole with one-segment end
+    /// jumpers stayed 18.6 → 13.4 → 10.5 % off nec2c at 21/41/81 segments on the
+    /// long wires, where two-segment jumpers give 12.1 → 4.0 → 0.9 %.
+    OneSegmentRun { tag: u32, seg: u32 },
+}
+
+impl std::fmt::Display for GraphRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GraphRefusal::Empty => write!(f, "the deck has no wires"),
+            GraphRefusal::OneSegmentRun { tag, seg } => write!(
+                f,
+                "the straight run at tag {tag} segment {seg} is one segment long; give it \
+                 at least two segments"
+            ),
+        }
+    }
+}
+
 /// Build the section graph of `segs`, or `None` when the geometry falls outside
-/// what it models: a wire end on another wire's interior (a connection this
-/// builder does not see), or a straight run one segment long (its single row
-/// cannot fix two constants).
+/// what it models ([`section_graph`] names why).
 pub fn build_section_graph(segs: &[Segment]) -> Option<SectionGraph> {
+    section_graph(segs).ok()
+}
+
+/// Build the section graph of `segs`, or the reason it falls outside what the
+/// builder models: a straight run one segment long (its single row cannot fix
+/// two constants).
+pub fn section_graph(segs: &[Segment]) -> Result<SectionGraph, GraphRefusal> {
     let wires = wire_endpoints_from_segs(segs);
     if wires.is_empty() {
-        return None;
+        return Err(GraphRefusal::Empty);
     }
     // Cluster wire ends into physical points.
     let mut points: Vec<[f64; 3]> = Vec::new();
@@ -138,20 +170,8 @@ pub fn build_section_graph(segs: &[Segment]) -> Option<SectionGraph> {
         at_point[b].push((w, true));
         wire_pts.push((a, b));
     }
-    // A wire end touching another wire's interior is a connection NEC makes and
-    // this builder does not: refuse rather than solve a different antenna.
-    for (pi, &p) in points.iter().enumerate() {
-        for (w, &(first, last)) in wires.iter().enumerate() {
-            if at_point[pi].iter().any(|&(ww, _)| ww == w) {
-                continue;
-            }
-            for sg in &segs[first..=last] {
-                if near(sg.end, p) || near(sg.start, p) {
-                    return None;
-                }
-            }
-        }
-    }
+    // A wire end on another wire's interior joint cannot reach here:
+    // `wire_endpoints_from_segs` splits the wire there (FND-192).
 
     // A point with exactly two wire ends that continue straight (same direction
     // through it, same radius) is not a node: the two wires are one section.
@@ -267,7 +287,11 @@ pub fn build_section_graph(segs: &[Segment]) -> Option<SectionGraph> {
             cf = !ne; // entering nw at its end means walking it backwards
         }
         if sec_segs.len() < 2 {
-            return None;
+            let one = &segs[sec_segs[0]];
+            return Err(GraphRefusal::OneSegmentRun {
+                tag: one.tag,
+                seg: one.tag_index,
+            });
         }
         let first = &segs[sec_segs[0]];
         let tangent = [
@@ -296,7 +320,7 @@ pub fn build_section_graph(segs: &[Segment]) -> Option<SectionGraph> {
             end_node: en,
         });
     }
-    Some(SectionGraph { sections, nodes })
+    Ok(SectionGraph { sections, nodes })
 }
 
 /// Section index and position within it, per global segment.

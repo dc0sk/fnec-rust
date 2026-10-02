@@ -250,6 +250,41 @@ pub fn wire_endpoints_from_segs(segs: &[Segment]) -> Vec<(usize, usize)> {
     if current_tag != u32::MAX {
         out.push((first, segs.len() - 1));
     }
+    split_at_touching_ends(segs, out)
+}
+
+/// Break a wire at an interior joint where a segment of ANOTHER wire starts or
+/// ends (FND-192).
+///
+/// NEC connects coincident segment ends, wherever they are on their wires. A stem
+/// whose end meets a bar at one of the bar's joints is joined to it — the usual
+/// way to draw a T — and two wires crossing at a joint each has are joined into
+/// four arms. fnec saw unconnected wires and solved them so, silently: a T drawn
+/// that way gave 12.3 − j1123 Ω where nec2c gives 23.0 − j66.9. Breaking the wire
+/// at the joint makes it a wire-end meeting like any other, for every consumer of
+/// the wire list. A touch in the middle of a segment stays unconnected, as in NEC.
+/// One pass: segment end points do not move when a wire is split.
+fn split_at_touching_ends(segs: &[Segment], wires: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    let near = |a: &[f64; 3], b: &[f64; 3]| {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+            <= crate::hallen_session::JUNCTION_TOL_M
+    };
+    let mut out = Vec::with_capacity(wires.len());
+    for &(f, l) in &wires {
+        let mut start = f;
+        for m in f..l {
+            let joint = &segs[m].end;
+            let touched = segs
+                .iter()
+                .enumerate()
+                .any(|(i, o)| (i < f || i > l) && (near(&o.start, joint) || near(&o.end, joint)));
+            if touched {
+                out.push((start, m));
+                start = m + 1;
+            }
+        }
+        out.push((start, l));
+    }
     out
 }
 
@@ -296,11 +331,24 @@ pub fn merge_collinear_wire_endpoints(segs: &[Segment]) -> Vec<(usize, usize)> {
     if base.len() < 2 {
         return base;
     }
+    // How many wire ends meet at a point. A joint where a third wire ends is a
+    // junction, not a continuation, however straight the two halves are: after
+    // `wire_endpoints_from_segs` splits a bar where a stem meets it (FND-192),
+    // the merge must not weld the halves back over the stem.
+    let ends_at = |p: [f64; 3]| {
+        base.iter()
+            .flat_map(|&(f, l)| [segs[f].start, segs[l].end])
+            .filter(|&e| dist2(e, p) < MERGE_POS_TOL_M * MERGE_POS_TOL_M)
+            .count()
+    };
     let mut merged: Vec<(usize, usize)> = Vec::new();
     let mut cur = base[0];
     for &next in &base[1..] {
         // last segment of the current (possibly merged) block, first of the candidate
-        if cur.1 + 1 == next.0 && continues_straight(&segs[cur.1], &segs[next.0]) {
+        if cur.1 + 1 == next.0
+            && continues_straight(&segs[cur.1], &segs[next.0])
+            && ends_at(segs[cur.1].end) == 2
+        {
             cur = (cur.0, next.1); // extend the merged chain
         } else {
             merged.push(cur);
