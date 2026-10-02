@@ -15,6 +15,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-02 — Every wire sees the others
+
+Twenty-six changes since v0.19.0 (#483–#509). **Hallén now couples every
+non-parallel pair of wires, ground images included**: a 45° dipole over ground
+went from its free-space value (7.3 % off nec2c) to 2.9 %, an inverted-V over
+ground from 13 % to 4.7 %, and a wire crossing another carries current where it
+carried none. **Junctions and loops are solved, not warned about** (FND-162,
+complete): a T, Y or loop deck — with loads, on perfect ground, driven by a current
+source, with TL/NT networks or lit by a plane wave — converges on nec2c, where it
+was garbage (a stem-fed Y: −1.83 − j1673 Ω against 23.66 − j1756). A T drawn with
+its stem on a bar joint is now a T (FND-192, it was two unconnected wires). Where
+fnec and nec2c take different junction conditions (an H-shaped deck, 12 %) the
+difference is documented and gated (FND-191). The plane-wave receive solve
+models a bend. **One rule decides what is straight**, so a wire split with
+rounded coordinates (0.32 − j930 Ω) and a stepped-radius element (−7.3 − j1147 Ω)
+now solve. What fnec still cannot answer is refused, with the reason named. The
+**GPU-resident solve is rebuilt** — it returned garbage on NVIDIA hardware — and is
+now 11× the CPU at 1001 segments; without `--exec`, fnec picks the GPU for a large
+enough deck, and a CPU sweep solves its points in parallel. Release assets are
+built in a pinned container. The findings ledger went from 167 findings / 0 open
+to **192 / 2 open**: FND-187 (a sweep's memory has no budget) and FND-190 (a host
+NVIDIA driver fault, handled by falling back to the CPU).
+
 ### Added
 
 - **A plane wave on a junction or loop deck solves (FND-162 stage 5).** The receive
@@ -133,26 +156,6 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `nec_accel` unit test failed intermittently with its name lost. Every wgpu
   instance, adapter and device is now created under one lock, the shared device
   is built once, and a failed device request prints the driver's reason.
-
-## [0.20.0] — 2026-09-30 — Every wire sees the others
-
-Fifteen changes since v0.19.0 (#483–#497). **Hallén now couples every
-non-parallel pair of wires, ground images included**: a 45° dipole over ground
-went from its free-space value (7.3 % off nec2c) to 2.9 %, an inverted-V over
-ground from 13 % to 4.7 %, and a wire crossing another carries current where it
-carried none. The **plane-wave receive solve models a bend** (an L's corner
-current 122 % off → 3.6 %). **One rule decides what is straight**, so a wire split
-with rounded coordinates (0.32 − j930 Ω) and a stepped-radius element
-(−7.3 − j1147 Ω) now solve (4.9 %, 4.3 %). What fnec still cannot answer is
-refused: a plane wave over ground, and every refusal on the `sweep --resonance`
-route. The **GPU-resident solve is rebuilt** — it returned garbage on NVIDIA
-hardware (every answer fell back to the CPU) and is now correct there and 5x
-faster than the CPU at 1001 segments. Release assets are built in a pinned
-container. The findings ledger went from 167 findings / 0 open to **186 / 1
-open**, the 19 new ones found by a targeted review and by the move to a new
-build host; the open one (FND-186) is an intermittent unit-test failure.
-
-### Fixed
 
 - **The GPU-resident solve is correct on NVIDIA GPUs, and faster than the CPU on
   large decks (FND-185).** It ran in one workgroup and handed its matrix between
