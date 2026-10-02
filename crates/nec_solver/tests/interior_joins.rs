@@ -134,14 +134,21 @@ fn the_merged_wire_list_sees_the_junction() {
     assert!(nec_solver::validate::has_wire_junction(&segs));
 }
 
-/// A plane wave on a T is refused, as on any junctioned geometry — it used to
-/// solve the unconnected wires instead.
+/// A plane wave on the T drawn through the bar is the plane wave on the T drawn as
+/// halves: every current, to 1e-9. It used to solve the unconnected wires; since
+/// FND-162 stage 5 a junction's receive solve runs on the section graph.
 #[test]
-fn a_plane_wave_on_a_drawn_through_t_is_refused() {
-    let (deck, segs) = parse(&format!("{}EX 1 1 1 0 90 0 0\n", t_drawn_through(21)));
-    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    assert!(
-        solve_hallen_routed(&deck, &segs, &mut z, FREQ, &[]).is_err(),
-        "a plane wave on a junctioned T must be refused"
-    );
+fn a_plane_wave_on_a_drawn_through_t_is_received_as_the_t() {
+    let receive = |geometry: String| {
+        let (deck, segs) = parse(&format!("{geometry}EX 1 1 1 0 45 0 0\n"));
+        let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+        nec_solver::solve_hallen_planewave_routed(&deck, &segs, &z, FREQ).expect("receives")
+    };
+    // Both decks list the bar's segments left to right, then the stem's.
+    let (through, halves) = (receive(t_drawn_through(21)), receive(t_drawn_as_halves(21)));
+    assert_eq!(through.len(), halves.len());
+    let peak = halves.iter().map(|i| i.norm()).fold(0.0, f64::max);
+    for (k, (a, b)) in through.iter().zip(&halves).enumerate() {
+        assert!((a - b).norm() < 1e-9 * peak, "segment {k}: {a} against {b}");
+    }
 }

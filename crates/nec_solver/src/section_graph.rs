@@ -367,6 +367,7 @@ pub struct GraphFeed {
 /// A node end: a section, and whether it is that section's end (not its start).
 type NodeEnd = (usize, bool);
 
+#[derive(Debug, Clone)]
 pub(crate) struct GraphSystem {
     graph: SectionGraph,
     /// Section and position along it of every segment.

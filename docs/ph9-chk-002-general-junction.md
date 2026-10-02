@@ -34,9 +34,10 @@ receive, current source) now solve on conductor paths. **Degree-3+** (T/Y)
 junctions and **closed loops** are outside the conductor-path model — see
 [Out-of-scope topologies](#out-of-scope-topologies-degree-3-and-closed-loops). Since
 FND-162 stages 2 and 3 the voltage-driven Hallén solve takes them on a *section
-graph* instead (`docs/hallen-bends.md`); decks outside that route (loads, current
-source, plane wave, perfect-ground contact, one-segment sections, a wire end on
-another wire's interior) still fall back per wire and warn for the *whole geometry*
+graph* instead (`docs/hallen-bends.md`), and since stage 5 also with loads,
+current sources, TL/NT networks, plane waves and perfect-ground contact; decks
+outside it (a one-segment section, a loaded plane-wave receive deck) still fall
+back per wire and warn for the *whole geometry*
 (since 2026-07-06), not only when the feed sits on the junction.
 
 > **Correction (2026-09-26, FND-158):** this document said a voltage delta-gap (and
@@ -238,7 +239,7 @@ it previously failed fast.
 | bend / start-to-start / end-to-end (degree-2) — current source (EX type 4) | **solved (CLI-wired)** |
 | degree-3+ T/Y junction — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 2) |
 | closed loop — voltage delta-gap, in section-graph scope | **solved** (section graph, FND-162 stage 3) |
-| degree-3+ / closed loop — outside that scope (EX 1–3 plane waves, one-segment section) | **guarded (whole-geometry warning)** |
+| degree-3+ / closed loop — outside that scope (one-segment section; a plane wave with LD loads) | **guarded (whole-geometry warning)** |
 
 ## Out-of-scope topologies (degree-3+ and closed loops)
 
