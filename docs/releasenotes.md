@@ -2,25 +2,27 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-02
 ---
 
 # Release Notes
 
 ## 0.20.0 — Every wire sees the others
 
-Fifteen changes since 0.19.0 (#483–#497). Hallén now couples wires that are not
-parallel — including a slanted wire and its own image in the ground — and models a
-bend under an incident plane wave; one rule decides which wire cards are one
-straight wire; and the GPU-resident solve works on NVIDIA hardware and beats the
-CPU on large decks. The findings ledger went from 167 findings / 0 open to
-**186 / 1 open**: a targeted review of 0.19.0 found thirteen, the new build host
-found three more; the open one (FND-186) is an intermittent unit-test failure
-seen once on that host, not yet named.
+Twenty-six changes since 0.19.0 (#483–#509). Hallén now couples wires that are
+not parallel — including a slanted wire and its own image in the ground — and models
+a bend under an incident plane wave; **junctions and closed loops are solved** on a
+section graph, with loads, on perfect ground, with current sources, networks and
+plane waves; a T drawn through a bar joint is a T; one rule decides which wire cards
+are one straight wire; and the GPU-resident solve works on NVIDIA hardware, beats
+the CPU from about 500 segments, and is picked automatically. The findings ledger
+went from 167 findings / 0 open to **192 / 2 open**; the open two are FND-187 (a
+CPU sweep's memory has no budget) and FND-190 (an NVIDIA driver fault on the build
+host, which fnec handles by falling back to the CPU).
 
-Every value below was measured at the release commit (release builds, 14.2 MHz),
-0.19.0 with its published binary; the nec2c 1.3.1 references are the ones the test
-suite pins.
+Every value below was measured at the tagged commit (`34f89fb`, release builds,
+14.2 MHz unless stated), 0.19.0 with its published binary; the nec2c 1.3.1
+references are the ones the test suite pins.
 
 ### Answers that change
 
@@ -48,6 +50,48 @@ converges on nec2c as the mesh is refined.
 decks, and decks with non-parallel wires. Decks of parallel, horizontal or vertical
 wires do not move; the corpus did not move.
 
+### Junctions and loops are solved (FND-162)
+
+0.19.0 solved a junction of three or more wires, and a closed loop, on one term per
+wire with pairwise junction rows — garbage, behind a warning. Each straight section
+now has its own constants, and each node is closed by Kirchhoff's current law and
+equal scalar potential with the corner term; a loop is a cycle of sections.
+
+| deck (nec2c 1.3.1, 21 → 41 segments per wire) | fnec 0.19.0 | fnec 0.20.0, error |
+|---|---|---|
+| Y fed on its stem | −1.83 − j1673 (nec2c 23.66 − j1756 at 11) | 1.68 → 0.74 % |
+| T fed on its stem | ≈ 0 − j1300 | 2.23 → 1.33 % |
+| 1 λ square loop | ≈ 17 − j1163 (nec2c 111.01 − j146.27) | 1.05 → 0.57 % |
+| loop with a 100 Ω + 2 µH load beside a corner | per-wire fallback | 2.05 → 1.43 % |
+| folded monopole on perfect ground (both legs grounded) | refused (exit 1) | 0.73 → 0.49 % (21/5 → 41/9) |
+| two 1 λ loops on a 50 Ω phasing line | per-wire fallback | 1.54 → 0.83 % |
+| 1 λ loop lit broadside by a plane wave: current table | refused | 0.78 → 0.48 % of the peak |
+
+A current source on such a deck gives exactly the voltage gap's impedance (to
+1e-9). Still refused, each with its reason named: a straight run one segment long
+(measured 10.5 % off at 81 segments; the warning names the run and says to give it
+two), a plane wave on a loaded junction deck, networks or a current source with
+perfect-ground contact.
+
+**A documented difference from nec2c (FND-191).** fnec closes a junction with equal
+scalar potential; NEC-2 with Wu–King's equal charge density. On T, Y and T-dipole
+decks the two agree within 2 %; on an H — a stem fed in its middle with a hat at
+each end, which is also how a top-hat monopole on perfect ground is solved — they
+converge 12 % apart (16.69 − j50.31 against nec2c 16.47 − j57.43 at 7.1 MHz), and on
+a double-Y 20 %. fnec's MPIE, separate code with no imposed junction condition,
+agrees with fnec within 0.6 %. fnec keeps its condition; the H is gated against the
+MPIE and the gap to nec2c is pinned by a test.
+
+**A T drawn through a bar joint is a T (FND-192).** NEC connects coincident segment
+ends wherever they lie; fnec connected only wire ends, so a T drawn as a bar plus a
+stem ending on one of its joints — the usual EZNEC way — was two unconnected wires,
+silently: 12.31 − j1123.3 Ω where nec2c gives 23.00 − j66.87. It is now a T on every
+route, equal to the T drawn as halves; two wires crossing at a shared joint are four
+arms. No corpus deck moved.
+
+*Migration.* Re-baseline stored results for junction and loop decks (they were
+warned as unreliable), and for any T or X drawn through a joint.
+
 ### Refused, where 0.19.0 answered
 
 - **An incident plane wave over ground** (FND-170): the receive source has no
@@ -70,9 +114,18 @@ wires do not move; the corpus did not move.
   it returned garbage — a write inside one workgroup was not visible to the rest
   after the barrier — and every answer fell back to the CPU. It is rebuilt with
   every hand-off at a dispatch boundary, and it factors the system directly.
-- **It is now faster than the CPU on large decks**: 1001 segments in 0.91 s against
-  the CPU's 4.60 s (0.19.0: 8.70 s on the GPU); below about 500 segments the CPU
-  is still faster. `--exec gpu` says so.
+- **It is now faster than the CPU on large decks**: 1001 segments in 0.43 s against
+  the CPU's 4.64 s (0.19.0: 8.70 s on the GPU), 2049 segments in 1.3 s against 69 s.
+  Its triangular solves run one dispatch per column; it no longer panics at 2048
+  segments or declines silently above 1024 (FND-188, FND-189).
+- **Without `--exec`, fnec picks the GPU** for a supported deck of 500 segments or
+  more (one frequency) or 550 (a sweep), when a hardware GPU is present; `--exec
+  cpu` keeps the CPU's digits (the device solve is f32, within 2 Ω). The `exec=`
+  label says what solved each point. `--exec hybrid` runs a real GPU lane beside the
+  CPU pool, which pays on long sweeps only, so the automatic pick never chooses it.
+- **A CPU sweep solves its points in parallel**: 24 points of a 601-segment dipole in
+  3.7 s, from 12.2 s.
+- Concurrent first use of the GPU no longer crashes the process (FND-186).
 
 ### Other fixes
 
