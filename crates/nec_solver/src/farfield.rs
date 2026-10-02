@@ -290,7 +290,6 @@ fn far_field_components(
     (f_theta, f_phi)
 }
 
-const EPS0: f64 = 8.854_187_812_8e-12; // F/m
 const MU0: f64 = 4.0 * PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
 
@@ -405,9 +404,8 @@ pub fn radiation_efficiency(
 /// (`eps_r → ∞`) these tend to `(+1, −1)`; at grazing (`theta → 90°`) both tend
 /// to `−1`, giving the horizon null.
 fn fresnel_coeffs(theta_deg: f64, eps_r: f64, sigma: f64, k: f64) -> (Complex64, Complex64) {
-    let omega = k * SPEED_OF_LIGHT;
-    // Complex relative permittivity ε_c = ε_r − j σ/(ω ε₀).
-    let eps_c = Complex64::new(eps_r, -sigma / (omega * EPS0));
+    let freq_hz = k * SPEED_OF_LIGHT / (2.0 * PI);
+    let eps_c = crate::sommerfeld::complex_permittivity(freq_hz, eps_r, sigma);
     let th = theta_deg.to_radians();
     let cos_i = Complex64::new(th.cos(), 0.0);
     let sin2 = th.sin() * th.sin();

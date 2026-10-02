@@ -42,9 +42,24 @@ const EPS0: f64 = 8.854_187_817e-12; // F/m
 const ETA0: f64 = MU0 * C0; // free-space wave impedance
 
 /// Complex relative permittivity of the ground: `εc = εr − j σ/(ω ε0)`.
+///
+/// A **negative** `sigma` is NEC's other form of the card: `|SIG|` is the
+/// imaginary part of the relative permittivity itself, `εc = εr − j·|SIG|`
+/// (nec2c `main.c`: `sig = −sig/(59.96·λ)`, then `εc = εr − j·sig·λ·59.96`).
+/// It was clamped to σ = 0 here and in the matrix, and used with its sign flipped
+/// in the far field, so a `GN 2 0 0 0 13 -5` deck solved over a lossless ground
+/// that nec2c reads as 3.95 mS/m at 14.2 MHz (FND-194).
+///
+/// The one copy: the matrix, the far field and the incident plane wave take the
+/// ground's permittivity from here.
 pub fn complex_permittivity(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
-    let omega = 2.0 * std::f64::consts::PI * freq_hz;
-    Complex64::new(eps_r.max(1.0e-6), -sigma.max(0.0) / (omega * EPS0))
+    let loss = if sigma < 0.0 {
+        -sigma
+    } else {
+        let omega = 2.0 * std::f64::consts::PI * freq_hz;
+        sigma / (omega * EPS0)
+    };
+    Complex64::new(eps_r.max(1.0e-6), -loss)
 }
 
 /// Normal-incidence scalar Fresnel coefficient `Γ = (√εc − 1)/(√εc + 1)` — the
@@ -1063,5 +1078,23 @@ mod tests {
         let h = 0.025 * LAM;
         let e = reflected_ex_horizontal(0.05 * LAM, 2.0 * h, FREQ, 13.0, 0.005, false);
         assert!(e.norm().is_finite() && e.norm() > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod permittivity_tests {
+    use super::complex_permittivity;
+
+    /// FND-194: a negative σ is NEC's ε'' form — `|SIG|` is the imaginary part of
+    /// the relative permittivity, at every frequency — not a lossless ground.
+    #[test]
+    fn a_negative_sigma_is_the_imaginary_permittivity_itself() {
+        for f in [3.5e6, 14.2e6, 144e6] {
+            let e = complex_permittivity(f, 13.0, -5.0);
+            assert_eq!((e.re, e.im), (13.0, -5.0), "at {f} Hz");
+        }
+        // The positive form at 14.2 MHz: 0.005 S/m is ε'' = σ/(ωε₀) ≈ 6.33.
+        let e = complex_permittivity(14.2e6, 13.0, 0.005);
+        assert!((e.im + 6.329).abs() < 1e-3, "{e}");
     }
 }
