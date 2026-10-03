@@ -45,6 +45,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A GPU fault the driver did not report could hang `fnec --exec gpu` for good**
+  (FND-196). Every device readback waited without a limit; on this NVIDIA host an
+  exception on the compute channel left the work's fence unsignalled with no
+  lost-device error, and the process slept in the driver indefinitely — about one
+  run in 300. A readback now waits at most 120 s (the largest device solve takes
+  about 1.3 s), then drops the GPU context, falls back to the CPU and says why.
+
 - **A `GN` card with a negative conductivity solved over the wrong ground**
   (FND-194). NEC reads a negative `SIG` as the imaginary part of the relative
   permittivity itself (εc = εr − j·|SIG|): nec2c takes `GN 2 0 0 0 13 -5` at
