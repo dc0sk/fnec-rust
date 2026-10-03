@@ -45,6 +45,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A parallel CPU sweep's memory is budgeted** (FND-187). Each point in flight
+  holds its own matrices — measured 3.0–6.5 × 16·N² bytes depending on the solver
+  — and the sweep ran one point per core with no bound: about 14 GB for a
+  3001-segment deck on 24 cores. The points in flight are now capped at half of
+  the memory the host and the process's cgroup leave available, the cap is said
+  in an `info:` line, and `FNEC_SWEEP_MEMORY_BUDGET_MB` sets it explicitly.
+
 - **One of the three shader constructs Vulkan validation rejected is gone**
   (FND-193). The Z-matrix fill's Gauss–Legendre tables were constant arrays,
   which naga copies into a local variable with a layout decoration the spec

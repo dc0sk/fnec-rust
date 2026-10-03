@@ -59,6 +59,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
 | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 5 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp…; a plane-wave receive deck says the correction cannot apply (FND-170) | PH9-CHK-006 |
+| `apps/nec-cli/tests/sweep_memory_budget.rs` | 3 | FND-187: a small `FNEC_SWEEP_MEMORY_BUDGET_MB` caps the points in flight and says so, with every point still out in frequency order; an ample budget is silent; a malformed one is reported | FND-187 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 8 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
 | `apps/nec-cli/tests/sweep_partial_output.rs` | 2 | A sweep prints the points it computed, even when one of them fails. | FND-033 |
 | `apps/nec-cli/tests/taper_cli.rs` | 2 | `fnec taper` — the Leeson step-tapered-radius correction (BL-IMPR-014). | — |
@@ -120,7 +121,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=648 --> **648** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=651 --> **651** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -134,18 +135,18 @@ functions across the `tests/` binaries listed above.
 | `nec_solver` | 239 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
 | `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 39 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |
+| `apps/nec-cli` | 44 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 30 | lib, template |
 | `nec_accel` | 32 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196) |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=581 --> **581** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=586 --> **586** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1236 --> **1236** = 581 unit + 648 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1244 --> **1244** = 586 unit + 651 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
