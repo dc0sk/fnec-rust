@@ -28,6 +28,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   inverted-L 0.59 → 0.37 %. A receive sweep builds the doubled structure and its
   matrix once per frequency. Still refused, by name: LD loads on such a deck.
 
+- **A current source, and TL/NT networks, on wires touching perfect ground.**
+  Both were refused on a ground contact. A current source now drives the doubled
+  structure as a gap pair scaled to the impressed current, so its impedance is
+  the voltage source's to round-off (a monopole, an inverted-L, a top-hat). Each
+  network gets an image between the mirrored ports — the same card, crossed-line
+  sign and shunts included — and the contact deck's feed impedance equals an
+  independently drawn free-space double's to round-off. Against nec2c, two
+  monopoles joined by a TL, a crossed TL or an NT are 1.29 / 1.11 / 0.84 Ω off
+  at 21 segments and 0.78 / 0.68 / 0.51 Ω at 41, closer than the same pair
+  without the network (2.39 → 1.48 Ω). A current source with a network stays refused, as
+  everywhere (FND-123).
+
 ## [0.21.0] — 2026-10-03 — The wave meets the ground
 
 Nine changes since v0.20.0 (#511–#519). **An incident plane wave over ground
