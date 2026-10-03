@@ -17,27 +17,91 @@ pub struct AdapterInfo {
     pub device_type: String,
 }
 
-/// Wait for submitted GPU work and the buffer map to complete. Returns `false`
-/// if the device was lost, the poll failed, or the map failed — callers then
-/// degrade to the CPU path instead of panicking, so a mid-run GPU fault does not
-/// abort the process. (G9, review-260821.)
-fn await_map<E>(device: &wgpu::Device, rx: &std::sync::mpsc::Receiver<Result<(), E>>) -> bool {
-    if device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .is_err()
-    {
-        // A failed poll means this device is gone. Drop the shared context so the
-        // next solve builds a fresh one instead of being pinned to the CPU
-        // fallback for the rest of the process. `device` may belong to one of the
-        // uncached callers, in which case this discards a healthy context — that
-        // costs one rebuild and is cheaper than the alternative.
-        invalidate_gpu_context();
-        return false;
+/// How long a readback waits for the GPU before giving up on it (FND-196). The
+/// largest deck the device solves takes about 1.3 s on a GTX 1080 Ti, so this
+/// only ever ends a wait that would not have ended: on a driver fault that is not
+/// reported as a lost device — an Xid 13 on the compute class, say — the work's
+/// fence never signals, and an unbounded wait held `fnec` for good.
+const GPU_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Wait for submitted GPU work and the buffer map to complete, for at most
+/// [`GPU_WAIT_TIMEOUT`]. `Err` names why not: the device was lost, the wait timed
+/// out, or the map failed — callers then degrade to the CPU path instead of
+/// panicking, so a mid-run GPU fault does not abort the process (G9,
+/// review-260821), and a fault that never resolves does not hang it (FND-196).
+fn await_map<E: std::fmt::Display>(
+    device: &wgpu::Device,
+    rx: &std::sync::mpsc::Receiver<Result<(), E>>,
+) -> Result<(), String> {
+    let poll = |t| device.poll(wait_for(t)).map(|_| ());
+    wait_readback(poll, rx, GPU_WAIT_TIMEOUT).map_err(|fault| {
+        // A lost, hung or unmappable device cannot be trusted. Drop the shared
+        // context so the next solve builds a fresh one instead of being pinned
+        // to the CPU fallback for the rest of the process. `device` may belong
+        // to one of the uncached callers, in which case this discards a healthy
+        // context — that costs one rebuild and is cheaper than the alternative.
+        if fault.device_suspect {
+            invalidate_gpu_context();
+        }
+        fault.why
+    })
+}
+
+/// The device wait for everything submitted, bounded by `t`. The bound is what
+/// FND-196 is about: `timeout: None` waited for good on a fence that never signals.
+fn wait_for(t: std::time::Duration) -> wgpu::PollType {
+    wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: Some(t),
     }
-    matches!(rx.recv(), Ok(Ok(())))
+}
+
+/// Why a readback did not complete, and whether the device is to blame.
+#[derive(Debug)]
+struct ReadbackFault {
+    why: String,
+    device_suspect: bool,
+}
+
+/// The bounded wait itself, touching no process-wide state: `poll` (the device's
+/// wait for the submitted work, given the time it may take), then the map
+/// callback, together within `timeout`. The poll is a parameter so each outcome —
+/// a timeout above all — can be tested without racing a real GPU.
+fn wait_readback<E: std::fmt::Display>(
+    poll: impl FnOnce(std::time::Duration) -> Result<(), wgpu::PollError>,
+    rx: &std::sync::mpsc::Receiver<Result<(), E>>,
+    timeout: std::time::Duration,
+) -> Result<(), ReadbackFault> {
+    let start = std::time::Instant::now();
+    if let Err(e) = poll(timeout) {
+        return Err(ReadbackFault {
+            why: match e {
+                wgpu::PollError::Timeout => format!(
+                    "the GPU did not finish within {} s — a device fault the driver did \
+                     not report as a lost device (FND-196)",
+                    timeout.as_secs_f64()
+                ),
+                other => format!("the device was lost ({other})"),
+            },
+            device_suspect: true,
+        });
+    }
+    // The poll returned, so the map callback has run or is about to; bounded all
+    // the same, since a callback that never arrives would block here instead.
+    let left = timeout
+        .saturating_sub(start.elapsed())
+        .max(std::time::Duration::from_secs(1));
+    match rx.recv_timeout(left) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(ReadbackFault {
+            why: format!("the buffer map failed ({e})"),
+            device_suspect: false,
+        }),
+        Err(_) => Err(ReadbackFault {
+            why: "the buffer map never completed (FND-196)".to_string(),
+            device_suspect: true,
+        }),
+    }
 }
 
 /// Relative-residual ceiling for the GPU-resident f32 solve, above which the
@@ -727,7 +791,7 @@ pub async fn run_rp_farfield_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(&device, &rx) {
+    if await_map(&device, &rx).is_err() {
         return RpPipelineResult::NoAdapterAvailable;
     }
     let raw = slice.get_mapped_range();
@@ -989,7 +1053,7 @@ pub async fn run_rp_farfield_batch_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(device, &rx) {
+    if await_map(device, &rx).is_err() {
         return None;
     }
     let raw = slice.get_mapped_range();
@@ -1299,8 +1363,8 @@ pub async fn fill_zmatrix_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(device, &rx) {
-        return Err("the device failed during the readback".to_string());
+    if let Err(why) = await_map(device, &rx) {
+        return Err(format!("the device failed during the readback: {why}"));
     }
     let raw = slice.get_mapped_range();
     let floats: &[f32] = bytemuck::cast_slice(&raw);
@@ -2178,7 +2242,8 @@ pub async fn solve_hallen_gpu_resident(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if !await_map(device, &rx) {
+    if let Err(why) = await_map(device, &rx) {
+        eprintln!("warning: solve_hallen_gpu_resident: {why} — falling back to CPU");
         return Err(GpuSolveDeclined::DeviceFailed);
     }
     let raw = slice.get_mapped_range();
@@ -2250,5 +2315,101 @@ mod env_logger_tests {
     fn with_no_level_given_nothing_is_logged() {
         let (l, _) = EnvLogger::parse("wgpu_hal=debug");
         assert_eq!(l.level_for("nec_accel"), LevelFilter::Off);
+    }
+}
+
+#[cfg(test)]
+mod wait_timeout_tests {
+    use super::{wait_readback, ReadbackFault, GPU_WAIT_TIMEOUT};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Run `wait_readback` on a thread and give it `deadline` to return, so a
+    /// regression to an unbounded wait fails the test instead of hanging it.
+    fn within(
+        deadline: Duration,
+        f: impl FnOnce() -> Result<(), ReadbackFault> + Send + 'static,
+    ) -> Result<(), ReadbackFault> {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(deadline)
+            .expect("the readback wait must return, not block")
+    }
+
+    /// FND-196: a poll that times out ends the wait with the reason, and marks the
+    /// device suspect — the path a driver fault that never signals the fence
+    /// takes after `GPU_WAIT_TIMEOUT`.
+    #[test]
+    fn a_timed_out_poll_ends_the_wait_with_the_reason() {
+        let fault = within(Duration::from_secs(10), || {
+            let (_tx, rx) = mpsc::channel::<Result<(), String>>();
+            wait_readback(|_| Err(wgpu::PollError::Timeout), &rx, GPU_WAIT_TIMEOUT)
+        })
+        .expect_err("a timed-out poll is a fault");
+        assert!(
+            fault.device_suspect
+                && fault.why.contains("did not finish within 120 s")
+                && fault.why.contains("FND-196"),
+            "{fault:?}"
+        );
+    }
+
+    /// The device wait carries its bound — `timeout: None` was FND-196.
+    #[test]
+    fn the_device_wait_is_bounded() {
+        let t = Duration::from_secs(7);
+        assert!(
+            matches!(super::wait_for(t), wgpu::PollType::Wait { timeout: Some(x), .. } if x == t),
+            "{:?}",
+            super::wait_for(t)
+        );
+    }
+
+    /// The poll gets the timeout it must honour: the production one.
+    #[test]
+    fn the_poll_is_given_the_production_timeout() {
+        let (tx, rx) = mpsc::channel::<Result<(), String>>();
+        tx.send(Ok(())).unwrap();
+        let mut seen = None;
+        wait_readback(
+            |t| {
+                seen = Some(t);
+                Ok(())
+            },
+            &rx,
+            GPU_WAIT_TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(seen, Some(GPU_WAIT_TIMEOUT));
+    }
+
+    /// A poll that returns but a map callback that never arrives is bounded too.
+    #[test]
+    fn a_map_callback_that_never_arrives_is_bounded() {
+        let fault = within(Duration::from_secs(10), || {
+            let (tx, rx) = mpsc::channel::<Result<(), String>>();
+            let r = wait_readback(|_| Ok(()), &rx, Duration::from_millis(10));
+            drop(tx);
+            r
+        })
+        .expect_err("a callback that never arrives is a fault");
+        assert!(
+            fault.device_suspect && fault.why.contains("never completed"),
+            "{fault:?}"
+        );
+    }
+
+    /// A map that fails is reported, but is not the device's fault.
+    #[test]
+    fn a_failed_map_is_not_blamed_on_the_device() {
+        let (tx, rx) = mpsc::channel::<Result<(), String>>();
+        tx.send(Err("out of range".into())).unwrap();
+        let fault = wait_readback(|_| Ok(()), &rx, GPU_WAIT_TIMEOUT).unwrap_err();
+        assert!(
+            !fault.device_suspect && fault.why.contains("out of range"),
+            "{fault:?}"
+        );
     }
 }
