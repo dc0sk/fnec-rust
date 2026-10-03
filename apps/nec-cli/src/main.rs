@@ -656,7 +656,43 @@ fn main() -> ExitCode {
         )
     };
 
-    let mut solved = execute_frequency_sweep(&freqs_hz, execution_mode, gpu_lane, solve_one);
+    // FND-187: every CPU point holds its own matrices, so the points in flight are
+    // bounded by memory, not only by cores. One point, or the device alone, needs
+    // no budget.
+    let max_parallel = if freqs_hz.len() > 1 && execution_mode != ExecutionMode::Gpu {
+        let budget = solve_session::sweep_memory_budget().unwrap_or_else(|e| {
+            eprintln!("warning: {e}; the sweep's memory is not budgeted");
+            None
+        });
+        let pool = rayon::current_num_threads();
+        let b = solve_session::sweep_parallelism(segs.len(), budget, pool);
+        if let Some(budget) = budget {
+            let mb = |bytes: u64| bytes / 1_000_000;
+            if b.per_point > budget {
+                eprintln!(
+                    "warning: one sweep point needs about {} MB and the sweep's memory budget \
+                     is {} MB; the points are solved one at a time, and may still not fit \
+                     (FNEC_SWEEP_MEMORY_BUDGET_MB sets the budget; FND-187)",
+                    mb(b.per_point),
+                    mb(budget)
+                );
+            } else if b.threads < pool {
+                eprintln!(
+                    "info: the sweep solves {} of its points at a time, not {pool}: each holds \
+                     about {} MB and the memory budget is {} MB (half the available memory; \
+                     FNEC_SWEEP_MEMORY_BUDGET_MB sets it; FND-187)",
+                    b.threads,
+                    mb(b.per_point),
+                    mb(budget)
+                );
+            }
+        }
+        b.threads
+    } else {
+        usize::MAX
+    };
+    let mut solved =
+        execute_frequency_sweep(&freqs_hz, execution_mode, gpu_lane, max_parallel, solve_one);
     solved.sort_by_key(|(idx, _, _)| *idx);
 
     // A GPU or hybrid sweep says how many points the device actually solved:

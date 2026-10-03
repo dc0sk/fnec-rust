@@ -1650,10 +1650,95 @@ impl LaneResult for Result<FrequencySolveResult, String> {
     }
 }
 
-/// Execute a frequency sweep.
+/// Peak memory of one sweep point's solve, as a multiple of one complex N×N
+/// matrix (16·N² bytes), N = segments (FND-187). Measured 2026-10-03, one point,
+/// `--exec cpu`, N = 1001, max RSS less the process's ~9 MB: hallen 4.02, hallen
+/// over GN 2 4.06, hallen with the Sommerfeld correction 4.02, sinusoidal 6.54
+/// (it keeps a Hallén system for its residual fallback), continuity 3.89, pulse
+/// 3.03, mpie 3.03, mpie over GN 2 3.07. The worst case, rounded up.
+const POINT_MATRICES: u64 = 7;
+/// What the process holds besides its points (measured ~9 MB).
+const PROCESS_FIXED_BYTES: u64 = 10_000_000;
+
+/// How many sweep points may be in flight at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SweepBudget {
+    pub threads: usize,
+    pub per_point: u64,
+}
+
+/// The points in flight for `n_segs` segments within `budget` bytes, at most
+/// `pool_threads` and never fewer than one. No budget, no cap.
+pub(super) fn sweep_parallelism(
+    n_segs: usize,
+    budget: Option<u64>,
+    pool_threads: usize,
+) -> SweepBudget {
+    let n = n_segs as u64;
+    let per_point = POINT_MATRICES
+        .saturating_mul(16)
+        .saturating_mul(n.saturating_mul(n));
+    let pool = pool_threads.max(1);
+    let threads = match budget {
+        None => pool,
+        Some(b) => {
+            let fit = b.saturating_sub(PROCESS_FIXED_BYTES) / per_point.max(1);
+            usize::try_from(fit).unwrap_or(usize::MAX).clamp(1, pool)
+        }
+    };
+    SweepBudget { threads, per_point }
+}
+
+/// The memory a sweep may use: `FNEC_SWEEP_MEMORY_BUDGET_MB` when set, else half
+/// of what the host and the process's own cgroup leave available (Linux; `None`
+/// elsewhere, which is no cap). `Err` names a malformed override.
+pub(super) fn sweep_memory_budget() -> Result<Option<u64>, String> {
+    if let Ok(v) = std::env::var("FNEC_SWEEP_MEMORY_BUDGET_MB") {
+        return v
+            .trim()
+            .parse::<u64>()
+            .map(|mb| Some(mb.saturating_mul(1_000_000)))
+            .map_err(|_| {
+                format!("FNEC_SWEEP_MEMORY_BUDGET_MB={v:?} is not a whole number of megabytes")
+            });
+    }
+    Ok(available_memory().map(|b| b / 2))
+}
+
+/// `MemAvailable`, lowered to the process's cgroup v2 headroom when it has a
+/// limit — a container's can be far below the host's free memory.
+fn available_memory() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kb: u64 = meminfo
+        .lines()
+        .find_map(|l| l.strip_prefix("MemAvailable:"))?
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .ok()?;
+    let mut avail = kb.saturating_mul(1024);
+    let cgroup = std::fs::read_to_string("/proc/self/cgroup").ok();
+    if let Some(path) = cgroup
+        .as_deref()
+        .and_then(|c| c.lines().find_map(|l| l.strip_prefix("0::")))
+    {
+        let dir = format!("/sys/fs/cgroup{}", path.trim());
+        let read = |f: &str| std::fs::read_to_string(format!("{dir}/{f}")).ok();
+        // `max` (no limit) does not parse, and leaves `avail` alone.
+        if let (Some(max), Some(cur)) = (read("memory.max"), read("memory.current")) {
+            if let (Ok(max), Ok(cur)) = (max.trim().parse::<u64>(), cur.trim().parse::<u64>()) {
+                avail = avail.min(max.saturating_sub(cur));
+            }
+        }
+    }
+    Some(avail)
+}
+
+/// Execute a frequency sweep, at most `max_parallel` points in flight on the CPU.
 ///
-/// - `cpu`: every point in parallel in one rayon `par_iter` (`RAYON_NUM_THREADS`
-///   bounds it, and with it memory — FND-187).
+/// - `cpu`: the points in parallel on the rayon pool, at most `max_parallel` at a
+///   time — the memory budget of [`sweep_parallelism`] (FND-187).
 /// - `gpu`: the points in turn on the one device.
 /// - `hybrid` with `gpu_lane`: both at once. One dedicated thread solves points on
 ///   the device while every rayon worker solves points on the CPU, all pulling
@@ -1673,6 +1758,7 @@ pub(super) fn execute_frequency_sweep<R, F>(
     freqs_hz: &[f64],
     execution_mode: ExecutionMode,
     gpu_lane: bool,
+    max_parallel: usize,
     solve_one: F,
 ) -> Vec<(usize, R, u128)>
 where
@@ -1687,6 +1773,9 @@ where
         let result = solve_one(freqs_hz[idx], mode);
         (idx, result, t0.elapsed().as_millis())
     };
+    // CPU workers each take the next point from one counter, so at most this
+    // many points are in flight on the CPU.
+    let cpu_workers = rayon::current_num_threads().min(max_parallel).max(1);
 
     match execution_mode {
         // One device: a GPU sweep takes its points in turn.
@@ -1694,6 +1783,9 @@ where
             .map(|i| timed(i, ExecutionMode::Gpu))
             .collect(),
         ExecutionMode::Hybrid if gpu_lane && freqs_hz.len() > 1 => {
+            // The GPU lane holds a point too; keep one CPU worker regardless, or a
+            // lane that retires on a fallback would leave the rest unsolved.
+            let cpu_workers = cpu_workers.min(max_parallel.saturating_sub(1)).max(1);
             let next = AtomicUsize::new(0);
             let lane_open = AtomicBool::new(true);
             let solved = std::sync::Mutex::new(Vec::with_capacity(freqs_hz.len()));
@@ -1723,23 +1815,35 @@ where
                         keep(point);
                     }
                 });
-                (0..rayon::current_num_threads())
-                    .into_par_iter()
-                    .for_each(|_| {
-                        while let Some(i) = take() {
-                            keep(timed(i, ExecutionMode::Cpu));
-                        }
-                    });
+                (0..cpu_workers).into_par_iter().for_each(|_| {
+                    while let Some(i) = take() {
+                        keep(timed(i, ExecutionMode::Cpu));
+                    }
+                });
             });
             solved
                 .into_inner()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
         }
         // Every point is independent, and the caller re-sorts by index.
-        _ => (0..freqs_hz.len())
-            .into_par_iter()
-            .map(|i| timed(i, ExecutionMode::Cpu))
-            .collect(),
+        _ => {
+            let next = AtomicUsize::new(0);
+            let solved = std::sync::Mutex::new(Vec::with_capacity(freqs_hz.len()));
+            (0..cpu_workers).into_par_iter().for_each(|_| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= freqs_hz.len() {
+                    break;
+                }
+                let point = timed(i, ExecutionMode::Cpu);
+                solved
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(point);
+            });
+            solved
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        }
     }
 }
 
@@ -1791,11 +1895,22 @@ mod sweep_tests {
         freqs: &[f64],
         device_ok: bool,
     ) -> (bool, Vec<(usize, Point)>) {
+        sweep_within(mode, gpu_lane, freqs, device_ok, usize::MAX)
+    }
+
+    /// [`sweep`] with at most `max_parallel` points in flight on the CPU.
+    fn sweep_within(
+        mode: ExecutionMode,
+        gpu_lane: bool,
+        freqs: &[f64],
+        device_ok: bool,
+        max_parallel: usize,
+    ) -> (bool, Vec<(usize, Point)>) {
         let arrived = Mutex::new(0usize);
         let cv = Condvar::new();
         let met = Mutex::new(false);
         let solved = in_pool(|| {
-            execute_frequency_sweep(freqs, mode, gpu_lane, |freq, mode| {
+            execute_frequency_sweep(freqs, mode, gpu_lane, max_parallel, |freq, mode| {
                 let mut n = arrived.lock().unwrap();
                 *n += 1;
                 if *n == 1 {
@@ -1851,6 +1966,26 @@ mod sweep_tests {
         assert!(points.iter().all(|p| p.mode == ExecutionMode::Cpu));
     }
 
+    /// FND-187: the memory budget bounds the points in flight. One slot: the
+    /// first point waits its full 2 s and nobody arrives; two slots: they meet.
+    #[test]
+    fn a_cpu_sweep_with_one_slot_takes_its_points_in_turn() {
+        let (met, points) = sweep_within(ExecutionMode::Cpu, false, &FREQS[..3], true, 1);
+        assert!(!met, "one slot, yet two points were in flight at once");
+        assert_each_point_once(&FREQS[..3], points);
+        let (met, points) = sweep_within(ExecutionMode::Cpu, false, &FREQS, true, 2);
+        assert!(met, "two slots, yet the points ran one at a time");
+        assert_each_point_once(&FREQS, points);
+    }
+
+    /// A hybrid sweep with one slot keeps a CPU worker: a GPU lane that retires on
+    /// its first fallback must not leave the remaining points unsolved.
+    #[test]
+    fn a_hybrid_sweep_with_one_slot_still_solves_every_point() {
+        let (_, points) = sweep_within(ExecutionMode::Hybrid, true, &FREQS, false, 1);
+        assert_each_point_once(&FREQS, points);
+    }
+
     #[test]
     fn a_gpu_sweep_takes_its_points_in_turn() {
         // One device. The first point waits the full 2 s and nobody arrives.
@@ -1897,5 +2032,39 @@ mod sweep_tests {
             to_gpu, 1,
             "the lane kept pulling after a fallback: {to_gpu} points"
         );
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::{sweep_parallelism, POINT_MATRICES, PROCESS_FIXED_BYTES};
+
+    fn per_point(n: u64) -> u64 {
+        POINT_MATRICES * 16 * n * n
+    }
+
+    #[test]
+    fn the_budget_fits_whole_points_after_the_fixed_overhead() {
+        let pp = per_point(1001);
+        let b = |bytes| sweep_parallelism(1001, Some(bytes), 24).threads;
+        assert_eq!(b(PROCESS_FIXED_BYTES + 3 * pp), 3);
+        assert_eq!(
+            b(PROCESS_FIXED_BYTES + 3 * pp - 1),
+            2,
+            "a partial point does not fit"
+        );
+        assert_eq!(sweep_parallelism(1001, Some(1), 24).per_point, pp);
+    }
+
+    #[test]
+    fn never_fewer_than_one_nor_more_than_the_pool() {
+        assert_eq!(sweep_parallelism(3001, Some(1), 24).threads, 1);
+        assert_eq!(sweep_parallelism(11, Some(u64::MAX), 24).threads, 24);
+        assert_eq!(sweep_parallelism(11, Some(u64::MAX), 0).threads, 1);
+    }
+
+    #[test]
+    fn no_budget_is_no_cap() {
+        assert_eq!(sweep_parallelism(3001, None, 24).threads, 24);
     }
 }
