@@ -54,7 +54,14 @@ fn receive_currents_paths(deck: &NecDeck, segs: &[Segment]) -> Vec<Complex64> {
         build_conductor_paths(segs).is_some(),
         "supported degree-2 topology"
     );
-    solve_hallen_planewave_routed(deck, segs, &z, FREQ).expect("path receive solve")
+    solve_hallen_planewave_routed(
+        deck,
+        segs,
+        &z,
+        FREQ,
+        &nec_solver::build_deck_stamps(deck, segs, FREQ).diagonal,
+    )
+    .expect("path receive solve")
 }
 
 /// Receive solve through the existing per-wire plane-wave solver (validated path).

@@ -270,6 +270,7 @@ fn plane_wave_receive_sweep(
     z_mat: &ZMatrix,
     freq_hz: f64,
     ground: &GroundModel,
+    loads: &[Complex64],
 ) -> Result<Vec<nec_report::ReceivePatternRow>, String> {
     let ex = deck
         .cards
@@ -289,7 +290,9 @@ fn plane_wave_receive_sweep(
     // built per direction they made a 2701-point pattern 44× slower (FND-162).
     // Over the matrix's own ground: the corner terms take its images and the
     // incident field its reflected wave (FND-170).
-    let plan = nec_solver::plan_hallen_planewave(segs, freq_hz, ground);
+    // The loads in full — deck LD and --loads-config — so the plan builds its own
+    // loaded matrix and never reads `z_mat`'s stamps (FND-197).
+    let plan = nec_solver::plan_hallen_planewave(segs, freq_hz, ground, loads);
     let mut raw: Vec<(f64, f64, f64)> = Vec::new(); // (θ, φ, peak|I|)
     for it in 0..n_theta {
         for ip in 0..n_phi {
@@ -1542,7 +1545,7 @@ pub(super) fn solve_frequency_point(
 
     // PH9-CHK-001: incident-plane-wave receive-pattern sweep (NTHETA·NPHI > 1).
     let receive_pattern_table = if deck_has_plane_wave(deck) {
-        plane_wave_receive_sweep(deck, segs, &z_mat, freq_hz, ground)?
+        plane_wave_receive_sweep(deck, segs, &z_mat, freq_hz, ground, &stamps.diagonal)?
     } else {
         Vec::new()
     };

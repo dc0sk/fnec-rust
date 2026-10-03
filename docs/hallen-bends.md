@@ -165,8 +165,7 @@ Gate: `crates/nec_solver/tests/graph_nec2c.rs`.
   (measured and
   kept refused; the warning names it). These keep the per-path fallback, are
   warned about, and are pointed to `--solver mpie` where it takes the deck.
-  Lumped loads, current sources, networks, plane waves (receive; with `LD` loads
-  refused) and perfect-ground contact are in scope since stage 5, and a wire
+  Lumped loads, current sources, networks, plane waves (receive, loads included since FND-197) and perfect-ground contact are in scope since stage 5, and a wire
   end or a crossing at another wire's interior joint is a connection (FND-192).
 - **Receive over ground** was FND-170, not a bend problem: the receive forcing had
   no ground-reflected wave, so even a straight dipole over perfect ground was about

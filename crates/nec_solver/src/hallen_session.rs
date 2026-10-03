@@ -207,16 +207,15 @@ pub(crate) fn solve_graph_unit_gap(
     freq_hz: f64,
     graph: &crate::section_graph::SectionGraph,
     src: usize,
+    loads: &[Complex64],
 ) -> Result<Vec<Complex64>, crate::linear::SolveError> {
     let ground = crate::ground_model_from_deck(deck);
     let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
     let sources = corner_sources(segs, &ground, freq_hz);
+    // `z_mat` must be UNSTAMPED: the loads enter here, as columns of the graph
+    // system, and nowhere else (FND-198).
     let mut system = crate::section_graph::GraphSystem::build(z_mat, segs, graph, &sources, k)?;
-    for (p, z_l) in crate::build_deck_stamps(deck, segs, freq_hz)
-        .diagonal
-        .iter()
-        .enumerate()
-    {
+    for (p, z_l) in loads.iter().enumerate() {
         if *z_l != Complex64::new(0.0, 0.0) {
             system.add_load(p, *z_l);
         }
@@ -239,16 +238,10 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
         &crate::ground_model_from_deck(deck),
     ) {
         Ok(Some(img)) => graph_route(&img.deck, &img.segs).is_some(),
-        // A plane wave is a gap on every segment of the graph system — without
-        // LD loads (refused there).
+        // A plane wave is a gap on every segment of the graph system, loads
+        // included as its columns (FND-197).
         _ if deck_has_plane_wave(deck) => {
-            !deck.cards.iter().any(|c| matches!(c, Card::Ld(_)))
-                && matches!(
-                    classify_paths(segs, &crate::ground_model_from_deck(deck)),
-                    PathRoute::Unsupported
-                )
-                && crate::section_graph::build_section_graph(segs)
-                    .is_some_and(|g| g.has_junction_or_loop())
+            planewave_graph(segs, &crate::ground_model_from_deck(deck)).is_some()
         }
         // A current source is solved as its unit gap on the graph.
         _ if deck_has_current_source(deck) => graph_geometry(deck, segs).is_some(),
@@ -764,13 +757,14 @@ pub fn solve_hallen_planewave_routed(
     segs: &[Segment],
     z_mat: &ZMatrix,
     freq_hz: f64,
+    loads: &[Complex64],
 ) -> Result<Vec<Complex64>, HallenSessionError> {
     solve_hallen_planewave_planned(
         deck,
         segs,
         z_mat,
         freq_hz,
-        &plan_hallen_planewave(segs, freq_hz, &crate::ground_model_from_deck(deck)),
+        &plan_hallen_planewave(segs, freq_hz, &crate::ground_model_from_deck(deck), loads),
     )
 }
 
@@ -782,7 +776,7 @@ pub fn solve_hallen_planewave_routed(
 /// The corner term costs about n² · 1500 Green's-function evaluations, and it does
 /// not depend on the wave. Rebuilt per direction, a 37 × 73 receive pattern on a
 /// 41-per-arm L took 264 s instead of 6 s (FND-162).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PlaneWavePlan {
     paths: Option<Vec<ConductorPath>>,
     grouped: Option<PathGrouping>,
@@ -802,6 +796,16 @@ pub struct PlaneWavePlan {
     incident_ground: crate::GroundModel,
     /// Wires touching PEC ground: the solve runs on the doubled structure.
     image: Option<Box<ImagePlan>>,
+    /// The per-segment series loads (deck `LD` and CLI Laplace loads), or empty
+    /// for none. The graph takes them as columns of its own system; the other
+    /// routes from `loaded_z` (FND-197).
+    loads: Vec<Complex64>,
+    /// A loaded deck off the graph: the plan's own matrix with the loads stamped
+    /// for the route it takes, so the caller's matrix — stamped or not — is never
+    /// read for a loaded receive.
+    loaded_z: Option<std::sync::Arc<ZMatrix>>,
+    /// A load list whose length is neither 0 nor the segment count.
+    load_error: Option<String>,
 }
 
 /// The doubled, free-space receive problem of wires touching PEC ground: the
@@ -814,6 +818,23 @@ struct ImagePlan {
     n_orig: usize,
     z: std::sync::Arc<ZMatrix>,
     inner: PlaneWavePlan,
+}
+
+impl std::fmt::Debug for PlaneWavePlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlaneWavePlan")
+            .field("paths", &self.paths.as_ref().map(Vec::len))
+            .field("graph", &self.graph.is_some())
+            .field("matrix_ground", &self.matrix_ground)
+            .field("incident_ground", &self.incident_ground)
+            .field("image", &self.image)
+            .field(
+                "loads",
+                &self.loads.iter().filter(|l| l.norm() > 0.0).count(),
+            )
+            .field("loaded_z", &self.loaded_z.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl std::fmt::Debug for ImagePlan {
@@ -871,23 +892,55 @@ fn plane_wave_thetas(deck: &NecDeck) -> impl Iterator<Item = f64> + '_ {
     })
 }
 
+/// The section graph a plane-wave solve takes on `segs` over `ground`, or `None`:
+/// a junction or loop the conductor paths cannot carry. The one copy, read by the
+/// plan and by the routed path's choice not to stamp loads (FND-197).
+pub(crate) fn planewave_graph(
+    segs: &[Segment],
+    ground: &crate::GroundModel,
+) -> Option<crate::section_graph::SectionGraph> {
+    if matches!(classify_paths(segs, ground), PathRoute::Unsupported) {
+        crate::section_graph::build_section_graph(segs)
+            .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
+    } else {
+        None
+    }
+}
+
 /// Build the [`PlaneWavePlan`] for `segs` at `freq_hz` over `ground` — the ground
 /// the matrix was assembled with.
 pub fn plan_hallen_planewave(
     segs: &[Segment],
     freq_hz: f64,
     ground: &crate::GroundModel,
+    loads: &[Complex64],
 ) -> PlaneWavePlan {
+    if !loads.is_empty() && loads.len() != segs.len() {
+        let mut plan = plan_on(segs, freq_hz, ground, ground, &[]);
+        plan.load_error = Some(format!(
+            "{} loads given for {} segments: the load list must have one entry per segment",
+            loads.len(),
+            segs.len()
+        ));
+        return plan;
+    }
     // Wires touching PEC ground solve on the doubled structure in free space.
     // A contact that cannot be doubled is refused by the guard before any solve.
     if let Ok(Some((doubled, n_orig))) = crate::ground_contact::doubled_segments(segs, ground) {
         let free = crate::GroundModel::FreeSpace;
         let z = crate::assemble_z_matrix_with_ground(&doubled, freq_hz, &free);
+        // The image of a series load is the same load (FND-082).
+        let image_loads: Vec<Complex64> = if loads.is_empty() {
+            Vec::new()
+        } else {
+            loads.iter().chain(loads).copied().collect()
+        };
         let inner = plan_on(
             &doubled,
             freq_hz,
             &free,
             &crate::GroundModel::PerfectConductor,
+            &image_loads,
         );
         return PlaneWavePlan {
             paths: None,
@@ -902,9 +955,12 @@ pub fn plan_hallen_planewave(
                 z: std::sync::Arc::new(z),
                 inner,
             })),
+            loads: loads.to_vec(),
+            loaded_z: None,
+            load_error: None,
         };
     }
-    plan_on(segs, freq_hz, ground, ground)
+    plan_on(segs, freq_hz, ground, ground, loads)
 }
 
 /// The plan for `segs` as they stand, its matrix over `matrix_ground` and the
@@ -914,18 +970,21 @@ fn plan_on(
     freq_hz: f64,
     matrix_ground: &crate::GroundModel,
     incident_ground: &crate::GroundModel,
+    loads: &[Complex64],
 ) -> PlaneWavePlan {
     let ground = matrix_ground;
-    let graph = if matches!(classify_paths(segs, ground), PathRoute::Unsupported) {
-        crate::section_graph::build_section_graph(segs)
-            .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
-    } else {
-        None
-    };
+    let graph = planewave_graph(segs, ground);
     let paths = nontrivial_paths(segs, ground);
     let grouped = paths
         .as_ref()
         .map(|ps| group_sections(segs, ps, freq_hz, ground));
+    // Off the graph, a loaded receive solves its own matrix with the loads
+    // stamped in the form the route that runs derives (FND-122).
+    let loaded_z = (graph.is_none() && loads.iter().any(|l| l.norm() > 0.0)).then(|| {
+        let mut z = crate::assemble_z_matrix_with_ground(segs, freq_hz, ground);
+        crate::stamps::stamp_hallen_load_columns(&mut z, segs, freq_hz, loads, paths.as_deref());
+        std::sync::Arc::new(z)
+    });
     PlaneWavePlan {
         paths,
         grouped,
@@ -934,6 +993,9 @@ fn plan_on(
         matrix_ground: matrix_ground.clone(),
         incident_ground: incident_ground.clone(),
         image: None,
+        loads: loads.to_vec(),
+        loaded_z,
+        load_error: None,
     }
 }
 
@@ -952,15 +1014,18 @@ pub fn solve_hallen_planewave_planned(
     if let Some(why) = plane_wave_ground_problem(deck, segs, &plan.incident_ground) {
         return Err(HallenSessionError::PlaneWave(why));
     }
+    if let Some(why) = &plan.load_error {
+        return Err(HallenSessionError::PlaneWave(why.clone()));
+    }
+    // A plan made without the loads would solve a loaded deck unloaded, silently.
+    if plan.loads.is_empty() && deck.cards.iter().any(|c| matches!(c, Card::Ld(_))) {
+        return Err(HallenSessionError::PlaneWave(
+            "this deck has LD loads, but the receive solve was given none: pass the \
+             per-segment load diagonal (FND-197)"
+                .to_string(),
+        ));
+    }
     if let Some(img) = &plan.image {
-        // The doubled matrix would need the image loads stamped too.
-        if deck.cards.iter().any(|c| matches!(c, Card::Ld(_))) {
-            return Err(HallenSessionError::PlaneWave(
-                "a plane wave on wires touching the ground plane with LD loads is not \
-                 supported (FND-170)"
-                    .to_string(),
-            ));
-        }
         // `deck` carries this call's wave; the doubled segments and matrix are the
         // plan's. `z_mat` (the deck's own matrix) is not used.
         let mut currents = solve_planewave_on_plan(deck, &img.segs, &img.z, freq_hz, &img.inner)?;
@@ -986,31 +1051,35 @@ fn solve_planewave_on_plan(
         matrix_ground,
         incident_ground,
         image: _,
+        loads,
+        loaded_z,
+        load_error: _,
     } = plan;
+    let z_mat: &ZMatrix = loaded_z.as_deref().unwrap_or(z_mat);
 
     // A junction or loop: the wave is a gap on every segment of the graph system.
     if let Some(graph) = graph {
-        // Lumped loads would be columns of the graph system, but the routed solve
-        // stamps them into the matrix in the plain basis's form before reaching
-        // here, so a loaded receive deck on the graph is refused, not solved
-        // with misplaced loads.
-        if deck.cards.iter().any(|c| matches!(c, Card::Ld(_))) {
-            return Err(HallenSessionError::PlaneWave(
-                "a plane wave on a junction or loop deck with LD loads is not supported \
-                 (FND-162 stage 5)"
-                    .to_string(),
-            ));
-        }
+        // The graph system is built from the plan's OWN unstamped matrix, with the
+        // loads as its columns: a caller's matrix may carry the plain basis's load
+        // stamps, and a system built from it applied them in the wrong form,
+        // silently — 25 % off nec2c on a loaded T (FND-197).
         let built = system.get_or_init(|| {
             let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
-            crate::section_graph::GraphSystem::build(
-                z_mat,
+            let z = crate::assemble_z_matrix_with_ground(segs, freq_hz, matrix_ground);
+            let mut system = crate::section_graph::GraphSystem::build(
+                &z,
                 segs,
                 graph,
                 &corner_sources(segs, matrix_ground, freq_hz),
                 k,
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+            for (p, z_l) in loads.iter().enumerate() {
+                if *z_l != Complex64::new(0.0, 0.0) {
+                    system.add_load(p, *z_l);
+                }
+            }
+            Ok(system)
         });
         let system = built
             .as_ref()
@@ -1198,7 +1267,7 @@ fn solve_ground_contact(
     // wave would take the image deck's ground — free space, its GN card stripped
     // — and the image half would see the direct wave alone (FND-170).
     if route.drive == HallenDrive::PlaneWave {
-        let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz)?;
+        let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz, loads)?;
         return Ok(HallenRouted {
             currents,
             port_voltage: None,
@@ -1359,6 +1428,46 @@ fn solve_hallen_routed_inner(
     // where the basis is not yet decided (FND-122).
     //
     // These are deltas: call once per matrix, exactly as the old `apply` was.
+    //
+    // Not for a current source on the section graph: the graph takes the loads as
+    // columns of its own system, so stamped here too they applied twice — 153.7 −
+    // j1530 Ω under EX 4 against the voltage source's 85.5 − j1536 on a loaded T
+    // (FND-198).
+    let cs_graph = (route.drive == HallenDrive::CurrentSource)
+        .then(|| graph_geometry(deck, segs))
+        .flatten();
+    if let Some(graph) = &cs_graph {
+        // Ahead of the networks check below, so it is made here too (FND-123).
+        let (networks, _) = crate::network::build_networks(deck, segs, freq_hz)
+            .map_err(HallenSessionError::Network)?;
+        if !networks.is_empty() {
+            return Err(HallenSessionError::Network(
+                "TL/NT networks are supported with voltage (delta-gap) sources only; this deck \
+                 is driven by a current source"
+                    .to_string(),
+            ));
+        }
+        let (tag, seg, i0) = first_current_source(deck)
+            .ok_or_else(|| HallenSessionError::Excitation("no current source in deck".into()))?;
+        let src = segs
+            .iter()
+            .position(|s| s.tag == tag && s.tag_index == seg)
+            .ok_or(HallenSessionError::CurrentSource(
+                CurrentSourceError::NoCurrentSource,
+            ))?;
+        let unit = solve_graph_unit_gap(deck, segs, z_mat, freq_hz, graph, src, loads)
+            .map_err(HallenSessionError::Solve)?;
+        let (currents, port_voltage) =
+            crate::current_source::scale_to_impressed_current(unit, src, i0, tag, seg)
+                .map_err(HallenSessionError::CurrentSource)?;
+        return Ok(HallenRouted {
+            currents,
+            port_voltage: Some(port_voltage),
+            route,
+            residual_inputs: None,
+            network_branch: Vec::new(),
+        });
+    }
     crate::stamps::stamp_hallen_load_columns(z_mat, segs, freq_hz, loads, paths.as_deref());
 
     // Path grouping, built once and shared by every arm below.
@@ -1388,7 +1497,7 @@ fn solve_hallen_routed_inner(
         HallenDrive::PlaneWave => {
             // The arm itself lives in `solve_hallen_planewave_routed`, because
             // the receive sweep needs it without the load stamping above.
-            let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz)?;
+            let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz, loads)?;
             Ok(HallenRouted {
                 currents,
                 port_voltage: None,

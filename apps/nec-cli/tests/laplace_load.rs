@@ -102,3 +102,81 @@ fn laplace_load_rejected_on_mpie_path() {
         "expected an mpie-rejection message, got: {stderr}"
     );
 }
+
+/// A T: 4 m stem, 3 m bar halves — a junction deck, solved on the section graph.
+const TEE: &str = "CE\nGW 1 21 0 0 0 0 0 4 0.001\nGW 2 21 0 0 4 -3 0 4 0.001\n\
+                   GW 3 21 0 0 4 3 0 4 0.001\nGE 0\n{LD}{EX}FR 0 1 0 0 14.2 0\nEN\n";
+
+const LAPLACE_300: &str =
+    "[[laplace_load]]\ntag = 2\nseg_first = 5\nnumerator = [300.0]\ndenominator = [1.0]\n";
+
+fn current_table(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .skip_while(|l| *l != "CURRENTS")
+        .skip(2)
+        .take_while(|l| l.split_whitespace().count() == 6)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// FND-197: a `--loads-config` load on a junction deck lit by a plane wave was
+/// solved over the plain basis's load stamps — 25 % off nec2c, exit 0 — while the
+/// same load as an `LD` card was refused. Both now solve, identically.
+#[test]
+fn a_laplace_load_on_a_receiving_junction_deck_equals_its_ld_twin() {
+    let wave = "EX 1 1 1 0 90 0 0\n";
+    let ld = tmp(
+        "tee-ld.nec",
+        &TEE.replace("{LD}", "LD 4 2 5 5 300 0\n")
+            .replace("{EX}", wave),
+    );
+    let bare = tmp(
+        "tee-bare.nec",
+        &TEE.replace("{LD}", "").replace("{EX}", wave),
+    );
+    let cfg = tmp("tee-loads.toml", LAPLACE_300);
+    let out_ld = run(&[], &ld);
+    let out_lap = run(&["--loads-config", cfg.to_str().unwrap()], &bare);
+    for out in [&out_ld, &out_lap] {
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let (a, b) = (
+        current_table(&String::from_utf8_lossy(&out_ld.stdout)),
+        current_table(&String::from_utf8_lossy(&out_lap.stdout)),
+    );
+    assert_eq!(a.len(), 63, "the whole current table");
+    assert_eq!(
+        a, b,
+        "the Laplace load must equal its LD twin, segment by segment"
+    );
+}
+
+/// FND-198: a current source on a loaded junction deck applied its loads twice.
+/// With the load from `--loads-config`, EX 4 prices exactly as EX 0.
+#[test]
+fn a_laplace_loaded_current_source_on_a_junction_deck_prices_as_the_voltage_source() {
+    let cfg = tmp("tee-cs-loads.toml", LAPLACE_300);
+    let z = |ex: &str| {
+        let deck = tmp(
+            &format!("tee-{}.nec", &ex[3..4]),
+            &TEE.replace("{LD}", "").replace("{EX}", ex),
+        );
+        let out = run(&["--loads-config", cfg.to_str().unwrap()], &deck);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        feedpoint_z(&String::from_utf8_lossy(&out.stdout))
+    };
+    let (v, i) = (z("EX 0 1 4 0 1 0\n"), z("EX 4 1 4 0 1 0\n"));
+    assert!(
+        (v.0 - i.0).abs() < 1e-6 && (v.1 - i.1).abs() < 1e-6,
+        "EX 0 {v:?} vs EX 4 {i:?}"
+    );
+}

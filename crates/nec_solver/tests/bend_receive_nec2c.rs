@@ -36,7 +36,14 @@ fn receive(geometry: &str, wave: &str) -> Vec<Complex64> {
     let d = deck(geometry, wave);
     let segs = build_geometry(&d).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&d));
-    solve_hallen_planewave_routed(&d, &segs, &z, FREQ).expect("receive solve")
+    solve_hallen_planewave_routed(
+        &d,
+        &segs,
+        &z,
+        FREQ,
+        &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
+    )
+    .expect("receive solve")
 }
 
 /// Max over the gated segments (1-based, nec2c numbering) of |ΔI| / peak |I_nec2c|.
@@ -159,11 +166,23 @@ fn a_planned_receive_solve_equals_the_one_shot_solve() {
     let plan_deck = deck(&geo, "EX 1 1 1 0 45 0 0\n");
     let segs = build_geometry(&plan_deck).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&plan_deck));
-    let plan = plan_hallen_planewave(&segs, FREQ, &ground_model_from_deck(&plan_deck));
+    let plan = plan_hallen_planewave(
+        &segs,
+        FREQ,
+        &ground_model_from_deck(&plan_deck),
+        &nec_solver::build_deck_stamps(&plan_deck, &segs, FREQ).diagonal,
+    );
     for wave in ["EX 1 1 1 0 30 0 0\n", "EX 1 1 1 0 75 40 90\n"] {
         let d = deck(&geo, wave);
         let planned = solve_hallen_planewave_planned(&d, &segs, &z, FREQ, &plan).unwrap();
-        let one_shot = solve_hallen_planewave_routed(&d, &segs, &z, FREQ).unwrap();
+        let one_shot = solve_hallen_planewave_routed(
+            &d,
+            &segs,
+            &z,
+            FREQ,
+            &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
+        )
+        .unwrap();
         assert_eq!(planned, one_shot, "{wave:?}");
     }
 }

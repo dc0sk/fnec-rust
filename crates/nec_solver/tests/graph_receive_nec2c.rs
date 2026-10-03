@@ -8,6 +8,8 @@
 //! once and reuses it for every incidence direction. Junction and loop decks lit
 //! by a plane wave were refused (`JunctionedGeometryNotSupported`).
 //!
+//! Loaded decks (FND-197) solve too: the loads are columns of the graph system.
+//!
 //! Every expectation is nec2c 1.3.1, captured 2026-10-02: the peak |I| and the
 //! currents at a handful of segments (the feed corner, a mid-run, the node). The
 //! whole current table agrees too (max |ΔI| / peak at 21 → 41 per wire: loop
@@ -30,7 +32,14 @@ fn receive(geometry: &str, wave: &str) -> Vec<Complex64> {
     .deck;
     let segs = build_geometry(&deck).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    solve_hallen_planewave_routed(&deck, &segs, &z, FREQ).expect("receive solve")
+    solve_hallen_planewave_routed(
+        &deck,
+        &segs,
+        &z,
+        FREQ,
+        &nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal,
+    )
+    .expect("receive solve")
 }
 
 /// Max over the pinned segments (1-based) of |ΔI| / peak |I_nec2c|.
@@ -132,18 +141,193 @@ fn a_t_receives_like_nec2c() {
     assert_converges("T at 45°", e21, e41, 0.01);
 }
 
-/// A loaded receive deck on the graph is refused, not solved with its loads in
-/// the wrong form (the routed solve stamps them for the plain basis).
-#[test]
-fn a_loaded_plane_wave_junction_deck_is_refused() {
-    let deck = nec_parser::parse(&format!(
-        "CE\n{}GE 0\nLD 0 2 5 5 50 0 0\nEX 1 1 1 0 45 0 0\nFR 0 1 0 0 14.2 0\nEN\n",
-        square_loop(21)
-    ))
-    .expect("parses")
-    .deck;
+/// The single-shot route a frontend takes, with the deck's loads (or `loads`
+/// when given — what the CLI's `--loads-config` adds) passed in full.
+fn routed(text: &str, loads: Option<Vec<Complex64>>) -> nec_solver::HallenRouted {
+    let deck = nec_parser::parse(text).expect("parses").deck;
     let segs = build_geometry(&deck).expect("geometry");
+    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+    let loads = loads.unwrap_or_else(|| nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal);
+    nec_solver::solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("routed solve")
+}
+
+fn tee(n: u32) -> String {
+    format!("GW 1 {n} 0 0 0 0 0 4 .001\nGW 2 {n} 0 0 4 -3 0 4 .001\nGW 3 {n} 0 0 4 3 0 4 .001\n")
+}
+
+fn deck_text(geometry: &str, cards: &str) -> String {
+    format!("CE\n{geometry}GE 0\n{cards}FR 0 1 0 0 14.2 0\nEN\n")
+}
+
+/// FND-197: a loaded junction deck lit by a plane wave. A 300 Ω load on the T's
+/// bar, against nec2c at two meshes (the load at the same fraction of the bar).
+/// It was refused as an `LD` card and — as a CLI `--loads-config` load — solved
+/// over the plain basis's stamps, 25 % off. Kill criterion: under 1 % at 41,
+/// shrinking. Measured 0.96 → 0.68 % over the whole table.
+#[test]
+fn a_loaded_t_receives_like_nec2c() {
+    let wave = "EX 1 1 1 0 90 0 0\n";
+    let e = |n: u32, seg: u32, peak: f64, refs: &[(usize, f64, f64)]| {
+        let text = deck_text(&tee(n), &format!("LD 4 2 {seg} {seg} 300 0\n{wave}"));
+        err(&routed(&text, None).currents, peak, refs)
+    };
+    let e21 = e(
+        21,
+        5,
+        6.336_284e-3,
+        &[
+            (1, -4.2607e-05, -4.1899e-04),
+            (11, -6.2857e-04, -5.2966e-03),
+            (21, -9.3431e-04, -6.0907e-03),
+            (22, -1.1972e-03, -2.4934e-03),
+            (26, -1.2263e-03, -1.9998e-03),
+            (43, 2.4966e-04, -3.4445e-03),
+            (63, 9.0293e-06, -1.2748e-04),
+        ],
+    );
+    let e41 = e(
+        41,
+        10,
+        6.362_046e-3,
+        &[
+            (1, -2.3438e-05, -2.3575e-04),
+            (21, -6.1760e-04, -5.3173e-03),
+            (41, -9.1788e-04, -6.0938e-03),
+            (42, -1.1651e-03, -2.5520e-03),
+            (51, -1.2022e-03, -1.9799e-03),
+            (83, 2.4141e-04, -3.4685e-03),
+            (123, 4.8818e-06, -7.1679e-05),
+        ],
+    );
+    assert_converges("loaded T", e21, e41, 0.01);
+}
+
+/// A 1 λ loop with a 100 + j50 Ω load mid-side, lit broadside. Kill criterion:
+/// under 1 % at 41, shrinking. Measured 0.87 → 0.51 % over the whole table.
+#[test]
+fn a_loaded_loop_receives_like_nec2c() {
+    let wave = "EX 1 1 1 0 90 90 0\n";
+    let e = |n: u32, peak: f64, refs: &[(usize, f64, f64)]| {
+        let mid = n.div_ceil(2);
+        let text = deck_text(
+            &square_loop(n),
+            &format!("LD 4 2 {mid} {mid} 100 50\n{wave}"),
+        );
+        err(&routed(&text, None).currents, peak, refs)
+    };
+    let e21 = e(
+        21,
+        3.985_428e-2,
+        &[
+            (1, 2.5442e-02, 1.0300e-02),
+            (11, 1.8021e-03, -1.4500e-03),
+            (21, -2.2770e-02, -1.2408e-02),
+            (22, -2.4767e-02, -1.3225e-02),
+            (32, -3.6540e-02, -1.5912e-02),
+            (53, 1.8021e-03, -1.4500e-03),
+            (84, 2.7257e-02, 1.1272e-02),
+        ],
+    );
+    let e41 = e(
+        41,
+        3.985_878e-2,
+        &[
+            (1, 2.5871e-02, 1.0550e-02),
+            (21, 1.8010e-03, -1.4523e-03),
+            (41, -2.3244e-02, -1.2625e-02),
+            (42, -2.4266e-02, -1.3044e-02),
+            (62, -3.6561e-02, -1.5875e-02),
+            (103, 1.8010e-03, -1.4523e-03),
+            (164, 2.6800e-02, 1.1049e-02),
+        ],
+    );
+    assert_converges("loaded loop", e21, e41, 0.01);
+}
+
+/// The compensation theorem, an exact identity through a different code path:
+/// a series load Z_L at p is the unloaded receive plus the field of a source
+/// −Z_L·I_L[p] at p, so I_L = I_0 − Z_L·I_L[p]·g with g the DRIVEN graph's
+/// response to 1 V at p, and I_L[p] = I_0[p] / (1 + Z_L·g[p]). Measured
+/// residual 1.1e-9 of the peak (the regularised solves' floor); the solve built
+/// over the plain basis's stamps was 25 % off.
+#[test]
+fn a_loaded_receive_is_the_unloaded_one_compensated() {
+    let wave = "EX 1 1 1 0 90 0 0\n";
+    let (seg, z_l) = (5u32, Complex64::new(300.0, 0.0));
+    let loaded = routed(
+        &deck_text(&tee(21), &format!("LD 4 2 {seg} {seg} 300 0\n{wave}")),
+        None,
+    )
+    .currents;
+    let unloaded = routed(&deck_text(&tee(21), wave), None).currents;
+    let g = routed(&deck_text(&tee(21), &format!("EX 0 2 {seg} 0 1 0\n")), None).currents;
+    let p = 21 + seg as usize - 1;
+    let i_p = unloaded[p] / (Complex64::new(1.0, 0.0) + z_l * g[p]);
+    let peak = loaded.iter().map(|c| c.norm()).fold(0.0, f64::max);
+    let worst = (0..loaded.len())
+        .map(|i| (loaded[i] - (unloaded[i] - z_l * i_p * g[i])).norm() / peak)
+        .fold(0.0, f64::max);
+    println!("compensation residual: {worst:.3e} of the peak");
+    assert!(worst < 1e-6, "{worst:.3e}");
+}
+
+/// FND-198: a current source on a loaded junction deck prices exactly as the
+/// voltage source — the loads were applied twice (153.7 − j1530 Ω against
+/// 85.5 − j1536). Through the routed entry point, with the loads as an `LD` card
+/// and as a bare diagonal (what `--loads-config` adds).
+#[test]
+fn a_loaded_current_source_on_the_graph_prices_as_the_voltage_source() {
+    let load = "LD 0 2 1 1 100 2e-6 0\n";
+    let z_of = |r: nec_solver::HallenRouted, idx: usize| match r.port_voltage {
+        Some(v) => v,
+        None => Complex64::new(1.0, 0.0) / r.source_current(idx),
+    };
+    let feed = 3; // tag 1 segment 4
+    let v = z_of(
+        routed(
+            &deck_text(&tee(21), &format!("{load}EX 0 1 4 0 1 0\n")),
+            None,
+        ),
+        feed,
+    );
+    let i = z_of(
+        routed(
+            &deck_text(&tee(21), &format!("{load}EX 4 1 4 0 1 0\n")),
+            None,
+        ),
+        feed,
+    );
+    assert!((i - v).norm() <= 1e-9 * v.norm(), "EX 4 {i} vs EX 0 {v}");
+    // The same load as a diagonal, the deck carrying no LD card.
+    let deck = nec_parser::parse(&deck_text(&tee(21), &format!("{load}EX 0 1 4 0 1 0\n")))
+        .unwrap()
+        .deck;
+    let segs = build_geometry(&deck).unwrap();
+    let diagonal = nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal;
+    let bare = z_of(
+        routed(&deck_text(&tee(21), "EX 4 1 4 0 1 0\n"), Some(diagonal)),
+        feed,
+    );
+    assert!(
+        (bare - v).norm() <= 1e-9 * v.norm(),
+        "diagonal {bare} vs LD {v}"
+    );
+}
+
+/// A receive solve given no loads for a deck with `LD` cards refuses, rather than
+/// solving it unloaded.
+#[test]
+fn a_loaded_receive_given_no_loads_refuses() {
+    let deck = nec_parser::parse(&deck_text(
+        &tee(21),
+        "LD 4 2 5 5 300 0\nEX 1 1 1 0 90 0 0\n",
+    ))
+    .unwrap()
+    .deck;
+    let segs = build_geometry(&deck).unwrap();
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    let err = solve_hallen_planewave_routed(&deck, &segs, &z, FREQ).expect_err("refused");
-    assert!(err.to_string().contains("LD loads"), "{err}");
+    let e = solve_hallen_planewave_routed(&deck, &segs, &z, FREQ, &[])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("LD loads") && e.contains("none"), "{e}");
 }

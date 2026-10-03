@@ -40,6 +40,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   without the network (2.39 → 1.48 Ω). A current source with a network stays refused, as
   everywhere (FND-123).
 
+### Fixed
+
+- **A current source on a loaded junction or loop deck applied its loads twice**
+  (FND-198). The routed solve stamped the loads into the matrix for the plain
+  basis, then the section graph added them again as columns: a T with a 100 Ω +
+  2 µH load answered 153.73 − j1530.41 Ω under `EX 4` where the voltage source
+  gives 85.48 − j1536.34. The graph now builds from the unstamped matrix, and the
+  current source prices exactly as the voltage source — with `LD` loads and with
+  `--loads-config` ones.
+- **A `--loads-config` load on a junction or loop deck lit by a plane wave was
+  solved over the wrong form of the load** (FND-197). The same load as an `LD`
+  card was refused; through the CLI's Laplace loads it reached a graph system
+  built from the plain basis's stamps, 25 % off nec2c on a loaded T, with exit 0.
+  The receive plan now owns its matrix: the graph takes the loads as columns of
+  its own system, and a loaded deck off the graph solves the plan's own stamped
+  copy, never the caller's. Loaded junction and loop decks lit by a plane wave
+  solve, `LD` and `--loads-config` alike — a loaded T 0.96 → 0.68 % from nec2c,
+  a loaded loop 0.87 → 0.51 % at 21 → 41 per wire — and so do loaded decks
+  touching perfect ground.
+
+### Changed
+
+- `plan_hallen_planewave` and `solve_hallen_planewave_routed` take the
+  per-segment load diagonal (as `solve_hallen_routed` does); a receive solve
+  given none for a deck with `LD` cards refuses rather than solving unloaded.
+
 ## [0.21.0] — 2026-10-03 — The wave meets the ground
 
 Nine changes since v0.20.0 (#511–#519). **An incident plane wave over ground
