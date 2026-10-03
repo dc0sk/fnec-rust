@@ -2,10 +2,96 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-02
+last_updated: 2026-10-03
 ---
 
 # Release Notes
+
+## 0.21.0 — The wave meets the ground
+
+Nine changes since 0.20.0 (#511–#519). An incident plane wave over ground now
+solves — perfect and finite — with the ground-reflected wave nec2c uses, where
+0.20.0 refused it. Four defects are fixed, one of them a silent wrong answer: a
+negative ground conductivity was read as a lossless ground. The findings ledger
+went from 192 findings / 2 open to **196 / 0 open**.
+
+Every value below was measured at the release commit (release builds, 14.2 MHz),
+0.20.0 with its published binary; the nec2c 1.3.1 references are the ones the
+test suite pins.
+
+### Plane waves over ground solve (FND-170)
+
+0.20.0 refused an incident plane wave over any ground (exit 1): its receive
+forcing had only the direct wave, which had made a dipole over perfect ground
+55 % off nec2c. The forcing now adds the ground-reflected wave as nec2c's `etmns`
+does — evaluated at each segment's mirror point, the mirrored polarization scaled
+by the reflection coefficients — on every receive route (straight wires, bent
+paths, junctions and loops), and the corner terms of bent and junction decks take
+the ground images too.
+
+| deck, against nec2c over the ground | 0.20.0 | 0.21.0, 21 → 41 segments per wire |
+|---|---|---|
+| horizontal dipole over perfect ground, θ = 45° | refused | 10.91 → 5.91 % |
+| vertical dipole over perfect ground, θ = 60° | refused | 9.77 → 5.38 % |
+| inverted-V over perfect ground | refused | 7.95 → 4.61 % |
+| T over perfect ground | refused | 1.05 → 0.56 % |
+| dipole 3 λ over average ground (`GN 2`, εr 13, 5 mS/m), ratio to free space, θ̂ and φ̂ | refused | 0.27 → 0.16 % |
+
+The error is the largest current difference over the whole table, relative to the
+peak. The straight and bent decks sit at the same deck's own free-space error,
+which is how fnec's Hallén solver approaches nec2c's current table, transmit and
+receive alike (FND-195, rejected as a receive defect). Over finite ground the
+reflected wave matches nec2c closely; close to the ground (0.24 λ) the ratio is
+2.4 % off, which is fnec's simpler finite-ground matrix, not the wave.
+
+Still refused, by name: a wave from below the ground plane (θ > 90°, as nec2c's
+own pattern skips), and a plane wave on wires touching the ground.
+`--ground-solver sommerfeld` cannot apply to a receive solve and now says so.
+
+### Fixed
+
+| | 0.20.0 | 0.21.0 |
+|---|---|---|
+| `GN 2 0 0 0 13 -5` (negative σ: NEC's ε″ = 5), 10 m dipole 5 m up | 70.586 − j26.565 Ω — the lossless ground | 72.513 − j26.706 Ω, as σ = 3.95 mS/m |
+| `--exec gpu` when the driver drops a fence without reporting a lost device | hangs for good (about 1 run in 300 on this host) | falls back to the CPU after 120 s and says why |
+| parallel CPU sweep, 8 points, N = 1001, 8 threads | no memory bound | at most 7 × 16·N² bytes per point in flight (measured peak 553 MB hallen, 760 MB sinusoidal, against a budgeted 908 MB) |
+
+- **Negative ground conductivity** (FND-194). NEC reads a negative `SIG` as the
+  imaginary part of the permittivity itself; nec2c takes the card above as
+  3.95 mS/m. fnec's matrix clamped it to zero and its far field used it with the
+  sign flipped. One function now turns a ground card into its permittivity.
+- **A GPU readback that never finishes** (FND-196). On this host's NVIDIA driver
+  a fault on fnec's compute channel left the work's fence unsignalled, and the
+  process slept in the driver indefinitely. A readback now waits at most 120 s —
+  the largest device solve takes about 1.3 s.
+- **Sweep memory** (FND-187). Each point in flight holds its own matrices — the
+  sinusoidal solver the most, 6.5 × 16·N² — and the sweep ran one point per core:
+  about 14 GB for a 3001-segment deck on 24 cores. The points in flight are now
+  capped at half the memory the host and the process's cgroup leave available;
+  an `info:` line says so when it caps, and `FNEC_SWEEP_MEMORY_BUDGET_MB` sets the
+  budget explicitly.
+- **A shader construct Vulkan validation rejects** (FND-193). The Z-matrix
+  fill's integration tables are vectors now, not constant arrays (same values).
+  Two workgroup arrays remain, which need wgpu's own fix (gfx-rs/wgpu PR #9295).
+
+### Diagnostics
+
+The standard wgpu switches now take effect: `WGPU_BACKEND` restricts the backend,
+`WGPU_VALIDATION=1 WGPU_DEBUG=1` routes Vulkan validation to stderr, and
+`RUST_LOG=info` names the adapter fnec chose. The CLI guide's "GPU diagnostics"
+section lists them.
+
+### Known issue
+
+**NVIDIA driver faults on the build host** (FND-190, deferred). The GTX 1080 Ti
+host's driver (580.178.04) raises Xid faults in about 2–5 % of GPU runs, Xwayland
+included; fnec falls back to the CPU on each, and says why. The only driver
+branch Ubuntu offers this card is the installed one.
+
+### Versions
+
+Workspace 0.20.0 → **0.21.0**; `fnec_py` 0.11.0 → **0.12.0**. No dependency left
+or arrived; the SBOM has 525 packages.
 
 ## 0.20.0 — Every wire sees the others
 
