@@ -117,14 +117,17 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg("--exec")
-        .arg("hybrid")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec sweep test: {e}"));
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--exec")
+            .arg("hybrid")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| panic!("Failed to run fnec --exec hybrid: {e}"))
+    };
+    let output = run();
 
     assert!(
         output.status.success(),
@@ -149,7 +152,9 @@ fn hybrid_exec_mode_runs_frequency_sweep_with_ordered_reports() {
         "expected 5 FREQ_MHZ headers, got {freq_headers}"
     );
 
-    common::assert_hybrid_lane_reported(&stderr, 5);
+    common::assert_hybrid_lane_reported(&stderr, 5, || {
+        String::from_utf8_lossy(&run().stderr).into_owned()
+    });
     common::assert_points_say_what_ran(&stderr);
 
     // Verify report ordering remains ascending by FR sweep points.
@@ -180,14 +185,17 @@ fn hybrid_exec_mode_runs_a_real_gpu_lane_or_says_it_is_cpu_only() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/frequency-sweep-dipole.nec");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg("--exec")
-        .arg("hybrid")
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for hybrid exec fallback test: {e}"));
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .arg("--solver")
+            .arg("hallen")
+            .arg("--exec")
+            .arg("hybrid")
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| panic!("Failed to run fnec --exec hybrid: {e}"))
+    };
+    let output = run();
 
     assert!(
         output.status.success(),
@@ -198,7 +206,9 @@ fn hybrid_exec_mode_runs_a_real_gpu_lane_or_says_it_is_cpu_only() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    common::assert_hybrid_lane_reported(&stderr, 5);
+    common::assert_hybrid_lane_reported(&stderr, 5, || {
+        String::from_utf8_lossy(&run().stderr).into_owned()
+    });
     assert!(
         !stderr.contains("accelerator stub backend") && !stderr.contains("CPU emulation"),
         "did not expect any 'stub backend' / 'CPU emulation' wording, got:\n{stderr}"
@@ -1315,4 +1325,38 @@ fn cpu_sweep_is_ordered_and_identical_to_a_single_thread_run() {
         cursor += rel + marker.len();
     }
     assert_eq!(parallel, run(Some("1")), "4 threads and 1 thread disagree");
+}
+
+/// FND-190: the hybrid-lane check re-runs exactly once, and only when a GPU is
+/// present but the run said it saw none — a transient passes on the re-run, a
+/// hybrid that never finds the GPU still fails.
+#[test]
+fn the_hybrid_lane_check_reruns_once_on_a_hidden_gpu() {
+    if !pollster::block_on(nec_accel::hardware_adapter_present()) {
+        eprintln!("SKIP: needs a hardware GPU");
+        return;
+    }
+    const CPU_ONLY: &str = "info: --exec hybrid runs on the CPU only: no hardware GPU\n";
+    const LANE: &str = "info: --exec hybrid: 2 of 5 sweep points solved on the GPU\n";
+    let reruns = std::cell::Cell::new(0);
+    common::assert_hybrid_lane_reported(CPU_ONLY, 5, || {
+        reruns.set(reruns.get() + 1);
+        LANE.to_string()
+    });
+    assert_eq!(reruns.get(), 1, "a hidden GPU earns exactly one re-run");
+
+    let twice = std::panic::catch_unwind(|| {
+        common::assert_hybrid_lane_reported(CPU_ONLY, 5, || CPU_ONLY.to_string());
+    });
+    assert!(twice.is_err(), "two runs without the lane must fail");
+
+    let lane_first = std::cell::Cell::new(false);
+    common::assert_hybrid_lane_reported(LANE, 5, || {
+        lane_first.set(true);
+        String::new()
+    });
+    assert!(
+        !lane_first.get(),
+        "a run that reported its lane is not re-run"
+    );
 }

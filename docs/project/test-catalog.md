@@ -30,7 +30,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
 | `apps/nec-cli/tests/exec_auto.rs` | 7 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
-| `apps/nec-cli/tests/exec_modes.rs` | 27 | `--exec` selection, drop-in alias resolution, sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run | DEC-003, CP-012 |
+| `apps/nec-cli/tests/exec_modes.rs` | 28 | `--exec` selection, drop-in alias resolution, sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run; the hybrid-lane check re-runs once, and only, when a present GPU was hidden from the run's enumeration (FND-190) | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 17 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
@@ -121,7 +121,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=651 --> **651** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=652 --> **652** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -146,7 +146,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=586 --> **586** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1244 --> **1244** = 586 unit + 651 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1245 --> **1245** = 586 unit + 652 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

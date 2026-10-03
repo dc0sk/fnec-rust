@@ -161,10 +161,28 @@ pub fn assert_points_say_what_ran(stderr: &str) {
 /// A multi-point `--exec hybrid` run on a deck the GPU solves: with a hardware
 /// GPU the lane runs and reports how many points it solved; without one the run
 /// says it is CPU-only, and why.
-pub fn assert_hybrid_lane_reported(stderr: &str, points: usize) {
+///
+/// FND-190: this host's driver has momentarily hidden the GPU from adapter
+/// enumeration — the run said "no hardware GPU" while this check found one. Only
+/// that disagreement earns one re-run (`rerun` returns its stderr): a transient
+/// passes on it, while a hybrid that cannot find a present GPU fails both.
+pub fn assert_hybrid_lane_reported(stderr: &str, points: usize, rerun: impl FnOnce() -> String) {
+    const CPU_ONLY: &str = "--exec hybrid runs on the CPU only: no hardware GPU";
     if pollster::block_on(nec_accel::hardware_adapter_present()) {
+        let lane = format!("of {points} sweep points solved on the GPU");
+        if !stderr.contains(&lane) && stderr.contains(CPU_ONLY) {
+            let second = rerun();
+            assert!(
+                second.contains(&lane),
+                "a GPU is present and two hybrid runs reported no lane:\n{stderr}\n---\n{second}"
+            );
+            eprintln!(
+                "NOTE: the first run did not see the GPU, the second did (FND-190); accepted"
+            );
+            return;
+        }
         assert!(
-            stderr.contains(&format!("of {points} sweep points solved on the GPU")),
+            stderr.contains(&lane),
             "a GPU is present and the hybrid run reported no lane:\n{stderr}"
         );
     } else {
