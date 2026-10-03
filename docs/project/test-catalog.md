@@ -77,6 +77,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_ceilings.rs` | 5 | The GPU size ceilings (FND-188/189): the 2-D dispatch grid at the 65 535 boundary, the storage-binding capacity, every indexed shader entry reads the grid (structural), a 2049-segment fill on the device, a decline one past the device's capacity names its reason; device tests skip without a hardware adapter | FND-188, FND-189 |
 | `crates/nec_accel/tests/gpu_concurrent_init.rs` | 1 | FND-186: four threads' first wgpu use must not segfault; alone in its binary, because the crash needs an uninitialised driver (10 of 10 with the lock removed) | FND-186 |
+| `crates/nec_accel/tests/shader_structure.rs` | 1 | FND-193: no shader declares a `const` array (naga gives its function-local copy an `ArrayStride` that Vulkan validation rejects); scans the shader directory, so a new shader is covered | FND-193 |
 | `crates/nec_accel/tests/gpu_context_once.rs` | 1 | FND-186: eight concurrent first callers build one shared device (own binary: the build counter is process-global) | FND-186 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 5 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163); a 301-segment dipole solves on the device; the solve shader uses no storage barrier (FND-185); no single-invocation entry point reads the LU factor (the triangular solves run one dispatch per column) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
@@ -119,7 +120,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=647 --> **647** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=648 --> **648** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -144,7 +145,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=581 --> **581** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1235 --> **1235** = 581 unit + 647 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1236 --> **1236** = 581 unit + 648 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
