@@ -144,6 +144,19 @@ pub fn pec_ground_contact(
     image_deck
         .cards
         .retain(|c| !matches!(c, Card::Gn(_) | Card::Ge(_)));
+    // A current source becomes a 1 V gap, which the loop below mirrors into the
+    // pair the doubled problem needs (+1 V and its image's −1 V); the contact
+    // solve scales the result to the impressed current, as the free-space
+    // current-source solve does (`current_source::scale_to_impressed_current`).
+    for card in &mut image_deck.cards {
+        if let Card::Ex(ex) = card {
+            if ex.kind() == nec_model::card::ExcitationKind::CurrentSource {
+                ex.excitation_type = 0;
+                ex.voltage_real = 1.0;
+                ex.voltage_imag = 0.0;
+            }
+        }
+    }
     let mut images = Vec::new();
     for card in &image_deck.cards {
         match card {
@@ -163,6 +176,30 @@ pub fn pec_ground_contact(
                 let mut image = ld.clone();
                 image.tag += max_tag;
                 images.push(Card::Ld(image));
+            }
+            // A network's image joins the mirrored ports with the same card: in
+            // the image frame both ports carry −V and −I, so `I = Y·V` holds with
+            // the same Y — crossed-line sign and shunts included. nec2c agrees to
+            // its printed digits (TL, crossed TL, shunts, NT; FND-170 review).
+            Card::Tl(tl) => {
+                let mut image = tl.clone();
+                image.tag1 += max_tag;
+                image.tag2 += max_tag;
+                images.push(Card::Tl(image));
+            }
+            Card::Nt(nt) => {
+                let mut image = nt.clone();
+                for i in [0, 2] {
+                    if let Some(tag) = image
+                        .raw_fields
+                        .get(i)
+                        .and_then(|f| f.parse::<f64>().ok())
+                        .filter(|v| v.fract() == 0.0 && *v > 0.0)
+                    {
+                        image.raw_fields[i] = format!("{}", tag as u32 + max_tag);
+                    }
+                }
+                images.push(Card::Nt(image));
             }
             _ => {}
         }

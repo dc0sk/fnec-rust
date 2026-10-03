@@ -1207,23 +1207,26 @@ fn solve_ground_contact(
             network_branch: Vec::new(),
         });
     }
-    // The drives and cards whose images this does not build. Refused rather than
-    // solved without their images (which would be a different antenna).
-    if route.drive != HallenDrive::DeltaGap {
-        return Err(HallenSessionError::Excitation(
-            "wires touching the ground are supported with voltage (delta-gap) sources only"
-                .to_string(),
-        ));
-    }
-    if deck.cards.iter().any(|c| {
+    let has_networks = deck.cards.iter().any(|c| {
         matches!(
             c,
             nec_model::card::Card::Tl(_) | nec_model::card::Card::Nt(_)
         )
-    }) {
-        return Err(HallenSessionError::Network(
-            "TL/NT networks are not supported with wires touching the ground".to_string(),
-        ));
+    });
+    match route.drive {
+        HallenDrive::DeltaGap => {}
+        // The image deck carries it as a gap pair (`pec_ground_contact`); scaled
+        // below. With networks it is refused, as everywhere (FND-123).
+        HallenDrive::CurrentSource if !has_networks => {}
+        HallenDrive::CurrentSource => {
+            return Err(HallenSessionError::Network(
+                "TL/NT networks are supported with voltage (delta-gap) sources only; this deck \
+                 is driven by a current source"
+                    .to_string(),
+            ))
+        }
+        // Returned through the receive seam above.
+        HallenDrive::PlaneWave => {}
     }
     // The image of a series load is the same load.
     let mut image_loads = loads.to_vec();
@@ -1235,8 +1238,41 @@ fn solve_ground_contact(
     );
     let mut routed =
         solve_hallen_routed_inner(&img.deck, &img.segs, &mut z, freq_hz, &image_loads)?;
+    if route.drive == HallenDrive::CurrentSource {
+        // The doubled problem was driven by the unit gap pair; scale it so the
+        // source segment carries the impressed current. Originals come first, so
+        // the source's index is the deck's own.
+        let cs = deck
+            .cards
+            .iter()
+            .find_map(|c| match c {
+                Card::Ex(ex) if ex.kind() == ExcitationKind::CurrentSource => Some(ex),
+                _ => None,
+            })
+            .ok_or(HallenSessionError::CurrentSource(
+                CurrentSourceError::NoCurrentSource,
+            ))?;
+        let src = segs
+            .iter()
+            .position(|s| s.tag == cs.tag && s.tag_index == cs.segment)
+            .ok_or(HallenSessionError::CurrentSource(
+                CurrentSourceError::NoCurrentSource,
+            ))?;
+        let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
+        let (currents, port_voltage) = crate::current_source::scale_to_impressed_current(
+            routed.currents,
+            src,
+            i0,
+            cs.tag,
+            cs.segment,
+        )
+        .map_err(HallenSessionError::CurrentSource)?;
+        routed.currents = currents;
+        routed.port_voltage = Some(port_voltage);
+    }
     routed.currents.truncate(img.n_orig);
-    routed.network_branch.clear();
+    // The image ports are driven too; only the deck's own ports are reported.
+    routed.network_branch.retain(|&(seg, _)| seg < img.n_orig);
     // The residual inputs describe the doubled system; keeping them beside
     // truncated currents would compare vectors of different problems.
     routed.residual_inputs = None;
