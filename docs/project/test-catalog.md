@@ -116,12 +116,13 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/graph_nec2c.rs` | 19 | Hallén on the section graph (FND-162 stages 2+3) vs nec2c at two meshes, converging: a stem-fed Y and T, a T fed on its node, a dipole with a centre stub (a regression gate — the fallback passes it too), a 1 λ square loop, a loop with a stub, the loop over PEC; and Kirchhoff at the Y's node read off the solved currents (1e-9); stage 5: a loaded Y, a T with a coil on its node segment, a loop loaded beside a corner, and the exact feed-load identity; on PEC ground: a top-hat monopole equals its free-space H, the H against the MPIE with its FND-191 gap to nec2c pinned, a folded monopole against nec2c, and neither flagged nor warned; a current source on a Y, a loop and a loaded T equals the voltage gap; a Y with a TL between its arms and two loops on a phasing line against nec2c | FND-162 |
 | `crates/nec_solver/tests/graph_receive_nec2c.rs` | 3 | FND-162 stage 5: the plane-wave receive solve on the section graph — a 1 λ loop broadside and a T at 45° against nec2c's currents at two meshes, converging; a loaded plane-wave junction deck is refused | FND-162 |
 | `crates/nec_solver/tests/planewave_ground_nec2c.rs` | 7 | FND-170: a plane wave over perfect ground against nec2c's currents at two meshes, converging — a horizontal and a vertical dipole, an inverted-V (bent-path route), a T (section graph), an elliptic wave; a deferred ground receives exactly as free space; a wave from below the plane (single or a sweep row), wires touching the ground and finite ground are refused by name | FND-170 |
+| `crates/nec_solver/tests/planewave_ground_contact.rs` | 5 | FND-170: a plane wave on wires touching PEC ground — the contact deck equals its free-space double lit from θ and from 180° − θ to round-off (straight and bent); a monopole and an inverted-L against nec2c at two meshes, converging; the sweep route doubles the structure too; LD loads refused on both routes | FND-170 |
 | `crates/nec_solver/tests/planewave_finite_ground_nec2c.rs` | 4 | FND-170 PR 2: a plane wave over finite ground — the ratio of the current over `GN 2` to the same deck's free-space current against nec2c's, 3 λ up, one deck per polarization (θ̂ isolates `rrv`, φ̂ `rrh`), converging; a pinned band at 0.24 λ that measures fnec's matrix model; a ground of εr = 1, σ = 0 receives exactly as free space | FND-170 |
 | `crates/nec_solver/tests/negative_sigma.rs` | 1 | FND-194: a `GN` card with a negative `SIG` (NEC's ε'' form) solves exactly as its conductivity equivalent, through the matrix (feedpoint impedance) and the far field (gain over ground), and not as the lossless ground it was clamped to | FND-194 |
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=652 --> **652** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=657 --> **657** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -146,7 +147,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=586 --> **586** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1245 --> **1245** = 586 unit + 652 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1250 --> **1250** = 586 unit + 657 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

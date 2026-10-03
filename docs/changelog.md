@@ -15,6 +15,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **A plane wave on wires touching perfect ground solves** (FND-170): a
+  ground-mounted monopole, or an inverted-L whose foot is on the ground, receives
+  instead of being refused. The deck solves on its doubled structure — the wires
+  and their mirror images, in free space — lit by the incident field over perfect
+  ground. For θ̂ polarization that is exactly the free-space double lit from θ and
+  from 180° − θ, which fnec reproduces to round-off (and nec2c to its printed
+  digits). Against nec2c, a λ/4 monopole at θ = 45° is 4.64 → 2.70 % off at
+  21 → 41 segments (the doubled dipole's own free-space receive level), an
+  inverted-L 0.59 → 0.37 %. A receive sweep builds the doubled structure and its
+  matrix once per frequency. Still refused, by name: LD loads on such a deck.
+
 ## [0.21.0] — 2026-10-03 — The wave meets the ground
 
 Nine changes since v0.20.0 (#511–#519). **An incident plane wave over ground

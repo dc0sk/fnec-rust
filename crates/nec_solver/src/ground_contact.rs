@@ -53,25 +53,15 @@ pub fn touches_ground(segs: &[Segment]) -> bool {
         .any(|s| s.start[2] <= GROUND_CONTACT_EPS_M || s.end[2] <= GROUND_CONTACT_EPS_M)
 }
 
-/// Build the image problem for a PEC-ground deck with ground contact.
-///
-/// `Ok(None)`: not PEC ground, or nothing touches it — solve as usual.
-/// `Err`: the ground contact is one fnec cannot represent. Each refusal names a
-/// shape that would otherwise be answered wrongly:
-/// - a wire below the ground (truly buried);
-/// - a segment lying in the ground plane (its image coincides with it; nec2c
-///   refuses this too);
-/// - a contact that, doubled, is neither a set of simple conductor paths nor a
-///   section graph. A wire grounded at both ends (a closed loop with its image)
-///   and a junction above the ground (a top-hat) are section graphs and solve
-///   (FND-162 stage 5); what stays refused is a doubled structure the graph
-///   builder rejects (a one-segment straight run, a wire end on another wire's
-///   interior).
-pub fn pec_ground_contact(
-    deck: &NecDeck,
+/// The segments of the doubled problem — the originals followed by their mirror
+/// images, `n` of each — or `None` when nothing touches PEC ground. The deck-free
+/// half of [`pec_ground_contact`], so the receive solve, which takes a fresh deck
+/// per incidence direction, builds the same geometry without a frozen copy of
+/// any card (FND-170). `Err` refuses the same shapes, by name.
+pub(crate) fn doubled_segments(
     segs: &[Segment],
     ground: &GroundModel,
-) -> Result<Option<ImageProblem>, String> {
+) -> Result<Option<(Vec<Segment>, usize)>, String> {
     if !matches!(ground, GroundModel::PerfectConductor) || !touches_ground(segs) {
         return Ok(None);
     }
@@ -121,7 +111,34 @@ pub fn pec_ground_contact(
                 .to_string(),
         );
     }
+    Ok(Some((doubled, n)))
+}
 
+/// Build the image problem for a PEC-ground deck with ground contact.
+///
+/// `Ok(None)`: not PEC ground, or nothing touches it — solve as usual.
+/// `Err`: the ground contact is one fnec cannot represent. Each refusal names a
+/// shape that would otherwise be answered wrongly:
+/// - a wire below the ground (truly buried);
+/// - a segment lying in the ground plane (its image coincides with it; nec2c
+///   refuses this too);
+/// - a contact that, doubled, is neither a set of simple conductor paths nor a
+///   section graph. A wire grounded at both ends (a closed loop with its image)
+///   and a junction above the ground (a top-hat) are section graphs and solve
+///   (FND-162 stage 5); what stays refused is a doubled structure the graph
+///   builder rejects (a one-segment straight run, a wire end on another wire's
+///   interior).
+pub fn pec_ground_contact(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+) -> Result<Option<ImageProblem>, String> {
+    let Some((doubled, n)) = doubled_segments(segs, ground)? else {
+        return Ok(None);
+    };
+    // The image segments' tags are offset by this (see `doubled_segments`); the
+    // mirrored sources and loads below name them the same way.
+    let max_tag = segs.iter().map(|s| s.tag).max().unwrap_or(0);
     // The doubled problem is free space: no GN card and no GE reflection flag.
     let mut image_deck = deck.clone();
     image_deck
