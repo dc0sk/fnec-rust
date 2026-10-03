@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-02
+last_updated: 2026-10-03
 ---
 
 # Changelog
@@ -14,6 +14,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.21.0] — 2026-10-03 — The wave meets the ground
+
+Nine changes since v0.20.0 (#511–#519). **An incident plane wave over ground
+solves** — perfect and finite — with nec2c's ground-reflected wave, where it was
+refused. Four defects are fixed: a negative ground conductivity read as a
+lossless ground (FND-194), a GPU fault that could hang `--exec gpu` for good
+(FND-196), a parallel sweep with no memory bound (FND-187), and a shader construct
+Vulkan validation rejects (FND-193, fnec's share). The wgpu diagnostic switches
+work. The findings ledger went from 192 findings / 2 open to **196 / 0 open**:
+FND-187 fixed; FND-190 (a host NVIDIA driver fault) and the upstream half of
+FND-193 deferred with owners; FND-195 rejected on measurement.
 
 ### Added
 
