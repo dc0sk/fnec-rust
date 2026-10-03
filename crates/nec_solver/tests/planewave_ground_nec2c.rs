@@ -53,7 +53,14 @@ fn receive(geometry: &str, ground: &str, wave: &str) -> Result<Vec<Complex64>, S
         return Err(why);
     }
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
-    solve_hallen_planewave_routed(&d, &segs, &z, FREQ).map_err(|e| e.to_string())
+    solve_hallen_planewave_routed(
+        &d,
+        &segs,
+        &z,
+        FREQ,
+        &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
+    )
+    .map_err(|e| e.to_string())
 }
 
 const PEC: &str = "GE 1\nGN 1\n";

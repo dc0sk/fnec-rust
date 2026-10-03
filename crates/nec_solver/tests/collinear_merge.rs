@@ -244,8 +244,14 @@ fn collinear_chain_recovers_single_wire_plane_wave_currents() {
     let induced = |deck: &NecDeck| -> Vec<Complex64> {
         let segs = build_geometry(deck).unwrap();
         let z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
-        solve_hallen_planewave_routed(deck, &segs, &z, FREQ)
-            .expect("a collinear split is one conductor, not a junction")
+        solve_hallen_planewave_routed(
+            deck,
+            &segs,
+            &z,
+            FREQ,
+            &nec_solver::build_deck_stamps(deck, &segs, FREQ).diagonal,
+        )
+        .expect("a collinear split is one conductor, not a junction")
     };
 
     let i_whole = induced(&whole);

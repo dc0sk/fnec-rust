@@ -50,7 +50,14 @@ fn receive(geometry: &str, ground: &str, wave: &str) -> Vec<Complex64> {
     let g = ground_model_from_deck(&d);
     assert_eq!(pre_solve_error(&d, &segs, &g), None);
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
-    solve_hallen_planewave_routed(&d, &segs, &z, FREQ).expect("receive solve")
+    solve_hallen_planewave_routed(
+        &d,
+        &segs,
+        &z,
+        FREQ,
+        &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
+    )
+    .expect("receive solve")
 }
 
 fn dipole(n: u32, h: f64) -> String {

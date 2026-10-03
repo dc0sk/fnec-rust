@@ -16,7 +16,7 @@
 //! |ΔI| / peak, 21 → 41 segments per wire: a λ/4 monopole at θ = 45°
 //! 4.64 → 2.70 %, at 60° 4.58 → 2.68 % — the doubled dipole's own free-space
 //! receive level — and an inverted-L touching ground at θ = 60°, φ = 30°
-//! 0.59 → 0.37 %.
+//! 0.59 → 0.37 %. Loads mirror as the same load on the image (FND-197).
 
 use nec_solver::validate::pre_solve_error;
 use nec_solver::{
@@ -60,7 +60,12 @@ fn receive_planned(geometry: &str, wave: &str) -> Vec<Complex64> {
     let segs = build_geometry(&d).expect("geometry");
     let g = ground_model_from_deck(&d);
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
-    let plan = plan_hallen_planewave(&segs, FREQ, &g);
+    let plan = plan_hallen_planewave(
+        &segs,
+        FREQ,
+        &g,
+        &build_deck_stamps(&d, &segs, FREQ).diagonal,
+    );
     solve_hallen_planewave_planned(&d, &segs, &z, FREQ, &plan).expect("planned receive")
 }
 
@@ -214,20 +219,34 @@ fn the_sweep_route_doubles_the_structure_too() {
     }
 }
 
-/// Still refused, by name: loads on a contact deck lit by a plane wave (the
-/// doubled matrix would need the image loads), on both routes.
+/// Loads on a contact deck lit by a plane wave (FND-197): the image of a series
+/// load is the same load, so the loaded contact deck equals its loaded
+/// free-space double lit from θ and from 180° − θ, to round-off — on the
+/// single-shot route and on the sweep route.
 #[test]
-fn a_loaded_contact_deck_is_refused_on_both_routes() {
-    let geometry = format!("{}LD 0 1 5 5 50 0 0\n", monopole(21));
-    let e = receive(&geometry, PEC, &wave(45.0, 0.0)).unwrap_err();
-    assert!(e.contains("LD loads") && e.contains("touching"), "{e}");
-    let d = deck(&geometry, PEC, &wave(45.0, 0.0));
-    let segs = build_geometry(&d).unwrap();
-    let g = ground_model_from_deck(&d);
-    let z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
-    let plan = plan_hallen_planewave(&segs, FREQ, &g);
-    let e = solve_hallen_planewave_planned(&d, &segs, &z, FREQ, &plan)
-        .unwrap_err()
-        .to_string();
-    assert!(e.contains("LD loads"), "{e}");
+fn a_loaded_contact_deck_is_its_loaded_double() {
+    let load = "LD 4 1 5 5 300 50\n";
+    let contact = format!("{}{load}", monopole(21));
+    let doubled = format!("{}{load}LD 4 2 5 5 300 50\n", monopole_doubled(21));
+    for theta in [45.0, 60.0] {
+        let on_ground = receive(&contact, PEC, &wave(theta, 0.0)).expect("solves on ground");
+        let direct = receive(&doubled, FREE, &wave(theta, 0.0)).expect("free, θ");
+        let mirror = receive(&doubled, FREE, &wave(180.0 - theta, 0.0)).expect("free, 180-θ");
+        let planned = receive_planned(&contact, &wave(theta, 0.0));
+        let peak = on_ground.iter().map(|c| c.norm()).fold(0.0, f64::max);
+        for i in 0..on_ground.len() {
+            let want = direct[i] + mirror[i];
+            assert!(
+                (on_ground[i] - want).norm() <= 1e-9 * peak,
+                "θ = {theta}°, seg {i}: {} vs {want}",
+                on_ground[i]
+            );
+            assert!(
+                (planned[i] - on_ground[i]).norm() <= 1e-12 * peak,
+                "θ = {theta}°, seg {i}: sweep {} vs single {}",
+                planned[i],
+                on_ground[i]
+            );
+        }
+    }
 }

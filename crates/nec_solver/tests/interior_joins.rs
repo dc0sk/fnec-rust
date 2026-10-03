@@ -142,7 +142,14 @@ fn a_plane_wave_on_a_drawn_through_t_is_received_as_the_t() {
     let receive = |geometry: String| {
         let (deck, segs) = parse(&format!("{geometry}EX 1 1 1 0 45 0 0\n"));
         let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-        nec_solver::solve_hallen_planewave_routed(&deck, &segs, &z, FREQ).expect("receives")
+        nec_solver::solve_hallen_planewave_routed(
+            &deck,
+            &segs,
+            &z,
+            FREQ,
+            &nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal,
+        )
+        .expect("receives")
     };
     // Both decks list the bar's segments left to right, then the stem's.
     let (through, halves) = (receive(t_drawn_through(21)), receive(t_drawn_as_halves(21)));

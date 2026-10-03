@@ -154,8 +154,12 @@ pub fn solve_current_source_hallen(
                     .iter()
                     .position(|s| s.tag == cs.tag && s.tag_index == cs.segment)
                     .ok_or(CurrentSourceError::NoCurrentSource)?;
+                // This entry takes an unstamped `z_mat` and the deck's own loads;
+                // the routed solve, which also carries CLI Laplace loads, takes
+                // the graph itself before stamping (FND-198).
+                let loads = crate::build_deck_stamps(deck, segs, freq_hz).diagonal;
                 let unit = crate::hallen_session::solve_graph_unit_gap(
-                    deck, segs, z_mat, freq_hz, &graph, src_seg,
+                    deck, segs, z_mat, freq_hz, &graph, src_seg, &loads,
                 )
                 .map_err(CurrentSourceError::Solve)?;
                 let (currents, port_voltage) =
