@@ -45,6 +45,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **One of the three shader constructs Vulkan validation rejected is gone**
+  (FND-193). The Z-matrix fill's Gauss–Legendre tables were constant arrays,
+  which naga copies into a local variable with a layout decoration the spec
+  forbids; they are vectors now, with the same values. The two that remain are
+  workgroup arrays, which need naga's own fix (gfx-rs/wgpu PR #9295); a strict
+  driver that misread them would fail fnec's residual check and fall back to
+  the CPU.
+
 - **A GPU fault the driver did not report could hang `fnec --exec gpu` for good**
   (FND-196). Every device readback waited without a limit; on this NVIDIA host an
   exception on the compute channel left the work's fence unsignalled with no

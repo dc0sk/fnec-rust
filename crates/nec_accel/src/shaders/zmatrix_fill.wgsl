@@ -52,23 +52,31 @@ struct ZUniforms {
 // Gauss-Legendre nodes and weights
 // ---------------------------------------------------------------------------
 
-// 4-point GL on [-1, 1] — used for the self (smooth) part
-const GL4_N = array<f32, 4>(
-    -0.861136312f, -0.339981044f, 0.339981044f, 0.861136312f,
-);
-const GL4_W = array<f32, 4>(
-    0.347854845f, 0.652145155f, 0.652145155f, 0.347854845f,
-);
+// Held in vectors, not arrays (FND-193): indexing a constant `array` with a
+// loop counter makes naga copy it into a function-local variable whose SPIR-V
+// type carries `ArrayStride`, which Vulkan validation rejects
+// (VUID-StandaloneSpirv-None-10684, gfx-rs/wgpu#7696). A vector indexes the same
+// way and has no layout decoration. The values are unchanged.
 
-// 8-point GL on [-1, 1] — used for off-diagonal elements
-const GL8_N = array<f32, 8>(
-    -0.960289856f, -0.796666477f, -0.525532410f, -0.183434642f,
-     0.183434642f,  0.525532410f,  0.796666477f,  0.960289856f,
-);
-const GL8_W = array<f32, 8>(
-    0.101228536f, 0.222381034f, 0.313706646f, 0.362683783f,
-    0.362683783f, 0.313706646f, 0.222381034f, 0.101228536f,
-);
+// 4-point GL on [-1, 1] — used for the self (smooth) part
+const GL4_N = vec4<f32>(-0.861136312f, -0.339981044f, 0.339981044f, 0.861136312f);
+const GL4_W = vec4<f32>(0.347854845f, 0.652145155f, 0.652145155f, 0.347854845f);
+
+// 8-point GL on [-1, 1] — used for off-diagonal elements, as two halves
+const GL8_N_LO = vec4<f32>(-0.960289856f, -0.796666477f, -0.525532410f, -0.183434642f);
+const GL8_N_HI = vec4<f32>( 0.183434642f,  0.525532410f,  0.796666477f,  0.960289856f);
+const GL8_W_LO = vec4<f32>( 0.101228536f,  0.222381034f,  0.313706646f,  0.362683783f);
+const GL8_W_HI = vec4<f32>( 0.362683783f,  0.313706646f,  0.222381034f,  0.101228536f);
+
+fn gl8_n(m: u32) -> f32 {
+    if m < 4u { return GL8_N_LO[m]; }
+    return GL8_N_HI[m - 4u];
+}
+
+fn gl8_w(m: u32) -> f32 {
+    if m < 4u { return GL8_W_LO[m]; }
+    return GL8_W_HI[m - 4u];
+}
 
 // ---------------------------------------------------------------------------
 // Complex multiply: (a_re + j a_im)(b_re + j b_im)
@@ -147,7 +155,7 @@ fn cs_zmatrix_fill(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_w
         // R_eff    = sqrt(|obs.mid − r_src|² + a²)
         // ----------------------------------------------------------------
         for (var m: u32 = 0u; m < 8u; m++) {
-            let t = GL8_N[m] * half;
+            let t = gl8_n(m) * half;
 
             let rx = obs.mid_x - (src.mid_x + t * src.dir_x);
             let ry = obs.mid_y - (src.mid_y + t * src.dir_y);
@@ -156,8 +164,8 @@ fn cs_zmatrix_fill(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_w
             let r_eff = sqrt(r_sq + a * a);
 
             let g = green_k(r_eff, k);
-            int_re += GL8_W[m] * g.x;
-            int_im += GL8_W[m] * g.y;
+            int_re += gl8_w(m) * g.x;
+            int_im += gl8_w(m) * g.y;
         }
         int_re *= half;
         int_im *= half;
