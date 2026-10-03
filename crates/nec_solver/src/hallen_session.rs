@@ -792,8 +792,38 @@ pub struct PlaneWavePlan {
     graph: Option<crate::section_graph::SectionGraph>,
     system: std::sync::OnceLock<Result<crate::section_graph::GraphSystem, String>>,
     /// The ground the matrix was built over: the paths' corner terms take its
-    /// images, and the incident field its reflected wave (FND-170).
-    ground: crate::GroundModel,
+    /// images (FND-170).
+    matrix_ground: crate::GroundModel,
+    /// The ground the incident wave reflects off. The same as `matrix_ground`,
+    /// except on the doubled structure of wires touching PEC ground, whose matrix
+    /// is FREE SPACE (the images are explicit wires) while the wave still reflects
+    /// off PEC — keep the two apart; unified, the image half would see the direct
+    /// wave alone, which is FND-170's defect over again.
+    incident_ground: crate::GroundModel,
+    /// Wires touching PEC ground: the solve runs on the doubled structure.
+    image: Option<Box<ImagePlan>>,
+}
+
+/// The doubled, free-space receive problem of wires touching PEC ground: the
+/// original segments followed by their mirror images, the free-space matrix of
+/// all of them (built once per frequency, not per incidence direction), and the
+/// plan for it — matrix ground free space, incident ground PEC.
+#[derive(Clone)]
+struct ImagePlan {
+    segs: Vec<Segment>,
+    n_orig: usize,
+    z: std::sync::Arc<ZMatrix>,
+    inner: PlaneWavePlan,
+}
+
+impl std::fmt::Debug for ImagePlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImagePlan")
+            .field("segs", &self.segs.len())
+            .field("n_orig", &self.n_orig)
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Why a plane wave over `ground` cannot be solved, or `None` (FND-170). The one
@@ -803,8 +833,10 @@ pub struct PlaneWavePlan {
 /// - **A wave from below the ground plane** (θ > 90°): nec2c computes it, but the
 ///   result is unphysical — over finite ground |rrv| reaches 2.1 at 135° — and
 ///   nec2c's own pattern skips θ > 90.01° over ground. θ = 90° (grazing) solves.
-/// - **Wires touching perfect ground**: the doubled-image solve needs the
-///   reflected wave on the image half, which is not built yet.
+/// - **A ground contact fnec cannot represent** (a wire below or in the ground
+///   plane, or a doubled structure no route takes) — the same refusals, by name,
+///   as a driven deck's. Wires touching PEC ground otherwise solve, on the
+///   doubled structure.
 pub(crate) fn plane_wave_ground_problem(
     deck: &NecDeck,
     segs: &[Segment],
@@ -824,15 +856,7 @@ pub(crate) fn plane_wave_ground_problem(
              over ground the arrival angle must be 0°–90° (FND-170)"
         ));
     }
-    match crate::ground_contact::pec_ground_contact(deck, segs, ground) {
-        Ok(None) => None,
-        Ok(Some(_)) => Some(
-            "an incident plane wave on wires touching the ground plane is not supported yet: \
-             the doubled-image solve has no reflected wave on its image half (FND-170)"
-                .to_string(),
-        ),
-        Err(e) => Some(e),
-    }
+    crate::ground_contact::doubled_segments(segs, ground).err()
 }
 
 /// Every arrival θ a deck's plane-wave card asks for: the first, and, for a
@@ -854,6 +878,44 @@ pub fn plan_hallen_planewave(
     freq_hz: f64,
     ground: &crate::GroundModel,
 ) -> PlaneWavePlan {
+    // Wires touching PEC ground solve on the doubled structure in free space.
+    // A contact that cannot be doubled is refused by the guard before any solve.
+    if let Ok(Some((doubled, n_orig))) = crate::ground_contact::doubled_segments(segs, ground) {
+        let free = crate::GroundModel::FreeSpace;
+        let z = crate::assemble_z_matrix_with_ground(&doubled, freq_hz, &free);
+        let inner = plan_on(
+            &doubled,
+            freq_hz,
+            &free,
+            &crate::GroundModel::PerfectConductor,
+        );
+        return PlaneWavePlan {
+            paths: None,
+            grouped: None,
+            graph: None,
+            system: std::sync::OnceLock::new(),
+            matrix_ground: ground.clone(),
+            incident_ground: ground.clone(),
+            image: Some(Box::new(ImagePlan {
+                segs: doubled,
+                n_orig,
+                z: std::sync::Arc::new(z),
+                inner,
+            })),
+        };
+    }
+    plan_on(segs, freq_hz, ground, ground)
+}
+
+/// The plan for `segs` as they stand, its matrix over `matrix_ground` and the
+/// incident wave reflecting off `incident_ground`.
+fn plan_on(
+    segs: &[Segment],
+    freq_hz: f64,
+    matrix_ground: &crate::GroundModel,
+    incident_ground: &crate::GroundModel,
+) -> PlaneWavePlan {
+    let ground = matrix_ground;
     let graph = if matches!(classify_paths(segs, ground), PathRoute::Unsupported) {
         crate::section_graph::build_section_graph(segs)
             .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
@@ -869,7 +931,9 @@ pub fn plan_hallen_planewave(
         grouped,
         graph,
         system: std::sync::OnceLock::new(),
-        ground: ground.clone(),
+        matrix_ground: matrix_ground.clone(),
+        incident_ground: incident_ground.clone(),
+        image: None,
     }
 }
 
@@ -883,16 +947,46 @@ pub fn solve_hallen_planewave_planned(
     freq_hz: f64,
     plan: &PlaneWavePlan,
 ) -> Result<Vec<Complex64>, HallenSessionError> {
+    // On the deck's own segments, before any switch to the doubled structure:
+    // the images lie below the ground plane, which the guard refuses.
+    if let Some(why) = plane_wave_ground_problem(deck, segs, &plan.incident_ground) {
+        return Err(HallenSessionError::PlaneWave(why));
+    }
+    if let Some(img) = &plan.image {
+        // The doubled matrix would need the image loads stamped too.
+        if deck.cards.iter().any(|c| matches!(c, Card::Ld(_))) {
+            return Err(HallenSessionError::PlaneWave(
+                "a plane wave on wires touching the ground plane with LD loads is not \
+                 supported (FND-170)"
+                    .to_string(),
+            ));
+        }
+        // `deck` carries this call's wave; the doubled segments and matrix are the
+        // plan's. `z_mat` (the deck's own matrix) is not used.
+        let mut currents = solve_planewave_on_plan(deck, &img.segs, &img.z, freq_hz, &img.inner)?;
+        currents.truncate(img.n_orig);
+        return Ok(currents);
+    }
+    solve_planewave_on_plan(deck, segs, z_mat, freq_hz, plan)
+}
+
+/// The receive solve itself, unguarded: the caller has checked the deck.
+fn solve_planewave_on_plan(
+    deck: &NecDeck,
+    segs: &[Segment],
+    z_mat: &ZMatrix,
+    freq_hz: f64,
+    plan: &PlaneWavePlan,
+) -> Result<Vec<Complex64>, HallenSessionError> {
     let PlaneWavePlan {
         paths,
         grouped,
         graph,
         system,
-        ground,
+        matrix_ground,
+        incident_ground,
+        image: _,
     } = plan;
-    if let Some(why) = plane_wave_ground_problem(deck, segs, ground) {
-        return Err(HallenSessionError::PlaneWave(why));
-    }
 
     // A junction or loop: the wave is a gap on every segment of the graph system.
     if let Some(graph) = graph {
@@ -913,7 +1007,7 @@ pub fn solve_hallen_planewave_planned(
                 z_mat,
                 segs,
                 graph,
-                &corner_sources(segs, ground, freq_hz),
+                &corner_sources(segs, matrix_ground, freq_hz),
                 k,
             )
             .map_err(|e| e.to_string())
@@ -921,7 +1015,7 @@ pub fn solve_hallen_planewave_planned(
         let system = built
             .as_ref()
             .map_err(|e| HallenSessionError::PlaneWave(e.clone()))?;
-        let gaps = crate::planewave::planewave_gaps(deck, segs, freq_hz, ground)
+        let gaps = crate::planewave::planewave_gaps(deck, segs, freq_hz, incident_ground)
             .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
         let currents = system.solve(&gaps).map_err(HallenSessionError::Solve)?;
         crate::check_currents_finite(&currents).map_err(HallenSessionError::NonFiniteCurrents)?;
@@ -929,8 +1023,8 @@ pub fn solve_hallen_planewave_planned(
     }
 
     let pw = match paths {
-        Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps, ground),
-        None => build_planewave_hallen(deck, segs, freq_hz, ground),
+        Some(ps) => build_planewave_hallen_paths(deck, segs, freq_hz, ps, incident_ground),
+        None => build_planewave_hallen(deck, segs, freq_hz, incident_ground),
     }
     .map_err(|e| HallenSessionError::PlaneWave(e.to_string()))?;
 
@@ -1066,7 +1160,7 @@ pub fn solve_hallen_routed(
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
     let routed = match image_problem(deck, segs)? {
-        Some(img) => solve_ground_contact(deck, segs, &img, freq_hz, loads)?,
+        Some(img) => solve_ground_contact(deck, segs, &img, z_mat, freq_hz, loads)?,
         None => solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?,
     };
     // One exit, guarded once. The inner function returns from three arms, and a
@@ -1094,12 +1188,27 @@ fn solve_ground_contact(
     deck: &NecDeck,
     segs: &[Segment],
     img: &crate::ground_contact::ImageProblem,
+    z_mat: &ZMatrix,
     freq_hz: f64,
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
+    let route = hallen_route(deck, segs);
+    // A plane wave goes through the one receive seam, on the deck's own segments:
+    // its plan doubles them itself. Solved here through `img.deck` instead, the
+    // wave would take the image deck's ground — free space, its GN card stripped
+    // — and the image half would see the direct wave alone (FND-170).
+    if route.drive == HallenDrive::PlaneWave {
+        let currents = solve_hallen_planewave_routed(deck, segs, z_mat, freq_hz)?;
+        return Ok(HallenRouted {
+            currents,
+            port_voltage: None,
+            route,
+            residual_inputs: None,
+            network_branch: Vec::new(),
+        });
+    }
     // The drives and cards whose images this does not build. Refused rather than
     // solved without their images (which would be a different antenna).
-    let route = hallen_route(deck, segs);
     if route.drive != HallenDrive::DeltaGap {
         return Err(HallenSessionError::Excitation(
             "wires touching the ground are supported with voltage (delta-gap) sources only"
