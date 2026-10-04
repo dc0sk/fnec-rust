@@ -342,7 +342,9 @@ fn distributed_run_refuses_geometry_before_contacting_any_host() {
 fn distributed_run_refuses_laplace_loads_before_contacting_any_host() {
     let deck = common::TempDeck::new(
         "fnec-dist-laplace.nec",
-        "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        // 51 segments: the example file loads segments 20 and 26, and a load
+        // naming no segment is refused first (FND-204).
+        "CM plain dipole\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
     );
     let hosts = common::TempDeck::new(
         "fnec-dist-laplace-hosts.toml",

@@ -306,6 +306,31 @@ fn laplace_segment_matches(ll: &LaplaceLoad, seg: &Segment) -> bool {
     seg.tag_index >= ll.seg_first && seg.tag_index <= last
 }
 
+/// Why a Laplace load cannot be applied to this geometry, if it cannot: a range
+/// written backwards, or one that names no segment.
+///
+/// The `LD` card's refusal for exactly these (FND-161, `load_card_error`) scans
+/// the deck's cards, and a `--loads-config` load is no card — so a wrong tag, a
+/// reversed range or an out-of-range segment solved the antenna unloaded, exit 0,
+/// nothing on stderr, where the same load as `LD` was refused (FND-204).
+pub fn laplace_load_error(laplace: &[LaplaceLoad], segs: &[Segment]) -> Option<String> {
+    for (idx, ll) in laplace.iter().enumerate() {
+        let what = format!(
+            "--loads-config laplace_load[{idx}] (tag {}, seg_first {}, seg_last {})",
+            ll.tag, ll.seg_first, ll.seg_last
+        );
+        if ll.seg_first != 0 && ll.seg_last != 0 && ll.seg_last < ll.seg_first {
+            return Some(format!(
+                "{what}: seg_last is before seg_first; a load range runs first to last"
+            ));
+        }
+        if !segs.iter().any(|seg| laplace_segment_matches(ll, seg)) {
+            return Some(format!("{what}: names no segment in the geometry"));
+        }
+    }
+    None
+}
+
 /// Add Laplace-load series impedances to a per-segment load vector (as built by
 /// [`build_loads`]), in place. Degenerate coefficients (empty vectors, a
 /// denominator that vanishes at this frequency) are skipped with a warning
