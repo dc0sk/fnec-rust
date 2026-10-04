@@ -362,6 +362,7 @@ Formatting and ordering rules:
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `SWEEP_POINTS` is emitted once, after the last per-frequency report block, on every multi-frequency text run — one row per solved point, so a sweep can be read without parsing each block. It is pinned by `apps/nec-cli/tests/report_contract.rs`; this guide simply never mentioned it (FND-086).
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
+- `RADIATION_PATTERN` gains (`GAIN_DB`, `GAIN_V_DB`, `GAIN_H_DB`) are **gain** in dBi, not directivity: the directivity scaled by the radiation efficiency η = P_radiated / P_input, so the power lost in lossy loads (`LD` or `--loads-config`), lossy networks and a lossy ground all count, over every ground (FND-200)
 - `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `X` digit); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
 - `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
 - `NEAR_FIELD` appears only when an `NE` card is present; it lists the complex `E = (Ex, Ey, Ez)` (V/m) on the card's rectangular grid. `NEAR_H_FIELD` is the magnetic companion for an `NH` card (`H = (Hx, Hy, Hz)`, A/m)

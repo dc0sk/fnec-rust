@@ -884,10 +884,9 @@ fn gui_gain_correction_db(
     };
     let p_in =
         nec_solver::feedpoint_input_power(&parsed.deck, segs, v_vec, source_currents, port_voltage);
-    // `unwrap_or(0.0)` is right for free space and PEC, where there is no loss to
-    // account for. Over a LOSSY ground it means the correction was unavailable,
-    // not that it is zero — so anything that can make it unavailable there is a
-    // silent wrong answer, which is exactly how FND-114 hid.
+    // `unwrap_or(0.0)` means the correction was unavailable (no input power),
+    // not that it is zero — so anything that can make it unavailable on a lossy
+    // deck is a silent wrong answer, which is exactly how FND-114 hid.
     nec_solver::gain_correction_db(segs, currents, freq_hz, ground, p_in).unwrap_or(0.0)
 }
 

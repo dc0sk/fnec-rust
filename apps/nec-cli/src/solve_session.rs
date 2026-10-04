@@ -1511,12 +1511,12 @@ pub(super) fn solve_frequency_point(
             .collect()
     };
 
-    // PH9-CHK-003: over a lossy finite ground the pattern gain is the directivity
-    // reduced by the radiation efficiency η = P_radiated / P_input (ground-absorbed
-    // power). compute_radiation_pattern returns directivity; convert to gain here so
-    // the reported dBi matches nec2c's gain. (Free-space / PEC are lossless → η ≈ 1,
-    // and are left as directivity so their corpus gates are unchanged.)
-    if matches!(ground, GroundModel::SimpleFiniteGround { .. }) && !pattern_table.is_empty() {
+    // PH9-CHK-003: the pattern gain is the directivity reduced by the radiation
+    // efficiency η = P_radiated / P_input. compute_radiation_pattern returns
+    // directivity; convert to gain here so the reported dBi matches nec2c's gain.
+    // Over every ground: this was gated on a lossy finite ground, so a lossy load
+    // in free space or over PEC printed its directivity as gain (FND-200).
+    if !pattern_table.is_empty() {
         // The shared producer, not a second inline sum. It computed a different
         // number for a current source than this loop did, and since only the GUI
         // called it, the divergence was invisible from here (FND-114). Identical

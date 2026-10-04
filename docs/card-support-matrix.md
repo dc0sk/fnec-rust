@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-10-02
+last_updated: 2026-10-04
 ---
 
 # NEC Card Support Matrix
@@ -120,7 +120,7 @@ The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section; `XNDA` A-digit → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%) (PH9-CHK-004). The `N`/`D` digits (gain-component labeling / dB-vs-ratio output-format toggles) are deferred — fnec always emits vertical/horizontal/total gain in dBi |
+| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section; `XNDA` A-digit → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%; a loaded free-space dipole 0.454 vs 0.458) (PH9-CHK-004). Gains are directivity × radiation efficiency over every ground, so lossy loads cost gain in free space and over PEC as in nec2c (FND-200). The `N`/`D` digits (gain-component labeling / dB-vs-ratio output-format toggles) are deferred — fnec always emits vertical/horizontal/total gain in dBi |
 
 ## Unknown / other cards
 

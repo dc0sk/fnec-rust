@@ -293,7 +293,8 @@ fn far_field_components(
 const MU0: f64 = 4.0 * PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
 
-/// The dB to add to a directivity to make it a **gain**, over lossy ground.
+/// The dB to add to a directivity to make it a **gain**: `10·log10 η`, with
+/// `η = P_radiated / P_input` from [`radiation_efficiency`].
 ///
 /// `compute_radiation_pattern` returns directivity: it normalises by the power
 /// the antenna radiates, not by the power put into it. Over a lossy ground those
@@ -304,9 +305,16 @@ const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 
 /// the GUI's was 6.3355, a 6.04 dB overstatement. Shared so there is one
 /// correction rather than one per frontend.
 ///
-/// `None` when it does not apply: free space and PEC ground have no loss to
-/// account for, and a non-positive input power means no feedpoint is delivering
-/// any, so the ratio is undefined rather than zero.
+/// It applies over EVERY ground. This used to return `None` unless the ground
+/// was lossy, on the reasoning that "free space and PEC have no loss" — but a
+/// lossy `LD` load, a Laplace load or a lossy network dissipates power whatever
+/// the ground, and the decision keyed on the ground card rather than on the
+/// power the solve actually loses. A λ/2 dipole with a 100 Ω load reported
+/// 2.17 dBi in free space against nec2c's −1.20 (efficiency 45.89 %), exit 0
+/// (FND-200). Over a lossless deck η clamps to 1, so the correction is 0 dB.
+///
+/// `None` when a non-positive input power means no feedpoint is delivering any,
+/// so the ratio is undefined rather than zero.
 pub fn gain_correction_db(
     segs: &[Segment],
     i_vec: &[Complex64],
@@ -314,7 +322,7 @@ pub fn gain_correction_db(
     ground: &GroundModel,
     input_power: f64,
 ) -> Option<f64> {
-    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) || input_power <= 0.0 {
+    if input_power <= 0.0 {
         return None;
     }
     let eta = radiation_efficiency(segs, i_vec, freq_hz, ground, input_power);
@@ -373,8 +381,9 @@ pub fn feedpoint_input_power(
 /// `P_radiated = (k²·η₀/32π²)·∮|F|²dΩ` (ground-aware: upper hemisphere over a
 /// ground plane), where `F` is the [`compute_radiation_pattern`] far-field sum.
 /// `input_power` is the real power delivered at the feed,
-/// `½·Re(Σ V_m·conj(I_m))`. Over a lossless case (free space, PEC) η ≈ 1; over a
-/// lossy finite ground η < 1 (ground-absorbed power). Used to convert the pattern
+/// `½·Re(Σ V_m·conj(I_m))`. Over a lossless deck η ≈ 1 (the quadrature reads
+/// up to ~0.7 % high at 21 segments per λ/2, so it clamps to 1); lossy loads,
+/// lossy networks and a lossy finite ground each make η < 1. Used to convert the pattern
 /// **directivity** to **gain** (`gain_dBi = directivity_dBi + 10·log10 η`).
 ///
 /// Returns 1.0 when `input_power <= 0` (no meaningful reference).
