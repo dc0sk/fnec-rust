@@ -2,10 +2,64 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-03
+last_updated: 2026-10-04
 ---
 
 # Release Notes
+
+## 0.21.1 — Loads in their place
+
+Three changes since 0.21.0 (#521–#523). Two silent wrong answers, both in 0.20.0
+and 0.21.0, are fixed; the last refusals on the receive path and on wires
+touching perfect ground are lifted. The findings ledger went from 196 findings /
+0 open to **198 / 0 open**.
+
+Every value below was measured at the release commit (release builds), 0.21.0
+with its published binary.
+
+### Fixed
+
+| | 0.21.0 | 0.21.1 |
+|---|---|---|
+| T (4 m stem, 3 m halves, 21 per wire), `LD 0 2 1 1 100 2e-6 0`, **`EX 4`** at 1/4 | 153.73 − j1530.41 Ω | 85.48 − j1536.34 Ω — the voltage source's, exactly |
+| the same T lit at θ = 90°, 300 Ω from **`--loads-config`** on 2/5: current there | 2.596 mA ∠ −109.0°, exit 0 | 2.343 mA ∠ −121.5° (nec2c 2.346 mA ∠ −121.5°) |
+
+Both came from one root cause: the junction solver built its system from a
+matrix already stamped with the loads in another form.
+
+- **A current source on a loaded junction or loop deck** (FND-198) had its loads
+  applied twice. It now prices exactly as the voltage source, with `LD` loads and
+  with `--loads-config` ones.
+- **A `--loads-config` load on a junction or loop deck lit by a plane wave**
+  (FND-197) passed a refusal meant for `LD` cards and was solved 25 % off. The
+  same load as an `LD` card was refused; now both solve, identically.
+
+### Now solved
+
+| deck | 0.21.0 | 0.21.1 |
+|---|---|---|
+| λ/4 monopole on perfect ground lit by a plane wave | refused | solves: 2.70 % from nec2c at 41 segments |
+| the monopole fed by a current source | refused | 39.19 + j21.01 Ω, exactly its voltage-source impedance |
+| two monopoles on perfect ground joined by a 50 Ω TL (30 MHz) | refused | 23.97 + j18.37 Ω (nec2c 24.22 + j19.63 at 21 segments; 0.78 Ω off at 41) |
+| a loaded T or loop lit by a plane wave | refused | 0.68 % / 0.51 % from nec2c at 41 per wire |
+
+On wires touching perfect ground the deck solves on its doubled structure — the
+wires and their images in free space — and a plane wave there is exactly the
+free-space double lit from θ and from 180° − θ (to round-off; nec2c to its
+printed digits). Each network gets an image between the mirrored ports. Still
+refused, by name: a wave from below the ground plane, a wire lying in it, a
+straight run one segment long, and a current source with a network.
+
+### Library API
+
+`plan_hallen_planewave` and `solve_hallen_planewave_routed` take the per-segment
+load diagonal, as `solve_hallen_routed` does; given none for a deck with `LD`
+cards they refuse rather than solving it unloaded.
+
+### Versions
+
+Workspace 0.21.0 → **0.21.1**; `fnec_py` 0.12.0 → **0.12.1**. No dependency left
+or arrived; the SBOM has 525 packages.
 
 ## 0.21.0 — The wave meets the ground
 

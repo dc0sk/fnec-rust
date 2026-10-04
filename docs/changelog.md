@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-03
+last_updated: 2026-10-04
 ---
 
 # Changelog
@@ -14,6 +14,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.21.1] — 2026-10-04 — Loads in their place
+
+Three changes since v0.21.0 (#521–#523). **Two silent wrong answers are fixed**,
+both in v0.20.0 and v0.21.0: a current source on a loaded junction or loop deck
+applied its loads twice (FND-198), and a `--loads-config` load on such a deck lit
+by a plane wave was solved 25 % off nec2c with exit 0 (FND-197). With them, the
+last receive refusals are lifted: plane waves on wires touching perfect ground,
+current sources and TL/NT networks there, and loaded junction, loop and contact
+decks lit by a plane wave all solve. The findings ledger went from 196 / 0 open
+to **198 / 0 open**.
 
 ### Added
 
