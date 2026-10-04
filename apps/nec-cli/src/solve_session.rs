@@ -1169,6 +1169,24 @@ pub(super) fn solve_frequency_point(
             "wires touching the ground are supported on --solver hallen only (FND-082)".to_string(),
         );
     }
+    // The sinusoidal basis is the plain merged-conductor solve: it has no
+    // conductor-path basis for a bend or split (FND-121) and no section graph for
+    // a junction or loop (FND-162). It answered those decks anyway, silently — a
+    // split-V 10.27 - j731.22 against Hallén's 270.43 + j443.20 and nec2c's
+    // 268.56 + j452.26, a T 4.19 - j1010.07 against nec2c's 107.54 - j366.35 —
+    // and its residual check could not see it (FND-203). The routing decision is
+    // the Hallén session's own, so the two cannot disagree about what a deck is.
+    if matches!(solver_mode, SolverMode::Sinusoidal) {
+        let route = nec_solver::hallen_route(deck, segs);
+        if route.paths || route.unsupported_topology {
+            return Err(
+                "--solver sinusoidal solves straight wires and collinear chains only; this \
+                 deck has a bend, split, junction or loop, which needs the conductor-path or \
+                 section-graph basis of --solver hallen (FND-203)"
+                    .to_string(),
+            );
+        }
+    }
     if stamps.has_networks && !matches!(solver_mode, SolverMode::Hallen | SolverMode::Mpie) {
         return Err(format!(
             "TL/NT networks are supported on --solver hallen only (FND-123); \

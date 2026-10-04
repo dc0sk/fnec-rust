@@ -25,6 +25,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   excitation vector, each with its own polarity: 144.80 + j34.49 at 21 segments
   per wire and 145.39 + j34.59 at 41, antiphase 12.32 + j52.00 / 12.39 + j53.13
   (nec2c 12.39 + j53.13 / 12.44 + j53.63).
+- **`--solver sinusoidal` answered bent, split, junction and loop decks on a
+  basis that cannot solve them** (FND-203). It is the plain merged-conductor
+  solve, without the conductor paths (FND-121) or the section graph (FND-162),
+  so a split-V came back 10.27 − j731.22 Ω where Hallén gives 270.43 + j443.20
+  and nec2c 268.56 + j452.26, and a T 4.19 − j1010.07 against nec2c's 107.54 −
+  j366.35 — exit 0, its residual check passing. It now refuses those decks by
+  name, deciding with the Hallén session's own route; straight wires and
+  collinear chains solve as before.
 
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which
