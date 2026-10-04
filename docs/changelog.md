@@ -33,6 +33,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   j366.35 — exit 0, its residual check passing. It now refuses those decks by
   name, deciding with the Hallén session's own route; straight wires and
   collinear chains solve as before.
+- **A `--loads-config` file was read leniently, and every lenient reading was a
+  silent wrong answer** (FND-204, FND-207). A load naming no segment — a wrong
+  tag, a reversed range, an out-of-range segment — solved the antenna unloaded,
+  where the same load as an `LD` card is refused. A misspelled or missing key
+  read as 0, which means "all": `segment = 11` loaded every segment (866.41 −
+  j431.27 Ω against the intended 162.97 − j54.38); a float tag loaded every wire;
+  a negative one wrapped; a misspelled table read as "no loads" and so also
+  slipped past the refusals keyed on loads being given. The file is now checked
+  like an `LD` card: one table name, five keys, `tag` and `seg_first` required
+  non-negative integers, at least one load, and each load must name a segment.
 
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which

@@ -65,12 +65,18 @@ measured/curve-fitted loads.
 ```toml
 # A series R + L load (Z = 150 + jωL, L = 2 µH) on tag 1, segment 20.
 [[laplace_load]]
-tag = 1            # 0 = all tags
-seg_first = 20     # 0 = all segments of the tag
+tag = 1            # required; 0 = all tags
+seg_first = 20     # required; 0 = all segments of the tag
 # seg_last = 20    # omit or 0 = single segment
 numerator   = [150.0, 2.0e-6]   # a0 + a1·s  ->  R + L·s
 denominator = [1.0]
 ```
+
+The file is checked as strictly as an `LD` card (FND-204, FND-207): only
+`[[laplace_load]]` tables, only these five keys, `tag` and `seg_first` required
+and non-negative integers, at least one load, a range that runs first to last,
+and a load that names at least one segment of the geometry. Anything else is
+refused by name rather than read as "all" or "none".
 
 Equivalences (so you can cross-check against `LD`): a **series RLC**
 (`R + jωL − j/(ωC)`) is `numerator = [1, R·C, L·C]`, `denominator = [0, C]`; a

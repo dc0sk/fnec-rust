@@ -455,6 +455,11 @@ fn main() -> ExitCode {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;
     }
+    // The loads file's twin of `pre_solve_error`'s LD check, which cannot see it.
+    if let Some(err) = nec_solver::laplace_load_error(&laplace_loads, &segs) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
     warn_deferred_ground_model(&ground);
     warn_near_field_over_finite_ground(deck, &ground);
 
