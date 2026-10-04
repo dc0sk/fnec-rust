@@ -15,6 +15,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **A distributed worker asked for `exec: gpu` solved a collinear split on the
+  wrong basis** (FND-199). It handed the device the raw per-card grouping, which
+  the device declined on every split, and its fallback was a plain Hallén solve
+  on that same grouping — not the routed solve every other path uses. A 1+9+9+1
+  split dipole answered 1032.2 − j3723.8 Ω under `fnec --hosts … --exec gpu`
+  against 76.68 + j32.87 under `--exec cpu` and from the CLI (nec2c 79.41 +
+  j45.63), with `exec_used: cpu` and no warning. The device now takes the
+  merged-conductor grouping the CLI's GPU path uses, and every fallback is the
+  routed CPU solve; on this host the device accepts all three splits gated and
+  agrees with the CPU to 3e-5 Ω.
+
 ## [0.21.1] — 2026-10-04 — Loads in their place
 
 Three changes since v0.21.0 (#521–#523). **Two silent wrong answers are fixed**,

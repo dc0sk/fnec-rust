@@ -134,7 +134,7 @@ functions across the `tests/` binaries listed above.
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
 | `nec_solver` | 239 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
-| `nec_worker` | 92 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
+| `nec_worker` | 93 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 44 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 30 | lib, template |
@@ -143,11 +143,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=586 --> **586** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=587 --> **587** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1259 --> **1259** = 586 unit + 666 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1260 --> **1260** = 587 unit + 666 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
