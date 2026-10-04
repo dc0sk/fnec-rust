@@ -17,6 +17,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver mpie` drove only the first voltage source** (FND-202). A second
+  `EX 0`/`EX 5` was dropped while the report still priced it: two parallel
+  dipoles 3 m apart, both fed, answered 42.69 + j77.76 and 15.73 − j118.01 Ω
+  against nec2c's 145.37 + j34.69 on both — exit 0, in the CLI, the GUI and the
+  Python bindings (one shared session). Every delta gap is now in the MPIE's
+  excitation vector, each with its own polarity: 144.80 + j34.49 at 21 segments
+  per wire and 145.39 + j34.59 at 41, antiphase 12.32 + j52.00 / 12.39 + j53.13
+  (nec2c 12.39 + j53.13 / 12.44 + j53.63).
+
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which
   the device declined on every split, and its fallback was a plain Hallén solve
