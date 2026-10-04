@@ -53,6 +53,9 @@ fn py_solver_context(
         // The bindings have a solver argument now, so the remedy names it rather
         // than pointing a Python caller at a different program (FND-055).
         mpie_remedy: "pass solver=\"mpie\"",
+        // The bindings' loads are the deck's own; the negative-resistance sites
+        // describe them with `with_loads` (FND-209).
+        loads: nec_solver::validate::RunLoads::NONE,
     }
 }
 
@@ -198,7 +201,11 @@ fn solve_at_freq(
             ex.segment as usize,
             deck,
             &segs,
-            py_solver_context(solver),
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+                deck,
+                &segs,
+                &[freq_hz],
+            )),
         ) {
             warnings.push(w);
         }
@@ -242,7 +249,11 @@ fn solve_at_freq(
             seg.tag_index as usize,
             deck,
             &segs,
-            py_solver_context(solver),
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+                deck,
+                &segs,
+                &[freq_hz],
+            )),
         ) {
             warnings.push(w);
         }
@@ -406,7 +417,11 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
         &z_res,
         &result.deck,
         &segs,
-        py_solver_context(solver),
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            &result.deck,
+            &segs,
+            &nec_solver::frequencies_hz(&result.deck),
+        )),
     ) {
         emit_warnings(py, &[w], &mut seen)?;
     }

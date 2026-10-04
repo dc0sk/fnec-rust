@@ -917,12 +917,19 @@ fn warn_negative_resistance_for_run<T>(
         .collect();
     let per_point = ok.iter().map(|r| r.negative_r.clone()).collect();
     let min_feed_re: Vec<Option<f64>> = ok.iter().map(|r| r.min_feed_re).collect();
+    // Any point's loads speak for the run: one negative load, or one load from
+    // outside the deck, changes what the aggregate may say (FND-209).
+    let run_loads = nec_solver::validate::RunLoads {
+        outside_deck: ok.iter().any(|r| r.run_loads.outside_deck),
+        negative: ok.iter().any(|r| r.run_loads.negative),
+    };
     for w in solve_session::run_negative_resistance_warnings(
         per_point,
         &min_feed_re,
         deck,
         segs,
         solver_mode,
+        run_loads,
     ) {
         eprintln!("warning: {w}");
     }
@@ -953,6 +960,7 @@ fn distributed_negative_resistance_warnings(
     deck: &nec_model::deck::NecDeck,
     segs: &[nec_solver::Segment],
     solver_mode: SolverMode,
+    freqs_hz: &[f64],
 ) -> Vec<String> {
     if !matches!(solver_mode, SolverMode::Hallen)
         || !nec_solver::validate::is_negative_resistance(z_re)
@@ -971,7 +979,9 @@ fn distributed_negative_resistance_warnings(
         seg,
         deck,
         segs,
-        nec_solver::validate::SolverContext::cli_hallen(),
+        nec_solver::validate::SolverContext::cli_hallen().with_loads(
+            nec_solver::validate::RunLoads::of_deck(deck, segs, freqs_hz),
+        ),
     )
     .into_iter()
     .collect()
@@ -1145,6 +1155,7 @@ fn run_distributed_solve(
                     deck,
                     segs,
                     solver_mode,
+                    &[freq_mhz * 1e6],
                 );
                 let sweep_summary = Some(SweepPointSummary {
                     freq_mhz,
@@ -1164,6 +1175,13 @@ fn run_distributed_solve(
                     negative_r,
                     min_feed_re: Some(impedance.re_ohm),
                     ran_on_gpu: exec_used == "gpu",
+                    // The controller refuses --loads-config, so the worker's
+                    // loads are the deck's own.
+                    run_loads: nec_solver::validate::RunLoads::of_deck(
+                        deck,
+                        segs,
+                        &[freq_mhz * 1e6],
+                    ),
                 })
             }
             Ok((
@@ -1517,6 +1535,7 @@ mod tests {
         worker_warning_lines, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
+    use nec_solver::validate::RunLoads;
     use num_complex::Complex64;
 
     // The distributed path is the one frontend whose end-to-end gate needs SSH.
@@ -1548,11 +1567,25 @@ mod tests {
         let z = [-5.9, 12.0, -3.1];
         let per_point: Vec<Vec<String>> = z
             .iter()
-            .map(|&r| negative_resistance_warnings(&[row(r)], &deck, &segs, SolverMode::Hallen))
+            .map(|&r| {
+                negative_resistance_warnings(
+                    &[row(r)],
+                    &deck,
+                    &segs,
+                    SolverMode::Hallen,
+                    RunLoads::NONE,
+                )
+            })
             .collect();
         let mins: Vec<Option<f64>> = z.iter().map(|&r| Some(r)).collect();
-        let w =
-            run_negative_resistance_warnings(per_point, &mins, &deck, &segs, SolverMode::Hallen);
+        let w = run_negative_resistance_warnings(
+            per_point,
+            &mins,
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            RunLoads::NONE,
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].starts_with("2 of 3 sweep points"), "{w:?}");
 
@@ -1561,18 +1594,40 @@ mod tests {
             &deck,
             &segs,
             SolverMode::Hallen,
+            RunLoads::NONE,
         )];
-        let w =
-            run_negative_resistance_warnings(one, &[Some(-5.9)], &deck, &segs, SolverMode::Hallen);
+        let w = run_negative_resistance_warnings(
+            one,
+            &[Some(-5.9)],
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            RunLoads::NONE,
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("tag 1 segment 5"), "{w:?}");
 
         // The pulse bases keep their own wording in the aggregate too.
         let per_point: Vec<Vec<String>> = z
             .iter()
-            .map(|&r| negative_resistance_warnings(&[row(r)], &deck, &segs, SolverMode::Pulse))
+            .map(|&r| {
+                negative_resistance_warnings(
+                    &[row(r)],
+                    &deck,
+                    &segs,
+                    SolverMode::Pulse,
+                    RunLoads::NONE,
+                )
+            })
             .collect();
-        let w = run_negative_resistance_warnings(per_point, &mins, &deck, &segs, SolverMode::Pulse);
+        let w = run_negative_resistance_warnings(
+            per_point,
+            &mins,
+            &deck,
+            &segs,
+            SolverMode::Pulse,
+            RunLoads::NONE,
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("unvalidated solver"), "{w:?}");
 
@@ -1584,6 +1639,7 @@ mod tests {
             &deck,
             &segs,
             SolverMode::Hallen,
+            RunLoads::NONE,
         );
         assert!(w.is_empty(), "{w:?}");
     }
@@ -1626,7 +1682,13 @@ mod tests {
         // Nothing covered this arm before: deleting it failed no test, and the
         // shared-predicate sabotage cannot reach it.
         let (deck, segs) = deck_and_segs(BENT);
-        let w = negative_resistance_warnings(&[row(-5.973)], &deck, &segs, SolverMode::Mpie);
+        let w = negative_resistance_warnings(
+            &[row(-5.973)],
+            &deck,
+            &segs,
+            SolverMode::Mpie,
+            RunLoads::NONE,
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("report it as a solver defect"), "{}", w[0]);
         assert!(
@@ -1647,18 +1709,27 @@ mod tests {
     #[test]
     fn every_basis_reports_a_negative_resistance() {
         let (deck, segs) = deck_and_segs(BENT);
-        let sin =
-            negative_resistance_warnings(&[row(-5.973)], &deck, &segs, SolverMode::Sinusoidal);
+        let sin = negative_resistance_warnings(
+            &[row(-5.973)],
+            &deck,
+            &segs,
+            SolverMode::Sinusoidal,
+            RunLoads::NONE,
+        );
         assert_eq!(sin.len(), 1, "{sin:?}");
         assert!(sin[0].contains("-5.973"), "{}", sin[0]);
         for mode in [SolverMode::Pulse, SolverMode::Continuity] {
-            let w = negative_resistance_warnings(&[row(-5.973)], &deck, &segs, mode);
+            let w =
+                negative_resistance_warnings(&[row(-5.973)], &deck, &segs, mode, RunLoads::NONE);
             assert_eq!(w.len(), 1, "{mode:?}: {w:?}");
             assert!(w[0].contains("unvalidated solver"), "{mode:?}: {}", w[0]);
         }
         // Negative control: a physical resistance earns nothing.
         for mode in [SolverMode::Sinusoidal, SolverMode::Pulse] {
-            assert!(negative_resistance_warnings(&[row(73.0)], &deck, &segs, mode).is_empty());
+            assert!(
+                negative_resistance_warnings(&[row(73.0)], &deck, &segs, mode, RunLoads::NONE)
+                    .is_empty()
+            );
         }
     }
 
@@ -1899,7 +1970,13 @@ mod tests {
     #[test]
     fn a_negative_distributed_result_earns_a_caveat_naming_the_real_feedpoint() {
         let (deck, segs) = deck_and_segs(BENT);
-        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
+        let w = distributed_negative_resistance_warnings(
+            -5.973,
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            &[14.2e6],
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("negative resistance"), "{}", w[0]);
         assert!(w[0].contains("PH9-CHK-002"), "{}", w[0]);
@@ -1916,10 +1993,14 @@ mod tests {
     #[test]
     fn a_positive_distributed_result_earns_nothing() {
         let (deck, segs) = deck_and_segs(BENT);
-        assert!(
-            distributed_negative_resistance_warnings(74.24, &deck, &segs, SolverMode::Hallen)
-                .is_empty()
-        );
+        assert!(distributed_negative_resistance_warnings(
+            74.24,
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            &[14.2e6]
+        )
+        .is_empty());
     }
 
     #[test]
@@ -1933,7 +2014,13 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 5 2 3 0 1.0 0.0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
+        let w = distributed_negative_resistance_warnings(
+            -5.973,
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            &[14.2e6],
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         let expected = nec_solver::first_delta_gap_feedpoint(&deck).expect("a delta-gap feedpoint");
         assert!(
@@ -1956,7 +2043,13 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 1 7 9 0 0.0 0.0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let w = distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Hallen);
+        let w = distributed_negative_resistance_warnings(
+            -5.973,
+            &deck,
+            &segs,
+            SolverMode::Hallen,
+            &[14.2e6],
+        );
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(
             w[0].contains("tag 1 segment 5"),
@@ -1971,10 +2064,14 @@ mod tests {
         // crate. If a worker ever gains the MPIE, this must not go on telling
         // someone already running it to cross-check with `--solver mpie`.
         let (deck, segs) = deck_and_segs(BENT);
-        assert!(
-            distributed_negative_resistance_warnings(-5.973, &deck, &segs, SolverMode::Mpie)
-                .is_empty()
-        );
+        assert!(distributed_negative_resistance_warnings(
+            -5.973,
+            &deck,
+            &segs,
+            SolverMode::Mpie,
+            &[14.2e6]
+        )
+        .is_empty());
     }
 
     #[test]

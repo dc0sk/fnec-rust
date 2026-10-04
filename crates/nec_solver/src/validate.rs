@@ -31,6 +31,7 @@ use crate::geometry::{
     UnsupportedTopology,
 };
 use crate::{GroundModel, Segment};
+use num_complex::Complex64;
 
 /// Speed of light in vacuum (m/s), for the wavelength-relative height check.
 const C0: f64 = 299_792_458.0;
@@ -287,6 +288,60 @@ pub struct SolverContext<'a> {
     /// How to reach the MPIE from here — "re-run with `--solver mpie`" for the
     /// CLI, "switch the solver to MPIE" for a GUI with a picker.
     pub mpie_remedy: &'a str,
+    /// What the run's RESOLVED loads are, which the deck alone cannot say.
+    pub loads: RunLoads,
+}
+
+/// Facts about the loads a run actually solved with — the per-segment diagonal,
+/// deck `LD` cards and `--loads-config` loads together — for the diagnostics
+/// that must not read them off the deck's cards (FND-209).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RunLoads {
+    /// Loads came from outside the deck (`--loads-config`), so a deck-only
+    /// predicate such as [`mpie_compatible_deck`] cannot see them — and the MPIE
+    /// refuses them.
+    pub outside_deck: bool,
+    /// Some resolved load has negative resistance at a solved frequency, so a
+    /// negative feedpoint resistance may be the load's own, not a solver defect.
+    pub negative: bool,
+}
+
+impl RunLoads {
+    /// No loads beyond what the deck shows, none negative.
+    pub const NONE: Self = Self {
+        outside_deck: false,
+        negative: false,
+    };
+
+    /// From a solved load diagonal (`DeckStamps::diagonal`, with any Laplace
+    /// loads added) and whether any of it came from outside the deck.
+    pub fn of(diagonal: &[Complex64], outside_deck: bool) -> Self {
+        Self {
+            outside_deck,
+            negative: diagonal.iter().any(|z| z.re < 0.0),
+        }
+    }
+
+    /// For a frontend whose loads are the deck's own (the GUI, the bindings):
+    /// the deck's load diagonal at each of `freqs_hz`.
+    pub fn of_deck(deck: &NecDeck, segs: &[Segment], freqs_hz: &[f64]) -> Self {
+        Self {
+            outside_deck: false,
+            negative: freqs_hz.iter().any(|&f| {
+                crate::build_deck_stamps(deck, segs, f)
+                    .diagonal
+                    .iter()
+                    .any(|z| z.re < 0.0)
+            }),
+        }
+    }
+}
+
+impl<'a> SolverContext<'a> {
+    /// This context, describing the given run's loads.
+    pub fn with_loads(self, loads: RunLoads) -> Self {
+        Self { loads, ..self }
+    }
 }
 
 impl SolverContext<'static> {
@@ -295,6 +350,7 @@ impl SolverContext<'static> {
         Self {
             kind: SolverKind::Hallen,
             mpie_remedy: "re-run with `--solver mpie`",
+            loads: RunLoads::NONE,
         }
     }
 }
@@ -678,13 +734,25 @@ pub fn negative_resistance_cause(
     // there — this cause is a claim about the solver, not about the deck. It was
     // an arm in the CLI, which meant the GUI running an MPIE solve would have
     // recommended the solver it was already running.
+    // A negative load is the first explanation, whatever the solver: the feed
+    // carries the load's resistance. It was diagnosed as "the reason is not
+    // identified", and the remedy offered depended on how the load was spelled
+    // (FND-209).
+    if ctx.loads.negative {
+        return "a load in this run has negative resistance (an LD card or a \
+                --loads-config load), and the feedpoint resistance includes it — check \
+                the loads before suspecting the solver"
+            .to_string();
+    }
     if ctx.kind == SolverKind::Mpie {
         return "please report it as a solver defect".to_string();
     }
     let mpie_remedy = ctx.mpie_remedy;
     if has_wire_junction(segs) {
         "commonly a junctioned-geometry limitation (see PH9-CHK-002)".to_string()
-    } else if mpie_compatible_deck(deck) {
+    } else if mpie_compatible_deck(deck) && !ctx.loads.outside_deck {
+        // `outside_deck`: the MPIE refuses --loads-config, which the deck-only
+        // predicate cannot see — recommending it led straight to a refusal.
         // Saying "junctioned-geometry limitation" here would send the reader after
         // a cause the deck does not contain.
         format!(
@@ -2677,6 +2745,7 @@ mod tests {
         let ctx = SolverContext {
             kind: SolverKind::Mpie,
             mpie_remedy: "unused on the MPIE arm",
+            loads: RunLoads::NONE,
         };
         let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, ctx);
         assert!(
@@ -2713,5 +2782,59 @@ mod tests {
         let w = deferred_ground_warning(&deferred).expect("a deferred GN type warns");
         assert!(w.contains("GN type 4") && w.contains("EPSE=13"), "{w}");
         assert_eq!(deferred_ground_warning(&GroundModel::FreeSpace), None);
+    }
+}
+
+#[cfg(test)]
+mod run_loads_tests {
+    use super::*;
+
+    fn dipole() -> (NecDeck, Vec<Segment>) {
+        let deck = nec_parser::parse(
+            "GW 1 21 0 0 -5.282 0 0 5.282 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        )
+        .expect("parses")
+        .deck;
+        let segs = crate::build_geometry(&deck).expect("geometry");
+        (deck, segs)
+    }
+
+    /// FND-209: the remedy may only name the MPIE when the run would reach it. A
+    /// deck the MPIE takes, solved with loads from outside the deck, is refused
+    /// there — so the cause must not send the user to it.
+    #[test]
+    fn loads_from_outside_the_deck_withdraw_the_mpie_remedy() {
+        let (deck, segs) = dipole();
+        let plain = negative_resistance_cause(&deck, &segs, SolverContext::cli_hallen());
+        assert!(plain.contains("--solver mpie"), "{plain}");
+        let outside = negative_resistance_cause(
+            &deck,
+            &segs,
+            SolverContext::cli_hallen().with_loads(RunLoads {
+                outside_deck: true,
+                negative: false,
+            }),
+        );
+        assert!(!outside.contains("--solver mpie"), "{outside}");
+    }
+
+    /// A negative load is named as the cause, on every solver.
+    #[test]
+    fn a_negative_load_is_named_as_the_cause() {
+        let (deck, segs) = dipole();
+        let loads = RunLoads::of(&[Complex64::new(-200.0, 0.0)], false);
+        assert!(loads.negative);
+        for kind in [SolverKind::Hallen, SolverKind::Mpie] {
+            let ctx = SolverContext {
+                kind,
+                mpie_remedy: "re-run with `--solver mpie`",
+                loads,
+            };
+            let cause = negative_resistance_cause(&deck, &segs, ctx);
+            assert!(
+                cause.contains("a load in this run has negative resistance"),
+                "{cause}"
+            );
+        }
     }
 }

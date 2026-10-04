@@ -60,6 +60,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   current in the antenna's reaction, R 8 % off) — exit 0, and it silenced the
   low-ground warning. These decks now decline, keep the rcm answer and say so;
   a single collinear wire with one feed is corrected as before.
+- **The negative-resistance caveat misread loads from `--loads-config`**
+  (FND-209). A dipole with a −200 Ω load reports Re Z ≈ −122 Ω — the load's own
+  resistance at the feed — and the caveat said the reason was not identified,
+  then chose its remedy from the deck's cards: with the load from a loads file
+  it said to re-run with `--solver mpie`, which refuses loads files. The caveat
+  now reads the run's resolved loads: a negative load is named as the cause, in
+  the CLI, the GUI and the Python bindings, and the MPIE is recommended only to
+  a run it would take.
 
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which
