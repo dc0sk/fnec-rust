@@ -764,7 +764,7 @@ Quick reference:
 | EX type 5 | Partial | Voltage source (current-slope discontinuity) — solves as a voltage source, same result as type 0. NEC's separate current-slope numerics are a documented non-goal |
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern; `XNDA` X-digit adds `NORMALIZED_PATTERN`, A-digit adds `AVERAGE_POWER_GAIN`. The N/D digits (labeling / dB-vs-ratio toggles) are deferred |
-| NE / NH | Partial | Near electric / magnetic field, rectangular (`I1=0`) and spherical (`I1=1`) grids; emits `NEAR_FIELD` / `NEAR_H_FIELD` |
+| NE / NH | Partial | Near electric / magnetic field, rectangular (`I1=0`) and spherical (`I1=1`) grids; emits `NEAR_FIELD` / `NEAR_H_FIELD`. Over PEC ground the images are included; over a finite ground the reflected field is not, and a warning says so (FND-201) |
 | LD type 0–5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads. Arbitrary rational `Z(s)` loads come from `--loads-config` |
 | TL | Partial | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`, solved as a two-port network across the port gaps (see below). fnec's retired `… NSEG TYPE Z0 LEN [VF]` layout is refused with the NEC-2 rewrite in the error |
 | PT | Partial | Print control applied at runtime: `I1 ≤ −1` suppresses current output, `I1 = 0` prints all, `I1 ≥ 1` restricts to tag `I2` / segments `I3..I4`. Last `PT` wins |

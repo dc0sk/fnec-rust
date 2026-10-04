@@ -151,12 +151,22 @@ fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 /// point-element model is accurate away from the wire surface; very close to a
 /// conductor (`r_n` ≈ the wire radius) it departs from NEC's extended thin-wire
 /// kernel — a documented limitation.
+///
+/// Over PEC ground ([`GroundModel::PerfectConductor`]) the sum includes every
+/// segment's image ([`with_pec_images`]). It once took no ground at all, so a
+/// dipole over GN 1 read 0.0234 V/m where nec2c reads 0.0387 (FND-201). Over a
+/// finite ground the reflected field is NOT included — only the solved currents
+/// see that ground — and the frontends say so
+/// ([`crate::validate::near_field_over_finite_ground_warning`]).
 pub fn near_e_field(
     segs: &[Segment],
     i_vec: &[Complex64],
     freq_hz: f64,
     points: &[NearFieldPoint],
+    ground: &GroundModel,
 ) -> Vec<NearFieldE> {
+    let (segs, i_vec) = with_pec_images(segs, i_vec, ground);
+    let (segs, i_vec) = (segs.as_ref(), i_vec.as_ref());
     let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
     let coeff = ETA0 / (4.0 * PI);
     points
@@ -214,13 +224,17 @@ pub fn near_e_field(
 ///
 /// The 1/r far term satisfies `|E| = η·|H|` with `E ⟂ H ⟂ r̂` (validated), so the
 /// near magnetic field is consistent with the radiation pattern at large range.
-/// The same close-to-the-wire accuracy caveat as [`near_e_field`] applies.
+/// The same close-to-the-wire accuracy caveat, and the same ground treatment
+/// (PEC images; no reflected field over a finite ground), as [`near_e_field`].
 pub fn near_h_field(
     segs: &[Segment],
     i_vec: &[Complex64],
     freq_hz: f64,
     points: &[NearFieldPoint],
+    ground: &GroundModel,
 ) -> Vec<NearFieldH> {
+    let (segs, i_vec) = with_pec_images(segs, i_vec, ground);
+    let (segs, i_vec) = (segs.as_ref(), i_vec.as_ref());
     let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
     let coeff = 1.0 / (4.0 * PI);
     points
@@ -258,6 +272,39 @@ pub fn near_h_field(
             }
         })
         .collect()
+}
+
+/// The segments plus, over PEC ground, their images: each mirrored in `z = 0`,
+/// carrying the same current with its horizontal components reversed (the
+/// image direction is `(−u_x, −u_y, u_z)`). Over any other ground, the segments
+/// alone. A deck whose wires touch the plane is solved on its doubled structure,
+/// but its currents are reported for the originals only, so this restores the
+/// image half there too.
+fn with_pec_images<'a>(
+    segs: &'a [Segment],
+    i_vec: &'a [Complex64],
+    ground: &GroundModel,
+) -> (
+    std::borrow::Cow<'a, [Segment]>,
+    std::borrow::Cow<'a, [Complex64]>,
+) {
+    use std::borrow::Cow;
+    if !matches!(ground, GroundModel::PerfectConductor) {
+        return (Cow::Borrowed(segs), Cow::Borrowed(i_vec));
+    }
+    let mirror = |p: [f64; 3]| [p[0], p[1], -p[2]];
+    let mut all = segs.to_vec();
+    all.extend(segs.iter().map(|s| {
+        let mut img = s.clone();
+        img.start = mirror(s.start);
+        img.end = mirror(s.end);
+        img.midpoint = mirror(s.midpoint);
+        img.direction = [-s.direction[0], -s.direction[1], s.direction[2]];
+        img
+    }));
+    let mut currents = i_vec.to_vec();
+    currents.extend_from_slice(i_vec);
+    (Cow::Owned(all), Cow::Owned(currents))
 }
 
 /// Compute the complex far-field θ and φ components for one observation

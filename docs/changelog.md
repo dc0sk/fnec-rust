@@ -36,6 +36,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   applies over every ground: −1.27 dBi at 21 segments and −1.23 at 41 (nec2c
   −1.20 / −1.18), over PEC −1.31 / −1.28 (nec2c −1.26 / −1.24), and the average
   power gain 0.454 (nec2c 0.458). Lossless decks are unchanged.
+- **Near fields ignored the ground** (FND-201). `NE`/`NH` summed the real
+  segments' currents only, so over any ground the returned field was missing: a
+  vertical dipole over PEC read |Ez| 0.0234 V/m 30 m out where nec2c reads 0.0387
+  (−40 %), |Ex| 91 % low 9 m up, and a ground-mounted monopole lost its whole
+  image half — exit 0, no warning. Over PEC every segment's image is now summed:
+  the dipole is within 5 % of nec2c (the free-space model's own error here is
+  ~4 %), and a monopole and a horizontal dipole equal their free-space doubles
+  to round-off. Over a finite ground, where the reflected field is not modelled,
+  fnec now warns instead of printing the numbers silently.
 
 ## [0.21.1] — 2026-10-04 — Loads in their place
 

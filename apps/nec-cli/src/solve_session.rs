@@ -482,6 +482,7 @@ fn build_near_field_rows(
     segs: &[Segment],
     i_vec: &[Complex64],
     freq_hz: f64,
+    ground: &GroundModel,
 ) -> Vec<nec_report::NearFieldRow> {
     let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
     for card in &deck.cards {
@@ -502,7 +503,7 @@ fn build_near_field_rows(
     if points.is_empty() {
         return Vec::new();
     }
-    nec_solver::near_e_field(segs, i_vec, freq_hz, &points)
+    nec_solver::near_e_field(segs, i_vec, freq_hz, &points, ground)
         .into_iter()
         .map(|f| nec_report::NearFieldRow {
             x: f.x,
@@ -522,6 +523,7 @@ fn build_near_h_field_rows(
     segs: &[Segment],
     i_vec: &[Complex64],
     freq_hz: f64,
+    ground: &GroundModel,
 ) -> Vec<nec_report::NearHFieldRow> {
     let mut points: Vec<nec_solver::NearFieldPoint> = Vec::new();
     for card in &deck.cards {
@@ -542,7 +544,7 @@ fn build_near_h_field_rows(
     if points.is_empty() {
         return Vec::new();
     }
-    nec_solver::near_h_field(segs, i_vec, freq_hz, &points)
+    nec_solver::near_h_field(segs, i_vec, freq_hz, &points, ground)
         .into_iter()
         .map(|f| nec_report::NearHFieldRow {
             x: f.x,
@@ -1551,8 +1553,8 @@ pub(super) fn solve_frequency_point(
     };
 
     // PH9-CHK-004: near electric field on the NE-card grid(s), magnetic on NH.
-    let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz);
-    let near_h_field_table = build_near_h_field_rows(deck, segs, &i_vec, freq_hz);
+    let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz, ground);
+    let near_h_field_table = build_near_h_field_rows(deck, segs, &i_vec, freq_hz, ground);
 
     // PH9-CHK-004: average power gain (RP XNDA A-digit) — the solid-angle-weighted
     // mean gain over the pattern region (= radiation efficiency over the full

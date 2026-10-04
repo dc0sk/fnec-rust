@@ -37,7 +37,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 use warnings::{
     warn_deferred_ground_model, warn_ge_ground_reflection_flag, warn_mpie_mixed_radius,
-    warn_pulse_mode_experimental,
+    warn_near_field_over_finite_ground, warn_pulse_mode_experimental,
 };
 
 /// Print every point a sweep computed, and report the ones that failed.
@@ -456,6 +456,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     warn_deferred_ground_model(&ground);
+    warn_near_field_over_finite_ground(deck, &ground);
 
     // ------------------------------------------------------------------
     // Distributed solve via --hosts

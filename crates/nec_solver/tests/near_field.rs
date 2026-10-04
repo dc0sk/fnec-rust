@@ -52,7 +52,7 @@ fn near_field_far_limit_matches_gain_derived_far_field() {
         y: 0.0,
         z: r * th.cos(),
     };
-    let e = near_e_field(&segs, &currents, FREQ, &[p])[0].e;
+    let e = near_e_field(&segs, &currents, FREQ, &[p], &GroundModel::FreeSpace)[0].e;
 
     // At 200λ the field must be transverse (E_r ≈ 0).
     let r_hat = [th.sin(), 0.0, th.cos()];
@@ -105,6 +105,7 @@ fn near_field_broadside_is_axis_polarized() {
             y: 0.0,
             z: 0.0,
         }],
+        &GroundModel::FreeSpace,
     )[0]
     .e;
     assert!(e[1].norm() < 1e-12, "Ey must vanish by symmetry: {}", e[1]);
@@ -129,8 +130,8 @@ fn near_h_field_far_limit_impedance_and_azimuthal() {
         y: 0.0,
         z: r * th.cos(),
     };
-    let e = near_e_field(&segs, &currents, FREQ, &[p])[0].e;
-    let hf = near_h_field(&segs, &currents, FREQ, &[p])[0].h;
+    let e = near_e_field(&segs, &currents, FREQ, &[p], &GroundModel::FreeSpace)[0].e;
+    let hf = near_h_field(&segs, &currents, FREQ, &[p], &GroundModel::FreeSpace)[0].h;
     let emag = (e[0].norm_sqr() + e[1].norm_sqr() + e[2].norm_sqr()).sqrt();
     let hmag = (hf[0].norm_sqr() + hf[1].norm_sqr() + hf[2].norm_sqr()).sqrt();
     // Far field: |E| = η·|H|.
