@@ -117,6 +117,9 @@ fn gui_ctx(solver: SolverKind) -> nec_solver::validate::SolverContext<'static> {
     nec_solver::validate::SolverContext {
         kind: solver,
         mpie_remedy: GUI_MPIE_REMEDY,
+        // The GUI's loads are the deck's own; the negative-resistance sites
+        // describe them with `with_loads` (FND-209).
+        loads: nec_solver::validate::RunLoads::NONE,
     }
 }
 
@@ -460,7 +463,11 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
         seg,
         deck,
         &segs,
-        gui_ctx(solver),
+        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            deck,
+            &segs,
+            &[freq_hz],
+        )),
     ) {
         warnings.push(w);
     }
@@ -834,7 +841,11 @@ impl SweepJob {
             &z_res,
             &self.deck,
             &self.segs,
-            gui_ctx(self.solver),
+            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+                &self.deck,
+                &self.segs,
+                &nec_solver::frequencies_hz(&self.deck),
+            )),
         )
     }
 }

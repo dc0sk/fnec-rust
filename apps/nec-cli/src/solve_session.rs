@@ -149,6 +149,9 @@ pub(super) struct FrequencySolveResult {
     pub(super) min_feed_re: Option<f64>,
     /// Whether the device solved this point (a GPU sweep reports the count).
     pub(super) ran_on_gpu: bool,
+    /// What this point's resolved loads were, for the sweep's aggregate caveat
+    /// (FND-209): the deck alone cannot say.
+    pub(super) run_loads: nec_solver::validate::RunLoads,
 }
 
 /// The `exec` a point actually ran: `gpu` only when the device solved it.
@@ -637,17 +640,21 @@ pub(super) fn run_negative_resistance_warnings(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
     solver_mode: SolverMode,
+    run_loads: nec_solver::validate::RunLoads,
 ) -> Vec<String> {
     if per_point.len() <= 1 {
         return per_point.into_iter().flatten().collect();
     }
     let z_res: Vec<f64> = min_feed_re.iter().filter_map(|z| *z).collect();
     match solver_ctx(solver_mode) {
-        Some(ctx) => {
-            nec_solver::validate::swept_negative_resistance_caveat(&z_res, deck, segs, ctx)
-                .into_iter()
-                .collect()
-        }
+        Some(ctx) => nec_solver::validate::swept_negative_resistance_caveat(
+            &z_res,
+            deck,
+            segs,
+            ctx.with_loads(run_loads),
+        )
+        .into_iter()
+        .collect(),
         None => {
             let n = z_res
                 .iter()
@@ -674,6 +681,7 @@ fn solver_ctx(solver_mode: SolverMode) -> Option<nec_solver::validate::SolverCon
         SolverMode::Mpie => Some(nec_solver::validate::SolverContext {
             kind: nec_solver::validate::SolverKind::Mpie,
             mpie_remedy: CLI_MPIE_REMEDY,
+            loads: nec_solver::validate::RunLoads::NONE,
         }),
         // FND-081: sinusoidal is Hallén's matrix in a projected basis and as
         // accurate, so it takes Hallén's wording.
@@ -689,6 +697,7 @@ pub(super) fn negative_resistance_warnings(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
     solver_mode: SolverMode,
+    run_loads: nec_solver::validate::RunLoads,
 ) -> Vec<String> {
     // `negative_resistance_cause` takes the solver context and picks the cause
     // itself, so the GUI's MPIE runs get the same "report it as a solver defect"
@@ -696,7 +705,7 @@ pub(super) fn negative_resistance_warnings(
     // physically impossible whatever produced it; the pulse bases get their own
     // wording, since for them it is the expected output of an unvalidated solver.
     let ctx = match solver_ctx(solver_mode) {
-        Some(ctx) => ctx,
+        Some(ctx) => ctx.with_loads(run_loads),
         None => {
             return rows
                 .iter()
@@ -1146,6 +1155,9 @@ pub(super) fn solve_frequency_point(
     if let Some(problem) = laplace_warnings.first() {
         return Err(format!("--loads-config: {problem}"));
     }
+    // What the negative-resistance caveat may say about loads is a property of
+    // this diagonal, not of the deck's cards (FND-209).
+    let run_loads = nec_solver::validate::RunLoads::of(&stamps.diagonal, !laplace_loads.is_empty());
     // Loads enter in the form the basis that runs derives for them (FND-122,
     // FND-124). Hallen: as matrix columns, stamped by the session once the route is
     // known. Sinusoidal: the same columns, since it solves the Hallen matrix in a
@@ -1449,7 +1461,7 @@ pub(super) fn solve_frequency_point(
         // Stays here: only this frontend can make the request that gets declined.
         warn_if_sommerfeld_declined(sommerfeld_outcome);
     }
-    let negative_r = negative_resistance_warnings(&rows, deck, segs, solver_mode);
+    let negative_r = negative_resistance_warnings(&rows, deck, segs, solver_mode, run_loads);
     let min_feed_re = rows.iter().map(|r| r.z_in.re).reduce(f64::min);
 
     let current_table: Vec<CurrentRow> = segs
@@ -1691,6 +1703,7 @@ pub(super) fn solve_frequency_point(
         bench,
         sweep_summary,
         negative_r,
+        run_loads,
         min_feed_re,
         ran_on_gpu,
     })
