@@ -70,6 +70,36 @@ pub fn scalar_gamma(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
     (sq - Complex64::new(1.0, 0.0)) / (sq + Complex64::new(1.0, 0.0))
 }
 
+/// Whether every midpoint lies on the line through `midpoints[0]` along `axis`.
+///
+/// Both correction paths measure separations along that one line — the
+/// horizontal one looks up its kernel by `|ρ|` as if every offset were along the
+/// wire, the general one by signed arc position — so "parallel" is not enough. A
+/// broadside pair of parallel wires passed the old parallel-only gate and got the
+/// along-axis kernel for an across-axis offset (FND-206).
+fn collinear(midpoints: &[[f64; 3]], axis: [f64; 3]) -> bool {
+    let p0 = midpoints[0];
+    let extent = midpoints
+        .iter()
+        .map(|m| ((m[0] - p0[0]).powi(2) + (m[1] - p0[1]).powi(2) + (m[2] - p0[2]).powi(2)).sqrt())
+        .fold(0.0_f64, f64::max);
+    // The axis as given need not be exactly unit (the parallel test above only
+    // asks |dot| ≥ 1 − 1e-6): projecting on an unnormalised axis left a straight
+    // tilted wire with a spurious perpendicular part of ~1e-4 of its extent.
+    let norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    if norm == 0.0 {
+        return false;
+    }
+    let axis = [axis[0] / norm, axis[1] / norm, axis[2] / norm];
+    let tol = 1e-6 * extent.max(1.0);
+    midpoints.iter().all(|m| {
+        let d = [m[0] - p0[0], m[1] - p0[1], m[2] - p0[2]];
+        let along = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+        let perp2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] - along * along;
+        perp2 <= tol * tol
+    })
+}
+
 /// Surface-wave correction to the near-ground feedpoint impedance of a **straight
 /// horizontal wire** over finite ground (PH9-CHK-006).
 ///
@@ -124,6 +154,10 @@ pub fn horizontal_ground_z_correction(
         if (midpoints[i][2] - h).abs() > TOL {
             return None;
         }
+    }
+    // one line, not merely parallel lines (FND-206)
+    if !collinear(midpoints, axis) {
+        return None;
     }
 
     let i_feed = currents[feed_idx];
@@ -213,6 +247,11 @@ pub fn ground_z_correction(
         if dot.abs() < 1.0 - TOL {
             return None;
         }
+    }
+    // One line, not merely parallel lines: both paths measure separations along
+    // it (FND-206).
+    if !collinear(midpoints, axis) {
+        return None;
     }
     // Horizontal wire: fast ρ-grid path.
     if axis[2].abs() <= TOL {

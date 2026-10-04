@@ -754,9 +754,11 @@ fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
     }
     if outcome == SommerfeldOutcome::Declined {
         eprintln!(
-            "warning: --ground-solver sommerfeld covers straight wires (horizontal, vertical \
-             or tilted) and declined this bent or mixed geometry; the reported feedpoint \
-             impedance is the unchanged reflection-coefficient (rcm) result. For the surface \
+            "warning: --ground-solver sommerfeld covers a single straight wire (collinear \
+             segments, horizontal, vertical or tilted) with one feed and no TL/NT network, \
+             and declined this deck (bent, mixed or parallel wires, several feeds, or a \
+             network — FND-206, FND-208); the reported feedpoint impedance is the unchanged \
+             reflection-coefficient (rcm) result. For the surface \
              wave on bent geometry use --solver mpie, which assembles the reflected kernels \
              into its Z-matrix (PH9-CHK-006 / PH9-CHK-007)"
         );
@@ -791,6 +793,18 @@ pub(super) fn build_feedpoint_rows(
         }
         _ => None,
     };
+    // The correction is a one-port quantity: ⟨J, ΔG J⟩ / I_feed² over the whole
+    // structure's currents. With several feeds that charges every port with the
+    // whole structure's reaction — a symmetric pair got 2(ΔZ11 ± ΔZ12), 76.29 −
+    // j65.29 against nec2c's 75.01 − j30.15 (FND-206) — and with a TL/NT network
+    // the feed current carries the network branch, which is not antenna current
+    // (FND-208). Both decline, and say so, rather than correct wrongly.
+    let one_port_without_networks = nec_solver::feedpoints(deck).count() == 1
+        && !deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)));
+    let sommerfeld_applicable = sommerfeld_ground.is_some() && one_port_without_networks;
     let mut sommerfeld_outcome = if sommerfeld_ground.is_some() {
         // Downgraded to `Applied` only if a correction actually comes back.
         SommerfeldOutcome::Declined
@@ -853,7 +867,7 @@ pub(super) fn build_feedpoint_rows(
         // PH9-CHK-006: add the Sommerfeld surface-wave correction to the near-ground
         // feedpoint impedance for any straight wire — horizontal, vertical, or tilted
         // (bent / mixed geometry is declined and keeps the scalar-Γ result).
-        if let Some((eps_r, sigma)) = sommerfeld_ground {
+        if let Some((eps_r, sigma)) = sommerfeld_ground.filter(|_| sommerfeld_applicable) {
             if let Some(dz) = nec_solver::sommerfeld::ground_z_correction(
                 &midpoints,
                 &directions,
