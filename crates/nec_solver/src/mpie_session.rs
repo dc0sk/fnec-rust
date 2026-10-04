@@ -17,11 +17,10 @@
 
 use num_complex::Complex64;
 
-use crate::excitation::first_delta_gap_feedpoint;
 use crate::geometry::Segment;
 use crate::mpie::{
     feed_node_for_segment, feed_reference_sign, geometry_from_segments, segment_currents,
-    solve_mpie, solve_mpie_ground, MpieError,
+    solve_mpie_sources, MpieError,
 };
 use crate::GroundModel;
 use nec_model::card::Card;
@@ -157,49 +156,47 @@ pub fn solve_mpie_session(
     // admitted a type-4 current source and any unrecognised type, and was safe
     // only because callers happened to reject those first (FND-037) — a shared
     // function may not depend on what its callers checked.
-    let ex = first_delta_gap_feedpoint(deck).ok_or(MpieSessionError::NoVoltageSource)?;
-    let driven_idx = segs
-        .iter()
-        .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        .ok_or(MpieSessionError::DrivenSegmentNotFound {
-            tag: ex.tag,
-            segment: ex.segment,
-        })?;
-
-    let geom = geometry_from_segments(segs);
-    let feed_node =
-        feed_node_for_segment(&geom, driven_idx).ok_or(MpieSessionError::NoInteriorNode)?;
-
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
-    let sol = if has_ground {
-        solve_mpie_ground(&geom, freq_hz, feed_node, ground)
-    } else {
-        solve_mpie(&geom, freq_hz, feed_node)
-    }
-    .map_err(MpieSessionError::Solve)?;
-
-    // `solve_mpie` drives the feed with a unit (1 V) source; scale the resulting
-    // currents by the deck's actual `EX` voltage so the reported currents are
-    // physical and the feedpoint V/I (in `build_feedpoint_rows`) is independent of
-    // the source voltage — MoM is linear, so I(V) = V·I(1 V).
     //
-    // The unit source is applied along the *basis's* reference direction, which is
-    // set by the incidence order of the fed node's two arms. `EX` instead applies
-    // it along the driven segment's own `p0 → p1` tangent, and for a
-    // start-to-start junction feed (both `GW` cards written outward from the
-    // shared node, e.g. an apex-fed inverted-V) those oppose. Re-reference the
-    // solve to the deck's source polarity, or every reported current — and hence
-    // the feedpoint `V/I` — comes out negated (an unphysical negative resistance
-    // for a deck that is only written differently, not built differently).
-    let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
-    let source_v = Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign;
-    let mut currents = segment_currents(&geom, &sol.basis_currents);
-    for c in &mut currents {
-        *c *= source_v;
+    // EVERY delta gap. This drove `first_delta_gap_feedpoint` alone, so a second
+    // source was dropped while the reporting still priced it: two parallel
+    // dipoles, both fed, answered 42.69 + j77.76 and 15.73 − j118.01 against
+    // Hallén's 142.48 + j25.73 on both (nec2c 145.37 + j34.69), exit 0 (FND-202).
+    let geom = geometry_from_segments(segs);
+    let mut feeds: Vec<(usize, Complex64)> = Vec::new();
+    for (ex, role) in crate::excitation::feedpoints(deck) {
+        if role != nec_model::card::FeedpointRole::DeltaGap {
+            continue;
+        }
+        let driven_idx = segs
+            .iter()
+            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            .ok_or(MpieSessionError::DrivenSegmentNotFound {
+                tag: ex.tag,
+                segment: ex.segment,
+            })?;
+        let feed_node =
+            feed_node_for_segment(&geom, driven_idx).ok_or(MpieSessionError::NoInteriorNode)?;
+        // The source is applied along the *basis's* reference direction, set by
+        // the incidence order of the fed node's two arms. `EX` instead applies it
+        // along the driven segment's own `p0 → p1` tangent, and for a
+        // start-to-start junction feed (both `GW` cards written outward from the
+        // shared node, e.g. an apex-fed inverted-V) those oppose. Re-reference
+        // each source to the deck's polarity, or its contribution — and hence
+        // the feedpoint `V/I` — comes out negated (an unphysical negative
+        // resistance for a deck that is only written differently).
+        let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
+        feeds.push((
+            feed_node,
+            Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign,
+        ));
     }
+    if feeds.is_empty() {
+        return Err(MpieSessionError::NoVoltageSource);
+    }
+
+    let basis_currents =
+        solve_mpie_sources(&geom, freq_hz, ground, &feeds).map_err(MpieSessionError::Solve)?;
+    let currents = segment_currents(&geom, &basis_currents);
     // The MPIE had no finiteness check anywhere: a diverged solve whose feed
     // current happened to stay finite printed NaN rows for every other segment
     // (FND-126).
@@ -210,6 +207,7 @@ pub fn solve_mpie_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::excitation::first_delta_gap_feedpoint;
     use nec_parser::parse;
 
     fn deck_of(text: &str) -> NecDeck {

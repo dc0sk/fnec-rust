@@ -842,6 +842,44 @@ pub fn solve_mpie_ground(
     })
 }
 
+/// Solve with several delta-gap sources at once: `feeds` pairs an interior node
+/// with the voltage applied there, along the basis's reference direction. One
+/// matrix, one right-hand side carrying every source — MoM is linear, so this is
+/// the superposition of the single-source solves. `ground` `None` (or free
+/// space) is the free-space assembly, as in [`solve_mpie`]; anything else is
+/// [`solve_mpie_ground`]'s.
+///
+/// Returns the basis currents. With a single 1 V feed it is exactly the
+/// `basis_currents` of [`solve_mpie`] / [`solve_mpie_ground`].
+pub fn solve_mpie_sources(
+    geom: &MpieGeometry,
+    freq_hz: f64,
+    ground: &GroundModel,
+    feeds: &[(usize, Complex64)],
+) -> Result<Vec<Complex64>, MpieError> {
+    check_geometry(geom)?;
+    let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
+    let has_ground = !matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    );
+    let mut z = if has_ground {
+        assemble_with_ground(geom, freq_hz, ground)?
+    } else {
+        assemble(&seg_geom(geom), &bases, geom.radius, freq_hz)
+    };
+    let mut v = vec![Complex64::new(0.0, 0.0); z.len()];
+    for &(node, volts) in feeds {
+        let basis = node_feed
+            .get(node)
+            .copied()
+            .flatten()
+            .ok_or(MpieError::InvalidFeed { node })?;
+        v[basis] += volts;
+    }
+    Ok(solve_square_in_place(&mut z, &mut v)?)
+}
+
 /// Assemble the dense free-space MPIE impedance matrix for a straight/bent chain.
 pub fn assemble_free_space_z(wire: &MpieWire, freq_hz: f64) -> Vec<Vec<Complex64>> {
     let geom = wire.geometry();
