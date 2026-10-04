@@ -32,6 +32,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/exec_auto.rs` | 7 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
 | `apps/nec-cli/tests/exec_modes.rs` | 28 | `--exec` selection, drop-in alias resolution, sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run; the hybrid-lane check re-runs once, and only, when a present GPU was hidden from the run's enumeration (FND-190) | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
+| `apps/nec-cli/tests/gain_load_loss.rs` | 3 | FND-200: a lossy load costs gain in free space and over PEC — vs nec2c at two meshes with unloaded controls, a `--loads-config` twin equal to its `LD` card, and the RP A-digit average power gain equal to the efficiency. | FND-200 |
 | `apps/nec-cli/tests/geometry_diagnostics.rs` | 17 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
@@ -73,7 +74,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/worker_integration.rs` | 10 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
 | `apps/nec-cli/tests/worker_poison_budget.rs` | 2 | FND-102 — one task that kills workers must not kill the pool. | FND-102 |
 | `apps/nec-cli/tests/worker_task_fault.rs` | 1 | FND-117 — a task fault must not evict the worker that reported it. | FND-117 |
-| `apps/nec-gui/tests/gui_smoke.rs` | 132 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
+| `apps/nec-gui/tests/gui_smoke.rs` | 133 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
 | `crates/nec_accel/tests/gpu_ceilings.rs` | 5 | The GPU size ceilings (FND-188/189): the 2-D dispatch grid at the 65 535 boundary, the storage-binding capacity, every indexed shader entry reads the grid (structural), a 2049-segment fill on the device, a decline one past the device's capacity names its reason; device tests skip without a hardware adapter | FND-188, FND-189 |
@@ -122,7 +123,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=666 --> **666** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=670 --> **670** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -147,7 +148,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=587 --> **587** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1260 --> **1260** = 587 unit + 666 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1264 --> **1264** = 587 unit + 670 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

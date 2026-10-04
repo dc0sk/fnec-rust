@@ -27,6 +27,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   merged-conductor grouping the CLI's GPU path uses, and every fallback is the
   routed CPU solve; on this host the device accepts all three splits gated and
   agrees with the CPU to 3e-5 Ω.
+- **Gain ignored load losses in free space and over perfect ground** (FND-200).
+  The pattern's directivity became gain through the radiation efficiency only
+  over a lossy finite ground; free space and PEC were taken as lossless, so a
+  lossy `LD` or `--loads-config` load reported its directivity as gain. A λ/2
+  dipole with 100 Ω at its feed printed 2.17 dBi against nec2c's −1.20
+  (efficiency 45.89 %), exit 0, in the CLI and the GUI. The correction now
+  applies over every ground: −1.27 dBi at 21 segments and −1.23 at 41 (nec2c
+  −1.20 / −1.18), over PEC −1.31 / −1.28 (nec2c −1.26 / −1.24), and the average
+  power gain 0.454 (nec2c 0.458). Lossless decks are unchanged.
 
 ## [0.21.1] — 2026-10-04 — Loads in their place
 

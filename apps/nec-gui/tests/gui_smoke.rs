@@ -2513,14 +2513,11 @@ fn the_gui_pattern_corrects_a_current_source_drive_as_the_cli_does() {
     );
 }
 
-/// The free-space control, and an honest note on what it does *not* prove.
-///
-/// It pins that a free-space pattern is still the textbook ~2.15 dBi, so a
-/// correction with the wrong sign or magnitude fails here. It does **not** prove
-/// the ground-type guard is load-bearing: removing that guard leaves this test
-/// green, because radiation efficiency in free space is ~1 and the correction is
-/// then ~0 dB anyway. Verified by sabotage rather than assumed. The guard earns
-/// its place on the PEC-ground path, not this one.
+/// The free-space control: an unloaded free-space pattern is still the textbook
+/// ~2.15 dBi, so a correction with the wrong sign or magnitude fails here. The
+/// correction applies over every ground since FND-200 (radiation efficiency of a
+/// lossless deck is ~1, so it is ~0 dB here); the loaded test below is the one
+/// that proves it is applied at all.
 #[test]
 fn a_free_space_pattern_is_not_shifted_by_the_ground_correction() {
     let deck = std::fs::read_to_string(concat!(
@@ -2539,6 +2536,28 @@ fn a_free_space_pattern_is_not_shifted_by_the_ground_correction() {
     assert!(
         (peak - 2.15).abs() < 0.3,
         "free-space peak {peak:.4} dBi is not the textbook ~2.15"
+    );
+}
+
+/// FND-200 — a lossy load costs gain in free space too, in this view as in the
+/// CLI. The correction was applied over a lossy finite ground only, so a λ/2
+/// dipole with 100 Ω at its feed showed its directivity, 2.17 dBi, where nec2c
+/// gives −1.20 (efficiency 45.89 %). Pinned absolutely against the CLI's
+/// −1.2678 for the same deck (`apps/nec-cli/tests/gain_load_loss.rs`).
+#[test]
+fn the_gui_pattern_charges_a_lossy_load_in_free_space() {
+    let deck = "CE\nGW 1 21 0 0 -0.25 0 0 0.25 .001\nGE 0\nLD 4 1 11 11 100 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 299.79 0\nEN\n";
+    let slice =
+        nec_gui::solve::pattern_slice_deck_str(deck, 0.0, nec_gui::solve::SolverKind::Hallen)
+            .expect("pattern slice");
+    let peak = slice
+        .iter()
+        .map(|p| p.gain_total_dbi)
+        .fold(f64::MIN, f64::max);
+    assert!(
+        (peak - -1.2678).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's -1.2678 for this loaded dipole; \
+         2.17 would mean the load loss is unaccounted for"
     );
 }
 
