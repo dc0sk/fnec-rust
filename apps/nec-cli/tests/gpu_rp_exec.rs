@@ -139,3 +139,58 @@ fn exec_gpu_diag_line_shows_gpu_exec_mode() {
     let (_stdout, stderr) = run_fnec(&["--exec", "gpu"]);
     common::assert_gpu_exec_label(&stderr);
 }
+
+/// FND-205: over ground the pattern must not take the device's far-field kernel,
+/// which is free-space only. It did, on every `--exec gpu` deck, so a vertical
+/// dipole over PEC printed −8.62 / −2.56 / +0.67 dBi at θ 20/40/60 where the CPU
+/// and nec2c give −3.12 / −0.26 / −15.04, exit 0. Over PEC and over a finite
+/// ground `--exec gpu` must now print the CPU's pattern to the digit, and say
+/// once that the pattern ran there. (Without an adapter the device arm fell back
+/// to the CPU anyway, so in CI the info line is what this pins; on a GPU host the
+/// equality pins it too.)
+#[test]
+fn exec_gpu_pattern_over_ground_is_the_cpu_pattern() {
+    for ground in ["GN 1", "GN 2 0 0 0 13 .005"] {
+        let deck = common::TempDeck::new(
+            &format!(
+                "fnec-gpurp-ground-{}-{}",
+                ground.len(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            &format!(
+                "CE\nGW 1 21 0 0 5 0 0 15 0.001\nGE 1\n{ground}\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nRP 0 4 1 1000 0 0 20 0\nEN\n"
+            ),
+        );
+        let run = |exec: &str| {
+            let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+                .args(["--exec", exec])
+                .arg(&deck)
+                .output()
+                .expect("run fnec");
+            assert!(
+                out.status.success(),
+                "{ground} --exec {exec}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            (
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        };
+        let (cpu, _) = run("cpu");
+        let (gpu, gpu_err) = run("gpu");
+        let (c, g) = (parse_gain_total_column(&cpu), parse_gain_total_column(&gpu));
+        assert!(!c.is_empty(), "{ground}: no pattern rows");
+        assert_eq!(
+            c, g,
+            "{ground}: --exec gpu pattern {g:?} differs from the CPU's {c:?}"
+        );
+        assert!(
+            gpu_err.contains("the radiation pattern over ground runs on the CPU"),
+            "{ground}: --exec gpu did not say the pattern ran on the CPU:\n{gpu_err}"
+        );
+    }
+}

@@ -1453,14 +1453,35 @@ pub(super) fn solve_frequency_point(
     let source_table = build_source_rows(deck);
     let load_table = build_load_rows(deck);
 
+    // The device's far-field kernel sums the real segments in free space: it has
+    // no image and no reflected field. It ran on every `--exec gpu` deck, so over
+    // GN 1 or GN 2 the pattern was the free-space one — a vertical dipole over
+    // PEC −8.62 / −2.56 / +0.67 dBi at θ 20/40/60 against the CPU's and nec2c's
+    // −3.12 / −0.26 / −15.04 — while the solve had correctly declined the ground
+    // deck to the CPU (FND-205). The deck class keys the solve; it keys the
+    // pattern too.
+    let gpu_pattern = execution_mode == ExecutionMode::Gpu
+        && matches!(
+            ground,
+            GroundModel::FreeSpace | GroundModel::Deferred { .. }
+        );
+    if execution_mode == ExecutionMode::Gpu && !gpu_pattern && !pattern_points.is_empty() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            eprintln!(
+                "info: --exec gpu: the radiation pattern over ground runs on the CPU \
+                 (the device's far-field kernel is free-space only)"
+            );
+        });
+    }
     let mut pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
-    } else if execution_mode == ExecutionMode::Gpu {
+    } else if gpu_pattern {
         // Attempt wgpu RP kernel dispatch (gate G4).
         // Compute total radiated power on CPU for gain normalisation — the GPU
-        // computes radiation intensity components, not normalised gain.
-        let pec_ground = matches!(ground, GroundModel::PerfectConductor);
-        let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, pec_ground);
+        // computes radiation intensity components, not normalised gain. Free
+        // space only (above), so the power integral is the full sphere.
+        let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, false);
         let k = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
 
         let gpu_segments: Vec<_> = segs
