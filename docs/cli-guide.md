@@ -581,7 +581,9 @@ fnec --exec gpu dipole.nec
 
 `--exec gpu` dispatches the radiation-pattern far-field and Z-matrix-fill
 kernels through real wgpu compute shaders when a wgpu adapter is available,
-falling back to CPU otherwise. For Hallén decks in the supported class
+falling back to CPU otherwise. The far-field kernel is free-space only, so over
+a ground (`GN 1`, `GN 0/2`) the pattern runs on the CPU, which includes the
+image or the reflected field, and an `info:` line says so (FND-205). For Hallén decks in the supported class
 (free-space ground, no LD/TL/NT cards) it also runs the **GPU-resident dense
 solve** (PH7-CHK-003): the impedance matrix is filled and the system solved
 entirely on the device, with only the solution vector returned. This path is

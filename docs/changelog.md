@@ -43,6 +43,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   slipped past the refusals keyed on loads being given. The file is now checked
   like an `LD` card: one table name, five keys, `tag` and `seg_first` required
   non-negative integers, at least one load, and each load must name a segment.
+- **`--exec gpu` printed a free-space radiation pattern over any ground**
+  (FND-205). The device's far-field kernel has no image and no reflected field,
+  and it ran on every `--exec gpu` deck — although the solve itself correctly
+  declined ground decks to the CPU. A vertical dipole over PEC printed −8.62 /
+  −2.56 / +0.67 dBi at θ 20/40/60 where the CPU and nec2c give −3.12 / −0.26 /
+  −15.04; over GN 2 −13.68 / −7.63 / −4.40 against −5.06 / −1.59 / −2.94; exit 0.
+  Over ground the pattern now runs on the CPU, with an `info:` line saying so.
 
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which
