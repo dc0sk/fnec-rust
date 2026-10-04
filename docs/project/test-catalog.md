@@ -66,6 +66,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/sinusoidal_routing.rs` | 2 | FND-203: `--solver sinusoidal` refuses bent, split, junction and loop decks by name (path route and graph-declined topology both), and still solves straight and collinear decks on its basis. | FND-203 |
 | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 5 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp…; a plane-wave receive deck says the correction cannot apply (FND-170) | PH9-CHK-006 |
 | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 7 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp…; a plane-wave receive deck says the correction cannot apply (FND-170) | PH9-CHK-006 |
+| `apps/nec-cli/tests/sweep_config_replaces_fr.rs` | 2 | FND-210: under `--sweep-config` the deck's FR cards neither refuse the run (a negative FR the sweep replaces) nor describe it (the superseded-FR caveat); without it both still apply. | FND-210 |
 | `apps/nec-cli/tests/sweep_memory_budget.rs` | 3 | FND-187: a small `FNEC_SWEEP_MEMORY_BUDGET_MB` caps the points in flight and says so, with every point still out in frequency order; an ample budget is silent; a malformed one is reported | FND-187 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 8 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
 | `apps/nec-cli/tests/sweep_partial_output.rs` | 2 | A sweep prints the points it computed, even when one of them fails. | FND-033 |
@@ -129,7 +130,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=683 --> **683** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=685 --> **685** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -154,7 +155,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=589 --> **589** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1279 --> **1279** = 589 unit + 683 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1281 --> **1281** = 589 unit + 685 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

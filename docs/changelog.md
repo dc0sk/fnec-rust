@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--sweep-config` replaced the deck's `FR` cards, but they still refused
+  and described the run** (FND-210). A deck whose `FR` was negative was refused
+  although the sweep file supplied a valid frequency and that card never runs,
+  and a deck with two `FR` cards was warned that fnec runs at the last card's
+  frequency before solving the sweep's. Under `--sweep-config` the pre-solve
+  checks now read the list that will run (networks priced at those
+  frequencies), and the superseded-`FR` caveat is not printed.
+
 - **`--solver mpie` drove only the first voltage source** (FND-202). A second
   `EX 0`/`EX 5` was dropped while the report still priced it: two parallel
   dipoles 3 m apart, both fed, answered 42.69 + j77.76 and 15.73 − j118.01 Ω
