@@ -123,7 +123,7 @@ const LOW_STRAIGHT: &str = "GW 1 21 -5.278 0 1.056 5.278 0 1.056 0.001\nGE 1\nGN
 const LOW_BENT: &str = "GW 1 10 -3.732 0 1.056 0 0 4.788 0.001\nGW 2 10 0 0 4.788 3.732 0 1.056 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 10 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 const MISSING_SURFACE_WAVE: &str = "does not model the Sommerfeld surface wave";
-const DECLINED: &str = "declined this bent or mixed geometry";
+const DECLINED: &str = "declined this deck";
 
 /// The low-height warning says the reported impedance misses the surface wave.
 /// When `--ground-solver sommerfeld` actually applied its correction that sentence
@@ -191,4 +191,90 @@ fn a_receive_deck_says_the_sommerfeld_correction_does_not_apply() {
     );
     let rcm = stderr_of(&["--ground-solver", "rcm"], RECEIVE);
     assert!(!rcm.contains(RECEIVE_DECLINED), "rcm asked nothing:\n{rcm}");
+}
+
+/// Every feedpoint row's `(R, X)`.
+fn feedpoint_zs(extra_args: &[&str], deck: &str) -> Vec<(f64, f64)> {
+    let path = std::env::temp_dir().join(format!(
+        "fnec-somm-zs-{}.nec",
+        std::process::id() as u64 + fastrand_seed()
+    ));
+    std::fs::write(&path, deck).expect("write deck");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["--solver", "hallen"])
+        .args(extra_args)
+        .arg(&path)
+        .output()
+        .expect("run fnec");
+    let _ = std::fs::remove_file(&path);
+    assert!(out.status.success(), "fnec failed: {out:?}");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let p: Vec<&str> = l.split_whitespace().collect();
+            if p.len() == 8 && p[0].parse::<u32>().is_ok() && p[1].parse::<u32>().is_ok() {
+                Some((p[6].parse().ok()?, p[7].parse().ok()?))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+const LOW_GN2: &str = "GE 1\nGN 2 0 0 0 13 0.005\nFR 0 1 0 0 14.2 0\n";
+
+/// FND-206 / FND-208: the correction is a one-port reaction over currents along
+/// one line. Two broadside wires both fed got 2(ΔZ11 ± ΔZ12) on each port —
+/// 76.29 − j65.29 against nec2c's 75.01 − j30.15, rcm 65.39 − j33.57 — and a
+/// network's branch current entered the antenna's reaction sum. These decks must
+/// now decline: the rcm answer, and the warning that says so.
+#[test]
+fn several_feeds_parallel_wires_and_networks_decline_the_correction() {
+    for (label, deck) in [
+        (
+            "two fed broadside wires",
+            format!("GW 1 21 -5 0 2 5 0 2 .001\nGW 2 21 -5 5 2 5 5 2 .001\n{LOW_GN2}EX 0 1 11 0 1 0\nEX 0 2 11 0 1 0\nEN\n"),
+        ),
+        (
+            // One line, so the feed count alone declines it.
+            "two fed collinear wires",
+            format!("GW 1 21 -10.5 0 2 -0.5 0 2 .001\nGW 2 21 0.5 0 2 10.5 0 2 .001\n{LOW_GN2}EX 0 1 11 0 1 0\nEX 0 2 11 0 1 0\nEN\n"),
+        ),
+        (
+            "a fed wire beside a parasitic one",
+            format!("GW 1 21 -5 0 2 5 0 2 .001\nGW 2 21 -5 5 2 5 5 2 .001\n{LOW_GN2}EX 0 1 11 0 1 0\nEN\n"),
+        ),
+        (
+            // The stub is on the dipole's own axis, so the network alone declines it.
+            "a dipole with a collinear TL stub",
+            format!("GW 1 21 -5 0 1.5 5 0 1.5 .001\nGW 2 3 7 0 1.5 8 0 1.5 .001\n{LOW_GN2}TL 1 11 2 2 50 1\nEX 0 1 11 0 1 0\nEN\n"),
+        ),
+    ] {
+        let rcm = feedpoint_zs(&["--ground-solver", "rcm"], &deck);
+        let somm = feedpoint_zs(&["--ground-solver", "sommerfeld"], &deck);
+        assert!(!rcm.is_empty(), "{label}: no feedpoint rows");
+        assert_eq!(somm, rcm, "{label}: the correction was applied, not declined");
+        let err = stderr_of(&["--ground-solver", "sommerfeld"], &deck);
+        assert!(err.contains(DECLINED), "{label}: declined in silence:\n{err}");
+    }
+}
+
+/// The class the correction is for still gets it: two collinear wires end to
+/// end, one fed — one line, one port.
+#[test]
+fn a_collinear_pair_with_one_feed_is_still_corrected() {
+    let deck = format!(
+        "GW 1 21 -10.5 0 2 -0.5 0 2 .001\nGW 2 21 0.5 0 2 10.5 0 2 .001\n{LOW_GN2}EX 0 1 11 0 1 0\nEN\n"
+    );
+    let rcm = feedpoint_zs(&["--ground-solver", "rcm"], &deck);
+    let somm = feedpoint_zs(&["--ground-solver", "sommerfeld"], &deck);
+    assert!(
+        (somm[0].0 - rcm[0].0).abs() > 5.0,
+        "the collinear pair was not corrected: {somm:?} vs rcm {rcm:?}"
+    );
+    let err = stderr_of(&["--ground-solver", "sommerfeld"], &deck);
+    assert!(
+        !err.contains(DECLINED),
+        "declined a collinear one-port deck:\n{err}"
+    );
 }

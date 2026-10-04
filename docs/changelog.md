@@ -50,6 +50,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   −2.56 / +0.67 dBi at θ 20/40/60 where the CPU and nec2c give −3.12 / −0.26 /
   −15.04; over GN 2 −13.68 / −7.63 / −4.40 against −5.06 / −1.59 / −2.94; exit 0.
   Over ground the pattern now runs on the CPU, with an `info:` line saying so.
+- **`--ground-solver sommerfeld` corrected decks its formula does not cover**
+  (FND-206, FND-208). The correction is a one-port reaction over currents along
+  one line, but it was applied to every feed of a multi-feed deck (each port got
+  the whole structure's reaction: two fed wires 2 m over GN 2 answered 76.29 −
+  j65.29 Ω against nec2c's 75.01 − j30.15, where rcm gives 65.39 − j33.57), to
+  side-by-side parallel wires (with the along-the-wire kernel for an
+  across-the-wire offset), and to network decks (with the network's branch
+  current in the antenna's reaction, R 8 % off) — exit 0, and it silenced the
+  low-ground warning. These decks now decline, keep the rcm answer and say so;
+  a single collinear wire with one feed is corrected as before.
 
 - **A distributed worker asked for `exec: gpu` solved a collinear split on the
   wrong basis** (FND-199). It handed the device the raw per-card grouping, which
