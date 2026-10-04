@@ -243,6 +243,11 @@ divergence as `pulse`, and the same `--experimental-solver` gate.
 
 Sinusoidal-basis solve path for the Hallen thin-wire system, with guarded fallback
 when the residual-quality budget is exceeded.
+It solves **straight wires and collinear chains** (including parallel arrays of
+them). A deck with a bend, a split the collinear merge cannot express, a
+junction or a loop needs the conductor-path or section-graph basis of
+`--solver hallen`, and `sinusoidal` refuses it by name (FND-203) — it once
+answered such decks off by a factor of two to three with exit 0.
 If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
 `SOLVER_MODE sinusoidal->hallen(residual)`.

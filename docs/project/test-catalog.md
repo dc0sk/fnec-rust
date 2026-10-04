@@ -61,6 +61,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/rp_avg_power_gain.rs` | 2 | PH9-CHK-004: RP XNDA `A` digit — average power gain. | PH9-CHK-004 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract; temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
+| `apps/nec-cli/tests/sinusoidal_routing.rs` | 2 | FND-203: `--solver sinusoidal` refuses bent, split, junction and loop decks by name (path route and graph-declined topology both), and still solves straight and collinear decks on its basis. | FND-203 |
 | `apps/nec-cli/tests/sommerfeld_ground_cli.rs` | 5 | PH9-CHK-006: `fnec --ground-solver sommerfeld` must correct the near-ground feedpoint impedance of a low horizontal dipole to the surface-wave-inclusive (nec2c GN2) value, flipp…; a plane-wave receive deck says the correction cannot apply (FND-170) | PH9-CHK-006 |
 | `apps/nec-cli/tests/sweep_memory_budget.rs` | 3 | FND-187: a small `FNEC_SWEEP_MEMORY_BUDGET_MB` caps the points in flight and says so, with every point still out in frequency order; an ample budget is silent; a malformed one is reported | FND-187 |
 | `apps/nec-cli/tests/sweep_contract.rs` | 8 | Sweep point/list/linear produce correct frequency blocks; `--sweep-config` **supplies** frequencies for an FR-less deck, and a deck with no frequency from any source is refused (FND-070) | FR-007, PH3-CHK-006 |
@@ -125,7 +126,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=674 --> **674** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=676 --> **676** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -150,7 +151,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=587 --> **587** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1268 --> **1268** = 587 unit + 674 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1270 --> **1270** = 587 unit + 676 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
