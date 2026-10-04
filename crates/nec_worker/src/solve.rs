@@ -262,8 +262,7 @@ mod tests {
 }
 
 use nec_solver::{
-    assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, detect_wire_junctions,
-    ground_model_from_deck, solve_hallen, wire_endpoints_from_segs,
+    assemble_z_matrix_with_ground, build_geometry, build_hallen_rhs, ground_model_from_deck,
 };
 use num_complex::Complex64;
 
@@ -342,10 +341,12 @@ pub fn solve_deck_at_frequency(
 ///
 /// When `exec == "gpu"` and the deck is in the GPU-resident supported class
 /// (free-space/deferred ground, no LD/TL stamps, ≥ [`MIN_GPU_RESIDENT_SEGS`]
-/// segments), the worker dispatches `nec_accel::solve_hallen_gpu_resident`
-/// (PH7-CHK-003) and reports `exec_used = "gpu"`. Otherwise — out of class, or no
-/// wgpu adapter — it falls back to the f64 CPU `solve_hallen`
-/// (`exec_used = "cpu"`). PH7-CHK-004.
+/// segments), the worker dispatches `nec_accel::solve_hallen_gpu_resident` on the
+/// merged-conductor grouping (PH7-CHK-003) and reports `exec_used = "gpu"`.
+/// Otherwise — out of class, no wgpu adapter, or a declined or rejected device
+/// answer — it runs the same routed f64 CPU solve as `exec = "cpu"`
+/// (`exec_used = "cpu"`), so the two can differ only by the device's rounding
+/// (FND-199). PH7-CHK-004.
 pub fn solve_deck_at_frequency_with_exec(
     deck_str: &str,
     freq_hz: f64,
@@ -422,7 +423,6 @@ fn solve_inner(
         }
         other => SolveError::GeometryError(other.to_string()),
     })?;
-    let wire_endpoints = wire_endpoints_from_segs(&segs);
     let ground = ground_model_from_deck(&deck);
 
     // 2b. Refuse geometry outside the solver's supported class, exactly as the CLI
@@ -500,13 +500,6 @@ fn solve_inner(
     // session runs it and returns the port voltage it is priced from (FND-051).
     let mut current_source_port: Option<Complex64> = None;
 
-    // 5. Wire-junction constraints
-    let junctions = detect_wire_junctions(&segs, &wire_endpoints);
-    let junc_constraints: Vec<(usize, usize, f64)> = junctions
-        .iter()
-        .map(|j| (j.seg_a, j.seg_b, j.sign))
-        .collect();
-
     // 6. Solve — GPU-resident (PH7-CHK-003) for the supported class when
     // requested, else the f64 CPU solve.
     // The route decides which member of the Hallén family this deck needs, and
@@ -525,7 +518,16 @@ fn solve_inner(
         // same question through the shared seam.
         && stamps.is_identity();
 
-    let (currents, exec_used) = if gpu_eligible {
+    // The device solves the merged-conductor basis the CLI's GPU-resident path
+    // uses: collinear `GW` runs as one conductor, a junction row only where
+    // distinct conductors meet. Handed the raw per-card grouping instead, its
+    // constraint rows outnumbered its unknowns on every collinear split, so it
+    // declined them all — and the fallback below was a plain `solve_hallen` on
+    // that same raw grouping, without the FND-158 term: a 1+9+9+1 split dipole
+    // came back 1032.2 - j3723.8 under `exec: gpu` against 76.68 + j32.87 under
+    // `exec: cpu` and from the CLI, labelled `exec_used: cpu` (FND-199).
+    let device_currents = if gpu_eligible {
+        let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(&segs);
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
             .iter()
             .map(|s| nec_accel::ZSegmentInput {
@@ -540,29 +542,33 @@ fn solve_inner(
             &hallen_rhs.rhs,
             &hallen_rhs.cos_vec,
             &hallen_rhs.sin_vec,
-            &wire_endpoints,
-            &nec_solver::sin_eligible(&wire_endpoints, &junc_constraints),
+            &merged_endpoints,
+            &nec_solver::sin_eligible(&merged_endpoints, &junction_tuples),
             &nec_solver::hallen_constraint_rows(
-                &wire_endpoints,
-                &junc_constraints,
+                &merged_endpoints,
+                &junction_tuples,
                 &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
             ),
             freq_hz,
         )) {
-            Ok(x) if x.len() >= segs.len() => (x[..segs.len()].to_vec(), "gpu"),
+            Ok(x) if x.len() >= segs.len() => Some(x[..segs.len()].to_vec()),
             // No adapter, a device fault, or a rejected f32 answer (or a short
-            // result) — fall back to CPU, which `exec_used` then reports.
-            _ => (
-                cpu_currents(&z_mat, &hallen_rhs, &wire_endpoints, &junc_constraints)?,
-                "cpu",
-            ),
+            // result) — the routed CPU solve below, which `exec_used` reports.
+            _ => None,
         }
+    } else {
+        None
+    };
+
+    let (currents, exec_used) = if let Some(x) = device_currents {
+        (x, "gpu")
     } else {
         // One call for every Hallén route: plane-wave, current-source, and
         // delta-gap on either the merged-conductor or the conductor-path basis.
         // This branch used to be a plain `solve_hallen`, so a bent or split
         // geometry came back 9.15 - j767.60 where the CLI — which had the paths
-        // arm — gave 264.88 + j410.86 and nec2c 268.56 + j452.26 (FND-121).
+        // arm — gave 264.88 + j410.86 and nec2c 268.56 + j452.26 (FND-121). The
+        // device's fallback is this branch too, not a second, plainer solve.
         let routed =
             nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
                 .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
@@ -646,25 +652,6 @@ fn solve_inner(
     Err(SolveError::UnsupportedConfig(
         "internal: solved a deck with no feedpoint to price".to_string(),
     ))
-}
-
-/// CPU Hallén solve returning just the current vector.
-fn cpu_currents(
-    z_mat: &nec_solver::ZMatrix,
-    hallen_rhs: &nec_solver::HallenRhs,
-    wire_endpoints: &[(usize, usize)],
-    junc_constraints: &[(usize, usize, f64)],
-) -> Result<Vec<Complex64>, SolveError> {
-    let solution = solve_hallen(
-        z_mat,
-        &hallen_rhs.rhs,
-        &hallen_rhs.cos_vec,
-        &hallen_rhs.sin_vec,
-        wire_endpoints,
-        junc_constraints,
-    )
-    .map_err(|e| SolveError::SingularMatrix(e.to_string()))?;
-    Ok(solution.currents)
 }
 
 #[cfg(test)]
@@ -816,6 +803,58 @@ mod frontend_parity_tests {
                 got.impedance_im,
                 want.re,
                 want.im
+            );
+        }
+    }
+    /// Collinear splits, the class the device used to decline and the fallback
+    /// used to solve on the raw per-card grouping. The 1+9+9+1 split came back
+    /// 1032.2 - j3723.8 under `exec: gpu` against 76.68 + j32.87 under
+    /// `exec: cpu` and from the CLI (nec2c 79.41 + j45.63), labelled
+    /// `exec_used: cpu` (FND-199). With no adapter — CI — the fallback is what
+    /// runs, which is the half that was wrong; with one, the device must land on
+    /// the same answer to its single-precision rounding.
+    #[test]
+    fn exec_gpu_answers_a_collinear_split_as_exec_cpu_does() {
+        const ONE_NINE_NINE_ONE: &str = "CE\nGW 1 1 0 0 -5.282 0 0 -4.5 .001\nGW 2 9 0 0 -4.5 0 0 0 .001\nGW 3 9 0 0 0 0 0 4.5 .001\nGW 4 1 0 0 4.5 0 0 5.282 .001\nGE\nEX 0 2 9 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        const THREE_FIFTEEN_THREE: &str = "CE\nGW 1 3 0 0 -5.282 0 0 -4 .001\nGW 2 15 0 0 -4 0 0 4 .001\nGW 3 3 0 0 4 0 0 5.282 .001\nGE\nEX 0 2 8 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        const TEN_TEN: &str = "CE\nGW 1 10 0 0 -5.282 0 0 0 .001\nGW 2 10 0 0 0 0 0 5.282 .001\nGE\nEX 0 1 10 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        for (name, deck_str) in [
+            ("1+9+9+1", ONE_NINE_NINE_ONE),
+            ("3+15+3", THREE_FIFTEEN_THREE),
+            ("10+10", TEN_TEN),
+        ] {
+            let cpu = solve_deck_at_frequency_with_exec(deck_str, 14.2e6, "hallen", "cpu")
+                .unwrap_or_else(|e| panic!("{name}: exec cpu failed: {e}"));
+            let solve_gpu = || {
+                solve_deck_at_frequency_with_exec(deck_str, 14.2e6, "hallen", "gpu")
+                    .unwrap_or_else(|e| panic!("{name}: exec gpu failed: {e}"))
+            };
+            let mut gpu = solve_gpu();
+            // With an adapter the device must TAKE the split: handed the raw
+            // grouping it declined every one, and the fallback hid that. A
+            // device fault on this host's driver (FND-190) earns one re-run,
+            // as the hybrid lane's tests do.
+            if gpu.exec_used == "cpu"
+                && pollster::block_on(nec_accel::wgpu_device::hardware_adapter_present())
+            {
+                gpu = solve_gpu();
+                assert_eq!(
+                    gpu.exec_used, "gpu",
+                    "{name}: a hardware adapter is present, but the device declined the split twice"
+                );
+            }
+            let z_cpu = Complex64::new(cpu.impedance_re, cpu.impedance_im);
+            let z_gpu = Complex64::new(gpu.impedance_re, gpu.impedance_im);
+            // The fallback is the identical f64 solve; the device rounds in f32.
+            let tol = if gpu.exec_used == "cpu" { 1e-9 } else { 1e-3 } * z_cpu.norm();
+            assert!(
+                (z_gpu - z_cpu).norm() <= tol,
+                "{name}: exec gpu ({}) {z_gpu} vs exec cpu {z_cpu}",
+                gpu.exec_used
+            );
+            eprintln!(
+                "{name}: exec gpu ({}) {z_gpu} vs exec cpu {z_cpu}",
+                gpu.exec_used
             );
         }
     }
