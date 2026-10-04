@@ -311,8 +311,12 @@ fn main() -> ExitCode {
     // discards a run the author asked for (FND-057). The GUI and the bindings get
     // this through `validate::diagnose`; this binary composes its own caveats, so
     // it has to ask.
-    for w in nec_solver::validate::superseded_frequency_warnings(deck) {
-        eprintln!("warning: {w}");
+    // Not under --sweep-config, which replaces every FR card: the warning would
+    // name frequencies that never run (FND-210).
+    if sweep_config_path.is_none() {
+        for w in nec_solver::validate::superseded_frequency_warnings(deck) {
+            eprintln!("warning: {w}");
+        }
     }
 
     warn_pulse_mode_experimental(solver_mode);
@@ -451,7 +455,12 @@ fn main() -> ExitCode {
         }
     };
     let ground = ground_model_from_deck(deck);
-    if let Some(err) = nec_solver::validate::pre_solve_error(deck, &segs, &ground) {
+    // The frequencies that will run: a --sweep-config list replaces the deck's FR
+    // cards, so the deck's FR must not refuse the run (FND-210).
+    let resolved_freqs = sweep_config_path.is_some().then_some(freqs_hz.as_slice());
+    if let Some(err) =
+        nec_solver::validate::pre_solve_error_at(deck, &segs, &ground, resolved_freqs)
+    {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;
     }

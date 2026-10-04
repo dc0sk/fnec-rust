@@ -1604,13 +1604,40 @@ pub fn no_frequency_error(freqs_hz: &[f64], remedy: &str) -> Option<String> {
 /// which reason it reports is deliberate — geometry before excitation, because a
 /// deck whose wires cross has a problem no excitation change will fix.
 pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
+    pre_solve_error_at(deck, segs, ground, None)
+}
+
+/// [`pre_solve_error`] for a run whose frequencies do not come from the deck's
+/// `FR` cards — the CLI's `--sweep-config`, which replaces them. The frequency
+/// and network checks then read the list that will be solved: checking the
+/// deck's `FR` refused a deck for a negative frequency the sweep never runs, and
+/// priced its networks at frequencies it never solves (FND-210).
+pub fn pre_solve_error_at(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    frequencies_hz: Option<&[f64]>,
+) -> Option<String> {
+    let frequency_check = || match frequencies_hz {
+        None => frequency_error(deck),
+        Some(list) => list
+            .iter()
+            .find(|f| !crate::frequency::is_usable_frequency_mhz(**f / 1e6))
+            .map(|f| format!("--sweep-config: {} MHz is not a usable frequency", f / 1e6)),
+    };
+    let network_check = || match frequencies_hz {
+        None => network_card_error(deck, segs),
+        Some(list) => list
+            .iter()
+            .find_map(|&f| crate::network::build_networks(deck, segs, f).err()),
+    };
     geometry_error(deck, segs, ground)
         .or_else(|| undriven_deck_error(deck))
         .or_else(|| mixed_excitation_error(deck))
         .or_else(|| multiple_current_sources_error(deck))
         .or_else(|| grid_budget_error(deck))
-        .or_else(|| frequency_error(deck))
-        .or_else(|| network_card_error(deck, segs))
+        .or_else(frequency_check)
+        .or_else(network_check)
         .or_else(|| load_card_error(deck, segs))
         .or_else(|| plane_wave_over_ground_error(deck, segs, ground))
 }
