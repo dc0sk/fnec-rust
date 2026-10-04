@@ -106,6 +106,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   to round-off. Over a finite ground, where the reflected field is not modelled,
   fnec now warns instead of printing the numbers silently.
 
+### Changed
+
+- `solve_current_source_hallen` keeps one contract — a stamped matrix — and
+  refuses a junction or loop deck the section graph takes with the new
+  `CurrentSourceError::NeedsRoutedSolve`, pointing at `solve_hallen_routed`
+  (FND-211). Its graph arm wanted an unstamped matrix and rebuilt the deck's
+  loads, so a library caller following the documentation applied loads twice
+  on such a deck (the FND-198 defect) and dropped Laplace loads. No frontend
+  called it there.
+
 ## [0.21.1] — 2026-10-04 — Loads in their place
 
 Three changes since v0.21.0 (#521–#523). **Two silent wrong answers are fixed**,

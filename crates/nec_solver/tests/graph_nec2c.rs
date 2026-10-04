@@ -475,10 +475,18 @@ fn z_current_source(body: &str, feed: (u32, u32)) -> (Complex64, Option<String>)
     .expect("parses")
     .deck;
     let segs = build_geometry(&deck).expect("geometry");
-    let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    let cs = nec_solver::solve_current_source_hallen(&deck, &segs, &z, FREQ).expect("solves");
+    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+    // Through the production entry: a graph deck's current source is taken
+    // before the loads are stamped, which `solve_current_source_hallen` cannot
+    // do, and now refuses (FND-211).
+    let loads = nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal;
+    let routed =
+        nec_solver::solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("solves");
+    let port_voltage = routed
+        .port_voltage
+        .expect("a current-source solve has a port voltage");
     (
-        cs.port_voltage / Complex64::new(1.0, 0.0),
+        port_voltage / Complex64::new(1.0, 0.0),
         nec_solver::validate::unsupported_topology_warning(&deck, &segs, "mpie"),
     )
 }
@@ -570,4 +578,28 @@ fn two_loops_on_a_phasing_line_converge_to_nec2c() {
     let e21 = rel(z_in(&deck(21), (1, 11)), Complex64::new(9.3873, -21.997));
     let e41 = rel(z_in(&deck(41), (1, 21)), Complex64::new(9.3596, -21.951));
     assert_converges("two loops on a phasing line", e21, e41, 0.01);
+}
+
+/// FND-211: `solve_current_source_hallen` is documented to take a STAMPED
+/// matrix, and a section-graph solve needs it unstamped with the loads as graph
+/// columns. Its graph arm took the unstamped contract and rebuilt the deck's
+/// loads, so a caller following the doc applied loads twice on a junction deck,
+/// and Laplace loads were dropped. One entry cannot honour both contracts: it
+/// refuses the graph deck by name, and `solve_hallen_routed` solves it.
+#[test]
+fn a_direct_current_source_call_on_a_graph_deck_is_refused() {
+    let deck = nec_parser::parse(
+        "CE\nGW 1 21 0 0 0 0 0 4 .001\nGW 2 21 -3 0 4 0 0 4 .001\nGW 3 21 0 0 4 3 0 4 .001\n\
+         LD 0 2 1 1 100 2e-6 0\nEX 4 1 4 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+    )
+    .expect("parses")
+    .deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+    match nec_solver::solve_current_source_hallen(&deck, &segs, &z, FREQ) {
+        Err(e @ nec_solver::CurrentSourceError::NeedsRoutedSolve) => {
+            assert!(e.to_string().contains("solve_hallen_routed"), "{e}");
+        }
+        other => panic!("a graph deck must be refused by name, got {other:?}"),
+    }
 }
