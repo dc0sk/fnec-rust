@@ -36,6 +36,15 @@ pub(super) fn warn_deferred_ground_model(ground: &GroundModel) {
     }
 }
 
+pub(super) fn warn_near_field_over_finite_ground(
+    deck: &nec_model::deck::NecDeck,
+    ground: &GroundModel,
+) {
+    if let Some(w) = nec_solver::validate::near_field_over_finite_ground_warning(deck, ground) {
+        eprintln!("warning: {w}");
+    }
+}
+
 pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
     if let Some(w) = nec_solver::validate::ge_ground_reflection_warning(deck) {
         eprintln!("warning: {w}");

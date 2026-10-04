@@ -368,6 +368,33 @@ pub fn deferred_ground_warning(ground: &GroundModel) -> Option<String> {
     ))
 }
 
+/// `NE`/`NH` over a finite ground: the near field is the sum over the solved
+/// currents, and over a finite ground it does not include the field the ground
+/// reflects — only the currents see that ground. Over PEC the images are summed
+/// exactly (FND-201); here the values near the ground plane can be far off
+/// (a vertical dipole over GN 2: Ex 81 % low 9 m up at 30 m out).
+pub fn near_field_over_finite_ground_warning(
+    deck: &NecDeck,
+    ground: &GroundModel,
+) -> Option<String> {
+    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) {
+        return None;
+    }
+    if !deck
+        .cards
+        .iter()
+        .any(|c| matches!(c, Card::Ne(_) | Card::Nh(_)))
+    {
+        return None;
+    }
+    Some(
+        "NE/NH near fields over a finite ground omit the field the ground reflects \
+         (the currents include the ground, the near-field sum does not); values near \
+         the ground plane can be far off — over PEC (GN 1) the image is exact"
+            .to_string(),
+    )
+}
+
 /// `GE I1` selects the ground-reflection treatment. `0` (free space) and `1` (PEC
 /// image) are handled; anything else falls back to free space and is reported.
 pub fn ge_ground_reflection_warning(deck: &NecDeck) -> Option<String> {
