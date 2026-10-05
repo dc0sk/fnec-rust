@@ -62,9 +62,9 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 /// GPU-resident dense solve.
 ///
 /// PH7-CHK-003 measured the single-workgroup solve at **0.04x-0.48x** the CPU at
-/// every size (FND-009). Since FND-185 it crosses over: on an NVIDIA GTX 1080 Ti,
-/// whole CLI run, 0.18 s against the CPU's 0.009 s at 101 segments and 0.90 s
-/// against 4.56 s at 1001; near 500 for one point since the triangular solves run per column. Without `--exec` fnec now picks
+/// every size (FND-009). Since FND-185 it crosses over: on an NVIDIA RTX 2080 Ti,
+/// whole CLI run, 0.32 s against the CPU's 0.011 s at 101 segments, and near 600
+/// for one point (the GTX 1080 Ti crossed near 500). Without `--exec` fnec now picks
 /// the faster side itself, so this fires only when the user forced the device
 /// onto a deck where it loses — once per process, not once per sweep point.
 pub(super) fn warn_gpu_resident_solve_is_slower(segments: usize) {
@@ -77,7 +77,7 @@ pub(super) fn warn_gpu_resident_solve_is_slower(segments: usize) {
         eprintln!(
             "warning: --exec gpu on a {segments}-segment deck: the GPU-resident dense solve \
              is slower than the CPU below about {AUTO_GPU_MIN_SEGS_ONE_POINT} segments \
-             (GTX 1080 Ti: 0.18 s against 0.009 s at 101). Without --exec, fnec picks the \
+             (RTX 2080 Ti: 0.32 s against 0.011 s at 101). Without --exec, fnec picks the \
              faster one"
         );
     });

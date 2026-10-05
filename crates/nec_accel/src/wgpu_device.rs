@@ -193,9 +193,33 @@ static WGPU_INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Also installs [`EnvLogger`] when `RUST_LOG` is set, so wgpu's own messages —
 /// validation errors among them — reach stderr; nothing in the workspace
 /// installed a logger, so they were dropped.
+///
+/// The Vulkan validation layer is on only when `WGPU_VALIDATION` asks for it.
+/// wgpu's own default turns it on in every debug build, so once the layer was
+/// installed on the development host every GPU test loaded it — and the loader
+/// crashed inside it when one test named a buffer through `VK_EXT_debug_utils`
+/// while another test's `vkEnumeratePhysicalDevices` was `dlclose`-ing a
+/// library: a segfault in `libvulkan` that killed the whole test binary, 2 of
+/// 30 suite loops on 2026-10-05 (backtrace from the core; FND-214). With the
+/// layer off, 0 of 300 runs. Release builds never enabled it.
 fn new_instance() -> wgpu::Instance {
     install_env_logger();
-    wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env())
+    wgpu::Instance::new(instance_descriptor(
+        std::env::var_os("WGPU_VALIDATION").is_some(),
+    ))
+}
+
+/// The descriptor [`new_instance`] builds: wgpu's, from the environment, with
+/// the validation layer withdrawn unless `WGPU_VALIDATION` was set. Split out
+/// so the decision is testable without touching the process environment.
+fn instance_descriptor(validation_requested: bool) -> wgpu::InstanceDescriptor {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+    if !validation_requested {
+        descriptor
+            .flags
+            .remove(wgpu::InstanceFlags::VALIDATION | wgpu::InstanceFlags::GPU_BASED_VALIDATION);
+    }
+    descriptor
 }
 
 /// A minimal stderr logger for wgpu's diagnostics, filtered by `RUST_LOG`:
@@ -2357,6 +2381,26 @@ mod wait_timeout_tests {
     }
 
     /// The device wait carries its bound — `timeout: None` was FND-196.
+    /// FND-214: the Vulkan validation layer is loaded only on request. wgpu's
+    /// debug-build default turned it on in every test, and the loader crashed
+    /// inside it under concurrent instances (2 of 30 suite loops).
+    #[test]
+    fn the_validation_layer_is_opt_in() {
+        let off = super::instance_descriptor(false).flags;
+        assert!(
+            !off.contains(wgpu::InstanceFlags::VALIDATION)
+                && !off.contains(wgpu::InstanceFlags::GPU_BASED_VALIDATION),
+            "validation must be off unless requested: {off:?}"
+        );
+        // Requested, it is whatever wgpu's environment reading gives — which, in
+        // a debug build, includes the layer.
+        if cfg!(debug_assertions) {
+            assert!(super::instance_descriptor(true)
+                .flags
+                .contains(wgpu::InstanceFlags::VALIDATION));
+        }
+    }
+
     #[test]
     fn the_device_wait_is_bounded() {
         let t = Duration::from_secs(7);

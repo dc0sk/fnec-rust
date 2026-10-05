@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 //! Without `--exec`, the deck picks the CPU or the GPU: a supported deck goes to
-//! the GPU at ≥ 500 segments for one point, ≥ 550 for a sweep, when a hardware
+//! the GPU at ≥ 600 segments for one point, ≥ 550 for a sweep, when a hardware
 //! GPU is present. Everything here runs on any host; on one without a GPU the
 //! pick must stay on the CPU and the answer must be the CPU's to the byte.
 
@@ -63,18 +63,18 @@ fn gpu_present() -> bool {
 
 #[test]
 fn below_the_crossover_the_pick_is_the_cpu_to_the_byte() {
-    let deck = dipole(499, 1);
-    let (auto_out, auto_err) = run("499", &deck, &[]);
+    let deck = dipole(599, 1);
+    let (auto_out, auto_err) = run("599", &deck, &[]);
     assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
-    let (cpu_out, _) = run("499cpu", &deck, &["--exec", "cpu"]);
+    let (cpu_out, _) = run("599cpu", &deck, &["--exec", "cpu"]);
     assert_eq!(auto_out, cpu_out);
 }
 
 #[test]
 fn at_the_crossover_the_pick_is_the_gpu_where_there_is_one() {
-    let deck = dipole(501, 1);
-    let (auto_out, auto_err) = run("501", &deck, &[]);
-    let (cpu_out, _) = run("501cpu", &deck, &["--exec", "cpu"]);
+    let deck = dipole(601, 1);
+    let (auto_out, auto_err) = run("601", &deck, &[]);
+    let (cpu_out, _) = run("601cpu", &deck, &["--exec", "cpu"]);
     if !gpu_present() {
         assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
         assert!(auto_err.contains("no hardware GPU"), "{auto_err}");
@@ -100,8 +100,8 @@ fn a_large_deck_the_gpu_does_not_solve_stays_on_the_cpu() {
     assert!(err.contains("not a deck the GPU solves"), "{err}");
 }
 
-/// A sweep crosses over higher than one point: 520 segments over two points
-/// stays on the CPU although one point of it would go to the GPU.
+/// A sweep has its own crossover: 520 segments over two points stays on the
+/// CPU, below the sweep threshold (550).
 #[test]
 fn a_sweep_below_its_crossover_stays_on_the_cpu() {
     let (_, err) = run("sweep520", &dipole(520, 2), &[]);
