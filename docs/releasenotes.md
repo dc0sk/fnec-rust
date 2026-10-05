@@ -2,10 +2,71 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-04
+last_updated: 2026-10-05
 ---
 
 # Release Notes
+
+## 0.21.2 — Every axis
+
+A targeted audit of 0.21.1 for one shape — a decision made on one axis (an
+input source, the solver, the execution mode, the ground) while the run has
+another — found thirteen defects; ten were silent wrong answers. All are fixed
+(#525–#536) but one performance nit, rejected with a measurement. The findings
+ledger went from 198 findings / 0 open to **213 / 0 open**.
+
+Every value below was measured at the release commit (release build), 0.21.1
+with its published binary — except the worker row, which needs a worker and is
+the gate's own measurement (#526).
+
+### Default path
+
+| | 0.21.1 | 0.21.2 | nec2c |
+|---|---|---|---|
+| λ/2 dipole with a 100 Ω load, free space: gain at θ = 90° | +2.17 dBi | −1.27 dBi | −1.20 dBi |
+| vertical dipole 5–15 m over PEC: near field Ez 30 m out, z = 5 m | 0.0234 V/m | 0.0370 V/m | 0.0387 V/m |
+
+- **Gain now charges load losses over every ground** (FND-200): the efficiency
+  correction ran over a lossy finite ground only, so a lossy load in free space
+  or over PEC printed its directivity as gain — in the CLI and the GUI. The RP
+  average power gain follows (0.454 against nec2c's 0.458).
+- **Near fields include the ground** (FND-201): over PEC every segment's image
+  is now summed — a ground-mounted monopole equals its free-space double to
+  round-off. Over a finite ground the reflected field is not modelled, and fnec
+  now says so.
+
+### Opt-in paths
+
+| | 0.21.1 | 0.21.2 |
+|---|---|---|
+| `--solver mpie`, two fed dipoles 3 m apart (nec2c 145.37 + j34.69 both) | 42.69 + j77.76, 15.73 − j118.01 | 144.80 + j34.49 both |
+| `--solver sinusoidal`, a T junction (nec2c 107.54 − j366.35) | 4.19 − j1010.07 | refused by name |
+| `--exec gpu` pattern, vertical dipole over PEC, θ 20/40/60° (CPU and nec2c −3.12 / −0.26 / −15.04) | −8.62 / −2.56 / +0.67 dBi | −3.12 / −0.26 / −15.04 dBi |
+| `--hosts … --exec gpu`, 1+9+9+1 split dipole (CPU 76.68 + j32.87) | 1032.2 − j3723.8 | 76.68 + j32.87 |
+| `--loads-config` load on tag 9 of a one-wire deck | solved unloaded | refused: names no segment |
+| `--loads-config` with `segment = 11` for `seg_first` | every segment loaded (866.41 − j431.27) | refused: unknown key |
+| `--ground-solver sommerfeld`, two fed wires 2 m over GN 2 (nec2c 75.01 − j30.15) | 76.29 − j65.29, silent | declined, rcm 65.39 − j33.57 with a warning |
+
+Also: MPIE now superposes every voltage source (FND-202); the worker's GPU path
+falls back to the routed solve (FND-199); the Sommerfeld correction declines
+side-by-side wires and network decks (FND-206, FND-208); the negative-resistance
+caveat names a negative load as the cause whichever way it was given (FND-209);
+under `--sweep-config` the deck's `FR` no longer refuses or describes the run
+(FND-210).
+
+### Library API
+
+- `near_e_field` / `near_h_field` take the ground model.
+- `validate::SolverContext` carries `loads: RunLoads` (every frontend sets it);
+  `validate::pre_solve_error_at` takes the frequencies that will run.
+- `solve_current_source_hallen` refuses a section-graph deck with
+  `CurrentSourceError::NeedsRoutedSolve`; `solve_hallen_routed` solves it.
+- `laplace_load_error` checks Laplace loads against the geometry.
+
+### Versions
+
+Workspace 0.21.1 → **0.21.2**; `fnec_py` 0.12.1 → **0.12.2**. No dependency left
+or arrived; the SBOM has 525 packages.
 
 ## 0.21.1 — Loads in their place
 
