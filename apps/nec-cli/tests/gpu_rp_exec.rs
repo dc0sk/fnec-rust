@@ -194,3 +194,86 @@ fn exec_gpu_pattern_over_ground_is_the_cpu_pattern() {
         );
     }
 }
+
+/// FND-216: the device pattern's axial ratio is the polarisation ellipse's, as the
+/// CPU's is. The kernel returned only |Fθ|² and |Fφ|², so the host printed √Uθ/√Uφ —
+/// an amplitude ratio: a tilted dipole, linearly polarised everywhere, read 2.2161
+/// under `--exec gpu` where the CPU reads 0. Pinned on a tilted dipole (linear, AR 0)
+/// and a turnstile fed in quadrature, its two dipoles 5 cm apart so they do not
+/// cross (circular overhead, |AR| near 1), so a kernel that
+/// returned 0 everywhere fails too. Without an adapter the device arm falls back and
+/// the rows are the CPU's.
+#[test]
+fn exec_gpu_axial_ratio_is_the_cpus() {
+    let decks = [
+        (
+            "tilted dipole",
+            "CE\nGW 1 21 -3 1 -4 4 -1 5 .001\nGE 0\nEX 0 1 7 0 1 0\nFR 0 1 0 0 14.2 0\nRP 0 3 2 1001 15 0 45 90\nEN\n",
+        ),
+        (
+            "turnstile",
+            "CE\nGW 1 21 -5.28 0 0 5.28 0 0 .001\nGW 2 21 0 -5.28 0.05 0 5.28 0.05 .001\nGE 0\nEX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nFR 0 1 0 0 14.2 0\nRP 0 3 2 1001 0 0 30 45\nEN\n",
+        ),
+    ];
+    let mut saw_circular = false;
+    for (label, text) in decks {
+        let deck = common::TempDeck::new(
+            &format!(
+                "fnec-gpurp-ar-{}-{}",
+                label.len(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            text,
+        );
+        let rows = |exec: &str| -> Vec<Vec<f64>> {
+            let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+                .args(["--exec", exec])
+                .arg(&deck)
+                .output()
+                .expect("run fnec");
+            assert!(out.status.success(), "{label} --exec {exec}");
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            let mut on = false;
+            let mut v = Vec::new();
+            for l in stdout.lines() {
+                if l == "RADIATION_PATTERN" {
+                    on = true;
+                    continue;
+                }
+                let nums: Vec<f64> = l
+                    .split_whitespace()
+                    .filter_map(|x| x.parse().ok())
+                    .collect();
+                if on && nums.len() == 6 {
+                    v.push(nums);
+                } else if on && l.is_empty() {
+                    break;
+                }
+            }
+            v
+        };
+        let (cpu, gpu) = (rows("cpu"), rows("gpu"));
+        assert_eq!(cpu.len(), gpu.len(), "{label}: row counts");
+        assert!(!cpu.is_empty(), "{label}: no pattern rows");
+        for (c, g) in cpu.iter().zip(&gpu) {
+            assert!(
+                (c[5] - g[5]).abs() < 1e-3,
+                "{label} θ {} φ {}: axial ratio CPU {} vs GPU {}",
+                c[0],
+                c[1],
+                c[5],
+                g[5]
+            );
+            if c[5].abs() > 0.9 {
+                saw_circular = true;
+            }
+        }
+    }
+    assert!(
+        saw_circular,
+        "the turnstile must show a near-circular direction"
+    );
+}

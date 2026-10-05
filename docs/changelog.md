@@ -26,6 +26,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--exec gpu` printed an amplitude ratio as the pattern's `AXIAL_RATIO`**
+  (FND-216): the device kernel returned only the two polarisation intensities, so a
+  tilted dipole — linearly polarised everywhere — read 2.22, 2.15, 5.25 … where the
+  CPU reads 0. The kernel now returns the complex components and the axial ratio is
+  the CPU's Stokes formula. The gains were always right.
+
 - **Debug-build GPU tests loaded the Vulkan validation layer, and the loader
   could crash inside it** (FND-214): wgpu turns validation on in every debug
   build, and with two instances in one process the loader segfaulted in the
