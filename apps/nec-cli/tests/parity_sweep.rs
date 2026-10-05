@@ -61,6 +61,7 @@ struct Outcome {
     /// Every numeric data section of the report, by name.
     sections: BTreeMap<String, Vec<Vec<f64>>>,
     stderr: String,
+    stdout_text: String,
 }
 
 const DECISION_KEYS: [&str; 9] = [
@@ -190,6 +191,7 @@ fn parse(ok: bool, stdout: &str, stderr: &str) -> Outcome {
         decisions,
         sections,
         stderr: stderr.to_string(),
+        stdout_text: stdout.to_string(),
     }
 }
 
@@ -590,6 +592,9 @@ const SOLVERS: [&str; 3] = ["hallen", "sinusoidal", "mpie"];
 
 /// One cell: its id (relation/geometry/ground/…), and the closure that produces its
 /// outcome — `Ok(label)` or `Err(why it failed)`.
+/// A deck chosen to draw caveats: its name, its text, and any config files it runs with.
+type CaveatDeck = (&'static str, String, Vec<(&'static str, String)>);
+
 type Cell = (
     String,
     Box<dyn Fn() -> Result<String, String> + Send + Sync>,
@@ -767,6 +772,256 @@ fn cells() -> Vec<Cell> {
         }
     }
 
+    // ---- Stage 2 -------------------------------------------------------------
+
+    // S-worker: the distributed path's own solve (`fnec worker --stdio`, what a
+    // `--hosts` controller sends) against the local CLI, bare and with an LD load, on
+    // the CPU and on the device. FND-199 was the worker's device fallback alone. Where
+    // the worker's protocol cannot carry what the local run solves, the refusal is
+    // pinned as `WorkerRefused(...)` — a reviewed limit, never a silent skip.
+    for (g, gr) in placements() {
+        for exec in ["cpu", "gpu"] {
+            for loaded in [false, true] {
+                let id = format!(
+                    "S-worker/{}/{}/{exec}/{}",
+                    g.name,
+                    gr.name(),
+                    if loaded { "loaded" } else { "bare" }
+                );
+                let ld = if loaded {
+                    load_spellings(g.load.0, g.load.1).0
+                } else {
+                    String::new()
+                };
+                let text = deck(&g, gr, &ld, Drive::Voltage);
+                let cid = id.clone();
+                v.push((
+                    id,
+                    Box::new(move || {
+                        let local = run(&format!("{cid}/local"), &text, &["--exec", exec], &[]);
+                        let remote = worker(&text, exec);
+                        match (local.ok, remote) {
+                            (true, Ok((re, im, used))) => {
+                                let z = feed_z(&local);
+                                let dev = used == "gpu"
+                                    || local.decisions.get("solve_exec").map(String::as_str)
+                                        == Some("gpu");
+                                // The CLI prints six decimals; the worker sends full precision.
+                                let tol = if dev { 2e-3 } else { 1e-7 };
+                                if (z.0 - re).hypot(z.1 - im) > tol * z.0.hypot(z.1) {
+                                    return Err(format!(
+                                        "local Z {z:?} vs worker {re} + j{im} (exec_used {used})"
+                                    ));
+                                }
+                                record_reached(&local);
+                                Ok("Holds".into())
+                            }
+                            (true, Err(why)) => Ok(format!(
+                                "WorkerRefused({})",
+                                why.chars()
+                                    .filter(|c| !c.is_ascii_digit())
+                                    .take(90)
+                                    .collect::<String>()
+                            )),
+                            (false, Err(_)) => Ok(format!(
+                                "Refused({})",
+                                verbatim(local.refusal.as_deref().unwrap_or(""))
+                            )),
+                            (false, Ok(z)) => Err(format!(
+                                "the local CLI refused what the worker solved ({z:?}): {:?}",
+                                local.refusal
+                            )),
+                        }
+                    }),
+                ));
+            }
+        }
+    }
+
+    // S-load-invalid: a load the geometry cannot take, spelled both ways, is refused
+    // both ways, for the same reason. FND-204 (no segment), FND-207's twin (a range
+    // written backwards).
+    for g in GEOMETRIES.iter().filter(|g| !g.contact) {
+        for (what, card, toml) in [
+            (
+                "no-segment",
+                "LD 0 9 3 3 75 1.5e-6 0\n".to_string(),
+                "[[laplace_load]]\ntag = 9\nseg_first = 3\nnumerator = [75.0, 1.5e-6]\ndenominator = [1.0]\n".to_string(),
+            ),
+            (
+                "reversed-range",
+                format!("LD 0 {} 8 3 75 1.5e-6 0\n", g.load.0),
+                format!("[[laplace_load]]\ntag = {}\nseg_first = 8\nseg_last = 3\nnumerator = [75.0, 1.5e-6]\ndenominator = [1.0]\n", g.load.0),
+            ),
+        ] {
+            let id = format!("S-load-invalid/{}/{what}", g.name);
+            let with_card = deck(g, Ground::Free, &card, Drive::Voltage);
+            let bare = deck(g, Ground::Free, "", Drive::Voltage);
+            let cid = id.clone();
+            v.push((
+                id,
+                Box::new(move || {
+                    let args = ["--exec", "cpu"];
+                    let a = run(&format!("{cid}/card"), &with_card, &args, &[]);
+                    let b = run(&format!("{cid}/config"), &bare, &args, &[("--loads-config", &toml)]);
+                    // A backwards range matches no segment: the LD check words it that
+                    // way, the loads-file check names the order — one refusal class.
+                    pair_outcome_except(&a, &b, &["loads"], 1e-9, &["LOADS"], |r| {
+                        if r.contains("no segment")
+                            || r.contains("before")
+                            || r.contains("first to last")
+                        {
+                            "the load cannot be applied".into()
+                        } else {
+                            verbatim(r)
+                        }
+                    })
+                }),
+            ));
+        }
+    }
+
+    // R-network: a pure shunt admittance at the feed (an NT to a distant, otherwise
+    // unconnected stub, with only Y11) leaves the antenna's currents alone, so the
+    // input impedance is exactly the antenna's in parallel with it. FND-208's shape.
+    for (g, gr) in placements() {
+        if g.feed2.is_some() || g.contact {
+            continue;
+        }
+        let id = format!("R-network/{}/{}", g.name, gr.name());
+        let z0 = if gr == Ground::Free { 0.0 } else { 8.0 };
+        let stub = format!("GW 9 3 40 40 {} 41 40 {} .001\n", z0, z0);
+        let bare = deck(&g, gr, "", Drive::Voltage).replacen("GE ", &format!("{stub}GE "), 1);
+        let with_nt = bare.replacen(
+            "EX ",
+            &format!("NT {} {} 9 2 0 -0.01 0 0 0 0\nEX ", g.feed.0, g.feed.1),
+            1,
+        );
+        let cid = id.clone();
+        v.push((
+            id,
+            Box::new(move || {
+                let a = run(&format!("{cid}/bare"), &bare, &["--exec", "cpu"], &[]);
+                let b = run(&format!("{cid}/nt"), &with_nt, &["--exec", "cpu"], &[]);
+                match (a.ok, b.ok) {
+                    (true, true) => {
+                        let (za, zb) = (feed_z(&a), feed_z(&b));
+                        // Z_in = 1 / (1/Z_ant + Y), Y = -j0.01 S
+                        let d = za.0 * za.0 + za.1 * za.1;
+                        let (yr, yi) = (za.0 / d, -za.1 / d - 0.01);
+                        let dy = yr * yr + yi * yi;
+                        let want = (yr / dy, -yi / dy);
+                        if (want.0 - zb.0).hypot(want.1 - zb.1) > 1e-6 * want.0.hypot(want.1) {
+                            return Err(format!("Z with the shunt {zb:?}, Z_ant ∥ shunt {want:?}"));
+                        }
+                        record_reached(&b);
+                        Ok("Holds".into())
+                    }
+                    (true, false) => Ok(format!(
+                        "Refused({})",
+                        verbatim(b.refusal.as_deref().unwrap_or(""))
+                    )),
+                    _ => Err(format!("the bare deck failed:\n{}", a.stderr)),
+                }
+            }),
+        ));
+    }
+
+    // R-remedy: a remedy a caveat names (`--solver mpie`, `--ground-solver
+    // sommerfeld`, …) must be one the run can take — rerunning with it is not refused.
+    // FND-209: the negative-resistance caveat sent a --loads-config run to an MPIE that
+    // refuses it. Decks chosen to draw caveats: a T with a one-segment arm, a low
+    // dipole over finite ground, a loaded loop, the same with a load from a file.
+    let caveat_decks: Vec<CaveatDeck> = vec![
+        (
+            "tee-one-segment-arm",
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![],
+        ),
+        (
+            "low-dipole-gn2",
+            "CE\nGW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![],
+        ),
+        (
+            "negative-load-config",
+            "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![("--loads-config", "[[laplace_load]]\ntag = 1\nseg_first = 11\nnumerator = [-200.0]\ndenominator = [1.0]\n".into())],
+        ),
+        (
+            "negative-load-card",
+            "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nLD 4 1 11 11 -200 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![],
+        ),
+    ];
+    for (name, text, files) in caveat_decks {
+        let id = format!("R-remedy/{name}");
+        let cid = id.clone();
+        v.push((
+            id,
+            Box::new(move || {
+                let f: Vec<(&str, &str)> = files.iter().map(|(a, b)| (*a, b.as_str())).collect();
+                let first = run(&format!("{cid}/first"), &text, &["--exec", "cpu"], &f);
+                if !first.ok {
+                    return Err(format!("the caveat deck itself failed:\n{}", first.stderr));
+                }
+                let named = remedies(&first.stderr);
+                for r in &named {
+                    let mut args: Vec<&str> = r.iter().map(String::as_str).collect();
+                    if !args.contains(&"--exec") {
+                        args.extend(["--exec", "cpu"]);
+                    }
+                    let again = run(&format!("{cid}/{}", r.join("-")), &text, &args, &f);
+                    if !again.ok {
+                        return Err(format!(
+                            "a caveat named `{}`, and that run was refused: {:?}",
+                            r.join(" "),
+                            again.refusal
+                        ));
+                    }
+                }
+                Ok(format!(
+                    "Holds[{}]",
+                    named
+                        .iter()
+                        .map(|r| r.join(" "))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            }),
+        ));
+    }
+
+    // S-point: one point of a frequency sweep against that frequency solved alone —
+    // every output and the decision record. Every solver and placement, voltage drive.
+    for (g, gr) in placements() {
+        for solver in SOLVERS {
+            // The MPIE over ground costs 7-10 s a run in a debug build, and three
+            // frequencies here; S-fr already compares its ground solves. Free space only.
+            if solver == "mpie" && gr != Ground::Free {
+                continue;
+            }
+            let id = format!("S-point/{}/{}/{solver}", g.name, gr.name());
+            let single = deck(&g, gr, "", Drive::Voltage);
+            let swept = single.replacen(
+                &format!("FR 0 1 0 0 {FREQ_MHZ} 0"),
+                &format!("FR 0 3 0 0 {} 0.2", FREQ_MHZ - 0.2),
+                1,
+            );
+            let cid = id.clone();
+            v.push((
+                id,
+                Box::new(move || {
+                    let args = ["--solver", solver, "--exec", "cpu"];
+                    let a = run_raw(&format!("{cid}/single"), &single, &args, &[]);
+                    let b = run_raw(&format!("{cid}/sweep"), &swept, &args, &[]);
+                    let (pa, pb) = (point(&a, FREQ_MHZ), point(&b, FREQ_MHZ));
+                    pair_outcome(&pa, &pb, &[], 1e-9, verbatim)
+                }),
+            ));
+        }
+    }
+
     // R-image: a deck touching PEC against its explicit free-space double — the wires
     // mirrored in z = 0 with the horizontal current reversed, i.e. the same wires written
     // downward from the plane, fed antiphase where the image of a horizontal source would
@@ -887,6 +1142,109 @@ fn cells() -> Vec<Cell> {
     }
 
     v
+}
+
+/// One frequency's block of a report: from its `FREQ_MHZ` line to the next block, with
+/// the `diag:` line for that frequency — so a sweep point compares with a single run.
+fn point(o: &RawRun, freq_mhz: f64) -> Outcome {
+    let tag = format!("FREQ_MHZ {freq_mhz:.6}");
+    let mut block = String::new();
+    let mut on = false;
+    for line in o.stdout.lines() {
+        if line.starts_with("FREQ_MHZ ") {
+            on = line.trim() == tag;
+        } else if line == "SWEEP_POINTS" {
+            on = false;
+        }
+        if on {
+            block.push_str(line);
+            block.push('\n');
+        }
+    }
+    let diag_tag = format!("freq_mhz={freq_mhz:.6}");
+    let stderr: String = o
+        .stderr
+        .lines()
+        .filter(|l| !l.starts_with("diag:") || l.contains(&diag_tag))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    parse(o.ok, &block, &stderr)
+}
+
+/// A run's raw output, for relations that cut it up themselves.
+struct RawRun {
+    ok: bool,
+    stdout: String,
+    stderr: String,
+}
+
+fn run_raw(cell: &str, deck: &str, args: &[&str], files: &[(&str, &str)]) -> RawRun {
+    let o = run(cell, deck, args, files);
+    RawRun {
+        ok: o.ok,
+        stdout: o.stdout_text.clone(),
+        stderr: o.stderr.clone(),
+    }
+}
+
+/// One task through `fnec worker --stdio`, the distributed path's own solve, as the
+/// controller would send it. `Ok((re, im, exec_used))` or `Err(the worker's message)`.
+fn worker(deck: &str, exec: &str) -> Result<(f64, f64, String), String> {
+    use base64::Engine;
+    use std::io::Write;
+    let task = serde_json::json!({
+        "task_id": "parity",
+        "deck_hash": "-",
+        "deck_b64": base64::engine::general_purpose::STANDARD.encode(deck),
+        "solver_config": {"basis": "hallen", "ground_model": "none", "exec": exec},
+        "frequency_hz": FREQ_MHZ * 1e6,
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["worker", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn worker");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        writeln!(stdin, "{task}").expect("send task");
+        writeln!(stdin, r#"{{"cmd":"shutdown"}}"#).expect("send shutdown");
+    }
+    let out = child.wait_with_output().expect("worker output");
+    let line = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(line.lines().next().unwrap_or(""))
+        .map_err(|e| format!("unreadable worker line {line:?}: {e}"))?;
+    if v["status"] == "ok" {
+        Ok((
+            v["impedance"]["re_ohm"].as_f64().unwrap_or(f64::NAN),
+            v["impedance"]["im_ohm"].as_f64().unwrap_or(f64::NAN),
+            v["exec_used"].as_str().unwrap_or("?").to_string(),
+        ))
+    } else {
+        Err(v["error_message"].as_str().unwrap_or("?").to_string())
+    }
+}
+
+/// The `--solver`/`--ground-solver`/`--exec` remedies a run's warnings name.
+fn remedies(stderr: &str) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    for line in stderr.lines().filter(|l| l.starts_with("warning:")) {
+        let toks: Vec<&str> = line
+            .split(|c: char| c.is_whitespace() || c == '`')
+            .filter(|t| !t.is_empty())
+            .collect();
+        for w in toks.windows(2) {
+            if ["--solver", "--ground-solver", "--exec"].contains(&w[0]) {
+                let val = w[1].trim_end_matches([',', '.', ';', ')']);
+                let r = vec![w[0].to_string(), val.to_string()];
+                if !out.contains(&r) {
+                    out.push(r);
+                }
+            }
+        }
+    }
+    out
 }
 
 fn feed_z(o: &Outcome) -> (f64, f64) {
