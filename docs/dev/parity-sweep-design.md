@@ -151,3 +151,39 @@ Sabotage-verified, each caught by its relation, with a clean sweep after:
 
 `R-remedy` can test only remedies a caveat names. The low-ground caveat names none,
 although `--ground-solver sommerfeld` exists for a single straight wire — FND-217.
+
+## Stage 3 — built (2026-10-05)
+
+586 cells, about 170 s on pc1. Two relations for what no spelling pair can see, because
+both spellings were wrong identically (FND-202, FND-203):
+
+| relation | the comparison | cells |
+|---|---|---|
+| `R-reference` | Hallén's feedpoint Z ↔ nec2c's, for every voltage-driven unloaded placement | 23 |
+| `R-solver` | the MPIE and sinusoidal Z at **every** feed ↔ Hallén's (MPIE over finite ground left to `S-fr`, ~10 s a run) | 37 |
+
+Each cell pins its measured difference rounded to 1 %, so a change in any solver's answer
+is a reviewed manifest diff, and fails outright past 25 % (FND-202 was 70 %, FND-203 two-
+to threefold). Today: Hallén ↔ nec2c 1–10 %; MPIE ↔ Hallén 3–17 %; sinusoidal ↔ Hallén
+1–2 %. A refusal is pinned like any outcome.
+
+The references live in `apps/nec-cli/tests/parity_nec2c.txt`, captured from the sweep's
+own deck text by the ignored test `capture_nec2c_goldens` (nec2c 1.3.1-3build1); CI has
+no nec2c and only reads the file. A placement without a reference fails its cell.
+
+The square loop is now 21 segments a side. At 11, near anti-resonance (X ≈ −4.5 kΩ),
+Hallén and the MPIE differed by 34 % — and both close on nec2c from opposite sides as
+the mesh is refined (21 a side: 15 %; nec2c itself moves 390 → 355 Ω from 21 to 41).
+That is discretisation, not a defect; the coarse loop measured the mesh.
+
+Sabotage-verified, with a clean sweep after:
+
+| re-introduced | caught by |
+|---|---|
+| FND-202: the MPIE drives the first source only | `R-solver`, 2 cells (two-element array) |
+| FND-203: the sinusoidal basis answers bent decks | `R-solver`, 6 cells (inverted-V, loop) |
+
+Not built, and why: the enum macro generating `ALL` and execution-derived coverage are
+left for when a new axis value is added — the manifest's `reached` lines already fail
+when a decision value stops being reached. The sweep runs in every gate already: it is
+an integration test of `nec-cli`.

@@ -38,10 +38,72 @@ R-network/tee/pec Holds
 R-network/tilted-offcentre/free Holds
 R-network/tilted-offcentre/gn2 Holds
 R-network/tilted-offcentre/pec Holds
+R-reference/collinear-split/free Holds(dZ 9 %)
+R-reference/collinear-split/gn2 Holds(dZ 9 %)
+R-reference/collinear-split/pec Holds(dZ 10 %)
+R-reference/dipole/free Holds(dZ 9 %)
+R-reference/dipole/gn2 Holds(dZ 8 %)
+R-reference/dipole/pec Holds(dZ 9 %)
+R-reference/inverted-l/pec Holds(dZ 1 %)
+R-reference/inverted-v/free Holds(dZ 6 %)
+R-reference/inverted-v/gn2 Holds(dZ 6 %)
+R-reference/inverted-v/pec Holds(dZ 6 %)
+R-reference/monopole/pec Holds(dZ 5 %)
+R-reference/square-loop/free Holds(dZ 8 %)
+R-reference/square-loop/gn2 Holds(dZ 8 %)
+R-reference/square-loop/pec Holds(dZ 8 %)
+R-reference/tee/free Holds(dZ 2 %)
+R-reference/tee/gn2 Holds(dZ 2 %)
+R-reference/tee/pec Holds(dZ 2 %)
+R-reference/tilted-offcentre/free Holds(dZ 3 %)
+R-reference/tilted-offcentre/gn2 Holds(dZ 4 %)
+R-reference/tilted-offcentre/pec Holds(dZ 4 %)
+R-reference/two-element-array/free Holds(dZ 6 %)
+R-reference/two-element-array/gn2 Holds(dZ 5 %)
+R-reference/two-element-array/pec Holds(dZ 6 %)
 R-remedy/low-dipole-gn2 Holds[]
 R-remedy/negative-load-card Holds[]
 R-remedy/negative-load-config Holds[]
 R-remedy/tee-one-segment-arm Holds[--solver mpie]
+R-solver/collinear-split/free/mpie Holds(dZ 9 %)
+R-solver/collinear-split/free/sinusoidal Holds(dZ 1 %)
+R-solver/collinear-split/gn2/sinusoidal Holds(dZ 1 %)
+R-solver/collinear-split/pec/mpie Holds(dZ 9 %)
+R-solver/collinear-split/pec/sinusoidal Holds(dZ 1 %)
+R-solver/dipole/free/mpie Holds(dZ 9 %)
+R-solver/dipole/free/sinusoidal Holds(dZ 1 %)
+R-solver/dipole/gn2/sinusoidal Holds(dZ 1 %)
+R-solver/dipole/pec/mpie Holds(dZ 9 %)
+R-solver/dipole/pec/sinusoidal Holds(dZ 1 %)
+R-solver/inverted-l/pec/mpie Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
+R-solver/inverted-l/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+R-solver/inverted-v/free/mpie Holds(dZ 3 %)
+R-solver/inverted-v/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/inverted-v/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/inverted-v/pec/mpie Holds(dZ 3 %)
+R-solver/inverted-v/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/monopole/pec/mpie Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
+R-solver/monopole/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+R-solver/square-loop/free/mpie Holds(dZ 17 %)
+R-solver/square-loop/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/square-loop/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/square-loop/pec/mpie Holds(dZ 17 %)
+R-solver/square-loop/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/tee/free/mpie Holds(dZ 14 %)
+R-solver/tee/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/tee/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/tee/pec/mpie Holds(dZ 14 %)
+R-solver/tee/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/tilted-offcentre/free/mpie Holds(dZ 8 %)
+R-solver/tilted-offcentre/free/sinusoidal Holds(dZ 2 %)
+R-solver/tilted-offcentre/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/tilted-offcentre/pec/mpie Holds(dZ 8 %)
+R-solver/tilted-offcentre/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+R-solver/two-element-array/free/mpie Holds(dZ 6 %)
+R-solver/two-element-array/free/sinusoidal Holds(dZ 1 %)
+R-solver/two-element-array/gn2/sinusoidal Holds(dZ 1 %)
+R-solver/two-element-array/pec/mpie Holds(dZ 7 %)
+R-solver/two-element-array/pec/sinusoidal Holds(dZ 1 %)
 S-drive/collinear-split/free/bare Holds
 S-drive/collinear-split/free/loaded Holds
 S-drive/collinear-split/gn2/bare Holds
@@ -520,7 +582,9 @@ S-worker/two-element-array/pec/gpu/loaded Holds
 count R-image 2
 count R-loss 18
 count R-network 18
+count R-reference 23
 count R-remedy 4
+count R-solver 39
 count S-drive 40
 count S-exec 69
 count S-fr 69
