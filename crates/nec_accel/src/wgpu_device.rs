@@ -930,7 +930,8 @@ pub async fn run_rp_farfield_batch_wgpu(
     });
 
     // Output: n_points × [u_theta_f32, u_phi_f32] = n_points × 8 bytes
-    let out_size = n_points as u64 * 8;
+    // Four f32 per direction: Fθ and Fφ, complex (FND-216).
+    let out_size = n_points as u64 * 16;
     let out_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("rp-batch-output"),
         size: out_size,
@@ -1096,8 +1097,10 @@ pub async fn run_rp_farfield_batch_wgpu(
         .iter()
         .enumerate()
         .map(|(i, &(theta_deg, phi_deg))| {
-            let u_theta = vals[i * 2] as f64;
-            let u_phi = vals[i * 2 + 1] as f64;
+            let (ft_re, ft_im) = (vals[i * 4] as f64, vals[i * 4 + 1] as f64);
+            let (fp_re, fp_im) = (vals[i * 4 + 2] as f64, vals[i * 4 + 3] as f64);
+            let u_theta = ft_re * ft_re + ft_im * ft_im;
+            let u_phi = fp_re * fp_re + fp_im * fp_im;
             let u_total = u_theta + u_phi;
             let gain_total_dbi = if u_total * norm > MIN_NORM {
                 DB_FACTOR * (u_total * norm).log10()
@@ -1114,10 +1117,17 @@ pub async fn run_rp_farfield_batch_wgpu(
             } else {
                 -999.99
             };
-            let axial_ratio = if u_phi.sqrt() > 1e-30 {
-                u_theta.sqrt() / u_phi.sqrt()
-            } else {
+            // The polarisation ellipse's axial ratio, signed by the sense of
+            // rotation — the CPU's `polarization_axial_ratio` (Stokes S3) term for
+            // term. This was √Uθ/√Uφ, an amplitude ratio: a tilted dipole, linearly
+            // polarised everywhere, printed 2.2161 where the CPU prints 0 (FND-216).
+            let s0 = u_theta + u_phi;
+            let axial_ratio = if s0 <= 1e-30 {
                 0.0
+            } else {
+                // 2·Im(Fθ·conj(Fφ))
+                let s3 = 2.0 * (ft_im * fp_re - ft_re * fp_im);
+                (0.5 * (s3 / s0).clamp(-1.0, 1.0).asin()).tan()
             };
             RpGpuResult {
                 u_theta,

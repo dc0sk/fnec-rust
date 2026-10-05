@@ -16,7 +16,9 @@
 // Binding 1 — currents (read-only storage): [I₀ᵣₑ, I₀ᵢₘ, I₁ᵣₑ, I₁ᵢₘ, ...]
 // Binding 2 — uniforms (uniform, 16 B): k, n_segs, n_points, _pad
 // Binding 3 — obs_pts (read-only storage): [θ₀, φ₀, θ₁, φ₁, ...] in degrees
-// Binding 4 — output (read_write storage): [u_θ₀, u_φ₀, u_θ₁, u_φ₁, ...]
+// Binding 4 — output (read_write storage): [Fθ₀ re, Fθ₀ im, Fφ₀ re, Fφ₀ im, …]
+//   the complex components, not their intensities: the axial ratio needs their
+//   relative phase, and |F|² alone gave the host only an amplitude ratio (FND-216).
 
 struct Segment {
     mid_x  : f32,
@@ -102,6 +104,8 @@ fn cs_rp_farfield_batch(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(
         fp_im += w.y * proj_p;
     }
 
-    output[idx * 2u]      = ft_re * ft_re + ft_im * ft_im;
-    output[idx * 2u + 1u] = fp_re * fp_re + fp_im * fp_im;
+    output[idx * 4u]      = ft_re;
+    output[idx * 4u + 1u] = ft_im;
+    output[idx * 4u + 2u] = fp_re;
+    output[idx * 4u + 3u] = fp_im;
 }
