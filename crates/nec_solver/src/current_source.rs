@@ -47,6 +47,12 @@ pub enum CurrentSourceError {
     },
     Excitation(ExcitationError),
     Solve(SolveError),
+    /// A junction or loop the section graph takes: that solve needs the matrix
+    /// UNSTAMPED, with the loads as graph columns, while this entry's contract is
+    /// a stamped matrix — so it is reached through
+    /// [`crate::hallen_session::solve_hallen_routed`], which decides before
+    /// stamping (FND-198, FND-211).
+    NeedsRoutedSolve,
 }
 
 impl std::fmt::Display for CurrentSourceError {
@@ -66,6 +72,12 @@ impl std::fmt::Display for CurrentSourceError {
             ),
             Self::Excitation(e) => write!(f, "{e}"),
             Self::Solve(e) => write!(f, "{e}"),
+            Self::NeedsRoutedSolve => write!(
+                f,
+                "EX: a current source on a junction or loop is solved on the section \
+                 graph from the unstamped matrix; call solve_hallen_routed, which takes \
+                 it before stamping the loads"
+            ),
         }
     }
 }
@@ -80,7 +92,12 @@ impl std::fmt::Display for CurrentSourceError {
 /// `cos(k·s)` constant per path plus the port voltage, `I = 0` at the free ends, and
 /// the forced `I[src] = i0`. Out-of-scope topologies (degree-3+ T/Y, closed loops)
 /// return `None` from `build_conductor_paths` and fail fast with a diagnostic.
-/// `z_mat` is the assembled Hallén matrix (including any load / TL stamps).
+/// `z_mat` is the assembled Hallén matrix (including any load / TL stamps). A
+/// junction or loop the section graph takes needs the matrix unstamped instead,
+/// so it is refused here with [`CurrentSourceError::NeedsRoutedSolve`]: one entry
+/// cannot honour both contracts, and taking either silently applied loads twice
+/// or dropped them (FND-211). [`crate::hallen_session::solve_hallen_routed`]
+/// solves it.
 ///
 /// This lived in the CLI, which made the CLI the only frontend that could solve a
 /// current-source deck — the GUI and the Python bindings declined by name, and
@@ -149,27 +166,8 @@ pub fn solve_current_source_hallen(
             // A junction or loop the section graph takes: a current source is the
             // unit-gap voltage solve scaled to its impressed current, exactly, so
             // the graph solve serves it unchanged (FND-162 stage 5).
-            if let Some(graph) = crate::hallen_session::graph_geometry(deck, segs) {
-                let src_seg = segs
-                    .iter()
-                    .position(|s| s.tag == cs.tag && s.tag_index == cs.segment)
-                    .ok_or(CurrentSourceError::NoCurrentSource)?;
-                // This entry takes an unstamped `z_mat` and the deck's own loads;
-                // the routed solve, which also carries CLI Laplace loads, takes
-                // the graph itself before stamping (FND-198).
-                let loads = crate::build_deck_stamps(deck, segs, freq_hz).diagonal;
-                let unit = crate::hallen_session::solve_graph_unit_gap(
-                    deck, segs, z_mat, freq_hz, &graph, src_seg, &loads,
-                )
-                .map_err(CurrentSourceError::Solve)?;
-                let (currents, port_voltage) =
-                    scale_to_impressed_current(unit, src_seg, i0, cs.tag, cs.segment)?;
-                return Ok(CurrentSourceFeedpoint {
-                    currents,
-                    port_voltage,
-                    source_tag: cs.tag,
-                    source_segment: cs.segment,
-                });
+            if crate::hallen_session::graph_geometry(deck, segs).is_some() {
+                return Err(CurrentSourceError::NeedsRoutedSolve);
             }
             if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs)).is_empty() {
                 // Out-of-scope junction topology (degree-3+ T/Y, closed loop).

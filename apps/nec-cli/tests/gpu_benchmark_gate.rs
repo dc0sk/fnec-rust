@@ -61,13 +61,22 @@ fn gpu_rp_kernel_not_more_than_50_percent_slower_than_cpu() {
     };
 
     // Warm-up: pays the device start-up, which is not the kernel's cost.
+    //
+    // With an adapter present, one failed dispatch earns one re-run, as the
+    // hybrid lane's tests do (#519): this host's NVIDIA driver faults about one
+    // run in twenty-five (FND-190, Xid 13 on the test's own pid), and twice on
+    // 2026-10-04 that failed this gate as if the kernel were broken (FND-213). A
+    // second failure in a row is still a failure.
     if gpu_run().is_none() {
+        if !pollster::block_on(nec_accel::hardware_adapter_present()) {
+            eprintln!("G5 gate: no hardware GPU adapter — skipped");
+            return;
+        }
+        eprintln!("G5 gate: the RP kernel returned nothing on a present adapter; re-running once");
         assert!(
-            !pollster::block_on(nec_accel::hardware_adapter_present()),
-            "G5: a hardware adapter is present but the RP kernel returned nothing"
+            gpu_run().is_some(),
+            "G5: a hardware adapter is present but the RP kernel returned nothing, twice"
         );
-        eprintln!("G5 gate: no hardware GPU adapter — skipped");
-        return;
     }
 
     let best = |f: &mut dyn FnMut()| {
