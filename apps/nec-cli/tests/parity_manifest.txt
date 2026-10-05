@@ -20,6 +20,28 @@ R-loss/tee/pec Holds
 R-loss/tilted-offcentre/free Holds
 R-loss/tilted-offcentre/gn2 Holds
 R-loss/tilted-offcentre/pec Holds
+R-network/collinear-split/free Holds
+R-network/collinear-split/gn2 Holds
+R-network/collinear-split/pec Holds
+R-network/dipole/free Holds
+R-network/dipole/gn2 Holds
+R-network/dipole/pec Holds
+R-network/inverted-v/free Holds
+R-network/inverted-v/gn2 Holds
+R-network/inverted-v/pec Holds
+R-network/square-loop/free Holds
+R-network/square-loop/gn2 Holds
+R-network/square-loop/pec Holds
+R-network/tee/free Holds
+R-network/tee/gn2 Holds
+R-network/tee/pec Holds
+R-network/tilted-offcentre/free Holds
+R-network/tilted-offcentre/gn2 Holds
+R-network/tilted-offcentre/pec Holds
+R-remedy/low-dipole-gn2 Holds[]
+R-remedy/negative-load-card Holds[]
+R-remedy/negative-load-config Holds[]
+R-remedy/tee-one-segment-arm Holds[--solver mpie]
 S-drive/collinear-split/free/bare Holds
 S-drive/collinear-split/free/loaded Holds
 S-drive/collinear-split/gn2/bare Holds
@@ -198,6 +220,20 @@ S-fr/two-element-array/gn2/sinusoidal Holds
 S-fr/two-element-array/pec/hallen Holds
 S-fr/two-element-array/pec/mpie Holds
 S-fr/two-element-array/pec/sinusoidal Holds
+S-load-invalid/collinear-split/no-segment Refused(the load cannot be applied)
+S-load-invalid/collinear-split/reversed-range Refused(the load cannot be applied)
+S-load-invalid/dipole/no-segment Refused(the load cannot be applied)
+S-load-invalid/dipole/reversed-range Refused(the load cannot be applied)
+S-load-invalid/inverted-v/no-segment Refused(the load cannot be applied)
+S-load-invalid/inverted-v/reversed-range Refused(the load cannot be applied)
+S-load-invalid/square-loop/no-segment Refused(the load cannot be applied)
+S-load-invalid/square-loop/reversed-range Refused(the load cannot be applied)
+S-load-invalid/tee/no-segment Refused(the load cannot be applied)
+S-load-invalid/tee/reversed-range Refused(the load cannot be applied)
+S-load-invalid/tilted-offcentre/no-segment Refused(the load cannot be applied)
+S-load-invalid/tilted-offcentre/reversed-range Refused(the load cannot be applied)
+S-load-invalid/two-element-array/no-segment Refused(the load cannot be applied)
+S-load-invalid/two-element-array/reversed-range Refused(the load cannot be applied)
 S-load/collinear-split/free/hallen/PlaneWave Holds
 S-load/collinear-split/free/hallen/Voltage Holds
 S-load/collinear-split/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
@@ -336,12 +372,162 @@ S-load/two-element-array/pec/mpie/PlaneWave Refused(error: EX: incident plane-wa
 S-load/two-element-array/pec/mpie/Voltage Refused(loads refused)
 S-load/two-element-array/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/two-element-array/pec/sinusoidal/Voltage Holds
+S-point/collinear-split/free/hallen Holds
+S-point/collinear-split/free/mpie Holds
+S-point/collinear-split/free/sinusoidal Holds
+S-point/collinear-split/gn2/hallen Holds
+S-point/collinear-split/gn2/sinusoidal Holds
+S-point/collinear-split/pec/hallen Holds
+S-point/collinear-split/pec/sinusoidal Holds
+S-point/dipole/free/hallen Holds
+S-point/dipole/free/mpie Holds
+S-point/dipole/free/sinusoidal Holds
+S-point/dipole/gn2/hallen Holds
+S-point/dipole/gn2/sinusoidal Holds
+S-point/dipole/pec/hallen Holds
+S-point/dipole/pec/sinusoidal Holds
+S-point/inverted-l/pec/hallen Holds
+S-point/inverted-l/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-point/inverted-v/free/hallen Holds
+S-point/inverted-v/free/mpie Holds
+S-point/inverted-v/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/inverted-v/gn2/hallen Holds
+S-point/inverted-v/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/inverted-v/pec/hallen Holds
+S-point/inverted-v/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/monopole/pec/hallen Holds
+S-point/monopole/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-point/square-loop/free/hallen Holds
+S-point/square-loop/free/mpie Holds
+S-point/square-loop/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/square-loop/gn2/hallen Holds
+S-point/square-loop/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/square-loop/pec/hallen Holds
+S-point/square-loop/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/tee/free/hallen Holds
+S-point/tee/free/mpie Holds
+S-point/tee/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/tee/gn2/hallen Holds
+S-point/tee/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/tee/pec/hallen Holds
+S-point/tee/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/tilted-offcentre/free/hallen Holds
+S-point/tilted-offcentre/free/mpie Holds
+S-point/tilted-offcentre/free/sinusoidal Holds
+S-point/tilted-offcentre/gn2/hallen Holds
+S-point/tilted-offcentre/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/tilted-offcentre/pec/hallen Holds
+S-point/tilted-offcentre/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-point/two-element-array/free/hallen Holds
+S-point/two-element-array/free/mpie Holds
+S-point/two-element-array/free/sinusoidal Holds
+S-point/two-element-array/gn2/hallen Holds
+S-point/two-element-array/gn2/sinusoidal Holds
+S-point/two-element-array/pec/hallen Holds
+S-point/two-element-array/pec/sinusoidal Holds
+S-worker/collinear-split/free/cpu/bare Holds
+S-worker/collinear-split/free/cpu/loaded Holds
+S-worker/collinear-split/free/gpu/bare Holds
+S-worker/collinear-split/free/gpu/loaded Holds
+S-worker/collinear-split/gn2/cpu/bare Holds
+S-worker/collinear-split/gn2/cpu/loaded Holds
+S-worker/collinear-split/gn2/gpu/bare Holds
+S-worker/collinear-split/gn2/gpu/loaded Holds
+S-worker/collinear-split/pec/cpu/bare Holds
+S-worker/collinear-split/pec/cpu/loaded Holds
+S-worker/collinear-split/pec/gpu/bare Holds
+S-worker/collinear-split/pec/gpu/loaded Holds
+S-worker/dipole/free/cpu/bare Holds
+S-worker/dipole/free/cpu/loaded Holds
+S-worker/dipole/free/gpu/bare Holds
+S-worker/dipole/free/gpu/loaded Holds
+S-worker/dipole/gn2/cpu/bare Holds
+S-worker/dipole/gn2/cpu/loaded Holds
+S-worker/dipole/gn2/gpu/bare Holds
+S-worker/dipole/gn2/gpu/loaded Holds
+S-worker/dipole/pec/cpu/bare Holds
+S-worker/dipole/pec/cpu/loaded Holds
+S-worker/dipole/pec/gpu/bare Holds
+S-worker/dipole/pec/gpu/loaded Holds
+S-worker/inverted-l/pec/cpu/bare Holds
+S-worker/inverted-l/pec/cpu/loaded Holds
+S-worker/inverted-l/pec/gpu/bare Holds
+S-worker/inverted-l/pec/gpu/loaded Holds
+S-worker/inverted-v/free/cpu/bare Holds
+S-worker/inverted-v/free/cpu/loaded Holds
+S-worker/inverted-v/free/gpu/bare Holds
+S-worker/inverted-v/free/gpu/loaded Holds
+S-worker/inverted-v/gn2/cpu/bare Holds
+S-worker/inverted-v/gn2/cpu/loaded Holds
+S-worker/inverted-v/gn2/gpu/bare Holds
+S-worker/inverted-v/gn2/gpu/loaded Holds
+S-worker/inverted-v/pec/cpu/bare Holds
+S-worker/inverted-v/pec/cpu/loaded Holds
+S-worker/inverted-v/pec/gpu/bare Holds
+S-worker/inverted-v/pec/gpu/loaded Holds
+S-worker/monopole/pec/cpu/bare Holds
+S-worker/monopole/pec/cpu/loaded Holds
+S-worker/monopole/pec/gpu/bare Holds
+S-worker/monopole/pec/gpu/loaded Holds
+S-worker/square-loop/free/cpu/bare Holds
+S-worker/square-loop/free/cpu/loaded Holds
+S-worker/square-loop/free/gpu/bare Holds
+S-worker/square-loop/free/gpu/loaded Holds
+S-worker/square-loop/gn2/cpu/bare Holds
+S-worker/square-loop/gn2/cpu/loaded Holds
+S-worker/square-loop/gn2/gpu/bare Holds
+S-worker/square-loop/gn2/gpu/loaded Holds
+S-worker/square-loop/pec/cpu/bare Holds
+S-worker/square-loop/pec/cpu/loaded Holds
+S-worker/square-loop/pec/gpu/bare Holds
+S-worker/square-loop/pec/gpu/loaded Holds
+S-worker/tee/free/cpu/bare Holds
+S-worker/tee/free/cpu/loaded Holds
+S-worker/tee/free/gpu/bare Holds
+S-worker/tee/free/gpu/loaded Holds
+S-worker/tee/gn2/cpu/bare Holds
+S-worker/tee/gn2/cpu/loaded Holds
+S-worker/tee/gn2/gpu/bare Holds
+S-worker/tee/gn2/gpu/loaded Holds
+S-worker/tee/pec/cpu/bare Holds
+S-worker/tee/pec/cpu/loaded Holds
+S-worker/tee/pec/gpu/bare Holds
+S-worker/tee/pec/gpu/loaded Holds
+S-worker/tilted-offcentre/free/cpu/bare Holds
+S-worker/tilted-offcentre/free/cpu/loaded Holds
+S-worker/tilted-offcentre/free/gpu/bare Holds
+S-worker/tilted-offcentre/free/gpu/loaded Holds
+S-worker/tilted-offcentre/gn2/cpu/bare Holds
+S-worker/tilted-offcentre/gn2/cpu/loaded Holds
+S-worker/tilted-offcentre/gn2/gpu/bare Holds
+S-worker/tilted-offcentre/gn2/gpu/loaded Holds
+S-worker/tilted-offcentre/pec/cpu/bare Holds
+S-worker/tilted-offcentre/pec/cpu/loaded Holds
+S-worker/tilted-offcentre/pec/gpu/bare Holds
+S-worker/tilted-offcentre/pec/gpu/loaded Holds
+S-worker/two-element-array/free/cpu/bare Holds
+S-worker/two-element-array/free/cpu/loaded Holds
+S-worker/two-element-array/free/gpu/bare Holds
+S-worker/two-element-array/free/gpu/loaded Holds
+S-worker/two-element-array/gn2/cpu/bare Holds
+S-worker/two-element-array/gn2/cpu/loaded Holds
+S-worker/two-element-array/gn2/gpu/bare Holds
+S-worker/two-element-array/gn2/gpu/loaded Holds
+S-worker/two-element-array/pec/cpu/bare Holds
+S-worker/two-element-array/pec/cpu/loaded Holds
+S-worker/two-element-array/pec/gpu/bare Holds
+S-worker/two-element-array/pec/gpu/loaded Holds
 count R-image 2
 count R-loss 18
+count R-network 18
+count R-remedy 4
 count S-drive 40
 count S-exec 69
 count S-fr 69
 count S-load 138
+count S-load-invalid 14
+count S-point 53
+count S-worker 92
 reached contact=no
 reached contact=yes
 reached drive=current

@@ -17,6 +17,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **The parity sweep, stage 2**: the distributed worker against the local CLI, invalid
+  loads refused both ways, a shunt network's exact identity, every named remedy rerun,
+  and a sweep point against the same frequency alone — 533 cells; re-introducing five
+  more defects fails it five times. Its remedy check found FND-217.
 - **The parity sweep** (`apps/nec-cli/tests/parity_sweep.rs`, stage 1): the standing
   check for the audit's main defect class — a decision keyed on one axis while the run
   has another. 336 cells, each running the CLI twice where the two runs must agree

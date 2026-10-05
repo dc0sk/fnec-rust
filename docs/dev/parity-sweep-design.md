@@ -123,3 +123,31 @@ past findings, one at a time, each caught by the relation meant for it:
 Known gaps, by design until stage 3: FND-202 (MPIE multi-source) and FND-203 (sinusoidal
 on bent decks) are wrong *identically* in both spellings, so no spelling pair sees them;
 R-solver and nec2c goldens are what catch them.
+
+## Stage 2 — built (2026-10-05)
+
+533 cells, about 110 s on pc1. New relations:
+
+| relation | the two runs | cells |
+|---|---|---|
+| `S-worker` | the local CLI ↔ `fnec worker --stdio` (what a `--hosts` controller sends), bare and `LD`-loaded, `exec` cpu and gpu | 92 |
+| `S-load-invalid` | a load naming no segment, and a range written backwards, as an `LD` card ↔ in `--loads-config`: refused both ways, one class | 14 |
+| `R-network` | a pure shunt `NT` at the feed ↔ the antenna alone: Z_in = Z_ant ∥ Z_shunt exactly | 18 |
+| `R-remedy` | a run ↔ the same run with each remedy its caveats name: not refused | 4 |
+| `S-point` | one point of a 3-point sweep ↔ that frequency alone (every output and the decision record) | 53 |
+
+The MPIE over ground is compared by `S-fr` only (7–10 s a run in a debug build); `S-point`
+keeps the MPIE in free space.
+
+Sabotage-verified, each caught by its relation, with a clean sweep after:
+
+| re-introduced | caught by |
+|---|---|
+| the worker dropping `LD` loads | `S-worker`, 46 cells |
+| FND-204: a `--loads-config` load naming no segment accepted | `S-load-invalid`, 42 cells |
+| FND-209: the remedy chosen from the deck's cards (two edits) | `R-remedy`, 1 cell |
+| an `NT` Y11 stamped with the wrong sign | `R-network`, 18 cells |
+| every sweep point solved at the first frequency | `S-point`, 40 cells |
+
+`R-remedy` can test only remedies a caveat names. The low-ground caveat names none,
+although `--ground-solver sommerfeld` exists for a single straight wire — FND-217.
