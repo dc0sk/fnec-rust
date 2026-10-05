@@ -384,7 +384,7 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0 sin_fallback_rel_max=1.000000e-02
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0 sin_fallback_rel_max=1.000000e-02 route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none solve_exec=cpu rp_exec=none nf_exec=none
 ```
 
 | Field | Description |
@@ -398,6 +398,15 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `diag_spread` | Conditioning proxy: max/min diagonal magnitude ratio of solved matrix |
 | `sin_rel_res` | Sinusoidal pre-fallback relative residual (0 for non-sinusoidal paths) |
 | `sin_fallback_rel_max` | Active sinusoidal residual fallback threshold after CLI/env/default precedence |
+| `route` | The solve route the run took: `plain`, `paths` (conductor paths or the section graph), `unsupported` (a topology the graph declines), `mpie`, `pulse` |
+| `contact` | `yes` when the deck touches PEC and solved as its image problem |
+| `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
+| `ground` | `free`, `pec`, `finite`, `deferred` |
+| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `n/a` otherwise |
+| `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
+| `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
+
+The decision fields (`route` onward) are what the parity sweep (`apps/nec-cli/tests/parity_sweep.rs`) classifies runs by: they record what the run did, read from the values it used.
 
 When `--bench-format csv` is enabled, one header plus one machine-readable line per solved frequency point is emitted to stderr:
 

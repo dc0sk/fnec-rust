@@ -15,6 +15,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **The parity sweep** (`apps/nec-cli/tests/parity_sweep.rs`, stage 1): the standing
+  check for the audit's main defect class — a decision keyed on one axis while the run
+  has another. 336 cells, each running the CLI twice where the two runs must agree
+  (the same load as an `LD` card and from `--loads-config`; `--exec gpu`/`hybrid`/auto
+  against `--exec cpu`; the deck's `FR` against `--sweep-config`; `EX 4` against
+  `EX 0`; a deck on PEC against its free-space double; a feed load against its share of
+  the gain), with every outcome, count and reached decision pinned. Its first run
+  found FND-216; re-introducing six past findings fails it six times.
+- **The `diag:` line records what the run decided**: `route`, `contact`, `drive`,
+  `ground`, `gsolver`, `loads`, and the executor of each stage (`solve_exec`,
+  `rp_exec`, `nf_exec`).
+
 ### Changed
 
 - **Without `--exec`, one frequency point goes to the GPU from 600 segments,
