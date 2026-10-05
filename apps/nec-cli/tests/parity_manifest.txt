@@ -1,0 +1,361 @@
+# parity_sweep — every cell's outcome. A diff here is a behaviour change: review it,
+# then bless with PARITY_BLESS=1. Generated; do not edit by hand.
+R-image/inverted-l Holds
+R-image/monopole Holds
+R-loss/collinear-split/free Holds
+R-loss/collinear-split/gn2 Holds
+R-loss/collinear-split/pec Holds
+R-loss/dipole/free Holds
+R-loss/dipole/gn2 Holds
+R-loss/dipole/pec Holds
+R-loss/inverted-v/free Holds
+R-loss/inverted-v/gn2 Holds
+R-loss/inverted-v/pec Holds
+R-loss/square-loop/free Holds
+R-loss/square-loop/gn2 Holds
+R-loss/square-loop/pec Holds
+R-loss/tee/free Holds
+R-loss/tee/gn2 Holds
+R-loss/tee/pec Holds
+R-loss/tilted-offcentre/free Holds
+R-loss/tilted-offcentre/gn2 Holds
+R-loss/tilted-offcentre/pec Holds
+S-drive/collinear-split/free/bare Holds
+S-drive/collinear-split/free/loaded Holds
+S-drive/collinear-split/gn2/bare Holds
+S-drive/collinear-split/gn2/loaded Holds
+S-drive/collinear-split/pec/bare Holds
+S-drive/collinear-split/pec/loaded Holds
+S-drive/dipole/free/bare Holds
+S-drive/dipole/free/loaded Holds
+S-drive/dipole/gn2/bare Holds
+S-drive/dipole/gn2/loaded Holds
+S-drive/dipole/pec/bare Holds
+S-drive/dipole/pec/loaded Holds
+S-drive/inverted-l/pec/bare Holds
+S-drive/inverted-l/pec/loaded Holds
+S-drive/inverted-v/free/bare Holds
+S-drive/inverted-v/free/loaded Holds
+S-drive/inverted-v/gn2/bare Holds
+S-drive/inverted-v/gn2/loaded Holds
+S-drive/inverted-v/pec/bare Holds
+S-drive/inverted-v/pec/loaded Holds
+S-drive/monopole/pec/bare Holds
+S-drive/monopole/pec/loaded Holds
+S-drive/square-loop/free/bare Holds
+S-drive/square-loop/free/loaded Holds
+S-drive/square-loop/gn2/bare Holds
+S-drive/square-loop/gn2/loaded Holds
+S-drive/square-loop/pec/bare Holds
+S-drive/square-loop/pec/loaded Holds
+S-drive/tee/free/bare Holds
+S-drive/tee/free/loaded Holds
+S-drive/tee/gn2/bare Holds
+S-drive/tee/gn2/loaded Holds
+S-drive/tee/pec/bare Holds
+S-drive/tee/pec/loaded Holds
+S-drive/tilted-offcentre/free/bare Holds
+S-drive/tilted-offcentre/free/loaded Holds
+S-drive/tilted-offcentre/gn2/bare Holds
+S-drive/tilted-offcentre/gn2/loaded Holds
+S-drive/tilted-offcentre/pec/bare Holds
+S-drive/tilted-offcentre/pec/loaded Holds
+S-exec/collinear-split/free/auto Holds
+S-exec/collinear-split/free/gpu Holds
+S-exec/collinear-split/free/hybrid Holds
+S-exec/collinear-split/gn2/auto Holds
+S-exec/collinear-split/gn2/gpu Holds
+S-exec/collinear-split/gn2/hybrid Holds
+S-exec/collinear-split/pec/auto Holds
+S-exec/collinear-split/pec/gpu Holds
+S-exec/collinear-split/pec/hybrid Holds
+S-exec/dipole/free/auto Holds
+S-exec/dipole/free/gpu Holds
+S-exec/dipole/free/hybrid Holds
+S-exec/dipole/gn2/auto Holds
+S-exec/dipole/gn2/gpu Holds
+S-exec/dipole/gn2/hybrid Holds
+S-exec/dipole/pec/auto Holds
+S-exec/dipole/pec/gpu Holds
+S-exec/dipole/pec/hybrid Holds
+S-exec/inverted-l/pec/auto Holds
+S-exec/inverted-l/pec/gpu Holds
+S-exec/inverted-l/pec/hybrid Holds
+S-exec/inverted-v/free/auto Holds
+S-exec/inverted-v/free/gpu Holds
+S-exec/inverted-v/free/hybrid Holds
+S-exec/inverted-v/gn2/auto Holds
+S-exec/inverted-v/gn2/gpu Holds
+S-exec/inverted-v/gn2/hybrid Holds
+S-exec/inverted-v/pec/auto Holds
+S-exec/inverted-v/pec/gpu Holds
+S-exec/inverted-v/pec/hybrid Holds
+S-exec/monopole/pec/auto Holds
+S-exec/monopole/pec/gpu Holds
+S-exec/monopole/pec/hybrid Holds
+S-exec/square-loop/free/auto Holds
+S-exec/square-loop/free/gpu Holds
+S-exec/square-loop/free/hybrid Holds
+S-exec/square-loop/gn2/auto Holds
+S-exec/square-loop/gn2/gpu Holds
+S-exec/square-loop/gn2/hybrid Holds
+S-exec/square-loop/pec/auto Holds
+S-exec/square-loop/pec/gpu Holds
+S-exec/square-loop/pec/hybrid Holds
+S-exec/tee/free/auto Holds
+S-exec/tee/free/gpu Holds
+S-exec/tee/free/hybrid Holds
+S-exec/tee/gn2/auto Holds
+S-exec/tee/gn2/gpu Holds
+S-exec/tee/gn2/hybrid Holds
+S-exec/tee/pec/auto Holds
+S-exec/tee/pec/gpu Holds
+S-exec/tee/pec/hybrid Holds
+S-exec/tilted-offcentre/free/auto Holds
+S-exec/tilted-offcentre/free/gpu Holds
+S-exec/tilted-offcentre/free/hybrid Holds
+S-exec/tilted-offcentre/gn2/auto Holds
+S-exec/tilted-offcentre/gn2/gpu Holds
+S-exec/tilted-offcentre/gn2/hybrid Holds
+S-exec/tilted-offcentre/pec/auto Holds
+S-exec/tilted-offcentre/pec/gpu Holds
+S-exec/tilted-offcentre/pec/hybrid Holds
+S-exec/two-element-array/free/auto Holds
+S-exec/two-element-array/free/gpu Holds
+S-exec/two-element-array/free/hybrid Holds
+S-exec/two-element-array/gn2/auto Holds
+S-exec/two-element-array/gn2/gpu Holds
+S-exec/two-element-array/gn2/hybrid Holds
+S-exec/two-element-array/pec/auto Holds
+S-exec/two-element-array/pec/gpu Holds
+S-exec/two-element-array/pec/hybrid Holds
+S-fr/collinear-split/free/hallen Holds
+S-fr/collinear-split/free/mpie Holds
+S-fr/collinear-split/free/sinusoidal Holds
+S-fr/collinear-split/gn2/hallen Holds
+S-fr/collinear-split/gn2/mpie Holds
+S-fr/collinear-split/gn2/sinusoidal Holds
+S-fr/collinear-split/pec/hallen Holds
+S-fr/collinear-split/pec/mpie Holds
+S-fr/collinear-split/pec/sinusoidal Holds
+S-fr/dipole/free/hallen Holds
+S-fr/dipole/free/mpie Holds
+S-fr/dipole/free/sinusoidal Holds
+S-fr/dipole/gn2/hallen Holds
+S-fr/dipole/gn2/mpie Holds
+S-fr/dipole/gn2/sinusoidal Holds
+S-fr/dipole/pec/hallen Holds
+S-fr/dipole/pec/mpie Holds
+S-fr/dipole/pec/sinusoidal Holds
+S-fr/inverted-l/pec/hallen Holds
+S-fr/inverted-l/pec/mpie Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
+S-fr/inverted-l/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-fr/inverted-v/free/hallen Holds
+S-fr/inverted-v/free/mpie Holds
+S-fr/inverted-v/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/inverted-v/gn2/hallen Holds
+S-fr/inverted-v/gn2/mpie Holds
+S-fr/inverted-v/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/inverted-v/pec/hallen Holds
+S-fr/inverted-v/pec/mpie Holds
+S-fr/inverted-v/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/monopole/pec/hallen Holds
+S-fr/monopole/pec/mpie Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
+S-fr/monopole/pec/sinusoidal Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-fr/square-loop/free/hallen Holds
+S-fr/square-loop/free/mpie Holds
+S-fr/square-loop/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/square-loop/gn2/hallen Holds
+S-fr/square-loop/gn2/mpie Holds
+S-fr/square-loop/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/square-loop/pec/hallen Holds
+S-fr/square-loop/pec/mpie Holds
+S-fr/square-loop/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/tee/free/hallen Holds
+S-fr/tee/free/mpie Holds
+S-fr/tee/free/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/tee/gn2/hallen Holds
+S-fr/tee/gn2/mpie Holds
+S-fr/tee/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/tee/pec/hallen Holds
+S-fr/tee/pec/mpie Holds
+S-fr/tee/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/tilted-offcentre/free/hallen Holds
+S-fr/tilted-offcentre/free/mpie Holds
+S-fr/tilted-offcentre/free/sinusoidal Holds
+S-fr/tilted-offcentre/gn2/hallen Holds
+S-fr/tilted-offcentre/gn2/mpie Holds
+S-fr/tilted-offcentre/gn2/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/tilted-offcentre/pec/hallen Holds
+S-fr/tilted-offcentre/pec/mpie Holds
+S-fr/tilted-offcentre/pec/sinusoidal Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-fr/two-element-array/free/hallen Holds
+S-fr/two-element-array/free/mpie Holds
+S-fr/two-element-array/free/sinusoidal Holds
+S-fr/two-element-array/gn2/hallen Holds
+S-fr/two-element-array/gn2/mpie Holds
+S-fr/two-element-array/gn2/sinusoidal Holds
+S-fr/two-element-array/pec/hallen Holds
+S-fr/two-element-array/pec/mpie Holds
+S-fr/two-element-array/pec/sinusoidal Holds
+S-load/collinear-split/free/hallen/PlaneWave Holds
+S-load/collinear-split/free/hallen/Voltage Holds
+S-load/collinear-split/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/free/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/free/sinusoidal/Voltage Holds
+S-load/collinear-split/gn2/hallen/PlaneWave Holds
+S-load/collinear-split/gn2/hallen/Voltage Holds
+S-load/collinear-split/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/gn2/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/gn2/sinusoidal/Voltage Holds
+S-load/collinear-split/pec/hallen/PlaneWave Holds
+S-load/collinear-split/pec/hallen/Voltage Holds
+S-load/collinear-split/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/pec/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/collinear-split/pec/sinusoidal/Voltage Holds
+S-load/dipole/free/hallen/PlaneWave Holds
+S-load/dipole/free/hallen/Voltage Holds
+S-load/dipole/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/free/mpie/Voltage Refused(loads refused)
+S-load/dipole/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/free/sinusoidal/Voltage Holds
+S-load/dipole/gn2/hallen/PlaneWave Holds
+S-load/dipole/gn2/hallen/Voltage Holds
+S-load/dipole/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/gn2/mpie/Voltage Refused(loads refused)
+S-load/dipole/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/gn2/sinusoidal/Voltage Holds
+S-load/dipole/pec/hallen/PlaneWave Holds
+S-load/dipole/pec/hallen/Voltage Holds
+S-load/dipole/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/pec/mpie/Voltage Refused(loads refused)
+S-load/dipole/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/dipole/pec/sinusoidal/Voltage Holds
+S-load/inverted-l/pec/hallen/PlaneWave Holds
+S-load/inverted-l/pec/hallen/Voltage Holds
+S-load/inverted-l/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-l/pec/mpie/Voltage Refused(loads refused)
+S-load/inverted-l/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-l/pec/sinusoidal/Voltage Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-load/inverted-v/free/hallen/PlaneWave Holds
+S-load/inverted-v/free/hallen/Voltage Holds
+S-load/inverted-v/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/free/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/inverted-v/gn2/hallen/PlaneWave Holds
+S-load/inverted-v/gn2/hallen/Voltage Holds
+S-load/inverted-v/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/gn2/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/inverted-v/pec/hallen/PlaneWave Holds
+S-load/inverted-v/pec/hallen/Voltage Holds
+S-load/inverted-v/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/pec/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/inverted-v/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/monopole/pec/hallen/PlaneWave Holds
+S-load/monopole/pec/hallen/Voltage Holds
+S-load/monopole/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/monopole/pec/mpie/Voltage Refused(loads refused)
+S-load/monopole/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/monopole/pec/sinusoidal/Voltage Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
+S-load/square-loop/free/hallen/PlaneWave Holds
+S-load/square-loop/free/hallen/Voltage Holds
+S-load/square-loop/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/free/mpie/Voltage Refused(loads refused)
+S-load/square-loop/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/square-loop/gn2/hallen/PlaneWave Holds
+S-load/square-loop/gn2/hallen/Voltage Holds
+S-load/square-loop/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/gn2/mpie/Voltage Refused(loads refused)
+S-load/square-loop/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/square-loop/pec/hallen/PlaneWave Holds
+S-load/square-loop/pec/hallen/Voltage Holds
+S-load/square-loop/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/pec/mpie/Voltage Refused(loads refused)
+S-load/square-loop/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/square-loop/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/tee/free/hallen/PlaneWave Holds
+S-load/tee/free/hallen/Voltage Holds
+S-load/tee/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/free/mpie/Voltage Refused(loads refused)
+S-load/tee/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/tee/gn2/hallen/PlaneWave Holds
+S-load/tee/gn2/hallen/Voltage Holds
+S-load/tee/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/gn2/mpie/Voltage Refused(loads refused)
+S-load/tee/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/tee/pec/hallen/PlaneWave Holds
+S-load/tee/pec/hallen/Voltage Holds
+S-load/tee/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/pec/mpie/Voltage Refused(loads refused)
+S-load/tee/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tee/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/tilted-offcentre/free/hallen/PlaneWave Holds
+S-load/tilted-offcentre/free/hallen/Voltage Holds
+S-load/tilted-offcentre/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/free/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/free/sinusoidal/Voltage Holds
+S-load/tilted-offcentre/gn2/hallen/PlaneWave Holds
+S-load/tilted-offcentre/gn2/hallen/Voltage Holds
+S-load/tilted-offcentre/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/gn2/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/tilted-offcentre/pec/hallen/PlaneWave Holds
+S-load/tilted-offcentre/pec/hallen/Voltage Holds
+S-load/tilted-offcentre/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/pec/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/tilted-offcentre/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
+S-load/two-element-array/free/hallen/PlaneWave Holds
+S-load/two-element-array/free/hallen/Voltage Holds
+S-load/two-element-array/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/free/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/free/sinusoidal/Voltage Holds
+S-load/two-element-array/gn2/hallen/PlaneWave Holds
+S-load/two-element-array/gn2/hallen/Voltage Holds
+S-load/two-element-array/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/gn2/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/gn2/sinusoidal/Voltage Holds
+S-load/two-element-array/pec/hallen/PlaneWave Holds
+S-load/two-element-array/pec/hallen/Voltage Holds
+S-load/two-element-array/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/pec/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
+S-load/two-element-array/pec/sinusoidal/Voltage Holds
+count R-image 2
+count R-loss 18
+count S-drive 40
+count S-exec 69
+count S-fr 69
+count S-load 138
+reached contact=no
+reached contact=yes
+reached drive=current
+reached drive=planewave
+reached drive=voltage
+reached ground=finite
+reached ground=free
+reached ground=pec
+reached gsolver=n/a
+reached gsolver=rcm
+reached loads=config
+reached loads=deck
+reached loads=none
+reached nf_exec=cpu
+reached route=mpie
+reached route=paths
+reached route=plain

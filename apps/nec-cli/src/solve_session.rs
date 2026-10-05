@@ -1145,6 +1145,9 @@ pub(super) fn solve_frequency_point(
     // into the same diagonal: they are a CLI-only input (`--loads-config`), so they
     // are not part of the deck's own stamps.
     let mut stamps = nec_solver::build_deck_stamps(deck, segs, freq_hz);
+    // For the decision record: whether the DECK's own cards load the structure,
+    // read from the stamps before any Laplace load is composed in.
+    let deck_loaded = stamps.diagonal.iter().any(|z| z.norm() > 0.0);
     let laplace_warnings =
         nec_solver::add_laplace_loads(&mut stamps.diagonal, laplace_loads, segs, freq_hz);
     for warning in &stamps.warnings {
@@ -1500,6 +1503,9 @@ pub(super) fn solve_frequency_point(
             );
         });
     }
+    // Whether the device actually computed the pattern, for the decision record:
+    // the exec label alone said `gpu` while the pattern ran elsewhere (FND-205).
+    let mut rp_on_device = false;
     let mut pattern_table: Vec<PatternRow> = if pattern_points.is_empty() {
         Vec::new()
     } else if gpu_pattern {
@@ -1533,17 +1539,19 @@ pub(super) fn solve_frequency_point(
         ));
 
         match gpu_results {
-            Some(rows) => rows
-                .iter()
-                .map(|r| PatternRow {
-                    theta_deg: r.theta_deg,
-                    phi_deg: r.phi_deg,
-                    gain_total_dbi: r.gain_total_dbi,
-                    gain_theta_dbi: r.gain_theta_dbi,
-                    gain_phi_dbi: r.gain_phi_dbi,
-                    axial_ratio: r.axial_ratio,
-                })
-                .collect(),
+            Some(rows) => {
+                rp_on_device = true;
+                rows.iter()
+                    .map(|r| PatternRow {
+                        theta_deg: r.theta_deg,
+                        phi_deg: r.phi_deg,
+                        gain_total_dbi: r.gain_total_dbi,
+                        gain_theta_dbi: r.gain_theta_dbi,
+                        gain_phi_dbi: r.gain_phi_dbi,
+                        axial_ratio: r.axial_ratio,
+                    })
+                    .collect()
+            }
             None => {
                 // No adapter available — fall back to CPU path silently.
                 eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU RP");
@@ -1675,7 +1683,7 @@ pub(super) fn solve_frequency_point(
             .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
     });
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",
         pulse_rhs_mode,
         exec_label(execution_mode, ran_on_gpu),
         freq_hz / 1e6,
@@ -1683,7 +1691,21 @@ pub(super) fn solve_frequency_point(
         diag_rel,
         diag_spread,
         sin_rel_res,
-        sin_fallback_rel_max
+        sin_fallback_rel_max,
+        decision_record(&DecisionInputs {
+            deck,
+            segs,
+            solver_mode,
+            ground,
+            ground_solver,
+            sommerfeld_outcome,
+            deck_loaded,
+            config_loaded: !laplace_loads.is_empty(),
+            solved_on_device: ran_on_gpu,
+            pattern_rows: pattern_table.len(),
+            pattern_on_device: rp_on_device,
+            near_field_points: near_field_table.len() + near_h_field_table.len(),
+        }),
     );
 
     let bench = BenchRecord {
@@ -1707,6 +1729,96 @@ pub(super) fn solve_frequency_point(
         min_feed_re,
         ran_on_gpu,
     })
+}
+
+/// What one run decided, for the parity sweep (`docs/dev/parity-sweep-design.md`).
+///
+/// The sweep compares two runs that must agree, and classifies a cell by what each
+/// run DID — which route, which drive, which ground model and correction, where the
+/// loads came from, and which executor produced each stage — never by the prose of
+/// a warning: every `--exec gpu` run prints an `info:` line, so "a warning appeared"
+/// says nothing. Read from the values the run used, not re-derived from its cards.
+pub(super) struct DecisionInputs<'a> {
+    pub(super) deck: &'a nec_model::deck::NecDeck,
+    pub(super) segs: &'a [Segment],
+    pub(super) solver_mode: SolverMode,
+    pub(super) ground: &'a GroundModel,
+    pub(super) ground_solver: GroundSolver,
+    pub(super) sommerfeld_outcome: SommerfeldOutcome,
+    pub(super) deck_loaded: bool,
+    pub(super) config_loaded: bool,
+    pub(super) solved_on_device: bool,
+    pub(super) pattern_rows: usize,
+    pub(super) pattern_on_device: bool,
+    pub(super) near_field_points: usize,
+}
+
+/// `key=value` fields appended to the `diag:` line; see [`DecisionInputs`].
+pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
+    let route = match d.solver_mode {
+        SolverMode::Hallen | SolverMode::Sinusoidal => {
+            let r = nec_solver::hallen_route(d.deck, d.segs);
+            if r.unsupported_topology {
+                "unsupported"
+            } else if r.paths {
+                "paths"
+            } else {
+                "plain"
+            }
+        }
+        SolverMode::Mpie => "mpie",
+        SolverMode::Pulse | SolverMode::Continuity => "pulse",
+    };
+    let drive = if deck_has_plane_wave(d.deck) {
+        "planewave"
+    } else if nec_solver::feedpoints(d.deck)
+        .any(|(_, role)| role == nec_model::card::FeedpointRole::CurrentSource)
+    {
+        "current"
+    } else {
+        "voltage"
+    };
+    let ground = match d.ground {
+        GroundModel::FreeSpace => "free",
+        GroundModel::PerfectConductor => "pec",
+        GroundModel::SimpleFiniteGround { .. } => "finite",
+        GroundModel::Deferred { .. } => "deferred",
+    };
+    let gsolver = match (d.ground, d.ground_solver, d.sommerfeld_outcome) {
+        (_, _, SommerfeldOutcome::Applied) => "sommerfeld-applied",
+        (_, _, SommerfeldOutcome::Declined) => "sommerfeld-declined",
+        (_, _, SommerfeldOutcome::DeclinedReceive) => "sommerfeld-declined-receive",
+        (GroundModel::SimpleFiniteGround { .. }, GroundSolver::Rcm, _) => "rcm",
+        // No finite ground (or a solver that brings its own, the MPIE): no
+        // ground solver to name.
+        _ => "n/a",
+    };
+    let loads = match (d.deck_loaded, d.config_loaded) {
+        (false, false) => "none",
+        (true, false) => "deck",
+        (false, true) => "config",
+        (true, true) => "deck+config",
+    };
+    let solve = if d.solved_on_device { "gpu" } else { "cpu" };
+    let rp = match (d.pattern_rows, d.pattern_on_device) {
+        (0, _) => "none",
+        (_, true) => "gpu",
+        (_, false) => "cpu",
+    };
+    let nf = if d.near_field_points == 0 {
+        "none"
+    } else {
+        "cpu"
+    };
+    // A deck touching PEC solves as its image problem (FND-082) — a route of its
+    // own for every output that must add the image (FND-201).
+    let contact = matches!(d.ground, GroundModel::PerfectConductor)
+        && nec_solver::ground_contact::touches_ground(d.segs);
+    format!(
+        "route={route} contact={} drive={drive} ground={ground} gsolver={gsolver} \
+         loads={loads} solve_exec={solve} rp_exec={rp} nf_exec={nf}",
+        if contact { "yes" } else { "no" }
+    )
 }
 
 /// What the sweep executor needs to know about one point's result: whether the
