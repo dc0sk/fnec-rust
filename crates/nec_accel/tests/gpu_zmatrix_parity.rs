@@ -82,13 +82,21 @@ fn build_test_inputs() -> (Vec<ZSegmentInput>, Vec<[f64; 2]>, usize, f64) {
 fn gpu_zmatrix_fill_matches_cpu_within_1e4_relative() {
     let (gpu_segs, cpu_flat, n, freq_hz) = build_test_inputs();
 
-    let gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
+    let mut gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
+    // One re-run on a present adapter, as G5 and the hybrid lane's tests have
+    // (#519, #536): the NVIDIA driver faulted this test's own process with Xid 32
+    // on 2026-10-04 and again on 2026-10-05 on the RTX 2080 Ti (FND-190), failing
+    // it as if the fill were wrong. A second failure in a row still fails.
+    if gpu_result.is_err() && pollster::block_on(hardware_adapter_present()) {
+        eprintln!("G6 gate: the fill returned nothing on a present adapter; re-running once");
+        gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
+    }
 
     let Ok(gpu_flat) = gpu_result else {
         // A skip only where there is no GPU (FND-163).
         assert!(
             !pollster::block_on(hardware_adapter_present()),
-            "G6: a hardware adapter is present but the GPU fill returned nothing"
+            "G6: a hardware adapter is present but the GPU fill returned nothing, twice"
         );
         eprintln!("G6 gate: no hardware GPU adapter — parity gate skipped (software fallback)");
         return;

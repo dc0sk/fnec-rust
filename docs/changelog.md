@@ -15,6 +15,26 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **Without `--exec`, one frequency point goes to the GPU from 600 segments,
+  not 500.** The crossover is the device's start-up against the CPU's N³ solve,
+  so it belongs to the card: re-measured on the host's new RTX 2080 Ti (driver
+  595.91.07), whose start-up is ≈ 0.35 s against the GTX 1080 Ti's 0.18 s — at
+  551 segments the two tie (0.41 s each), at 601 the GPU wins (0.40 s against
+  0.53). The sweep threshold (550) measured the same on both cards.
+
+### Fixed
+
+- **Debug-build GPU tests loaded the Vulkan validation layer, and the loader
+  could crash inside it** (FND-214): wgpu turns validation on in every debug
+  build, and with two instances in one process the loader segfaulted in the
+  layer (2 of 30 suite loops), killing the test binary. Validation is now opt-in
+  with `WGPU_VALIDATION=1`; release builds never enabled it.
+- **The G6 Z-fill parity gate re-runs once on a driver fault on a present
+  adapter**, as G5 does (FND-190). The host's NVIDIA faults (FND-190) are gone
+  after a card and driver change: 0 Xids in 1,890 GPU tests on 595.91.07.
+
 ## [0.21.2] — 2026-10-05 — Every axis
 
 A targeted audit of v0.21.1 (FND-199 to FND-213, #525–#536) for the shape of

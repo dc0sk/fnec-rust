@@ -45,18 +45,22 @@ pub(super) enum CompatibilityProfile {
 
 /// The smallest deck the automatic pick sends to the GPU for one frequency point.
 ///
-/// Measured 2026-10-01 on an NVIDIA GTX 1080 Ti against a 24-thread CPU, a λ/2
-/// dipole, whole process, best of 3, with the triangular solves one dispatch per
-/// column: 401 segments 0.17 s CPU / 0.22 s GPU, 451 0.235 / 0.224 (a tie), 501
-/// 0.31 / 0.25, 601 0.52 / 0.27. Set at the first clear GPU win, 501. The device
-/// pays a fixed ≈ 0.18 s to start, the CPU grows as N³. (It was 600 when the
-/// triangular solves ran in one invocation.)
-pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 500;
+/// Measured 2026-10-05 on an NVIDIA RTX 2080 Ti (driver 595.91.07, open kernel
+/// module) against a 24-thread CPU, a λ/2 dipole, whole process, best of 3:
+/// 401 segments 0.171 s CPU / 0.365 s GPU, 501 0.316 / 0.398, 551 0.411 / 0.406
+/// (a tie), 601 0.525 / 0.396. Set at the first clear GPU win, 601. The device
+/// pays a fixed ≈ 0.35 s to start — about twice the GTX 1080 Ti's 0.18 s, which
+/// is why this rose from the 500 measured there on 2026-10-01 (451 a tie, 501
+/// 0.31 / 0.25) — and the CPU grows as N³. A host constant: re-measure on a new
+/// card or driver (`~/.cache/swap/xover.sh`-style, whole process, exact timer).
+pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 600;
 
 /// The same for a sweep, where the CPU solves its points in parallel and the GPU
-/// in turn. 24 points, measured as above: 401 segments 0.40 s CPU / 1.20 s GPU,
-/// 501 1.24 / 1.64, 551 2.65 / 1.89, 601 3.71 / 2.20, 701 6.79 / 2.95 (it was 800
-/// with the serial triangular solves). It moves with the controller's thread count
+/// in turn. 24 points, measured as above (2080 Ti, 595): 401 segments 0.380 s
+/// CPU / 1.258 s GPU, 501 1.107 / 1.669, 551 2.058 / 1.910, 601 3.194 / 2.159,
+/// 701 6.498 / 2.727 — the same crossover as the 1080 Ti's (501 1.24 / 1.64,
+/// 551 2.65 / 1.89), where the device's start-up is amortised over the points.
+/// (It was 800 with the serial triangular solves.) It moves with the controller's thread count
 /// — fewer cores, a lower crossover — and is not modelled: guessing high errs
 /// toward the CPU, which was the default before this pick existed, so the pick is
 /// never slower than it.
