@@ -1,5 +1,6 @@
 # parity_sweep — every cell's outcome. A diff here is a behaviour change: review it,
 # then bless with PARITY_BLESS=1. Generated; do not edit by hand.
+R-converge/square-loop/free/mpie Shrinks(dZ 17 % -> 9 %)
 R-image/inverted-l Holds
 R-image/monopole Holds
 R-loss/collinear-split/free Holds
@@ -579,6 +580,7 @@ S-worker/two-element-array/pec/cpu/bare Holds
 S-worker/two-element-array/pec/cpu/loaded Holds
 S-worker/two-element-array/pec/gpu/bare Holds
 S-worker/two-element-array/pec/gpu/loaded Holds
+count R-converge 1
 count R-image 2
 count R-loss 18
 count R-network 18

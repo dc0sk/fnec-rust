@@ -445,9 +445,10 @@ const GEOMETRIES: [Geometry; 9] = [
         contact: false,
     },
     Geometry {
-        // 21 per side: near anti-resonance (X ~ -4.5 kΩ) every code still moves with the
-        // mesh at 11 — Hallén and the MPIE differed by 34 % there, 15 % at 21, and both
-        // close on nec2c from opposite sides as it is refined.
+        // 21 per side. Near anti-resonance (X ~ -4.5 kΩ) every code still moves with the
+        // mesh: Hallén ↔ MPIE 34 / 17 / 9 / 5 % at 11 / 21 / 41 / 81 a side, and each
+        // code's extrapolated limit agrees with the others' within ~3 % — discretisation,
+        // pinned at two meshes by `R-converge`.
         name: "square-loop",
         wires: "GW 1 21 0 0 {0} 3 0 {0} .001\nGW 2 21 3 0 {0} 3 0 {3} .001\nGW 3 21 3 0 {3} 0 0 {3} .001\nGW 4 21 0 0 {3} 0 0 {0} .001\n",
         feed: (1, 11),
@@ -595,8 +596,15 @@ const SOLVERS: [&str; 3] = ["hallen", "sinusoidal", "mpie"];
 
 /// One cell: its id (relation/geometry/ground/…), and the closure that produces its
 /// outcome — `Ok(label)` or `Err(why it failed)`.
-/// A deck chosen to draw caveats: its name, its text, and any config files it runs with.
-type CaveatDeck = (&'static str, String, Vec<(&'static str, String)>);
+/// A deck chosen to draw caveats: its name, its text, any config files it runs with, and
+/// the remedies its caveats must name — from the fixture, never from the output, or a
+/// caveat that drops its remedy reads as nothing to check.
+type CaveatDeck = (
+    &'static str,
+    String,
+    Vec<(&'static str, String)>,
+    &'static [&'static str],
+);
 
 type Cell = (
     String,
@@ -940,24 +948,31 @@ fn cells() -> Vec<Cell> {
             "tee-one-segment-arm",
             "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            &["--solver mpie"],
         ),
         (
             "low-dipole-gn2",
             "CE\nGW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            // Should name `--ground-solver sommerfeld`, which applies here (FND-217);
+            // pinned empty so the fix is this line's reviewed change.
+            &[],
         ),
         (
             "negative-load-config",
             "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![("--loads-config", "[[laplace_load]]\ntag = 1\nseg_first = 11\nnumerator = [-200.0]\ndenominator = [1.0]\n".into())],
+            // The negative-resistance caveat says to check the loads: no flag cures it.
+            &[],
         ),
         (
             "negative-load-card",
             "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nLD 4 1 11 11 -200 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            &[],
         ),
     ];
-    for (name, text, files) in caveat_decks {
+    for (name, text, files, expected) in caveat_decks {
         let id = format!("R-remedy/{name}");
         let cid = id.clone();
         v.push((
@@ -969,6 +984,12 @@ fn cells() -> Vec<Cell> {
                     return Err(format!("the caveat deck itself failed:\n{}", first.stderr));
                 }
                 let named = remedies(&first.stderr);
+                let said: Vec<String> = named.iter().map(|r| r.join(" ")).collect();
+                if said != expected {
+                    return Err(format!(
+                        "the caveats named {said:?}; this deck's caveats must name {expected:?}"
+                    ));
+                }
                 for r in &named {
                     let mut args: Vec<&str> = r.iter().map(String::as_str).collect();
                     if !args.contains(&"--exec") {
@@ -1121,6 +1142,52 @@ fn cells() -> Vec<Cell> {
                 }),
             ));
         }
+    }
+
+    // R-converge: a solver-vs-solver gap is discretisation only if it shrinks with the
+    // mesh. The loop's MPIE ↔ Hallén gap, at 21 and at 41 a side; both pinned.
+    {
+        let lp = |n: u32| {
+            format!(
+                "CE\nGW 1 {n} 0 0 0 3 0 0 .001\nGW 2 {n} 3 0 0 3 0 3 .001\nGW 3 {n} 3 0 3 0 0 3 .001\nGW 4 {n} 0 0 3 0 0 0 .001\nGE 0\nEX 0 1 {} 0 1 0\nFR 0 1 0 0 {FREQ_MHZ} 0\nEN\n",
+                n.div_ceil(2)
+            )
+        };
+        let id = "R-converge/square-loop/free/mpie".to_string();
+        let cid = id.clone();
+        v.push((
+            id,
+            Box::new(move || {
+                let mut gaps = Vec::new();
+                for n in [21, 41] {
+                    let t = lp(n);
+                    let h = run(&format!("{cid}/{n}/hallen"), &t, &["--exec", "cpu"], &[]);
+                    let m = run(
+                        &format!("{cid}/{n}/mpie"),
+                        &t,
+                        &["--solver", "mpie", "--exec", "cpu"],
+                        &[],
+                    );
+                    if !h.ok || !m.ok {
+                        return Err(format!("{n} a side: {:?} / {:?}", h.refusal, m.refusal));
+                    }
+                    let (zh, zm) = (feed_z(&h), feed_z(&m));
+                    gaps.push((zh.0 - zm.0).hypot(zh.1 - zm.1) / zh.0.hypot(zh.1));
+                }
+                if gaps[1] >= gaps[0] {
+                    return Err(format!(
+                        "the gap does not shrink with the mesh: {:.1} % at 21, {:.1} % at 41",
+                        100.0 * gaps[0],
+                        100.0 * gaps[1]
+                    ));
+                }
+                Ok(format!(
+                    "Shrinks(dZ {:.0} % -> {:.0} %)",
+                    100.0 * gaps[0],
+                    100.0 * gaps[1]
+                ))
+            }),
+        ));
     }
 
     // R-image: a deck touching PEC against its explicit free-space double — the wires
