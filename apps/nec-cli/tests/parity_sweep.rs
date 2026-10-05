@@ -445,11 +445,15 @@ const GEOMETRIES: [Geometry; 9] = [
         contact: false,
     },
     Geometry {
+        // 21 per side. Near anti-resonance (X ~ -4.5 kΩ) every code still moves with the
+        // mesh: Hallén ↔ MPIE 34 / 17 / 9 / 5 % at 11 / 21 / 41 / 81 a side, and each
+        // code's extrapolated limit agrees with the others' within ~3 % — discretisation,
+        // pinned at two meshes by `R-converge`.
         name: "square-loop",
-        wires: "GW 1 11 0 0 {0} 3 0 {0} .001\nGW 2 11 3 0 {0} 3 0 {3} .001\nGW 3 11 3 0 {3} 0 0 {3} .001\nGW 4 11 0 0 {3} 0 0 {0} .001\n",
-        feed: (1, 6),
+        wires: "GW 1 21 0 0 {0} 3 0 {0} .001\nGW 2 21 3 0 {0} 3 0 {3} .001\nGW 3 21 3 0 {3} 0 0 {3} .001\nGW 4 21 0 0 {3} 0 0 {0} .001\n",
+        feed: (1, 11),
         feed2: None,
-        load: (3, 6),
+        load: (3, 11),
         contact: false,
     },
     Geometry {
@@ -592,8 +596,15 @@ const SOLVERS: [&str; 3] = ["hallen", "sinusoidal", "mpie"];
 
 /// One cell: its id (relation/geometry/ground/…), and the closure that produces its
 /// outcome — `Ok(label)` or `Err(why it failed)`.
-/// A deck chosen to draw caveats: its name, its text, and any config files it runs with.
-type CaveatDeck = (&'static str, String, Vec<(&'static str, String)>);
+/// A deck chosen to draw caveats: its name, its text, any config files it runs with, and
+/// the remedies its caveats must name — from the fixture, never from the output, or a
+/// caveat that drops its remedy reads as nothing to check.
+type CaveatDeck = (
+    &'static str,
+    String,
+    Vec<(&'static str, String)>,
+    &'static [&'static str],
+);
 
 type Cell = (
     String,
@@ -937,24 +948,31 @@ fn cells() -> Vec<Cell> {
             "tee-one-segment-arm",
             "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            &["--solver mpie"],
         ),
         (
             "low-dipole-gn2",
             "CE\nGW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            // Should name `--ground-solver sommerfeld`, which applies here (FND-217);
+            // pinned empty so the fix is this line's reviewed change.
+            &[],
         ),
         (
             "negative-load-config",
             "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![("--loads-config", "[[laplace_load]]\ntag = 1\nseg_first = 11\nnumerator = [-200.0]\ndenominator = [1.0]\n".into())],
+            // The negative-resistance caveat says to check the loads: no flag cures it.
+            &[],
         ),
         (
             "negative-load-card",
             "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nLD 4 1 11 11 -200 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
+            &[],
         ),
     ];
-    for (name, text, files) in caveat_decks {
+    for (name, text, files, expected) in caveat_decks {
         let id = format!("R-remedy/{name}");
         let cid = id.clone();
         v.push((
@@ -966,6 +984,12 @@ fn cells() -> Vec<Cell> {
                     return Err(format!("the caveat deck itself failed:\n{}", first.stderr));
                 }
                 let named = remedies(&first.stderr);
+                let said: Vec<String> = named.iter().map(|r| r.join(" ")).collect();
+                if said != expected {
+                    return Err(format!(
+                        "the caveats named {said:?}; this deck's caveats must name {expected:?}"
+                    ));
+                }
                 for r in &named {
                     let mut args: Vec<&str> = r.iter().map(String::as_str).collect();
                     if !args.contains(&"--exec") {
@@ -1020,6 +1044,150 @@ fn cells() -> Vec<Cell> {
                 }),
             ));
         }
+    }
+
+    // ---- Stage 3 -------------------------------------------------------------
+
+    // R-reference and R-solver: what no spelling pair can see, because both spellings
+    // are wrong identically (FND-202, the MPIE driving one of two sources; FND-203,
+    // sinusoidal answering a bent deck on the wrong basis). Each cell pins its measured
+    // difference — to nec2c (R-reference, Hallén) or to Hallén (R-solver, the MPIE and
+    // sinusoidal) — rounded to 1 %, so any change in a solver's answer is a reviewed
+    // manifest diff; and fails outright past REF_CAP (FND-202 was 70 %, FND-203 two- to
+    // threefold).
+    const REF_CAP: f64 = 0.25;
+    let goldens = nec2c_goldens();
+    for (g, gr) in placements() {
+        let key = format!("{}/{}", g.name, gr.name());
+        let Some(&golden) = goldens.get(&key) else {
+            let id = format!("R-reference/{key}");
+            v.push((
+                id,
+                Box::new(move || Err(format!("no nec2c golden for {key}: capture it"))),
+            ));
+            continue;
+        };
+        let text = deck(&g, gr, "", Drive::Voltage);
+        let id = format!("R-reference/{key}");
+        let (cid, t) = (id.clone(), text.clone());
+        v.push((
+            id,
+            Box::new(move || {
+                let a = run(&format!("{cid}/hallen"), &t, &["--exec", "cpu"], &[]);
+                if !a.ok {
+                    return Err(format!(
+                        "Hallén refused a deck nec2c solves: {:?}",
+                        a.refusal
+                    ));
+                }
+                let z = feed_z(&a);
+                let rel = (z.0 - golden.0).hypot(z.1 - golden.1) / golden.0.hypot(golden.1);
+                if rel > REF_CAP {
+                    return Err(format!(
+                        "Hallén {z:?} vs nec2c {golden:?}: {:.1} %",
+                        100.0 * rel
+                    ));
+                }
+                record_reached(&a);
+                Ok(format!("Holds(dZ {:.0} %)", 100.0 * rel))
+            }),
+        ));
+        for solver in ["mpie", "sinusoidal"] {
+            // The MPIE over finite ground costs ~10 s a run here; S-fr compares those.
+            if solver == "mpie" && gr == Ground::Finite {
+                continue;
+            }
+            let id = format!("R-solver/{key}/{solver}");
+            let (cid, t) = (id.clone(), text.clone());
+            v.push((
+                id,
+                Box::new(move || {
+                    let h = run(&format!("{cid}/hallen"), &t, &["--exec", "cpu"], &[]);
+                    let o = run(
+                        &format!("{cid}/{solver}"),
+                        &t,
+                        &["--solver", solver, "--exec", "cpu"],
+                        &[],
+                    );
+                    if !o.ok {
+                        return Ok(format!(
+                            "Refused({})",
+                            verbatim(o.refusal.as_deref().unwrap_or(""))
+                        ));
+                    }
+                    if !h.ok {
+                        return Err(format!(
+                            "{solver} solved what Hallén refused: {:?}",
+                            h.refusal
+                        ));
+                    }
+                    // Every feed: FND-202 was the second port.
+                    let (fh, fo) = (&h.sections["FEEDPOINTS"], &o.sections["FEEDPOINTS"]);
+                    if fh.len() != fo.len() {
+                        return Err(format!("{} feeds vs {}", fh.len(), fo.len()));
+                    }
+                    let mut worst = 0.0_f64;
+                    for (rh, ro) in fh.iter().zip(fo) {
+                        let rel = (rh[6] - ro[6]).hypot(rh[7] - ro[7]) / rh[6].hypot(rh[7]);
+                        worst = worst.max(rel);
+                    }
+                    if worst > REF_CAP {
+                        return Err(format!(
+                            "{solver} vs Hallén: {:.1} % at a feed",
+                            100.0 * worst
+                        ));
+                    }
+                    record_reached(&o);
+                    Ok(format!("Holds(dZ {:.0} %)", 100.0 * worst))
+                }),
+            ));
+        }
+    }
+
+    // R-converge: a solver-vs-solver gap is discretisation only if it shrinks with the
+    // mesh. The loop's MPIE ↔ Hallén gap, at 21 and at 41 a side; both pinned.
+    {
+        let lp = |n: u32| {
+            format!(
+                "CE\nGW 1 {n} 0 0 0 3 0 0 .001\nGW 2 {n} 3 0 0 3 0 3 .001\nGW 3 {n} 3 0 3 0 0 3 .001\nGW 4 {n} 0 0 3 0 0 0 .001\nGE 0\nEX 0 1 {} 0 1 0\nFR 0 1 0 0 {FREQ_MHZ} 0\nEN\n",
+                n.div_ceil(2)
+            )
+        };
+        let id = "R-converge/square-loop/free/mpie".to_string();
+        let cid = id.clone();
+        v.push((
+            id,
+            Box::new(move || {
+                let mut gaps = Vec::new();
+                for n in [21, 41] {
+                    let t = lp(n);
+                    let h = run(&format!("{cid}/{n}/hallen"), &t, &["--exec", "cpu"], &[]);
+                    let m = run(
+                        &format!("{cid}/{n}/mpie"),
+                        &t,
+                        &["--solver", "mpie", "--exec", "cpu"],
+                        &[],
+                    );
+                    if !h.ok || !m.ok {
+                        return Err(format!("{n} a side: {:?} / {:?}", h.refusal, m.refusal));
+                    }
+                    let (zh, zm) = (feed_z(&h), feed_z(&m));
+                    gaps.push((zh.0 - zm.0).hypot(zh.1 - zm.1) / zh.0.hypot(zh.1));
+                }
+                if gaps[1] >= gaps[0] {
+                    return Err(format!(
+                        "the gap does not shrink with the mesh: {:.1} % at 21, {:.1} % at 41",
+                        100.0 * gaps[0],
+                        100.0 * gaps[1]
+                    ));
+                }
+                Ok(format!(
+                    "Shrinks(dZ {:.0} % -> {:.0} %)",
+                    100.0 * gaps[0],
+                    100.0 * gaps[1]
+                ))
+            }),
+        ));
     }
 
     // R-image: a deck touching PEC against its explicit free-space double — the wires
@@ -1372,4 +1540,72 @@ fn parity_sweep() {
                 .join("\n"),
         );
     }
+}
+
+// ---------------------------------------------------------------------------------
+// Stage 3: references
+// ---------------------------------------------------------------------------------
+
+fn nec2c_golden_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity_nec2c.txt")
+}
+
+/// nec2c's feedpoint impedance for every voltage-driven, unloaded placement — the
+/// external reference for what no identity between two fnec runs can see (FND-202 and
+/// FND-203 were wrong identically in both spellings). Captured with this exact deck
+/// text by `capture_nec2c_goldens`; CI has no nec2c and only reads the file.
+fn nec2c_goldens() -> BTreeMap<String, (f64, f64)> {
+    let text = std::fs::read_to_string(nec2c_golden_path()).unwrap_or_default();
+    text.lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            Some((f[0].to_string(), (f[1].parse().ok()?, f[2].parse().ok()?)))
+        })
+        .collect()
+}
+
+/// Capture the nec2c references. Run on a host with nec2c, after a deliberate change:
+/// `cargo test -p nec-cli --test parity_sweep capture_nec2c_goldens -- --ignored`.
+#[test]
+#[ignore = "needs nec2c; run deliberately to refresh tests/parity_nec2c.txt"]
+fn capture_nec2c_goldens() {
+    let version = Command::new("dpkg-query")
+        .args(["-W", "-f=${Version}", "nec2c"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_else(|_| "unknown".into());
+    let mut out = format!(
+        "# nec2c feedpoint impedance (first feed) for the parity sweep's placements.\n\
+         # Captured by `capture_nec2c_goldens` with nec2c {version}, from the same deck text\n\
+         # the sweep runs (voltage drive, unloaded, FR {FREQ_MHZ} MHz). id R X\n"
+    );
+    let dir = std::env::temp_dir().join("n2c");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (g, gr) in placements() {
+        let id = format!("{}/{}", g.name, gr.name());
+        let text = deck(&g, gr, "", Drive::Voltage);
+        let (inp, outp) = (dir.join("d.nec"), dir.join("d.out"));
+        std::fs::write(&inp, text.replace("EN\n", "XQ\nEN\n")).unwrap();
+        let st = Command::new("nec2c")
+            .arg(format!("-i{}", inp.display()))
+            .arg(format!("-o{}", outp.display()))
+            .output()
+            .expect("run nec2c");
+        assert!(st.status.success(), "{id}: nec2c failed: {:?}", st);
+        let report = std::fs::read_to_string(&outp).unwrap();
+        let mut lines = report
+            .lines()
+            .skip_while(|l| !l.contains("ANTENNA INPUT PARAMETERS"));
+        let row = lines
+            .find(|l| {
+                let f: Vec<&str> = l.split_whitespace().collect();
+                f.len() >= 10 && f[0].parse::<u32>().is_ok() && f[1].parse::<u32>().is_ok()
+            })
+            .unwrap_or_else(|| panic!("{id}: no input-parameter row"));
+        let f: Vec<&str> = row.split_whitespace().collect();
+        out.push_str(&format!("{id} {} {}\n", f[6], f[7]));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::write(nec2c_golden_path(), out).unwrap();
 }

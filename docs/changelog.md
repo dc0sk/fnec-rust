@@ -17,6 +17,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **The parity sweep, stage 3**: Hallén against nec2c references on every placement,
+  and the MPIE and sinusoidal solvers against Hallén at every feed, each difference
+  pinned — the two classes no spelling pair could see (FND-202, FND-203) now fail it.
 - **The parity sweep, stage 2**: the distributed worker against the local CLI, invalid
   loads refused both ways, a shunt network's exact identity, every named remedy rerun,
   and a sweep point against the same frequency alone — 533 cells; re-introducing five

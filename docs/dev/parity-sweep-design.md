@@ -54,7 +54,7 @@ Around it, relations that hold by physics and use only printed values:
 | R-solver | `mpie`/`sinusoidal` ↔ `hallen`, per-(deck, solver) tolerance measured at two meshes and pinned | FND-202, 203 |
 
 and committed nec2c goldens where no identity exists (GN 2 near field; the Sommerfeld
-correction; captured once, provenance in the file — pc1 has no nec2c): FND-201 over finite
+correction; captured once, provenance in the file; CI has no nec2c): FND-201 over finite
 ground, FND-206.
 
 ## How it cannot pass while the class persists
@@ -151,3 +151,71 @@ Sabotage-verified, each caught by its relation, with a clean sweep after:
 
 `R-remedy` can test only remedies a caveat names. The low-ground caveat names none,
 although `--ground-solver sommerfeld` exists for a single straight wire — FND-217.
+
+## Stage 3 — built (2026-10-05)
+
+580 cells, about 170 s on pc1. Two relations for what no spelling pair can see, because
+both spellings were wrong identically (FND-202, FND-203):
+
+| relation | the comparison | cells |
+|---|---|---|
+| `R-reference` | Hallén's feedpoint Z ↔ nec2c's, for every voltage-driven unloaded placement | 23 |
+| `R-solver` | the MPIE and sinusoidal Z at **every** feed ↔ Hallén's (MPIE over finite ground left to `S-fr`, ~10 s a run) | 39 |
+| `R-converge` | the loop's MPIE ↔ Hallén gap at 21 and at 41 a side: it must shrink | 1 |
+
+Each cell pins its measured difference rounded to 1 %, so a change in any solver's answer
+is a reviewed manifest diff, and fails outright past 25 % (FND-202 was 70 %, FND-203 two-
+to threefold). Today: Hallén ↔ nec2c 1–10 %; MPIE ↔ Hallén 3–17 %; sinusoidal ↔ Hallén
+1–2 %. A refusal is pinned like any outcome.
+
+The references live in `apps/nec-cli/tests/parity_nec2c.txt`, captured from the sweep's
+own deck text by the ignored test `capture_nec2c_goldens` (nec2c 1.3.1-3build1); CI has
+no nec2c and only reads the file. A placement without a reference fails its cell.
+
+The square loop is now 21 segments a side. At 11, near anti-resonance (X ≈ −4.5 kΩ),
+Hallén and the MPIE differed by 34 %. Measured on the loop in free space (R X, Ω):
+
+| a side | Hallén | MPIE | nec2c |
+|---|---|---|---|
+| 11 | 340.5 −4108 | 605.0 −5478 | 455.7 −4763 |
+| 21 | 331.2 −4053 | 451.9 −4737 | 389.7 −4404 |
+| 41 | 323.6 −4009 | 385.4 −4376 | 355.3 −4205 |
+| 81 | 317.7 −3974 | 351.9 −4182 | 335.9 −4088 |
+
+Every pairwise gap shrinks about 0.55× per doubling (MPIE ↔ Hallén 34 / 17 / 9 / 5 %),
+and each code extrapolated to its own limit agrees with the others within ~1–3 % of |Z|.
+Both together — a shrinking gap alone could be errors cancelling — are why this is
+discretisation. Hallén's limit stays ~2 % from nec2c's: a converged residual, inside the
+1–10 % band. Note also that nec2c at 21 a side is itself ~8 % from its own limit, so the
+loop's `R-reference` gap is mostly the reference's mesh error. One mesh pins nothing
+about convergence, so `R-converge` asserts the loop's gap shrinks from 21 to 41 a side.
+It can see a mesh-dependent defect; a constant one is caught by the 1 % pins instead.
+
+`R-remedy`'s fixture names the remedies each deck's caveats must name; an empty list is a
+pass only where the fixture expects none. The low dipole expects none today — FND-217 —
+so fixing it is a reviewed change to that line.
+
+Sabotage-verified, with a clean sweep after (the harness now asserts from cargo's output
+that every sabotaged and every restored crate recompiled):
+
+| re-introduced | caught by |
+|---|---|
+| the CLI topology caveat stops naming `--solver mpie` (`CLI_MPIE_REMEDY`) | `R-remedy`, 1 cell (it passed as `Holds[]` before the fixture named its remedies) |
+| the MPIE's currents scaled by 0.9 | `R-solver`, 4 cells (a constant error: the 1 % pins, not `R-converge`) |
+
+The same remedy text has a second copy, `SolverContext::cli_hallen().mpie_remedy`, that
+the CLI uses only in the negative-feedpoint-resistance diagnosis with no negative load on
+a deck without junctions — a solver failure no fixture can produce. Changing that copy is
+not caught; it is the one remedy path the sweep cannot reach.
+
+Sabotage-verified, with a clean sweep after:
+
+| re-introduced | caught by |
+|---|---|
+| FND-202: the MPIE drives the first source only | `R-solver`, 2 cells (two-element array) |
+| FND-203: the sinusoidal basis answers bent decks | `R-solver`, 6 cells (inverted-V, loop) |
+
+Not built, and why: the enum macro generating `ALL` and execution-derived coverage are
+left for when a new axis value is added — the manifest's `reached` lines already fail
+when a decision value stops being reached. The sweep runs in every gate already: it is
+an integration test of `nec-cli`.
