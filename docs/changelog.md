@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-04
+last_updated: 2026-10-05
 ---
 
 # Changelog
@@ -14,6 +14,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.21.2] — 2026-10-05 — Every axis
+
+A targeted audit of v0.21.1 (FND-199 to FND-213, #525–#536) for the shape of
+FND-197/198: a decision keyed on one input source or one dispatch axis while
+the run has another. Thirteen confirmed defects, ten of them silent wrong
+answers; two on the default path — **gain ignored load losses in free space and
+over PEC** (FND-200) and **near fields ignored the ground** (FND-201). All are
+fixed but one, rejected with a measurement (FND-212). The findings ledger went
+from 198 / 0 open to **213 / 0 open**.
 
 ### Fixed
 
