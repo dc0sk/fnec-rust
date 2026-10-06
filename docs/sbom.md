@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # SBOM
@@ -16,9 +16,9 @@ release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the f
 transitive graph — 525 packages at v0.19.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
 
-**No dependency left or arrived between v0.21.1 and v0.21.2.** Set difference over
+**No dependency left or arrived between v0.21.2 and v0.21.3.** Set difference over
 `(name, versionInfo)` pairs: 525 packages before and after; the only entries that moved
-are the nine workspace members' own versions (0.21.1 → 0.21.2).
+are the nine workspace members' own versions (0.21.2 → 0.21.3).
 
 **One dependency left between v0.18.0 and v0.19.0 and none arrived:** `sha2` 0.10.9,
 which only the unused result cache called (removed, FND-155). Established by set

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # Changelog
@@ -15,23 +15,28 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.21.3] — 2026-10-06 — Every spelling
+
+A standing check that every way of asking fnec the same question gets the same
+answer — the parity sweep — and the three defects it and its reviews found on the
+way (FND-216, FND-217, FND-218), plus a re-measured GPU crossover (FND-219) for the
+host's new card. The findings ledger went from 213 / 0 open to **219 / 0 open**.
+
 ### Added
 
-- **The parity sweep, stage 3**: Hallén against nec2c references on every placement,
-  and the MPIE and sinusoidal solvers against Hallén at every feed, each difference
-  pinned — the two classes no spelling pair could see (FND-202, FND-203) now fail it.
-- **The parity sweep, stage 2**: the distributed worker against the local CLI, invalid
-  loads refused both ways, a shunt network's exact identity, every named remedy rerun,
-  and a sweep point against the same frequency alone — 533 cells; re-introducing five
-  more defects fails it five times. Its remedy check found FND-217.
-- **The parity sweep** (`apps/nec-cli/tests/parity_sweep.rs`, stage 1): the standing
-  check for the audit's main defect class — a decision keyed on one axis while the run
-  has another. 336 cells, each running the CLI twice where the two runs must agree
-  (the same load as an `LD` card and from `--loads-config`; `--exec gpu`/`hybrid`/auto
-  against `--exec cpu`; the deck's `FR` against `--sweep-config`; `EX 4` against
-  `EX 0`; a deck on PEC against its free-space double; a feed load against its share of
-  the gain), with every outcome, count and reached decision pinned. Its first run
-  found FND-216; re-introducing six past findings fails it six times.
+- **The parity sweep** (`apps/nec-cli/tests/parity_sweep.rs`): a standing check for the
+  audit's main defect class — a decision keyed on one axis while the run has another.
+  580 cells, each running the CLI where two spellings must agree or an identity must
+  hold: the same load as an `LD` card and from `--loads-config`; `--exec gpu`/`hybrid`/
+  auto against `--exec cpu`; the deck's `FR` against `--sweep-config`; `EX 4` against
+  `EX 0`; a deck on PEC against its free-space double; a feed load against its share
+  of the gain; the distributed worker against the local CLI; invalid loads refused
+  both ways; a shunt network's exact identity; every remedy a caveat names, rerun; a
+  sweep point against that frequency alone; Hallén against nec2c references; the MPIE
+  and sinusoidal solvers against Hallén at every feed, at two meshes where it matters.
+  Every outcome, count and reached decision is pinned in a reviewed manifest.
+  Re-introducing fifteen past defects fails it fifteen times; it found FND-216 and
+  FND-217. (#540, #541, #542)
 - **The `diag:` line records what the run decided**: `route`, `contact`, `drive`,
   `ground`, `gsolver`, `loads`, and the executor of each stage (`solve_exec`,
   `rp_exec`, `nf_exec`).
