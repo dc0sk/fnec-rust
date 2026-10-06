@@ -954,8 +954,22 @@ fn cells() -> Vec<Cell> {
             "low-dipole-gn2",
             "CE\nGW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
-            // Should name `--ground-solver sommerfeld`, which applies here (FND-217);
-            // pinned empty so the fix is this line's reviewed change.
+            &["--ground-solver sommerfeld"],
+        ),
+        // The two halves of where the correction applies (FND-217), one deck each,
+        // so either half can be broken alone and be seen: a bent wire (geometry)
+        // and a straight wire fed twice (one port). Neither earns another remedy,
+        // so the only one that could appear is the one a broken half would add.
+        (
+            "low-inverted-v-gn2",
+            "CE\nGW 1 11 0 0 1.6 -3.7 0 0.6 .001\nGW 2 11 0 0 1.6 3.7 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![],
+            &[],
+        ),
+        (
+            "low-two-fed-gn2",
+            "CE\nGW 1 41 -10 0 0.6 10 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nEX 0 1 31 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![],
             &[],
         ),
         (
@@ -1001,6 +1015,16 @@ fn cells() -> Vec<Cell> {
                             "a caveat named `{}`, and that run was refused: {:?}",
                             r.join(" "),
                             again.refusal
+                        ));
+                    }
+                    // A declined correction is not a cure. This catches the solve and
+                    // the caveat disagreeing about where it applies; a predicate that
+                    // over-claims is caught above, by the fixture's expected list.
+                    let gsolver = again.decisions.get("gsolver").map(String::as_str);
+                    if r[0] == "--ground-solver" && gsolver != Some("sommerfeld-applied") {
+                        return Err(format!(
+                            "a caveat named `{}`, and the rerun reported gsolver={gsolver:?}",
+                            r.join(" ")
                         ));
                     }
                 }

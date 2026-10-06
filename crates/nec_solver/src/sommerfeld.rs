@@ -209,6 +209,54 @@ pub fn horizontal_ground_z_correction(
     Some(acc / (i_feed * i_feed))
 }
 
+/// Whether the segments form one straight line wholly above `z = 0`: every
+/// direction parallel, every midpoint on one line (FND-206), every midpoint above
+/// ground. The geometry half of [`correction_applies`], and the same test
+/// [`ground_z_correction`] makes — one function, so the two cannot disagree.
+fn one_straight_line_above_ground(midpoints: &[[f64; 3]], directions: &[[f64; 3]]) -> bool {
+    const TOL: f64 = 1e-6;
+    if midpoints.len() < 2 || directions.len() != midpoints.len() {
+        return false;
+    }
+    let axis = directions[0];
+    for (m, d) in midpoints.iter().zip(directions) {
+        if m[2] <= TOL {
+            return false;
+        }
+        let dot = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+        if dot.abs() < 1.0 - TOL {
+            return false;
+        }
+    }
+    // One line, not merely parallel lines: both paths measure separations along
+    // it (FND-206).
+    collinear(midpoints, axis)
+}
+
+/// Whether `--ground-solver sommerfeld` corrects this deck's feedpoint impedance:
+/// one feed (a voltage or current source — the correction is a one-port quantity,
+/// FND-206), no `TL`/`NT` network (whose branch current is not antenna current,
+/// FND-208), and one straight wire above ground.
+///
+/// The CLI's solve gates the correction on exactly this, and the low-ground caveat
+/// names the remedy on exactly this, so the advice cannot outrun the cure
+/// (FND-217). Two conditions only the solve can see remain — a feed current of
+/// zero, and a feed segment missing from the mesh — and neither is reachable from
+/// a valid deck. It holds for `GN 0` as for `GN 2`: fnec models both as finite
+/// ground with the scalar reflection coefficient, and the correction adds the
+/// surface wave to either (`docs/cli-guide.md`).
+pub fn correction_applies(deck: &nec_model::deck::NecDeck, segs: &[crate::Segment]) -> bool {
+    use nec_model::card::Card;
+    let midpoints: Vec<[f64; 3]> = segs.iter().map(|s| s.midpoint).collect();
+    let directions: Vec<[f64; 3]> = segs.iter().map(|s| s.direction).collect();
+    crate::feedpoints(deck).count() == 1
+        && !deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)))
+        && one_straight_line_above_ground(&midpoints, &directions)
+}
+
 /// Surface-wave ΔZ correction for **any straight wire** over finite ground
 /// (PH9-CHK-006 Level 1) — the arbitrary-orientation generalization of
 /// [`horizontal_ground_z_correction`]. Horizontal wires dispatch to the fast
@@ -236,23 +284,10 @@ pub fn ground_z_correction(
         return None;
     }
     const TOL: f64 = 1e-6;
-    // Straight wire, above ground.
-    let axis = directions[0];
-    for i in 0..n {
-        if midpoints[i][2] <= TOL {
-            return None;
-        }
-        let dot =
-            directions[i][0] * axis[0] + directions[i][1] * axis[1] + directions[i][2] * axis[2];
-        if dot.abs() < 1.0 - TOL {
-            return None;
-        }
-    }
-    // One line, not merely parallel lines: both paths measure separations along
-    // it (FND-206).
-    if !collinear(midpoints, axis) {
+    if !one_straight_line_above_ground(midpoints, directions) {
         return None;
     }
+    let axis = directions[0];
     // Horizontal wire: fast ρ-grid path.
     if axis[2].abs() <= TOL {
         return horizontal_ground_z_correction(
@@ -806,6 +841,55 @@ pub fn bessel_j2(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Where the correction applies, one deck per condition (FND-217): the solve
+    /// gates on this and the low-ground caveat names the remedy on it.
+    #[test]
+    fn the_correction_applies_to_one_straight_singly_fed_wire_above_ground() {
+        let applies = |body: &str| {
+            let src = format!("{body}GE 1\nGN 2 0 0 0 13 0.005\nFR 0 1 0 0 14.2 0\nEN\n");
+            let deck = nec_parser::parse(&src).expect("parse").deck;
+            let segs = crate::build_geometry(&deck).expect("geometry");
+            correction_applies(&deck, &segs)
+        };
+        let dipole = "GW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\n";
+        assert!(
+            applies(&format!("{dipole}EX 0 1 11 0 1 0\n")),
+            "a straight dipole"
+        );
+        assert!(
+            applies(&format!("{dipole}EX 4 1 11 0 1 0\n")),
+            "a current source is a feed like any other"
+        );
+        assert!(
+            applies("GW 1 21 -3 0 1 4 0 6 .001\nEX 0 1 11 0 1 0\n"),
+            "a tilted straight wire"
+        );
+        assert!(
+            !applies(
+                "GW 1 11 0 0 1.6 -3.7 0 0.6 .001\nGW 2 11 0 0 1.6 3.7 0 0.6 .001\nEX 0 1 1 0 1 0\n"
+            ),
+            "a bent wire"
+        );
+        assert!(
+            !applies(&format!(
+                "{dipole}GW 2 21 -5.28 1 0.6 5.28 1 0.6 .001\nEX 0 1 11 0 1 0\n"
+            )),
+            "parallel wires that are not one line"
+        );
+        assert!(
+            !applies("GW 1 41 -10 0 0.6 10 0 0.6 .001\nEX 0 1 11 0 1 0\nEX 0 1 31 0 1 0\n"),
+            "two feeds"
+        );
+        assert!(
+            !applies(&format!(
+                "{dipole}GW 9 3 40 40 0.6 41 40 0.6 .001\nNT 1 11 9 2 0 -0.01 0 0 0 0\nEX 0 1 11 0 1 0\n"
+            )),
+            "a network"
+        );
+        // A wire touching finite ground never reaches this: it is refused as buried
+        // geometry first. (The test is on midpoints, so it would say yes.)
+    }
 
     const FREQ: f64 = 14.2e6;
     const LAM: f64 = C0 / FREQ;

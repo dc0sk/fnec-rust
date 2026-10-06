@@ -288,8 +288,32 @@ pub struct SolverContext<'a> {
     /// How to reach the MPIE from here — "re-run with `--solver mpie`" for the
     /// CLI, "switch the solver to MPIE" for a GUI with a picker.
     pub mpie_remedy: &'a str,
+    /// How to ask for the Sommerfeld surface-wave correction from here, or `None`
+    /// where this frontend cannot ask for it: the GUI and the bindings have no such
+    /// option, `--hosts` and `sweep --resonance` refuse it, and a run that already
+    /// asked must not be told to (FND-217).
+    pub sommerfeld_remedy: Option<&'a str>,
     /// What the run's RESOLVED loads are, which the deck alone cannot say.
     pub loads: RunLoads,
+}
+
+/// The remedies a frontend can offer, as the geometry caveats name them.
+#[derive(Debug, Clone, Copy)]
+pub struct Remedies<'a> {
+    /// See [`SolverContext::mpie_remedy`].
+    pub mpie: &'a str,
+    /// See [`SolverContext::sommerfeld_remedy`].
+    pub sommerfeld: Option<&'a str>,
+}
+
+impl<'a> Remedies<'a> {
+    /// The MPIE remedy alone, for a path that cannot ask for the surface wave.
+    pub const fn mpie_only(mpie: &'a str) -> Self {
+        Self {
+            mpie,
+            sommerfeld: None,
+        }
+    }
 }
 
 /// Facts about the loads a run actually solved with — the per-segment diagonal,
@@ -342,6 +366,22 @@ impl<'a> SolverContext<'a> {
     pub fn with_loads(self, loads: RunLoads) -> Self {
         Self { loads, ..self }
     }
+
+    /// This context, able to name the Sommerfeld remedy this way.
+    pub fn with_sommerfeld_remedy(self, remedy: Option<&'a str>) -> Self {
+        Self {
+            sommerfeld_remedy: remedy,
+            ..self
+        }
+    }
+
+    /// The remedies this context can offer.
+    pub fn remedies(&self) -> Remedies<'a> {
+        Remedies {
+            mpie: self.mpie_remedy,
+            sommerfeld: self.sommerfeld_remedy,
+        }
+    }
 }
 
 impl SolverContext<'static> {
@@ -350,6 +390,7 @@ impl SolverContext<'static> {
         Self {
             kind: SolverKind::Hallen,
             mpie_remedy: "re-run with `--solver mpie`",
+            sommerfeld_remedy: None,
             loads: RunLoads::NONE,
         }
     }
@@ -858,13 +899,30 @@ pub fn hallen_geometry_caveats(
     ground: &GroundModel,
     freq_hz: f64,
     surface_wave_modelled: bool,
-    mpie_remedy: &str,
+    remedies: Remedies<'_>,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs, ground, mpie_remedy);
+    let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
-        out.push(w);
+        out.push(with_sommerfeld_remedy(w, deck, segs, remedies.sommerfeld));
     }
     out
+}
+
+/// The low-ground caveat, naming the Sommerfeld remedy where this frontend can ask
+/// for it and it applies to this deck — last, after any sweep annotation. It named
+/// none, though the correction exists for exactly this (FND-217).
+fn with_sommerfeld_remedy(
+    caveat: String,
+    deck: &NecDeck,
+    segs: &[Segment],
+    remedy: Option<&str>,
+) -> String {
+    match remedy {
+        Some(r) if crate::sommerfeld::correction_applies(deck, segs) => {
+            format!("{caveat} — {r}, which adds the surface wave for this deck")
+        }
+        _ => caveat,
+    }
 }
 
 /// Every `EX` card whose type this build does not recognise.
@@ -1267,11 +1325,11 @@ pub fn hallen_geometry_caveats_swept(
     ground: &GroundModel,
     freqs_hz: &[f64],
     surface_wave_modelled: bool,
-    mpie_remedy: &str,
+    remedies: Remedies<'_>,
 ) -> Vec<String> {
-    let mut out = frequency_independent_caveats(deck, segs, ground, mpie_remedy);
+    let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
     if let Some(w) = swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled) {
-        out.push(w);
+        out.push(with_sommerfeld_remedy(w, deck, segs, remedies.sommerfeld));
     }
     out
 }
@@ -1749,7 +1807,7 @@ pub fn diagnose(
             // named the topology and junction caveats itself, so the bent-
             // conductor caveat added to the producer (FND-162) reached the CLI and
             // not the GUI or the bindings.
-            for w in hallen_geometry_caveats(deck, segs, ground, freq_hz, false, ctx.mpie_remedy) {
+            for w in hallen_geometry_caveats(deck, segs, ground, freq_hz, false, ctx.remedies()) {
                 out.push(ValidationDiagnostic::warning(w));
             }
         }
@@ -2772,6 +2830,7 @@ mod tests {
         let ctx = SolverContext {
             kind: SolverKind::Mpie,
             mpie_remedy: "unused on the MPIE arm",
+            sommerfeld_remedy: None,
             loads: RunLoads::NONE,
         };
         let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, ctx);
@@ -2855,6 +2914,7 @@ mod run_loads_tests {
             let ctx = SolverContext {
                 kind,
                 mpie_remedy: "re-run with `--solver mpie`",
+                sommerfeld_remedy: None,
                 loads,
             };
             let cause = negative_resistance_cause(&deck, &segs, ctx);

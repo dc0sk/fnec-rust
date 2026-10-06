@@ -822,7 +822,10 @@ fn distributed_pre_solve_caveats(
         ground,
         freqs_hz,
         false,
-        crate::solve_session::CLI_MPIE_REMEDY,
+        // `--hosts` refuses `--ground-solver sommerfeld`, so this path may not name
+        // it — fixed here, like the `false` above, so no caller can get it wrong
+        // (FND-217).
+        nec_solver::validate::Remedies::mpie_only(crate::solve_session::CLI_MPIE_REMEDY),
     )
 }
 
@@ -1468,7 +1471,9 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
                 &ground,
                 freq_hz,
                 false,
-                solve_session::CLI_MPIE_REMEDY,
+                // `sweep --resonance` takes no `--ground-solver`, so its caveat may
+                // not name one (FND-217).
+                nec_solver::validate::Remedies::mpie_only(solve_session::CLI_MPIE_REMEDY),
             ) {
                 eprintln!("warning: {w}");
             }
@@ -1749,6 +1754,47 @@ mod tests {
     // which keeps it off the section-graph solve (a one-segment run, measured and
     // kept refused in FND-162 stage 5); a T the graph takes earns neither the
     // topology nor the junction-feed caveat.
+    /// `--hosts` refuses `--ground-solver sommerfeld`, so its low-ground caveat must
+    /// not name it (FND-217). Differential, on a deck the remedy applies to: the
+    /// producer offered the remedy DOES name it here, so the fixture earns it, and
+    /// the distributed path does not.
+    #[test]
+    fn the_distributed_caveats_do_not_name_the_sommerfeld_remedy() {
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        let ground = nec_solver::ground_model_from_deck(&deck);
+        let offered = nec_solver::validate::hallen_geometry_caveats(
+            &deck,
+            &segs,
+            &ground,
+            14.2e6,
+            false,
+            nec_solver::validate::Remedies {
+                mpie: crate::solve_session::CLI_MPIE_REMEDY,
+                sommerfeld: Some(crate::solve_session::CLI_SOMMERFELD_REMEDY),
+            },
+        );
+        assert!(
+            offered
+                .iter()
+                .any(|w| w.contains("--ground-solver sommerfeld")),
+            "the fixture must earn the remedy: {offered:?}"
+        );
+        let distributed =
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Hallen);
+        assert!(
+            distributed
+                .iter()
+                .any(|w| w.contains("above finite ground")),
+            "the caveat itself must still come: {distributed:?}"
+        );
+        assert!(
+            !distributed.iter().any(|w| w.contains("--ground-solver")),
+            "--hosts refuses the flag, so its caveat must not name it: {distributed:?}"
+        );
+    }
+
     const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
     #[test]
@@ -1768,7 +1814,7 @@ mod tests {
             &ground,
             14.2e6,
             false,
-            crate::solve_session::CLI_MPIE_REMEDY,
+            nec_solver::validate::Remedies::mpie_only(crate::solve_session::CLI_MPIE_REMEDY),
         );
         assert!(
             produced.len() >= 3,
