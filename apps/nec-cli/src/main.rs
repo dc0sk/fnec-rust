@@ -2222,8 +2222,8 @@ mod tests {
         );
     }
 
-    /// The pick's boundaries, with the GPU's capacity injected: 599 / 600 for one
-    /// point (RTX 2080 Ti, 2026-10-05; 500 on the GTX 1080 Ti), 549 / 550 for a
+    /// The pick's boundaries, with the GPU's capacity injected: 549 / 550 for one
+    /// point (RTX 2080 Ti, 2026-10-06; 500 on the GTX 1080 Ti), 549 / 550 for a
     /// sweep. Never `Hybrid`.
     #[test]
     fn auto_pick_crosses_over_at_the_measured_sizes() {
@@ -2231,8 +2231,8 @@ mod tests {
         let pick = |n: usize, points: usize| {
             auto_select_execution_mode(n, n + 2, points, Ok(()), gpu).mode
         };
-        assert_eq!(pick(599, 1), ExecutionMode::Cpu);
-        assert_eq!(pick(600, 1), ExecutionMode::Gpu);
+        assert_eq!(pick(549, 1), ExecutionMode::Cpu);
+        assert_eq!(pick(550, 1), ExecutionMode::Gpu);
         assert_eq!(pick(549, 24), ExecutionMode::Cpu);
         assert_eq!(pick(550, 24), ExecutionMode::Gpu);
         // A sweep has its own crossover: two points of 520 stay on the CPU.
