@@ -47,6 +47,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`sweep --resonance` no longer names a flag it refuses, or repeats itself** (FND-218).
+  Its caveats said "re-run with `--solver mpie`", which the subcommand refuses as an
+  unknown option, and printed once per probe — 12 copies in an 11-iteration search.
+  They now print once, and point at the main command for the MPIE. (#544)
 - **The low-ground caveat now names its remedy** (FND-217). An antenna below ~0.1 λ
   over finite ground is warned that its feedpoint impedance lacks the Sommerfeld surface
   wave; on the command line it now adds "re-run with `--ground-solver sommerfeld`" when

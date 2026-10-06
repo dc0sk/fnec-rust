@@ -668,6 +668,7 @@ fn main() -> ExitCode {
             freq_hz,
             ground_solver,
             &laplace_loads,
+            solve_session::GeometryCaveats::PerPoint,
         )
     };
 
@@ -1371,6 +1372,10 @@ fn run_taper_subcommand(args: &[String]) -> ExitCode {
 
 /// Entry point for `fnec sweep --resonance <file.nec.toml>`.
 fn run_sweep_subcommand(args: &[String]) -> ExitCode {
+    /// How a resonance-search user reaches the MPIE: not by a flag of this
+    /// subcommand, which takes none (FND-218).
+    const RESONANCE_MPIE_REMEDY: &str = "this search runs the Hallén solver only — \
+        check the value it finds by solving the deck at that value with `fnec --solver mpie`";
     const SWEEP_USAGE: &str = "Usage: fnec sweep --resonance <file.nec.toml>\n\
          The .nec.toml file must contain [search] and [deck] tables.";
 
@@ -1471,9 +1476,11 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
                 &ground,
                 freq_hz,
                 false,
-                // `sweep --resonance` takes no `--ground-solver`, so its caveat may
-                // not name one (FND-217).
-                nec_solver::validate::Remedies::mpie_only(solve_session::CLI_MPIE_REMEDY),
+                // `sweep --resonance` takes no option but `--resonance`: not
+                // `--ground-solver` (FND-217), and not `--solver` either, so "re-run
+                // with `--solver mpie`" sent the user to a refusal (FND-218). The
+                // search runs Hallén only; the MPIE is reached on the main command.
+                nec_solver::validate::Remedies::mpie_only(RESONANCE_MPIE_REMEDY),
             ) {
                 eprintln!("warning: {w}");
             }
@@ -1494,6 +1501,8 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             freq_hz,
             GroundSolver::Rcm,
             &[], // Laplace loads apply to the normal solve path, not `sweep --resonance`.
+            // Printed once above, with this subcommand's remedies (FND-218).
+            solve_session::GeometryCaveats::ShownByCaller,
         )?;
 
         // A probe is not a sweep point: each one still says so itself, as

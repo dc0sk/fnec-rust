@@ -121,6 +121,19 @@ use num_complex::Complex64;
 /// frontend quotes the other's interface.
 pub(crate) const CLI_MPIE_REMEDY: &str = "re-run with `--solver mpie`";
 
+/// Who prints a point's geometry caveats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GeometryCaveats {
+    /// This point prints them — a single solve, and each point of an `FR` sweep,
+    /// whose low-ground caveat differs with the frequency.
+    PerPoint,
+    /// The caller prints them once, in its own terms: `sweep --resonance`, whose
+    /// probes are not points the user asked for, and whose remedies differ
+    /// (FND-218). Printing them per probe repeated the caveat once per probe
+    /// (12 times in an 11-iteration search), with a remedy the search refuses.
+    ShownByCaller,
+}
+
 /// How a command-line user asks for the Sommerfeld surface wave — offered by the
 /// low-ground caveat on the main command only, where the flag exists (FND-217).
 pub(crate) const CLI_SOMMERFELD_REMEDY: &str = "re-run with `--ground-solver sommerfeld`";
@@ -1059,6 +1072,7 @@ pub(super) fn solve_frequency_point(
     freq_hz: f64,
     ground_solver: GroundSolver,
     laplace_loads: &[nec_solver::LaplaceLoad],
+    geometry_caveats: GeometryCaveats,
 ) -> Result<FrequencySolveResult, String> {
     // Incident plane waves and current sources are solved on the Hallén path
     // only (crate::planewave / solve_hallen_current_source).
@@ -1454,20 +1468,25 @@ pub(super) fn solve_frequency_point(
         // the distributed path too instead of only this one. A request that
         // actually applied DID model the surface wave, which changes what the
         // low-ground caveat may claim.
-        for w in nec_solver::validate::hallen_geometry_caveats(
-            deck,
-            segs,
-            ground,
-            freq_hz,
-            matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
-            nec_solver::validate::Remedies {
-                mpie: CLI_MPIE_REMEDY,
-                // Only to a run that has not asked: one that asked and was declined
-                // already has the decline's own warning, and telling it to re-run
-                // with the flag it passed would be advice it has taken (FND-217).
-                sommerfeld: (ground_solver == GroundSolver::Rcm).then_some(CLI_SOMMERFELD_REMEDY),
-            },
-        ) {
+        let shown = match geometry_caveats {
+            GeometryCaveats::PerPoint => nec_solver::validate::hallen_geometry_caveats(
+                deck,
+                segs,
+                ground,
+                freq_hz,
+                matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
+                nec_solver::validate::Remedies {
+                    mpie: CLI_MPIE_REMEDY,
+                    // Only to a run that has not asked: one that asked and was declined
+                    // already has the decline's own warning, and telling it to re-run
+                    // with the flag it passed would be advice it has taken (FND-217).
+                    sommerfeld: (ground_solver == GroundSolver::Rcm)
+                        .then_some(CLI_SOMMERFELD_REMEDY),
+                },
+            ),
+            GeometryCaveats::ShownByCaller => Vec::new(),
+        };
+        for w in shown {
             eprintln!("warning: {w}");
         }
         // Stays here: only this frontend can make the request that gets declined.

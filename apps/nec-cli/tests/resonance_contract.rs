@@ -262,3 +262,39 @@ fn a_resonance_search_refuses_what_every_frontend_refuses() {
         "the unmodified template must converge"
     );
 }
+
+/// `sweep --resonance` takes no option but `--resonance`, so its caveats may not
+/// tell the user to "re-run with `--solver mpie`" — a rerun with that flag is
+/// refused as an unknown sweep option (FND-218, the sibling of FND-217). The
+/// search runs Hallén only, so the remedy is to check the value it finds on the
+/// main command. A T with a one-segment arm earns the topology caveat.
+#[test]
+fn a_resonance_search_names_only_remedies_it_can_take() {
+    let t =
+        "GW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\n";
+    let out = search("tee", t, "FR 0 1 0 0 14.2 0");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Once: the search prints its caveats itself, and its probes used to repeat
+    // them, one copy per probe (12 in an 11-iteration search).
+    assert_eq!(
+        stderr.matches("three or more wires meet").count(),
+        1,
+        "the fixture must earn the topology caveat, once: {stderr}"
+    );
+    assert!(
+        !stderr.contains("re-run with `--solver mpie`"),
+        "the search refuses --solver, so it may not be told to re-run with it: {stderr}"
+    );
+    assert!(
+        stderr.contains("`fnec --solver mpie`"),
+        "the caveat must still say how to reach the MPIE from here: {stderr}"
+    );
+    let rerun = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["sweep", "--resonance", "x.nec.toml", "--solver", "mpie"])
+        .output()
+        .expect("runs fnec");
+    assert!(
+        String::from_utf8_lossy(&rerun.stderr).contains("unknown sweep option: --solver"),
+        "the premise: sweep --resonance refuses --solver"
+    );
+}
