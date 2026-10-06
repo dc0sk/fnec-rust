@@ -1813,12 +1813,18 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         GroundModel::Deferred { .. } => "deferred",
     };
     let gsolver = match (d.ground, d.ground_solver, d.sommerfeld_outcome) {
+        // The MPIE fills the exact Sommerfeld kernels into its own matrix over a
+        // finite ground, whatever `--ground-solver` says. It read `rcm` here — the
+        // arm below did not ask the solver — naming the model it does not use
+        // (FND-220).
+        (GroundModel::SimpleFiniteGround { .. }, _, _) if d.solver_mode == SolverMode::Mpie => {
+            "mpie-exact"
+        }
         (_, _, SommerfeldOutcome::Applied) => "sommerfeld-applied",
         (_, _, SommerfeldOutcome::Declined) => "sommerfeld-declined",
         (_, _, SommerfeldOutcome::DeclinedReceive) => "sommerfeld-declined-receive",
         (GroundModel::SimpleFiniteGround { .. }, GroundSolver::Rcm, _) => "rcm",
-        // No finite ground (or a solver that brings its own, the MPIE): no
-        // ground solver to name.
+        // No finite ground: no ground solver to name.
         _ => "n/a",
     };
     let loads = match (d.deck_loaded, d.config_loaded) {
