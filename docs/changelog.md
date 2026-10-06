@@ -38,12 +38,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
-- **Without `--exec`, one frequency point goes to the GPU from 600 segments,
+- **Without `--exec`, one frequency point goes to the GPU from 550 segments,
   not 500.** The crossover is the device's start-up against the CPU's N³ solve,
   so it belongs to the card: re-measured on the host's new RTX 2080 Ti (driver
-  595.91.07), whose start-up is ≈ 0.35 s against the GTX 1080 Ti's 0.18 s — at
-  551 segments the two tie (0.41 s each), at 601 the GPU wins (0.40 s against
-  0.53). The sweep threshold (550) measured the same on both cards.
+  595.91.07), whose start-up is ≈ 0.35 s against the GTX 1080 Ti's 0.18 s. Every
+  10 segments, median of 15: 530 a tie (0.40 s each), 550 the GPU (0.41 s against
+  0.45). The first setting of this change, 600 (#538), came from a 50-segment grid
+  and kept 540–599-segment runs on the slower CPU, by up to 27 % (FND-219). The
+  sweep threshold (550) measured the same on both cards.
 
 ### Fixed
 

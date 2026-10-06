@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 //! Without `--exec`, the deck picks the CPU or the GPU: a supported deck goes to
-//! the GPU at ≥ 600 segments for one point, ≥ 550 for a sweep, when a hardware
+//! the GPU at ≥ 550 segments for one point or a sweep, when a hardware
 //! GPU is present. Everything here runs on any host; on one without a GPU the
 //! pick must stay on the CPU and the answer must be the CPU's to the byte.
 
@@ -63,18 +63,18 @@ fn gpu_present() -> bool {
 
 #[test]
 fn below_the_crossover_the_pick_is_the_cpu_to_the_byte() {
-    let deck = dipole(599, 1);
-    let (auto_out, auto_err) = run("599", &deck, &[]);
+    let deck = dipole(549, 1);
+    let (auto_out, auto_err) = run("549", &deck, &[]);
     assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
-    let (cpu_out, _) = run("599cpu", &deck, &["--exec", "cpu"]);
+    let (cpu_out, _) = run("549cpu", &deck, &["--exec", "cpu"]);
     assert_eq!(auto_out, cpu_out);
 }
 
 #[test]
 fn at_the_crossover_the_pick_is_the_gpu_where_there_is_one() {
-    let deck = dipole(601, 1);
-    let (auto_out, auto_err) = run("601", &deck, &[]);
-    let (cpu_out, _) = run("601cpu", &deck, &["--exec", "cpu"]);
+    let deck = dipole(551, 1);
+    let (auto_out, auto_err) = run("551", &deck, &[]);
+    let (cpu_out, _) = run("551cpu", &deck, &["--exec", "cpu"]);
     if !gpu_present() {
         assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
         assert!(auto_err.contains("no hardware GPU"), "{auto_err}");

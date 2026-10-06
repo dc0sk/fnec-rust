@@ -48,12 +48,18 @@ pub(super) enum CompatibilityProfile {
 /// Measured 2026-10-05 on an NVIDIA RTX 2080 Ti (driver 595.91.07, open kernel
 /// module) against a 24-thread CPU, a λ/2 dipole, whole process, best of 3:
 /// 401 segments 0.171 s CPU / 0.365 s GPU, 501 0.316 / 0.398, 551 0.411 / 0.406
-/// (a tie), 601 0.525 / 0.396. Set at the first clear GPU win, 601. The device
+/// (a tie), 601 0.525 / 0.396. Re-measured 2026-10-06 every 10 segments, whole
+/// process, median of 15 alternating runs: 520 0.381 / 0.416, 530 0.396 / 0.404 (a
+/// tie), 540 0.424 / 0.404, 550 0.445 / 0.408, 570 0.500 / 0.416 — the GPU wins from
+/// 540 with its quartiles clear of the CPU's. The first setting, 600, was the first
+/// clear win on a 50-segment grid and cost up to 0.15 s (27 %) on every one-point
+/// run from 540 to 599 (FND-219). Set at 550: the first clear win on that grid, and
+/// still on the CPU's side of the crossover, which drifts ±8 % between days. The device
 /// pays a fixed ≈ 0.35 s to start — about twice the GTX 1080 Ti's 0.18 s, which
 /// is why this rose from the 500 measured there on 2026-10-01 (451 a tie, 501
 /// 0.31 / 0.25) — and the CPU grows as N³. A host constant: re-measure on a new
 /// card or driver (`~/.cache/swap/xover.sh`-style, whole process, exact timer).
-pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 600;
+pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 550;
 
 /// The same for a sweep, where the CPU solves its points in parallel and the GPU
 /// in turn. 24 points, measured as above (2080 Ti, 595): 401 segments 0.380 s
