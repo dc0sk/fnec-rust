@@ -53,6 +53,8 @@ fn py_solver_context(
         // The bindings have a solver argument now, so the remedy names it rather
         // than pointing a Python caller at a different program (FND-055).
         mpie_remedy: "pass solver=\"mpie\"",
+        // The bindings have no Sommerfeld option, so their caveats name none (FND-217).
+        sommerfeld_remedy: None,
         // The bindings' loads are the deck's own; the negative-resistance sites
         // describe them with `with_loads` (FND-209).
         loads: nec_solver::validate::RunLoads::NONE,

@@ -47,6 +47,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The low-ground caveat now names its remedy** (FND-217). An antenna below ~0.1 λ
+  over finite ground is warned that its feedpoint impedance lacks the Sommerfeld surface
+  wave; on the command line it now adds "re-run with `--ground-solver sommerfeld`" when
+  the correction applies to the deck (one feed, no network, one straight wire) — the
+  same test the correction itself is gated on, so the advice cannot promise what the
+  run would decline. `--hosts`, `sweep --resonance`, the GUI and the Python bindings,
+  which cannot ask for the correction, do not name it. (#543)
+
 - **`--exec gpu` printed an amplitude ratio as the pattern's `AXIAL_RATIO`**
   (FND-216): the device kernel returned only the two polarisation intensities, so a
   tilted dipole — linearly polarised everywhere — read 2.22, 2.15, 5.25 … where the

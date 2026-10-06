@@ -62,7 +62,9 @@ R-reference/tilted-offcentre/pec Holds(dZ 4 %)
 R-reference/two-element-array/free Holds(dZ 6 %)
 R-reference/two-element-array/gn2 Holds(dZ 5 %)
 R-reference/two-element-array/pec Holds(dZ 6 %)
-R-remedy/low-dipole-gn2 Holds[]
+R-remedy/low-dipole-gn2 Holds[--ground-solver sommerfeld]
+R-remedy/low-inverted-v-gn2 Holds[]
+R-remedy/low-two-fed-gn2 Holds[]
 R-remedy/negative-load-card Holds[]
 R-remedy/negative-load-config Holds[]
 R-remedy/tee-one-segment-arm Holds[--solver mpie]
@@ -585,7 +587,7 @@ count R-image 2
 count R-loss 18
 count R-network 18
 count R-reference 23
-count R-remedy 4
+count R-remedy 6
 count R-solver 39
 count S-drive 40
 count S-exec 69

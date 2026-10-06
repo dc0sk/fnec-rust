@@ -149,8 +149,8 @@ Sabotage-verified, each caught by its relation, with a clean sweep after:
 | an `NT` Y11 stamped with the wrong sign | `R-network`, 18 cells |
 | every sweep point solved at the first frequency | `S-point`, 40 cells |
 
-`R-remedy` can test only remedies a caveat names. The low-ground caveat names none,
-although `--ground-solver sommerfeld` exists for a single straight wire — FND-217.
+`R-remedy` could test only remedies a caveat named, and the low-ground caveat named
+none although `--ground-solver sommerfeld` applied — FND-217, fixed: see below.
 
 ## Stage 3 — built (2026-10-05)
 
@@ -192,8 +192,11 @@ about convergence, so `R-converge` asserts the loop's gap shrinks from 21 to 41 
 It can see a mesh-dependent defect; a constant one is caught by the 1 % pins instead.
 
 `R-remedy`'s fixture names the remedies each deck's caveats must name; an empty list is a
-pass only where the fixture expects none. The low dipole expects none today — FND-217 —
-so fixing it is a reviewed change to that line.
+pass only where the fixture expects none. Since FND-217 the low dipole expects
+`--ground-solver sommerfeld`, and a rerun with it must report `gsolver=sommerfeld-applied`
+— a declined correction is no cure. Two more decks expect none: a low inverted-V and a
+straight wire fed twice, one for each half of where the correction applies, so either
+half can be broken alone and be seen.
 
 Sabotage-verified, with a clean sweep after (the harness now asserts from cargo's output
 that every sabotaged and every restored crate recompiled):

@@ -117,6 +117,8 @@ fn gui_ctx(solver: SolverKind) -> nec_solver::validate::SolverContext<'static> {
     nec_solver::validate::SolverContext {
         kind: solver,
         mpie_remedy: GUI_MPIE_REMEDY,
+        // The GUI has no Sommerfeld option, so its caveats name none (FND-217).
+        sommerfeld_remedy: None,
         // The GUI's loads are the deck's own; the negative-resistance sites
         // describe them with `with_loads` (FND-209).
         loads: nec_solver::validate::RunLoads::NONE,
@@ -1468,6 +1470,13 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("above finite ground")),
             "missing the low-ground warning: {:?}",
+            low.warnings
+        );
+        // The CLI names `--ground-solver sommerfeld` on this deck; the GUI has no
+        // such option, so its caveat must not quote the flag (FND-217).
+        assert!(
+            !low.warnings.iter().any(|w| w.contains("--ground-solver")),
+            "the GUI must not quote a CLI flag it has no equivalent for: {:?}",
             low.warnings
         );
         // A degree-3 junction must still be flagged, and must point at the MPIE

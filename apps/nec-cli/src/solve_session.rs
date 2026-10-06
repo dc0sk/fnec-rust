@@ -121,6 +121,10 @@ use num_complex::Complex64;
 /// frontend quotes the other's interface.
 pub(crate) const CLI_MPIE_REMEDY: &str = "re-run with `--solver mpie`";
 
+/// How a command-line user asks for the Sommerfeld surface wave — offered by the
+/// low-ground caveat on the main command only, where the flag exists (FND-217).
+pub(crate) const CLI_SOMMERFELD_REMEDY: &str = "re-run with `--ground-solver sommerfeld`";
+
 /// **Dormant (FND-130).** The pulse solver's EX 4 current-source path. No input
 /// reaches it: an `EX 4` deck with any solver but Hallén is refused before the
 /// solve (`--solver hallen` only, corpus-pinned by
@@ -681,6 +685,7 @@ fn solver_ctx(solver_mode: SolverMode) -> Option<nec_solver::validate::SolverCon
         SolverMode::Mpie => Some(nec_solver::validate::SolverContext {
             kind: nec_solver::validate::SolverKind::Mpie,
             mpie_remedy: CLI_MPIE_REMEDY,
+            sommerfeld_remedy: None,
             loads: nec_solver::validate::RunLoads::NONE,
         }),
         // FND-081: sinusoidal is Hallén's matrix in a projected basis and as
@@ -807,13 +812,11 @@ pub(super) fn build_feedpoint_rows(
     // whole structure's reaction — a symmetric pair got 2(ΔZ11 ± ΔZ12), 76.29 −
     // j65.29 against nec2c's 75.01 − j30.15 (FND-206) — and with a TL/NT network
     // the feed current carries the network branch, which is not antenna current
-    // (FND-208). Both decline, and say so, rather than correct wrongly.
-    let one_port_without_networks = nec_solver::feedpoints(deck).count() == 1
-        && !deck
-            .cards
-            .iter()
-            .any(|c| matches!(c, Card::Tl(_) | Card::Nt(_)));
-    let sommerfeld_applicable = sommerfeld_ground.is_some() && one_port_without_networks;
+    // (FND-208). Both decline, and say so, rather than correct wrongly. The test is
+    // the one the low-ground caveat names the remedy on, so the two cannot drift
+    // (FND-217); the geometry half is also what `ground_z_correction` checks.
+    let sommerfeld_applicable =
+        sommerfeld_ground.is_some() && nec_solver::sommerfeld::correction_applies(deck, segs);
     let mut sommerfeld_outcome = if sommerfeld_ground.is_some() {
         // Downgraded to `Applied` only if a correction actually comes back.
         SommerfeldOutcome::Declined
@@ -1457,7 +1460,13 @@ pub(super) fn solve_frequency_point(
             ground,
             freq_hz,
             matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
-            CLI_MPIE_REMEDY,
+            nec_solver::validate::Remedies {
+                mpie: CLI_MPIE_REMEDY,
+                // Only to a run that has not asked: one that asked and was declined
+                // already has the decline's own warning, and telling it to re-run
+                // with the flag it passed would be advice it has taken (FND-217).
+                sommerfeld: (ground_solver == GroundSolver::Rcm).then_some(CLI_SOMMERFELD_REMEDY),
+            },
         ) {
             eprintln!("warning: {w}");
         }
