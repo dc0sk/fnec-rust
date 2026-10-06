@@ -2,10 +2,78 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # Release Notes
+
+## 0.21.3 — Every spelling
+
+fnec can be asked the same question many ways — a load as an `LD` card or from a
+file, on the CPU or the GPU, one frequency or a sweep, locally or through a worker.
+0.21.2 found ten silent wrong answers where two such ways disagreed. 0.21.3 adds the
+**parity sweep**, a standing test that asks 580 such pairs and fails on any
+difference, and fixes what it and its reviews found. The findings ledger went from
+213 findings / 0 open to **219 / 0 open**.
+
+Every value below was measured on the release build against the published 0.21.2
+binary, on the host's RTX 2080 Ti (driver 595.91.07).
+
+| | 0.21.2 | 0.21.3 | reference |
+|---|---|---|---|
+| `--exec gpu` pattern of a tilted dipole, `AXIAL_RATIO` at θ 30/60/90° | 0.78 / 2.15 / 4.50 | 0 / 0 / 0 | CPU: 0 / 0 / 0 |
+| λ/2 dipole 0.6 m over GN 2: the low-ground caveat's remedy | none | "re-run with `--ground-solver sommerfeld`" | — |
+| … that dipole's feedpoint Z, default / with the remedy | 30.83 + j31.10 | 30.83 + j31.10 / 82.26 + j58.21 | nec2c 83.77 + j64.57 |
+| `sweep --resonance` on a T: copies of the topology caveat | 12, each "re-run with `--solver mpie`" (a flag it refuses) | 1, pointing at the main command | — |
+| One 520-segment point, no `--exec`: pick and time | GPU, 0.45 s | CPU, 0.38 s | — |
+
+- **The GPU pattern's axial ratio is the polarisation ellipse's** (FND-216): the
+  device kernel returned only the two polarisation intensities, and the host
+  printed their ratio. A linearly polarised antenna read as elliptical wherever both
+  components were present. The gains were always right.
+- **The low-ground caveat names its remedy** (FND-217): the default ground model
+  is a reflection coefficient, which misses the surface wave below ~0.1 λ — on this
+  dipole by a factor of 2.7 in resistance. On the command line the caveat now names
+  `--ground-solver sommerfeld` wherever that correction applies (one feed, no
+  network, one straight wire) — the same test the correction itself uses — and only
+  to a run that has not asked for it. Paths that cannot ask for it (`--hosts`,
+  `sweep --resonance`, the GUI, the bindings) do not name it.
+- **`sweep --resonance` says each caveat once, with a remedy it can take** (FND-218).
+- **Without `--exec`, one point goes to the GPU from 550 segments** (was 500, set
+  for the old GTX 1080 Ti). The 2080 Ti's device start-up is about 0.35 s, twice the
+  1080 Ti's; measured every 10 segments, the two tie at 530 and the GPU wins from
+  540. An intermediate setting of 600 (#538, never released) was found too high while
+  measuring these notes (FND-219). The sweep crossover (550) is unchanged.
+- **The `diag:` line records what the run decided**: `route`, `contact`, `drive`,
+  `ground`, `gsolver`, `loads`, and the executor of each stage (`solve_exec`,
+  `rp_exec`, `nf_exec`). The parity sweep compares these between runs.
+
+### The parity sweep
+
+`apps/nec-cli/tests/parity_sweep.rs`, part of every gate (about 3 minutes in a debug
+build). Each cell runs the CLI where two spellings must agree or an identity must
+hold, and compares the whole outcome — exit status, the reason for a refusal, the
+decision record and every printed number. Its relations: the same load spelled two
+ways; every execution mode against the CPU; `FR` against `--sweep-config`; a current
+against a voltage source; a deck on PEC against its free-space double; a feed load
+against its share of the gain; the worker against the local CLI; invalid loads
+refused both ways; a shunt network against the exact parallel impedance; every
+remedy a caveat names, rerun; a sweep point against that frequency alone; Hallén
+against nec2c; the MPIE and sinusoidal solvers against Hallén, and the gap shrinking
+with the mesh where it is large. Every outcome is pinned in a reviewed manifest, so
+a change in any answer is a diff someone reads. Re-introducing fifteen past defects
+fails it fifteen times, each in the relation built for it.
+
+### Host and test infrastructure
+
+- The host's NVIDIA faults (FND-190) are gone after the card and driver change:
+  0 Xids in 1,890 GPU tests and 900 runs on 595.91.07.
+- **Debug builds no longer load the Vulkan validation layer unless asked**
+  (`WGPU_VALIDATION=1`, FND-214): wgpu enabled it in every debug build, and with two
+  instances in one process the loader could crash inside it. Release builds never
+  enabled it.
+- The G6 Z-fill parity gate re-runs once on a driver fault on a present adapter, as
+  G5 does. FND-215 (five more GPU tests without that allowance) is deferred.
 
 ## 0.21.2 — Every axis
 
