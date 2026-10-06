@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/dev/parity-sweep-design.md
 status: living
-last_updated: 2026-10-05
+last_updated: 2026-10-06
 ---
 
 # Parity sweep — design (draft for review)
@@ -222,3 +222,15 @@ Not built, and why: the enum macro generating `ALL` and execution-derived covera
 left for when a new axis value is added — the manifest's `reached` lines already fail
 when a decision value stops being reached. The sweep runs in every gate already: it is
 an integration test of `nec-cli`.
+
+## The near-ground gate (2026-10-06)
+
+`R-lowground` (8 cells): a horizontal λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2 and
+a low inverted-V, each at 21 and 41 segments, under `--solver mpie` and under Hallén
+with `--ground-solver sommerfeld`, against nec2c GN 2 on the same mesh (references in
+`parity_nec2c.txt` under `low/`). A cell fails unless the gap shrinks from the coarse
+mesh to the fine one and the fine gap is under its cap (MPIE 3 %, Hallén 12 %); both
+gaps and the run's `gsolver` are pinned. Built when BL-IMPR-015's DCIM port was
+rejected (`docs/sommerfeld-level2-scope.md` § Phase 3): the regime it was meant to
+improve is now held where it stands. Its first run found FND-220 — the decision record
+said `gsolver=rcm` for the MPIE.

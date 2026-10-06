@@ -1214,6 +1214,84 @@ fn cells() -> Vec<Cell> {
         ));
     }
 
+    // R-lowground: the near-ground regime against nec2c GN 2, at two meshes. The MPIE
+    // fills the exact Sommerfeld kernels; Hallén with `--ground-solver sommerfeld`
+    // corrects a straight wire's feedpoint (a bent one is declined, and its cell
+    // pins that). Each gap must shrink with the mesh — one mesh pins nothing about
+    // convergence — and stay under its cap; both are pinned to 1 %. Measured
+    // 2026-10-06: MPIE 0.7-1.3 % at 21, 0.3-0.6 % at 41; the Hallén correction
+    // 5.6-9.9 % -> 3.0-5.3 %. This is why the DCIM port (BL-IMPR-015) was not
+    // built: it was 7 % from the exact kernel the MPIE already uses.
+    for (stem, cap) in [("mpie", 0.03), ("hallen-sommerfeld", 0.12)] {
+        let lows = low_ground_decks();
+        let names: Vec<String> = lows
+            .iter()
+            .filter(|(_, _, n)| *n == 21)
+            .map(|(id, _, _)| id.trim_end_matches("/21").to_string())
+            .collect();
+        for name in names {
+            let pair: Vec<(String, String)> = lows
+                .iter()
+                .filter(|(id, _, _)| id.starts_with(&format!("{name}/")))
+                .map(|(id, t, _)| (id.clone(), t.clone()))
+                .collect();
+            let refs: Vec<Option<(f64, f64)>> = pair
+                .iter()
+                .map(|(id, _)| goldens.get(id).copied())
+                .collect();
+            let id = format!("R-lowground/{}/{stem}", name.trim_start_matches("low/"));
+            let cid = id.clone();
+            v.push((
+                id,
+                Box::new(move || {
+                    let args: &[&str] = if stem == "mpie" {
+                        &["--solver", "mpie", "--exec", "cpu"]
+                    } else {
+                        &["--ground-solver", "sommerfeld", "--exec", "cpu"]
+                    };
+                    let mut gaps = Vec::new();
+                    let mut gsolver = String::new();
+                    for ((pid, text), golden) in pair.iter().zip(&refs) {
+                        let Some(golden) = golden else {
+                            return Err(format!("no nec2c golden for {pid}: capture it"));
+                        };
+                        let o = run(&format!("{cid}/{pid}"), text, args, &[]);
+                        if !o.ok {
+                            return Err(format!("{pid} refused: {:?}", o.refusal));
+                        }
+                        gsolver = o.decisions.get("gsolver").cloned().unwrap_or_default();
+                        let z = feed_z(&o);
+                        gaps.push(
+                            (z.0 - golden.0).hypot(z.1 - golden.1) / golden.0.hypot(golden.1),
+                        );
+                    }
+                    let [coarse, fine] = gaps[..] else {
+                        return Err(format!("expected two meshes, got {}", gaps.len()));
+                    };
+                    if fine >= coarse {
+                        return Err(format!(
+                            "the gap to nec2c does not shrink with the mesh: {:.2} % -> {:.2} %",
+                            100.0 * coarse,
+                            100.0 * fine
+                        ));
+                    }
+                    if fine > cap {
+                        return Err(format!(
+                            "{:.2} % from nec2c at the finer mesh, cap {:.0} %",
+                            100.0 * fine,
+                            100.0 * cap
+                        ));
+                    }
+                    Ok(format!(
+                        "Shrinks(dZ {:.0} % -> {:.0} %, gsolver={gsolver})",
+                        100.0 * coarse,
+                        100.0 * fine
+                    ))
+                }),
+            ));
+        }
+    }
+
     // R-image: a deck touching PEC against its explicit free-space double — the wires
     // mirrored in z = 0 with the horizontal current reversed, i.e. the same wires written
     // downward from the plane, fed antiphase where the image of a horizontal source would
@@ -1570,6 +1648,35 @@ fn parity_sweep() {
 // Stage 3: references
 // ---------------------------------------------------------------------------------
 
+/// The near-ground regime the default ground model misses (below ~0.1 λ, where the
+/// surface wave matters): a horizontal λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2,
+/// and a low inverted-V, each at two meshes. `(id, deck, mesh)`, the id ending in the
+/// mesh so a cell can pair them.
+fn low_ground_decks() -> Vec<(String, String, u32)> {
+    let mut v = Vec::new();
+    for n in [21u32, 41] {
+        let feed = n.div_ceil(2);
+        for (name, h) in [("0.025", 0.528), ("0.05", 1.056), ("0.1", 2.112)] {
+            v.push((
+                format!("low/dipole-{name}/{n}"),
+                format!(
+                    "CE\nGW 1 {n} -5.28 0 {h} 5.28 0 {h} .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 {feed} 0 1 0\nFR 0 1 0 0 {FREQ_MHZ} 0\nEN\n"
+                ),
+                n,
+            ));
+        }
+        let arm = n.div_ceil(2);
+        v.push((
+            format!("low/inverted-v/{n}"),
+            format!(
+                "CE\nGW 1 {arm} 0 0 1.6 -3.7 0 0.6 .001\nGW 2 {arm} 0 0 1.6 3.7 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1 0\nFR 0 1 0 0 {FREQ_MHZ} 0\nEN\n"
+            ),
+            n,
+        ));
+    }
+    v
+}
+
 fn nec2c_golden_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity_nec2c.txt")
 }
@@ -1606,9 +1713,21 @@ fn capture_nec2c_goldens() {
     );
     let dir = std::env::temp_dir().join("n2c");
     std::fs::create_dir_all(&dir).unwrap();
-    for (g, gr) in placements() {
-        let id = format!("{}/{}", g.name, gr.name());
-        let text = deck(&g, gr, "", Drive::Voltage);
+    let mut decks: Vec<(String, String)> = placements()
+        .into_iter()
+        .map(|(g, gr)| {
+            (
+                format!("{}/{}", g.name, gr.name()),
+                deck(&g, gr, "", Drive::Voltage),
+            )
+        })
+        .collect();
+    decks.extend(
+        low_ground_decks()
+            .into_iter()
+            .map(|(id, text, _)| (id, text)),
+    );
+    for (id, text) in decks {
         let (inp, outp) = (dir.join("d.nec"), dir.join("d.out"));
         std::fs::write(&inp, text.replace("EN\n", "XQ\nEN\n")).unwrap();
         let st = Command::new("nec2c")
