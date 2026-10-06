@@ -26,7 +26,7 @@ host's new card. The findings ledger went from 213 / 0 open to **219 / 0 open**.
 
 - **The parity sweep** (`apps/nec-cli/tests/parity_sweep.rs`): a standing check for the
   audit's main defect class — a decision keyed on one axis while the run has another.
-  580 cells, each running the CLI where two spellings must agree or an identity must
+  582 cells, each running the CLI where two spellings must agree or an identity must
   hold: the same load as an `LD` card and from `--loads-config`; `--exec gpu`/`hybrid`/
   auto against `--exec cpu`; the deck's `FR` against `--sweep-config`; `EX 4` against
   `EX 0`; a deck on PEC against its free-space double; a feed load against its share

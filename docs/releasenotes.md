@@ -12,7 +12,7 @@ last_updated: 2026-10-06
 fnec can be asked the same question many ways — a load as an `LD` card or from a
 file, on the CPU or the GPU, one frequency or a sweep, locally or through a worker.
 0.21.2 found ten silent wrong answers where two such ways disagreed. 0.21.3 adds the
-**parity sweep**, a standing test that asks 580 such pairs and fails on any
+**parity sweep**, a standing test that asks 582 such pairs and fails on any
 difference, and fixes what it and its reviews found. The findings ledger went from
 213 findings / 0 open to **219 / 0 open**.
 
