@@ -148,6 +148,27 @@ def measured() -> tuple[Counter, Counter, int]:
     return unit, integration, doctests
 
 
+PARITY_MANIFEST = ROOT / "apps/nec-cli/tests/parity_manifest.txt"
+
+
+def parity_cells() -> int:
+    """The parity sweep's cell count, summed from its blessed manifest's `count` lines.
+
+    The catalog quoted this by hand and was wrong twice in one day (580 for 582 in
+    the v0.21.3 notes, 588 for 590 in the next PR's catalog) — while the manifest
+    beside it carried the number. A count with a machine source in the tree is read
+    from it.
+    """
+    total = 0
+    for line in PARITY_MANIFEST.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0] == "count":
+            total += int(parts[2])
+    if total == 0:
+        raise SystemExit(f"{PARITY_MANIFEST}: no `count` lines — the sum would be vacuous")
+    return total
+
+
 def main() -> int:
     unit, integration, doctests = measured()
     total = sum(unit.values()) + sum(integration.values()) + doctests
@@ -188,6 +209,7 @@ def main() -> int:
         ("unit subtotal", sum(unit.values())),
         ("integration subtotal", sum(integration.values())),
         ("workspace total", total),
+        ("parity cells", parity_cells()),
     ):
         marker = f"<!-- COUNT:{name.upper().replace(' ', '-')}="
         if marker not in text:
