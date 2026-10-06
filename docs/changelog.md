@@ -24,7 +24,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   its cap. Measured: the MPIE 0.3–0.6 % from nec2c at 41 segments, the Hallén
   correction 3.0–5.3 %. BL-IMPR-015 is closed on these numbers, its DCIM port
   rejected: DCIM was ~7 % from the exact kernel the MPIE already uses, to save
-  ~0.15 s per frequency. (#548)
+  part of a ground overhead of 0.15–0.34 s per frequency. (#548)
 
 ### Fixed
 
