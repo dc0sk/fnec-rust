@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sommerfeld-level2-scope.md
 status: living
-last_updated: 2026-09-29
+last_updated: 2026-10-06
 ---
 
 # Sommerfeld–Norton "Level 2" — scoping the real remaining gap (BL-IMPR-015)
@@ -144,6 +144,39 @@ already inside fnec's ~5–8 % gate on both Z and currents without it.**
    nec2c 1.3.1 is installed, re-checked 2026-09-29, FND-004),
    and lift the Hallén `--ground-solver sommerfeld` path from feedpoint-Z to full
    currents.
+
+## Phase 3 — rejected with a measurement (2026-10-06)
+
+**Do not port DCIM without reading this.** Phase 3 assumed the exact kernel was the
+cost to remove. Measured on the release build (RTX 2080 Ti host, 24-thread CPU), the
+MPIE's exact ground fill costs a fixed ~0.15 s per frequency for the kernel table
+plus a modest per-pair term — 401 segments: 0.73 s over GN 2 against 0.39 s in free
+space; 21 segments: 0.16 s against 0.01 s. And the exact kernel is already as good
+as the reference: a horizontal λ/2 dipole over GN 2, against nec2c GN 2 on the same
+mesh —
+
+| height | `--solver mpie` (exact kernel) | Hallén + `--ground-solver sommerfeld` | default (rcm) |
+|:-------|:------------------------------|:--------------------------------------|:--------------|
+| 0.025 λ | 0.7 % (21 segs) → 0.3 % (41) | 5.6 % → 3.0 % | 30.3 + j29.7 against 87.9 + j69.2 |
+| 0.05 λ | 1.1 % → 0.5 % | 8.7 % → 4.5 % | — |
+| 0.1 λ | 1.3 % → 0.6 % | 9.9 % → 5.3 % | — |
+| inverted-V, apex 1.6 m | 0.9 % → 0.4 % | declined (bent) | 8.1 % → 7.0 % |
+
+DCIM was validated at ~7 % from the exact kernel (Phase 2) — a different reference
+from nec2c, so its gap to nec2c could be up to ~8 %. Porting it would make the
+near-ground answer several times *worse* than the MPIE's, to save part of the ground
+overhead: a fixed ~0.15 s per frequency for the kernel table plus a per-pair term that
+grows with N² (the whole overhead is 0.15 s at 21 segments, 0.34 s at 401). The
+accuracy argument closes the item on its own. Item 2 (Hallén-path parity) is likewise met by routing: the MPIE is
+the near-ground currents-and-patterns path, ~1 % from nec2c on straight and bent
+wires; the Hallén correction stays the fast feedpoint-only path. What would reopen
+this: a workload where the measured ground overhead (points × its value at that N)
+dominates the run, *and* a DCIM that holds within ~1 % of the exact kernel.
+
+BL-IMPR-015 is closed on these numbers. The regime is now a standing gate: the parity
+sweep's `R-lowground` relation pins both solvers against nec2c GN 2 at 0.025, 0.05
+and 0.1 λ and on the inverted-V, at two meshes, and fails if a gap stops shrinking
+with the mesh or exceeds its cap (MPIE 3 %, Hallén 12 %).
 
 ## References
 

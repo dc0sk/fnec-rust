@@ -402,7 +402,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
 | `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
 | `ground` | `free`, `pec`, `finite`, `deferred` |
-| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `n/a` otherwise |
+| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise |
 | `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
 | `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
 

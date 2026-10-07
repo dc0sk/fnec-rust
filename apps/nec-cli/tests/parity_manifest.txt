@@ -21,6 +21,14 @@ R-loss/tee/pec Holds
 R-loss/tilted-offcentre/free Holds
 R-loss/tilted-offcentre/gn2 Holds
 R-loss/tilted-offcentre/pec Holds
+R-lowground/dipole-0.025/hallen-sommerfeld Shrinks(dZ 6 % -> 3 %, gsolver=sommerfeld-applied)
+R-lowground/dipole-0.025/mpie Shrinks(dZ 1 % -> 0 %, gsolver=mpie-exact)
+R-lowground/dipole-0.05/hallen-sommerfeld Shrinks(dZ 9 % -> 5 %, gsolver=sommerfeld-applied)
+R-lowground/dipole-0.05/mpie Shrinks(dZ 1 % -> 1 %, gsolver=mpie-exact)
+R-lowground/dipole-0.1/hallen-sommerfeld Shrinks(dZ 10 % -> 5 %, gsolver=sommerfeld-applied)
+R-lowground/dipole-0.1/mpie Shrinks(dZ 1 % -> 1 %, gsolver=mpie-exact)
+R-lowground/inverted-v/hallen-sommerfeld Shrinks(dZ 8 % -> 7 %, gsolver=sommerfeld-declined)
+R-lowground/inverted-v/mpie Shrinks(dZ 1 % -> 0 %, gsolver=mpie-exact)
 R-network/collinear-split/free Holds
 R-network/collinear-split/gn2 Holds
 R-network/collinear-split/pec Holds
@@ -585,6 +593,7 @@ S-worker/two-element-array/pec/gpu/loaded Holds
 count R-converge 1
 count R-image 2
 count R-loss 18
+count R-lowground 8
 count R-network 18
 count R-reference 23
 count R-remedy 6
@@ -604,6 +613,7 @@ reached drive=voltage
 reached ground=finite
 reached ground=free
 reached ground=pec
+reached gsolver=mpie-exact
 reached gsolver=n/a
 reached gsolver=rcm
 reached loads=config

@@ -15,6 +15,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **The near-ground regime is a standing gate.** The parity sweep's `R-lowground`
+  relation runs a λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2 and a low inverted-V,
+  at two meshes, under `--solver mpie` and under Hallén with `--ground-solver
+  sommerfeld`, against nec2c GN 2: each gap must shrink with the mesh and stay under
+  its cap. Measured: the MPIE 0.3–0.6 % from nec2c at 41 segments, the Hallén
+  correction 3.0–5.3 %. BL-IMPR-015 is closed on these numbers, its DCIM port
+  rejected: DCIM was ~7 % from the exact kernel the MPIE already uses, to save
+  part of a ground overhead of 0.15–0.34 s per frequency. (#548)
+
+### Fixed
+
+- **The `diag:` record names the MPIE's ground model** (FND-220): over a finite
+  ground it said `gsolver=rcm`, but the MPIE fills the exact Sommerfeld kernels
+  itself. It now says `gsolver=mpie-exact`. (#548)
+
 ## [0.21.3] — 2026-10-06 — Every spelling
 
 A standing check that every way of asking fnec the same question gets the same
