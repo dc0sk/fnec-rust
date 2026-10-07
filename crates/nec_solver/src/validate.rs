@@ -300,8 +300,9 @@ pub struct SolverContext<'a> {
 /// The remedies a frontend can offer, as the geometry caveats name them.
 #[derive(Debug, Clone, Copy)]
 pub struct Remedies<'a> {
-    /// See [`SolverContext::mpie_remedy`].
-    pub mpie: &'a str,
+    /// See [`SolverContext::mpie_remedy`]; `None` when this run cannot take the MPIE
+    /// whatever the deck says — a `--loads-config` load, which it refuses (FND-222).
+    pub mpie: Option<&'a str>,
     /// See [`SolverContext::sommerfeld_remedy`].
     pub sommerfeld: Option<&'a str>,
 }
@@ -310,7 +311,7 @@ impl<'a> Remedies<'a> {
     /// The MPIE remedy alone, for a path that cannot ask for the surface wave.
     pub const fn mpie_only(mpie: &'a str) -> Self {
         Self {
-            mpie,
+            mpie: Some(mpie),
             sommerfeld: None,
         }
     }
@@ -378,7 +379,7 @@ impl<'a> SolverContext<'a> {
     /// The remedies this context can offer.
     pub fn remedies(&self) -> Remedies<'a> {
         Remedies {
-            mpie: self.mpie_remedy,
+            mpie: (!self.loads.outside_deck).then_some(self.mpie_remedy),
             sommerfeld: self.sommerfeld_remedy,
         }
     }
@@ -536,7 +537,7 @@ pub fn ge_ground_reflection_warning(deck: &NecDeck) -> Option<String> {
 pub fn unsupported_topology_warning(
     deck: &NecDeck,
     segs: &[Segment],
-    mpie_remedy: &str,
+    mpie_remedy: Option<&str>,
 ) -> Option<String> {
     // A deck the section-graph solve takes is modelled: every junction closes
     // with Kirchhoff and equal potential, and a loop is a cycle of sections
@@ -554,7 +555,9 @@ pub fn unsupported_topology_warning(
              not model the Kirchhoff current split there"
         }
     };
-    let remedy = if mpie_compatible_deck(deck) {
+    // `None`: this run cannot take the MPIE whatever the deck says — a load from
+    // `--loads-config`, which it refuses (FND-222). The deck alone cannot show that.
+    let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(
             "so the reported impedance, currents, and pattern are unreliable — {mpie_remedy}, \
              which solves this geometry correctly (PH9-CHK-007)"
@@ -1339,7 +1342,7 @@ fn frequency_independent_caveats(
     deck: &NecDeck,
     segs: &[Segment],
     ground: &GroundModel,
-    mpie_remedy: &str,
+    mpie_remedy: Option<&str>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(w) = unsupported_topology_warning(deck, segs, mpie_remedy) {
@@ -1377,7 +1380,7 @@ pub fn slanted_over_ground_warning(
     deck: &NecDeck,
     segs: &[Segment],
     ground: &GroundModel,
-    mpie_remedy: &str,
+    mpie_remedy: Option<&str>,
 ) -> Option<String> {
     let over = match ground {
         GroundModel::FreeSpace | GroundModel::Deferred { .. } => return None,
@@ -1423,7 +1426,7 @@ pub fn slanted_over_ground_warning(
                 }
             }))
         })?;
-    let remedy = if mpie_compatible_deck(deck) {
+    let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(" — {mpie_remedy}, which models it")
     } else {
         String::new()
@@ -1473,7 +1476,7 @@ pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
 pub fn bent_conductor_warning(
     deck: &NecDeck,
     segs: &[Segment],
-    mpie_remedy: &str,
+    mpie_remedy: Option<&str>,
 ) -> Option<String> {
     // Judge the segments the solve runs on: a deck touching PEC ground is solved
     // as its doubled image problem (FND-082), where a one-segment run at the
@@ -1490,7 +1493,7 @@ pub fn bent_conductor_warning(
         return None;
     }
     let angle = largest_bend_deg(segs)?;
-    let or_mpie = if mpie_compatible_deck(deck) {
+    let or_mpie = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(", or {mpie_remedy}, which models the bend (PH9-CHK-007)")
     } else {
         String::new()
@@ -2563,7 +2566,7 @@ mod tests {
         );
         assert!(crate::hallen_session::graph_route(&deck, &segs).is_some());
         assert_eq!(
-            unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`"),
+            unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`")),
             None
         );
     }
@@ -2576,7 +2579,7 @@ mod tests {
             "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
-        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
             .expect("T junction must warn");
         assert!(w.contains("three or more wires"), "{w}");
         assert!(
@@ -2586,7 +2589,7 @@ mod tests {
         // A straight dipole has no such topology.
         let (d2, s2) = deck_and_segs(CLEAN_DIPOLE);
         assert_eq!(
-            unsupported_topology_warning(&d2, &s2, "re-run with `--solver mpie`"),
+            unsupported_topology_warning(&d2, &s2, Some("re-run with `--solver mpie`")),
             None
         );
     }
@@ -2600,7 +2603,7 @@ mod tests {
         let (deck, segs) = deck_and_segs(
             "GW 1 21 -5.25 0 0 5.25 0 0 .001\nGW 2 1 5.25 0 0 5.25 0 .1 .001\nGW 3 21 5.25 0 .1 -5.25 0 .1 .001\nGW 4 1 -5.25 0 .1 -5.25 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
-        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
             .expect("a refused loop must warn");
         assert!(
             w.contains("tag 2 segment 1 is one segment long") && w.contains("two segments"),
@@ -2619,7 +2622,7 @@ mod tests {
         // (FND-162 stage 5); the one-segment stem does.
         assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
         assert!(!mpie_compatible_deck(&deck));
-        let w = unsupported_topology_warning(&deck, &segs, "re-run with `--solver mpie`")
+        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
             .expect("still an unsupported topology");
         assert!(
             !w.contains("--solver mpie"),
@@ -2796,6 +2799,20 @@ mod tests {
         assert_eq!(frequency_error(&deck_with("FR 0 1 0 0 14.2 0.0")), None);
         assert_eq!(frequency_error(&deck_with("FR 0 5 0 0 14.0 0.1")), None);
         assert_eq!(frequency_error(&deck_with("FR 1 3 0 0 14.0 2.0")), None);
+    }
+
+    /// A run with a load from outside the deck cannot take the MPIE, which refuses
+    /// `--loads-config`, so its caveats may not name it — whatever the deck says
+    /// (FND-222). The context withholds the remedy; every other run keeps it.
+    #[test]
+    fn a_run_with_loads_from_outside_the_deck_is_not_offered_the_mpie() {
+        let ctx = SolverContext::cli_hallen();
+        assert_eq!(ctx.remedies().mpie, Some("re-run with `--solver mpie`"));
+        let outside = ctx.with_loads(RunLoads {
+            outside_deck: true,
+            negative: false,
+        });
+        assert_eq!(outside.remedies().mpie, None);
     }
 
     /// The CLI expands only the first `FR` card; `fnec_py` expands them all. The

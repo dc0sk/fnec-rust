@@ -452,7 +452,7 @@ fn a_grounded_top_hat_is_neither_flagged_nor_warned() {
     let route = nec_solver::hallen_route(&deck, &segs);
     assert!(!route.unsupported_topology, "{route:?}");
     assert_eq!(
-        nec_solver::validate::unsupported_topology_warning(&deck, &segs, "re-run with mpie"),
+        nec_solver::validate::unsupported_topology_warning(&deck, &segs, Some("re-run with mpie")),
         None
     );
 }
@@ -487,7 +487,7 @@ fn z_current_source(body: &str, feed: (u32, u32)) -> (Complex64, Option<String>)
         .expect("a current-source solve has a port voltage");
     (
         port_voltage / Complex64::new(1.0, 0.0),
-        nec_solver::validate::unsupported_topology_warning(&deck, &segs, "mpie"),
+        nec_solver::validate::unsupported_topology_warning(&deck, &segs, Some("mpie")),
     )
 }
 

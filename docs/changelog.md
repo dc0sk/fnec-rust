@@ -36,6 +36,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A geometry caveat no longer offers the MPIE to a run it cannot take** (FND-222):
+  the junction, bend and slant caveats named `--solver mpie` to a run with
+  `--loads-config`, which the MPIE refuses. (#552)
 - **`--hosts` no longer tells the user to add `--solver mpie`** (FND-221), which it
   refuses: it says to run without `--hosts`, as `fnec --solver mpie`. (#550)
 - **The `diag:` record names the MPIE's ground model** (FND-220): over a finite

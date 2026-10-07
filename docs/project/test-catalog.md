@@ -53,7 +53,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
 | `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
-| `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=604 --> **604** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
+| `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=607 --> **607** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | Warnings for unknown cards, `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
 | `apps/nec-cli/tests/pt_print_control.rs` | 4 | PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment current output by mode / tag / segment range. | PH9-CHK-004 |
@@ -142,7 +142,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 242 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
+| `nec_solver` | 243 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
 | `nec_worker` | 93 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 45 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -152,11 +152,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=592 --> **592** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=593 --> **593** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1289 --> **1289** = 592 unit + 690 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1290 --> **1290** = 593 unit + 690 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
