@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-10-07T19:14:28Z",
-  "git_sha": "df36f20",
+  "generated_at": "2026-10-07T20:01:32Z",
+  "git_sha": "a5eccbd",
   "runner_nproc": 4,
   "runs": [
     {
@@ -44,7 +44,7 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 83
+      "elapsed_ms": 31
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -134,7 +134,7 @@
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
@@ -245,9 +245,9 @@
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 29,
+      "avg_ms": 12,
       "min_ms": 3,
-      "max_ms": 83
+      "max_ms": 31
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -290,8 +290,8 @@
       "solver": "hallen",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
+      "avg_ms": 2,
+      "min_ms": 2,
       "max_ms": 3
     },
     {
