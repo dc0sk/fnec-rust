@@ -2,10 +2,59 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Release Notes
+
+## 0.21.4 — Advice you can take
+
+When fnec warns that an answer is approximate, it names a remedy. 0.21.4 makes every
+remedy one the run can actually take, on every path, and checks that standingly. It
+also points the low-ground warning at the more accurate solver, after fixing a
+silent wrong answer in that solver's ground. The findings ledger went from 219 / 0
+open to **224 / 0 open**.
+
+Every value below was measured on the release build against the published 0.21.3
+binary; nec2c 1.3.1 for the reference.
+
+| | 0.21.3 | 0.21.4 | reference |
+|---|---|---|---|
+| `--solver mpie`, a λ/2 dipole 4 m above another, both over GN 2 | 56.75 + j87.72 | 30.43 + j84.02 | nec2c 31.01 + j85.60 |
+| λ/2 dipole 0.6 m over GN 2: what the low-ground warning names | `--ground-solver sommerfeld` | `--solver mpie`, then `--ground-solver sommerfeld` | — |
+| … that dipole's Z: default / `--solver mpie` | 30.83 + j31.10 | 30.83 + j31.10 / 83.36 + j63.89 | nec2c 83.77 + j64.57 |
+| a T junction under `--hosts`: the remedy named | "re-run with `--solver mpie`" (refused by `--hosts`) | "run it without `--hosts`, as `fnec --solver mpie`" | — |
+| a T junction with a `--loads-config` load: the remedy named | "re-run with `--solver mpie`" (refused: the MPIE takes no loads file) | none | — |
+| `diag:` record for the MPIE over GN 2 | `gsolver=rcm` | `gsolver=mpie-exact` | — |
+
+- **The MPIE solves stacked and side-by-side parallel wires over ground correctly**
+  (FND-223). Parallel wires not on one line took the single-wire ground path, which
+  ignores their sideways offset — 28 % off on the stacked pair above, and a wire
+  five wavelengths away moved the answer by a third. Such decks now take the
+  per-pair ground path: correct, and slower (2 s for that pair).
+- **The low-ground warning names the MPIE first** where its accuracy is measured —
+  one feed on one unbranched wire, straight or bent: ~0.5 % from nec2c GN 2 at
+  0.025–0.1 λ, against 3–5 % for the feedpoint-only Sommerfeld correction. The GUI
+  names its MPIE setting in both the single solve and the sweep.
+- **No warning names a remedy its own path refuses** (FND-221, FND-222). The parity
+  sweep now reruns every named remedy on the main command, `--sweep-config`,
+  `--hosts` and `sweep --resonance`.
+- The CLI guide's Sommerfeld section quoted stale figures; it now carries the
+  measured table (default, correction, MPIE and nec2c at three heights).
+
+### Test infrastructure
+
+- **A standing near-ground gate** (parity sweep `R-lowground`): horizontal and
+  vertical dipoles at 0.025–0.1 λ and a low inverted-V over GN 2, both near-ground
+  solvers against nec2c at two meshes; a gap must shrink with the mesh and stay
+  under its cap. BL-IMPR-015 is closed on it: its DCIM port was rejected, being
+  ~7 % from the exact kernel the MPIE already uses.
+- **Every parity cell pins its run's decision record** — a label both runs of a pair
+  computed wrongly (FND-220) now fails its cell. The sweep has 609 cells.
+- The catalog's parity count is checked against the manifest.
+- FND-224 (deferred): the MPIE's two ports on a symmetric two-fed wire differ, by an
+  amount that halves with each mesh doubling — first-order discretisation of its
+  nodal feed; an improvement is recorded.
 
 ## 0.21.3 — Every spelling
 

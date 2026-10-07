@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.21.4] — 2026-10-07 — Advice you can take
+
+Every remedy fnec's warnings name is now one the run can take: four defects of that
+one class (FND-209 before, FND-221 and FND-222 here, FND-217/218 in 0.21.3) and a
+standing check across every path. The low-ground warning now points at the MPIE,
+after fixing a silent wrong answer in the MPIE's ground (FND-223) that the advice
+would otherwise have sent users to. The findings ledger went from 219 / 0 open to
+**224 / 0 open** (FND-224 deferred with its measurement).
+
 ### Added
 
 - **Every parity cell pins its run's decision record**, not only the set of values
