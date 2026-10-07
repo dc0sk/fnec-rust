@@ -1485,7 +1485,13 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
                 // `--ground-solver` (FND-217), and not `--solver` either, so "re-run
                 // with `--solver mpie`" sent the user to a refusal (FND-218). The
                 // search runs Hallén only; the MPIE is reached on the main command.
-                nec_solver::validate::Remedies::mpie_only(RESONANCE_MPIE_REMEDY),
+                // Not for the low-ground caveat: the search runs Hallén, so the
+                // value it finds is what the ground error moves.
+                nec_solver::validate::Remedies {
+                    mpie: Some(RESONANCE_MPIE_REMEDY),
+                    mpie_low_ground: None,
+                    sommerfeld: None,
+                },
             ) {
                 eprintln!("warning: {w}");
             }
@@ -1786,6 +1792,7 @@ mod tests {
             false,
             nec_solver::validate::Remedies {
                 mpie: Some(crate::solve_session::CLI_MPIE_REMEDY),
+                mpie_low_ground: Some(crate::solve_session::CLI_MPIE_REMEDY),
                 sommerfeld: Some(crate::solve_session::CLI_SOMMERFELD_REMEDY),
             },
         );

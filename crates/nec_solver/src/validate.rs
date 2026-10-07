@@ -303,6 +303,11 @@ pub struct Remedies<'a> {
     /// See [`SolverContext::mpie_remedy`]; `None` when this run cannot take the MPIE
     /// whatever the deck says — a `--loads-config` load, which it refuses (FND-222).
     pub mpie: Option<&'a str>,
+    /// The MPIE as the low-ground caveat's remedy, or `None` where that advice does
+    /// not fit: `sweep --resonance`, whose search itself runs Hallén, so the value
+    /// it finds is what the ground error moves — not something the MPIE can check
+    /// after the fact.
+    pub mpie_low_ground: Option<&'a str>,
     /// See [`SolverContext::sommerfeld_remedy`].
     pub sommerfeld: Option<&'a str>,
 }
@@ -312,6 +317,7 @@ impl<'a> Remedies<'a> {
     pub const fn mpie_only(mpie: &'a str) -> Self {
         Self {
             mpie: Some(mpie),
+            mpie_low_ground: Some(mpie),
             sommerfeld: None,
         }
     }
@@ -378,8 +384,10 @@ impl<'a> SolverContext<'a> {
 
     /// The remedies this context can offer.
     pub fn remedies(&self) -> Remedies<'a> {
+        let mpie = (!self.loads.outside_deck).then_some(self.mpie_remedy);
         Remedies {
-            mpie: (!self.loads.outside_deck).then_some(self.mpie_remedy),
+            mpie,
+            mpie_low_ground: mpie,
             sommerfeld: self.sommerfeld_remedy,
         }
     }
@@ -906,26 +914,79 @@ pub fn hallen_geometry_caveats(
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
-        out.push(with_sommerfeld_remedy(w, deck, segs, remedies.sommerfeld));
+        out.push(with_low_ground_remedies(w, deck, segs, remedies));
     }
     out
 }
 
-/// The low-ground caveat, naming the Sommerfeld remedy where this frontend can ask
-/// for it and it applies to this deck — last, after any sweep annotation. It named
-/// none, though the correction exists for exactly this (FND-217).
-fn with_sommerfeld_remedy(
+/// The low-ground caveat with the remedies this frontend can offer and this deck
+/// can take — last, after any sweep annotation. It named none (FND-217), then only
+/// the Sommerfeld correction, which is a feedpoint-only fix 3–5 % from nec2c GN 2;
+/// the MPIE puts the surface wave into the solve and is ~0.5 % (parity sweep,
+/// `R-lowground`). The MPIE is named only where that is measured
+/// ([`mpie_low_ground_measured`]); the Sommerfeld correction only where it applies.
+fn with_low_ground_remedies(
     caveat: String,
     deck: &NecDeck,
     segs: &[Segment],
-    remedy: Option<&str>,
+    remedies: Remedies<'_>,
 ) -> String {
-    match remedy {
-        Some(r) if crate::sommerfeld::correction_applies(deck, segs) => {
-            format!("{caveat} — {r}, which adds the surface wave for this deck")
+    let mpie = remedies
+        .mpie_low_ground
+        .filter(|_| mpie_compatible_deck(deck) && mpie_low_ground_measured(deck, segs));
+    let sommerfeld = remedies
+        .sommerfeld
+        .filter(|_| crate::sommerfeld::correction_applies(deck, segs));
+    match (mpie, sommerfeld) {
+        (Some(m), Some(s)) => format!(
+            "{caveat} — {m}, which puts the surface wave into the solve itself, or {s}, \
+             which corrects this straight wire's feedpoint impedance"
+        ),
+        (Some(m), None) => {
+            format!("{caveat} — {m}, which puts the surface wave into the solve itself")
         }
-        _ => caveat,
+        (None, Some(s)) => format!("{caveat} — {s}, which adds the surface wave for this deck"),
+        (None, None) => caveat,
     }
+}
+
+/// Where the MPIE's near-ground answer is measured against nec2c GN 2: one feed on one
+/// unbranched open wire, straight or bent (the parity sweep's `R-lowground` decks —
+/// horizontal and vertical dipoles, an inverted-V). Junctions, loops and several
+/// wires are not measured there, and several feeds sit on the MPIE's half-segment
+/// feed offset, which is first-order in the mesh (FND-224).
+pub(crate) fn mpie_low_ground_measured(deck: &NecDeck, segs: &[Segment]) -> bool {
+    if crate::feedpoints(deck).count() != 1 {
+        return false;
+    }
+    let g = crate::mpie::geometry_from_segments(segs);
+    let n = g.nodes.len();
+    // One open path: n − 1 segments, every node of degree ≤ 2, exactly two ends.
+    // (A cycle would need as many segments as nodes; a second path, two more ends.)
+    if n < 2 || g.segments.len() + 1 != n {
+        return false;
+    }
+    let mut degree = vec![0usize; n];
+    for s in &g.segments {
+        degree[s[0]] += 1;
+        degree[s[1]] += 1;
+    }
+    degree.iter().all(|&d| (1..=2).contains(&d)) && degree.iter().filter(|&&d| d == 1).count() == 2
+}
+
+/// The low-ground caveat over a sweep, with the remedies — what
+/// [`hallen_geometry_caveats_swept`] emits, for a frontend that renders the
+/// frequency-independent caveats elsewhere (the GUI's sweep).
+pub fn low_ground_caveat_swept(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freqs_hz: &[f64],
+    surface_wave_modelled: bool,
+    remedies: Remedies<'_>,
+) -> Option<String> {
+    swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled)
+        .map(|w| with_low_ground_remedies(w, deck, segs, remedies))
 }
 
 /// Every `EX` card whose type this build does not recognise.
@@ -1331,8 +1392,15 @@ pub fn hallen_geometry_caveats_swept(
     remedies: Remedies<'_>,
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
-    if let Some(w) = swept_low_ground_caveat(segs, ground, freqs_hz, surface_wave_modelled) {
-        out.push(with_sommerfeld_remedy(w, deck, segs, remedies.sommerfeld));
+    if let Some(w) = low_ground_caveat_swept(
+        deck,
+        segs,
+        ground,
+        freqs_hz,
+        surface_wave_modelled,
+        remedies,
+    ) {
+        out.push(w);
     }
     out
 }
@@ -2799,6 +2867,44 @@ mod tests {
         assert_eq!(frequency_error(&deck_with("FR 0 1 0 0 14.2 0.0")), None);
         assert_eq!(frequency_error(&deck_with("FR 0 5 0 0 14.0 0.1")), None);
         assert_eq!(frequency_error(&deck_with("FR 1 3 0 0 14.0 2.0")), None);
+    }
+
+    /// The MPIE is named for low ground only where `R-lowground` measures it: one
+    /// feed on one unbranched open wire, straight or bent. One deck per condition.
+    #[test]
+    fn the_mpie_low_ground_remedy_is_named_only_where_it_is_measured() {
+        let measured = |body: &str| {
+            let src = format!("{body}GE 1\nGN 2 0 0 0 13 0.005\nFR 0 1 0 0 14.2 0\nEN\n");
+            let deck = nec_parser::parse(&src).expect("parse").deck;
+            let segs = crate::build_geometry(&deck).expect("geometry");
+            mpie_low_ground_measured(&deck, &segs)
+        };
+        assert!(
+            measured("GW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nEX 0 1 11 0 1 0\n"),
+            "a dipole"
+        );
+        assert!(
+            measured(
+                "GW 1 11 0 0 1.6 -3.7 0 0.6 .001\nGW 2 11 0 0 1.6 3.7 0 0.6 .001\nEX 0 1 1 0 1 0\n"
+            ),
+            "an inverted-V: one bent wire"
+        );
+        assert!(
+            !measured("GW 1 41 -10 0 0.6 10 0 0.6 .001\nEX 0 1 11 0 1 0\nEX 0 1 31 0 1 0\n"),
+            "two feeds"
+        );
+        assert!(
+            !measured("GW 1 10 -5 0 1 0 0 1 .001\nGW 2 10 0 0 1 5 0 1 .001\nGW 3 10 0 0 1 0 5 1 .001\nEX 0 1 5 0 1 0\n"),
+            "a T junction"
+        );
+        assert!(
+            !measured("GW 1 5 0 0 1 3 0 1 .001\nGW 2 5 3 0 1 3 3 1 .001\nGW 3 5 3 3 1 0 3 1 .001\nGW 4 5 0 3 1 0 0 1 .001\nEX 0 1 3 0 1 0\n"),
+            "a closed loop"
+        );
+        assert!(
+            !measured("GW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGW 2 21 -5.28 9 0.6 5.28 9 0.6 .001\nEX 0 1 11 0 1 0\n"),
+            "two separate wires"
+        );
     }
 
     /// A run with a load from outside the deck cannot take the MPIE, which refuses

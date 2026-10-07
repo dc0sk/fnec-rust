@@ -34,6 +34,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   rejected: DCIM was ~7 % from the exact kernel the MPIE already uses, to save
   part of a ground overhead of 0.15–0.34 s per frequency. (#548)
 
+### Changed
+
+- **The low-ground warning names `--solver mpie` first.** Below ~0.1 λ over a finite
+  ground the warning named only `--ground-solver sommerfeld`, a feedpoint-only
+  correction 3–5 % from nec2c GN 2. It now names the MPIE, which puts the surface
+  wave into the solve and is ~0.5 % from nec2c, wherever that is measured — one feed
+  on one unbranched wire, straight or bent — and the correction where it applies. The
+  GUI's single solve and sweep both name its MPIE setting; `sweep --resonance` names
+  neither, since its search runs Hallén. A low vertical dipole joins the near-ground
+  gate. (#554)
+
 ### Fixed
 
 - **`--solver mpie` over ground solves stacked and side-by-side parallel wires

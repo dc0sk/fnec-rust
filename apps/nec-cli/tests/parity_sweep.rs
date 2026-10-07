@@ -974,7 +974,9 @@ fn cells() -> Vec<Cell> {
             "low-dipole-gn2",
             "CE\nGW 1 21 -5.28 0 0.6 5.28 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
-            &["--ground-solver sommerfeld"],
+            // The MPIE first: it puts the surface wave into the solve (~0.5 % from
+            // nec2c GN 2 here); the correction is feedpoint-only (3–5 %).
+            &["--solver mpie", "--ground-solver sommerfeld"],
         ),
         // The two halves of where the correction applies (FND-217), one deck each,
         // so either half can be broken alone and be seen: a bent wire (geometry)
@@ -984,7 +986,8 @@ fn cells() -> Vec<Cell> {
             "low-inverted-v-gn2",
             "CE\nGW 1 11 0 0 1.6 -3.7 0 0.6 .001\nGW 2 11 0 0 1.6 3.7 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
-            &[],
+            // Bent: the correction declines; the MPIE is measured on it.
+            &["--solver mpie"],
         ),
         (
             "low-two-fed-gn2",
@@ -1874,6 +1877,14 @@ fn low_ground_decks() -> Vec<(String, String, u32)> {
                 n,
             ));
         }
+        // Vertical, bottom at 0.03 λ: the MPIE's straight non-horizontal path.
+        v.push((
+            format!("low/vertical/{n}"),
+            format!(
+                "CE\nGW 1 {n} 0 0 0.63 0 0 11.19 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 {feed} 0 1 0\nFR 0 1 0 0 {FREQ_MHZ} 0\nEN\n"
+            ),
+            n,
+        ));
         let arm = n.div_ceil(2);
         v.push((
             format!("low/inverted-v/{n}"),

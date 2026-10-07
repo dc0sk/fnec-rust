@@ -27,8 +27,10 @@ inverted-l/pec 4.8120E+01 2.9422E+02
 low/dipole-0.025/21 8.7873E+01 6.9163E+01
 low/dipole-0.05/21 6.7318E+01 5.3167E+01
 low/dipole-0.1/21 5.9705E+01 5.8733E+01
+low/vertical/21 9.4888E+01 4.1789E+01
 low/inverted-v/21 3.4808E+01 -3.5257E+02
 low/dipole-0.025/41 8.8284E+01 6.9537E+01
 low/dipole-0.05/41 6.7563E+01 5.3542E+01
 low/dipole-0.1/41 5.9941E+01 5.9151E+01
+low/vertical/41 9.5164E+01 4.1974E+01
 low/inverted-v/41 3.4280E+01 -3.4883E+02
