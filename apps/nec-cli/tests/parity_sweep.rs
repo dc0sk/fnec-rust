@@ -44,6 +44,26 @@ fn record_reached(o: &Outcome) {
         .count();
     *DEVICE_STAGES.lock().unwrap() += on_device;
 }
+/// A passing cell's pinned outcome: `Holds` and the run's decision record. A pair's
+/// two runs are compared with each other, so a field both compute wrongly passes
+/// that comparison — the MPIE's `gsolver=rcm` did, on every pair (FND-220). Pinned
+/// per cell in the blessed manifest, each field has an expectation from outside the
+/// product. `solve_exec` and `rp_exec` stay out: they follow the host's GPU, and
+/// the manifest must hold on a host without one (`S-exec` pins them its own way).
+fn holds(o: &Outcome) -> String {
+    let record: Vec<String> = DECISION_KEYS
+        .iter()
+        .filter(|k| !["solve_exec", "rp_exec"].contains(*k))
+        .map(|k| {
+            format!(
+                "{k}={}",
+                o.decisions.get(*k).map(String::as_str).unwrap_or("?")
+            )
+        })
+        .collect();
+    format!("Holds[{}]", record.join(" "))
+}
+
 const RUN_TIMEOUT: Duration = Duration::from_secs(120);
 
 // ---------------------------------------------------------------------------------
@@ -354,7 +374,7 @@ fn pair_outcome_except(
             same_numbers_except(a, b, tol, skip_sections)?;
             record_reached(a);
             record_reached(b);
-            Ok("Holds".into())
+            Ok(holds(a))
         }
         (false, false) => {
             let (ra, rb) = (
@@ -748,7 +768,7 @@ fn cells() -> Vec<Cell> {
                             return Err(format!("current {ra:?} vs {rb:?}"));
                         }
                     }
-                    Ok("Holds".into())
+                    Ok(holds(&a))
                 }),
             ));
         }
@@ -825,7 +845,7 @@ fn cells() -> Vec<Cell> {
                                     ));
                                 }
                                 record_reached(&local);
-                                Ok("Holds".into())
+                                Ok(holds(&local))
                             }
                             (true, Err(why)) => Ok(format!(
                                 "WorkerRefused({})",
@@ -926,7 +946,7 @@ fn cells() -> Vec<Cell> {
                             return Err(format!("Z with the shunt {zb:?}, Z_ant ∥ shunt {want:?}"));
                         }
                         record_reached(&b);
-                        Ok("Holds".into())
+                        Ok(holds(&b))
                     }
                     (true, false) => Ok(format!(
                         "Refused({})",
@@ -1480,7 +1500,7 @@ fn cells() -> Vec<Cell> {
                 if (zp.0 - zd.0).hypot(zp.1 - zd.1) > 1e-6 * zp.0.hypot(zp.1) {
                     return Err(format!("Z over PEC {zp:?} vs the double's per-gap Z {zd:?}"));
                 }
-                Ok("Holds".into())
+                Ok(holds(&a))
             }),
         ));
     }
@@ -1532,7 +1552,7 @@ fn cells() -> Vec<Cell> {
                         ));
                     }
                 }
-                Ok("Holds".into())
+                Ok(holds(&a))
             }),
         ));
     }
