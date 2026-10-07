@@ -999,6 +999,14 @@ fn cells() -> Vec<Cell> {
             // The negative-resistance caveat says to check the loads: no flag cures it.
             &[],
         ),
+        // A junction deck with a load from a file: the topology caveat named the MPIE,
+        // which refuses --loads-config (FND-222, FND-209's shape on another caveat).
+        (
+            "tee-loads-config",
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![("--loads-config", "[[laplace_load]]\ntag = 2\nseg_first = 5\nnumerator = [50.0]\ndenominator = [1.0]\n".into())],
+            &[],
+        ),
         (
             "negative-load-card",
             "CE\nGW 1 21 0 0 -5.28 0 0 5.28 .001\nGE 0\nLD 4 1 11 11 -200 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),

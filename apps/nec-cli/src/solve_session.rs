@@ -1476,7 +1476,8 @@ pub(super) fn solve_frequency_point(
                 freq_hz,
                 matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
                 nec_solver::validate::Remedies {
-                    mpie: CLI_MPIE_REMEDY,
+                    // The MPIE refuses a load from --loads-config (FND-222).
+                    mpie: laplace_loads.is_empty().then_some(CLI_MPIE_REMEDY),
                     // Only to a run that has not asked: one that asked and was declined
                     // already has the decline's own warning, and telling it to re-run
                     // with the flag it passed would be advice it has taken (FND-217).

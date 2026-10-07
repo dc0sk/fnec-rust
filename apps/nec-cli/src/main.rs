@@ -1785,7 +1785,7 @@ mod tests {
             14.2e6,
             false,
             nec_solver::validate::Remedies {
-                mpie: crate::solve_session::CLI_MPIE_REMEDY,
+                mpie: Some(crate::solve_session::CLI_MPIE_REMEDY),
                 sommerfeld: Some(crate::solve_session::CLI_SOMMERFELD_REMEDY),
             },
         );
