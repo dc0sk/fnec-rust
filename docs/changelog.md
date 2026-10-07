@@ -17,6 +17,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **Every parity cell pins its run's decision record**, not only the set of values
+  reached: a label both runs of a pair compute wrongly — as FND-220's was — now fails
+  its cell. (#551)
 - **Every remedy on every path is checked.** The parity sweep's `R-remedy` relation now
   runs each remedy a caveat names, as its words say, on every path that prints caveats
   — the main command, `--sweep-config`, `--hosts` and `sweep --resonance` — and fails

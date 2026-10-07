@@ -245,3 +245,22 @@ dials, so it runs against an unreachable host (203.0.113.1, TEST-NET-3): a run w
 error is the empty pool has passed every check of its flags; each such run costs the ssh
 timeout, ~10 s. Each cell pins what its path names. The first run found FND-221 — the
 fourth instance of the class (FND-209, 217, 218), each on a different path.
+
+## Decision records pinned per cell (2026-10-07)
+
+FND-220 passed every pair: both runs computed the same wrong `gsolver`, and the manifest
+pinned decision values only as the *set* reached anywhere, which Hallén cells satisfied.
+A differential test has no expectation for what both sides compute with the same code
+(test-integrity, 2026-10-06). Every passing cell now pins its run's decision record —
+`Holds[route=… contact=… drive=… ground=… gsolver=… loads=… nf_exec=…]` — so each
+field has a per-cell expectation in the blessed manifest. `solve_exec` and `rp_exec`
+stay out: they follow the host's GPU and the manifest must hold on CI.
+
+The first blessing was reviewed against an expectation derived independently from each
+cell's id (its geometry, ground, solver and load spelling), not from fnec: all 387
+records agree on `ground`, `contact` and `gsolver`. `route` differed in three groups,
+each a documented routing rule my expectation had left out: a tilted wire over ground
+takes the path basis (it is not parallel to its image, FND-171); the `R-network` stub is
+perpendicular to the antenna (FND-174); a monopole on PEC is solved as its doubled image,
+whose two halves both start at the ground point — a reversed split (FND-082). The solve
+takes its route from the same `hallen_route` the record uses.
