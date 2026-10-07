@@ -70,11 +70,25 @@ R-reference/tilted-offcentre/pec Holds(dZ 4 %)
 R-reference/two-element-array/free Holds(dZ 6 %)
 R-reference/two-element-array/gn2 Holds(dZ 5 %)
 R-reference/two-element-array/pec Holds(dZ 6 %)
+R-remedy/hosts/low-dipole-gn2 Holds[]
+R-remedy/hosts/low-inverted-v-gn2 Holds[]
+R-remedy/hosts/low-two-fed-gn2 Holds[]
+R-remedy/hosts/negative-load-card Holds[]
+R-remedy/hosts/negative-load-config Refused(error: Laplace loads (--loads-config) are not supported with --hosts; the worker protocol carries no field for them. Run without --hosts.)
+R-remedy/hosts/tee-one-segment-arm Holds[fnec --solver mpie]
 R-remedy/low-dipole-gn2 Holds[--ground-solver sommerfeld]
 R-remedy/low-inverted-v-gn2 Holds[]
 R-remedy/low-two-fed-gn2 Holds[]
 R-remedy/negative-load-card Holds[]
 R-remedy/negative-load-config Holds[]
+R-remedy/resonance/low-dipole-gn2 Holds[]
+R-remedy/resonance/tee-one-segment-arm Holds[fnec --solver mpie]
+R-remedy/sweep-config/low-dipole-gn2 Holds[--ground-solver sommerfeld]
+R-remedy/sweep-config/low-inverted-v-gn2 Holds[]
+R-remedy/sweep-config/low-two-fed-gn2 Holds[]
+R-remedy/sweep-config/negative-load-card Holds[]
+R-remedy/sweep-config/negative-load-config Holds[]
+R-remedy/sweep-config/tee-one-segment-arm Holds[--solver mpie]
 R-remedy/tee-one-segment-arm Holds[--solver mpie]
 R-solver/collinear-split/free/mpie Holds(dZ 9 %)
 R-solver/collinear-split/free/sinusoidal Holds(dZ 1 %)
@@ -596,7 +610,7 @@ count R-loss 18
 count R-lowground 8
 count R-network 18
 count R-reference 23
-count R-remedy 6
+count R-remedy 20
 count R-solver 39
 count S-drive 40
 count S-exec 69

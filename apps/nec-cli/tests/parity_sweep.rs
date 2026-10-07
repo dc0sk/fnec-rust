@@ -986,6 +986,7 @@ fn cells() -> Vec<Cell> {
             &[],
         ),
     ];
+    let path_decks = caveat_decks.clone();
     for (name, text, files, expected) in caveat_decks {
         let id = format!("R-remedy/{name}");
         let cid = id.clone();
@@ -1036,6 +1037,131 @@ fn cells() -> Vec<Cell> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ))
+            }),
+        ));
+    }
+
+    // R-remedy on every path that prints caveats (FND-209, 217, 218, 221 — one class,
+    // four instances, each on a different path). A remedy is run as its own words say:
+    // "re-run with `--flag v`" is this path with the flag added, which must not be
+    // refused; "`fnec --flag v`" is the main command, which must not be refused either.
+    // `--hosts` refuses and warns before it dials, so an unreachable host suffices: a
+    // run whose only error is the empty pool passed every check of its flags. What
+    // each path names is pinned per cell in the manifest.
+    const UNREACHABLE: &str = "[[worker]]\nhostname = \"203.0.113.1\"\n";
+    let sweep_cfg = format!("[frequency]\npoints_mhz = [{FREQ_MHZ}]\n");
+    for (name, text, files, _) in path_decks {
+        for path in ["sweep-config", "hosts"] {
+            let id = format!("R-remedy/{path}/{name}");
+            let (cid, text, sweep_cfg) = (id.clone(), text.clone(), sweep_cfg.clone());
+            let files = files.clone();
+            v.push((
+                id,
+                Box::new(move || {
+                    let mut f: Vec<(&str, &str)> =
+                        files.iter().map(|(a, b)| (*a, b.as_str())).collect();
+                    let base: Vec<&str> = if path == "hosts" {
+                        f.push(("--hosts", UNREACHABLE));
+                        vec![]
+                    } else {
+                        f.push(("--sweep-config", &sweep_cfg));
+                        vec!["--exec", "cpu"]
+                    };
+                    let first = run(&format!("{cid}/first"), &text, &base, &f);
+                    if let Err(why) = reached(&first, path) {
+                        return Ok(format!("Refused({})", verbatim(&why)));
+                    }
+                    let named = scoped_remedies(&first.stderr);
+                    for (main_command, r) in &named {
+                        let again = if *main_command {
+                            let mut args: Vec<&str> = r.iter().map(String::as_str).collect();
+                            args.extend(["--exec", "cpu"]);
+                            let main_files: Vec<(&str, &str)> =
+                                files.iter().map(|(a, b)| (*a, b.as_str())).collect();
+                            let o = run(
+                                &format!("{cid}/main-{}", r.join("-")),
+                                &text,
+                                &args,
+                                &main_files,
+                            );
+                            if o.ok {
+                                Ok(())
+                            } else {
+                                Err(o.refusal.unwrap_or_default())
+                            }
+                        } else {
+                            let mut args = base.clone();
+                            args.extend(r.iter().map(String::as_str));
+                            let o = run(&format!("{cid}/{}", r.join("-")), &text, &args, &f);
+                            reached(&o, path)
+                        };
+                        if let Err(why) = again {
+                            return Err(format!(
+                                "on {path}, a caveat named `{}`{}, and that run was refused: {why}",
+                                r.join(" "),
+                                if *main_command {
+                                    " (as `fnec ...`)"
+                                } else {
+                                    ""
+                                }
+                            ));
+                        }
+                    }
+                    Ok(format!("Holds[{}]", describe_remedies(&named)))
+                }),
+            ));
+        }
+    }
+    // `sweep --resonance` takes a template; the decks that earn a remedy there.
+    for (name, template) in [
+        (
+            "tee-one-segment-arm",
+            "GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\nGW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        ),
+        (
+            "low-dipole-gn2",
+            "GW 1 21 -$HALF_LEN 0 0.6 $HALF_LEN 0 0.6 .001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+        ),
+    ] {
+        let id = format!("R-remedy/resonance/{name}");
+        let cid = id.clone();
+        let toml = format!(
+            "[search]\nvar = \"HALF_LEN\"\nlo = 4.5\nhi = 6.0\ntarget_reactance_ohm = 0.0\ntolerance_ohm = 0.5\nmax_iter = 50\n\n[deck]\ntemplate = \"\"\"\n{template}\"\"\"\n"
+        );
+        v.push((
+            id,
+            Box::new(move || {
+                let first = run(&format!("{cid}/first"), &toml, &["sweep", "--resonance"], &[]);
+                let named = scoped_remedies(&first.stderr);
+                // The deck the search found, for a remedy that names the main command.
+                let value = first
+                    .stdout_text
+                    .lines()
+                    .find_map(|l| l.strip_prefix("CONVERGED_VALUE "))
+                    .unwrap_or("5.0")
+                    .trim()
+                    .to_string();
+                let found = format!("CE\n{}", template.replace("$HALF_LEN", &value));
+                for (main_command, r) in &named {
+                    let o = if *main_command {
+                        let mut args: Vec<&str> = r.iter().map(String::as_str).collect();
+                        args.extend(["--exec", "cpu"]);
+                        run(&format!("{cid}/main-{}", r.join("-")), &found, &args, &[])
+                    } else {
+                        let mut args = vec!["sweep", "--resonance"];
+                        args.extend(r.iter().map(String::as_str));
+                        run(&format!("{cid}/{}", r.join("-")), &toml, &args, &[])
+                    };
+                    if !o.ok {
+                        return Err(format!(
+                            "sweep --resonance named `{}`{}, and that run was refused: {:?}",
+                            r.join(" "),
+                            if *main_command { " (as `fnec ...`)" } else { "" },
+                            o.refusal
+                        ));
+                    }
+                }
+                Ok(format!("Holds[{}]", describe_remedies(&named)))
             }),
         ));
     }
@@ -1515,6 +1641,61 @@ fn remedies(stderr: &str) -> Vec<Vec<String>> {
         }
     }
     out
+}
+
+/// Every remedy the warnings name, and whether it names the main command (`fnec --flag v`)
+/// rather than this path ("re-run with `--flag v`").
+fn scoped_remedies(stderr: &str) -> Vec<(bool, Vec<String>)> {
+    let mut out: Vec<(bool, Vec<String>)> = Vec::new();
+    for line in stderr.lines().filter(|l| l.starts_with("warning:")) {
+        let toks: Vec<&str> = line
+            .split(|c: char| c.is_whitespace() || c == '`')
+            .filter(|t| !t.is_empty())
+            .collect();
+        for i in 0..toks.len().saturating_sub(1) {
+            if ["--solver", "--ground-solver", "--exec"].contains(&toks[i]) {
+                let val = toks[i + 1].trim_end_matches([',', '.', ';', ')']);
+                let main_command = i > 0 && toks[i - 1] == "fnec";
+                let r = (main_command, vec![toks[i].to_string(), val.to_string()]);
+                if !out.contains(&r) {
+                    out.push(r);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn describe_remedies(named: &[(bool, Vec<String>)]) -> String {
+    named
+        .iter()
+        .map(|(m, r)| format!("{}{}", if *m { "fnec " } else { "" }, r.join(" ")))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Whether a run on `path` got past every check of its own flags: for `--hosts`, its
+/// only error is the empty pool an unreachable host leaves; otherwise it succeeded.
+fn reached(o: &Outcome, path: &str) -> Result<(), String> {
+    if path == "hosts" {
+        let errors: Vec<&str> = o
+            .stderr
+            .lines()
+            .filter(|l| l.starts_with("error:"))
+            .collect();
+        if errors.iter().all(|l| l.contains("worker pool is empty")) && !errors.is_empty() {
+            return Ok(());
+        }
+        return Err(errors
+            .first()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "no error at all".into()));
+    }
+    if o.ok {
+        Ok(())
+    } else {
+        Err(o.refusal.clone().unwrap_or_default())
+    }
 }
 
 fn feed_z(o: &Outcome) -> (f64, f64) {

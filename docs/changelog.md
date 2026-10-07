@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Changelog
@@ -17,6 +17,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **Every remedy on every path is checked.** The parity sweep's `R-remedy` relation now
+  runs each remedy a caveat names, as its words say, on every path that prints caveats
+  — the main command, `--sweep-config`, `--hosts` and `sweep --resonance` — and fails
+  if the run it describes is refused. Four defects of this one class were found one
+  path at a time (FND-209, 217, 218, 221); this is the standing check. (#550)
 - **The near-ground regime is a standing gate.** The parity sweep's `R-lowground`
   relation runs a λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2 and a low inverted-V,
   at two meshes, under `--solver mpie` and under Hallén with `--ground-solver
@@ -28,6 +33,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--hosts` no longer tells the user to add `--solver mpie`** (FND-221), which it
+  refuses: it says to run without `--hosts`, as `fnec --solver mpie`. (#550)
 - **The `diag:` record names the MPIE's ground model** (FND-220): over a finite
   ground it said `gsolver=rcm`, but the MPIE fills the exact Sommerfeld kernels
   itself. It now says `gsolver=mpie-exact`. (#548)

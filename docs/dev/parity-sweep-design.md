@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/dev/parity-sweep-design.md
 status: living
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Parity sweep — design (draft for review)
@@ -234,3 +234,14 @@ gaps and the run's `gsolver` are pinned. Built when BL-IMPR-015's DCIM port was
 rejected (`docs/sommerfeld-level2-scope.md` § Phase 3): the regime it was meant to
 improve is now held where it stands. Its first run found FND-220 — the decision record
 said `gsolver=rcm` for the MPIE.
+
+## Remedies on every path (2026-10-07)
+
+`R-remedy` grew from the main command to every path that prints caveats: `--sweep-config`,
+`--hosts` and `sweep --resonance` (14 more cells). A remedy is run as its words say —
+"re-run with `--flag v`" is the same path with the flag added; "`fnec --flag v`" is the
+main command — and the run must not be refused. `--hosts` refuses and warns before it
+dials, so it runs against an unreachable host (203.0.113.1, TEST-NET-3): a run whose only
+error is the empty pool has passed every check of its flags; each such run costs the ssh
+timeout, ~10 s. Each cell pins what its path names. The first run found FND-221 — the
+fourth instance of the class (FND-209, 217, 218), each on a different path.
