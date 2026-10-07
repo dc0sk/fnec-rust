@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # CLI Guide — fnec (v0.21.3)
@@ -484,9 +484,23 @@ fnec --ground-solver sommerfeld low-dipole-gn2.nec
 Replaces the default normal-incidence reflection-coefficient ground with the
 exact Sommerfeld–Norton surface wave in the feedpoint impedance of a straight
 wire (PH9-CHK-006) — the regime below ~0.1 λ where the reflection-coefficient
-model misses the surface wave, including the low-height sign flip. A horizontal
-λ/2 dipole at 0.05 λ over `GN 2` average ground moves from 32.9 + j9.3 Ω (`rcm`)
-to 63.1 + j15.8 Ω, against nec2c's 67.3 + j52.6 Ω.
+model misses the surface wave, including the low-height sign flip.
+
+A horizontal λ/2 dipole (21 segments) over `GN 2` average ground, against nec2c GN 2
+on the same mesh (measured 2026-10-06; held by the parity sweep's `R-lowground`):
+
+| height | default (`rcm`) | `--ground-solver sommerfeld` | `--solver mpie` | nec2c |
+|---|---|---|---|---|
+| 0.025 λ | 30.33 + j29.69 | 86.12 + j63.11 | 87.48 + j68.54 | 87.87 + j69.16 |
+| 0.05 λ | 34.75 + j39.66 | 66.46 + j45.79 | 66.99 + j52.29 | 67.32 + j53.17 |
+| 0.1 λ | 47.65 + j54.88 | 58.81 + j50.45 | 59.33 + j57.70 | 59.70 + j58.73 |
+
+The correction recovers the resistance; its residual is mostly reactance. The MPIE,
+which puts the surface wave into the solve itself, is within ~1 % (and ~0.5 % at 41
+segments). The low-height warning names both where they apply — the MPIE for one
+feed on one unbranched wire, straight or bent (where it is measured), the correction
+for a single straight wire — on the command line; the GUI and the bindings name
+their own MPIE setting.
 
 The correction is a feedpoint-impedance delta only: currents and patterns are
 unchanged, and bent or mixed geometry is declined — with an explicit warning —

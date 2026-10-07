@@ -813,7 +813,10 @@ impl SweepJob {
         if self.solver == SolverKind::Mpie {
             return Vec::new();
         }
-        nec_solver::validate::swept_low_ground_caveat(
+        // Through the producer the single solve's `diagnose` uses, with the same
+        // remedies, so the two GUI paths phrase one deck the same.
+        nec_solver::validate::low_ground_caveat_swept(
+            &self.deck,
             &self.segs,
             &self.ground,
             &self
@@ -822,6 +825,7 @@ impl SweepJob {
                 .map(|f| f * 1_000_000.0)
                 .collect::<Vec<_>>(),
             false,
+            gui_ctx(self.solver).remedies(),
         )
         .into_iter()
         .collect()
@@ -1260,6 +1264,17 @@ mod tests {
             caveats.iter().any(|w| w.contains("worst case, at 14.2")),
             "must name the frequency the quoted height belongs to: {caveats:?}"
         );
+        // The same remedy the single solve's `diagnose` names, in this frontend's
+        // terms — the sweep took the bare caveat from another producer, so the two
+        // GUI paths phrased one deck differently.
+        assert!(
+            caveats.iter().any(|w| w.contains(GUI_MPIE_REMEDY)),
+            "the sweep must name the GUI's MPIE remedy: {caveats:?}"
+        );
+        assert!(
+            !caveats.iter().any(|w| w.contains("--")),
+            "no CLI flag in the GUI: {caveats:?}"
+        );
     }
 
     #[test]
@@ -1470,6 +1485,11 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("above finite ground")),
             "missing the low-ground warning: {:?}",
+            low.warnings
+        );
+        assert!(
+            low.warnings.iter().any(|w| w.contains(GUI_MPIE_REMEDY)),
+            "a low single wire is offered the MPIE, in the GUI's terms: {:?}",
             low.warnings
         );
         // The CLI names `--ground-solver sommerfeld` on this deck; the GUI has no

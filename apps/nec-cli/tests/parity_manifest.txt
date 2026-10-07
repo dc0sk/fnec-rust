@@ -29,6 +29,8 @@ R-lowground/dipole-0.1/hallen-sommerfeld Shrinks(dZ 10 % -> 5 %, gsolver=sommerf
 R-lowground/dipole-0.1/mpie Shrinks(dZ 1 % -> 1 %, gsolver=mpie-exact)
 R-lowground/inverted-v/hallen-sommerfeld Shrinks(dZ 8 % -> 7 %, gsolver=sommerfeld-declined)
 R-lowground/inverted-v/mpie Shrinks(dZ 1 % -> 0 %, gsolver=mpie-exact)
+R-lowground/vertical/hallen-sommerfeld Shrinks(dZ 9 % -> 5 %, gsolver=sommerfeld-applied)
+R-lowground/vertical/mpie Shrinks(dZ 1 % -> 0 %, gsolver=mpie-exact)
 R-network/collinear-split/free Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-network/collinear-split/gn2 Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
 R-network/collinear-split/pec Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
@@ -70,22 +72,22 @@ R-reference/tilted-offcentre/pec Holds(dZ 4 %)
 R-reference/two-element-array/free Holds(dZ 6 %)
 R-reference/two-element-array/gn2 Holds(dZ 5 %)
 R-reference/two-element-array/pec Holds(dZ 6 %)
-R-remedy/hosts/low-dipole-gn2 Holds[]
-R-remedy/hosts/low-inverted-v-gn2 Holds[]
+R-remedy/hosts/low-dipole-gn2 Holds[fnec --solver mpie]
+R-remedy/hosts/low-inverted-v-gn2 Holds[fnec --solver mpie]
 R-remedy/hosts/low-two-fed-gn2 Holds[]
 R-remedy/hosts/negative-load-card Holds[]
 R-remedy/hosts/negative-load-config Refused(error: Laplace loads (--loads-config) are not supported with --hosts; the worker protocol carries no field for them. Run without --hosts.)
 R-remedy/hosts/tee-loads-config Refused(error: Laplace loads (--loads-config) are not supported with --hosts; the worker protocol carries no field for them. Run without --hosts.)
 R-remedy/hosts/tee-one-segment-arm Holds[fnec --solver mpie]
-R-remedy/low-dipole-gn2 Holds[--ground-solver sommerfeld]
-R-remedy/low-inverted-v-gn2 Holds[]
+R-remedy/low-dipole-gn2 Holds[--solver mpie, --ground-solver sommerfeld]
+R-remedy/low-inverted-v-gn2 Holds[--solver mpie]
 R-remedy/low-two-fed-gn2 Holds[]
 R-remedy/negative-load-card Holds[]
 R-remedy/negative-load-config Holds[]
 R-remedy/resonance/low-dipole-gn2 Holds[]
 R-remedy/resonance/tee-one-segment-arm Holds[fnec --solver mpie]
-R-remedy/sweep-config/low-dipole-gn2 Holds[--ground-solver sommerfeld]
-R-remedy/sweep-config/low-inverted-v-gn2 Holds[]
+R-remedy/sweep-config/low-dipole-gn2 Holds[--solver mpie, --ground-solver sommerfeld]
+R-remedy/sweep-config/low-inverted-v-gn2 Holds[--solver mpie]
 R-remedy/sweep-config/low-two-fed-gn2 Holds[]
 R-remedy/sweep-config/negative-load-card Holds[]
 R-remedy/sweep-config/negative-load-config Holds[]
@@ -610,7 +612,7 @@ S-worker/two-element-array/pec/gpu/loaded Holds[route=plain contact=no drive=vol
 count R-converge 1
 count R-image 2
 count R-loss 18
-count R-lowground 8
+count R-lowground 10
 count R-network 18
 count R-reference 23
 count R-remedy 23
