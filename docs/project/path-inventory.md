@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/path-inventory.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-07
 ---
 
 # Path inventory for cross-cutting concerns
@@ -139,7 +139,7 @@ in it. There is no second way to reach that kernel.
 | 4 | GUI **sweep** low-ground | yes | `a_sweep_earns_the_caveats_its_range_deserves_not_the_fr_cards`, with `a_sweep_that_stays_high_earns_no_low_ground_caveat` as its mirror. The send is pinned by `the_geometry_caveats_arrive_before_the_first_point` |
 | 5 | CLI distributed low-ground | yes | `the_low_ground_check_uses_the_worst_case_frequency_not_the_first` |
 | 6 | GUI / Python declined Sommerfeld | n/a | neither exposes `--ground-solver`, so the request cannot be made. The GUI's MPIE path reaches the surface wave through the solver picker instead (#415) |
-| 7 | The caveat's **remedy** (FND-217) | yes | named only on the CLI's main command, only on a deck `sommerfeld::correction_applies` accepts (the same test the solve gates on), and only to a run that has not asked: parity sweep `R-remedy` (`low-dipole-gn2`, with `low-inverted-v-gn2` and `low-two-fed-gn2` for the two halves). Not named by `--hosts` (`the_distributed_caveats_do_not_name_the_sommerfeld_remedy`), `sweep --resonance` (no such flag there), the GUI (`gui_surfaces_the_warnings_the_cli_surfaces`) or the bindings (no such option) |
+| 7 | The caveat's **remedy** (FND-217) | yes | named only on the CLI's main command, only on a deck `sommerfeld::correction_applies` accepts (the same test the solve gates on), and only to a run that has not asked: parity sweep `R-remedy` (`low-dipole-gn2`, with `low-inverted-v-gn2` and `low-two-fed-gn2` for the two halves). Not named by `--hosts` (`the_distributed_caveats_do_not_name_the_sommerfeld_remedy`), `sweep --resonance` (no such flag there), the GUI (`gui_surfaces_the_warnings_the_cli_surfaces`) or the bindings (no such option). Every CLI path's remedies are rerun by the parity sweep's `R-remedy/<path>/…` cells (FND-221) |
 
 Row 3's "yes" was unqualified until #399 split it. The check is frequency-dependent,
 and a *sweep* is a different frequency from the deck's `FR` card — so covering the

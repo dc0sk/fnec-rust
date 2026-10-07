@@ -781,6 +781,10 @@ fn main() -> ExitCode {
     }
 }
 
+/// How a `--hosts` user reaches the MPIE: not by adding `--solver mpie`, which
+/// `--hosts` refuses, but by running without it (FND-221).
+const HOSTS_MPIE_REMEDY: &str = "run it without `--hosts`, as `fnec --solver mpie`";
+
 /// Every pre-solve caveat a distributed run owes its user.
 ///
 /// Produced by `validate::hallen_geometry_caveats`, the same function the local
@@ -823,10 +827,11 @@ fn distributed_pre_solve_caveats(
         ground,
         freqs_hz,
         false,
-        // `--hosts` refuses `--ground-solver sommerfeld`, so this path may not name
-        // it — fixed here, like the `false` above, so no caller can get it wrong
-        // (FND-217).
-        nec_solver::validate::Remedies::mpie_only(crate::solve_session::CLI_MPIE_REMEDY),
+        // `--hosts` refuses `--ground-solver sommerfeld` and every solver but
+        // Hallén, so this path may name neither as a rerun of itself (FND-217,
+        // FND-221) — fixed here, like the `false` above, so no caller can get it
+        // wrong. The MPIE is reached without `--hosts`.
+        nec_solver::validate::Remedies::mpie_only(HOSTS_MPIE_REMEDY),
     )
 }
 
@@ -1823,7 +1828,7 @@ mod tests {
             &ground,
             14.2e6,
             false,
-            nec_solver::validate::Remedies::mpie_only(crate::solve_session::CLI_MPIE_REMEDY),
+            nec_solver::validate::Remedies::mpie_only(super::HOSTS_MPIE_REMEDY),
         );
         assert!(
             produced.len() >= 3,
