@@ -36,6 +36,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver mpie` over ground solves stacked and side-by-side parallel wires
+  correctly** (FND-223). Parallel wires not on one line took the single-wire ground
+  path, which ignores their sideways offset: a dipole stacked above another read
+  56.75 + j87.72 against nec2c's 31.01 + j85.60; it now reads 30.43 + j84.02. A wire
+  five wavelengths away no longer moves the answer. Such decks now take the slower
+  per-pair ground path. (#553)
 - **A geometry caveat no longer offers the MPIE to a run it cannot take** (FND-222):
   the junction, bend and slant caveats named `--solver mpie` to a run with
   `--loads-config`, which the MPIE refuses. (#552)

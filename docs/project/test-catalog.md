@@ -108,7 +108,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
 | `crates/nec_solver/tests/mpie_farfield.rs` | 3 | PH9-CHK-007 MPIE Phase C — far-field from the recovered MPIE currents. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_free_space.rs` | 4 | PH9-MPIE Phase A — free-space MPIE straight-wire core, external gates. | — |
-| `crates/nec_solver/tests/mpie_ground.rs` | 6 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_ground.rs` | 7 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_junction.rs` | 4 | PH9-CHK-007 MPIE Phase B — degree-N junctions, external gates. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_loop.rs` | 2 | PH9-CHK-007 MPIE Phase B (B3) — closed loops. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_nec2c.rs` | 3 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
@@ -131,7 +131,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=690 --> **690** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=691 --> **691** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -156,7 +156,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=593 --> **593** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1290 --> **1290** = 593 unit + 690 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1291 --> **1291** = 593 unit + 691 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

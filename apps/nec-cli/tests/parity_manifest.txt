@@ -130,7 +130,7 @@ R-solver/tilted-offcentre/pec/sinusoidal Refused(error: --solver sinusoidal solv
 R-solver/two-element-array/free/mpie Holds(dZ 6 %)
 R-solver/two-element-array/free/sinusoidal Holds(dZ 1 %)
 R-solver/two-element-array/gn2/sinusoidal Holds(dZ 1 %)
-R-solver/two-element-array/pec/mpie Holds(dZ 7 %)
+R-solver/two-element-array/pec/mpie Holds(dZ 6 %)
 R-solver/two-element-array/pec/sinusoidal Holds(dZ 1 %)
 S-drive/collinear-split/free/bare Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 S-drive/collinear-split/free/loaded Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
