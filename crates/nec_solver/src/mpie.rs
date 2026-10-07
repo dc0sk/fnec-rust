@@ -637,9 +637,25 @@ fn add_general_ground_reaction(
     sigma: f64,
 ) -> Result<(), MpieError> {
     let axis = segs[0].tangent;
-    // A bent wire (segments not all parallel) uses the per-segment-pair reflected
-    // reaction; a straight wire uses the faster (Δs, Σs) grid below.
-    if segs.iter().any(|s| dot(s.tangent, axis).abs() < 1.0 - 1e-6) {
+    // Anything but ONE straight line uses the per-segment-pair reflected reaction;
+    // one line uses the faster (Δs, Σs) grid below, which measures every separation
+    // along the axis from the centroid's height. "All segments parallel" admitted
+    // parallel wires that are not one line — a second dipole 5 λ away at another
+    // height moved the fed one's Z by 34 % (FND-223), the same assumption FND-206
+    // removed from the Sommerfeld correction. One collinearity test for both.
+    let midpoints: Vec<[f64; 3]> = segs
+        .iter()
+        .map(|s| {
+            [
+                0.5 * (s.p0[0] + s.p1[0]),
+                0.5 * (s.p0[1] + s.p1[1]),
+                0.5 * (s.p0[2] + s.p1[2]),
+            ]
+        })
+        .collect();
+    if segs.iter().any(|s| dot(s.tangent, axis).abs() < 1.0 - 1e-6)
+        || !crate::sommerfeld::collinear(&midpoints, axis)
+    {
         add_bent_ground_reaction(z, segs, bases, freq_hz, pec, eps_r, sigma);
         return Ok(());
     }

@@ -77,7 +77,7 @@ pub fn scalar_gamma(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
 /// wire, the general one by signed arc position — so "parallel" is not enough. A
 /// broadside pair of parallel wires passed the old parallel-only gate and got the
 /// along-axis kernel for an across-axis offset (FND-206).
-fn collinear(midpoints: &[[f64; 3]], axis: [f64; 3]) -> bool {
+pub(crate) fn collinear(midpoints: &[[f64; 3]], axis: [f64; 3]) -> bool {
     let p0 = midpoints[0];
     let extent = midpoints
         .iter()

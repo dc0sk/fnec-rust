@@ -232,3 +232,47 @@ fn buried_wire_is_rejected() {
         Err(MpieError::UnsupportedGround)
     ));
 }
+
+/// Two straight wires, as one geometry: `a` and `b` share no node.
+fn two_wires(a: nec_solver::MpieWire, b: nec_solver::MpieWire) -> nec_solver::MpieGeometry {
+    let (ga, gb) = (a.geometry(), b.geometry());
+    let off = ga.nodes.len();
+    let mut nodes = ga.nodes;
+    nodes.extend(gb.nodes);
+    let mut segments = ga.segments;
+    segments.extend(gb.segments.iter().map(|s| [s[0] + off, s[1] + off]));
+    nec_solver::MpieGeometry {
+        nodes,
+        segments,
+        radius: ga.radius,
+    }
+}
+
+/// FND-223: parallel is not collinear. Over a finite ground the MPIE took any set
+/// of parallel segments for one straight wire and looked its reflected kernel up
+/// by the separation ALONG the axis, from the centroid's height — dropping every
+/// across-axis offset. A second dipole five wavelengths away, parallel but at
+/// another height, moved the first one's Z by 34 % (65.77 + j64.31 alone,
+/// 88.38 + j57.12 with it); Hallén moved by 0.01 %. At 5 λ the second wire's real
+/// coupling is negligible, so its presence must leave the fed wire's Z alone.
+/// FND-206 fixed the same assumption in the Sommerfeld correction; this was the
+/// other copy.
+#[test]
+fn a_distant_parallel_wire_at_another_height_leaves_the_fed_wire_alone() {
+    let wire = |y: f64, z: f64| straight_wire([-5.28, y, z], [5.28, y, z], 10, 0.001);
+    let alone = solve_mpie_ground(&wire(0.0, 3.0).geometry(), FREQ, 5, &gn2()).unwrap();
+    for (what, other) in [
+        ("same height", wire(105.0, 3.0)),
+        ("another height", wire(105.0, 7.0)),
+    ] {
+        let pair = solve_mpie_ground(&two_wires(wire(0.0, 3.0), other), FREQ, 5, &gn2()).unwrap();
+        let rel = (pair.z_in - alone.z_in).norm() / alone.z_in.norm();
+        assert!(
+            rel < 0.005,
+            "a parallel wire 5 λ away at {what} moved Z by {:.1} %: {} alone, {} with it",
+            100.0 * rel,
+            alone.z_in,
+            pair.z_in
+        );
+    }
+}
