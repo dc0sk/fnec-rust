@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Changelog
@@ -15,6 +15,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.21.5] — 2026-10-08 — Measured here
+
+The automatic CPU/GPU pick now uses a crossover measured on the machine it runs on,
+by the new `fnec calibrate`, instead of one machine's number shipped to everyone.
+An uncalibrated host stays on the CPU until it is calibrated. The findings ledger
+went from 224 / 0 open to **225 / 0 open**.
+
 ### Changed
 
 - **The automatic `--exec` pick uses this host's own CPU/GPU crossover.** `fnec
@@ -23,6 +30,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   **Without a calibration a run stays on the CPU** and says to run `fnec calibrate`;
   the built-in threshold (550 segments, measured on one machine) is gone (FND-225).
   (#557)
+
+### Removed
+
+- **The roadmap's "publish discrete-GPU crossover evidence" item and FND-008** are
+  closed as not a project property — one host's crossover says nothing about
+  another's; per-host calibration replaces them. Phase 8's delivered items are
+  ticked, and FND-004 (the DCIM port's blocker) is closed. (#556, #557)
 
 ## [0.21.4] — 2026-10-07 — Advice you can take
 
