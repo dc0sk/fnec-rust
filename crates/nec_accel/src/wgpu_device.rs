@@ -1755,6 +1755,29 @@ pub fn shared_adapter_info() -> Option<AdapterInfo> {
     }
 }
 
+/// The adapter the shared device is (or would be) built on, without building it:
+/// the same high-performance request [`shared_adapter_info`] makes, stopping before
+/// the device. For noticing that the GPU or its driver changed since a calibration,
+/// on a run that may never use the device — a device build costs ~0.35 s. `None`
+/// without an adapter.
+pub fn preferred_adapter_info() -> Option<AdapterInfo> {
+    if let GpuCache::Ready(ctx) = &*GPU_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        return Some(ctx.adapter.clone());
+    }
+    let _init = wgpu_init_guard();
+    let instance = new_instance();
+    pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .ok()
+    .map(|a| AdapterInfo::of(&a.get_info()))
+}
+
 /// Print a GPU decline once per process for each distinct reason. A GPU sweep
 /// asks at every point, and the reason — a deck too large for the device — does
 /// not change between them.

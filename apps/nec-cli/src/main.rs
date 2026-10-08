@@ -597,9 +597,19 @@ fn main() -> ExitCode {
         }
     };
     if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
-        let calibration = match exec_calibration::loaded() {
-            Ok(c) => Ok(c.as_ref()),
-            Err(e) => Err(e.as_str()),
+        // On an interactive run of a deck the calibration could matter for, offer
+        // to measure this host if it has no calibration, or one from another GPU,
+        // driver or CPU. A fresh one is read from the offer, not from `loaded()`,
+        // which cached the file as it was before (its other reader, the
+        // --exec gpu warning, never reaches this path).
+        let fresh = gpu_deck_class
+            .is_ok()
+            .then(|| exec_calibration::maybe_offer(segs.len(), exec_calibration::loaded()))
+            .flatten();
+        let calibration = match (&fresh, exec_calibration::loaded()) {
+            (Some(c), _) => Ok(Some(c)),
+            (None, Ok(c)) => Ok(c.as_ref()),
+            (None, Err(e)) => Err(e.as_str()),
         };
         let choice = auto_select_execution_mode(
             segs.len(),
@@ -608,6 +618,7 @@ fn main() -> ExitCode {
             rayon::current_num_threads(),
             gpu_deck_class,
             calibration,
+            exec_calibration::declined().is_some(),
             || {
                 let capacity = device_capacity()?;
                 Some((capacity, exec_calibration::current_key()?))
@@ -2282,7 +2293,7 @@ mod tests {
     fn auto_pick_crosses_over_at_the_calibrated_sizes() {
         let c = cal(Some(550), Some(600));
         let pick = |n: usize, points: usize| {
-            auto_select_execution_mode(n, n + 2, points, 8, Ok(()), Ok(Some(&c)), || {
+            auto_select_execution_mode(n, n + 2, points, 8, Ok(()), Ok(Some(&c)), false, || {
                 Some((16_384, key("Calibrated GPU")))
             })
             .mode
@@ -2302,16 +2313,16 @@ mod tests {
         let no_device = || -> Option<(usize, crate::exec_calibration::HostKey)> {
             panic!("an uncalibrated pick must not touch the GPU")
         };
-        let none = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(None), no_device);
+        let none = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(None), false, no_device);
         assert_eq!(none.mode, ExecutionMode::Cpu);
         assert!(
-            none.reason.contains("run `fnec calibrate`"),
+            none.reason.contains("`fnec calibrate` lets it be picked"),
             "{}",
             none.reason
         );
 
         let unreadable =
-            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Err("bad toml"), no_device);
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Err("bad toml"), false, no_device);
         assert_eq!(unreadable.mode, ExecutionMode::Cpu);
         assert!(
             unreadable.reason.contains("bad toml"),
@@ -2320,9 +2331,10 @@ mod tests {
         );
 
         let c = cal(Some(550), Some(600));
-        let elsewhere = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || {
-            Some((16_384, key("Another GPU")))
-        });
+        let elsewhere =
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), false, || {
+                Some((16_384, key("Another GPU")))
+            });
         assert_eq!(elsewhere.mode, ExecutionMode::Cpu);
         assert!(
             elsewhere.reason.contains("Another GPU"),
@@ -2332,7 +2344,7 @@ mod tests {
 
         // A sweep calibrated on 8 threads says nothing about a run on 4.
         let threads =
-            auto_select_execution_mode(2000, 2002, 24, 4, Ok(()), Ok(Some(&c)), no_device);
+            auto_select_execution_mode(2000, 2002, 24, 4, Ok(()), Ok(Some(&c)), false, no_device);
         assert_eq!(threads.mode, ExecutionMode::Cpu);
         assert!(
             threads.reason.contains("8 CPU threads"),
@@ -2340,10 +2352,24 @@ mod tests {
             threads.reason
         );
 
+        // A host that declined the offer is told so, not asked to run calibrate as if new.
+        let declined =
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(None), true, no_device);
+        assert_eq!(declined.mode, ExecutionMode::Cpu);
+        assert!(declined.reason.contains("declined"), "{}", declined.reason);
+
         // An integrated GPU that never won.
         let never_cal = cal(None, None);
-        let never =
-            auto_select_execution_mode(5000, 5002, 1, 8, Ok(()), Ok(Some(&never_cal)), no_device);
+        let never = auto_select_execution_mode(
+            5000,
+            5002,
+            1,
+            8,
+            Ok(()),
+            Ok(Some(&never_cal)),
+            false,
+            no_device,
+        );
         assert_eq!(never.mode, ExecutionMode::Cpu);
         assert!(
             never.reason.contains("did not beat the CPU"),
@@ -2355,13 +2381,15 @@ mod tests {
     #[test]
     fn auto_pick_stays_on_the_cpu_without_a_gpu_or_a_deck_it_solves() {
         let c = cal(Some(550), Some(600));
-        let none = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || None);
+        let none =
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), false, || None);
         assert_eq!(none.mode, ExecutionMode::Cpu);
         assert!(none.reason.contains("no hardware GPU"), "{}", none.reason);
 
-        let full = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || {
-            Some((1000, key("Calibrated GPU")))
-        });
+        let full =
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), false, || {
+                Some((1000, key("Calibrated GPU")))
+            });
         assert_eq!(full.mode, ExecutionMode::Cpu);
         assert!(
             full.reason.contains("more than the GPU holds"),
@@ -2369,15 +2397,21 @@ mod tests {
             full.reason
         );
 
-        let class =
-            auto_select_execution_mode(2000, 2002, 1, 8, Err("a bend"), Ok(Some(&c)), || {
-                panic!("an ineligible deck must not touch the GPU")
-            });
+        let class = auto_select_execution_mode(
+            2000,
+            2002,
+            1,
+            8,
+            Err("a bend"),
+            Ok(Some(&c)),
+            false,
+            || panic!("an ineligible deck must not touch the GPU"),
+        );
         assert_eq!(class.mode, ExecutionMode::Cpu);
         assert!(class.reason.contains("a bend"), "{}", class.reason);
 
         // Below the crossover the device is not even asked about.
-        let small = auto_select_execution_mode(51, 53, 1, 8, Ok(()), Ok(Some(&c)), || {
+        let small = auto_select_execution_mode(51, 53, 1, 8, Ok(()), Ok(Some(&c)), false, || {
             panic!("a small deck must not touch the GPU")
         });
         assert_eq!(small.mode, ExecutionMode::Cpu);

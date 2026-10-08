@@ -15,6 +15,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **fnec offers to calibrate.** An interactive run without `--exec`, of a deck the
+  GPU solves, asks once — "Calibrate now? [y/N]" — when the host has no calibration,
+  or when its GPU, driver or CPU changed since it was calibrated. A "no" is
+  remembered for that GPU, driver and CPU; scripts and pipelines are never asked.
+  (#559)
+
+### Fixed
+
+- **The no-calibration hint no longer sends GPU-less hosts to `fnec calibrate`**
+  (FND-226): it now reads "if it has a GPU, `fnec calibrate` lets it be picked".
+  (#559)
+
 ## [0.21.5] — 2026-10-08 — Measured here
 
 The automatic CPU/GPU pick now uses a crossover measured on the machine it runs on,

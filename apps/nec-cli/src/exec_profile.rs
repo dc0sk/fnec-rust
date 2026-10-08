@@ -77,6 +77,7 @@ pub(super) fn auto_select_execution_mode(
     threads: usize,
     deck_class: Result<(), &str>,
     calibration: Result<Option<&super::exec_calibration::Calibration>, &str>,
+    declined: bool,
     device: impl FnOnce() -> Option<(usize, super::exec_calibration::HostKey)>,
 ) -> AutoExecChoice {
     let cpu = |reason: String| AutoExecChoice {
@@ -88,9 +89,19 @@ pub(super) fn auto_select_execution_mode(
     }
     let cal = match calibration {
         Err(why) => return cpu(format!("the host's calibration could not be read: {why}")),
+        // Said without probing for a GPU — every run would pay for it — so it
+        // must hold on a host that has none.
+        Ok(None) if declined => {
+            return cpu(
+                "calibration was declined on this host earlier; `fnec calibrate` measures it \
+                 any time"
+                    .to_string(),
+            )
+        }
         Ok(None) => {
             return cpu(
-                "no calibration for this host — run `fnec calibrate` to let the GPU be picked"
+                "no calibration for this host — if it has a GPU, `fnec calibrate` lets it be \
+                 picked"
                     .to_string(),
             )
         }
