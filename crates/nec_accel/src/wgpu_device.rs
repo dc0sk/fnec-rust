@@ -15,6 +15,20 @@ pub struct AdapterInfo {
     pub name: String,
     pub backend: String,
     pub device_type: String,
+    /// The driver's version string (wgpu's `driver_info`, e.g. "595.91.07"): a
+    /// driver change moves the CPU/GPU crossover, so a calibration keys on it.
+    pub driver: String,
+}
+
+impl AdapterInfo {
+    fn of(info: &wgpu::AdapterInfo) -> Self {
+        Self {
+            name: info.name.clone(),
+            backend: format!("{:?}", info.backend),
+            device_type: format!("{:?}", info.device_type),
+            driver: info.driver_info.clone(),
+        }
+    }
 }
 
 /// How long a readback waits for the GPU before giving up on it (FND-196). The
@@ -146,6 +160,9 @@ const GPU_SOLVE_MAX_REL_RESIDUAL: f64 = 1.0e-4;
 struct GpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// The adapter the shared device was built on — the one that solves, which on
+    /// a host with an integrated and a discrete GPU is not simply the first listed.
+    adapter: AdapterInfo,
 }
 
 /// What an acquisition attempt produced. The two failure variants are kept
@@ -416,7 +433,11 @@ async fn shared_gpu_context() -> GpuAcquire {
         };
 
     GPU_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let ctx = std::sync::Arc::new(GpuContext { device, queue });
+    let ctx = std::sync::Arc::new(GpuContext {
+        device,
+        queue,
+        adapter: AdapterInfo::of(&info),
+    });
     *cache = GpuCache::Ready(ctx.clone());
     GpuAcquire::Ready(ctx)
 }
@@ -431,14 +452,7 @@ pub async fn enumerate_compute_adapters() -> Vec<AdapterInfo> {
 
     pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
         .into_iter()
-        .map(|adapter| {
-            let info = adapter.get_info();
-            AdapterInfo {
-                name: info.name.clone(),
-                backend: format!("{:?}", info.backend),
-                device_type: format!("{:?}", info.device_type),
-            }
-        })
+        .map(|adapter| AdapterInfo::of(&adapter.get_info()))
         .collect()
 }
 
@@ -1658,9 +1672,10 @@ const REFINE_STEPS: u32 = 2;
 /// One value for both callers (FND-078: it was two independent `16`s). It is a
 /// floor, not a crossover. The single-workgroup solve measured 0.04x-0.48x the CPU
 /// at every size (PH7-CHK-003); the rebuilt one crosses over near 500 segments for
-/// one point on a GTX 1080 Ti (FND-185), which is where the CLI's automatic pick
-/// sends a deck. Below this floor the dispatch is pure overhead; between it and
-/// the crossover the path is taken only for an explicit `--exec gpu`.
+/// one point on a GTX 1080 Ti (FND-185). Where the CLI's automatic pick sends a
+/// deck is the host's own crossover, measured by `fnec calibrate` (FND-225). Below
+/// this floor the dispatch is pure overhead; between it and the crossover the path
+/// is taken only for an explicit `--exec gpu`.
 /// The value itself has no recorded measurement behind it.
 pub const MIN_GPU_RESIDENT_SEGS: usize = 16;
 
@@ -1725,6 +1740,17 @@ pub fn dense_matrix_capacity(limits: &wgpu::Limits) -> usize {
 pub fn shared_device_dense_capacity() -> Option<usize> {
     match pollster::block_on(shared_gpu_context()) {
         GpuAcquire::Ready(ctx) => Some(dense_matrix_capacity(&ctx.device.limits())),
+        GpuAcquire::NoAdapter(_) | GpuAcquire::DeviceFailed(_) => None,
+    }
+}
+
+/// The adapter the shared device solves on, or `None` where there is no device.
+/// The one a CPU/GPU calibration must name: `hardware_adapter_present` accepts
+/// any non-CPU adapter and enumeration lists them all, but the device is built
+/// on the high-performance one.
+pub fn shared_adapter_info() -> Option<AdapterInfo> {
+    match pollster::block_on(shared_gpu_context()) {
+        GpuAcquire::Ready(ctx) => Some(ctx.adapter.clone()),
         GpuAcquire::NoAdapter(_) | GpuAcquire::DeviceFailed(_) => None,
     }
 }

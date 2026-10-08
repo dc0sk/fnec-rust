@@ -43,34 +43,11 @@ pub(super) enum CompatibilityProfile {
     FourNec2DropIn,
 }
 
-/// The smallest deck the automatic pick sends to the GPU for one frequency point.
-///
-/// Measured 2026-10-05 on an NVIDIA RTX 2080 Ti (driver 595.91.07, open kernel
-/// module) against a 24-thread CPU, a λ/2 dipole, whole process, best of 3:
-/// 401 segments 0.171 s CPU / 0.365 s GPU, 501 0.316 / 0.398, 551 0.411 / 0.406
-/// (a tie), 601 0.525 / 0.396. Re-measured 2026-10-06 every 10 segments, whole
-/// process, median of 15 alternating runs: 520 0.381 / 0.416, 530 0.396 / 0.404 (a
-/// tie), 540 0.424 / 0.404, 550 0.445 / 0.408, 570 0.500 / 0.416 — the GPU wins from
-/// 540 with its quartiles clear of the CPU's. The first setting, 600, was the first
-/// clear win on a 50-segment grid and cost up to 0.15 s (27 %) on every one-point
-/// run from 540 to 599 (FND-219). Set at 550: the first clear win on that grid, and
-/// still on the CPU's side of the crossover, which drifts ±8 % between days. The device
-/// pays a fixed ≈ 0.35 s to start — about twice the GTX 1080 Ti's 0.18 s, which
-/// is why this rose from the 500 measured there on 2026-10-01 (451 a tie, 501
-/// 0.31 / 0.25) — and the CPU grows as N³. A host constant: re-measure on a new
-/// card or driver (`~/.cache/swap/xover.sh`-style, whole process, exact timer).
-pub(super) const AUTO_GPU_MIN_SEGS_ONE_POINT: usize = 550;
-
-/// The same for a sweep, where the CPU solves its points in parallel and the GPU
-/// in turn. 24 points, measured as above (2080 Ti, 595): 401 segments 0.380 s
-/// CPU / 1.258 s GPU, 501 1.107 / 1.669, 551 2.058 / 1.910, 601 3.194 / 2.159,
-/// 701 6.498 / 2.727 — the same crossover as the 1080 Ti's (501 1.24 / 1.64,
-/// 551 2.65 / 1.89), where the device's start-up is amortised over the points.
-/// (It was 800 with the serial triangular solves.) It moves with the controller's thread count
-/// — fewer cores, a lower crossover — and is not modelled: guessing high errs
-/// toward the CPU, which was the default before this pick existed, so the pick is
-/// never slower than it.
-pub(super) const AUTO_GPU_MIN_SEGS_SWEEP: usize = 550;
+// The CPU/GPU crossover is this host's, measured by `fnec calibrate`
+// (`exec_calibration`). It used to be two constants measured on one machine and
+// shipped to every user (550 on an RTX 2080 Ti beside a 24-thread CPU, 500 on a
+// GTX 1080 Ti — FND-219 records the measurements); a single host's crossover is
+// not a property of fnec.
 
 /// What `--exec` resolves to when it is not given, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,20 +59,25 @@ pub(super) struct AutoExecChoice {
 /// Pick the CPU or the GPU for a run without `--exec`.
 ///
 /// `deck_class` is whether the deck is one the device solves (the shared class,
-/// and no stamps of any kind); `device_capacity` is asked only once the deck
-/// qualifies on everything else, so a small or ineligible deck never touches the
-/// GPU. It returns the device's dense capacity, or `None` without a hardware
-/// adapter.
+/// and no stamps of any kind). `calibration` is this host's measured crossover
+/// (`fnec calibrate`): `Ok(None)` when there is none, `Err` when the file cannot be
+/// read. Without one the pick is the CPU and says how to get one. `device` is asked
+/// only once the deck qualifies on everything else, so a small or ineligible deck
+/// never touches the GPU; it returns the device's dense capacity and the host key
+/// the calibration must match, or `None` without a hardware adapter.
 ///
 /// Only ever `Cpu` or `Gpu`. It used to pick `Hybrid` for every multi-point run,
 /// which since the parallel CPU sweep is the CPU path plus a warning about a lane
 /// nobody asked for.
+#[allow(clippy::too_many_arguments)] // the pick's inputs; a struct would only rename them
 pub(super) fn auto_select_execution_mode(
     segments: usize,
     unknowns: usize,
     freq_points: usize,
+    threads: usize,
     deck_class: Result<(), &str>,
-    device_capacity: impl FnOnce() -> Option<usize>,
+    calibration: Result<Option<&super::exec_calibration::Calibration>, &str>,
+    device: impl FnOnce() -> Option<(usize, super::exec_calibration::HostKey)>,
 ) -> AutoExecChoice {
     let cpu = |reason: String| AutoExecChoice {
         mode: ExecutionMode::Cpu,
@@ -104,27 +86,57 @@ pub(super) fn auto_select_execution_mode(
     if let Err(why) = deck_class {
         return cpu(format!("not a deck the GPU solves: {why}"));
     }
-    let (threshold, what) = if freq_points > 1 {
-        (AUTO_GPU_MIN_SEGS_SWEEP, "a sweep")
+    let cal = match calibration {
+        Err(why) => return cpu(format!("the host's calibration could not be read: {why}")),
+        Ok(None) => {
+            return cpu(
+                "no calibration for this host — run `fnec calibrate` to let the GPU be picked"
+                    .to_string(),
+            )
+        }
+        Ok(Some(c)) => c,
+    };
+    let sweep = freq_points > 1;
+    let what = if sweep { "a sweep" } else { "one point" };
+    if sweep && cal.sweep_threads != threads {
+        return cpu(format!(
+            "this host's sweep calibration was measured with {} CPU threads, this run has              {threads} — run `fnec calibrate` again",
+            cal.sweep_threads
+        ));
+    }
+    let threshold = if sweep {
+        cal.sweep_min_segs
     } else {
-        (AUTO_GPU_MIN_SEGS_ONE_POINT, "one point")
+        cal.one_point_min_segs
+    };
+    let Some(threshold) = threshold else {
+        return cpu(format!(
+            "the GPU did not beat the CPU for {what} on this host up to {} segments \
+             (`fnec calibrate`)",
+            cal.measured_up_to
+        ));
     };
     if segments < threshold {
         return cpu(format!(
-            "{segments} segments, below the GPU crossover for {what} ({threshold})"
+            "{segments} segments, below this host's GPU crossover for {what} ({threshold})"
         ));
     }
-    match device_capacity() {
+    match device() {
         None => cpu("no hardware GPU".to_string()),
-        Some(capacity) if unknowns > capacity => cpu(format!(
+        Some((_, key)) if key != cal.key => cpu(format!(
+            "this host's calibration was measured on {} (driver {}) beside {}, not on this \
+             {} (driver {}) beside {} — run `fnec calibrate` again",
+            cal.key.adapter, cal.key.driver, cal.key.cpu, key.adapter, key.driver, key.cpu
+        )),
+        Some((capacity, _)) if unknowns > capacity => cpu(format!(
             "{unknowns} unknowns, more than the GPU holds ({capacity})"
         )),
         Some(_) => AutoExecChoice {
             mode: ExecutionMode::Gpu,
             reason: format!(
-                "{segments} segments, at or above the GPU crossover for {what} ({threshold}); \
-                 the device solve is f32, residual-checked, and within 2 Ω of the CPU — \
-                 pass --exec cpu for the CPU's digits"
+                "{segments} segments, at or above this host's GPU crossover for {what} \
+                 ({threshold}); the device solve is f32, residual-checked, and within 2 Ω of \
+                 the CPU — pass --exec cpu for the CPU's digits"
             ),
         },
     }

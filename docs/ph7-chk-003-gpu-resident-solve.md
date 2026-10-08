@@ -221,6 +221,7 @@ Measured on the GTX 1080 Ti: relative residual 2e-7 to 1.2e-6 on 21 to 301
 segments, identical over 20 runs; impedance within 0.0003 Ω of the f64 CPU
 solve up to 1001 segments. The recommendation above is superseded: the
 elimination now uses the whole device, and the solve crosses over near 500
-segments (whole CLI run, 0.90 s against the CPU's 4.56 s at 1001 segments;
+segments on the GTX 1080 Ti this was measured on — the crossover is the host's,
+measured by `fnec calibrate` (FND-225) — (whole CLI run, 0.90 s against the CPU's 4.56 s at 1001 segments;
 0.18 s against 0.009 s at 101).
 

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/benchmarks.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-08
 ---
 
 # Benchmarks
@@ -248,8 +248,10 @@ are **not** the CI software rasterizer — they are a real Vulkan GPU.
 - **Harness**: `apps/nec-cli/examples/gpu_crossover.rs`
   (`cargo run --release -p nec-cli --example gpu_crossover`).
 - **Artifact**: `benchmarks/real-gpu-crossover.json` (representative run).
-- Numbers below are a representative run on the local workstation; absolute µs
-  vary run-to-run, the crossover and scaling do not.
+- Numbers below are a representative run on one workstation. The scaling is
+  general; **the crossover is the host's** — card, driver and CPU — so it is not a
+  property of fnec. The automatic `--exec` pick uses this host's own, measured by
+  `fnec calibrate` (see `docs/cli-guide.md`).
 
 ### Z-matrix fill — kernel-only (device-init excluded)
 

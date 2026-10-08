@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-//! Without `--exec`, the deck picks the CPU or the GPU: a supported deck goes to
-//! the GPU at ≥ 550 segments for one point or a sweep, when a hardware
-//! GPU is present. Everything here runs on any host; on one without a GPU the
-//! pick must stay on the CPU and the answer must be the CPU's to the byte.
+//! Without `--exec`, the deck picks the CPU or the GPU from this host's calibration
+//! (`fnec calibrate`): a supported deck goes to the GPU at or above the calibrated
+//! crossover, when the calibration was measured on this host's device. Without a
+//! calibration the pick is the CPU and says how to get one. Everything here runs
+//! on any host — each run is given its own calibration file through
+//! `FNEC_EXEC_CALIBRATION`, never the user's — and on one without a GPU the pick
+//! must stay on the CPU and the answer must be the CPU's to the byte. The
+//! measuring path of `fnec calibrate` itself needs a GPU and minutes; it is run by
+//! hand on a GPU host (CI has no adapter).
 
 mod common;
 
+use std::path::PathBuf;
 use std::process::Command;
 
 fn dipole(n: usize, points: usize) -> String {
@@ -17,12 +23,24 @@ fn dipole(n: usize, points: usize) -> String {
     )
 }
 
-/// Run fnec on `deck` with `args`; (stdout, stderr).
-fn run(name: &str, deck: &str, args: &[&str]) -> (String, String) {
-    let path =
-        std::env::temp_dir().join(format!("fnec-exec-auto-{name}-{}.nec", std::process::id()));
+fn scratch(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("fnec-exec-auto-{name}-{}", std::process::id()))
+}
+
+/// Run fnec on `deck` with `args` and the calibration at `calibration` (a path that
+/// need not exist); (stdout, stderr). Four sweep threads, so a sweep calibration
+/// can name them.
+fn run_with(
+    name: &str,
+    deck: &str,
+    args: &[&str],
+    calibration: &std::path::Path,
+) -> (String, String) {
+    let path = scratch(name).with_extension("nec");
     std::fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .env("FNEC_EXEC_CALIBRATION", calibration)
+        .env("RAYON_NUM_THREADS", "4")
         .args(args)
         .arg(&path)
         .output()
@@ -31,6 +49,42 @@ fn run(name: &str, deck: &str, args: &[&str]) -> (String, String) {
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(out.status.success(), "fnec {args:?} failed:\n{stderr}");
     (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
+}
+
+/// An uncalibrated run.
+fn run(name: &str, deck: &str, args: &[&str]) -> (String, String) {
+    run_with(
+        name,
+        deck,
+        args,
+        &scratch("no-calibration").with_extension("toml"),
+    )
+}
+
+/// This host's key as `fnec calibrate --print-key` reports it, or `None` without a
+/// GPU device.
+fn host_key() -> Option<String> {
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["calibrate", "--print-key"])
+        .output()
+        .expect("run fnec calibrate");
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// A calibration file for this host (or a foreign one): 550 segments for one point
+/// and for a sweep of 4 threads.
+fn calibration(name: &str, key: Option<&str>) -> PathBuf {
+    let key = key.map(str::to_string).unwrap_or_else(|| {
+        "adapter = \"Another GPU\"\nbackend = \"Vulkan\"\ndevice_type = \"DiscreteGpu\"\ndriver = \"0\"\ncpu = \"Another CPU\"\n".to_string()
+    });
+    let text = format!(
+        "schema = 1\nepoch = 1\none_point_min_segs = 550\nsweep_min_segs = 550\nsweep_threads = 4\nmeasured_up_to = 2000\n\n[key]\n{key}"
+    );
+    let p = scratch(name).with_extension("toml");
+    std::fs::write(&p, text).expect("write calibration");
+    p
 }
 
 fn selected(stderr: &str) -> &str {
@@ -57,25 +111,57 @@ fn feed_z(stdout: &str) -> (f64, f64) {
     (f[6], f[7])
 }
 
-fn gpu_present() -> bool {
-    pollster::block_on(nec_accel::hardware_adapter_present())
+/// Without a calibration for this host the pick is the CPU, however large the
+/// deck, and it says how to get one — the answer the CPU's to the byte.
+#[test]
+fn an_uncalibrated_host_stays_on_the_cpu_and_says_how_to_calibrate() {
+    let deck = dipole(901, 1);
+    let (auto_out, auto_err) = run("uncal", &deck, &[]);
+    assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
+    assert!(auto_err.contains("run `fnec calibrate`"), "{auto_err}");
+    let (cpu_out, _) = run("uncal-cpu", &deck, &["--exec", "cpu"]);
+    assert_eq!(auto_out, cpu_out);
+}
+
+/// A calibration file that cannot be read is said, with its path — never silently
+/// treated as absent.
+#[test]
+fn an_unreadable_calibration_is_named() {
+    let bad = scratch("bad").with_extension("toml");
+    std::fs::write(&bad, "this is not toml = = =").unwrap();
+    let (_, err) = run_with("bad", &dipole(901, 1), &[], &bad);
+    let _ = std::fs::remove_file(&bad);
+    assert_eq!(selected(&err), "cpu", "{err}");
+    assert!(
+        err.contains("could not be read") && err.contains("bad"),
+        "{err}"
+    );
 }
 
 #[test]
-fn below_the_crossover_the_pick_is_the_cpu_to_the_byte() {
+fn below_the_calibrated_crossover_the_pick_is_the_cpu_to_the_byte() {
+    let cal = calibration("below", host_key().as_deref());
     let deck = dipole(549, 1);
-    let (auto_out, auto_err) = run("549", &deck, &[]);
+    let (auto_out, auto_err) = run_with("549", &deck, &[], &cal);
     assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
-    let (cpu_out, _) = run("549cpu", &deck, &["--exec", "cpu"]);
+    assert!(
+        auto_err.contains("below this host's GPU crossover for one point (550)"),
+        "{auto_err}"
+    );
+    let (cpu_out, _) = run_with("549cpu", &deck, &["--exec", "cpu"], &cal);
+    let _ = std::fs::remove_file(&cal);
     assert_eq!(auto_out, cpu_out);
 }
 
 #[test]
-fn at_the_crossover_the_pick_is_the_gpu_where_there_is_one() {
+fn at_the_calibrated_crossover_the_pick_is_the_gpu_where_there_is_one() {
+    let key = host_key();
+    let cal = calibration("at", key.as_deref());
     let deck = dipole(551, 1);
-    let (auto_out, auto_err) = run("551", &deck, &[]);
-    let (cpu_out, _) = run("551cpu", &deck, &["--exec", "cpu"]);
-    if !gpu_present() {
+    let (auto_out, auto_err) = run_with("551", &deck, &[], &cal);
+    let (cpu_out, _) = run_with("551cpu", &deck, &["--exec", "cpu"], &cal);
+    let _ = std::fs::remove_file(&cal);
+    if key.is_none() {
         assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
         assert!(auto_err.contains("no hardware GPU"), "{auto_err}");
         assert_eq!(auto_out, cpu_out, "no GPU: the CPU's answer to the byte");
@@ -90,6 +176,23 @@ fn at_the_crossover_the_pick_is_the_gpu_where_there_is_one() {
     );
 }
 
+/// A calibration measured on another device or CPU does not apply here.
+#[test]
+fn a_calibration_from_another_host_does_not_apply() {
+    let cal = calibration("foreign", None);
+    let (_, err) = run_with("foreign", &dipole(901, 1), &[], &cal);
+    let _ = std::fs::remove_file(&cal);
+    assert_eq!(selected(&err), "cpu", "{err}");
+    if host_key().is_some() {
+        assert!(
+            err.contains("Another GPU") && err.contains("run `fnec calibrate` again"),
+            "{err}"
+        );
+    } else {
+        assert!(err.contains("no hardware GPU"), "{err}");
+    }
+}
+
 /// A deck the device does not solve stays on the CPU however large: a 90° L is a
 /// bent conductor, which takes the path basis.
 #[test]
@@ -100,11 +203,12 @@ fn a_large_deck_the_gpu_does_not_solve_stays_on_the_cpu() {
     assert!(err.contains("not a deck the GPU solves"), "{err}");
 }
 
-/// A sweep has its own crossover: 520 segments over two points stays on the
-/// CPU, below the sweep threshold (550).
+/// A sweep has its own calibrated crossover.
 #[test]
 fn a_sweep_below_its_crossover_stays_on_the_cpu() {
-    let (_, err) = run("sweep520", &dipole(520, 2), &[]);
+    let cal = calibration("sweep520", host_key().as_deref());
+    let (_, err) = run_with("sweep520", &dipole(520, 2), &[], &cal);
+    let _ = std::fs::remove_file(&cal);
     assert_eq!(selected(&err), "cpu", "{err}");
     assert!(err.contains("crossover for a sweep (550)"), "{err}");
 }
@@ -113,8 +217,11 @@ fn a_sweep_below_its_crossover_stays_on_the_cpu() {
 /// how many did.
 #[test]
 fn a_sweep_past_its_crossover_runs_on_the_gpu_and_counts_its_points() {
-    let (_, err) = run("sweep551", &dipole(551, 2), &[]);
-    if !gpu_present() {
+    let key = host_key();
+    let cal = calibration("sweep551", key.as_deref());
+    let (_, err) = run_with("sweep551", &dipole(551, 2), &[], &cal);
+    let _ = std::fs::remove_file(&cal);
+    if key.is_none() {
         assert_eq!(selected(&err), "cpu", "{err}");
         return;
     }
@@ -131,15 +238,20 @@ fn a_sweep_past_its_crossover_runs_on_the_gpu_and_counts_its_points() {
 }
 
 /// The slower-than-the-CPU warning for an explicit `--exec gpu` on a small deck
-/// is said once per run. It printed once per sweep point.
+/// quotes this host's calibration, once per run (it printed once per sweep point);
+/// an uncalibrated host has no measurement to quote and says nothing.
 #[test]
-fn the_small_deck_gpu_warning_is_said_once_per_run() {
-    let (_, err) = run("small-sweep", &dipole(51, 5), &["--exec", "gpu"]);
+fn the_small_deck_gpu_warning_quotes_the_calibration_once_per_run() {
+    let cal = calibration("small", host_key().as_deref());
+    let (_, err) = run_with("small-sweep", &dipole(51, 5), &["--exec", "gpu"], &cal);
+    let _ = std::fs::remove_file(&cal);
     let n = err
         .lines()
-        .filter(|l| l.contains("is slower than the CPU below about"))
+        .filter(|l| l.contains("slower than the CPU below 550 segments"))
         .count();
     assert_eq!(n, 1, "expected one warning, got {n}:\n{err}");
+    let (_, uncal) = run("small-uncal", &dipole(51, 5), &["--exec", "gpu"]);
+    assert!(!uncal.contains("slower than the CPU"), "{uncal}");
 }
 
 /// A deck with a load card stays on the CPU: the device re-solves from raw
@@ -151,4 +263,26 @@ fn a_loaded_deck_stays_on_the_cpu() {
     let (_, err) = run("loaded", deck, &[]);
     assert_eq!(selected(&err), "cpu", "{err}");
     assert!(err.contains("stamps loads or networks"), "{err}");
+}
+
+/// `fnec calibrate --print-key` names this host's device, or says there is none.
+#[test]
+fn calibrate_prints_this_hosts_key_or_says_there_is_no_device() {
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["calibrate", "--print-key"])
+        .output()
+        .expect("run fnec calibrate");
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    if out.status.success() {
+        assert!(
+            stdout.contains("adapter = ") && stdout.contains("cpu = "),
+            "{stdout}"
+        );
+    } else {
+        assert_eq!(out.status.code(), Some(3), "{stderr}");
+        assert!(stderr.contains("no GPU device"), "{stderr}");
+    }
 }
