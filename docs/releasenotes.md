@@ -2,10 +2,51 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Release Notes
+
+## 0.21.5 — Measured here
+
+Without `--exec`, fnec chooses between the CPU and the GPU. Until now it chose by a
+threshold measured on one machine — the project's RTX 2080 Ti beside a 24-thread
+CPU — and applied it everywhere. The crossover belongs to the card, its driver and
+the CPU beside it: it moved from 500 to 600 to 550 segments in one week on two
+cards, and on an integrated GPU the device may never win. 0.21.5 measures it where
+it runs.
+
+**Run `fnec calibrate` once on each machine with a GPU** (about two minutes).
+Until then, runs without `--exec` stay on the CPU and say so.
+
+Measured on the release build against the published 0.21.4 binary, on the project's
+RTX 2080 Ti (driver 595.91.07) beside a Ryzen 9 3900X; one frequency point, median
+of 5 whole runs:
+
+| λ/2 dipole, no `--exec` | 0.21.4 | 0.21.5, uncalibrated | 0.21.5, calibrated |
+|---|---|---|---|
+| 520 segments | CPU, 0.38 s | CPU, 0.38 s | CPU, 0.38 s |
+| 700 segments | GPU, 0.43 s | **CPU, 0.93 s** | GPU, 0.44 s |
+
+`fnec calibrate` on that host took about 100 s and found 600 segments for one point
+and for a 24-point sweep, the same in two separate runs.
+
+- **`fnec calibrate`** times whole runs of fnec, `--exec cpu` against `--exec gpu`,
+  on generated dipoles of 100 to 2000 segments — five alternating runs per size, for
+  one point and for a sweep of one full wave of CPU threads — and keeps the first
+  size from which the GPU's slowest quartile beats the CPU's fastest at every larger
+  size. GPU runs that fell back to the CPU are dropped. `--print-key` shows what a
+  calibration is matched against.
+- The result is stored in `$XDG_CACHE_HOME/fnec/exec-calibration.toml`
+  (`FNEC_EXEC_CALIBRATION` overrides the path), keyed by the GPU the device is built
+  on, its driver and the CPU model. A run on another GPU, driver or CPU, a sweep with
+  another thread count, or an unreadable file stays on the CPU and says why. Re-run
+  `fnec calibrate` after changing any of them.
+- The warning for `--exec gpu` on a deck below the crossover quotes this host's
+  calibration, and says nothing where there is none.
+- The built-in thresholds are gone, with the four places that quoted them (which
+  disagreed). The roadmap's request to publish one discrete GPU's crossover as
+  project evidence is closed as not meaningful.
 
 ## 0.21.4 — Advice you can take
 
