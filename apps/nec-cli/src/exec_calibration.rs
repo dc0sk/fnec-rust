@@ -157,7 +157,7 @@ pub(crate) fn current_key() -> Option<HostKey> {
 const CALIBRATE_USAGE: &str = "Usage: fnec calibrate [--print-key]\n\
     Measures this host's CPU/GPU crossover (whole runs of fnec, --exec cpu against\n\
     --exec gpu, on generated dipoles) and writes it where the automatic --exec pick\n\
-    reads it. Takes a minute or two.";
+    reads it. Takes a minute or two, longer on a slow GPU.";
 
 /// Sizes measured, smallest first. The step is the threshold's error bar; at 100
 /// segments near the crossovers measured so far it costs at most ~0.1 s a run.
@@ -208,18 +208,51 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
         eprintln!("fnec calibrate: no cache directory (set XDG_CACHE_HOME or HOME, or FNEC_EXEC_CALIBRATION)");
         return ExitCode::FAILURE;
     };
-    let exe = match std::env::current_exe() {
-        Ok(e) => e,
+    let cal = match measure_and_write(key, &target) {
+        Ok(c) => c,
         Err(e) => {
-            eprintln!("fnec calibrate: cannot find this binary: {e}");
+            eprintln!("fnec calibrate: {e}");
             return ExitCode::FAILURE;
         }
     };
-    let scratch = std::env::temp_dir().join(format!("fnec-calibrate-{}", std::process::id()));
-    if let Err(e) = std::fs::create_dir_all(&scratch) {
-        eprintln!("fnec calibrate: {}: {e}", scratch.display());
-        return ExitCode::FAILURE;
+    for line in summary(&cal) {
+        println!("{line}");
     }
+    println!("written to {}", target.display());
+    ExitCode::SUCCESS
+}
+
+/// What a calibration found, one line each.
+fn summary(cal: &Calibration) -> [String; 2] {
+    let say = |t: Option<usize>| {
+        t.map_or(
+            format!("never, up to {} segments", cal.measured_up_to),
+            |n| format!("from {n} segments"),
+        )
+    };
+    [
+        format!(
+            "one frequency point: the GPU {}",
+            say(cal.one_point_min_segs)
+        ),
+        format!(
+            "a sweep ({} points): the GPU {}",
+            cal.sweep_threads,
+            say(cal.sweep_min_segs)
+        ),
+    ]
+}
+
+/// Measure this host and write the calibration to `target`, reporting progress on
+/// stderr only — the offer runs inside a solve whose stdout may be a deck's output
+/// file. Holds `<target>.lock`: two calibrations at once would time each other's
+/// CPU load. A successful one removes any decline marker, which could otherwise
+/// outlive a calibration deleted later.
+pub(crate) fn measure_and_write(key: HostKey, target: &Path) -> Result<Calibration, String> {
+    let _lock = CalibrationLock::take(target)?;
+    let exe = std::env::current_exe().map_err(|e| format!("cannot find this binary: {e}"))?;
+    let scratch = std::env::temp_dir().join(format!("fnec-calibrate-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
     let threads = rayon::current_num_threads();
     eprintln!(
         "fnec calibrate: {} ({}, driver {}) beside {} — {threads} threads",
@@ -242,34 +275,179 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
         })
     })();
     let _ = std::fs::remove_dir_all(&scratch);
-    let cal = match result {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("fnec calibrate: {e}");
-            return ExitCode::FAILURE;
+    let cal = result?;
+    write_atomically(target, &cal).map_err(|e| format!("{}: {e}", target.display()))?;
+    let _ = std::fs::remove_file(declined_path(target));
+    Ok(cal)
+}
+
+/// `<target>.lock`, created exclusively; removed on drop. A lock older than
+/// [`STALE_LOCK`] is a crashed run's and is taken over. (`File::try_lock` would do
+/// this, but is newer than the crate's minimum Rust.)
+struct CalibrationLock(PathBuf);
+
+const STALE_LOCK: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+impl CalibrationLock {
+    fn take(target: &Path) -> Result<Self, String> {
+        let p = target.with_extension("lock");
+        if let Some(dir) = p.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         }
-    };
-    if let Err(e) = write_atomically(&target, &cal) {
-        eprintln!("fnec calibrate: {}: {e}", target.display());
-        return ExitCode::FAILURE;
+        for _ in 0..2 {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&p)
+            {
+                Ok(_) => return Ok(Self(p)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&p)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.elapsed().ok())
+                        .is_some_and(|age| age > STALE_LOCK);
+                    if !stale {
+                        return Err(format!(
+                            "another fnec is calibrating this host ({} exists)",
+                            p.display()
+                        ));
+                    }
+                    let _ = std::fs::remove_file(&p);
+                }
+                Err(e) => return Err(format!("{}: {e}", p.display())),
+            }
+        }
+        Err(format!("cannot take {}", p.display()))
     }
-    let say = |t: Option<usize>| {
-        t.map_or(
-            format!("never, up to {} segments", cal.measured_up_to),
-            |n| format!("from {n} segments"),
-        )
+}
+
+impl Drop for CalibrationLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+// ---------------------------------------------------------------------------------
+// The offer: a run with no calibration — or one measured on another GPU, driver or
+// CPU — asks, once per host, whether to calibrate now.
+// ---------------------------------------------------------------------------------
+
+/// Where a declined offer is remembered: beside the calibration, as the host key it
+/// was declined for, so a new GPU, driver or CPU is asked again.
+fn declined_path(target: &Path) -> PathBuf {
+    target.with_extension("declined")
+}
+
+/// The host key an offer was declined for, if any.
+pub(crate) fn declined() -> Option<HostKey> {
+    let text = std::fs::read_to_string(declined_path(&path()?)).ok()?;
+    toml::from_str(&text).ok()
+}
+
+/// This host's key without building the device: the adapter the shared device
+/// would be built on, its driver, and the CPU. `None` without an adapter.
+fn current_key_cheap() -> Option<HostKey> {
+    let a = nec_accel::preferred_adapter_info()?;
+    Some(HostKey {
+        adapter: a.name,
+        backend: a.backend,
+        device_type: a.device_type,
+        driver: a.driver,
+        cpu: cpu_model(),
+    })
+}
+
+/// What to ask, if anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Offer {
+    /// No calibration on this host.
+    Calibrate,
+    /// A calibration measured on another GPU, driver or CPU.
+    Recalibrate(HostKey),
+}
+
+/// Whether to offer, from the calibration on disk, this host's key and a decline.
+/// Not for an unreadable calibration (its reason already names the file), not where
+/// the calibration is this host's, and not where this host's key was declined.
+pub(crate) fn offer(
+    current: &Result<Option<Calibration>, String>,
+    key: &HostKey,
+    declined: Option<&HostKey>,
+) -> Option<Offer> {
+    if declined == Some(key) {
+        return None;
+    }
+    match current {
+        Err(_) => None,
+        Ok(None) => Some(Offer::Calibrate),
+        Ok(Some(c)) if c.key == *key => None,
+        Ok(Some(c)) => Some(Offer::Recalibrate(c.key.clone())),
+    }
+}
+
+/// Offer to calibrate, on an interactive run of a deck the calibration could
+/// matter for. Returns the new calibration if the user said yes and it was
+/// measured; otherwise `None`, and the run goes on with what it had. A "no" is
+/// remembered for this host's key; a calibration that could not run (another one
+/// holds the lock) is not a "no" and records nothing.
+pub(crate) fn maybe_offer(
+    segments: usize,
+    current: &Result<Option<Calibration>, String>,
+) -> Option<Calibration> {
+    use std::io::{BufRead, IsTerminal, Write};
+    // Below the smallest size calibrated no host measured so far picks the GPU, so
+    // the answer could not change this run — and a "no" is final for the host.
+    if segments < GRID[0] || !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return None;
+    }
+    // Nowhere to remember a "no" would mean asking on every run.
+    let target = path()?;
+    let key = current_key_cheap()?;
+    let ask = offer(current, &key, declined().as_ref())?;
+    let question = match &ask {
+        Offer::Calibrate => format!(
+            "fnec: no CPU/GPU calibration for this host ({}, driver {}, {}).",
+            key.adapter, key.driver, key.cpu
+        ),
+        Offer::Recalibrate(old) => format!(
+            "fnec: the GPU, driver or CPU changed since this host was calibrated ({}, driver {}, {} → {}, driver {}, {}).",
+            old.adapter, old.driver, old.cpu, key.adapter, key.driver, key.cpu
+        ),
     };
-    println!(
-        "one frequency point: the GPU {}",
-        say(cal.one_point_min_segs)
+    eprint!(
+        "{question}
+      Calibrate now? It takes a minute or two, longer on a slow GPU, and lets runs without --exec use the GPU where it is faster. [y/N] "
     );
-    println!(
-        "a sweep ({} points): the GPU {}",
-        cal.sweep_threads,
-        say(cal.sweep_min_segs)
-    );
-    println!("written to {}", target.display());
-    ExitCode::SUCCESS
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    let yes = std::io::stdin().lock().read_line(&mut answer).is_ok()
+        && matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes");
+    if !yes {
+        match toml::to_string(&key)
+            .map_err(|e| e.to_string())
+            .and_then(|t| std::fs::write(declined_path(&target), t).map_err(|e| e.to_string()))
+        {
+            Ok(()) => eprintln!(
+                "fnec: not asking again on this host; `fnec calibrate` measures it any time"
+            ),
+            Err(e) => eprintln!("fnec: could not remember the answer: {e}"),
+        }
+        return None;
+    }
+    match measure_and_write(key, &target) {
+        Ok(cal) => {
+            for line in summary(&cal) {
+                eprintln!("fnec calibrate: {line}");
+            }
+            eprintln!("fnec calibrate: written to {}", target.display());
+            Some(cal)
+        }
+        Err(e) => {
+            eprintln!("fnec calibrate: {e}; this run stays on the CPU");
+            None
+        }
+    }
 }
 
 /// Measure one kind over [`GRID`]: the threshold (the first size from which the
@@ -434,6 +612,57 @@ mod tests {
         assert_eq!(t(&[s(500, 410.0, 404.0), s(600, 600.0, 410.0)]), Some(600));
         // Never: an integrated GPU.
         assert_eq!(t(&[s(500, 330.0, 900.0), s(2000, 4100.0, 5000.0)]), None);
+    }
+
+    fn key(gpu: &str, driver: &str) -> HostKey {
+        HostKey {
+            adapter: gpu.into(),
+            backend: "Vulkan".into(),
+            device_type: "DiscreteGpu".into(),
+            driver: driver.into(),
+            cpu: "Some CPU".into(),
+        }
+    }
+
+    fn calibrated(k: HostKey) -> Calibration {
+        Calibration {
+            schema: SCHEMA,
+            epoch: CALIBRATION_EPOCH,
+            key: k,
+            one_point_min_segs: Some(600),
+            sweep_min_segs: Some(600),
+            sweep_threads: 8,
+            measured_up_to: 800,
+            samples: vec![],
+        }
+    }
+
+    /// The offer: on a host with no calibration, or one measured on another GPU,
+    /// driver or CPU — unless this host's key was declined. A change of GPU, driver
+    /// or CPU after a decline is asked again.
+    #[test]
+    fn the_offer_follows_the_host_key() {
+        let here = key("RTX", "595");
+        assert_eq!(offer(&Ok(None), &here, None), Some(Offer::Calibrate));
+        assert_eq!(
+            offer(&Ok(Some(calibrated(here.clone()))), &here, None),
+            None
+        );
+        let old = key("RTX", "580");
+        assert_eq!(
+            offer(&Ok(Some(calibrated(old.clone()))), &here, None),
+            Some(Offer::Recalibrate(old.clone()))
+        );
+        // Declined for this key: not asked again.
+        assert_eq!(offer(&Ok(None), &here, Some(&here)), None);
+        assert_eq!(
+            offer(&Ok(Some(calibrated(old.clone()))), &here, Some(&here)),
+            None
+        );
+        // Declined for the old driver: the new one is asked.
+        assert_eq!(offer(&Ok(None), &here, Some(&old)), Some(Offer::Calibrate));
+        // An unreadable calibration is named by the pick, not offered over.
+        assert_eq!(offer(&Err("bad".into()), &here, None), None);
     }
 
     /// The file round-trips, and an absent threshold stays absent (it means

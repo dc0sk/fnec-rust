@@ -118,9 +118,34 @@ fn an_uncalibrated_host_stays_on_the_cpu_and_says_how_to_calibrate() {
     let deck = dipole(901, 1);
     let (auto_out, auto_err) = run("uncal", &deck, &[]);
     assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
-    assert!(auto_err.contains("run `fnec calibrate`"), "{auto_err}");
+    assert!(
+        auto_err.contains("`fnec calibrate` lets it be picked"),
+        "{auto_err}"
+    );
+    assert!(
+        !auto_err.contains("Calibrate now?"),
+        "a piped run must never prompt: {auto_err}"
+    );
     let (cpu_out, _) = run("uncal-cpu", &deck, &["--exec", "cpu"]);
     assert_eq!(auto_out, cpu_out);
+}
+
+/// A run whose stdin and stderr are not a terminal — a script, a pipeline, a test —
+/// never offers to calibrate: no prompt, no wait on stdin, and no decline written
+/// on its behalf (an unanswered prompt read as EOF would record one). Checked on
+/// the marker, which a prompt on any host would leave.
+#[test]
+fn a_piped_run_never_offers_and_never_records_a_decline() {
+    let cal = scratch("piped").with_extension("toml");
+    let marker = cal.with_extension("declined");
+    let _ = std::fs::remove_file(&marker);
+    let (_, err) = run_with("piped", &dipole(901, 1), &[], &cal);
+    assert!(!err.contains("Calibrate now?"), "{err}");
+    assert!(
+        !marker.exists(),
+        "a piped run wrote a decline marker: {}",
+        marker.display()
+    );
 }
 
 /// A calibration file that cannot be read is said, with its path — never silently
