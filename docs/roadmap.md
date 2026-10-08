@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-08
 ---
 
 # Roadmap
@@ -322,12 +322,14 @@ Execution order recommendation: PH7-CHK-001 → PH7-CHK-002 → PH7-CHK-003 → 
 **Scope note**: every item below already has parser support and a staged-portability warning path, so Phase 8 is *runtime semantics + corpus validation*, not parsing. Each must ship a reference-gated corpus case (external NEC2/4nec2 parity where available) and keep the existing fail-fast/warning contracts for out-of-scope sub-cases.
 
 **Key deliverables**:
-- [ ] EX type 1 (current source) on the Hallén path — not just `--solver pulse`.
-- [ ] EX type 2 (incident plane wave) — real receiving-antenna / RCS RHS, enabling open-circuit voltage and induced-current output.
-- [ ] EX type 5 (electric Hertz dipole / `qdsrc`) runtime semantics on the Hallén path.
-- [ ] NT (two-port network) admittance stamping into the Z matrix, like the existing TL stamp.
-- [ ] Lossy / complex TL (`type ≠ 0`) — characteristic-impedance and velocity-factor-as-angle handling.
-- [ ] Advanced ground breadth: extend the supported GN 2 near-ground subset and document the next Sommerfeld/buried increment.
+- [x] EX type 1 (current source) on the Hallén path — not just `--solver pulse`.
+- [x] EX type 2 (incident plane wave) — real receiving-antenna / RCS RHS, enabling open-circuit voltage and induced-current output.
+- [x] EX type 5 (electric Hertz dipole / `qdsrc`) runtime semantics on the Hallén path.
+- [x] NT (two-port network) admittance stamping into the Z matrix, like the existing TL stamp.
+- [x] Lossy / complex TL (`type ≠ 0`) — characteristic-impedance and velocity-factor-as-angle handling.
+- [x] Advanced ground breadth: extend the supported GN 2 near-ground subset and document the next Sommerfeld/buried increment.
+
+*(Ticked 2026-10-08: delivered 2026-07-04 — see "Actual completion" below; the boxes were never updated. Under the NEC-2 alignment the current source is `EX 4` and the plane wave `EX 1/2/3`, as PH8-CHK-001/002 record.)*
 
 ### Phase 8 implementation checklist
 
