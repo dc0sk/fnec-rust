@@ -3,6 +3,7 @@
 
 mod bench;
 mod cli_args;
+mod exec_calibration;
 mod exec_profile;
 mod laplace_config;
 mod project_cmd;
@@ -177,6 +178,13 @@ fn main() -> ExitCode {
     // and the reason `nec_project` was a dependency nothing imported (FND-016).
     if args.get(1).map(String::as_str) == Some("project") {
         return project_cmd::run(&args);
+    }
+    // ------------------------------------------------------------------------
+
+    // --- calibrate subcommand -----------------------------------------------
+    // This host's CPU/GPU crossover, for the automatic --exec pick.
+    if args.get(1).map(String::as_str) == Some("calibrate") {
+        return exec_calibration::run(&args);
     }
     // ------------------------------------------------------------------------
 
@@ -589,12 +597,21 @@ fn main() -> ExitCode {
         }
     };
     if !exec_flag_explicitly_set && profile == CompatibilityProfile::Native {
+        let calibration = match exec_calibration::loaded() {
+            Ok(c) => Ok(c.as_ref()),
+            Err(e) => Err(e.as_str()),
+        };
         let choice = auto_select_execution_mode(
             segs.len(),
             unknowns,
             freqs_hz.len(),
+            rayon::current_num_threads(),
             gpu_deck_class,
-            device_capacity,
+            calibration,
+            || {
+                let capacity = device_capacity()?;
+                Some((capacity, exec_calibration::current_key()?))
+            },
         );
         eprintln!(
             "info: exec auto: selected_exec={} ({})",
@@ -2234,30 +2251,117 @@ mod tests {
         );
     }
 
-    /// The pick's boundaries, with the GPU's capacity injected: 549 / 550 for one
-    /// point (RTX 2080 Ti, 2026-10-06; 500 on the GTX 1080 Ti), 549 / 550 for a
-    /// sweep. Never `Hybrid`.
+    fn key(adapter: &str) -> crate::exec_calibration::HostKey {
+        crate::exec_calibration::HostKey {
+            adapter: adapter.into(),
+            backend: "Vulkan".into(),
+            device_type: "DiscreteGpu".into(),
+            driver: "1.0".into(),
+            cpu: "Some CPU".into(),
+        }
+    }
+
+    /// A calibration as `fnec calibrate` would write it: 550 for one point, 600 for
+    /// a sweep on 8 threads.
+    fn cal(one: Option<usize>, sweep: Option<usize>) -> crate::exec_calibration::Calibration {
+        crate::exec_calibration::Calibration {
+            schema: crate::exec_calibration::SCHEMA,
+            epoch: crate::exec_calibration::CALIBRATION_EPOCH,
+            key: key("Calibrated GPU"),
+            one_point_min_segs: one,
+            sweep_min_segs: sweep,
+            sweep_threads: 8,
+            measured_up_to: 2000,
+            samples: vec![],
+        }
+    }
+
+    /// The pick's boundaries are the host's calibration, with the device injected.
+    /// Never `Hybrid`.
     #[test]
-    fn auto_pick_crosses_over_at_the_measured_sizes() {
-        let gpu = || Some(16_384);
+    fn auto_pick_crosses_over_at_the_calibrated_sizes() {
+        let c = cal(Some(550), Some(600));
         let pick = |n: usize, points: usize| {
-            auto_select_execution_mode(n, n + 2, points, Ok(()), gpu).mode
+            auto_select_execution_mode(n, n + 2, points, 8, Ok(()), Ok(Some(&c)), || {
+                Some((16_384, key("Calibrated GPU")))
+            })
+            .mode
         };
         assert_eq!(pick(549, 1), ExecutionMode::Cpu);
         assert_eq!(pick(550, 1), ExecutionMode::Gpu);
-        assert_eq!(pick(549, 24), ExecutionMode::Cpu);
-        assert_eq!(pick(550, 24), ExecutionMode::Gpu);
-        // A sweep has its own crossover: two points of 520 stay on the CPU.
-        assert_eq!(pick(520, 2), ExecutionMode::Cpu);
+        assert_eq!(pick(599, 24), ExecutionMode::Cpu);
+        assert_eq!(pick(600, 24), ExecutionMode::Gpu);
+        // Beyond what was measured, a GPU that won keeps winning: the CPU grows as N³.
+        assert_eq!(pick(5000, 1), ExecutionMode::Gpu);
+    }
+
+    /// Without a calibration that applies to this run, the pick is the CPU, and says
+    /// why — never a guess presented as a measurement.
+    #[test]
+    fn auto_pick_stays_on_the_cpu_without_a_calibration_for_this_host() {
+        let no_device = || -> Option<(usize, crate::exec_calibration::HostKey)> {
+            panic!("an uncalibrated pick must not touch the GPU")
+        };
+        let none = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(None), no_device);
+        assert_eq!(none.mode, ExecutionMode::Cpu);
+        assert!(
+            none.reason.contains("run `fnec calibrate`"),
+            "{}",
+            none.reason
+        );
+
+        let unreadable =
+            auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Err("bad toml"), no_device);
+        assert_eq!(unreadable.mode, ExecutionMode::Cpu);
+        assert!(
+            unreadable.reason.contains("bad toml"),
+            "{}",
+            unreadable.reason
+        );
+
+        let c = cal(Some(550), Some(600));
+        let elsewhere = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || {
+            Some((16_384, key("Another GPU")))
+        });
+        assert_eq!(elsewhere.mode, ExecutionMode::Cpu);
+        assert!(
+            elsewhere.reason.contains("Another GPU"),
+            "{}",
+            elsewhere.reason
+        );
+
+        // A sweep calibrated on 8 threads says nothing about a run on 4.
+        let threads =
+            auto_select_execution_mode(2000, 2002, 24, 4, Ok(()), Ok(Some(&c)), no_device);
+        assert_eq!(threads.mode, ExecutionMode::Cpu);
+        assert!(
+            threads.reason.contains("8 CPU threads"),
+            "{}",
+            threads.reason
+        );
+
+        // An integrated GPU that never won.
+        let never_cal = cal(None, None);
+        let never =
+            auto_select_execution_mode(5000, 5002, 1, 8, Ok(()), Ok(Some(&never_cal)), no_device);
+        assert_eq!(never.mode, ExecutionMode::Cpu);
+        assert!(
+            never.reason.contains("did not beat the CPU"),
+            "{}",
+            never.reason
+        );
     }
 
     #[test]
     fn auto_pick_stays_on_the_cpu_without_a_gpu_or_a_deck_it_solves() {
-        let none = auto_select_execution_mode(2000, 2002, 1, Ok(()), || None);
+        let c = cal(Some(550), Some(600));
+        let none = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || None);
         assert_eq!(none.mode, ExecutionMode::Cpu);
         assert!(none.reason.contains("no hardware GPU"), "{}", none.reason);
 
-        let full = auto_select_execution_mode(2000, 2002, 1, Ok(()), || Some(1000));
+        let full = auto_select_execution_mode(2000, 2002, 1, 8, Ok(()), Ok(Some(&c)), || {
+            Some((1000, key("Calibrated GPU")))
+        });
         assert_eq!(full.mode, ExecutionMode::Cpu);
         assert!(
             full.reason.contains("more than the GPU holds"),
@@ -2265,14 +2369,15 @@ mod tests {
             full.reason
         );
 
-        let class = auto_select_execution_mode(2000, 2002, 1, Err("a bend"), || {
-            panic!("an ineligible deck must not touch the GPU")
-        });
+        let class =
+            auto_select_execution_mode(2000, 2002, 1, 8, Err("a bend"), Ok(Some(&c)), || {
+                panic!("an ineligible deck must not touch the GPU")
+            });
         assert_eq!(class.mode, ExecutionMode::Cpu);
         assert!(class.reason.contains("a bend"), "{}", class.reason);
 
         // Below the crossover the device is not even asked about.
-        let small = auto_select_execution_mode(51, 53, 1, Ok(()), || {
+        let small = auto_select_execution_mode(51, 53, 1, 8, Ok(()), Ok(Some(&c)), || {
             panic!("a small deck must not touch the GPU")
         });
         assert_eq!(small.mode, ExecutionMode::Cpu);

@@ -61,24 +61,26 @@ pub(super) fn warn_ge_ground_reflection_flag(deck: &nec_model::deck::NecDeck) {
 /// Say so when an explicit `--exec gpu` sends a deck below the crossover to the
 /// GPU-resident dense solve.
 ///
-/// PH7-CHK-003 measured the single-workgroup solve at **0.04x-0.48x** the CPU at
-/// every size (FND-009). Since FND-185 it crosses over: on an NVIDIA RTX 2080 Ti,
-/// whole CLI run, 0.32 s against the CPU's 0.011 s at 101 segments, and near 600
-/// for one point (the GTX 1080 Ti crossed near 500). Without `--exec` fnec now picks
-/// the faster side itself, so this fires only when the user forced the device
-/// onto a deck where it loses — once per process, not once per sweep point.
+/// Where the crossover is is the host's (`fnec calibrate`), so this speaks only
+/// from a calibration: on an uncalibrated host it says nothing — there is no
+/// measurement to quote. Once per process, not once per sweep point.
 pub(super) fn warn_gpu_resident_solve_is_slower(segments: usize) {
-    use super::exec_profile::AUTO_GPU_MIN_SEGS_ONE_POINT;
     static ONCE: std::sync::Once = std::sync::Once::new();
-    if segments >= AUTO_GPU_MIN_SEGS_ONE_POINT {
+    let Ok(Some(cal)) = super::exec_calibration::loaded() else {
         return;
-    }
-    ONCE.call_once(|| {
-        eprintln!(
-            "warning: --exec gpu on a {segments}-segment deck: the GPU-resident dense solve \
-             is slower than the CPU below about {AUTO_GPU_MIN_SEGS_ONE_POINT} segments \
-             (RTX 2080 Ti: 0.32 s against 0.011 s at 101). Without --exec, fnec picks the \
-             faster one"
-        );
-    });
+    };
+    let msg = match cal.one_point_min_segs {
+        Some(t) if segments < t => format!(
+            "warning: --exec gpu on a {segments}-segment deck: on this host the GPU-resident \
+             dense solve is slower than the CPU below {t} segments (`fnec calibrate`). \
+             Without --exec, fnec picks the faster one"
+        ),
+        None => format!(
+            "warning: --exec gpu: on this host the GPU-resident dense solve did not beat the \
+             CPU at any size measured (up to {} segments, `fnec calibrate`)",
+            cal.measured_up_to
+        ),
+        Some(_) => return,
+    };
+    ONCE.call_once(|| eprintln!("{msg}"));
 }

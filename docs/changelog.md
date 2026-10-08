@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **The automatic `--exec` pick uses this host's own CPU/GPU crossover.** `fnec
+  calibrate` (new) measures it — whole runs, `--exec cpu` against `--exec gpu`, for
+  one point and a sweep — and stores it keyed by the GPU, its driver and the CPU.
+  **Without a calibration a run stays on the CPU** and says to run `fnec calibrate`;
+  the built-in threshold (550 segments, measured on one machine) is gone (FND-225).
+  (#557)
+
 ## [0.21.4] — 2026-10-07 — Advice you can take
 
 Every remedy fnec's warnings name is now one the run can take: four defects of that
