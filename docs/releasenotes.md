@@ -2,10 +2,52 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Release Notes
+
+## 0.21.6 — Ask once
+
+0.21.5 made the automatic CPU/GPU pick use a crossover measured on each machine,
+and left an uncalibrated machine on the CPU until someone ran `fnec calibrate`.
+0.21.6 asks instead.
+
+An interactive run — stdin and stderr both a terminal — without `--exec`, of a deck
+the GPU solves and of at least 100 segments, asks once when the machine has no
+calibration, or when its GPU, driver or CPU changed since it was calibrated:
+
+```
+fnec: no CPU/GPU calibration for this host (NVIDIA GeForce RTX 2080 Ti, driver 595.99.02, …).
+      Calibrate now? It takes a minute or two, longer on a slow GPU, and lets runs
+      without --exec use the GPU where it is faster. [y/N]
+```
+
+**y** calibrates and the same run goes on with the result. Anything else — Enter
+included — is remembered for that GPU, driver and CPU, and not asked again until one
+of them changes; `fnec calibrate` measures any time. Scripts, pipelines, `--hosts`
+workers and tests are never asked.
+
+Measured on the release build against the published 0.21.5 binary, with scratch
+calibration paths:
+
+| | 0.21.5 | 0.21.6 |
+|---|---|---|
+| piped run, no calibration: the `info:` line | "run `fnec calibrate` to let the GPU be picked" — also on machines with no GPU | "if it has a GPU, `fnec calibrate` lets it be picked" |
+| interactive run, no calibration | no prompt | asks once; a "no" is remembered |
+| interactive run after a "no" | — | no prompt; "calibration was declined on this host earlier" |
+| interactive run after a driver change (595.91.07 → 595.99.02, this machine's own update) | stays on the CPU | asks to re-calibrate, naming what changed |
+
+Accepting took 103 s here (600 segments for one point and for a 24-point sweep,
+under the new driver as under the old), and the run then took the GPU for its
+701-segment deck; its redirected output held only the deck report.
+
+- The current GPU, driver and CPU are read without building the GPU device, so the
+  check costs an interactive run little.
+- Two calibrations at once are refused (a lock beside the calibration file), and the
+  refusal is not recorded as a "no".
+- **Fixed (FND-226):** without a calibration, the `info:` line told every machine to
+  run `fnec calibrate` — including ones with no GPU, where it measures nothing.
 
 ## 0.21.5 — Measured here
 

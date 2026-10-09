@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Changelog
@@ -14,6 +14,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.21.6] — 2026-10-09 — Ask once
+
+fnec now offers to calibrate instead of waiting to be told to: an interactive run
+asks once per GPU, driver and CPU, and asks again when one of them changes. The
+findings ledger went from 225 / 0 open to **226 / 0 open**.
 
 ### Added
 
