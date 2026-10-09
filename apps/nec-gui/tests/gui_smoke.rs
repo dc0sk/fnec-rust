@@ -1960,8 +1960,8 @@ fn the_gui_mpie_reproduces_the_cli_dipole() {
 fn the_gui_mpie_reproduces_the_cli_y_junction() {
     let r = solve_deck_str(MPIE_Y_JUNCTION, nec_gui::solve::SolverKind::Mpie).expect("MPIE solve");
     assert!(
-        (r.z_re - 65.437925).abs() < 0.05 && (r.z_im - -61.604612).abs() < 0.05,
-        "GUI MPIE Y-junction {} + j{} != CLI 65.437925 - j61.604612",
+        (r.z_re - 67.442147).abs() < 0.05 && (r.z_im - -63.676316).abs() < 0.05,
+        "GUI MPIE Y-junction {} + j{} != CLI 67.442147 - j63.676316",
         r.z_re,
         r.z_im
     );
@@ -1979,8 +1979,8 @@ fn the_picker_reaches_every_solve_path() {
         .expect("MPIE sweep prepares");
     let pt = job.solve_at(14.2).expect("MPIE sweep solves");
     assert!(
-        (pt.z_re - 65.437925).abs() < 0.05,
-        "MPIE sweep {} != CLI 65.437925",
+        (pt.z_re - 67.442147).abs() < 0.05,
+        "MPIE sweep {} != CLI 67.442147",
         pt.z_re
     );
 

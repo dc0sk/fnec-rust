@@ -518,6 +518,28 @@ impl GroundKernelGrid {
     }
 }
 
+/// The MPIE's ground needs the wire wholly above the plane: `Some` where a node of
+/// `geom` touches or crosses it. The one copy of that test — the session asks it
+/// before placing feeds, so a base-fed monopole is refused for touching the ground,
+/// not as a feed at a free wire end (the plane is not part of the wire graph).
+pub fn ground_contact_error(
+    geom: &MpieGeometry,
+    freq_hz: f64,
+    ground: &GroundModel,
+) -> Option<MpieError> {
+    if matches!(
+        ground,
+        GroundModel::FreeSpace | GroundModel::Deferred { .. }
+    ) {
+        return None;
+    }
+    let lam = C0 / freq_hz;
+    geom.nodes
+        .iter()
+        .any(|n| n[2] <= 1e-6 * lam)
+        .then_some(MpieError::UnsupportedGround)
+}
+
 /// Assemble the MPIE impedance matrix with a Sommerfeld half-space added to the
 /// free-space fill (PH9-CHK-007 Phase D/E). The reflected term is added exactly
 /// where the free-space `e^{-jkR}/R` sits, so the surface wave enters the currents
@@ -543,11 +565,10 @@ pub fn assemble_with_ground(
         GroundModel::SimpleFiniteGround { eps_r, sigma } => (false, *eps_r, *sigma),
     };
 
-    // The wire must lie entirely above the ground plane.
-    let lam = C0 / freq_hz;
-    if geom.nodes.iter().any(|n| n[2] <= 1e-6 * lam) {
-        return Err(MpieError::UnsupportedGround);
+    if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
+        return Err(e);
     }
+    let lam = C0 / freq_hz;
     let z0 = geom.nodes[0][2];
     let horizontal = geom.nodes.iter().all(|n| (n[2] - z0).abs() < 1e-6 * lam);
 

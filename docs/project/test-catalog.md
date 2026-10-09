@@ -111,7 +111,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/mpie_ground.rs` | 7 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_junction.rs` | 4 | PH9-CHK-007 MPIE Phase B — degree-N junctions, external gates. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_loop.rs` | 2 | PH9-CHK-007 MPIE Phase B (B3) — closed loops. | PH9-CHK-007 |
-| `crates/nec_solver/tests/mpie_nec2c.rs` | 3 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
+| `crates/nec_solver/tests/mpie_nec2c.rs` | 8 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
 | `crates/nec_solver/tests/near_field.rs` | 3 | PH9-CHK-004: near electric-field computation (NE card), validated against the far field it must reduce to at large range and by dipole symmetry. | PH9-CHK-004 |
 | `crates/nec_solver/tests/network_solve.rs` | 7 | TL/NT solved as networks across the port gaps: one-port NT ≡ LD (straight and conductor-path), shunt across the feed analytic, same-segment one-port, pair+TL vs nec2c, feed load with a network present, other drives refused (FND-123) | NFR-004 |
 | `crates/nec_solver/tests/nt_network.rs` | 2 | PH8-CHK-004: `NT` networks, read as the admittance parameters they are (FND-123). | FND-123, PH8-CHK-004 |
@@ -131,7 +131,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=696 --> **696** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=701 --> **701** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -156,7 +156,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=598 --> **598** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1301 --> **1301** = 598 unit + 696 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1306 --> **1306** = 598 unit + 701 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

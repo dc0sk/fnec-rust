@@ -15,6 +15,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MPIE's feed is NEC's** (FND-224): an `EX` gap now drives both triangle bases
+  of the driven segment, half the voltage each, instead of one end node half a
+  segment from where the current is read. An off-centre feed was 6.5 % from nec2c at
+  21 segments; it is 1.1 %. Mirrored ports agree exactly; a centre-fed dipole's
+  currents are symmetric; the Y-junction is 0.9 % from nec2c (was 2.9 %). (#561)
+- **The MPIE refuses a feed on a segment at a free wire end** (FND-228), which it
+  answered 20–37 % from nec2c however fine the mesh; feed one segment in. (#561)
+
 ## [0.21.6] — 2026-10-09 — Ask once
 
 fnec now offers to calibrate instead of waiting to be told to: an interactive run
