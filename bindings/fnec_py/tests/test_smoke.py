@@ -391,8 +391,9 @@ def test_the_bindings_offer_the_mpie_solver():
     )
     got = fnec_py.solve_deck_str(y_junction, solver="mpie")
     # FND-157: was 63.673674 - j322.199211; nec2c 67.215 - j63.033.
-    assert abs(got["z_re"] - 65.437925) < 0.05, got
-    assert abs(got["z_im"] - -61.604612) < 0.05, got
+    # FND-224: 65.437925 - j61.604612 with the one-node feed; the centred feed is 0.9 %.
+    assert abs(got["z_re"] - 67.442147) < 0.05, got
+    assert abs(got["z_im"] - -63.676316) < 0.05, got
 
 
 def test_the_default_solver_is_unchanged():

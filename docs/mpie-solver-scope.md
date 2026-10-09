@@ -92,7 +92,7 @@ solve; report feedpoint Z + currents.
   discretization. The 6-point Gauss rule cannot resolve the reduced kernel's ~a-wide
   peak on self and adjacent segments; the static `1/R` part is now integrated exactly.
   The dipole gives 79.15 + j45.95 at 51 segments, the Yagi 8.20 + j55.78 (nec2c
-  8.17 + j56.54), a Y-junction 65.44 − j61.60 (nec2c 67.22 − j63.03; was −j322). The
+  8.17 + j56.54), a Y-junction 67.44 − j63.68 (nec2c 67.22 − j63.03; 65.44 − j61.60 before the centred feed, FND-224; was −j322). The
   Python oracle agreed with the old code because it used the same 6-point rule.*
 - **Gate A3 (identity):** a collinear split dipole equals the single-wire result to
   ~machine precision (the split-recovers-single gate, MPIE analog).

@@ -953,8 +953,9 @@ fn with_low_ground_remedies(
 /// Where the MPIE's near-ground answer is measured against nec2c GN 2: one feed on one
 /// unbranched open wire, straight or bent (the parity sweep's `R-lowground` decks —
 /// horizontal and vertical dipoles, an inverted-V). Junctions, loops and several
-/// wires are not measured there, and several feeds sit on the MPIE's half-segment
-/// feed offset, which is first-order in the mesh (FND-224).
+/// wires are not measured there, and neither is a deck with several feeds: since the
+/// centred feed (FND-224) its ports agree, but no two-feed deck over GN 2 has a nec2c
+/// reference in `R-lowground` yet — the exclusion stands on evidence, not the feed.
 pub(crate) fn mpie_low_ground_measured(deck: &NecDeck, segs: &[Segment]) -> bool {
     if crate::feedpoints(deck).count() != 1 {
         return false;

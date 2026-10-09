@@ -435,8 +435,10 @@ EN
     assert!(
         // FND-157: was 63.673674 - j322.199211, 260 Ω of reactance off, on the
         // topology MPIE is recommended for; nec2c on this deck: 67.215 - j63.033.
-        (r - 65.437925).abs() < 0.05 && (x - -61.604612).abs() < 0.05,
-        "MPIE Y-junction moved: got {r} + j{x}, pinned 65.437925 - j61.604612"
+        // FND-224: 65.437925 - j61.604612 (2.9 %) with the one-node feed; the
+        // centred feed is 0.9 % from nec2c.
+        (r - 67.442147).abs() < 0.05 && (x - -63.676316).abs() < 0.05,
+        "MPIE Y-junction moved: got {r} + j{x}, pinned 67.442147 - j63.676316"
     );
 }
 

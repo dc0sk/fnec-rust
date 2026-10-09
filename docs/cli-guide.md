@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # CLI Guide — fnec (v0.21.6)
@@ -285,12 +285,18 @@ vector and scalar potentials separately. It solves:
 On the 51-segment λ/2 dipole the MPIE gives 79.15 + j45.95 Ω, against
 Hallén's 78.83 + j42.44 Ω and nec2c's 79.35 + j46.22 Ω. It is now the most accurate
 solver in fnec: 8.20 + j55.78 Ω on the 5-element Yagi (nec2c 8.17 + j56.54) and
-65.44 − j61.60 Ω on a Y-junction (nec2c 67.22 − j63.03). Until FND-157 it read
+67.44 − j63.68 Ω on a Y-junction (nec2c 67.22 − j63.03; 65.44 − j61.60 before the
+centred feed, FND-224). Until FND-157 it read
 6% low on the dipole, 35 Ω off on the Yagi and 260 Ω off in reactance on the
 Y-junction: its self and adjacent terms were under-integrated.
 
-The MPIE feeds a delta-gap at the graph node nearest the `EX`-driven segment (a
-half-segment offset from NEC's segment-gap feed, vanishing under refinement). It
+The MPIE's feed is NEC's: an `EX` gap drives the two triangle bases that touch the
+driven segment, half the voltage each (FND-224) — an off-centre feed is as accurate
+as a centre feed (1.1 / 0.5 / 0.3 % from nec2c at 21 / 41 / 81 segments). Beside a
+junction only one end of the segment carries a basis, and the whole gap goes there
+(first-order in the mesh). **A feed on a segment at a free wire end is refused** —
+there is no basis to drive, and the answer stayed 20–37 % from nec2c (FND-228);
+feed one segment in. It
 models geometry + voltage sources (`EX` type 0) only: `LD` loads, `TL`
 transmission lines, `NT` networks, incident plane waves, and current sources are
 rejected on this path.

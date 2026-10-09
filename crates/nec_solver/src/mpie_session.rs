@@ -83,6 +83,9 @@ pub enum MpieSessionError {
     /// The feed segment has no interior (degree-2) node; only such a node can
     /// host the MPIE's delta gap.
     NoInteriorNode,
+    /// The feed is on a segment at a free wire end, where the MPIE has no basis
+    /// to drive (FND-228).
+    EndSegmentFeed { tag: u32, segment: u32 },
     /// The numerics failed.
     Solve(MpieError),
     /// The solve returned, but not with numbers (FND-126).
@@ -103,6 +106,12 @@ impl std::fmt::Display for MpieSessionError {
             Self::NoInteriorNode => write!(
                 f,
                 "the feed segment has no interior (degree-2) node to drive"
+            ),
+            Self::EndSegmentFeed { tag, segment } => write!(
+                f,
+                "EX on tag {tag} segment {segment}, a segment at a free wire end, \
+                 which the MPIE's basis cannot drive (its answer there is 20-37 % from NEC's, \
+                 FND-228); feed a segment one in from the end"
             ),
             Self::Solve(e) => write!(f, "{e}"),
             Self::NonFiniteCurrents(e) => write!(f, "{e}"),
@@ -139,10 +148,11 @@ pub fn mpie_unsupported(deck: &NecDeck) -> Option<MpieUnsupported> {
 /// Solve a deck on the MPIE path, returning per-segment currents aligned to
 /// `segs` so the reporting machinery consumes them unchanged.
 ///
-/// Note the feed model differs from the Hallén path: NEC's `EX` drives a segment
-/// gap, while the MPIE drives the nearest interior node — a half-segment offset
-/// that vanishes under refinement. The MPIE's value is the topologies the Hallén
-/// basis cannot reach (degree-3 junctions, closed loops, near-ground currents).
+/// The feed is NEC's: an `EX` gap on a segment drives both triangle bases that
+/// touch it, V/2 each (FND-224). Beside a junction only one end carries a basis,
+/// and the whole gap goes there (first-order in the mesh); a segment at a free wire
+/// end is refused (FND-228). The MPIE's value is the topologies the Hallén basis
+/// cannot reach (degree-3 junctions, closed loops, near-ground currents).
 pub fn solve_mpie_session(
     deck: &NecDeck,
     segs: &[Segment],
@@ -162,6 +172,11 @@ pub fn solve_mpie_session(
     // dipoles, both fed, answered 42.69 + j77.76 and 15.73 − j118.01 against
     // Hallén's 142.48 + j25.73 on both (nec2c 145.37 + j34.69), exit 0 (FND-202).
     let geom = geometry_from_segments(segs);
+    // Before the feeds: a wire touching the ground looks like a free end to the
+    // feed placement, which would refuse it for the wrong reason (FND-228).
+    if let Some(e) = crate::mpie::ground_contact_error(&geom, freq_hz, ground) {
+        return Err(MpieSessionError::Solve(e));
+    }
     let mut feeds: Vec<(usize, Complex64)> = Vec::new();
     for (ex, role) in crate::excitation::feedpoints(deck) {
         if role != nec_model::card::FeedpointRole::DeltaGap {
@@ -174,6 +189,42 @@ pub fn solve_mpie_session(
                 tag: ex.tag,
                 segment: ex.segment,
             })?;
+        // NEC's `EX 0` is a uniform field V/Δ over the driven segment. Projected on
+        // the two triangle bases touching it, that is V·f(½) = V/2 at each end node,
+        // with each basis's own reference sign — the transpose of the midpoint
+        // current readout (`segment_currents`), so Z = V / I_mid is also the power
+        // the source delivers. This put the whole V on ONE node, half a segment
+        // from where the current is read: first-order in the mesh (an off-centre
+        // dipole 6.5 / 3.4 / 1.7 % from nec2c at 21 / 41 / 81 segments, now 1.1 /
+        // 0.5 / 0.3 %), and mirrored ports came out unequal (FND-224).
+        let [a, b] = geom.segments[driven_idx];
+        let degree = |n: usize| {
+            geom.segments
+                .iter()
+                .filter(|s| s[0] == n || s[1] == n)
+                .count()
+        };
+        // A free end carries no basis, so a source there has nothing to drive but
+        // the next node — the current read on the end segment is half of it, and
+        // the answer stays 20–37 % from nec2c however fine the mesh (FND-228).
+        if degree(a) == 1 || degree(b) == 1 {
+            return Err(MpieSessionError::EndSegmentFeed {
+                tag: ex.tag,
+                segment: ex.segment,
+            });
+        }
+        let volts = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        if let (Some(sa), Some(sb)) = (
+            feed_reference_sign(&geom, a, driven_idx),
+            feed_reference_sign(&geom, b, driven_idx),
+        ) {
+            feeds.push((a, volts * 0.5 * sa));
+            feeds.push((b, volts * 0.5 * sb));
+            continue;
+        }
+        // Beside a junction one end hosts no basis: the whole gap goes on the other
+        // node, as before — first-order there (measured on a T arm fed at the
+        // junction: 0.59 / 0.23 / 0.78 % from nec2c at 21 / 41 / 81).
         let feed_node =
             feed_node_for_segment(&geom, driven_idx).ok_or(MpieSessionError::NoInteriorNode)?;
         // The source is applied along the *basis's* reference direction, set by
