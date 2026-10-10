@@ -50,8 +50,8 @@
         }
       ],
       "status": "Reference captured from Python study; xnec2c validation TBD Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External nec2c gate added 2026-09-25 (FND-156): the reference dipole had none, so a one-segment length error in every Hallen answer went ungated for its whole life. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended), captured 2026-09-25",
         "engine": "nec2c",
@@ -59,7 +59,7 @@
         "imag_ohm": 46.223,
         "captured_on": "2026-09-25"
       },
-      "last_produced_fingerprint": "07a8cd953fff25a0de194667f9f5059ce17410f75e7a2692039160d4de00798c"
+      "last_produced_fingerprint": "7811c5d9d8e637012bfa9c0765391b0fdc531f40c15951beac90be8ff80ecd22"
     },
     "dipole-ex3-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
@@ -213,9 +213,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "PH8-CHK-001: EX type 4 = current source; solves on --solver hallen with feedpoint Z=V/i0 matching the voltage-source dipole. Re-pinned 2026-08-30 (FND-118): was 74.23 + j13.9, fnec's old bespoke current-source solver, which agreed with the voltage drive to 0.02 percent rather than exactly. The current drive is now the voltage solve rescaled, so this is the voltage-drive value to the digit. The change is 0.015 ohm and the row passed its tolerance either way; it is re-pinned so the reference states what the code produces rather than what it produced. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "78ae6ab984f2d986125ed43a4824714d85411495a2fa879263bccc1388179a9a"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "58dc1cbd16366ba71176a368bf653b8af04be491fdfad836068dac1fedbbe35a"
     },
     "dipole-ex4-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex4-pulse-current-freesp-51seg.nec",
@@ -270,9 +270,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "PH8-CHK-003: EX type 5 = voltage source (applied-field model); solves == type 0. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "b36e6256adeda51a9fbfdc8d0fc0d9cb58425b9a3a4da3b932015359dd0571c7"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "b446f1a56e0fef09927816fb304f2e192e9116076f141ff8aee0420591842819"
     },
     "dipole-ex5-pulse-current-freesp-51seg": {
       "deck_file": "dipole-ex5-pulse-current-freesp-51seg.nec",
@@ -331,9 +331,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression lock for PT deck portability while PT runtime semantics remain deferred. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "61087a534a68b2f3bf849b920b3436994b44140c45cd13558e3d55ef7cee79df"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "8885947021870198808920ddbede480b3a0fc6eeef15d219351ba812033d821f"
     },
     "dipole-nt-freesp-51seg": {
       "deck_file": "dipole-nt-freesp-51seg.nec",
@@ -362,8 +362,8 @@
         "ExternalX_percent_rel": 7.0
       },
       "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26",
         "engine": "nec2c",
@@ -371,7 +371,7 @@
         "imag_ohm": -924.91,
         "captured_on": "2026-09-26"
       },
-      "last_produced_fingerprint": "f67423ac1b68976a06b98442263029ecb533c37804d549d848d5a7e9762f4af5"
+      "last_produced_fingerprint": "afe46659660b18bb879e7e51ab3bcd44b5a7e79de0cc2c6e07eb1b166820b965"
     },
     "dipole-nt-tl-equiv-freesp-51seg": {
       "deck_file": "dipole-nt-tl-equiv-freesp-51seg.nec",
@@ -400,8 +400,8 @@
         "ExternalX_absolute_ohm": 2.0
       },
       "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Until FND-123 this pinned 75.02 + j42.29 from the series-Z stamp; nec2c gives 64.51 - j212.78 for this deck, so the old model was not merely inaccurate but a different answer. Now 63.35 - j213.68. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26",
         "engine": "nec2c",
@@ -409,7 +409,7 @@
         "imag_ohm": -212.78,
         "captured_on": "2026-09-26"
       },
-      "last_produced_fingerprint": "bf2c3dba78fce5c5c13b5707f86fb37ea8425c475623d4ebdb9b6921a7d73cb1"
+      "last_produced_fingerprint": "12062ab4e898f0bbed102c7d46a796fb39f28ef43ae9188b6280ff7c14493fb0"
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -436,9 +436,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Phase-2 regression lock: PT still unknown-card; NT parsed with deferred-support warning. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "ab146c773bd0da200bff84592fce73a046c907e450069702102aa6af5fbce9f7"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "9e20502f79a878c3dcee2ce97dd6e8c073dadd8ab2a1f2ddb84b2e2df7d2e81d"
     },
     "dipole-nt-pt-freesp-51seg": {
       "deck_file": "dipole-nt-pt-freesp-51seg.nec",
@@ -465,9 +465,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Phase-2 regression lock: NT+PT card-order variant; NT parsed with deferred-support warning, PT still unknown-card. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "bcf76eeb4f03ca3821190b617a1b3bc0cad112085b7c2ea4b45a1b4ac0ed5dda"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "d610a553826511ef3bf82c0ccf232eed60ca9f95997b6caab41b7d797843882e"
     },
     "dipole-pt-nt-repeated-freesp-51seg": {
       "deck_file": "dipole-pt-nt-repeated-freesp-51seg.nec",
@@ -494,9 +494,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Phase-2 regression lock: repeated PT+NT; PT still unknown-card, NT parsed with deferred-support warning. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "eee93d7c1217b39d35220ba44b8ea2c8607c039b7a074e2bd4173b8e4806cd07"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "5f60ac0b6a73f240e9a5ae5dd8c03c39fe2a5bd36b38f30e10c5b14358bba1d2"
     },
     "dipole-nt-pt-repeated-freesp-51seg": {
       "deck_file": "dipole-nt-pt-repeated-freesp-51seg.nec",
@@ -523,9 +523,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Phase-2 regression lock: repeated NT+PT card-order; NT parsed with deferred-support warning, PT still unknown-card. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "c329127faca6072271f32561bb162ada3add62deda172fe4193806a0589b047e"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "6694e36541a30b222f76c1e026c6e9a770dbf6db56e1bebb7f1c33b6f086db08"
     },
     "dipole-pt-nt-interleaved-freesp-51seg": {
       "deck_file": "dipole-pt-nt-interleaved-freesp-51seg.nec",
@@ -552,9 +552,9 @@
         "NT card ignored",
         "unknown card 'NT'"
       ],
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "858e4775822bafe7145b6c7080e406d8f258dff5fec1952ba799c2e422564a5d"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "7e18ff4283ffd18a17202e391763148c57b6c0fad1617ee3d8c8cee20509913a"
     },
     "dipole-nt-pt-interleaved-freesp-51seg": {
       "deck_file": "dipole-nt-pt-interleaved-freesp-51seg.nec",
@@ -581,9 +581,9 @@
         "NT card ignored",
         "unknown card 'NT'"
       ],
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "e22fe65467259e4f04371661455ed7256de1b15a25d84c756b47d33c1eb2408d"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "0745b851a587e329fbab84294c77ccb171b82882db6db326cb5a70abdaca509b"
     },
     "dipole-ex3-i4-freesp-51seg": {
       "deck_file": "dipole-ex3-i4-freesp-51seg.nec",
@@ -828,9 +828,9 @@
         "ExternalAxialRatio_absolute": 0.0001
       },
       "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "6637c99529be492dae928c831e1fdcfdcf05ca152f1a1275fecf1640f46d3cee"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "809195bc50da69565aa8104610a3328948a0dea0ef2b1f66c60abf6ef971d1d8"
     },
     "dipole-ground-rp-51seg": {
       "deck_file": "dipole-ground-rp-51seg.nec",
@@ -928,9 +928,9 @@
         "AxialRatio_absolute": 0.0001
       },
       "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs) Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "f59f6c3e973f57a00d857ab2abe8094ee38b867540b8c88dce17ec5b4a353c84"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "416d2563a0b1e3afefaad7d4b9d7cd89414ffc5f449f2614b878e0a970a78f4d"
     },
     "dipole-xaxis-rp-grid-51seg": {
       "deck_file": "dipole-xaxis-rp-grid-51seg.nec",
@@ -1091,9 +1091,9 @@
         "ExternalAxialRatio_absolute": 0.0001
       },
       "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "361135405210e295b11f82af751aa25599849e8075e0e5e466a2d657dfbf482e"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "3124d49e0010688a7fe52291146c87b32c69c40a988c7a18ff7ed2774393a8d7"
     },
     "dipole-freesp-gm-inplace-shifted": {
       "deck_file": "dipole-freesp-gm-inplace-shifted.nec",
@@ -1115,9 +1115,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression reference matches dipole-freesp-51seg exactly; added to lock GM in-place translation into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "635a59c3a830c9ea1a7bf11bd2f9d7ca85e19b313ea9a9c92424ecdd353569c7"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "37655ebd15cace9f8a7d09e3e0dae599a6c21db77ee17651e56d381dd0640c4a"
     },
     "dipole-ground-51seg": {
       "deck_file": "dipole-ground-51seg.nec",
@@ -1168,9 +1168,9 @@
         }
       ],
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 8 / X 35 ohm to R 6 / X 5: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). External R gate tightened 2026-09-26 (FND-158) from 6 to 2 ohm: with the sin homogeneous term, R agrees with nec2c to 0.51 ohm (was 2.61). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "23822a5a1bac5c4f0080bbed49d1eced11a4c140ff3de7f4399d3dc353d55ca2"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "223c37b53d41302d577dac57cce6ffbd184c22dac1da5d8afc912c404b746011"
     },
     "dipole-gn0-fresnel-51seg": {
       "deck_file": "dipole-gn0-fresnel-51seg.nec",
@@ -1197,9 +1197,9 @@
       ],
       "expected_warning_counts": {},
       "status": "GN=0 simple finite-ground model active. Regression-gated in CI and explicitly forbids the former deferred-ground warning contract. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "a957bf00c104d450fc6470eaf28876f72866ec515dbab849f01c7abfd7cebdb2"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "407dd9906b06832709ff521d0c6509a575c35fa4bb09634a5394626cf25a86eb"
     },
     "dipole-gn2-deferred": {
       "deck_file": "dipole-gn2-deferred.nec",
@@ -1226,9 +1226,9 @@
       ],
       "expected_warning_counts": {},
       "status": "PAR-002 scoped runtime-ground fixture. GN2 no longer uses deferred free-space fallback; regression values are gated on the active finite-ground approximation and explicitly forbid the old deferred warning contract. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "f2928bdd698059c72f33ebc35760b0c43f9928a477942b9ef1c5799719f5a242"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "78ba7027ac54c45a47927fb33823decd75c81ba34ddcfea4aa6a2f3f1f42d7cd"
     },
     "dipole-gn2-buried-unsupported": {
       "deck_file": "dipole-gn2-buried-unsupported.nec",
@@ -1277,9 +1277,9 @@
       ],
       "expected_warning_counts": {},
       "status": "PH2-CHK-002 supported-class contract: low above-ground GN2 near-ground geometry remains solveable, regression-gated, and explicitly forbids both deferred-ground and buried-wire guardrail text. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "f7a7751074674d0950c825b963c097240fe8133028e16d3ff0579bc9723c2b91"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "051f28fa84a0a9f7a8a7a7dedb7a0b3d0eaff43c5519fd9064aedc523b3402ca"
     },
     "dipole-ex4-gn2-near-ground-51seg": {
       "deck_file": "dipole-ex4-gn2-near-ground-51seg.nec",
@@ -1309,9 +1309,9 @@
       ],
       "expected_warning_counts": {},
       "status": "FND-118 gate, RE-PINNED. This row was frozen at 86.237810 + j12.681089 to DOCUMENT a defect: the current drive disagreed with the voltage drive by 6.5 percent over ground, and every EX4 fixture was free space so the class was ungated. The defect is now fixed and the row records the corrected answer. The two drives agree to the digit because Z = V/I is a property of the port and not of how it is driven; a current source is the voltage solve scaled by i0/I_feed, exactly, for a linear system. MY FIRST DIAGNOSIS WAS WRONG and the ablation refuted it: I attributed the split to a constraint weight of 1e6 in the bespoke current-source solver, but sweeping that across nine orders of magnitude moves R by 0.28 percent against a 6.5 percent gap, and equalising the weight on both drives leaves the split intact. The real cause is that over finite ground the augmented Hallen system becomes INCONSISTENT -- the free-space homogeneous basis no longer satisfies the ground-modified operator, measured residual rising from 3e-7 to 5.8 percent -- so the port voltage is pinned only to about 4 percent and the two drives minimised slightly different objectives over a nearly flat valley. Which drive to keep was settled by an oracle that is NEITHER: the MPIE solver, a different kernel with a different ground model, answers this geometry R = 91.208. The voltage drive is 1.2 percent away; the old current drive was 5.4 percent away. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "4b8f2ba371fe8a61b258c7f0ad512a52f538bb954dcb53d06c06da3d4a88e300"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "8adb7785b5883505f3e5c1ad80349f95215850d9cdd1bf5b31a7fc7482d78fc3"
     },
     "dipole-gn-1-null": {
       "deck_file": "dipole-gn-1-null.nec",
@@ -1338,9 +1338,9 @@
       ],
       "expected_warning_counts": {},
       "status": "PAR-002 GN -1 null-ground correctness fixture. GN -1 must map to FreeSpace silently; no deferred-ground warning should be emitted. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "74e0cca3866039a81bd870a96c1e8d60e444638d70bb89c16e7b85e44c06ffd2"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "f8ea0818b65d952facfc570bbdf1cf40e3aaec92da91878a32d95de95cc748ab"
     },
     "yagi-5elm-51seg": {
       "deck_file": "yagi-5elm-51seg.nec",
@@ -1362,9 +1362,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Reference updated after Hallen RHS fix (2026). Old reference (-18.32) was captured with incorrect code that applied source excitation to passive parasitic elements. New result (30.63+j5.02) reflects correct passive-wire handling with rhs=0 for non-EX wires. Passive Yagi elements couple only through Z-matrix. External NEC2 validation pending. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "7e7163ed35d5c36e1005e711bf91f35c55494c1af1468f363c90188d7909e033"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "2818a6c1c294f6639c82d6e80738480dbd8804c36b8853bce246aecb281a4d18"
     },
     "dipole-ld-loaded-51seg": {
       "deck_file": "dipole-ld-loaded-51seg.nec",
@@ -1393,9 +1393,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 10.1 / X 40.4 ohm to R 2 / X 8: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "4bf980e63daf2c44fac85947ce41c7bb9635fafe2603163449f34b74c9916bde"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "8dd8617bb0f998d2ae8b63fdb41e646d6dfc668f70a9e0057b250a7edb28dd4e"
     },
     "dipole-ld-series-rl-51seg": {
       "deck_file": "dipole-ld-series-rl-51seg.nec",
@@ -1417,9 +1417,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "15bb9fc287e87072899b678d80baba7ba74928ab1d162724f1a2a264bacc2bf8"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "3334471fe11c10acbfe33b0a134401ec93444fe76ac73e860c1ed9a9b8036198"
     },
     "dipole-ld-series-rc-51seg": {
       "deck_file": "dipole-ld-series-rc-51seg.nec",
@@ -1441,9 +1441,9 @@
         "X_absolute_ohm": 500.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "520b51e0d725e104a07b14c233977752acc55c6a84ea140c14e2434ab4f938a8"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "b024c1ea917516ade8923590cb2b3062fca88084fdde676a656399117ea1f0ea"
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
@@ -1467,8 +1467,8 @@
         "ExternalX_absolute_ohm": 5.0
       },
       "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Until FND-123 this pinned 0.256 + j34.698 from the series-Z stamp, against nec2c's 84.826 + j31.131: the line was effectively inert. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26",
         "engine": "nec2c",
@@ -1476,7 +1476,7 @@
         "imag_ohm": 31.131,
         "captured_on": "2026-09-26"
       },
-      "last_produced_fingerprint": "d7d3253a9646c3d172f4f29880f3556bf13486830bccfccc643cb50cfd7ca20c"
+      "last_produced_fingerprint": "50a98b283d3a42e4bea4e3ffbfa3c83e15673bb086bc8b962d37d6400d8df837"
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1498,9 +1498,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Phase-2 regression lock: TL card with seg=0 center-mapping parsed and Z-stamp applied. Same Z-stamp as tl-two-dipoles-linked (seg=26 resolves to same position). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "c2b6e8c6326a9ac2102650c50c7ffc5210380e76fa319ebb196b5d6ba5997716"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "2bf27d817de7cbac4a9ea130119f892dab6b7f6f730d7bf565ce941f1b3d09c6"
     },
     "tl-two-dipoles-linked-nseg0": {
       "deck_file": "tl-two-dipoles-linked-nseg0.nec",
@@ -1524,8 +1524,8 @@
         "ExternalX_absolute_ohm": 2.0
       },
       "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26",
         "engine": "nec2c",
@@ -1533,7 +1533,7 @@
         "imag_ohm": -11.855,
         "captured_on": "2026-09-26"
       },
-      "last_produced_fingerprint": "c21bdff39c940179c9cbe1b04dd2ed2502160c10071fe2ac4555acd24ba86ab3"
+      "last_produced_fingerprint": "f9986832fe13d86f8378a89bc3fde7a292f812c4fc9ba215c1928dce447808b5"
     },
     "tl-two-dipoles-linked-seg0-even52": {
       "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
@@ -1555,9 +1555,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Phase-2 regression lock: TL card with seg=0 lower-center mapping on even-segment (52-seg) wires; Z-stamp shifts Z_RE relative to no-TL base. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "dab31ea301b38f2ee864a4f6f49798cd6ced44e0833713740a84562380d46d4d"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "45310ceef9a77735b30cc78dd52016ea680a890891bcab5d14ec38dba2c76eb7"
     },
     "dipole-loaded": {
       "deck_file": "dipole-loaded.nec",
@@ -1588,9 +1588,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "Hallen solver now supports non-collinear multi-wire topologies via per-wire local cos and junction KCL constraints. Reference: NEC2DXS500 via Wine at 13.4632 - j896.032 ohm. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-09-30 for FND-162 stages 2+3: the top-hat loop is a closed loop, which Hallén now solves as a cycle of sections (Kirchhoff and equal potential at each corner) instead of the per-wire basis; 12.92 - j893.25 -> 13.10 - j889.05. Against nec2c 1.3.1 with the loop kept at an odd segment count (an even one puts a segment boundary under the dipole tip and nec2c joins the two): 51/9 0.78 %, 153/27 0.29 %, 255/45 0.17 %, so the new answer converges. ExternalX widened 6 -> 8 ohm: at this mesh it is 7.0 ohm off the Wine NEC2DXS500 value, inside the discretisation error that refinement removes. Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-30",
-      "last_produced_in": "0.20.0",
-      "last_produced_fingerprint": "b2ca99969400611961ac95965359d98d86eebd12084d66857843465cd83d2e1a"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "a4123af5c46ce213fe71bb25dc83acabd349b5e04f71f14aeab75f0ae00f8a5b"
     },
     "dipole-loaded-noncollinear-hallen": {
       "deck_file": "dipole-loaded.nec",
@@ -1625,9 +1625,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "Regression lock for Hallen non-collinear path on dipole-loaded.nec. --allow-noncollinear-hallen is now silently ignored (non-collinear supported by default). Result matches dipole-loaded case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 5 / X 35 ohm to R 2 / X 6: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-09-30 for FND-162 stages 2+3: the top-hat loop is a closed loop, which Hallén now solves as a cycle of sections (Kirchhoff and equal potential at each corner) instead of the per-wire basis; 12.92 - j893.25 -> 13.10 - j889.05. Against nec2c 1.3.1 with the loop kept at an odd segment count (an even one puts a segment boundary under the dipole tip and nec2c joins the two): 51/9 0.78 %, 153/27 0.29 %, 255/45 0.17 %, so the new answer converges. ExternalX widened 6 -> 8 ohm: at this mesh it is 7.0 ohm off the Wine NEC2DXS500 value, inside the discretisation error that refinement removes. Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-30",
-      "last_produced_in": "0.20.0",
-      "last_produced_fingerprint": "31889352268b8e5f50a8c98fc14346df140c0357a1d95db7c50ab93bf09b0faf"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "f15a8037c7815083afbc64ceaf17db6483f2f0518d3f7d0f42f77bd769c75142"
     },
     "frequency-sweep-dipole": {
       "deck_file": "frequency-sweep-dipole.nec",
@@ -1698,9 +1698,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50→14/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 14 / X 47 ohm to R 8 / X 8: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "e796727b348446b41d1ed032737a11af15dc388006fe5073550d03cb1a8438e3"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "fac0d02a6399b6a637b9edd571393140a4ba72e9d7404c013e97ea919aaff3e5"
     },
     "multi-source": {
       "deck_file": "multi-source.nec",
@@ -1741,9 +1741,9 @@
         "ExternalX_absolute_ohm": 10.0
       },
       "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50→12/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 12 / X 40 ohm to R 3 / X 10: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "80557541858ad96514e630edffe0a70bb24a7987a40a6b3558aae4939ffdb062"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "7ad85f75191f047ed56687f7d47155c326e2e576aeb9fdcad2e0007f9691f2ed"
     },
     "multi-source-gr-180": {
       "deck_file": "multi-source-gr-180.nec",
@@ -1771,9 +1771,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GR geometry expansion into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "3d022f33da3139e3b80978037b749ad215ecebd24b324e1ccdb2d8196b1dd923"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "f0565bb0cd61366cec2399190dd15a0d12c82eb2fc2472ed3d784e8a09449bcc"
     },
     "multi-source-gm-copy": {
       "deck_file": "multi-source-gm-copy.nec",
@@ -1801,9 +1801,9 @@
         "X_absolute_ohm": 0.05
       },
       "status": "Regression reference matches the handwritten multi-source deck exactly; added to lock GM translated-copy expansion into corpus validation Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "4a6306e572e04e7bbb3af178b190b7f91f6c5be3542d74f106c79f9e8cda07d7"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "ba9e80a677785c8127a524c5738b27df2365cd41066d0ebe1cf9d3089bc56d67"
     },
     "dipole-sinusoidal-51seg": {
       "deck_file": "dipole-sinusoidal-51seg.nec",
@@ -1855,9 +1855,9 @@
         }
       ],
       "status": "Sinusoidal Galerkin solver (PH6-CHK-003); validated against dipole-freesp-51seg Hallen reference within 1% R, 5% X Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "274f4dacae9dd5c49a311396d18bcc898582f5c5d231b3fdef21fce77fa1855b"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "c445217ba401d20f665c44701b4d057833f2e3bb6159bb29040e9e262316d4f5"
     },
     "split-v-conductor-path-freesp": {
       "deck_file": "split-v-conductor-path-freesp.nec",
@@ -1893,9 +1893,9 @@
       "forbidden_warning_substrings": [],
       "expected_warning_counts": {},
       "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances were 30 % / 20 % while Hallen had no bend condition; with FND-162 stage 1b (per-section homogeneous terms, bend rows and the corner term) this deck answers within 0.7 % in R and 2 % in X of nec2c, and the band is 3 %. Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "4336d2b3c0a469d651e524288298f189c92edca83a0d7b777fb283ad6dae0b9a"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "30180b1f572021d15b4930b0cfbacc16dda1ef7f7fab46a1d429bde0b88e5c12"
     },
     "monopole-pec-26seg": {
       "deck_file": "monopole-pec-26seg.nec",
@@ -1930,9 +1930,9 @@
         "ExternalX_absolute_ohm": 4.0
       },
       "status": "FND-082 gate, added 2026-09-26. The residual against nec2c is half the half-wave dipole's (FND-156), as image theory requires. Pinned 2026-09-26 (FND-082). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-09-27",
-      "last_produced_in": "0.19.0",
-      "last_produced_fingerprint": "0da8051b3bf7a4eb13943e06868ab62134c59df687c478cf0697644bb0758a24"
+      "last_produced_on": "2026-10-10",
+      "last_produced_in": "0.21.6",
+      "last_produced_fingerprint": "2c95223d4bcd7b90b2498bd50254a224ee755b003419a23a8017409f573b16f7"
     }
   }
 }
