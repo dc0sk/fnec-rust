@@ -2049,10 +2049,12 @@ mod tests {
                 (24, SegmentPart::Flank { parent: 21 }),
             ]
         );
-        assert!(segs
+        let flank_numbers: Vec<u32> = segs
             .iter()
             .filter(|s| !s.is_deck_segment())
-            .all(|s| s.tag_index == 0));
+            .map(|s| s.tag_index)
+            .collect();
+        assert_eq!(flank_numbers, [0, 0, 0, 0]);
         for (i, s) in segs.iter().enumerate() {
             assert_eq!(s.global_index, i);
         }
