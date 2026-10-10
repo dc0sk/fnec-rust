@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 ---
 
 # Changelog
@@ -24,6 +24,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   currents are symmetric; the Y-junction is 0.9 % from nec2c (was 2.9 %). (#561)
 - **The MPIE refuses a feed on a segment at a free wire end** (FND-228), which it
   answered 20–37 % from nec2c however fine the mesh; feed one segment in. (#561)
+- **A source on the segment at a free wire end is refused on the Hallén path** (FND-227)
+  instead of answered with ~10¹⁰ Ω and exit 0. There the source lies wholly in the
+  solve's homogeneous solution, so the currents came out as regularisation noise — on
+  the plain, conductor-path, section-graph and sinusoidal routes, for a current source
+  and a `TL`/`NT` port alike, on CPU, GPU and the worker. The message names the remedy:
+  move it one segment in, or make the end segment a 3-segment wire and feed its middle.
+  A source beside a bend or junction still solves. (#562)
 
 ## [0.21.6] — 2026-10-09 — Ask once
 

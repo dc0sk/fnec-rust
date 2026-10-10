@@ -63,8 +63,8 @@ pub use hallen_session::{
 };
 pub use linear::{
     free_end_row, hallen_constraint_rows, hallen_homogeneous, hallen_homogeneous_paths,
-    sin_eligible, solve, solve_hallen, solve_hallen_paths, solve_hallen_planewave,
-    solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
+    merged_excitation_in_homogeneous_span, sin_eligible, solve, solve_hallen, solve_hallen_paths,
+    solve_hallen_planewave, solve_hallen_sinusoidal_basis, solve_with_continuity_basis,
     solve_with_continuity_basis_per_wire, solve_with_sinusoidal_basis,
     solve_with_sinusoidal_basis_per_wire, BendLayout, BendRow, ConstraintRow,
     CurrentSourceSolution, HallenSolution, SolveError,

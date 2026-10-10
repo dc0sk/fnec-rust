@@ -606,7 +606,11 @@ impl GraphSystem {
 
     /// Solve for a set of gap sources; returns the segment currents.
     pub(crate) fn solve(&self, gaps: &[GraphFeed]) -> Result<Vec<Complex64>, SolveError> {
-        let x = crate::linear::solve_normal_equations(&self.m, &self.rhs(gaps), self.cols)?;
+        let y = self.rhs(gaps);
+        if crate::linear::augmented_excitation_in_homogeneous_span(&self.m, &y, self.n) {
+            return Err(SolveError::ExcitationInHomogeneousSpan);
+        }
+        let x = crate::linear::solve_normal_equations(&self.m, &y, self.cols)?;
         Ok(x[..self.n].to_vec())
     }
 }

@@ -31,6 +31,9 @@ pub enum SolveError {
         rhs_len: usize,
         cos_len: usize,
     },
+    /// The excitation lies wholly in the span of the homogeneous columns, so the
+    /// constants absorb it and the currents solve to zero (FND-227).
+    ExcitationInHomogeneousSpan,
 }
 
 impl std::fmt::Display for SolveError {
@@ -47,6 +50,13 @@ impl std::fmt::Display for SolveError {
             } => write!(
                 f,
                 "Z is {z_n}×{z_n} but Hallen rhs/cos lengths are {rhs_len}/{cos_len}"
+            ),
+            SolveError::ExcitationInHomogeneousSpan => write!(
+                f,
+                "the source lies wholly in the homogeneous solution of Hallén's equation, \
+                 so this solve cannot see it — a source or port on the segment at a free \
+                 wire end does this; move it one segment in, or make the end segment a \
+                 short wire of its own (3 segments) and put it on the middle one"
             ),
         }
     }
@@ -618,6 +628,113 @@ pub fn hallen_homogeneous_paths(
         .collect()
 }
 
+/// Below this relative residual the excitation is taken to lie in the homogeneous
+/// span. A source on a free-end segment measures about 1e-16 there; the segment
+/// next to it measures 1e-2 or more at 21–81 segments (FND-227).
+const HOMOGENEOUS_SPAN_REL: f64 = 1e-9;
+
+/// Whether `y` lies wholly in the span of `columns` (complex Gram–Schmidt).
+///
+/// Then the homogeneous constants absorb the whole excitation and, the system
+/// having full column rank, the currents solve to zero: regularisation leaks
+/// about 1e-11 A, which reads as 10¹⁰ Ω (FND-227). A zero `y` is not in question.
+fn in_homogeneous_span(columns: Vec<Vec<Complex64>>, y: &[Complex64]) -> bool {
+    let dot = |q: &[Complex64], v: &[Complex64]| -> Complex64 {
+        q.iter().zip(v).map(|(a, b)| a.conj() * b).sum()
+    };
+    let norm = |v: &[Complex64]| v.iter().map(Complex64::norm_sqr).sum::<f64>().sqrt();
+    let total = norm(y);
+    if total == 0.0 {
+        return false;
+    }
+    let mut basis: Vec<Vec<Complex64>> = Vec::new();
+    for mut c in columns {
+        let before = norm(&c);
+        // Twice: the second pass removes what rounding left of the first.
+        for _ in 0..2 {
+            for q in &basis {
+                let d = dot(q, &c);
+                c.iter_mut().zip(q).for_each(|(a, b)| *a -= d * b);
+            }
+        }
+        let after = norm(&c);
+        if after > 1e-12 * before && after > 0.0 {
+            basis.push(c.iter().map(|a| a / after).collect());
+        }
+    }
+    let mut r = y.to_vec();
+    for _ in 0..2 {
+        for q in &basis {
+            let d = dot(q, &r);
+            r.iter_mut().zip(q).for_each(|(a, b)| *a -= d * b);
+        }
+    }
+    norm(&r) / total < HOMOGENEOUS_SPAN_REL
+}
+
+/// Whether the augmented system `m·x = y` solves to zero currents: `y` lies in
+/// the span of `m`'s homogeneous columns (every column from `n` on), over EVERY
+/// row — bend, junction and equal-potential rows included.
+///
+/// A delta gap on the segment at a free wire end does this: every other test
+/// point lies on one side of the gap, so `sin(k·|s − s_f|)` there IS a
+/// combination of the section's `cos(k·s)` and `sin(k·s)` columns. A gap beside
+/// a bend or junction is the same on its collocation rows and is NOT absorbed,
+/// because the rows that join the sections then disagree — which is why this is
+/// asked of the whole system and not of the segment rows alone. Asked of the
+/// vectors, not of the segment index, so a port excitation is caught too.
+pub(crate) fn augmented_excitation_in_homogeneous_span(
+    m: &[Vec<Complex64>],
+    y: &[Complex64],
+    n: usize,
+) -> bool {
+    let cols = m.first().map_or(0, Vec::len);
+    let columns = (n..cols)
+        .map(|c| m.iter().map(|row| row[c]).collect())
+        .collect();
+    in_homogeneous_span(columns, y)
+}
+
+/// The same question for the merged-conductor system [`solve_hallen`] builds
+/// from `wire_endpoints` and `junction_constraints`, without building it — for a
+/// caller that hands that system to another solver (the GPU resident solve) and
+/// must decline it there as `solve_hallen` refuses it. Its constraint rows hold
+/// no homogeneous term and no excitation, so the segment rows decide.
+pub fn merged_excitation_in_homogeneous_span(
+    rhs: &[Complex64],
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+    junction_constraints: &[(usize, usize, f64)],
+) -> bool {
+    let n = rhs.len();
+    let column = |v: &[f64], first: usize, last: usize| -> Vec<Complex64> {
+        (0..n)
+            .map(|r| {
+                Complex64::new(
+                    if (first..=last).contains(&r) {
+                        v[r]
+                    } else {
+                        0.0
+                    },
+                    0.0,
+                )
+            })
+            .collect()
+    };
+    let has_sin = sin_eligible(wire_endpoints, junction_constraints);
+    let mut columns: Vec<Vec<Complex64>> = wire_endpoints
+        .iter()
+        .map(|&(f, l)| column(cos_vec, f, l))
+        .collect();
+    for (&(f, l), &e) in wire_endpoints.iter().zip(&has_sin) {
+        if e {
+            columns.push(column(sin_vec, f, l));
+        }
+    }
+    in_homogeneous_span(columns, rhs)
+}
+
 /// Column offsets (after the cos columns) for the conductors that take a sin column.
 fn sin_columns(eligible: &[bool]) -> Vec<Option<usize>> {
     let mut next = 0;
@@ -702,6 +819,12 @@ pub fn solve_hallen_sinusoidal_basis(
     } else {
         wire_endpoints
     };
+
+    // The same null solution as `solve_hallen` (FND-227).
+    if merged_excitation_in_homogeneous_span(rhs, cos_vec, sin_vec, endpoints, junction_constraints)
+    {
+        return Err(SolveError::ExcitationInHomogeneousSpan);
+    }
 
     // If any wire has fewer than 2 segments, fall back to standard Hallén.
     if endpoints.iter().any(|&(first, last)| last <= first) {
@@ -1056,6 +1179,9 @@ pub fn solve_hallen(
     write_constraint_rows(&mut m, n, &crows, |seg, v, row| {
         row[seg] += Complex64::new(v, 0.0);
     });
+    if augmented_excitation_in_homogeneous_span(&m, &y, n) {
+        return Err(SolveError::ExcitationInHomogeneousSpan);
+    }
 
     // Normal equations with light Tikhonov regularization.
     let x = solve_normal_equations(&m, &y, cols)?;
@@ -1175,6 +1301,9 @@ pub fn solve_hallen_paths(
         phi[d_col(bend.group_b)] += Complex64::new(-bend.cos0, 0.0);
     }
 
+    if augmented_excitation_in_homogeneous_span(&m, &y, n) {
+        return Err(SolveError::ExcitationInHomogeneousSpan);
+    }
     // Normal equations with light Tikhonov regularization (mirrors solve_hallen).
     let x = solve_normal_equations(&m, &y, cols)?;
     let c_hom_per_wire = x[n..].to_vec();
@@ -1356,6 +1485,49 @@ mod tests {
     fn row_value(row: ConstraintRow, i: &[f64]) -> f64 {
         let (a, b, va, vb) = row;
         va * i[a] + b.map_or(0.0, |b| vb * i[b])
+    }
+
+    /// FND-227: a delta gap at a free wire end lies in the homogeneous span, the
+    /// next segment in does not. The vectors are the ones `build_hallen_rhs`
+    /// builds for a straight 21-segment λ/2 wire, written out so the predicate is
+    /// tested apart from the builder.
+    #[test]
+    fn only_a_gap_at_a_free_end_lies_in_the_homogeneous_span() {
+        let (n, h, k) = (21usize, 5.0 / 21.0, 2.0 * std::f64::consts::PI / 10.0);
+        let s: Vec<f64> = (0..n).map(|m| (m as f64 + 0.5) * h - 2.5).collect();
+        let cos_vec: Vec<f64> = s.iter().map(|x| (k * x).cos()).collect();
+        let sin_vec: Vec<f64> = s.iter().map(|x| (k * x).sin()).collect();
+        let gap = |f: usize| -> Vec<Complex64> {
+            s.iter()
+                .map(|x| Complex64::new(0.0, -(k * (x - s[f]).abs()).sin()))
+                .collect()
+        };
+        let in_span = |rhs: &[Complex64]| {
+            merged_excitation_in_homogeneous_span(rhs, &cos_vec, &sin_vec, &[(0, n - 1)], &[])
+        };
+        for f in [0, n - 1] {
+            assert!(in_span(&gap(f)), "a gap on end segment {f} must be caught");
+        }
+        for f in [1, n / 2, n - 2] {
+            assert!(!in_span(&gap(f)), "a gap on segment {f} has a solution");
+        }
+        // Without the sin column the cos column alone cannot absorb it.
+        let real = |v: &[f64]| {
+            v.iter()
+                .map(|&x| Complex64::new(x, 0.0))
+                .collect::<Vec<_>>()
+        };
+        assert!(!in_homogeneous_span(vec![real(&cos_vec)], &gap(0)));
+        assert!(in_homogeneous_span(
+            vec![real(&cos_vec), real(&sin_vec)],
+            &gap(0)
+        ));
+        // Nothing to see is not this refusal's business.
+        assert!(!in_span(&vec![Complex64::new(0.0, 0.0); n]));
+        // The solve refuses it rather than answering with regularisation noise.
+        let z = ZMatrix::new(n);
+        let err = solve_hallen(&z, &gap(0), &cos_vec, &sin_vec, &[(0, n - 1)], &[]);
+        assert!(matches!(err, Err(SolveError::ExcitationInHomogeneousSpan)));
     }
 
     /// FND-156: the row must vanish on a current that is zero at the PHYSICAL

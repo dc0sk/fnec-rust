@@ -1008,6 +1008,17 @@ fn maybe_gpu_resident_hallen(
     if !nec_solver::build_deck_stamps(deck, segs, freq_hz).is_identity() {
         return None;
     }
+    // An excitation the homogeneous constants absorb whole (FND-227): the CPU
+    // solve refuses it and says why.
+    if nec_solver::merged_excitation_in_homogeneous_span(
+        &hallen_rhs.rhs,
+        &hallen_rhs.cos_vec,
+        &hallen_rhs.sin_vec,
+        wire_endpoints,
+        junctions,
+    ) {
+        return None;
+    }
 
     let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
         .iter()
