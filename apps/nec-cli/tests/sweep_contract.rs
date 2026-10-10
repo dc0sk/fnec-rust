@@ -369,9 +369,9 @@ fn a_sweep_reports_negative_resistance_once() {
     // degree-3 junction the section graph refuses (FND-162) — which answers with
     // Re Z < 0 at 10, 12, 14 and 16 MHz and > 0 at 18 MHz. (It had two 10-segment
     // arms until the section graph solved that, and was a bent end-to-start
-    // chain until FND-167 fixed it.)
+    // chain until FND-167 fixed it.) The one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
     let bent = "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-                GW 3 1 0 0 5 -1 0 5 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
+                GW 3 1 0 0 5 -1 0 5 0.001\nGW 4 5 -1 0 5 -1 0 6 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
     let run = |name: &str, fr: &str| {
         let deck = write_temp(name, &format!("{bent}{fr}EN\n"));
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))

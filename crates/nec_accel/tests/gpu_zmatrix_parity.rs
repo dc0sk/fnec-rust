@@ -43,7 +43,8 @@ fn build_test_inputs() -> (Vec<ZSegmentInput>, Vec<[f64; 2]>, usize, f64) {
     }));
 
     let segs = build_geometry(&deck).expect("geometry should build");
-    assert_eq!(segs.len(), 51);
+    // The deck's 51 segments, its two free ends refined into thirds (FND-227).
+    assert_eq!(segs.len(), 55);
 
     // CPU reference matrix (f64)
     let z_cpu = assemble_z_matrix(&segs, freq_hz);

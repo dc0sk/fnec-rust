@@ -12,7 +12,18 @@
 //! the corner term included; a loop is a cycle of sections.
 //!
 //! Expectations are nec2c 1.3.1, captured 2026-09-30. Each deck is gated at two
-//! meshes and its error must shrink. The kill criteria are the design review's
+//! meshes and its error must shrink.
+//!
+//! The five stem-fed Y / T decks are gated against nec2c on a mesh 27 times finer
+//! (27N segments per wire, the feed, load or port on segment 27k − 13: the same
+//! point), captured 2026-10-10, under 2 % at 41 and shrinking. A feed this near a
+//! free stem end converges slowly in every code: holding the 21-mesh feed point,
+//! nec2c reads 22.58 − j1797.6 / 21.39 − j1746.3 / 20.85 − j1723.1 / 20.53 − j1710.3
+//! at 1 / 3 / 9 / 27 × the mesh, slower than 1/N. The old criteria (1 % for a Y,
+//! 2 % for a T) compared fnec with nec2c on the SAME mesh, two unconverged values
+//! erring the same way. Against 27N, nec2c on the same mesh is 5.1–5.9 % off at 21
+//! and 3.1–4.1 % at 41; fnec, with its free ends refined (FND-227), 2.3–2.4 % and
+//! 1.8 %. The same-mesh values are noted at each test. The kill criteria are the design review's
 //! (Fable), whose prototype these numbers reproduce: the Y at 11 segments per
 //! wire 20.74 − j1700, the loop at 21 per side 109.3 − j144.5.
 
@@ -39,10 +50,7 @@ fn solve(body: &str) -> (Vec<nec_solver::Segment>, Vec<Complex64>) {
 }
 
 fn current(segs: &[nec_solver::Segment], currents: &[Complex64], tag: u32, seg: u32) -> Complex64 {
-    let idx = segs
-        .iter()
-        .position(|s| s.tag == tag && s.tag_index == seg)
-        .expect("segment");
+    let idx = nec_solver::find_deck_segment(segs, tag, seg).expect("segment");
     currents[idx]
 }
 
@@ -89,32 +97,34 @@ fn square_loop(n: u32, z0: f64) -> String {
     )
 }
 
-/// Before: −1.83 − j1673 at 11 segments per wire. Kill criterion: under 1 % at
-/// 41, shrinking. Measured 3.19 → 1.68 → 0.74 % at 11 / 21 / 41.
+/// Before: −1.83 − j1673 at 11 segments per wire. Kill criterion: under 2 % of
+/// nec2c at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 3.19 → 1.68 → 0.74 % at 11 / 21 / 41 against nec2c on
+/// the same mesh (22.582 − j1797.6 / 21.434 − j1639.4).
 #[test]
 fn a_stem_fed_y_converges_to_nec2c() {
     let e21 = rel(
         z_in(&format!("{}EX 0 1 5 0 1 0\n", y(21)), (1, 5)),
-        Complex64::new(22.582, -1797.6),
+        Complex64::new(20.529, -1710.3),
     );
     let e41 = rel(
         z_in(&format!("{}EX 0 1 10 0 1 0\n", y(41)), (1, 10)),
-        Complex64::new(21.434, -1639.4),
+        Complex64::new(20.160, -1589.7),
     );
-    assert_converges("stem-fed Y", e21, e41, 0.01);
+    assert_converges("stem-fed Y", e21, e41, 0.02);
 }
 
 /// Before: about 0 − j1300. Kill criterion: under 2 % at 41, shrinking.
-/// Measured 6.45 → 2.23 → 1.33 %.
+/// Measured 6.45 → 2.23 → 1.33 % against nec2c on the same mesh (28.028 − j1621.2
+/// / 27.277 − j1664.3).
 #[test]
 fn a_stem_fed_t_converges_to_nec2c() {
     let e21 = rel(
         z_in(&format!("{}EX 0 1 4 0 1 0\n", tee(21)), (1, 4)),
-        Complex64::new(28.028, -1621.2),
+        Complex64::new(25.380, -1531.7),
     );
     let e41 = rel(
         z_in(&format!("{}EX 0 1 7 0 1 0\n", tee(41)), (1, 7)),
-        Complex64::new(27.277, -1664.3),
+        Complex64::new(25.508, -1600.2),
     );
     assert_converges("stem-fed T", e21, e41, 0.02);
 }
@@ -248,8 +258,9 @@ fn the_currents_meeting_at_a_y_node_sum_to_zero() {
 // per-wire basis with pairwise junction rows. Expectations are nec2c 1.3.1,
 // captured 2026-10-01; each deck converges at the unloaded decks' rate.
 
-/// A Y with a 10 Ω + 1 µH series load mid-arm. Kill criterion: under 1 % at 41,
-/// shrinking. Measured 1.67 → 0.73 %. A regression gate only: the load moves Z
+/// A Y with a 10 Ω + 1 µH series load mid-arm. Kill criterion: under 2 % of nec2c
+/// at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 1.67 → 0.73 % against nec2c on the same mesh (23.89 −
+/// j1791.0 / 22.69 − j1633.0). A regression gate only: the load moves Z
 /// by under 2 %, so a missing load passes it — the corner-loaded loop and the
 /// feed identity below are the tests that see one.
 #[test]
@@ -265,18 +276,19 @@ fn a_loaded_y_converges_to_nec2c() {
     };
     let e21 = rel(
         z_in(&deck(21), (1, feed(21))),
-        Complex64::new(23.89, -1791.0),
+        Complex64::new(21.746, -1704.3),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed(41))),
-        Complex64::new(22.69, -1633.0),
+        Complex64::new(21.363, -1583.6),
     );
-    assert_converges("loaded Y", e21, e41, 0.01);
+    assert_converges("loaded Y", e21, e41, 0.02);
 }
 
 /// A T with a 1 µH coil on the arm segment that touches the node, where the
 /// load's term in the equal-potential rows is largest. Kill criterion: under
-/// 2 % at 41, shrinking. Measured 2.21 → 1.35 %. It sees a load with the wrong
+/// 2 % at 41, shrinking. Measured 2.21 → 1.35 % against nec2c on the same mesh
+/// (29.70 − j1592.6 / 28.98 − j1636.3). It sees a load with the wrong
 /// sign, not a missing one (the coil moves Z by about 2 %).
 #[test]
 fn a_t_with_a_coil_at_its_node_converges_to_nec2c() {
@@ -289,11 +301,11 @@ fn a_t_with_a_coil_at_its_node_converges_to_nec2c() {
     };
     let e21 = rel(
         z_in(&deck(21), (1, feed_t(21))),
-        Complex64::new(29.70, -1592.6),
+        Complex64::new(27.031, -1504.5),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed_t(41))),
-        Complex64::new(28.98, -1636.3),
+        Complex64::new(27.232, -1572.5),
     );
     assert_converges("T, coil at the node", e21, e41, 0.02);
 }
@@ -376,10 +388,7 @@ fn z_at_7mhz(body: &str, feed: (u32, u32)) -> Complex64 {
     let f = 7.1e6;
     let mut z = assemble_z_matrix_with_ground(&segs, f, &ground_model_from_deck(&deck));
     let routed = solve_hallen_routed(&deck, &segs, &mut z, f, &[]).expect("solves");
-    let idx = segs
-        .iter()
-        .position(|s| s.tag == feed.0 && s.tag_index == feed.1)
-        .expect("feed");
+    let idx = nec_solver::find_deck_segment(&segs, feed.0, feed.1).expect("feed");
     Complex64::new(1.0, 0.0) / routed.currents[idx]
 }
 
@@ -527,8 +536,9 @@ fn a_current_source_on_a_graph_deck_is_its_voltage_gap() {
 // the least-squares solution is linear in the forcing for a fixed matrix).
 // Junction and loop decks with a TL or NT card were refused.
 
-/// A Y with a 300 Ω TL between its arms' midpoints. Kill criterion: under 1 % at
-/// 41, shrinking. Measured 1.88 → 0.84 %.
+/// A Y with a 300 Ω TL between its arms' midpoints. Kill criterion: under 2 % of
+/// nec2c at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 1.88 → 0.84 % against nec2c on the same mesh (18.201 −
+/// j1862.9 / 17.321 − j1702.0).
 #[test]
 fn a_y_with_a_line_between_its_arms_converges_to_nec2c() {
     let deck = |n: u32| {
@@ -542,13 +552,13 @@ fn a_y_with_a_line_between_its_arms_converges_to_nec2c() {
     let feed = |n: u32| (0.68 / 3.0 * f64::from(n)) as u32 + 1;
     let e21 = rel(
         z_in(&deck(21), (1, feed(21))),
-        Complex64::new(18.201, -1862.9),
+        Complex64::new(16.501, -1769.3),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed(41))),
-        Complex64::new(17.321, -1702.0),
+        Complex64::new(16.244, -1648.6),
     );
-    assert_converges("Y with a TL", e21, e41, 0.01);
+    assert_converges("Y with a TL", e21, e41, 0.02);
 }
 
 /// Two 1 λ square loops 2.5 m apart, the second fed only through a 50 Ω phasing

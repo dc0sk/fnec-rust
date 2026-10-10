@@ -16,6 +16,21 @@ mod tests {
     const DIPOLE_EX4: &str = include_str!("../../../corpus/dipole-ex4-freesp-51seg.nec");
     const DIPOLE_EX1: &str = include_str!("../../../corpus/dipole-ex1-freesp-51seg.nec");
 
+    /// The corpus-pinned feedpoint impedance of `case`, read from the one file the
+    /// CLI's corpus gate reads, so a re-pin moves every frontend's check at once.
+    /// The worker's copies of it had already drifted (78.834 against the corpus's
+    /// 78.825) before FND-227 moved both.
+    fn corpus_z(case: &str) -> (f64, f64) {
+        let refs: serde_json::Value =
+            serde_json::from_str(include_str!("../../../corpus/reference-results.json"))
+                .expect("reference-results.json parses");
+        let z = &refs["cases"][case]["feedpoint_impedance"];
+        (
+            z["real_ohm"].as_f64().expect("real_ohm"),
+            z["imag_ohm"].as_f64().expect("imag_ohm"),
+        )
+    }
+
     /// FND-021: an `EX` naming a segment the geometry does not contain is a
     /// semantic error, not a syntax one. It crossed the wire as `parse_error`,
     /// sending the reader to hunt for a typo in a deck that parsed cleanly.
@@ -102,21 +117,22 @@ mod tests {
     /// FND-031: the worker drove a type-5 card as a delta gap through
     /// `build_hallen_rhs`, solved it, and then refused to read the answer —
     /// "no EX type-0 card found in deck" for a deck the CLI and `fnec_py` both
-    /// solve to 78.834 + j42.440 Ω (74.243 + j13.900 before FND-156). The distributed path rejected a deck the
+    /// solve to the corpus value (74.243 + j13.900 before FND-156). The distributed path rejected a deck the
     /// other three frontends handle.
     #[test]
     fn a_type_5_voltage_source_is_a_feedpoint_here_as_it_is_everywhere_else() {
         let r = solve_deck_at_frequency(DIPOLE_EX5, 14.2e6, "hallen")
             .expect("EX 5 is a voltage source fnec models as a delta gap");
         // The corpus reference for this deck, which the CLI already matches.
+        let (re, im) = corpus_z("dipole-ex5-freesp-51seg");
         assert!(
-            (r.impedance_re - 78.83).abs() < 0.1,
-            "R = {} Ω",
+            (r.impedance_re - re).abs() < 0.1,
+            "R = {} Ω against {re}",
             r.impedance_re
         );
         assert!(
-            (r.impedance_im - 42.44).abs() < 0.1,
-            "X = {} Ω",
+            (r.impedance_im - im).abs() < 0.1,
+            "X = {} Ω against {im}",
             r.impedance_im
         );
     }
@@ -141,9 +157,10 @@ mod tests {
             "a current source must not go to the GPU"
         );
         // ...and the answer is the same one the CPU path gives.
+        let (re, _) = corpus_z("dipole-ex4-freesp-51seg");
         assert!(
-            (r.impedance_re - 78.834228).abs() < 0.05,
-            "{}",
+            (r.impedance_re - re).abs() < 0.05,
+            "{} against {re}",
             r.impedance_re
         );
     }
@@ -152,9 +169,10 @@ mod tests {
     fn a_current_source_deck_is_priced_and_agrees_with_the_cli() {
         let r = solve_deck_at_frequency(DIPOLE_EX4, 14.2e6, "hallen")
             .expect("the worker prices a current source now");
+        let (re, im) = corpus_z("dipole-ex4-freesp-51seg");
         assert!(
-            (r.impedance_re - 78.834228).abs() < 0.05 && (r.impedance_im - 42.439515).abs() < 0.05,
-            "worker gave {} + j{}, CLI gives 78.834228 + j42.439515",
+            (r.impedance_re - re).abs() < 0.05 && (r.impedance_im - im).abs() < 0.05,
+            "worker gave {} + j{}, the corpus pins {re} + j{im}",
             r.impedance_re,
             r.impedance_im
         );

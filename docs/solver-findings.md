@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-10
 ---
 
 # Solver Findings
@@ -16,7 +16,8 @@ last_updated: 2026-09-26
 > creeps toward NEC2 as N grows). The Python reference `hallen_reference.py` shared
 > the same step, so its to-the-digit agreement proved nothing. The fix extrapolates
 > the current linearly to the physical tip; fixed, the N=51 dipole gives
-> **78.83 + j42.44 Ω** (Python reference 78.825 + j42.435; nec2c 79.35 + j46.22).
+> **78.83 + j42.44 Ω** (Python reference 78.825 + j42.435; nec2c 79.35 + j46.22) — and
+> **79.33 + j45.04 Ω** since FND-227 refined each free wire end into thirds (2026-10-10).
 > The numbers and the explanation below are kept as the historical record.
 
 > **Correction (2026-09-26, FND-158):** fnec's delta-gap Hallén solves carried only

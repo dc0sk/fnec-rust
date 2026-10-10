@@ -4,12 +4,14 @@
 //! FND-204 / FND-207 — a `--loads-config` file is checked like an `LD` card.
 //!
 //! Each case below was a silent wrong answer, exit 0, on a 21-segment dipole at
-//! 28 MHz whose loaded answer is 162.97 − j54.38 Ω and unloaded 62.97 − j54.38:
+//! 28 MHz whose loaded answer is 164.13 − j48.89 Ω and unloaded 64.13 − j48.89
+//! (162.97 / 62.97 − j54.38 until FND-227 refined the free ends):
 //!
 //! - a load naming no segment (wrong tag, reversed range, out-of-range segment)
 //!   solved unloaded, where the same load as an `LD` card is refused (FND-204);
 //! - a misspelled key read as 0 — "all" — so `segment = 11` loaded every
-//!   segment (866.41 − j431.27); a float or negative tag read as 0 or wrapped;
+//!   segment (870.40 − j432.34; 866.41 − j431.27 before FND-227 — a lumped load
+//!   lands on a refined end's centre third, once); a float or negative tag read as 0 or wrapped;
 //!   a misspelled table read as "no loads" and solved unloaded (FND-207).
 
 use std::process::Command;
@@ -116,8 +118,8 @@ fn a_malformed_loads_file_is_refused() {
 #[test]
 fn well_formed_loads_still_apply() {
     for (label, entry, want_r) in [
-        ("segment 11", "tag = 1\nseg_first = 11\n", 162.97),
-        ("explicit all", "tag = 0\nseg_first = 0\n", 866.41),
+        ("segment 11", "tag = 1\nseg_first = 11\n", 164.13),
+        ("explicit all", "tag = 0\nseg_first = 0\n", 870.40),
     ] {
         let out = run(&format!("[[laplace_load]]\n{entry}{LOAD}"));
         assert!(

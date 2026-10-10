@@ -455,7 +455,7 @@ fn main() -> ExitCode {
     // `EX`. Same exit code either way. This is the order `validate::diagnose`
     // already uses, which the GUI and the Python bindings adopted in #369/#370, so
     // the three frontends now agree on it.
-    let segs = match build_geometry(deck) {
+    let segs = match solver_mode.geometry(deck) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1801,7 +1801,8 @@ mod tests {
     // cannot tell a complete set from a lucky one. The stem is one segment long,
     // which keeps it off the section-graph solve (a one-segment run, measured and
     // kept refused in FND-162 stage 5); a T the graph takes earns neither the
-    // topology nor the junction-feed caveat.
+    // topology nor the junction-feed caveat. The one-segment stem sits between the
+    // junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
     /// `--hosts` refuses `--ground-solver sommerfeld`, so its low-ground caveat must
     /// not name it (FND-217). Differential, on a deck the remedy applies to: the
     /// producer offered the remedy DOES name it here, so the fixture earns it, and
@@ -1844,7 +1845,7 @@ mod tests {
         );
     }
 
-    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGW 4 5 0 0 1.134 0.5 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
     #[test]
     fn the_distributed_caveats_come_from_the_shared_producer() {

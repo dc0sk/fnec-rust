@@ -16,7 +16,8 @@ fn assert_non_single_chain_fallback(solver: &str, expected_diag_mode: &str) {
 
     // Topology that is invalid for per-wire basis solve: one wire has only 1 segment.
     // This must force continuity/sinusoidal to fall back to pulse.
-    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 2 1 0.5 0.0 0.0 0.5 0.0 0.1 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    // The one-segment wire sits inside a collinear chain: a free-end one-segment wire is refined into thirds (FND-227).
+    let deck = "GW 1 11 0.0 0.0 -1.0 0.0 0.0 1.0 0.001\nGW 4 5 0.5 0.0 -0.5 0.5 0.0 0.0 0.001\nGW 2 1 0.5 0.0 0.0 0.5 0.0 0.1 0.001\nGW 3 5 0.5 0.0 0.1 0.5 0.0 0.6 0.001\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary topology-fallback deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))

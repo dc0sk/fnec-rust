@@ -298,6 +298,7 @@ fn image_segment(seg: &Segment) -> Segment {
         direction: [-seg.direction[0], -seg.direction[1], seg.direction[2]],
         length: seg.length,
         radius: seg.radius,
+        part: seg.part,
     }
 }
 
@@ -470,6 +471,7 @@ mod tests {
             direction,
             length,
             radius,
+            part: crate::geometry::SegmentPart::Whole,
         }
     }
 

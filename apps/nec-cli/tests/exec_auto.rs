@@ -166,7 +166,9 @@ fn an_unreadable_calibration_is_named() {
 #[test]
 fn below_the_calibrated_crossover_the_pick_is_the_cpu_to_the_byte() {
     let cal = calibration("below", host_key().as_deref());
-    let deck = dipole(549, 1);
+    // 549 solved segments: the pick counts what is solved, and the two free ends
+    // add two segments each (FND-227).
+    let deck = dipole(545, 1);
     let (auto_out, auto_err) = run_with("549", &deck, &[], &cal);
     assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
     assert!(

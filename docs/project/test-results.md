@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-results.md
 status: living
-last_updated: 2026-09-25
+last_updated: 2026-10-10
 ---
 
 # Test results
@@ -204,7 +204,7 @@ tests above on every run.
 | PH7-CHK-003 (GPU-resident solve) | ΔR=0.012 Ω, ΔX=0.002 Ω vs f64 CPU; 3 corpus decks ≤0.01 Ω |
 | PH7-CHK-002 (microbench) | 61 ms device-init vs 268 µs dispatch (~227× isolation); 10/10 non-flaky |
 | PH7-CHK-005 (real GPU crossover) | Z-fill: GPU beats CPU <32 seg, up to ~240× at 1536 seg; RP 1.5–1.8× faster |
-| Reference dipole (Phase 0 baseline) | 51-seg λ/2 dipole → 78.83 + j42.44 Ω since FND-156 (2026-09-25; was 74.24 + j13.90 with the free-end defect); Python reference 78.825 + j42.435, nec2c 79.35 + j46.22 |
+| Reference dipole (Phase 0 baseline) | 51-seg λ/2 dipole → 79.33 + j45.04 Ω since FND-227 (2026-10-10, free ends refined into thirds; 78.83 + j42.44 since FND-156, 74.24 + j13.90 with the free-end defect before it); Python reference 78.825 + j42.435, nec2c 79.35 + j46.22 |
 
 ## How to reproduce
 

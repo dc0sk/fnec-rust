@@ -60,6 +60,8 @@ fn receive(geometry: &str, ground: &str, wave: &str) -> Result<Vec<Complex64>, S
         FREQ,
         &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
     )
+    // nec2c numbers the deck's segments (FND-227).
+    .map(|currents| nec_solver::deck_values(&segs, &currents))
     .map_err(|e| e.to_string())
 }
 
@@ -188,7 +190,11 @@ fn an_inverted_v_over_perfect_ground_receives_like_nec2c() {
 }
 
 /// A T (4 m stem from 2 m up, 3 m bar halves): the section-graph route.
-/// Kill criterion: under 1 % at 41, shrinking.
+/// Kill criterion: under 1 % at 41, shrinking. Against nec2c on a 27× mesh
+/// (segment j → 27j − 13, the same point), captured 2026-10-10: since FND-227
+/// refined the free ends fnec outruns nec2c on the deck's own mesh, and the
+/// error against that stopped shrinking (0.32 → 0.41 %); against 27N it is
+/// 0.49 → 0.32 %.
 #[test]
 fn a_t_over_perfect_ground_receives_like_nec2c() {
     let tee = |n: u32| {
@@ -199,26 +205,26 @@ fn a_t_over_perfect_ground_receives_like_nec2c() {
     let wave = "EX 1 1 1 0 45 0 0\n";
     let e21 = err(
         &receive(&tee(21), PEC, wave).unwrap(),
-        7.175_369e-3,
+        7.209_240e-3,
         &[
-            (1, -2.3159e-05, -4.5295e-04),
-            (11, -2.9079e-04, -5.5370e-03),
-            (21, -3.3972e-04, -6.5612e-03),
-            (22, 6.2009e-03, -3.5149e-03),
-            (43, -6.5338e-03, -2.9657e-03),
-            (63, -3.6381e-04, -1.5930e-04),
+            (1, -2.4346e-05, -4.7334e-04),
+            (11, -2.9385e-04, -5.5604e-03),
+            (21, -3.4364e-04, -6.5913e-03),
+            (22, 6.2104e-03, -3.5316e-03),
+            (43, -6.5473e-03, -2.9800e-03),
+            (63, -3.8098e-04, -1.6713e-04),
         ],
     );
     let e41 = err(
         &receive(&tee(41), PEC, wave).unwrap(),
-        7.190_187e-3,
+        7.211_120e-3,
         &[
-            (1, -1.3030e-05, -2.5459e-04),
-            (21, -2.9170e-04, -5.5437e-03),
-            (41, -3.3960e-04, -6.5547e-03),
-            (42, 6.2060e-03, -3.5331e-03),
-            (83, -6.5423e-03, -2.9828e-03),
-            (123, -2.0549e-04, -9.0195e-05),
+            (1, -1.3809e-05, -2.6841e-04),
+            (21, -2.9436e-04, -5.5642e-03),
+            (41, -3.4313e-04, -6.5830e-03),
+            (42, 6.2119e-03, -3.5482e-03),
+            (83, -6.5517e-03, -2.9964e-03),
+            (123, -2.1728e-04, -9.5563e-05),
         ],
     );
     assert_converges("T over GN 1", e21, e41, 0.01);

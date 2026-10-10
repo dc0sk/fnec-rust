@@ -86,8 +86,9 @@ const TEE_JUNCTION_FED: &str =
     "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 // The same T with a stem one segment long, which the section graph refuses.
+// The one-segment stem sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
 const TEE_ONE_SEGMENT_STEM_FED: &str =
-    "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
 fn start_to_start_junction_fed_now_solves() {
@@ -103,8 +104,8 @@ fn start_to_start_junction_fed_now_solves() {
     );
     let r = feedpoint_r(&stdout);
     assert!(
-        (r - 78.83).abs() < 2.0,
-        "junction-fed split dipole must recover the single-wire ~78.8 Ω; got {r:.3}"
+        (r - 79.33).abs() < 2.0,
+        "junction-fed split dipole must recover the single-wire ~79.3 Ω; got {r:.3}"
     );
 }
 
@@ -218,28 +219,31 @@ fn closed_loop_is_guarded() {
 // The negative-resistance warning must not blame a cause the deck cannot have
 // ---------------------------------------------------------------------------
 
-/// A single straight wire, badly under-segmented (3 segments over ~1.9 λ), which
-/// the Hallén solve returns a negative resistance for. There is no junction
-/// anywhere in it.
+/// A single straight wire, badly under-segmented (2 segments over 3.3 λ), which
+/// the Hallén solve returns a negative resistance for (Re Z = −333.6 Ω). There is
+/// no junction anywhere in it. It was 3 segments over ~1.9 λ until FND-227 refined
+/// the free ends, which that wire then solved to a positive resistance.
 const STRAIGHT_NEGATIVE_R: &str = "\
 CM one straight wire, no junction
 CE
-GW 1 3 0 0 -20.0 0 0 20.0 0.01
+GW 1 2 0 0 0 0 0 10 0.01
 GE 0
-EX 0 1 2 0 1.0 0.0
-FR 0 1 0 0 14.2 0
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 100 0
 EN
 ";
 
 /// A Y junction whose second arm is one segment long: a degree-3 junction the
 /// section graph refuses (FND-162), which still solves to a negative resistance
-/// (Re Z = -5.44 Ω). It was a stem-fed Y with three 11-segment arms until the
+/// (Re Z = -5.13 Ω). The one-segment arm sits between the junction and a bend: a
+/// free-end one-segment arm is refined into thirds (FND-227). It was a stem-fed Y with three 11-segment arms until the
 /// section graph solved that, and an end-to-start inverted-V before FND-167.
 const JUNCTION_NEGATIVE_R: &str = "\
 CM Y junction with a one-segment arm
 CE
 GW 1 11 0 0 0 0 0 3 .001
 GW 2 1 0 0 3 -1 0 4 .001
+GW 4 5 -1 0 4 -1 0 5 .001
 GW 3 11 0 0 3 2 0 5 .001
 GE 0
 EX 0 1 1 0 1.0 0.0

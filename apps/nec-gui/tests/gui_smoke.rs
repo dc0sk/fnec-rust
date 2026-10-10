@@ -352,7 +352,9 @@ fn geometry_load_builds_scene_and_fits_camera() {
     let deck = "\
 CM dipole\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     let geo = nec_gui::solve::load_geometry_str(deck).expect("geometry builds");
-    assert_eq!(geo.wires.len(), 11, "11 segments → 11 wire lines");
+    // The view draws the mesh that is solved: 11 deck segments, the two at the
+    // free ends as their three thirds (FND-227).
+    assert_eq!(geo.wires.len(), 15, "11 segments → 15 wire lines");
     assert!(!geo.has_ground, "free-space deck has no ground");
     assert!((geo.bbox_min[2] + 5.0).abs() < 1e-3 && (geo.bbox_max[2] - 5.0).abs() < 1e-3);
 
@@ -370,8 +372,9 @@ CM dipole\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2
         "camera target centered on wire"
     );
     assert!(vp.camera.distance > 5.0, "camera outside the geometry");
+    // The solved count, as the CLI's `info:` line reports it (FND-227).
     assert!(
-        vp.status.contains("11"),
+        vp.status.contains("15"),
         "status reports segment count: {}",
         vp.status
     );
@@ -425,8 +428,10 @@ fn currents_solve_colors_wires_and_toggles() {
     let deck = "CM\nCE\nGW 1 11 0 0 -5 0 0 5 0.001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     let gc = nec_gui::solve::load_currents_str(deck, nec_gui::solve::SolverKind::Hallen)
         .expect("currents solve");
-    assert_eq!(gc.currents_ma.len(), 11);
-    // The peak |I| is at (or adjacent to) the center-fed segment, not a tip.
+    // One current per drawn line: the solved mesh, free ends in thirds (FND-227).
+    assert_eq!(gc.currents_ma.len(), 15);
+    // The peak |I| is at (or adjacent to) the center-fed segment, not a tip: the
+    // deck's segment 6 is drawn line 7, after the first end's three thirds.
     let peak_i = gc
         .currents_ma
         .iter()
@@ -435,7 +440,7 @@ fn currents_solve_colors_wires_and_toggles() {
         .unwrap()
         .0;
     assert!(
-        (4..=6).contains(&peak_i),
+        (6..=8).contains(&peak_i),
         "current should peak near center, got seg {peak_i}"
     );
 
@@ -1739,10 +1744,12 @@ fn browse_messages_do_not_change_the_paths() {
 fn solve_warns_on_high_degree_junction() {
     const Y: &str = "\
 CM Y-junction, one arm a single segment: the section graph refuses it (FND-162)
+CM the one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227)
 CE
 GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
 GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
 GW 3 1 0.0 0.0 0.0 -0.5 -0.866025 0.0 0.001
+GW 4 5 -0.5 -0.866025 0.0 -0.5 -0.866025 0.5 0.001
 GE 0
 FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0
@@ -2555,8 +2562,9 @@ fn the_gui_pattern_charges_a_lossy_load_in_free_space() {
         .map(|p| p.gain_total_dbi)
         .fold(f64::MIN, f64::max);
     assert!(
-        (peak - -1.2678).abs() < 0.01,
-        "GUI peak {peak:.4} dBi must match the CLI's -1.2678 for this loaded dipole; \
+        (peak - -1.2157).abs() < 0.01,
+        "GUI peak {peak:.4} dBi must match the CLI's -1.2157 for this loaded dipole \
+         (-1.2678 until FND-227 refined the free ends); \
          2.17 would mean the load loss is unaccounted for"
     );
 }

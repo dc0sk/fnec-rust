@@ -94,13 +94,15 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
             continue;
         }
 
-        let length_to_radius = seg.length / seg.radius;
+        // The deck segment's length: refinement (FND-227) makes the fed segment a
+        // third as long, and a feed that passed before must pass after.
+        let length_to_radius = seg.deck_length() / seg.radius;
         if length_to_radius < MIN_SOURCE_LENGTH_TO_RADIUS_RATIO {
             return Some(format!(
                 "unsupported source-risk geometry: EX on tiny segment tag {} seg {} (length={:.6e} m, radius={:.6e} m, L/r={:.3}). Increase segment length or reduce wire radius; tiny-loop/source-risk classes are deferred",
                 ex.tag,
                 ex.segment,
-                seg.length,
+                seg.deck_length(),
                 seg.radius,
                 length_to_radius,
             ));
@@ -2011,10 +2013,11 @@ mod tests {
         );
         // Positive control on the same geometry: a real feed there must still warn,
         // or this proves only that the check stopped firing. The stem is one
-        // segment long, because a T the section graph takes models a junction
-        // feed and rightly stays silent (FND-162).
+        // segment long, between the node and a bend, because a T the section graph
+        // takes models a junction feed and rightly stays silent (FND-162); a
+        // one-segment stem with a free end is refined into thirds (FND-227).
         let (driven, driven_segs) = deck_and_segs(
-            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert!(crate::hallen_session::graph_route(&driven, &driven_segs).is_none());
         assert!(
@@ -2325,8 +2328,11 @@ mod tests {
         let ex = "EX 0 1 21 0 1 0\n";
         let dipole45 = "GW 1 41 -3.7477 0 6.2523 3.7477 0 13.7477 .001\n";
         let vee = "GW 1 21 0 0 10 -3.7477 0 6.2523 .001\nGW 2 21 0 0 10 3.7477 0 6.2523 .001\n";
-        // A one-segment run elsewhere in the deck sends the whole layout back.
-        let stub = "GW 9 1 20 0 5 20 0 5.5 .001\n";
+        // A one-segment run elsewhere in the deck sends the whole layout back: the
+        // middle of a U, between two bends (a one-segment wire with free ends is
+        // refined into thirds, FND-227, and is no such run).
+        let stub = "GW 9 3 20 0 5 20 0 5.5 .001\nGW 10 1 20 0 5.5 20.5 0 5.5 .001\n\
+                    GW 11 3 20.5 0 5.5 20.5 0 5 .001\n";
         assert!(
             slant(dipole45, gn1, ex).is_none(),
             "a 45° dipole over PEC is modelled"
@@ -2637,10 +2643,12 @@ mod tests {
 
     #[test]
     fn a_degree_three_junction_warns_and_recommends_the_mpie() {
-        // The stem is one segment long: its single row cannot fix a section's two
-        // constants, so the graph solve refuses the deck and it still warns.
+        // The stem is one segment long and runs into a bend: its single row cannot
+        // fix a section's two constants, so the graph solve refuses the deck and it
+        // still warns. (Between two junctions: a one-segment run with a free end is
+        // refined into thirds, FND-227, and the graph takes it.)
         let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
         let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
@@ -2680,10 +2688,10 @@ mod tests {
         // The MPIE rejects LD loads, so recommending it here would send the user
         // to a solver that refuses the deck.
         let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         // Neither the load nor a network refuses the section graph any more
-        // (FND-162 stage 5); the one-segment stem does.
+        // (FND-162 stage 5); the one-segment stem between the node and a bend does.
         assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
         assert!(!mpie_compatible_deck(&deck));
         let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))

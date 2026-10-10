@@ -18,6 +18,21 @@ pub(super) enum SolverMode {
 }
 
 impl SolverMode {
+    /// The geometry this mode solves (FND-227): refined at free ends for the Hallén
+    /// family, the deck's own for the MPIE and the experimental bases, which do not
+    /// take the refinement. Exhaustive, so a new mode has to choose.
+    pub(super) fn geometry(
+        self,
+        deck: &nec_model::deck::NecDeck,
+    ) -> Result<Vec<Segment>, nec_solver::GeometryError> {
+        match self {
+            SolverMode::Hallen | SolverMode::Sinusoidal => nec_solver::build_geometry(deck),
+            SolverMode::Pulse | SolverMode::Continuity | SolverMode::Mpie => {
+                nec_solver::build_deck_geometry(deck)
+            }
+        }
+    }
+
     /// Every mode, in the order the CLI lists them. The one enumeration of the
     /// `--solver` axis: parsing and both error messages derive from it, and a
     /// test ties the usage line to it (FND-148). A new variant cannot be left
@@ -1504,9 +1519,12 @@ pub(super) fn solve_frequency_point(
     let negative_r = negative_resistance_warnings(&rows, deck, segs, solver_mode, run_loads);
     let min_feed_re = rows.iter().map(|r| r.z_in.re).reduce(f64::min);
 
+    // One row per deck segment: a refined end's flanks are not the deck's, and its
+    // centre's current is the current at the deck segment's midpoint (FND-227).
     let current_table: Vec<CurrentRow> = segs
         .iter()
         .enumerate()
+        .filter(|(_, seg)| seg.is_deck_segment())
         .map(|(idx, seg)| CurrentRow {
             tag: seg.tag as usize,
             seg: seg.tag_index as usize,

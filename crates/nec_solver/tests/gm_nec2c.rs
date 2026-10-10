@@ -17,11 +17,12 @@
 //! and the `NRPT` reading happen to agree.
 
 use nec_parser::parse;
-use nec_solver::{build_geometry, GeometryError, Segment};
+use nec_solver::{build_deck_geometry, build_geometry, GeometryError, Segment};
 
 fn geometry(src: &str) -> Vec<Segment> {
     let deck = parse(src).expect("deck parses").deck;
-    build_geometry(&deck).expect("geometry builds")
+    // Tests the GM deck expansion nec2c tabulates, so the deck geometry (FND-227).
+    build_deck_geometry(&deck).expect("geometry builds")
 }
 
 fn tags(segs: &[Segment]) -> Vec<u32> {

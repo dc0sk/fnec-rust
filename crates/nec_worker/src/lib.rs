@@ -19,7 +19,7 @@ pub use capability::{Capability, CapabilityCache};
 pub use controller::{DispatchError, LocalWorkerHandle};
 pub use hosts::{HostEntry, HostsConfig, HostsConfigError};
 pub use pool::{DispatchOutcome, WorkerPool};
-pub use protocol::{ErrorCode, Impedance, TaskMessage, TaskResult, WorkerSolverConfig};
+pub use protocol::{ErrorCode, Impedance, TaskMessage, TaskResult, WorkerSolverConfig, MESH};
 pub use ssh_worker::{connect_all, SshWorkerHandle};
 pub use worker::run_worker_stdio;
 

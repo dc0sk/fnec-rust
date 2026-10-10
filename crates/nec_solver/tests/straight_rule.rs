@@ -58,6 +58,14 @@ fn a_wire_split_with_rounded_coordinates_is_one_wire() {
 /// A stepped-radius collinear element (4 mm / 8 mm / 4 mm), fed in the thick
 /// middle. The merge refuses unequal radii, so it is a conductor path, not one
 /// wire; it was −7.35 − j1181 on the plain junction rows. Two meshes, converging.
+///
+/// Against nec2c on a 3× mesh (the feed on segment 3k − 1, the same point),
+/// captured 2026-10-10 — the finest mesh on which the thick segments stay at
+/// least 3 radii long. On a fat wire nec2c's reactance keeps rising with the mesh
+/// (31.98 / 37.10 / 39.13 / 40.84 at 1 / 3 / 5 / 9 × the coarse deck) until the
+/// thin-wire kernel breaks down (27× reads 99.99 − j2.97 on the fine deck); since
+/// FND-227 refined the free ends fnec sits inside that band (76.02 + j39.74,
+/// 76.31 + j40.56), so nec2c on the deck's own mesh was no longer a reference.
 #[test]
 fn a_stepped_radius_element_tracks_nec2c() {
     let element = |a: u32, b: u32| {
@@ -67,11 +75,11 @@ fn a_stepped_radius_element_tracks_nec2c() {
     };
     let coarse = rel(
         z_in(&element(15, 21), (2, 11)),
-        Complex64::new(76.911, 31.976),
+        Complex64::new(76.877, 37.098),
     );
     let fine = rel(
         z_in(&element(30, 41), (2, 21)),
-        Complex64::new(76.897, 35.222),
+        Complex64::new(76.865, 39.710),
     );
     println!(
         "stepped radius: {:.2} % -> {:.2} %",

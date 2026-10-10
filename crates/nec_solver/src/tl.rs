@@ -140,7 +140,9 @@ fn find_center_segment_index(segs: &[Segment], tag: u32) -> Option<(usize, u32, 
         .iter()
         .enumerate()
         .filter_map(|(i, s)| {
-            if s.tag == tag {
+            // The deck's segments: a refined end's flanks would move the middle
+            // this picks (FND-227).
+            if s.tag == tag && s.is_deck_segment() {
                 Some((i, s.tag_index))
             } else {
                 None

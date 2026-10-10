@@ -7,7 +7,7 @@ last_updated: 2026-10-10
 
 # Free-end refinement (FND-227, FND-230)
 
-**Status: design, reviewed (Fable, 2026-10-10) and revised. Nothing here is implemented yet.**
+**Status: implemented in #564 (2026-10-10), after review (Fable). The "As built" section at the end records what the implementation measured.**
 
 ## The defect
 
@@ -146,12 +146,14 @@ the gate is an MPIE pattern value pinned against today's.
 ## Gates
 
 1. **End-fed self-consistency:** the refined end-fed answer is compared with the
-   uniform 3N mesh with the gap on segment 2 (same position, same local mesh). Measured
-   so far: 1.7 % (5 m, 29.98 MHz) and 0.41 % (8.33 m, 18 MHz) in R — the rest of the
-   wire is meshed at h, not h/3, so the two are not the same mesh. **The bound is set
-   from a measured spread over length, radius and N before the gate is written**, not
-   from either case (CPU, GPU, worker alike). Negative control:
-   without refinement the deck is refused (the #562 tripwire).
+   uniform 3N mesh with the gap on segment 2 (the same point). It closes slowly, to
+   about a percent — an impedance this near a free tip converges slowly in every
+   code. Measured (split N vs uniform 3N, 11 / 21 / 41 / 81 segments): 0.5 λ, 1 mm
+   3.40 / 1.97 / 1.44 / 1.23 %; 1 λ 6.5 / 2.9–3.1 / 1.5–2.1 / 1.0–1.6 %; 0.3 λ
+   0.2–0.9 %. Gated at < 2.5 % (λ/42) and < 2 % (λ/82) on the 0.5 λ wire, closing.
+   (A first sweep that modelled the split with explicit split decks was invalid:
+   the product refined those decks' own free ends again, so it measured a mesh the
+   product never builds.)
 2. **FND-230:** end-segment LD changes Z; ΔZ within 15 % of nec2c's ΔZ.
 3. **Dipole accuracy:** the reference dipole at 21 / 51 / 101 within the table's
    values ± 0.05 Ω; corpus references re-captured against nec2c, never relaxed.
@@ -205,3 +207,35 @@ silently. The worker reports a `mesh` field; the controller refuses a mismatch.
 4. Anything in ground contact (`pec_ground_contact` copies `tag_index` to images),
    GM copies of refined wires, or `NT`/`TL` port voltage (`V = v·length`) that this
    misses?
+
+## As built (#564)
+
+- **Every Hallén answer with a free end moved toward nec2c.** The parity sweep: 32
+  of 34 moved cells improve — Hallén vs nec2c on the dipole 9 → 3 %, the two-element
+  array 6 → 2 %, the PEC monopole 5 → 1 %, low-ground Sommerfeld 6–10 → 1–3 %, Hallén
+  vs the MPIE 9 → 2 %. The two that move the other way are the tee (2 → 3 % vs nec2c
+  on the same mesh; 6 → 7 % vs the MPIE, which does not move).
+- **nec2c on the same mesh stopped being the nearer answer** (FND-232). Where a gate
+  compared with nec2c at the deck's own segment count, fnec now converges faster and
+  passes nec2c on the way: the off-centre feed (fnec 375.9 / 380.6 / 381.9, nec2c
+  366.9 / 376.8 / 379.3 at 42 / 126 / 210), the stem-fed Y (both extrapolate to
+  ≈ 20.5 − j1714). Those gates were re-pointed at nec2c on a finer mesh, the feed on
+  the same point (segment k → 27k − 13). Changed tolerances, each with its measurement
+  in the test:
+
+  | gate | before | after |
+  |:--|:--|:--|
+  | graph Y decks (3) | 1 % of nec2c, same mesh | 2 % of nec2c at 27N |
+  | off-centre feed (3) | R ± 6 Ω of nec2c, same mesh | R ± 10 Ω of nec2c at 27N |
+  | loaded-T receive | table under 1 % | table under 1 % without the node segment, which is held under 1 % alone (its 0.50 % does not converge: FND-191) |
+  | loaded gain "must shrink" | always | while above nec2c's 0.01 dB print resolution |
+  | stepped radius | nec2c same mesh | nec2c at 3N (finest with segments ≥ 3 radii) |
+  | `dipole-loaded` external | NEC2DXS500, same mesh | nec2c at 9× |
+
+- **Fixtures built on a one-segment arm with a free end dissolved** (refined, the
+  section graph takes them). Each was rebuilt with the one-segment run between a
+  junction and a bend, still showing what it was written to show.
+- **The MPIE is unchanged:** 59 repo decks under `--solver mpie` byte-identical to
+  main's binary; an impedance and a pattern value pinned.
+- **The sinusoidal basis needed nothing** (FND-231, rejected by measurement).
+

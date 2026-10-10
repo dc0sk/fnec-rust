@@ -962,11 +962,13 @@ fn cells() -> Vec<Cell> {
     // sommerfeld`, …) must be one the run can take — rerunning with it is not refused.
     // FND-209: the negative-resistance caveat sent a --loads-config run to an MPIE that
     // refuses it. Decks chosen to draw caveats: a T with a one-segment arm, a low
-    // dipole over finite ground, a loaded loop, the same with a load from a file.
+    // dipole over finite ground, a loaded loop, the same with a load from a file. The
+    // T's one-segment arm sits between the junction and a bend: a free-end one-segment
+    // arm is refined into thirds (FND-227).
     let caveat_decks: Vec<CaveatDeck> = vec![
         (
             "tee-one-segment-arm",
-            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
             &["--solver mpie"],
         ),
@@ -1003,10 +1005,11 @@ fn cells() -> Vec<Cell> {
             &[],
         ),
         // A junction deck with a load from a file: the topology caveat named the MPIE,
-        // which refuses --loads-config (FND-222, FND-209's shape on another caveat).
+        // which refuses --loads-config (FND-222, FND-209's shape on another caveat). Its
+        // one-segment arm sits between the junction and a bend (FND-227), as above.
         (
             "tee-loads-config",
-            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![("--loads-config", "[[laplace_load]]\ntag = 2\nseg_first = 5\nnumerator = [50.0]\ndenominator = [1.0]\n".into())],
             &[],
         ),
@@ -1143,11 +1146,13 @@ fn cells() -> Vec<Cell> {
             ));
         }
     }
-    // `sweep --resonance` takes a template; the decks that earn a remedy there.
+    // `sweep --resonance` takes a template; the decks that earn a remedy there. The T's
+    // one-segment arm sits between the junction and a bend: a free-end one-segment arm is
+    // refined into thirds (FND-227).
     for (name, template) in [
         (
             "tee-one-segment-arm",
-            "GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\nGW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+            "GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\nGW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\nGW 4 5 -0.5 0 $HALF_LEN -0.5 0.5 $HALF_LEN 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
         ),
         (
             "low-dipole-gn2",

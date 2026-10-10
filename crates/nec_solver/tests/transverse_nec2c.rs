@@ -80,15 +80,18 @@ fn a_slanted_dipole_over_ground_sees_its_image() {
 /// term now takes the images too. Before: 8.4 → 11.4 → 13.0 %, diverging. Kill
 /// criterion: under 5 % at 81 per arm, and shrinking. And it must equal the same
 /// antenna with its image written out as wires in free space, driven −1 V: the
-/// image term IS the doubled problem.
+/// image term IS the doubled problem. Against nec2c on a finer mesh (27× at 41,
+/// 9× at 81 per arm; the apex feed on the same point), captured 2026-10-10: once
+/// FND-227 refined the free ends fnec outran nec2c on the deck's own mesh
+/// (3.35 → 3.47 %, not shrinking); against the finer mesh 2.04 → 1.25 %.
 #[test]
 fn an_inverted_v_over_ground_converges_and_equals_its_explicit_image() {
     let arms = |n: u32| {
         format!("GW 1 {n} 0 0 10 -3.7477 0 6.2523 .001\nGW 2 {n} 0 0 10 3.7477 0 6.2523 .001\n")
     };
     let over = |n: u32| format!("{}GE 1\nGN 1\nEX 0 1 1 0 1 0\n", arms(n));
-    let e41 = rel(z_in(&over(41), (1, 1)), Complex64::new(54.784, 9.434));
-    let e81 = rel(z_in(&over(81), (1, 1)), Complex64::new(55.061, 9.587));
+    let e41 = rel(z_in(&over(41), (1, 1)), Complex64::new(53.401, 9.52));
+    let e81 = rel(z_in(&over(81), (1, 1)), Complex64::new(53.345, 9.50));
     assert_converges("inverted-V over GN 1", e41, e81, 0.05);
 
     let explicit = format!(
@@ -119,9 +122,10 @@ fn perpendicular_wires_couple_and_stay_antisymmetric() {
     };
     let wire2 = |n: u32, gap: f64| -> Vec<Complex64> {
         let (segs, currents) = solve(&deck(n, gap));
+        // nec2c numbers the deck's segments (FND-227).
         segs.iter()
             .zip(&currents)
-            .filter(|(s, _)| s.tag == 2)
+            .filter(|(s, _)| s.tag == 2 && s.is_deck_segment())
             .map(|(_, &i)| i)
             .collect()
     };

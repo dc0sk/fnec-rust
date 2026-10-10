@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Simon Keimer (DC0SK)
 """Smoke tests for fnec_py Python bindings (PH4-CHK-004)."""
 
+import json
 import os
 import warnings
 
@@ -138,6 +139,7 @@ TEE_JUNCTION = """\
 GW 1 11 -5 0 0 0 0 0 0.001
 GW 2 11 0 0 0 5 0 0 0.001
 GW 3 1 0 0 0 0 0 0.5 0.001
+GW 4 5 0 0 0.5 0.5 0 0.5 0.001
 GE
 EX 0 1 6 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
@@ -354,8 +356,12 @@ def test_a_current_source_deck_solves_and_agrees_with_the_cli():
     with open(os.path.join(root, "corpus", "dipole-ex4-freesp-51seg.nec")) as f:
         got = fnec_py.solve_deck_str(f.read())
 
-    assert abs(got["z_re"] - 78.834) < 0.05, got["z_re"]
-    assert abs(got["z_im"] - 42.440) < 0.05, got["z_im"]
+    # Read from the file the CLI's corpus gate reads, so a re-pin moves this
+    # check with it (its copy here had drifted from the corpus before FND-227).
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["dipole-ex4-freesp-51seg"]["feedpoint_impedance"]
+    assert abs(got["z_re"] - want["real_ohm"]) < 0.05, got["z_re"]
+    assert abs(got["z_im"] - want["imag_ohm"]) < 0.05, got["z_im"]
     # And it names the current source, not some other EX card.
     assert (got["tag"], got["seg"]) == (1, 26), got
 
@@ -420,7 +426,8 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
     """
     # A Y junction with a one-segment arm, negative at every point: the section
     # graph refuses a section too short for its two constants, so it keeps the
-    # per-wire fallback (FND-162). The stem-fed Y with three 11-segment arms is
+    # per-wire fallback (FND-162). The run sits between the junction and a bend:
+    # a one-segment arm with a free end is refined into thirds (FND-227). The stem-fed Y with three 11-segment arms is
     # solved correctly now, and before that this was a bent end-to-start chain
     # (FND-167). The test once passed with NO negative point at all, because it
     # allowed "<= 1" and checked the text only "if" there was one. It now
@@ -429,6 +436,7 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
         "CM Y junction with a one-segment arm\nCE\n"
         "GW 1 11 0 0 0 0 0 3 .001\n"
         "GW 2 1 0 0 3 -1 0 4 .001\n"
+        "GW 4 5 -1 0 4 -1 0 5 .001\n"
         "GW 3 11 0 0 3 2 0 5 .001\n"
         "GE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
     )
@@ -524,7 +532,10 @@ def test_a_monopole_on_pec_ground_solves():
     got = fnec_py.solve_deck_str(
         "GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 1\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n"
     )
-    assert abs(got["z_re"] - 39.30) < 0.05, got["z_re"]
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["monopole-pec-26seg"]["feedpoint_impedance"]
+    assert abs(got["z_re"] - want["real_ohm"]) < 0.05, got["z_re"]
 
 
 # A λ/2 dipole receiving a linear plane wave from θ=30°, φ=0 (EX 1). It has an EX

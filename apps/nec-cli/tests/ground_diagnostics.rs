@@ -58,8 +58,8 @@ fn gn0_is_active_without_deferred_warning() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 78.83).abs() > 0.5,
-        "GN0 should alter impedance vs free-space (~78.83 Ω), got Z_RE={z_re}"
+        (z_re - 79.33).abs() > 0.5,
+        "GN0 should alter impedance vs free-space (~79.33 Ω), got Z_RE={z_re}"
     );
 }
 
@@ -128,14 +128,15 @@ fn ge1_without_gn_infers_pec_ground() {
     // again (was 73.86 + j12.23): the free-end rows no longer shorten the wire.
     // FND-158 once more (was 77.41 + j41.67): the image makes the current
     // asymmetric, which the cos-only homogeneous term could not represent.
+    // FND-227 (was 74.28 + j40.20): free wire ends refined into thirds.
     // nec2c: 74.79 + j43.94.
     assert!(
-        (z_re - 74.283392).abs() < 0.05,
-        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~74.28"
+        (z_re - 74.763337).abs() < 0.05,
+        "Z_RE mismatch for GE1 PEC deck: got {z_re}, expected ~74.76"
     );
     assert!(
-        (z_im - 40.197738).abs() < 0.05,
-        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~40.20"
+        (z_im - 42.775033).abs() < 0.05,
+        "Z_IM mismatch for GE1 PEC deck: got {z_im}, expected ~42.78"
     );
 }
 
@@ -227,10 +228,11 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
         .expect("no feedpoint row in output");
 
     // PH9-CHK-006: corrected after the ground-image sign fix (was 78.17);
-    // FND-156 end-row fix (was 72.86); FND-158 sin homogeneous term (was 77.04).
+    // FND-156 end-row fix (was 72.86); FND-158 sin homogeneous term (was 77.04);
+    // FND-227 free ends refined into thirds (was 75.99).
     assert!(
-        (z_re - 75.986529).abs() < 0.05,
-        "GN2 regression mismatch: got Z_RE={z_re}, expected ~75.99"
+        (z_re - 76.472132).abs() < 0.05,
+        "GN2 regression mismatch: got Z_RE={z_re}, expected ~76.47"
     );
 }
 
@@ -362,8 +364,8 @@ fn gn_negative1_null_ground_is_silent_free_space() {
         .expect("no feedpoint row in output");
 
     assert!(
-        (z_re - 78.83).abs() < 0.1,
-        "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~78.83 (free-space)"
+        (z_re - 79.33).abs() < 0.1,
+        "Z_RE mismatch for GN -1 deck: got {z_re}, expected ~79.33 (free-space)"
     );
 }
 
@@ -505,13 +507,14 @@ fn near_ground_wire_with_active_ground_runs_without_deferred_warning() {
 
     // PH9-CHK-006: corrected after the ground-image sign fix (was 69.44). This
     // near-ground vertical dipole gains resistance from ground. Under the default
-    // reflection-coefficient model fnec's delta is +13.9 Ω against nec2c's +18.0;
+    // reflection-coefficient model fnec's delta is +14.0 Ω against nec2c's +18.0;
     // with --ground-solver sommerfeld it is +17.8. (This pin read 97.16, a +18.3
     // delta, between FND-156 and FND-158: the cos-only homogeneous term's error
-    // cancelled the RCM model's, and the match was coincidence.)
+    // cancelled the RCM model's, and the match was coincidence. 92.73 until
+    // FND-227 refined the free ends.)
     assert!(
-        (z_re - 92.725245).abs() < 0.05,
-        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~92.73"
+        (z_re - 93.369842).abs() < 0.05,
+        "near-ground GN2 regression mismatch: got Z_RE={z_re}, expected ~93.37"
     );
 }
 

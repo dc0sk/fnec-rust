@@ -1047,6 +1047,7 @@ pub fn segments_for_farfield(geom: &MpieGeometry) -> Vec<Segment> {
             direction: s.tangent,
             length: s.len,
             radius: geom.radius,
+            part: crate::geometry::SegmentPart::Whole,
         })
         .collect()
 }

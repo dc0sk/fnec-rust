@@ -55,13 +55,20 @@ const OFF_CENTRE: &str =
     "CE\nGW 1 42 0 0 0 11.661903789690601 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
 /// 0.55 λ wire fed at a quarter of its length. Was 324.12 + j463.78.
+///
+/// Against nec2c on a 27× mesh (1134 segments, the feed on segment 284: the
+/// same point), captured 2026-10-10: nec2c on the deck's own 42 segments reads
+/// 366.93 + j483.11, 4.4 % short of it, and both codes converge up to it (fnec
+/// 375.87 / 380.58 / 381.91, nec2c 366.93 / 376.76 / 379.31 at 42 / 126 / 210).
+/// Since FND-227 refined the free ends fnec is the nearer, 2.1 % (−7.9 Ω), so the
+/// R bound is 10 Ω — it was 6 Ω against nec2c on the same mesh.
 #[test]
 fn an_off_centre_feed_tracks_nec2c() {
     assert_near(
         "off-centre",
         z_hallen(OFF_CENTRE),
-        (366.93, 483.11),
-        (6.0, 15.0),
+        (383.78, 489.27),
+        (10.0, 15.0),
     );
 }
 
@@ -76,7 +83,12 @@ fn an_off_centre_feed_tracks_nec2c_on_the_sinusoidal_basis() {
     let sol = solve_hallen_sinusoidal_basis(&z, &rhs.rhs, &rhs.cos_vec, &rhs.sin_vec, &ep, &j)
         .expect("solves");
     let zin = Complex64::new(1.0, 0.0) / sol.currents[idx];
-    assert_near("off-centre, sinusoidal", zin, (366.93, 483.11), (6.0, 15.0));
+    assert_near(
+        "off-centre, sinusoidal",
+        zin,
+        (383.78, 489.27),
+        (10.0, 15.0),
+    );
 }
 
 /// A vertical λ/2 dipole 0.5 m over perfect ground — image theory is exact, so
@@ -114,8 +126,10 @@ fn an_off_centre_feed_on_a_conductor_path_tracks_nec2c() {
     assert_near(
         "off-centre path",
         z_hallen(d),
-        (366.96, 483.16),
-        (6.0, 15.0),
+        // nec2c on a 27× mesh, as the straight wire above (366.96 + j483.16 on
+        // the deck's own mesh).
+        (383.81, 489.32),
+        (10.0, 15.0),
     );
 }
 

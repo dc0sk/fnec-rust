@@ -251,6 +251,7 @@ fn process_task(line: &str) -> TaskResult {
                 feedpoint_current_mag: fp.current_mag,
                 feedpoint_current_phase_deg: fp.current_phase_deg,
                 exec_used: fp.exec_used,
+                mesh: crate::protocol::MESH.to_string(),
                 warnings: fp.warnings,
             }
         }

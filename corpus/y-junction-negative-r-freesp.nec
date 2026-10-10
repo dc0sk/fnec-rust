@@ -1,14 +1,17 @@
-CM Y junction whose second arm is one segment long: a degree-3 junction the
-CM section-graph Hallen solve refuses (FND-162), because a one-segment section
-CM has one collocation row for its two constants. It falls back to the per-wire
-CM basis and solves to a negative resistance (Re Z = -5.441 ohm at 14.2 MHz) - a
-CM fixture for the negative-resistance caveat and the infinite-VSWR worker path,
-CM which need a deck the solver still gets wrong. It replaces the stem-fed Y with
-CM three 11-segment arms, which the section graph now solves (20.74 - j1700 ohm
-CM against nec2c's 23.66 - j1756), and before that an inverted-V (FND-167).
+CM Y junction whose second arm runs one segment and then bends: a degree-3
+CM junction the section-graph Hallen solve refuses (FND-162), because a
+CM one-segment section has one collocation row for its two constants. It falls
+CM back to the per-wire basis and solves to a negative resistance (Re Z = -5.127
+CM ohm at 14.2 MHz) - a fixture for the negative-resistance caveat and the
+CM infinite-VSWR worker path, which need a deck the solver still gets wrong. The
+CM one-segment run sits between the node and a bend: until FND-227 it was a
+CM one-segment arm with a free tip (Re Z = -5.441), which the free-end refinement
+CM now splits into thirds and the section graph solves. Before that, a stem-fed Y
+CM with three 11-segment arms, and an inverted-V (FND-167).
 CE
 GW 1 11 0 0 0 0 0 3 .001
 GW 2 1 0 0 3 -1 0 4 .001
+GW 4 5 -1 0 4 -1 0 5 .001
 GW 3 11 0 0 3 2 0 5 .001
 GE 0
 EX 0 1 1 0 1.0 0.0
