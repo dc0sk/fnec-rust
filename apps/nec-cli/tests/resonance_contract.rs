@@ -268,10 +268,12 @@ fn a_resonance_search_refuses_what_every_frontend_refuses() {
 /// refused as an unknown sweep option (FND-218, the sibling of FND-217). The
 /// search runs Hallén only, so the remedy is to check the value it finds on the
 /// main command. A T with a one-segment arm earns the topology caveat.
+/// The one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
 #[test]
 fn a_resonance_search_names_only_remedies_it_can_take() {
     let t =
-        "GW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\n";
+        "GW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\n\
+             GW 4 5 -0.5 0 $HALF_LEN -0.5 0.5 $HALF_LEN 0.001\n";
     let out = search("tee", t, "FR 0 1 0 0 14.2 0");
     let stderr = String::from_utf8_lossy(&out.stderr);
     // Once: the search prints its caveats itself, and its probes used to repeat

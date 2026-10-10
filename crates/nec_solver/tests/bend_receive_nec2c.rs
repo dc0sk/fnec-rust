@@ -36,14 +36,16 @@ fn receive(geometry: &str, wave: &str) -> Vec<Complex64> {
     let d = deck(geometry, wave);
     let segs = build_geometry(&d).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&d));
-    solve_hallen_planewave_routed(
+    let currents = solve_hallen_planewave_routed(
         &d,
         &segs,
         &z,
         FREQ,
         &nec_solver::build_deck_stamps(&d, &segs, FREQ).diagonal,
     )
-    .expect("receive solve")
+    .expect("receive solve");
+    // nec2c numbers the deck's segments (FND-227).
+    nec_solver::deck_values(&segs, &currents)
 }
 
 /// Max over the gated segments (1-based, nec2c numbering) of |ΔI| / peak |I_nec2c|.

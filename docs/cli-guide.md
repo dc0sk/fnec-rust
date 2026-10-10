@@ -217,13 +217,15 @@ old per-wire fallback and is **warned about, not blocked**; the warning names
 is reported as an explicit warning, since a passive antenna cannot have one
 (PH9-CHK-005).
 
-**A source or `TL`/`NT` port on the segment at a free wire end is refused**
-(FND-227): there it lies wholly in the solve's homogeneous solution, so the solve
-cannot see it — the answer was ~10¹⁰ Ω. Move it one segment in (a different
-antenna: the gap is a segment further in), or make the end segment a short wire of
-its own, 3 segments, and feed its middle one. A source beside a bend or a junction
-is not affected. An `LD` load on a free-end segment is not yet refused and has no
-effect (FND-230).
+**Free wire ends are refined** (FND-227): every segment at a free wire end — an end
+no other segment shares, and not on the ground plane over a ground — is split into
+three equal thirds for the Hallén and sinusoidal solves. The deck's segment is the
+middle third: same tag and number, same midpoint, so `EX`, `LD`, `TL`, `NT` and `PT`
+cards, the CURRENTS block and the FEEDPOINTS rows mean what they did. A source, load
+or port on an end segment is therefore seen (it was not: ~10¹⁰ Ω, or no effect), and
+every answer moves toward nec2c — the 51-segment dipole above reads
+79.33 + j45.04 Ω. A deck solves two segments more per free end. The MPIE solves the
+deck's own segments.
 
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
@@ -232,7 +234,7 @@ accepted for backward compatibility and silently ignored.
 Validated result — 51-segment λ/2 dipole, 14.2 MHz:
 
 ```
-78.834228 + j42.439515 Ω  (Python MoM reference: 78.825 + j42.435 Ω; nec2c: 79.35 + j46.22 Ω)
+79.331456 + j45.036813 Ω  (nec2c: 79.35 + j46.22 Ω; 78.834 + j42.440 before FND-227 refined the free ends)
 ```
 
 ### `pulse` (EXPERIMENTAL — opt-in only)
@@ -291,7 +293,7 @@ vector and scalar potentials separately. It solves:
   reaches or crosses the `z = 0` plane is rejected.
 
 On the 51-segment λ/2 dipole the MPIE gives 79.15 + j45.95 Ω, against
-Hallén's 78.83 + j42.44 Ω and nec2c's 79.35 + j46.22 Ω. It is now the most accurate
+Hallén's 79.33 + j45.04 Ω and nec2c's 79.35 + j46.22 Ω. It is now the most accurate
 solver in fnec: 8.20 + j55.78 Ω on the 5-element Yagi (nec2c 8.17 + j56.54) and
 67.44 − j63.68 Ω on a Y-junction (nec2c 67.22 − j63.03; 65.44 − j61.60 before the
 centred feed, FND-224). Until FND-157 it read

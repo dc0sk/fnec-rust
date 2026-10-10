@@ -23,9 +23,7 @@
 
 use nec_parser::parse;
 use nec_solver::validate;
-use nec_solver::{
-    assemble_z_matrix_with_ground, build_excitation, build_geometry, ground_model_from_deck,
-};
+use nec_solver::{assemble_z_matrix_with_ground, build_excitation, ground_model_from_deck};
 use num_complex::Complex64;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -89,7 +87,7 @@ fn solve_structure(
     freq_hz: f64,
     solver: nec_solver::validate::SolverKind,
 ) -> Result<SolvedStructure, String> {
-    let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
     }
@@ -411,7 +409,7 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     // One line for the whole sweep. The cause is a property of the geometry,
     // fixed across the run, so repeating it per point restated a `z_re` the
     // record already carries.
-    let segs = nec_solver::build_geometry(&result.deck)
+    let segs = nec_solver::geometry_for(&result.deck, solver)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     if let Some(w) = nec_solver::validate::swept_negative_resistance_caveat(
         &z_res,
@@ -460,7 +458,13 @@ fn solve_currents_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult
     emit_warnings(py, &solved.warnings, &mut seen)?;
 
     let rows = pyo3::types::PyList::empty(py);
-    for (seg, i) in solved.segs.iter().zip(&solved.wire) {
+    // One row per deck segment: a refined end's flanks are not the deck's (FND-227).
+    for (seg, i) in solved
+        .segs
+        .iter()
+        .zip(&solved.wire)
+        .filter(|(seg, _)| seg.is_deck_segment())
+    {
         let row = PyDict::new(py);
         row.set_item("tag", seg.tag)?;
         row.set_item("seg", seg.tag_index)?;

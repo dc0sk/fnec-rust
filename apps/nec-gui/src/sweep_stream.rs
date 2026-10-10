@@ -225,8 +225,10 @@ mod tests {
         // position were pinned; content and wiring were not, and replacing both
         // aggregate sends with the *geometry* producer passed the entire suite.
         //
-        // A Y the section graph refuses sweeps negative at every point.
-        const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // A Y the section graph refuses sweeps negative at every point. Its one-segment arm
+        // sits between the junction and a bend: a free-end one-segment arm is refined into
+        // thirds (FND-227).
+        const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 4 5 -1 0 4 -1 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let msgs = run(BENT_NEGATIVE_R, 13.8, 14.6, 0.2);
         assert!(
             matches!(msgs.last(), Some(Message::SweepStreamDone(_))),

@@ -392,7 +392,7 @@ pub fn deck_warnings(deck_text: &str, solver: SolverKind) -> Vec<String> {
         return Vec::new();
     };
     let deck = &parsed.deck;
-    let Ok(segs) = build_geometry(deck) else {
+    let Ok(segs) = nec_solver::geometry_for(deck, solver) else {
         return Vec::new();
     };
     let ground = ground_model_from_deck(deck);
@@ -414,7 +414,7 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let deck = &parsed.deck;
 
     // --- geometry & excitation -------------------------------------------
-    let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
 
     // --- frequency -------------------------------------------------------
@@ -713,7 +713,7 @@ impl SweepJob {
 
         let parsed = parse(deck_text).map_err(|e| e.to_string())?;
         let deck = parsed.deck;
-        let segs = build_geometry(&deck).map_err(|e| e.to_string())?;
+        let segs = nec_solver::geometry_for(&deck, solver).map_err(|e| e.to_string())?;
         let ground = ground_model_from_deck(&deck);
         // Reject geometry the solver cannot honestly take, before queueing a whole
         // sweep of solves on it — and before the excitation, in the CLI's order.
@@ -986,9 +986,12 @@ pub fn current_distribution_deck_str(
 
     let mut pos: f64 = 0.0;
     let mut prev_mid: Option<[f64; 3]> = None;
+    // One point per deck segment: a refined end's flanks are not the deck's, and
+    // its centre's current is the current at the deck segment's midpoint (FND-227).
     let points = segs
         .iter()
         .zip(currents.iter())
+        .filter(|(seg, _)| seg.is_deck_segment())
         .enumerate()
         .map(|(idx, (seg, &i))| {
             if let Some(p) = prev_mid {
@@ -1040,7 +1043,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
-    let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
     let ground = ground_model_from_deck(deck);
     // The currents/pattern views share this path; they must refuse the same decks
     // the impedance view does rather than draw a plausible-looking wrong pattern.
@@ -1096,8 +1099,9 @@ mod tests {
     // An inverted-V fed away from the apex — a genuine junction. Solves to a
     // negative feedpoint resistance on the Hallén path, which is physically
     // impossible for a passive antenna. Before FND-014 the GUI reported that
-    // number with no caveat at all.
-    const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    // number with no caveat at all. The one-segment arm sits between the junction
+    // and a bend: a free-end one-segment arm is refined into thirds (FND-227).
+    const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 4 5 -1 0 4 -1 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     #[test]
@@ -1155,6 +1159,20 @@ mod tests {
     // The corpus reference for `dipole-ex4-freesp-51seg`, pinned under PH8-CHK-001:
     // the current-source feedpoint Z = V_port/i0 equals the voltage-source dipole
     // impedance, which is the internal consistency that path is validated against.
+    /// The corpus-pinned feedpoint impedance of `case`, from the file the CLI's
+    /// corpus gate reads: a re-pin moves this check with it (its copies here had
+    /// drifted from the corpus before FND-227 moved both).
+    fn corpus_z(case: &str) -> (f64, f64) {
+        let refs: serde_json::Value =
+            serde_json::from_str(include_str!("../../../corpus/reference-results.json"))
+                .expect("reference-results.json parses");
+        let z = &refs["cases"][case]["feedpoint_impedance"];
+        (
+            z["real_ohm"].as_f64().expect("real_ohm"),
+            z["imag_ohm"].as_f64().expect("imag_ohm"),
+        )
+    }
+
     const EX4_DECK: &str = "CM current-source feed\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 4 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     #[test]
@@ -1164,9 +1182,10 @@ mod tests {
         // the corpus value the CLI produces, so the two frontends cannot drift.
         let r = solve_deck_str(EX4_DECK, SolverKind::Hallen)
             .expect("the GUI can price a current source now");
+        let (re, im) = corpus_z("dipole-ex4-freesp-51seg");
         assert!(
-            (r.z_re - 78.834).abs() < 0.05 && (r.z_im - 42.440).abs() < 0.05,
-            "GUI disagrees with the CLI's corpus value: {} + j{}",
+            (r.z_re - re).abs() < 0.05 && (r.z_im - im).abs() < 0.05,
+            "GUI disagrees with the CLI's corpus value {re} + j{im}: {} + j{}",
             r.z_re,
             r.z_im
         );
@@ -1284,8 +1303,9 @@ mod tests {
         // A degree-3 T over GN 2 — a bend is merged into one conductor path and
         // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
         // an empty strip and prove nothing. Its stem is one segment long, because a T the section
-        // graph takes (FND-162) earns no topology caveat either.
-        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // graph takes (FND-162) earns no topology caveat either. The stem sits between the
+        // junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
+        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGW 4 5 0 0 1.134 0.5 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
         let strip = deck_warnings(LOW_TEE, SolverKind::Hallen);
         let panel = job.geometry_caveats();
@@ -1431,7 +1451,11 @@ mod tests {
         assert!(err.contains("ground plane"), "unexpected: {err}");
         // ...and the GUI solves a ground-mounted monopole as the CLI does.
         let mono = solve_deck_str(MONOPOLE_ON_PEC, SolverKind::Hallen).expect("monopole solves");
-        assert!((mono.z_re - 39.30).abs() < 0.05, "monopole {mono:?}");
+        let (re, _) = corpus_z("monopole-pec-26seg");
+        assert!(
+            (mono.z_re - re).abs() < 0.05,
+            "monopole {mono:?} against {re}"
+        );
         // Negative control: a clean deck still solves, with nothing to report.
         let ok = solve_deck_str(GOOD_DIPOLE, SolverKind::Hallen)
             .expect("a clean dipole must still solve");
@@ -1498,9 +1522,11 @@ mod tests {
             low.warnings
         );
         // A degree-3 junction must still be flagged, and must point at the MPIE
-        // in *this* frontend's terms — a GUI user has a picker, not a flag.
+        // in *this* frontend's terms — a GUI user has a picker, not a flag. The
+        // one-segment stem sits between the junction and a bend: a free-end
+        // one-segment arm is refined into thirds (FND-227).
         let tee = solve_deck_str(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
             SolverKind::Hallen,
         )
         .expect("a T junction the section graph refuses solves, unreliably");
@@ -1557,7 +1583,9 @@ mod tests {
     /// never saw: it says the numbers on screen are unreliable.
     #[test]
     fn deck_warnings_carries_the_unreliable_topology_caveat() {
-        let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        // The one-segment stem sits between the junction and a bend: a free-end
+        // one-segment arm is refined into thirds (FND-227).
+        let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
         let w = deck_warnings(tee, SolverKind::Hallen);
         assert!(
             w.iter().any(|m| m.contains(GUI_MPIE_REMEDY)),

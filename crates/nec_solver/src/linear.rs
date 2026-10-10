@@ -446,13 +446,14 @@ pub struct BendLayout {
 /// a segment inside the wire at each end — every wire was modelled one segment
 /// short. On the corpus half-wave dipole that is 74.24+j13.90 Ω against nec2c's
 /// 79.35+j46.22 Ω; with this row it is 78.83+j42.44 Ω. The remaining reactance gap
-/// to nec2c at the same segment count is 7.0, 3.8, 2.2 and 1.4 Ω at N = 25, 51, 101
-/// and 201 — first-order in 1/N, from the pulse basis itself rather than the end
-/// row. (Quadratic extrapolation, weights (15, −10, 3)/8, gives 79.15+j43.93 at
-/// N = 51: 1.5 Ω closer, for a third neighbour per end and a three-segment minimum.
-/// Not shipped; recorded so it is not later rediscovered as a defect.) The offset
-/// had been explained three different ways in three documents, and it was never
-/// ablated.
+/// to nec2c at the same segment count was 7.0, 3.8, 2.2 and 1.4 Ω at N = 25, 51, 101
+/// and 201 — first-order in 1/N. Most of it was the coarse end segment, not the
+/// pulse basis as this comment once said: refining each free end into thirds
+/// (FND-227, `build_geometry`) brings the dipole to 79.33+j45.04 at N = 51, a gap of
+/// 1.2 Ω (2.4 / 0.7 Ω at 21 / 101). (Quadratic extrapolation, weights (15, −10, 3)/8,
+/// gave 79.15+j43.93 at N = 51 before the refinement, for a third neighbour per end
+/// and a three-segment minimum; not shipped.) The offset had been explained three
+/// different ways in three documents, and it was never ablated.
 ///
 /// The weights come from the geometry of the extrapolation. The end segment's
 /// midpoint lies `h_end/2` inside the physical end and `(h_end + h_inner)/2` from

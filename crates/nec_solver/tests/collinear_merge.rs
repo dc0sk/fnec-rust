@@ -100,6 +100,13 @@ fn geom(cards: Vec<Card>) -> Vec<Segment> {
     build_geometry(&d).unwrap()
 }
 
+/// The deck's own expansion, unsplit at free ends (FND-227).
+fn deck_geom(cards: Vec<Card>) -> Vec<Segment> {
+    let mut d = NecDeck::new();
+    d.cards = cards;
+    build_deck_geometry(&d).unwrap()
+}
+
 #[test]
 fn merge_is_noop_for_single_wire() {
     let segs = geom(vec![Card::Gw(GwCard {
@@ -168,7 +175,8 @@ fn merge_is_noop_for_stepped_radius() {
 
 #[test]
 fn merge_joins_collinear_same_radius_chain() {
-    let segs = geom(vec![
+    // Tests the deck expansion's segment ranges, so the deck geometry (FND-227).
+    let segs = deck_geom(vec![
         Card::Gw(GwCard {
             tag: 1,
             segments: 10,
@@ -244,14 +252,16 @@ fn collinear_chain_recovers_single_wire_plane_wave_currents() {
     let induced = |deck: &NecDeck| -> Vec<Complex64> {
         let segs = build_geometry(deck).unwrap();
         let z = assemble_z_matrix_with_ground(&segs, FREQ, &GroundModel::FreeSpace);
-        solve_hallen_planewave_routed(
+        let currents = solve_hallen_planewave_routed(
             deck,
             &segs,
             &z,
             FREQ,
             &nec_solver::build_deck_stamps(deck, &segs, FREQ).diagonal,
         )
-        .expect("a collinear split is one conductor, not a junction")
+        .expect("a collinear split is one conductor, not a junction");
+        // nec2c numbers the deck's segments (FND-227).
+        deck_values(&segs, &currents)
     };
 
     let i_whole = induced(&whole);
@@ -260,7 +270,8 @@ fn collinear_chain_recovers_single_wire_plane_wave_currents() {
     assert_eq!(i_split.len(), 50);
 
     // The split really is a split: two `GW` cards that merge to one conductor.
-    let split_segs = build_geometry(&split).unwrap();
+    // Tests the deck expansion, so the deck geometry (FND-227).
+    let split_segs = build_deck_geometry(&split).unwrap();
     assert_eq!(wire_endpoints_from_segs(&split_segs).len(), 2);
     assert_eq!(merge_collinear_wire_endpoints(&split_segs), vec![(0, 49)]);
 

@@ -67,6 +67,10 @@ fn feed(n: u32) -> String {
 /// The T drawn either way is the same antenna, to every digit, and it converges
 /// on nec2c: 3.7 → 1.7 % at 21 → 41 (34.94 − j108.28 and 35.07 − j105.63 against
 /// 35.40 − j104.24 and 35.31 − j103.76). Before: 12.3 − j1123 drawn through.
+/// Against nec2c on a 27× mesh (the feed on segment 27k − 13, the same point),
+/// captured 2026-10-10: once FND-227 refined the free ends fnec outran nec2c on
+/// the deck's own mesh (0.24 → 0.37 %, not shrinking); against 27N it is
+/// 1.63 → 1.01 % (35.17 − j104.36 and 35.18 − j103.38).
 #[test]
 fn a_t_drawn_through_a_bar_joint_is_the_t() {
     for n in [21, 41] {
@@ -85,11 +89,11 @@ fn a_t_drawn_through_a_bar_joint_is_the_t() {
     }
     let e21 = rel(
         z_in(&format!("{}{}", t_drawn_through(21), feed(21)), (2, 11)),
-        Complex64::new(35.402, -104.24),
+        Complex64::new(35.195, -102.59),
     );
     let e41 = rel(
         z_in(&format!("{}{}", t_drawn_through(41), feed(41)), (2, 21)),
-        Complex64::new(35.312, -103.76),
+        Complex64::new(35.184, -102.28),
     );
     assert!(
         e41 < 0.03 && e41 < e21,

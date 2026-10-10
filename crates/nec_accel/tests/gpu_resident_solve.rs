@@ -56,7 +56,8 @@ fn build_dipole() -> (
     }));
 
     let segs = build_geometry(&deck).expect("geometry should build");
-    assert_eq!(segs.len(), 51);
+    // The deck's 51 segments, its two free ends refined into thirds (FND-227).
+    assert_eq!(segs.len(), 55);
     let rhs = build_hallen_rhs(&deck, &segs, freq_hz).expect("rhs should build");
     let wire_endpoints = vec![(0usize, segs.len() - 1)];
     (segs, rhs, wire_endpoints)

@@ -78,6 +78,7 @@ fn pec_image_farfield(seg: &Segment) -> Segment {
         direction: [-seg.direction[0], -seg.direction[1], seg.direction[2]],
         length: seg.length,
         radius: seg.radius,
+        part: seg.part,
     }
 }
 
@@ -924,6 +925,7 @@ mod tests {
             direction: [1.0, 0.0, 0.0],
             length: 1.0,
             radius: 0.001,
+            part: crate::geometry::SegmentPart::Whole,
         }
     }
 
@@ -1049,6 +1051,7 @@ mod tests {
             direction: [0.0, 0.0, 1.0],
             length,
             radius: 1e-4,
+            part: crate::geometry::SegmentPart::Whole,
         };
         let i = vec![Complex64::new(1.0, 0.0)];
         (vec![seg], i)
@@ -1138,6 +1141,7 @@ mod tests {
             direction: [0.0, 0.0, 1.0],
             length: 2.0,
             radius: 1e-4,
+            part: crate::geometry::SegmentPart::Whole,
         };
         let img = pec_image_farfield(&seg);
         // Position reflected about z = 0.
@@ -1160,6 +1164,7 @@ mod tests {
             direction: [1.0, 0.0, 0.0],
             length: 2.0,
             radius: 1e-4,
+            part: crate::geometry::SegmentPart::Whole,
         };
         let img = pec_image_farfield(&seg);
         // Position reflected: z negated.

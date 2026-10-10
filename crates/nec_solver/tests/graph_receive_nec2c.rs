@@ -32,14 +32,16 @@ fn receive(geometry: &str, wave: &str) -> Vec<Complex64> {
     .deck;
     let segs = build_geometry(&deck).expect("geometry");
     let z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
-    solve_hallen_planewave_routed(
+    let currents = solve_hallen_planewave_routed(
         &deck,
         &segs,
         &z,
         FREQ,
         &nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal,
     )
-    .expect("receive solve")
+    .expect("receive solve");
+    // nec2c numbers the deck's segments: compare at those (FND-227).
+    nec_solver::deck_values(&segs, &currents)
 }
 
 /// Max over the pinned segments (1-based) of |ΔI| / peak |I_nec2c|.
@@ -151,6 +153,17 @@ fn routed(text: &str, loads: Option<Vec<Complex64>>) -> nec_solver::HallenRouted
     nec_solver::solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("routed solve")
 }
 
+/// The geometry `routed` solves `text` on.
+fn segs_of(text: &str) -> Vec<nec_solver::Segment> {
+    build_geometry(&nec_parser::parse(text).expect("parses").deck).expect("geometry")
+}
+
+/// `routed`'s currents at the deck's segments.
+fn routed_deck_currents(text: &str) -> Vec<Complex64> {
+    // nec2c numbers the deck's segments: compare at those (FND-227).
+    nec_solver::deck_values(&segs_of(text), &routed(text, None).currents)
+}
+
 fn tee(n: u32) -> String {
     format!("GW 1 {n} 0 0 0 0 0 4 .001\nGW 2 {n} 0 0 4 -3 0 4 .001\nGW 3 {n} 0 0 4 3 0 4 .001\n")
 }
@@ -163,43 +176,60 @@ fn deck_text(geometry: &str, cards: &str) -> String {
 /// bar, against nec2c at two meshes (the load at the same fraction of the bar).
 /// It was refused as an `LD` card and — as a CLI `--loads-config` load — solved
 /// over the plain basis's stamps, 25 % off. Kill criterion: under 1 % at 41,
-/// shrinking. Measured 0.96 → 0.68 % over the whole table.
+/// shrinking. Measured 0.96 → 0.68 % over the whole table against nec2c on the
+/// same mesh; since FND-227 refined the free ends, fnec outruns nec2c there, so
+/// the table is nec2c on a 27× mesh (segment j → 27j − 13, the same point),
+/// captured 2026-10-10: 0.49 → 0.32 % without the node segment, which is held to
+/// the bound on its own (below).
 #[test]
 fn a_loaded_t_receives_like_nec2c() {
     let wave = "EX 1 1 1 0 90 0 0\n";
     let e = |n: u32, seg: u32, peak: f64, refs: &[(usize, f64, f64)]| {
         let text = deck_text(&tee(n), &format!("LD 4 2 {seg} {seg} 300 0\n{wave}"));
-        err(&routed(&text, None).currents, peak, refs)
+        err(&routed_deck_currents(&text), peak, refs)
     };
     let e21 = e(
         21,
         5,
-        6.336_284e-3,
+        6.375_693e-3,
         &[
-            (1, -4.2607e-05, -4.1899e-04),
-            (11, -6.2857e-04, -5.2966e-03),
-            (21, -9.3431e-04, -6.0907e-03),
-            (22, -1.1972e-03, -2.4934e-03),
-            (26, -1.2263e-03, -1.9998e-03),
-            (43, 2.4966e-04, -3.4445e-03),
-            (63, 9.0293e-06, -1.2748e-04),
+            (1, -4.4471e-05, -4.3836e-04),
+            (11, -6.2995e-04, -5.3267e-03),
+            (22, -1.1981e-03, -2.5080e-03),
+            (26, -1.2438e-03, -1.9993e-03),
+            (43, 2.4978e-04, -3.4735e-03),
+            (63, 9.4342e-06, -1.3432e-04),
         ],
     );
     let e41 = e(
         41,
         10,
-        6.362_046e-3,
+        6.399_255e-3,
         &[
-            (1, -2.3438e-05, -2.3575e-04),
-            (21, -6.1760e-04, -5.3173e-03),
-            (41, -9.1788e-04, -6.0938e-03),
-            (42, -1.1651e-03, -2.5520e-03),
-            (51, -1.2022e-03, -1.9799e-03),
-            (83, 2.4141e-04, -3.4685e-03),
-            (123, 4.8818e-06, -7.1679e-05),
+            (1, -2.4693e-05, -2.4883e-04),
+            (21, -6.1894e-04, -5.3444e-03),
+            (42, -1.1673e-03, -2.5669e-03),
+            (51, -1.2159e-03, -1.9830e-03),
+            (83, 2.4246e-04, -3.4944e-03),
+            (123, 5.1742e-06, -7.6236e-05),
         ],
     );
     assert_converges("loaded T", e21, e41, 0.01);
+    // The stem's segment at the T node, apart: its error is the junction
+    // condition's (fnec closes a node with equal potential, NEC-2 with Wu–King's
+    // equal charge density, FND-191) and does not shrink — 0.497 % at 21, 0.503 %
+    // at 41 — so in the table it set a floor the rest of it is below.
+    let node21 = e(21, 5, 6.375_693e-3, &[(21, -9.3535e-04, -6.1324e-03)]);
+    let node41 = e(41, 10, 6.399_255e-3, &[(41, -9.1906e-04, -6.1337e-03)]);
+    println!(
+        "loaded T, node segment: {:.2} % / {:.2} %",
+        node21 * 100.0,
+        node41 * 100.0
+    );
+    assert!(
+        node21 < 0.01 && node41 < 0.01,
+        "node segment {node21:.4} / {node41:.4}"
+    );
 }
 
 /// A 1 λ loop with a 100 + j50 Ω load mid-side, lit broadside. Kill criterion:
@@ -213,7 +243,7 @@ fn a_loaded_loop_receives_like_nec2c() {
             &square_loop(n),
             &format!("LD 4 2 {mid} {mid} 100 50\n{wave}"),
         );
-        err(&routed(&text, None).currents, peak, refs)
+        err(&routed_deck_currents(&text), peak, refs)
     };
     let e21 = e(
         21,
@@ -261,7 +291,8 @@ fn a_loaded_receive_is_the_unloaded_one_compensated() {
     .currents;
     let unloaded = routed(&deck_text(&tee(21), wave), None).currents;
     let g = routed(&deck_text(&tee(21), &format!("EX 0 2 {seg} 0 1 0\n")), None).currents;
-    let p = 21 + seg as usize - 1;
+    let p = nec_solver::find_deck_segment(&segs_of(&deck_text(&tee(21), wave)), 2, seg)
+        .expect("tag 2 segment");
     let i_p = unloaded[p] / (Complex64::new(1.0, 0.0) + z_l * g[p]);
     let peak = loaded.iter().map(|c| c.norm()).fold(0.0, f64::max);
     let worst = (0..loaded.len())
@@ -282,7 +313,8 @@ fn a_loaded_current_source_on_the_graph_prices_as_the_voltage_source() {
         Some(v) => v,
         None => Complex64::new(1.0, 0.0) / r.source_current(idx),
     };
-    let feed = 3; // tag 1 segment 4
+    let feed = nec_solver::find_deck_segment(&segs_of(&deck_text(&tee(21), "")), 1, 4)
+        .expect("tag 1 segment 4");
     let v = z_of(
         routed(
             &deck_text(&tee(21), &format!("{load}EX 0 1 4 0 1 0\n")),

@@ -30,5 +30,9 @@ iced        = { version = "0.13", features = ["advanced", "canvas"] }
 glam        = { workspace = true }
 bytemuck    = { workspace = true }
 
+[dev-dependencies]
+# Unit tests read the corpus pins from corpus/reference-results.json.
+serde_json  = { workspace = true }
+
 [lints]
 workspace = true

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-08-31
+last_updated: 2026-10-10
 ---
 
 # Golden Reference Corpus
@@ -99,7 +99,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Ground: None (free space)
 
 **Expected results** (self-pinned; gated against nec2c 79.348 + j46.223 Ω within 2 / 8 Ω since FND-156):
-- Z_in ≈ 78.83 + j42.44 Ω
+- Z_in ≈ 79.33 + j45.04 Ω (free ends refined, FND-227; 78.83 + j42.44 before)
 - Current distribution: symmetric cosine envelope
 
 **Tolerance gates**:
@@ -122,7 +122,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 78.834228 + j42.439515 Ω
+- Z_in = 79.331456 + j45.036813 Ω
 
 **Tolerance gates**: Same as `dipole-freesp-51seg`.
 
@@ -141,7 +141,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 78.834228 + j42.439515 Ω
+- Z_in = 79.331456 + j45.036813 Ω
 - Pattern table present with 19 points (`RADIATION_PATTERN`, `N_POINTS 19`)
 - Numeric pattern samples locked in corpus validation across 7 theta points (`0°, 30°, 60°, 90°, 120°, 150°, 180°` at `φ=0°`):
   - θ = 0°, φ = 0° → `GAIN_DB=-999.99`, `GAIN_V_DB=-999.99`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
@@ -173,7 +173,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
-- Z_in = 78.834228 + j42.439515 Ω
+- Z_in = 79.331456 + j45.036813 Ω
 - Pattern table present with 20 points (`RADIATION_PATTERN`, `N_POINTS 20`)
 - Numeric pattern samples locked in corpus validation across representative theta/phi combinations, including:
   - `θ=0°, φ=0°` → `GAIN_DB=2.1485`, `GAIN_V_DB=2.1485`, `GAIN_H_DB=-999.99`, `AXIAL_RATIO=0.0`
@@ -287,7 +287,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 **Expected results** (expected shape; never captured from any engine — the gate is the self-pinned regression):
 - Z_in trajectory must match known dipole impedance curve: minimum R around λ/2 (14.2 MHz), resistance increases off-resonance, reactance crosses zero near resonance
 - Impedance at 10 MHz ≈ [TBD]
-- Impedance at 14.2 MHz ≈ 78.83 + j42.44 Ω
+- Impedance at 14.2 MHz ≈ 79.33 + j45.04 Ω
 - Impedance at 18 MHz ≈ [TBD]
 
 **Tolerance gates**:
@@ -360,10 +360,10 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 | Case | Deck file | Segments | Wires | Sources | Ground | Reference Z_in (Ω) |
 |:-----|:----------|:---------|:------|:--------|:-------|:------------------|
-| 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
-| 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
-| 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
-| 1d | dipole-xaxis-rp-grid-51seg.nec | 51 | 1 | 1 | None | 78.83 + j42.44 |
+| 1 | dipole-freesp-51seg.nec | 51 | 1 | 1 | None | 79.33 + j45.04 |
+| 1b | dipole-freesp-gm-inplace-shifted.nec | 51 | 1 | 1 | None | 79.33 + j45.04 |
+| 1c | dipole-freesp-rp-51seg.nec | 51 | 1 | 1 | None | 79.33 + j45.04 |
+| 1d | dipole-xaxis-rp-grid-51seg.nec | 51 | 1 | 1 | None | 79.33 + j45.04 |
 | 2 | dipole-ground-51seg.nec | 51 | 1 | 1 | Perfect | 77.41 + j41.67 |
 | 3 | yagi-5elm-51seg.nec | 51 | 5 | 1 | None | [TBD] |
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |

@@ -1855,12 +1855,14 @@ mod gpu_route_tests {
     /// One arm is a single segment, because a T the section graph takes (FND-162)
     /// is a path-basis solve the device declines on `paths` alone; the
     /// one-segment run keeps this on the plain basis, where only the veto stands.
+    /// The run turns into a bend at its far end: a one-segment arm with a free end
+    /// is refined into thirds (FND-227) and the graph takes it.
     #[test]
     fn a_t_junction_is_not_offered_to_the_device() {
         let tee = route(
             "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-             GW 3 1 0 0 5 -0.5 0 5 0.001\nGE 0\nEX 0 1 10 0 1 0\n\
-             FR 0 1 0 0 14.2 0\nEN\n",
+             GW 3 1 0 0 5 -0.5 0 5 0.001\nGW 4 5 -0.5 0 5 -0.5 0 6 0.001\nGE 0\n\
+             EX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
         );
         assert!(!tee.paths, "the T falls to the plain basis — the hole");
         assert!(tee.unsupported_topology);
@@ -1984,7 +1986,7 @@ mod load_stamp_tests {
 #[cfg(test)]
 mod end_row_tests {
     use super::*;
-    use crate::geometry::{build_conductor_paths, build_geometry};
+    use crate::geometry::build_conductor_paths;
 
     /// FND-156, the case the path rows exist for: the path ENDS on a one-segment
     /// wire walked in reverse, and its inner neighbour is on another wire walked
@@ -2001,7 +2003,10 @@ mod end_row_tests {
         )
         .expect("deck parses")
         .deck;
-        let segs = build_geometry(&deck).expect("geometry builds");
+        // The deck's own segments: refinement (FND-227) would split the
+        // one-segment end wire into thirds and take away the shape this pins —
+        // `path_end_rows` must still be right on any segment list it is given.
+        let segs = crate::geometry::build_deck_geometry(&deck).expect("geometry builds");
         let paths = build_conductor_paths(&segs).expect("a degree-2 path");
         assert_eq!(paths.len(), 1);
         let p = &paths[0];

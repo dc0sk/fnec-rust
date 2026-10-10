@@ -10,14 +10,15 @@
 //! 260 Ω off in X on a Y-junction — the topology MPIE exists for. The static part
 //! is now integrated exactly. nec2c 1.3.1, captured 2026-09-26.
 
-use nec_solver::{build_geometry, ground_model_from_deck, solve_mpie_session};
+use nec_solver::{build_deck_geometry, ground_model_from_deck, solve_mpie_session};
 use num_complex::Complex64;
 
 const F: f64 = 14.2e6;
 
 fn z_mpie(text: &str, feed: (u32, u32)) -> Complex64 {
     let deck = nec_parser::parse(text).expect("parses").deck;
-    let segs = build_geometry(&deck).expect("geometry");
+    // The MPIE solves the deck's own segments (FND-227).
+    let segs = build_deck_geometry(&deck).expect("geometry");
     let currents =
         solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F).expect("solves");
     let idx = segs
@@ -103,7 +104,8 @@ mod centred_feed {
     fn a_centre_fed_dipole_carries_mirror_symmetric_current() {
         for n in [21u32, 41] {
             let deck = nec_parser::parse(&dipole(n, &[n / 2 + 1])).unwrap().deck;
-            let segs = build_geometry(&deck).unwrap();
+            // The MPIE solves the deck's own segments (FND-227).
+            let segs = build_deck_geometry(&deck).unwrap();
             let i = solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F).unwrap();
             let (first, last) = (i[0].norm(), i[i.len() - 1].norm());
             assert!(
@@ -150,7 +152,8 @@ mod centred_feed {
     #[test]
     fn a_feed_at_a_free_wire_end_is_refused() {
         let deck = nec_parser::parse(&dipole(21, &[1])).unwrap().deck;
-        let segs = build_geometry(&deck).unwrap();
+        // The MPIE solves the deck's own segments (FND-227).
+        let segs = build_deck_geometry(&deck).unwrap();
         let err = solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F)
             .expect_err("an end-segment feed must be refused");
         assert!(err.to_string().contains("free wire end"), "{err}");

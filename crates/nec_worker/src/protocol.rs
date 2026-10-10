@@ -30,6 +30,7 @@ mod tests {
             feedpoint_current_mag: 1.0,
             feedpoint_current_phase_deg: 0.0,
             exec_used: "cpu".into(),
+            mesh: MESH.into(),
             warnings: Vec::new(),
         };
         let json = serde_json::to_string(&result).expect("serialise");
@@ -63,6 +64,7 @@ mod tests {
             feedpoint_current_mag: 1.0,
             feedpoint_current_phase_deg: 0.0,
             exec_used: "cpu".into(),
+            mesh: MESH.into(),
             warnings: Vec::new(),
         };
         let json = serde_json::to_string(&result).expect("serialise");
@@ -87,6 +89,7 @@ mod tests {
             feedpoint_current_mag: 0.5,
             feedpoint_current_phase_deg: 10.0,
             exec_used: "cpu".into(),
+            mesh: MESH.into(),
             warnings: vec!["NT card has 8 fields; expected 10".into()],
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -359,6 +362,11 @@ pub enum ErrorCode {
     Internal,
 }
 
+/// The mesh this build solves on, as a worker reports it in [`TaskResult::Ok`]:
+/// free wire ends split into thirds (FND-227). Change it whenever the mesh a deck
+/// builds changes, so a mixed-version pool refuses rather than blends.
+pub const MESH: &str = "free-end-thirds";
+
 /// A result emitted by the worker for a completed (or failed) task.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -389,6 +397,13 @@ pub enum TaskResult {
         /// (PH7-CHK-004). Defaults to `"cpu"` for wire back-compat.
         #[serde(default = "default_exec")]
         exec_used: String,
+        /// The mesh the worker solved on: [`MESH`] for a worker that refines free
+        /// wire ends (FND-227), absent — `""` — from one built before. The
+        /// controller refuses a result on a mesh other than its own: a pool of
+        /// mixed versions would otherwise blend two meshes into one sweep, and
+        /// the points would disagree by the refinement's effect with no word.
+        #[serde(default)]
+        mesh: String,
         /// Caveats only the worker can know — a malformed `LD`, `TL` or `NT` card
         /// it skipped while filling the matrix (FND-026).
         ///

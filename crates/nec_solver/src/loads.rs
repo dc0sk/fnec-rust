@@ -236,6 +236,15 @@ fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
     if ld.tag != 0 && seg.tag != ld.tag {
         return false;
     }
+    // A refined free end's thirds (FND-227). A lumped load belongs to the deck
+    // segment and lands on its centre, once; a flank never takes one, even under
+    // "all segments". Conductivity (type 5) is per metre, so its loss is on all
+    // three thirds — a flank takes it as the deck segment it is part of.
+    let index = match seg.part {
+        crate::geometry::SegmentPart::Flank { parent } if ld.load_type == 5 => parent,
+        crate::geometry::SegmentPart::Flank { .. } => return false,
+        _ => seg.tag_index,
+    };
     // seg_first 0 = all segments of the tag.
     if ld.seg_first == 0 {
         return true;
@@ -246,7 +255,7 @@ fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
     } else {
         ld.seg_last
     };
-    seg.tag_index >= ld.seg_first && seg.tag_index <= last
+    index >= ld.seg_first && index <= last
 }
 
 /// A Laplace-domain (rational) series load: `Z(s) = N(s) / D(s)` with `s = jω`,
@@ -293,6 +302,10 @@ pub fn laplace_impedance(numerator: &[f64], denominator: &[f64], omega: f64) -> 
 
 fn laplace_segment_matches(ll: &LaplaceLoad, seg: &Segment) -> bool {
     if ll.tag != 0 && seg.tag != ll.tag {
+        return false;
+    }
+    // Lumped: the deck segment's centre takes it, a flank never (FND-227).
+    if !seg.is_deck_segment() {
         return false;
     }
     if ll.seg_first == 0 {
@@ -449,6 +462,7 @@ mod tests {
             direction: [0.0, 0.0, 1.0],
             length,
             radius,
+            part: crate::geometry::SegmentPart::Whole,
         }
     }
 

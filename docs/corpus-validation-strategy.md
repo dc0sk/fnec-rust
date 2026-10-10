@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/corpus-validation-strategy.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-10
 ---
 
 # Corpus Validation Strategy
@@ -168,8 +168,8 @@ For each corpus case:
    {
      "dipole-freesp-51seg": {
        "feedpoint_impedance": {
-         "real_ohm": 78.834228,
-         "imag_ohm": 42.439515
+         "real_ohm": 79.331456,
+         "imag_ohm": 45.036813
        },
        "tolerance_gates": {
          "R_percent_rel": 0.1,
@@ -190,8 +190,8 @@ CI runs `cargo test -p nec-cli --test corpus_validation`:
 #[test]
 fn corpus_validation_dipole_freesp() {
     // Run fnec-rust: fnec --solver hallen corpus/dipole-freesp-51seg.nec
-    // Extract impedance from output: 78.834228+42.439515j
-    // Compare: |78.834 - 78.834| <= 0.05 Ω ✓, |42.440 - 42.440| <= 0.05 Ω ✓
+    // Extract impedance from output: 79.331456+45.036813j
+    // Compare: |79.331 - 79.331| <= 0.05 Ω ✓, |45.037 - 45.037| <= 0.05 Ω ✓
     // Assert pass or fail
 }
 ```
@@ -235,7 +235,7 @@ Example PR comment:
 
 | Case | Status | R (Ω) | X (Ω) | Tolerance | Pass |
 |:-----|:-------|:------|:------|:----------|:-----|
-| dipole-freesp | ✓ | 78.83 | 42.44 | ±0.05 | PASS |
+| dipole-freesp | ✓ | 79.33 | 45.04 | ±0.05 | PASS |
 | dipole-ground | ⏳ | — | — | — | SKIPPED (ref TBD) |
 | yagi-5elm | ⏳ | — | — | — | SKIPPED (ref TBD) |
 

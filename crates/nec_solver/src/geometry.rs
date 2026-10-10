@@ -139,6 +139,48 @@ pub struct Segment {
     pub length: f64,
     /// Wire radius in metres.
     pub radius: f64,
+    /// What this segment is to the deck: a deck segment, or a third of one at a
+    /// free wire end (FND-227).
+    pub part: SegmentPart,
+}
+
+/// What a [`Segment`] is to the deck it was built from.
+///
+/// [`build_geometry`] splits every segment at a free wire end into three equal
+/// thirds (FND-227): Hallén cannot see a source, load or port on a segment with no
+/// test point between it and the tip, and the coarse end segment costs every
+/// answer accuracy. The deck's numbering is untouched — the middle third carries
+/// the deck segment's tag and number, and its midpoint is the deck segment's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SegmentPart {
+    /// A deck segment, as its `GW` card made it.
+    #[default]
+    Whole,
+    /// The middle third of a deck segment at a free wire end. A deck reference to
+    /// that segment resolves here.
+    Centre,
+    /// An outer third of that segment, numbered 0: no deck card can name it
+    /// ([`find_deck_segment`]). `parent` is the deck segment number it belongs to.
+    Flank {
+        /// The deck segment number (`tag_index`) of the segment this third is of.
+        parent: u32,
+    },
+}
+
+impl Segment {
+    /// Whether this is a segment the deck names — every one but a flank. Outputs
+    /// listing segments list these.
+    pub fn is_deck_segment(&self) -> bool {
+        !matches!(self.part, SegmentPart::Flank { .. })
+    }
+
+    /// The length of the deck segment this is (part of): three times a centre's.
+    pub fn deck_length(&self) -> f64 {
+        match self.part {
+            SegmentPart::Centre => 3.0 * self.length,
+            _ => self.length,
+        }
+    }
 }
 
 /// The index of the segment a deck card names as `(tag, segment)`, in NEC's
@@ -860,6 +902,40 @@ fn has_high_degree_node(segs: &[Segment]) -> bool {
 ///
 /// Segments are assigned consecutive `global_index` values in output order.
 pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
+    let segments = build_unnumbered(deck)?;
+    let grounded = matches!(
+        ground_model_from_deck(deck),
+        GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
+    );
+    let free = free_end_segments(&segments, grounded);
+    Ok(number(refine(segments, &free)))
+}
+
+/// The deck's own segments, without the free-end refinement [`build_geometry`]
+/// applies — for the solvers that do not take it (the MPIE, the experimental
+/// pulse and continuity bases), so their answers do not change with it.
+pub fn build_deck_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
+    Ok(number(build_unnumbered(deck)?))
+}
+
+/// The geometry `solver` solves: refined at free ends ([`build_geometry`]) for
+/// Hallén, the deck's own ([`build_deck_geometry`]) for the MPIE.
+///
+/// Chosen before the geometry is built, not coarsened after: the far and near
+/// field weight each segment as a point source, so three thirds carrying one
+/// current radiate differently from the whole — the MPIE would change with a
+/// refinement it does not take (review of FND-227's design).
+pub fn geometry_for(
+    deck: &NecDeck,
+    solver: crate::validate::SolverKind,
+) -> Result<Vec<Segment>, GeometryError> {
+    match solver {
+        crate::validate::SolverKind::Hallen => build_geometry(deck),
+        crate::validate::SolverKind::Mpie => build_deck_geometry(deck),
+    }
+}
+
+fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
     let mut segments: Vec<Segment> = Vec::new();
 
     for card in &deck.cards {
@@ -880,18 +956,147 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
     if segments.is_empty() {
         return Err(GeometryError::NoWires);
     }
-
-    // Re-number global_index in final order, and tag_index as NEC counts it:
-    // the running occurrence of each tag (see `Segment::tag_index`, FND-135).
-    let mut seen: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-    for (i, seg) in segments.iter_mut().enumerate() {
-        seg.global_index = i;
-        let n = seen.entry(seg.tag).or_insert(0);
-        *n += 1;
-        seg.tag_index = *n;
-    }
-
     Ok(segments)
+}
+
+/// Re-number `global_index` in final order, and `tag_index` as NEC counts it: the
+/// running occurrence of each tag (see `Segment::tag_index`, FND-135). A flank
+/// does not count — the deck does not know it — and is numbered 0, its parent the
+/// centre beside it.
+fn number(mut segments: Vec<Segment>) -> Vec<Segment> {
+    let mut seen: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    for i in 0..segments.len() {
+        segments[i].global_index = i;
+        let tag = segments[i].tag;
+        let n = seen.entry(tag).or_insert(0);
+        match segments[i].part {
+            SegmentPart::Flank { .. } => {
+                // Before its centre (the start flank) it belongs to the next number.
+                let before_centre = segments
+                    .get(i + 1)
+                    .is_some_and(|s| s.part == SegmentPart::Centre);
+                let parent = if before_centre { *n + 1 } else { *n };
+                segments[i].tag_index = 0;
+                segments[i].part = SegmentPart::Flank { parent };
+            }
+            _ => {
+                *n += 1;
+                segments[i].tag_index = *n;
+            }
+        }
+    }
+    segments
+}
+
+/// `values` (one per solved segment — currents, charges) at the deck's segments
+/// only: a refined end's flanks dropped, its centre standing for the deck segment
+/// (FND-227). Index `i` of the result is the deck's `i`-th segment, as an output
+/// row or a reference solver (nec2c) numbers it.
+pub fn deck_values<T: Copy>(segs: &[Segment], values: &[T]) -> Vec<T> {
+    segs.iter()
+        .zip(values)
+        .filter(|(s, _)| s.is_deck_segment())
+        .map(|(_, v)| *v)
+        .collect()
+}
+
+/// For each segment, whether it has a free end: an end point no other segment
+/// shares (within [`crate::hallen_session::JUNCTION_TOL_M`]), and — over a ground —
+/// not on the ground plane, where its image joins it.
+///
+/// The rule the Hallén solve applies (`wire_endpoints_from_segs`,
+/// `split_at_touching_ends`): wires join where end points meet; a touch in the
+/// middle of a segment stays unconnected, as in NEC, so that end is free.
+pub fn free_end_segments(segs: &[Segment], grounded: bool) -> Vec<bool> {
+    let tol = crate::hallen_session::JUNCTION_TOL_M;
+    // End points bucketed on a grid much coarser than the tolerance; a match is
+    // looked for in the point's cell and its neighbours.
+    let cell = 1e3 * tol;
+    let key = |p: &[f64; 3]| {
+        [
+            (p[0] / cell).floor() as i64,
+            (p[1] / cell).floor() as i64,
+            (p[2] / cell).floor() as i64,
+        ]
+    };
+    let mut grid: std::collections::HashMap<[i64; 3], Vec<(usize, [f64; 3])>> =
+        std::collections::HashMap::new();
+    for (i, s) in segs.iter().enumerate() {
+        for p in [s.start, s.end] {
+            grid.entry(key(&p)).or_default().push((i, p));
+        }
+    }
+    let shared = |i: usize, p: &[f64; 3]| {
+        let k = key(p);
+        (-1..=1).any(|dx| {
+            (-1..=1).any(|dy| {
+                (-1..=1).any(|dz| {
+                    grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz])
+                        .is_some_and(|pts| {
+                            pts.iter().any(|&(j, q)| {
+                                j != i
+                                    && ((p[0] - q[0]).powi(2)
+                                        + (p[1] - q[1]).powi(2)
+                                        + (p[2] - q[2]).powi(2))
+                                    .sqrt()
+                                        <= tol
+                            })
+                        })
+                })
+            })
+        })
+    };
+    let on_ground = |p: &[f64; 3]| grounded && p[2] <= crate::ground_contact::GROUND_CONTACT_EPS_M;
+    segs.iter()
+        .enumerate()
+        .map(|(i, s)| {
+            [s.start, s.end]
+                .iter()
+                .any(|p| !shared(i, p) && !on_ground(p))
+        })
+        .collect()
+}
+
+/// Split each segment `free` marks into three equal thirds: flank, centre, flank.
+fn refine(segs: Vec<Segment>, free: &[bool]) -> Vec<Segment> {
+    let mut out = Vec::with_capacity(segs.len() + 2 * free.iter().filter(|&&f| f).count());
+    for (s, &f) in segs.into_iter().zip(free) {
+        if !f {
+            out.push(s);
+            continue;
+        }
+        let at = |t: f64| {
+            [
+                s.start[0] + (s.end[0] - s.start[0]) * t,
+                s.start[1] + (s.end[1] - s.start[1]) * t,
+                s.start[2] + (s.end[2] - s.start[2]) * t,
+            ]
+        };
+        for (k, part) in [
+            SegmentPart::Flank { parent: 0 },
+            SegmentPart::Centre,
+            SegmentPart::Flank { parent: 0 },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (t0, t1) = (k as f64 / 3.0, (k as f64 + 1.0) / 3.0);
+            out.push(Segment {
+                start: at(t0),
+                end: at(t1),
+                // The centre's midpoint is the deck segment's, exactly.
+                midpoint: if part == SegmentPart::Centre {
+                    s.midpoint
+                } else {
+                    at(0.5 * (t0 + t1))
+                },
+                length: s.length / 3.0,
+                part,
+                ..s.clone()
+            });
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -960,6 +1165,7 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
             direction,
             length: seg_len,
             radius: gw.radius,
+            part: SegmentPart::Whole,
         });
     }
 
@@ -1175,7 +1381,8 @@ mod tests {
     #[test]
     fn dipole_segment_count_and_length() {
         let deck = deck_with_gw(1, 11, [0.0, 0.0, -2.677], [0.0, 0.0, 2.677], 0.001);
-        let segs = build_geometry(&deck).expect("should succeed");
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).expect("should succeed");
 
         assert_eq!(segs.len(), 11);
 
@@ -1200,7 +1407,8 @@ mod tests {
     #[test]
     fn midpoint_is_centre_of_segment() {
         let deck = deck_with_gw(1, 3, [0.0, 0.0, 0.0], [3.0, 0.0, 0.0], 0.001);
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         // Segments at x=[0,1], [1,2], [2,3]; midpoints at x=0.5, 1.5, 2.5
         let expected_midpoints = [0.5_f64, 1.5, 2.5];
         for (s, &ex) in segs.iter().zip(expected_midpoints.iter()) {
@@ -1211,7 +1419,8 @@ mod tests {
     #[test]
     fn tag_and_indices_are_correct() {
         let deck = deck_with_gw(7, 4, [0.0, 0.0, 0.0], [4.0, 0.0, 0.0], 0.001);
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         for (i, s) in segs.iter().enumerate() {
             assert_eq!(s.tag, 7);
             assert_eq!(s.tag_index, i as u32 + 1);
@@ -1236,7 +1445,8 @@ mod tests {
             end: [2.0, 1.0, 0.0],
             radius: 0.001,
         }));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 5);
         for (i, s) in segs.iter().enumerate() {
             assert_eq!(s.global_index, i);
@@ -1408,7 +1618,8 @@ mod tests {
         // Translate +2 m along z
         deck.cards
             .push(Card::Gm(make_gm(0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0)));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 1);
         assert!((segs[0].start[2] - 2.0).abs() < 1e-12);
         assert!((segs[0].end[2] - 2.0).abs() < 1e-12);
@@ -1631,7 +1842,8 @@ mod tests {
             count: 3,
             angle_deg: 90.0,
         }));
-        let segs = build_geometry(&deck).expect("a 4-fold turnstile is an ordinary deck");
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).expect("a 4-fold turnstile is an ordinary deck");
         assert_eq!(segs.len(), 4);
         assert_eq!(
             segs.iter().map(|s| s.tag).collect::<Vec<_>>(),
@@ -1657,7 +1869,8 @@ mod tests {
         // Copy with tag_increment=1, translate +1 m along y
         deck.cards
             .push(Card::Gm(make_gm(1, 1, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 2);
         // Original (tag=1) unchanged
         assert_eq!(segs[0].tag, 1);
@@ -1683,7 +1896,8 @@ mod tests {
             count: 3,
             angle_deg: 90.0,
         }));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         // 1 original + 3 copies = 4 segments (each wire has 1 segment)
         assert_eq!(segs.len(), 4);
         assert_eq!(segs[0].tag, 1);
@@ -1708,7 +1922,8 @@ mod tests {
             count: 1,
             angle_deg: 90.0,
         }));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 2);
         // Copy should be at y=1..2, x≈0
         assert!((segs[1].start[0]).abs() < 1e-12, "x should be ~0");
@@ -1733,10 +1948,171 @@ mod tests {
             count: 2,
             angle_deg: 120.0,
         }));
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's expansion; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         assert_eq!(segs.len(), 9); // 3 wires × 3 segments
         for (i, s) in segs.iter().enumerate() {
             assert_eq!(s.global_index, i);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Free-end refinement (FND-227)
+    // -----------------------------------------------------------------------
+
+    fn parsed(text: &str) -> NecDeck {
+        nec_parser::parse(text).expect("parses").deck
+    }
+
+    /// Exactly the two tips of a dipole are free; inside the wire nothing is.
+    #[test]
+    fn a_dipole_has_two_free_end_segments() {
+        let segs = build_deck_geometry(&parsed(
+            "CE\nGW 1 11 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        let free = free_end_segments(&segs, false);
+        let marked: Vec<usize> = (0..segs.len()).filter(|&i| free[i]).collect();
+        assert_eq!(marked, vec![0, 10]);
+    }
+
+    /// At a T the tips are free and the segments at the node are not; an end on
+    /// the ground plane is joined to its image, so it is not free over a ground
+    /// and is in free space.
+    #[test]
+    fn junctions_and_grounded_ends_are_not_free() {
+        let tee = build_deck_geometry(&parsed(
+            "CE\nGW 1 5 0 0 1 0 0 3 .001\nGW 2 5 0 0 3 2 0 3 .001\nGW 3 5 0 0 3 -2 0 3 .001\n\
+             GE 0\nEX 0 1 2 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        let free = free_end_segments(&tee, false);
+        let marked: Vec<usize> = (0..tee.len()).filter(|&i| free[i]).collect();
+        // The stem's foot, and each arm's tip; nothing at the node.
+        assert_eq!(marked, vec![0, 9, 14]);
+
+        let mono = build_deck_geometry(&parsed(
+            "CE\nGW 1 5 0 0 0 0 0 2.5 .001\nGE 1\nGN 1\nEX 0 1 1 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            free_end_segments(&mono, true),
+            [false, false, false, false, true]
+        );
+        assert_eq!(
+            free_end_segments(&mono, false),
+            [true, false, false, false, true]
+        );
+    }
+
+    /// A touch in the middle of a segment is no junction, as in NEC: that end
+    /// stays free.
+    #[test]
+    fn an_end_touching_a_segment_middle_is_free() {
+        let segs = build_deck_geometry(&parsed(
+            "CE\nGW 1 3 -1 0 0 1 0 0 .001\nGW 2 4 0 0 0 0 0 2 .001\nGE 0\n\
+             EX 0 1 2 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        // GW 2 starts at the midpoint of GW 1's middle segment.
+        assert!(free_end_segments(&segs, false)[3]);
+    }
+
+    /// The deck's numbering survives: deck segments keep their numbers in
+    /// order, flanks are 0 and name their deck segment, the centre's midpoint is
+    /// the deck segment's exactly, and each third is a third.
+    #[test]
+    fn refinement_keeps_the_decks_numbering_and_midpoints() {
+        let text =
+            "CE\nGW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 30 0\nEN\n";
+        let deck_segs = build_deck_geometry(&parsed(text)).unwrap();
+        let segs = build_geometry(&parsed(text)).unwrap();
+        assert_eq!(segs.len(), 25);
+        let numbers: Vec<u32> = segs
+            .iter()
+            .filter(|s| s.is_deck_segment())
+            .map(|s| s.tag_index)
+            .collect();
+        assert_eq!(numbers, (1..=21).collect::<Vec<_>>());
+        let flanks: Vec<(usize, SegmentPart)> = segs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !s.is_deck_segment())
+            .map(|(i, s)| (i, s.part))
+            .collect();
+        assert_eq!(
+            flanks,
+            vec![
+                (0, SegmentPart::Flank { parent: 1 }),
+                (2, SegmentPart::Flank { parent: 1 }),
+                (22, SegmentPart::Flank { parent: 21 }),
+                (24, SegmentPart::Flank { parent: 21 }),
+            ]
+        );
+        assert!(segs
+            .iter()
+            .filter(|s| !s.is_deck_segment())
+            .all(|s| s.tag_index == 0));
+        for (i, s) in segs.iter().enumerate() {
+            assert_eq!(s.global_index, i);
+        }
+        let (c, d) = (&segs[1], &deck_segs[0]);
+        assert_eq!(c.part, SegmentPart::Centre);
+        assert_eq!(
+            c.midpoint, d.midpoint,
+            "the centre stands at the deck segment's midpoint"
+        );
+        assert!((c.length - d.length / 3.0).abs() < 1e-15);
+        assert!((c.deck_length() - d.length).abs() < 1e-12);
+        assert_eq!(segs[0].start, d.start);
+        assert_eq!(segs[2].end, d.end);
+        // A reference resolves to the centre; segment 0 names nothing.
+        assert_eq!(find_deck_segment(&segs, 1, 1), Some(1));
+        assert_eq!(find_deck_segment(&segs, 1, 21), Some(23));
+        assert_eq!(find_deck_segment(&segs, 1, 0), None);
+        // Values at the deck's segments come back in the deck's order.
+        let idx: Vec<usize> = (0..segs.len()).collect();
+        assert_eq!(
+            deck_values(&segs, &idx),
+            [vec![1], (3..=21).collect(), vec![23]].concat()
+        );
+    }
+
+    /// A one-segment wire with two free ends is split once, not twice.
+    #[test]
+    fn a_one_segment_wire_is_split_once() {
+        let segs = build_geometry(&parsed(
+            "CE\nGW 1 1 0 0 -0.5 0 0 0.5 .001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        let parts: Vec<SegmentPart> = segs.iter().map(|s| s.part).collect();
+        assert_eq!(
+            parts,
+            [
+                SegmentPart::Flank { parent: 1 },
+                SegmentPart::Centre,
+                SegmentPart::Flank { parent: 1 }
+            ]
+        );
+    }
+
+    /// Refinement runs on the final structure: a GM copy's free ends are refined
+    /// too, and its numbering is the copy's.
+    #[test]
+    fn a_gm_copy_is_refined_as_the_original() {
+        let segs = build_geometry(&parsed(
+            "CE\nGW 1 5 0 0 -1 0 0 1 .001\nGM 1 1 0 0 0 2 0 0 0\nGE 0\nEX 0 1 3 0 1 0\n\
+             FR 0 1 0 0 30 0\nEN\n",
+        ))
+        .unwrap();
+        assert_eq!(segs.len(), 18, "two 5-segment wires, four free ends");
+        for tag in [1, 2] {
+            let numbers: Vec<u32> = segs
+                .iter()
+                .filter(|s| s.tag == tag && s.is_deck_segment())
+                .map(|s| s.tag_index)
+                .collect();
+            assert_eq!(numbers, vec![1, 2, 3, 4, 5], "tag {tag}");
         }
     }
 }

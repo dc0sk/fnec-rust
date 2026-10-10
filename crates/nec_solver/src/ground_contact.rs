@@ -97,6 +97,7 @@ pub(crate) fn doubled_segments(
         direction: mirror(s.direction),
         length: s.length,
         radius: s.radius,
+        part: s.part,
     }));
 
     if matches!(

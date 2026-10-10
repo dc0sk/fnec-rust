@@ -860,7 +860,7 @@ mod tests {
     use nec_model::card::{Card, ExCard, GwCard};
     use nec_model::deck::NecDeck;
 
-    use crate::geometry::build_geometry;
+    use crate::geometry::{build_deck_geometry, build_geometry, find_deck_segment};
 
     const TEST_FREQ_HZ: f64 = 14.2e6;
 
@@ -891,7 +891,8 @@ mod tests {
     #[test]
     fn voltage_placed_at_correct_segment() {
         let deck = dipole_deck();
-        let segs = build_geometry(&deck).unwrap();
+        // The deck's per-segment layout; the free-end refinement is tested separately.
+        let segs = build_deck_geometry(&deck).unwrap();
         let v = build_excitation(&deck, &segs).unwrap();
 
         assert_eq!(v.len(), 11);
@@ -935,13 +936,14 @@ mod tests {
         }));
         let segs = build_geometry(&deck).unwrap();
         let v = build_excitation(&deck, &segs).unwrap();
-        // Stored value is V/Δl.  Segment 1 spans from z=-1/3 to z=+1/3 → length 2/3.
-        let seg_len = segs[1].length;
+        // Stored value is V/Δl.  Deck segment 2 spans from z=-1/3 to z=+1/3 → length 2/3.
+        let feed = find_deck_segment(&segs, 1, 2).expect("deck segment 2");
+        let seg_len = segs[feed].length;
         let expected = Complex64::new(0.5, -0.5) / seg_len;
         assert!(
-            (v[1] - expected).norm() < 1e-12,
+            (v[feed] - expected).norm() < 1e-12,
             "expected {expected}, got {}",
-            v[1]
+            v[feed]
         );
     }
 
@@ -1023,8 +1025,8 @@ mod tests {
         let segs = build_geometry(&deck).unwrap();
         let h = build_hallen_rhs(&deck, &segs, TEST_FREQ_HZ).unwrap();
 
-        // EX is on segment 6 (1-based) => index 5
-        let feed_idx = 5usize;
+        // EX is on deck segment 6 (1-based)
+        let feed_idx = find_deck_segment(&segs, 1, 6).expect("deck segment 6");
         assert!(
             (h.cos_vec[feed_idx] - 1.0).abs() < 1e-12,
             "cos(feed) expected 1, got {}",
@@ -1046,7 +1048,7 @@ mod tests {
         let sample_idx = 0usize;
         let scale = 2.0 * std::f64::consts::PI / ETA0;
         let k = 2.0 * std::f64::consts::PI * TEST_FREQ_HZ / C0;
-        let feed_mid = segs[5].midpoint;
+        let feed_mid = segs[find_deck_segment(&segs, 1, 6).expect("deck segment 6")].midpoint;
         let sample_mid = segs[sample_idx].midpoint;
         let s = sample_mid[2] - feed_mid[2];
         let expected = Complex64::new(0.0, -scale * (k * s.abs()).sin());
@@ -1215,7 +1217,9 @@ mod tests {
             v_im in -1e6_f64..=1e6_f64,
             seg_idx in 1_u32..=3_u32,
         ) {
-            let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 0, seg_idx);
+            let (deck, _) = three_seg_deck_with_ex(v_re, v_im, 0, seg_idx);
+            // The deck's per-segment layout; the free-end refinement is tested separately.
+            let segs = build_deck_geometry(&deck).unwrap();
             let v = build_excitation(&deck, &segs).unwrap();
             prop_assert_eq!(v.len(), 3);
             for (i, vi) in v.iter().enumerate() {
@@ -1241,10 +1245,11 @@ mod tests {
         ) {
             let (deck, segs) = three_seg_deck_with_ex(v_re, v_im, 0, 2);
             let v = build_excitation(&deck, &segs).unwrap();
-            let dl = segs[1].length; // segment index 1 = seg_idx 2 (1-based)
+            let feed = find_deck_segment(&segs, 1, 2).expect("deck segment 2");
+            let dl = segs[feed].length;
             let expected = Complex64::new(v_re, v_im) / dl;
-            prop_assert!((v[1] - expected).norm() < 1e-12,
-                "expected {expected}, got {}", v[1]);
+            prop_assert!((v[feed] - expected).norm() < 1e-12,
+                "expected {expected}, got {}", v[feed]);
         }
 
         /// EX type 6+ is unknown: build_excitation must return UnsupportedType

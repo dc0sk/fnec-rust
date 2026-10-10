@@ -2368,6 +2368,7 @@ dependencies = [
  "num-complex",
  "rfd",
  "serde",
+ "serde_json",
  "toml",
 ]
 

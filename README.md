@@ -66,7 +66,7 @@ PULSE_RHS Nec2
 
 FEEDPOINTS
 TAG SEG V_RE V_IM I_RE I_IM Z_RE Z_IM
-1 26 1.000000 0.000000 0.009835 -0.005294 78.834228 42.439515
+1 26 1.000000 0.000000 0.009533 -0.005412 79.331456 45.036813
 ```
 
 See [docs/cli-guide.md](docs/cli-guide.md) for full option reference and [docs/card-support-matrix.md](docs/card-support-matrix.md) for the NEC card support matrix. For the 3-D GUI workbench (`cargo run -p nec-gui`), see [docs/gui-guide.md](docs/gui-guide.md).

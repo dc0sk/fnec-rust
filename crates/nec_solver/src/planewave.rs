@@ -483,7 +483,7 @@ pub fn build_planewave_hallen_paths(
 mod tests {
     use super::*;
     use crate::excitation::build_hallen_rhs_paths;
-    use crate::geometry::{build_conductor_paths, build_geometry};
+    use crate::geometry::{build_conductor_paths, build_deck_geometry};
 
     /// FND-162: the receive forcing is a superposition of delta-gap right-hand
     /// sides — a unit feed at each segment `p`, weighted by the incident field's
@@ -498,7 +498,10 @@ mod tests {
         let rx = nec_parser::parse(&format!("{geo}EX 1 1 1 0 60 30 20\n{tail}"))
             .expect("parses")
             .deck;
-        let segs = build_geometry(&rx).expect("geometry");
+        // On the deck's own mesh: the identity holds on any mesh, but it is checked
+        // by feeding every segment through an EX card, and a free-end flank (FND-227)
+        // has no deck address to feed. The refinement is tested separately.
+        let segs = build_deck_geometry(&rx).expect("geometry");
         let paths = build_conductor_paths(&segs).expect("one bent path");
         let pw = build_planewave_hallen_paths(&rx, &segs, freq, &paths, &GroundModel::FreeSpace)
             .expect("receive rhs");

@@ -200,10 +200,12 @@ fn guarded_topology_warning_recommends_mpie() {
         "\
 CM Y-junction on the default solver, one arm a single segment: the section
 CM graph refuses it (FND-162), so the default solve is still unreliable
+CM the one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227)
 CE
 GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
 GW 2 20 0.0 0.0 0.0 -2.5 4.330127 0.0 0.001
 GW 3 1 0.0 0.0 0.0 -0.5 -0.866025 0.0 0.001
+GW 4 5 -0.5 -0.866025 0.0 -0.5 -0.866025 0.5 0.001
 GE 0
 FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0
@@ -467,5 +469,41 @@ EN
         // FND-157: was 73.857642 + j30.548668; nec2c on this deck: 77.619 + j33.224.
         (r - 77.602091).abs() < 0.05 && (x - 32.943185).abs() < 0.05,
         "MPIE over GN2 moved: got {r} + j{x}, pinned 77.602091 + j32.943185"
+    );
+}
+
+/// The MPIE solves the deck's own segments (`SolverMode::geometry`), so the
+/// free-end refinement of FND-227 must not move it: its impedance and pattern
+/// are pinned at the values main produced before it. Checked when it landed: 59
+/// repo decks under `--solver mpie`, stdout and stderr, byte-identical to main's
+/// binary. Refining here as well would move the pattern (~1e-3: the far field
+/// weights each segment as a point source) where the parity sweep's twin runs
+/// could not see it.
+#[test]
+fn the_mpie_is_not_moved_by_the_free_end_refinement() {
+    let out = run_fnec(&[
+        "--solver",
+        "mpie",
+        "--exec",
+        "cpu",
+        "corpus/dipole-freesp-rp-51seg.nec",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout
+            .lines()
+            .any(|l| l.starts_with("1 26 ") && l.ends_with(" 79.147332 45.954885")),
+        "MPIE feedpoint moved:\n{stdout}"
+    );
+    assert!(
+        stdout
+            .lines()
+            .any(|l| l.starts_with("90.0000 0.0000 2.1672 ")),
+        "MPIE broadside gain moved:\n{stdout}"
     );
 }

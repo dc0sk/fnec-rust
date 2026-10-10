@@ -62,7 +62,8 @@ fn assert_near(what: &str, got: Complex64, want: (f64, f64), tol: (f64, f64)) {
     );
 }
 
-/// The corpus half-wave dipole. Now 78.83 + j42.44; old 74.24 + j13.90.
+/// The corpus half-wave dipole. Now 79.33 + j45.04 (free ends refined, FND-227);
+/// 78.83 + j42.44 after FND-156; old 74.24 + j13.90.
 #[test]
 fn the_half_wave_dipole_tracks_nec2c() {
     assert_near(

@@ -23,11 +23,31 @@ pub enum WorkerHandle {
 
 impl WorkerHandle {
     /// Dispatch a task to this worker and block for the result.
+    ///
+    /// A result on a mesh other than this build's — an fnec from before the
+    /// free-end refinement (FND-227), whose result carries no `mesh` — is that
+    /// task's failure, not an answer: a pool of mixed versions would otherwise
+    /// blend two discretisations of one deck into one sweep. The worker stays.
     fn dispatch(&mut self, task: &TaskMessage) -> Result<TaskResult, crate::DispatchError> {
-        match self {
+        let result = match self {
             WorkerHandle::Local(h) => h.dispatch(task),
             WorkerHandle::Ssh(h) => h.dispatch(task),
+        }?;
+        if let TaskResult::Ok { mesh, .. } = &result {
+            if mesh != crate::protocol::MESH {
+                return Err(crate::DispatchError::Task(format!(
+                    "it solved on a different mesh ({}) than this fnec ({}) — it is a \
+                     different version; install the same fnec on it",
+                    if mesh.is_empty() {
+                        "unrefined free ends"
+                    } else {
+                        mesh.as_str()
+                    },
+                    crate::protocol::MESH
+                )));
+            }
         }
+        Ok(result)
     }
 
     /// Gracefully shut down this worker.

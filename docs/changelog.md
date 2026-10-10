@@ -31,6 +31,22 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   and a `TL`/`NT` port alike, on CPU, GPU and the worker. The message names the remedy:
   move it one segment in, or make the end segment a 3-segment wire and feed its middle.
   A source beside a bend or junction still solves. (#562)
+- **A source, load or port at a free wire end is solved** (FND-227, FND-230): every
+  segment at a free wire end is split into three equal thirds for the Hallén solve.
+  The deck's segment is the middle third — same number, same midpoint — so every card
+  and every output row means what it did. An end-fed wire answers 1510.6 − j4102.9 Ω
+  (λ/2 at 21 segments; it read 8.2×10¹⁰ Ω, refused since #562), and an `LD` on an end
+  segment, which did nothing, is seen (ΔZ within 9 % of nec2c's). (#564)
+
+### Changed
+
+- **Every Hallén answer with a free wire end moves toward nec2c** (FND-227). The coarse
+  end segment had cost accuracy everywhere: the 51-segment reference dipole is
+  79.33 + j45.04 Ω (was 78.83 + j42.43; nec2c 79.35 + j46.22), the 5-element Yagi
+  8.35 + j54.51 (was 8.84 + j49.49; nec2c 8.17 + j56.54). A deck solves two more
+  segments per free end, which the `info:` line and the GPU crossover count. The MPIE
+  is unchanged — it takes the deck's own segments. A `--hosts` worker of an older fnec
+  is refused rather than blended into a sweep on another mesh. (#564)
 
 ## [0.21.6] — 2026-10-09 — Ask once
 

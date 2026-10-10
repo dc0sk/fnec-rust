@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Simon Keimer (DC0SK)
 """Smoke tests for fnec_py Python bindings (PH4-CHK-004)."""
 
+import json
 import os
 import warnings
 
@@ -354,8 +355,12 @@ def test_a_current_source_deck_solves_and_agrees_with_the_cli():
     with open(os.path.join(root, "corpus", "dipole-ex4-freesp-51seg.nec")) as f:
         got = fnec_py.solve_deck_str(f.read())
 
-    assert abs(got["z_re"] - 78.834) < 0.05, got["z_re"]
-    assert abs(got["z_im"] - 42.440) < 0.05, got["z_im"]
+    # Read from the file the CLI's corpus gate reads, so a re-pin moves this
+    # check with it (its copy here had drifted from the corpus before FND-227).
+    with open(os.path.join(root, "corpus", "reference-results.json")) as f:
+        want = json.load(f)["cases"]["dipole-ex4-freesp-51seg"]["feedpoint_impedance"]
+    assert abs(got["z_re"] - want["real_ohm"]) < 0.05, got["z_re"]
+    assert abs(got["z_im"] - want["imag_ohm"]) < 0.05, got["z_im"]
     # And it names the current source, not some other EX card.
     assert (got["tag"], got["seg"]) == (1, 26), got
 

@@ -125,7 +125,10 @@ fn solve_plane_wave(theta_deg: f64, phi_deg: f64, eta_deg: f64) -> Vec<Complex64
     let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ, &GroundModel::FreeSpace)
         .expect("planewave rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
-    solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve")
+    let currents =
+        solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve");
+    // nec2c numbers the deck's segments (FND-227).
+    nec_solver::deck_values(&segs, &currents)
 }
 
 #[test]
@@ -335,7 +338,10 @@ fn solve_ex_on(geom: GwCard, ex: Card) -> Vec<Complex64> {
     let pw = build_planewave_hallen(&deck, &segs, FREQ_HZ, &GroundModel::FreeSpace)
         .expect("planewave rhs");
     let endpoints = wire_endpoints_from_segs(&segs);
-    solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve")
+    let currents =
+        solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).expect("solve");
+    // nec2c numbers the deck's segments (FND-227).
+    nec_solver::deck_values(&segs, &currents)
 }
 
 fn z_dipole() -> GwCard {
@@ -499,7 +505,9 @@ fn two_wire_currents() -> Vec<Complex64> {
     let z = assemble_z_matrix_with_ground(&segs, freq, &GroundModel::FreeSpace);
     let pw = build_planewave_hallen(&deck, &segs, freq, &GroundModel::FreeSpace).unwrap();
     let endpoints = wire_endpoints_from_segs(&segs);
-    solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap()
+    let cur = solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap();
+    // nec2c numbers the deck's segments (FND-227).
+    nec_solver::deck_values(&segs, &cur)
 }
 
 #[test]
@@ -529,6 +537,8 @@ fn planewave_two_wire_symmetric_broadside_currents_are_equal() {
     let pw = build_planewave_hallen(&deck, &segs, freq, &GroundModel::FreeSpace).unwrap();
     let endpoints = wire_endpoints_from_segs(&segs);
     let cur = solve_hallen_planewave(&z, &pw.rhs, &pw.cos_vec, &pw.sin_vec, &endpoints).unwrap();
+    // Wire 2 starts at the deck's segment 22 (FND-227).
+    let cur = nec_solver::deck_values(&segs, &cur);
     let peak = cur[10].norm().max(1e-30);
     let mut mx = 0.0f64;
     for i in 0..21 {

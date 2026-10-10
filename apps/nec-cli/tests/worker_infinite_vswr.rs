@@ -20,7 +20,7 @@
 use base64::Engine;
 use nec_worker::{TaskResult, WorkerPool};
 
-/// Re(Z) = -5.97 Ω on this deck, so its VSWR is genuinely infinite.
+/// Re(Z) = -5.127 Ω on this deck, so its VSWR is genuinely infinite.
 const NEGATIVE_R_DECK: &str = "corpus/y-junction-negative-r-freesp.nec";
 const HEALTHY_DECK: &str = "corpus/dipole-freesp-51seg.nec";
 

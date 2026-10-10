@@ -158,9 +158,17 @@ fn geom(cards: Vec<Card>) -> Vec<Segment> {
     build_geometry(&d).unwrap()
 }
 
+/// The deck's own expansion, unsplit at free ends (FND-227).
+fn deck_geom(cards: Vec<Card>) -> Vec<Segment> {
+    let mut d = NecDeck::new();
+    d.cards = cards;
+    build_deck_geometry(&d).unwrap()
+}
+
 #[test]
 fn single_wire_is_one_trivial_path() {
-    let segs = geom(vec![Card::Gw(GwCard {
+    // Tests the deck expansion's path indices, so the deck geometry (FND-227).
+    let segs = deck_geom(vec![Card::Gw(GwCard {
         tag: 1,
         segments: 21,
         start: [0.0, 0.0, -5.0],
@@ -202,7 +210,8 @@ fn collinear_end_to_start_is_one_trivial_path() {
 #[test]
 fn start_to_start_is_one_nontrivial_path() {
     // Both wires start at the origin → one arm traversed in reverse (sign flip).
-    let segs = geom(vec![
+    // Tests the deck expansion's path segment counts, so the deck geometry (FND-227).
+    let segs = deck_geom(vec![
         Card::Gw(GwCard {
             tag: 1,
             segments: 10,

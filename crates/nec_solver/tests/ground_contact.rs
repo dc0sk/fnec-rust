@@ -108,11 +108,13 @@ fn unrepresentable_contacts_are_refused() {
         ("GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nGN 1\n", "ground plane"),
         // Below it.
         ("GW 1 21 0 0 -1 0 0 5 0.001\nGE 1\nGN 1\n", "below the ground"),
-        // A junction above the ground with an arm one segment long: doubled, a
-        // section graph the builder refuses (one row cannot fix a section's two
-        // constants).
+        // A junction above the ground with a run one segment long between it and a
+        // bend: doubled, a section graph the builder refuses (one row cannot fix a
+        // section's two constants). The run joins two junctions — a one-segment
+        // arm with a free end is refined into thirds (FND-227) and solves.
         (
-            "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 1 0 0 3 0.3 0 3 0.001\nGW 3 10 0 0 3 -3 0 3 0.001\nGE 1\nGN 1\n",
+            "GW 1 10 0 0 0 0 0 3 0.001\nGW 2 1 0 0 3 0.3 0 3 0.001\nGW 3 10 0.3 0 3 0.3 0 6 0.001\n\
+             GW 4 10 0 0 3 -3 0 3 0.001\nGE 1\nGN 1\n",
             "one segment long",
         ),
         // Finite ground has no trustworthy contact model.

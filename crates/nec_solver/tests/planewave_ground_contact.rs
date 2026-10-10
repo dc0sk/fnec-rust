@@ -49,7 +49,8 @@ fn receive(geometry: &str, ground: &str, wave: &str) -> Result<Vec<Complex64>, S
     let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
     let loads = build_deck_stamps(&d, &segs, FREQ).diagonal;
     solve_hallen_routed(&d, &segs, &mut z, FREQ, &loads)
-        .map(|r| r.currents)
+        // nec2c numbers the deck's segments (FND-227).
+        .map(|r| nec_solver::deck_values(&segs, &r.currents))
         .map_err(|e| e.to_string())
 }
 
@@ -66,7 +67,9 @@ fn receive_planned(geometry: &str, wave: &str) -> Vec<Complex64> {
         &g,
         &build_deck_stamps(&d, &segs, FREQ).diagonal,
     );
-    solve_hallen_planewave_planned(&d, &segs, &z, FREQ, &plan).expect("planned receive")
+    let currents =
+        solve_hallen_planewave_planned(&d, &segs, &z, FREQ, &plan).expect("planned receive");
+    nec_solver::deck_values(&segs, &currents)
 }
 
 fn monopole(n: u32) -> String {

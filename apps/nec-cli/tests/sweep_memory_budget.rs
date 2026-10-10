@@ -52,13 +52,14 @@ fn frequencies(stdout: &str) -> Vec<String> {
         .collect()
 }
 
-/// 11 MB less the process's fixed 10 MB fits three 0.29 MB points: three at a
-/// time, not the eight the pool would take.
+/// 11 MB less the process's fixed 10 MB fits two 0.34 MB points: two at a time,
+/// not the eight the pool would take. (Three 0.29 MB points until FND-227: the
+/// two free ends refined into thirds make the 51-segment deck 55 solved segments.)
 #[test]
 fn a_small_budget_caps_the_points_in_flight_and_says_so() {
     let (stdout, stderr) = run("11");
     assert!(
-        stderr.contains("the sweep solves 3 of its points at a time, not 8"),
+        stderr.contains("the sweep solves 2 of its points at a time, not 8"),
         "{stderr}"
     );
     assert_eq!(
