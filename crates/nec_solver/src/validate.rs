@@ -86,10 +86,7 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
     // rejection of a valid receive deck, on every frontend, complaining about a
     // source that is not there.
     for (ex, _role) in crate::excitation::feedpoints(deck) {
-        let Some(seg) = segs
-            .iter()
-            .find(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        else {
+        let Some(seg) = crate::find_deck_segment(segs, ex.tag, ex.segment).map(|i| &segs[i]) else {
             continue;
         };
 
@@ -624,10 +621,8 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     // voltage source does. Through the seam so an unrecognised `EX` type is not
     // silently treated as a feedpoint, which the plane-wave-only skip allowed.
     for (ex, _role) in crate::excitation::feedpoints(deck) {
-        if let Some((idx, _)) = segs
-            .iter()
-            .enumerate()
-            .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
+        if let Some((idx, _)) =
+            crate::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
         {
             if junction_segs.contains(&idx) {
                 out.push(format!(

@@ -627,10 +627,7 @@ fn solve_inner(
         // Unreachable today: `build_hallen_rhs` refuses an EX naming an absent
         // segment first. Kept defensive, saying what would be true — the deck
         // HAS a feedpoint; its segment is missing.
-        let Some(idx) = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        else {
+        let Some(idx) = nec_solver::find_deck_segment(&segs, ex.tag, ex.segment) else {
             return Err(SolveError::UnsupportedConfig(format!(
                 "EX on tag {} segment {} names a segment the geometry does not contain",
                 ex.tag, ex.segment
@@ -799,10 +796,8 @@ mod frontend_parity_tests {
                 .unwrap_or_else(|e| panic!("{name}: routed solve failed: {e}"));
 
             let ex = nec_solver::first_delta_gap_feedpoint(&deck).expect("feedpoint");
-            let idx = segs
-                .iter()
-                .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-                .expect("feed segment");
+            let idx =
+                nec_solver::find_deck_segment(&segs, ex.tag, ex.segment).expect("feed segment");
             let v = Complex64::new(ex.voltage_real, ex.voltage_imag);
             let want = v / routed.currents[idx];
 

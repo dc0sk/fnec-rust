@@ -141,6 +141,25 @@ pub struct Segment {
     pub radius: f64,
 }
 
+/// The index of the segment a deck card names as `(tag, segment)`, in NEC's
+/// numbering ([`Segment::tag_index`]); `None` when it names none.
+///
+/// The one place a deck reference becomes a segment. Nineteen sites — feeds,
+/// current sources, ports, the gain correction, validation and every front end —
+/// each spelled `position(|s| s.tag == t && s.tag_index == n)` inline, so a change
+/// to what a reference may name had nineteen places to be made, and the next
+/// copy would miss it (FND-135 was a numbering change of that kind). A gate
+/// (`apps/nec-cli/tests/deck_reference_resolver.rs`) refuses a new inline copy.
+/// Segment 0 names nothing: NEC numbers segments from 1, and the sites that read
+/// 0 as "all" or "the middle" (`LD`, `TL`/`NT` ports) do so before calling this.
+pub fn find_deck_segment(segs: &[Segment], tag: u32, segment: u32) -> Option<usize> {
+    if segment == 0 {
+        return None;
+    }
+    segs.iter()
+        .position(|s| s.tag == tag && s.tag_index == segment)
+}
+
 /// The largest segment count [`build_geometry`] will produce.
 ///
 /// The binding constraint is not the segment list — a `Segment` is about 128

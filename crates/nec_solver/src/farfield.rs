@@ -403,10 +403,7 @@ pub fn feedpoint_input_power(
 ) -> f64 {
     let mut total = 0.0;
     for (ex, role) in crate::excitation::feedpoints(deck) {
-        let Some(idx) = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        else {
+        let Some(idx) = crate::find_deck_segment(segs, ex.tag, ex.segment) else {
             continue;
         };
         if idx >= v_vec.len() || idx >= i_vec.len() {

@@ -182,13 +182,12 @@ pub fn solve_mpie_session(
         if role != nec_model::card::FeedpointRole::DeltaGap {
             continue;
         }
-        let driven_idx = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            .ok_or(MpieSessionError::DrivenSegmentNotFound {
+        let driven_idx = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
+            MpieSessionError::DrivenSegmentNotFound {
                 tag: ex.tag,
                 segment: ex.segment,
-            })?;
+            },
+        )?;
         // NEC's `EX 0` is a uniform field V/Δ over the driven segment. Projected on
         // the two triangle bases touching it, that is V·f(½) = V/2 at each end node,
         // with each basis's own reference sign — the transpose of the midpoint

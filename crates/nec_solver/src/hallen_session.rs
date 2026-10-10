@@ -260,12 +260,12 @@ fn graph_feeds(deck: &NecDeck, segs: &[Segment]) -> Vec<crate::section_graph::Gr
                     ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope
                 ) =>
             {
-                segs.iter()
-                    .position(|sg| sg.tag == ex.tag && sg.tag_index == ex.segment)
-                    .map(|seg| crate::section_graph::GraphFeed {
+                crate::find_deck_segment(segs, ex.tag, ex.segment).map(|seg| {
+                    crate::section_graph::GraphFeed {
                         seg,
                         volts: Complex64::new(ex.voltage_real, ex.voltage_imag),
-                    })
+                    }
+                })
             }
             _ => None,
         })
@@ -1321,12 +1321,9 @@ fn solve_ground_contact(
             .ok_or(HallenSessionError::CurrentSource(
                 CurrentSourceError::NoCurrentSource,
             ))?;
-        let src = segs
-            .iter()
-            .position(|s| s.tag == cs.tag && s.tag_index == cs.segment)
-            .ok_or(HallenSessionError::CurrentSource(
-                CurrentSourceError::NoCurrentSource,
-            ))?;
+        let src = crate::find_deck_segment(segs, cs.tag, cs.segment).ok_or(
+            HallenSessionError::CurrentSource(CurrentSourceError::NoCurrentSource),
+        )?;
         let i0 = Complex64::new(cs.voltage_real, cs.voltage_imag);
         let (currents, port_voltage) = crate::current_source::scale_to_impressed_current(
             routed.currents,
@@ -1449,12 +1446,9 @@ fn solve_hallen_routed_inner(
         }
         let (tag, seg, i0) = first_current_source(deck)
             .ok_or_else(|| HallenSessionError::Excitation("no current source in deck".into()))?;
-        let src = segs
-            .iter()
-            .position(|s| s.tag == tag && s.tag_index == seg)
-            .ok_or(HallenSessionError::CurrentSource(
-                CurrentSourceError::NoCurrentSource,
-            ))?;
+        let src = crate::find_deck_segment(segs, tag, seg).ok_or(
+            HallenSessionError::CurrentSource(CurrentSourceError::NoCurrentSource),
+        )?;
         let unit = solve_graph_unit_gap(deck, segs, z_mat, freq_hz, graph, src, loads)
             .map_err(HallenSessionError::Solve)?;
         let (currents, port_voltage) =
@@ -1599,8 +1593,7 @@ fn solve_delta_gap(
     // built by the same code (and the same path signs) as a real feed.
     let driven: Vec<(usize, Complex64)> = crate::excitation::feedpoints(deck)
         .filter_map(|(ex, _)| {
-            segs.iter()
-                .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+            crate::find_deck_segment(segs, ex.tag, ex.segment)
                 .map(|i| (i, Complex64::new(ex.voltage_real, ex.voltage_imag)))
         })
         .collect();
@@ -1766,10 +1759,7 @@ mod routing_tests {
         i: &[Complex64],
     ) -> Complex64 {
         let ex = crate::first_delta_gap_feedpoint(deck).expect("deck has a delta gap");
-        let idx = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            .expect("feed segment exists");
+        let idx = crate::find_deck_segment(segs, ex.tag, ex.segment).expect("feed segment exists");
         i[idx]
     }
 
@@ -1913,10 +1903,7 @@ mod load_stamp_tests {
         let routed =
             solve_hallen_routed(&deck, &segs, &mut z, F, &stamps.diagonal).expect("routed solve");
         let ex = crate::first_delta_gap_feedpoint(&deck).expect("feedpoint");
-        let idx = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            .expect("feed segment");
+        let idx = crate::find_deck_segment(&segs, ex.tag, ex.segment).expect("feed segment");
         Complex64::new(ex.voltage_real, ex.voltage_imag) / routed.currents[idx]
     }
 
