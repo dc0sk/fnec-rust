@@ -41,7 +41,7 @@ fn poison_stub() -> std::path::PathBuf {
                   *shutdown*) exit 0 ;;\n\
                   *poison*)   exit 1 ;;\n\
                 esac\n\
-                printf '{\"status\":\"ok\",\"task_id\":\"t\",\"frequency_hz\":1.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0}\\n'\n\
+                printf '{\"status\":\"ok\",\"task_id\":\"t\",\"frequency_hz\":1.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}\\n'\n\
               done\n",
         )
         .expect("write stub");
