@@ -603,10 +603,8 @@ fn feedpoint_impedance(
     // type, so a deck with a plane wave ahead of its voltage source reported the
     // plane wave's NTHETA/NPHI as a feedpoint tag and segment.
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
-        let Some((idx, seg)) = segs
-            .iter()
-            .enumerate()
-            .find(|(_, seg)| seg.tag == ex.tag && seg.tag_index == ex.segment)
+        let Some((idx, seg)) =
+            nec_solver::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
         else {
             // Unreachable today: `build_excitation` rejects an EX naming an absent
             // segment before this runs. Kept defensive, but saying what would

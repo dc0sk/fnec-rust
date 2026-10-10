@@ -233,13 +233,12 @@ pub fn build_hallen_rhs(
         if ex2.kind().feedpoint_role() != FeedpointRole::DeltaGap {
             continue;
         }
-        let idx = segs
-            .iter()
-            .position(|s| s.tag == ex2.tag && s.tag_index == ex2.segment)
-            .ok_or(ExcitationError::SegmentNotFound {
+        let idx = crate::find_deck_segment(segs, ex2.tag, ex2.segment).ok_or(
+            ExcitationError::SegmentNotFound {
                 tag: ex2.tag,
                 segment: ex2.segment,
-            })?;
+            },
+        )?;
         sources.push((idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)));
     }
 
@@ -372,13 +371,12 @@ pub fn build_hallen_rhs_paths(
                 })
             }
         }
-        let fi = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-            .ok_or(ExcitationError::SegmentNotFound {
+        let fi = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
+            ExcitationError::SegmentNotFound {
                 tag: ex.tag,
                 segment: ex.segment,
-            })?;
+            },
+        )?;
         any_source = true;
         let vsrc = Complex64::new(ex.voltage_real, ex.voltage_imag);
         let src_path = path_of[fi];
@@ -427,13 +425,12 @@ pub fn build_current_source_shape(
     src_tag: u32,
     src_segment: u32,
 ) -> Result<CurrentSourceShape, ExcitationError> {
-    let src_seg = segs
-        .iter()
-        .position(|s| s.tag == src_tag && s.tag_index == src_segment)
-        .ok_or(ExcitationError::SegmentNotFound {
+    let src_seg = crate::find_deck_segment(segs, src_tag, src_segment).ok_or(
+        ExcitationError::SegmentNotFound {
             tag: src_tag,
             segment: src_segment,
-        })?;
+        },
+    )?;
 
     // Synthesize a V=1 delta-gap at the source segment; drop other EX cards so
     // build_hallen_rhs sees a single ordinary voltage source.
@@ -482,13 +479,12 @@ pub fn build_current_source_shape_paths(
     src_segment: u32,
     paths: &[ConductorPath],
 ) -> Result<CurrentSourceShape, ExcitationError> {
-    let src_seg = segs
-        .iter()
-        .position(|s| s.tag == src_tag && s.tag_index == src_segment)
-        .ok_or(ExcitationError::SegmentNotFound {
+    let src_seg = crate::find_deck_segment(segs, src_tag, src_segment).ok_or(
+        ExcitationError::SegmentNotFound {
             tag: src_tag,
             segment: src_segment,
-        })?;
+        },
+    )?;
 
     // Synthesize a V=1 delta-gap at the source segment; drop other EX cards so
     // build_hallen_rhs_paths sees a single ordinary voltage source.
@@ -538,13 +534,12 @@ fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), Ex
     }
 
     // Find the segment by tag + tag_index.
-    let idx = segs
-        .iter()
-        .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
-        .ok_or(ExcitationError::SegmentNotFound {
+    let idx = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
+        ExcitationError::SegmentNotFound {
             tag: ex.tag,
             segment: ex.segment,
-        })?;
+        },
+    )?;
 
     // The EFIE RHS has units of V/m (electric field).  A series voltage
     // source of voltage V over a segment of length Δl impresses a tangential
@@ -703,11 +698,8 @@ mod tests {
         let segs = crate::build_geometry(&deck).expect("geometry");
         let rhs = build_hallen_rhs(&deck, &segs, 14.2e6).expect("rhs builds");
 
-        let idx = |tag_index: u32| {
-            segs.iter()
-                .position(|s| s.tag == 1 && s.tag_index == tag_index)
-                .expect("segment exists")
-        };
+        let idx =
+            |tag_index: u32| crate::find_deck_segment(&segs, 1, tag_index).expect("segment exists");
         let (a, b) = (idx(16), idx(36));
 
         // Both feed segments must carry the same driving term, since each is the

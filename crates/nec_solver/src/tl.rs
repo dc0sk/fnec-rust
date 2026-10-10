@@ -131,9 +131,7 @@ pub(crate) fn find_segment_index(
     if segment == 0 {
         return find_center_segment_index(segs, tag);
     }
-    let idx = segs
-        .iter()
-        .position(|s| s.tag == tag && s.tag_index == segment)?;
+    let idx = crate::geometry::find_deck_segment(segs, tag, segment)?;
     Some((idx, segment, None))
 }
 

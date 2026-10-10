@@ -218,10 +218,7 @@ fn solve_at_freq(
     // Through the shared seam (FND-031). This loop took the first `EX` of any
     // type, so a plane wave's NTHETA/NPHI could be reported as a feedpoint.
     if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
-        let Some((idx, seg)) = segs
-            .iter()
-            .enumerate()
-            .find(|(_, s)| s.tag == ex.tag && s.tag_index == ex.segment)
+        let Some((idx, seg)) = nec_solver::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
         else {
             // Unreachable today: `build_hallen_rhs` rejects an EX naming an absent
             // segment before this runs. Kept defensive, but saying what would

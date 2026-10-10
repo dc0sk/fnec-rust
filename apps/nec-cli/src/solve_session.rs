@@ -387,9 +387,7 @@ pub(super) fn collect_pulse_current_source_constraints(
             continue;
         }
 
-        let seg_index = segs
-            .iter()
-            .position(|s| s.tag == ex.tag && s.tag_index == ex.segment)
+        let seg_index = nec_solver::find_deck_segment(segs, ex.tag, ex.segment)
             .ok_or_else(|| format!("EX: no segment with tag {}, index {}", ex.tag, ex.segment))?;
 
         out.push(PulseCurrentSourceConstraint {
@@ -846,10 +844,8 @@ pub(super) fn build_feedpoint_rows(
     // solved port voltage, corpus-pinned under PH8-CHK-001 (`dipole-ex4-freesp-51seg`).
     // A seam that filtered on "voltage source" would have deleted that row.
     for (ex, role) in nec_solver::feedpoints(deck) {
-        let Some((idx, seg)) = segs
-            .iter()
-            .enumerate()
-            .find(|(_, seg)| seg.tag == ex.tag && seg.tag_index == ex.segment)
+        let Some((idx, seg)) =
+            nec_solver::find_deck_segment(segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
         else {
             continue;
         };
