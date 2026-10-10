@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 ---
 
 # CLI Guide — fnec (v0.21.6)
@@ -216,6 +216,14 @@ old per-wire fallback and is **warned about, not blocked**; the warning names
 `--solver mpie` where the MPIE takes the deck. A negative feedpoint resistance
 is reported as an explicit warning, since a passive antenna cannot have one
 (PH9-CHK-005).
+
+**A source or `TL`/`NT` port on the segment at a free wire end is refused**
+(FND-227): there it lies wholly in the solve's homogeneous solution, so the solve
+cannot see it — the answer was ~10¹⁰ Ω. Move it one segment in (a different
+antenna: the gap is a segment further in), or make the end segment a short wire of
+its own, 3 segments, and feed its middle one. A source beside a bend or a junction
+is not affected. An `LD` load on a free-end segment is not yet refused and has no
+effect (FND-230).
 
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now

@@ -526,8 +526,19 @@ fn solve_inner(
     // that same raw grouping, without the FND-158 term: a 1+9+9+1 split dipole
     // came back 1032.2 - j3723.8 under `exec: gpu` against 76.68 + j32.87 under
     // `exec: cpu` and from the CLI, labelled `exec_used: cpu` (FND-199).
+    let merged = nec_solver::merged_grouping(&segs);
+    // An excitation the homogeneous constants absorb whole (FND-227) is the
+    // routed CPU solve's to refuse, saying why.
+    let gpu_eligible = gpu_eligible
+        && !nec_solver::merged_excitation_in_homogeneous_span(
+            &hallen_rhs.rhs,
+            &hallen_rhs.cos_vec,
+            &hallen_rhs.sin_vec,
+            &merged.0,
+            &merged.1,
+        );
     let device_currents = if gpu_eligible {
-        let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(&segs);
+        let (merged_endpoints, junction_tuples) = merged;
         let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
             .iter()
             .map(|s| nec_accel::ZSegmentInput {
