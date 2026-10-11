@@ -25,6 +25,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/core_flags_contract.rs` | 19 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 10 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/converged_reference.rs` | 4 | FND-232 — the corpus's nec2c references are nec2c on a 9× mesh: exactly the 11 expected cases carry one, each stored 1 / 3 / 9 × series contracts to its reference, fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh. | FND-232 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_reference_resolver.rs` | 2 | A deck reference `(tag, segment)` becomes a segment in one place: `nec_solver::find_deck_segment`; the scan refuses an inline `tag_index ==` lookup in any product source (self-checked on a planted copy). | FND-135, FND-227 |
@@ -135,7 +136,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=718 --> **718** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=722 --> **722** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -160,7 +161,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=608 --> **608** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1333 --> **1333** = 608 unit + 718 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1337 --> **1337** = 608 unit + 722 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
