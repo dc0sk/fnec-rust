@@ -49,8 +49,8 @@ pub use geometry::{
     build_conductor_paths, build_deck_geometry, build_geometry, classify_unsupported_topology,
     deck_values, detect_wire_junctions, find_deck_segment, free_end_segments, geometry_for,
     ground_model_from_deck, merge_collinear_wire_endpoints, wire_endpoints_from_segs,
-    ConductorPath, GeometryError, GroundModel, Segment, SegmentPart, UnsupportedTopology,
-    WireJunction, MAX_SEGMENTS, MERGE_POS_TOL_M,
+    ConductorPath, GeometryError, GroundModel, Segment, SegmentOrder, SegmentPart,
+    UnsupportedTopology, WireJunction, MAX_SEGMENTS, MERGE_POS_TOL_M,
 };
 // `classify_paths`, `group_paths` and `PathRoute` are deliberately NOT re-exported:
 // they are `pub(crate)`, because nothing outside this crate consumes them and a

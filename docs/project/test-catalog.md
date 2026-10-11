@@ -30,6 +30,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/deck_reference_resolver.rs` | 2 | A deck reference `(tag, segment)` becomes a segment in one place: `nec_solver::find_deck_segment`; the scan refuses an inline `tag_index ==` lookup in any product source (self-checked on a planted copy). | FND-135, FND-227 |
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
 | `apps/nec-cli/tests/end_segment_source.rs` | 9 | FND-227 / FND-230 — a source, load or port on the segment at a free wire end: solved on every Hallén route and exec, within 2.5 % / 2 % of the wire meshed 3× finer, an end-segment load seen (ΔZ within 15 % of nec2c's), segment 0 still unnamed, a fat end judged by its deck length, the MPIE's refusal kept. | FND-227, FND-230 |
+| `apps/nec-cli/tests/sinusoidal_chain_order.rs` | 3 | FND-233 — `--solver sinusoidal` solves a collinear chain in any `GW` order: a loaded, unequally segmented split dipole gives the same Z and the same current on every deck segment in three orders, on the plain route, within 2 % of Hallén; a scrambled T and a reversed split are still refused. | FND-233 |
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
 | `apps/nec-cli/tests/exec_auto.rs` | 12 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
 | `apps/nec-cli/tests/exec_modes.rs` | 28 | `--exec` selection, drop-in alias resolution, sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run; the hybrid-lane check re-runs once, and only, when a present GPU was hidden from the run's enumeration (FND-190) | DEC-003, CP-012 |
@@ -134,7 +135,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=715 --> **715** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=718 --> **718** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -145,7 +146,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 251 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
+| `nec_solver` | 254 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity |
 | `nec_worker` | 93 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -155,11 +156,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=605 --> **605** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=608 --> **608** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1327 --> **1327** = 605 unit + 715 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1333 --> **1333** = 608 unit + 718 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
