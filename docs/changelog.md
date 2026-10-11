@@ -53,6 +53,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   segments per free end, which the `info:` line and the GPU crossover count. The MPIE
   is unchanged — it takes the deck's own segments. A `--hosts` worker of an older fnec
   is refused rather than blended into a sweep on another mesh. (#564)
+- **The corpus's nec2c references are nec2c's converged answer** (FND-232): eleven cases
+  captured on the deck's own mesh are re-captured on a mesh nine times finer, each
+  segment reference at the same point (`scripts/nec2c-fine-mesh.py`), with the 1 / 3 /
+  9 × series stored beside it. Refined the same way, fnec reaches the same value — the
+  dipole 79.65 + j46.36 against nec2c's 79.66 + j46.65 — and a new gate checks that
+  fnec moves toward each reference when its mesh is refined. The split-V's external
+  gate widens to 5 / 8 Ω: fnec at 21 segments is 3.8 / 6.3 Ω from the converged value,
+  its own discretisation, where same-mesh nec2c had agreed by cancellation. (#566)
 
 ## [0.21.6] — 2026-10-09 — Ask once
 

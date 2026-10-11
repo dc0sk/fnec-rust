@@ -232,6 +232,12 @@ silently. The worker reports a `mesh` field; the controller refuses a mismatch.
   | stepped radius | nec2c same mesh | nec2c at 3N (finest with segments ≥ 3 radii) |
   | `dipole-loaded` external | NEC2DXS500, same mesh | nec2c at 9× |
 
+  The rest of the corpus's external references followed in #566 (FND-232): eleven
+  cases at nec2c 9×, each with its 1 / 3 / 9 × series, gated by
+  `apps/nec-cli/tests/converged_reference.rs`. The 27× captures above sit below
+  nec2c's thin-wire guideline (segment/radius 8 without `EK`); with `EK` they agree to
+  0.05 %.
+
 - **Fixtures built on a one-segment arm with a free end dissolved** (refined, the
   section graph takes them). Each was rebuilt with the one-segment run between a
   junction and a bend, still showing what it was written to show.
