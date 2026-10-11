@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 ---
 
 # Changelog
@@ -37,6 +37,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   and every output row means what it did. An end-fed wire answers 1510.6 − j4102.9 Ω
   (λ/2 at 21 segments; it read 8.2×10¹⁰ Ω, refused since #562), and an `LD` on an end
   segment, which did nothing, is seen (ΔZ within 9 % of nec2c's). (#564)
+- **`--solver sinusoidal` takes a collinear chain in any `GW` order** (FND-233). A
+  straight conductor written over several cards solved when the cards were listed end
+  to end and was refused as "a bend, split, junction or loop" when one was listed out
+  of place. The sinusoidal arm now solves the segments in chain order and reports
+  them in deck order; the same deck gives the same impedance and currents in every
+  card order. A T junction or a wire written backwards is still refused. (#565)
 
 ### Changed
 

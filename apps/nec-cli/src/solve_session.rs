@@ -1122,6 +1122,19 @@ pub(super) fn solve_frequency_point(
 
     let mut v_vec_pulse = scale_pulse_rhs(v_vec, pulse_rhs_mode, freq_hz);
 
+    // The sinusoidal basis holds a conductor as one index range, so it solves the
+    // segments in chain order and restores the currents to deck order: a collinear
+    // chain was solved or refused by the order of its GW cards (FND-233). The whole
+    // arm runs on `sin_segs` — assembly, load columns, route and source — because
+    // each of them reads the chain off the array; permuting a finished matrix would
+    // leave the load columns shaped over the unmerged wires.
+    let sin_order = if matches!(solver_mode, SolverMode::Sinusoidal) {
+        nec_solver::SegmentOrder::chains(segs)
+    } else {
+        nec_solver::SegmentOrder::default()
+    };
+    let sin_segs = sin_order.segments(segs);
+
     let mut z_mat = match solver_mode {
         SolverMode::Hallen => {
             // For free-space (or deferred) ground with --exec gpu, attempt GPU Z-matrix fill.
@@ -1170,7 +1183,7 @@ pub(super) fn solve_frequency_point(
             // Sinusoidal mode uses the Hallén thin-wire Z-matrix (same as Hallen),
             // not the Pocklington EFIE matrix. The accurate basis only matters for
             // the solve step, not the matrix assembly.
-            assemble_z_matrix_with_ground(segs, freq_hz, ground)
+            assemble_z_matrix_with_ground(&sin_segs, freq_hz, ground)
         }
         // The MPIE assembles and solves its own (triangle-basis) system in the
         // i_vec step below; this Hallén Z-matrix is unused by it. Assembling it
@@ -1210,9 +1223,9 @@ pub(super) fn solve_frequency_point(
         SolverMode::Sinusoidal => {
             nec_solver::stamp_hallen_load_columns(
                 &mut z_mat,
-                segs,
+                &sin_segs,
                 freq_hz,
-                &stamps.diagonal,
+                &sin_order.apply(&stamps.diagonal),
                 None,
             );
         }
@@ -1245,7 +1258,7 @@ pub(super) fn solve_frequency_point(
     // and its residual check could not see it (FND-203). The routing decision is
     // the Hallén session's own, so the two cannot disagree about what a deck is.
     if matches!(solver_mode, SolverMode::Sinusoidal) {
-        let route = nec_solver::hallen_route(deck, segs);
+        let route = nec_solver::hallen_route(deck, &sin_segs);
         if route.paths || route.unsupported_topology {
             return Err(
                 "--solver sinusoidal solves straight wires and collinear chains only; this \
@@ -1384,23 +1397,23 @@ pub(super) fn solve_frequency_point(
             }
         }
         SolverMode::Sinusoidal => {
-            if !per_wire_basis_feasible {
+            let (i, a, r, label) = if !per_wire_basis_feasible {
                 eprintln!(
                     "warning: sinusoidal solver requires >=2 segments per wire; falling back to pulse"
                 );
-                let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                let i = solve(&z_mat, &sin_order.apply(&v_vec_pulse)).map_err(|e| e.to_string())?;
+                let (a, r) = residual_zi_minus_v(&z_mat, &i, &sin_order.apply(&v_vec_pulse));
                 (i, a, r, "sinusoidal->pulse")
             } else {
                 // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
                 // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
                 // sinusoidal expansion functions and pulse testing (projection).
                 let hallen_rhs =
-                    build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+                    build_hallen_rhs(deck, &sin_segs, freq_hz).map_err(|e| e.to_string())?;
                 // The Hallén arm's grouping, not the raw wires: it decides which
                 // conductors take the sin homogeneous term, and a collinear split
                 // must be one conductor on every `--solver` (FND-158).
-                let (sin_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
+                let (sin_endpoints, junction_tuples) = nec_solver::merged_grouping(&sin_segs);
                 let wire_endpoints = &sin_endpoints[..];
                 let sol = solve_hallen_sinusoidal_basis(
                     &z_mat,
@@ -1447,7 +1460,8 @@ pub(super) fn solve_frequency_point(
                         residual_hallen(&z_mat, &hallen_sol.currents, &h2, &hallen_rhs.rhs);
                     (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                 }
-            }
+            };
+            (sin_order.restore(&i), a, r, label)
         }
         SolverMode::Mpie => {
             // One mapping for every variant: the special-cased `NoVoltageSource`
@@ -1811,19 +1825,24 @@ pub(super) struct DecisionInputs<'a> {
 /// `key=value` fields appended to the `diag:` line; see [`DecisionInputs`].
 pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
     let route = match d.solver_mode {
-        SolverMode::Hallen | SolverMode::Sinusoidal => {
-            let r = nec_solver::hallen_route(d.deck, d.segs);
-            if r.unsupported_topology {
-                "unsupported"
-            } else if r.paths {
-                "paths"
-            } else {
-                "plain"
-            }
+        SolverMode::Hallen => route_label(nec_solver::hallen_route(d.deck, d.segs)),
+        // The order the sinusoidal arm solves in (FND-233).
+        SolverMode::Sinusoidal => {
+            let order = nec_solver::SegmentOrder::chains(d.segs);
+            route_label(nec_solver::hallen_route(d.deck, &order.segments(d.segs)))
         }
         SolverMode::Mpie => "mpie",
         SolverMode::Pulse | SolverMode::Continuity => "pulse",
     };
+    fn route_label(r: nec_solver::HallenRoute) -> &'static str {
+        if r.unsupported_topology {
+            "unsupported"
+        } else if r.paths {
+            "paths"
+        } else {
+            "plain"
+        }
+    }
     let drive = if deck_has_plane_wave(d.deck) {
         "planewave"
     } else if nec_solver::feedpoints(d.deck)

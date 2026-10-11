@@ -610,6 +610,98 @@ impl ConductorPath {
     }
 }
 
+/// A reordering of the segments that puts every chain of wires in walk order,
+/// for a basis that holds a conductor as one index range (FND-233).
+///
+/// The plain merged basis (the sinusoidal solve) can only weld wires that are
+/// adjacent in the segment array, so three collinear wires written out of order
+/// were one conductor when listed in chain order and a "split" refused when the
+/// first was listed last. Solving the reordered segments and restoring the
+/// currents is the same system re-indexed: every matrix entry, load column and
+/// source is a function of the segments, never of their positions — provided the
+/// WHOLE solve, from assembly on, runs on [`SegmentOrder::segments`].
+///
+/// The order is read from [`build_conductor_paths`], so the rule for what joins
+/// is that walk's, not a third copy. A chain walked from its far end is reversed
+/// back to forward; a chain with a wire written backwards stays in deck order
+/// (it is a reversed split, which only the path basis solves). It is the identity
+/// whenever every chain is already contiguous and forward, so a deck that solved
+/// before is solved on the same indices.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SegmentOrder {
+    /// `order[i]` is the deck index of solve index `i`; `None` is the identity.
+    order: Option<Vec<usize>>,
+}
+
+impl SegmentOrder {
+    /// The chain order of `segs`.
+    pub fn chains(segs: &[Segment]) -> Self {
+        let Some(paths) = build_conductor_paths(segs) else {
+            // A junction or loop: no plain-basis chain to restore.
+            return Self { order: None };
+        };
+        let mut chains: Vec<Vec<usize>> = paths
+            .into_iter()
+            .map(|p| {
+                let mut c = p.segs;
+                if p.signs.iter().all(|&s| s < 0.0) {
+                    c.reverse();
+                } else if p.signs.iter().any(|&s| s < 0.0) {
+                    c.sort_unstable();
+                }
+                c
+            })
+            .collect();
+        chains.sort_by_key(|c| c.iter().copied().min());
+        let order: Vec<usize> = chains.into_iter().flatten().collect();
+        let mut seen = vec![false; segs.len()];
+        let is_permutation = order.len() == segs.len()
+            && order
+                .iter()
+                .all(|&i| i < seen.len() && !std::mem::replace(&mut seen[i], true));
+        let identity = order.iter().enumerate().all(|(i, &o)| i == o);
+        Self {
+            order: (is_permutation && !identity).then_some(order),
+        }
+    }
+
+    /// Whether solve order is deck order.
+    pub fn is_identity(&self) -> bool {
+        self.order.is_none()
+    }
+
+    /// A deck-ordered per-segment vector in solve order.
+    pub fn apply<T: Clone>(&self, deck_ordered: &[T]) -> Vec<T> {
+        match &self.order {
+            None => deck_ordered.to_vec(),
+            Some(o) => o.iter().map(|&i| deck_ordered[i].clone()).collect(),
+        }
+    }
+
+    /// A solve-ordered per-segment vector back in deck order.
+    pub fn restore<T: Clone>(&self, solve_ordered: &[T]) -> Vec<T> {
+        match &self.order {
+            None => solve_ordered.to_vec(),
+            Some(o) => {
+                let mut out = solve_ordered.to_vec();
+                for (i, &d) in o.iter().enumerate() {
+                    out[d] = solve_ordered[i].clone();
+                }
+                out
+            }
+        }
+    }
+
+    /// The segments in solve order, each `global_index` its new position.
+    pub fn segments(&self, segs: &[Segment]) -> Vec<Segment> {
+        let mut out = self.apply(segs);
+        for (i, s) in out.iter_mut().enumerate() {
+            s.global_index = i;
+        }
+        out
+    }
+}
+
 /// Decompose the geometry into [`ConductorPath`]s for the general-junction Hallén
 /// solve (PH9-CHK-002).
 ///
@@ -2116,5 +2208,68 @@ mod tests {
                 .collect();
             assert_eq!(numbers, vec![1, 2, 3, 4, 5], "tag {tag}");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // FND-233 — the chain order the plain merged basis solves in
+    // -------------------------------------------------------------------------
+
+    /// Three collinear wires along z (tags 1..3 bottom to top), written in `order`.
+    fn chain_in_order(order: [usize; 3]) -> Vec<Segment> {
+        let wires = [(1, 4, -1.0, 0.0), (2, 3, 0.0, 0.5), (3, 5, 0.5, 1.5)];
+        let mut deck = NecDeck::new();
+        for i in order {
+            let (tag, segments, z0, z1) = wires[i];
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments,
+                start: [0.0, 0.0, z0],
+                end: [0.0, 0.0, z1],
+                radius: 0.001,
+            }));
+        }
+        build_deck_geometry(&deck).unwrap()
+    }
+
+    #[test]
+    fn segment_order_is_the_identity_on_a_chain_already_in_order() {
+        assert!(SegmentOrder::chains(&chain_in_order([0, 1, 2])).is_identity());
+    }
+
+    #[test]
+    fn segment_order_walks_a_scrambled_chain_bottom_to_top_and_restores_it() {
+        for order in [[1, 2, 0], [2, 0, 1], [2, 1, 0]] {
+            let segs = chain_in_order(order);
+            let so = SegmentOrder::chains(&segs);
+            assert!(!so.is_identity(), "{order:?}");
+            let solved = so.segments(&segs);
+            // Contiguous and forward: what the merge welds into one conductor.
+            assert_eq!(
+                merge_collinear_wire_endpoints(&solved),
+                vec![(0, 11)],
+                "{order:?}"
+            );
+            let positions: Vec<usize> = solved.iter().map(|s| s.global_index).collect();
+            assert_eq!(positions, (0..12).collect::<Vec<_>>(), "{order:?}");
+            // A per-segment vector survives the round trip, element for element.
+            let tagged: Vec<(u32, u32)> = segs.iter().map(|s| (s.tag, s.tag_index)).collect();
+            assert_eq!(so.restore(&so.apply(&tagged)), tagged, "{order:?}");
+        }
+    }
+
+    #[test]
+    fn segment_order_leaves_a_junction_in_deck_order() {
+        let mut deck = deck_with_gw(1, 5, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.001);
+        for (tag, x) in [(2, -1.0), (3, 1.0)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments: 3,
+                start: [0.0, 0.0, 1.0],
+                end: [x, 0.0, 1.0],
+                radius: 0.001,
+            }));
+        }
+        let segs = build_deck_geometry(&deck).unwrap();
+        assert!(SegmentOrder::chains(&segs).is_identity());
     }
 }
