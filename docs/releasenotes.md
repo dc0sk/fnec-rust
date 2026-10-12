@@ -2,10 +2,54 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-09
+last_updated: 2026-10-12
 ---
 
 # Release Notes
+
+## 0.21.7 — Free ends
+
+Hallén's basis has no freedom at a free wire end: the segment there carried the
+coarsest current of the wire, a source on it lay wholly in the homogeneous solution,
+and a load on it did nothing. 0.21.7 splits every segment at a free wire end into
+three equal thirds for the Hallén solve. The deck's segment is the middle third —
+same number, same midpoint — so every card and every output row means what it did.
+
+Measured on the release build against the published 0.21.6 binary, default solver
+unless named, nec2c 1.3.1 on the same deck:
+
+| | 0.21.6 | 0.21.7 | nec2c |
+|---|---|---|---|
+| reference dipole, 51 segments (`corpus/dipole-freesp-51seg.nec`) | 78.83 + j42.43 Ω | 79.33 + j45.04 Ω | 79.35 + j46.22 Ω |
+| 5-element Yagi, driven element (`corpus/yagi-5elm-51seg.nec`) | 8.84 + j49.49 Ω | 8.35 + j54.51 Ω | 8.17 + j56.54 Ω |
+| 5 m wire, 21 segments, 29.9 MHz, fed on its end segment | 9.9 × 10¹⁰ Ω, exit 0 | 1553 − j4046 Ω | 3385 − j5530 Ω |
+| the same wire centre-fed, 50 Ω on its end segment: ΔZ from the load | 0 (the load did nothing) | 0.44 − j0.09 Ω | 0.44 − j0.08 Ω |
+| `--solver mpie`, the same wire fed on segment 6 | 161.94 + j68.26 Ω (6.4 % off) | 150.16 + j64.99 Ω (1.1 % off) | 151.60 + j66.10 Ω |
+| `--solver mpie`, fed on its end segment | 3659 − j3311 Ω | refused: feed one segment in | — |
+| `--solver sinusoidal`, a straight dipole written as three `GW` cards out of order | refused as a bend or junction | 91.85 + j35.13 Ω, the same in every card order | — |
+
+An end-fed wire has no converged answer in either code — a delta gap at a free end
+is a different antenna at every mesh (nec2c reads 3385 − j5530, 2519 − j9790 and
+1853 − j15429 Ω on this wire at 21, 41 and 81 segments) — so the end-fed row shows
+the 0.21.6 failure, not an agreement. The ΔZ row is the one to compare.
+
+- **Every Hallén answer with a free wire end changes.** A deck solves two more
+  segments per free end, which the `info:` line and the GPU crossover count. A
+  `--hosts` worker of an older fnec is refused rather than blended into a sweep on
+  another mesh. The MPIE is unchanged — it takes the deck's own segments.
+- **The MPIE's feed is NEC's** (FND-224): a gap drives both triangle bases of the
+  driven segment, half the voltage each. Mirrored ports agree exactly, and the
+  Y-junction is 0.9 % from nec2c (was 2.9 %). A feed on an end segment, which the
+  MPIE answered 20–37 % from nec2c at any mesh, is refused (FND-228).
+- **`--solver sinusoidal` solves a collinear chain in any `GW` order** (FND-233) and
+  reports it in deck order. A T junction or a wire written backwards is still refused.
+- **The corpus's nec2c references are converged** (FND-232): eleven cases are
+  re-captured on a mesh nine times finer, each segment reference at the same point
+  (`scripts/nec2c-fine-mesh.py`), with the 1 / 3 / 9 × series stored beside them. A
+  new gate checks that fnec moves toward each reference when its mesh is refined.
+  The split-V's gate widens to 5 / 8 Ω: at 21 segments fnec is 3.8 / 6.3 Ω from the
+  converged value, its own discretisation, where same-mesh nec2c had agreed with it
+  by erring the same way.
 
 ## 0.21.6 — Ask once
 

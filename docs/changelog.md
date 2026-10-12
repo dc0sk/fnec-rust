@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 ---
 
 # Changelog
@@ -14,6 +14,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.21.7] — 2026-10-12 — Free ends
+
+The segment at a free wire end is solved instead of left coarse: a feed or a load
+there is answered, and every Hallén answer with a free end moves toward nec2c. The
+MPIE drives a gap as NEC does, `--solver sinusoidal` takes a chain in any card order,
+and the corpus's nec2c references are nec2c's converged answer. The findings ledger
+went from 226 / 0 open to **233 / 0 open**.
 
 ### Fixed
 
