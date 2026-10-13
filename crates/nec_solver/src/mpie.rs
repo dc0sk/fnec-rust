@@ -400,6 +400,31 @@ fn leg_pair_integrals(
     (za, zp)
 }
 
+/// The free-space reaction of basis `bm` on basis `bn` (legs into `segs`).
+fn reaction(segs: &[SegGeom], bm: &[Leg], bn: &[Leg], radius: f64, freq_hz: f64) -> Complex64 {
+    let w = 2.0 * std::f64::consts::PI * freq_hz;
+    let k = w / C0;
+    let pre_a = Complex64::new(0.0, w * MU0 / (4.0 * std::f64::consts::PI));
+    let pre_p =
+        Complex64::new(1.0, 0.0) / Complex64::new(0.0, w * EPS0 * 4.0 * std::f64::consts::PI);
+    let mut za = Complex64::new(0.0, 0.0);
+    let mut zp = Complex64::new(0.0, 0.0);
+    for lm in bm {
+        let sm = &segs[lm.seg];
+        let tm = lm.flow_tangent(segs);
+        let cm = lm.charge(segs);
+        for ln in bn {
+            let sn = &segs[ln.seg];
+            let tt = dot(tm, ln.flow_tangent(segs));
+            let cc = cm * ln.charge(segs);
+            let (a, p) = leg_pair_integrals(sm, lm, sn, ln, radius, k);
+            za += tt * a;
+            zp += cc * p;
+        }
+    }
+    pre_a * za + pre_p * zp
+}
+
 /// Assemble the dense free-space MPIE impedance matrix over the given bases.
 /// Galerkin-symmetric by construction (upper triangle filled and mirrored).
 fn assemble(
@@ -410,39 +435,68 @@ fn assemble(
 ) -> Vec<Vec<Complex64>> {
     let nb = bases.len();
     let mut z = vec![vec![Complex64::new(0.0, 0.0); nb]; nb];
-    if nb == 0 {
-        return z;
-    }
-
-    let w = 2.0 * std::f64::consts::PI * freq_hz;
-    let k = w / C0;
-    let pre_a = Complex64::new(0.0, w * MU0 / (4.0 * std::f64::consts::PI));
-    let pre_p =
-        Complex64::new(1.0, 0.0) / Complex64::new(0.0, w * EPS0 * 4.0 * std::f64::consts::PI);
-
     for m in 0..nb {
         for n in m..nb {
-            let mut za = Complex64::new(0.0, 0.0);
-            let mut zp = Complex64::new(0.0, 0.0);
-            for lm in &bases[m] {
-                let sm = &segs[lm.seg];
-                let tm = lm.flow_tangent(segs);
-                let cm = lm.charge(segs);
-                for ln in &bases[n] {
-                    let sn = &segs[ln.seg];
-                    let tt = dot(tm, ln.flow_tangent(segs));
-                    let cc = cm * ln.charge(segs);
-                    let (a, p) = leg_pair_integrals(sm, lm, sn, ln, radius, k);
-                    za += tt * a;
-                    zp += cc * p;
-                }
-            }
-            let entry = pre_a * za + pre_p * zp;
+            let entry = reaction(segs, &bases[m], &bases[n], radius, freq_hz);
             z[m][n] = entry;
             z[n][m] = entry;
         }
     }
     z
+}
+
+/// Add a perfect ground's reflected term by its exact image (FND-238): the image
+/// of a current `J` at `r` is `−M·J` at `M·r`, `M = diag(1, 1, −1)`, so the image
+/// of basis `f_n` is `−mirror(f_n)` — its charge `−q` — and the ground adds
+/// `−Z_free(f_m, mirror(f_n))` to every entry. The mirrored legs keep their flags
+/// on z-negated segments, so their flow tangent and charge come out mirrored, and
+/// the free-space fill's near-pair handling (exact static moments where a segment
+/// is within about a segment length of its image) carries over unchanged. It
+/// replaced a reflected kernel evaluated once per segment pair at the midpoints,
+/// which read a reactance ~200 Ω off, sign flipped, at a bend 0.1 m up with
+/// 0.25 m segments.
+fn add_pec_image(
+    z: &mut [Vec<Complex64>],
+    segs: &[SegGeom],
+    bases: &[Vec<Leg>],
+    radius: f64,
+    freq_hz: f64,
+) {
+    let n = segs.len();
+    let mut both: Vec<SegGeom> = Vec::with_capacity(2 * n);
+    both.extend(segs.iter().map(|s| SegGeom {
+        p0: s.p0,
+        p1: s.p1,
+        tangent: s.tangent,
+        len: s.len,
+    }));
+    both.extend(segs.iter().map(|s| SegGeom {
+        p0: [s.p0[0], s.p0[1], -s.p0[2]],
+        p1: [s.p1[0], s.p1[1], -s.p1[2]],
+        tangent: [s.tangent[0], s.tangent[1], -s.tangent[2]],
+        len: s.len,
+    }));
+    let mirrored: Vec<Vec<Leg>> = bases
+        .iter()
+        .map(|b| {
+            b.iter()
+                .map(|l| Leg {
+                    seg: l.seg + n,
+                    ..*l
+                })
+                .collect()
+        })
+        .collect();
+    let nb = bases.len();
+    for m in 0..nb {
+        for k in m..nb {
+            let refl = -reaction(&both, &bases[m], &mirrored[k], radius, freq_hz);
+            z[m][k] += refl;
+            if k != m {
+                z[k][m] += refl;
+            }
+        }
+    }
 }
 
 /// Solve the free-space MPIE for a delta-gap voltage source at `feed_node`
@@ -545,7 +599,9 @@ pub fn ground_contact_error(
 /// where the free-space `e^{-jkR}/R` sits, so the surface wave enters the currents
 /// themselves (not just the feed Z).
 ///
-/// Supports any wire **above ground**: a horizontal wire uses the fast reflected
+/// Over a **perfect** ground every geometry takes the exact image
+/// ([`add_pec_image`], FND-238). Over a finite ground it supports any wire
+/// **above ground**: a horizontal wire uses the fast reflected
 /// potential kernels (Phase D); a vertical / tilted / sloping straight wire uses
 /// the general reflected-E-field-dyadic reaction on a `(Δs, Σs)` grid; and a bent
 /// wire uses the per-segment-pair reflected reaction. A wire that reaches the
@@ -567,6 +623,10 @@ pub fn assemble_with_ground(
 
     if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
         return Err(e);
+    }
+    if pec {
+        add_pec_image(&mut z, &segs, &bases, geom.radius, freq_hz);
+        return Ok(z);
     }
     let lam = C0 / freq_hz;
     let z0 = geom.nodes[0][2];
