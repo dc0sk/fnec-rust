@@ -53,7 +53,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/loads_config_validation.rs` | 3 | FND-204/207: a `--loads-config` load naming no segment, and a malformed loads file (unknown key or table, missing or non-integer index, no loads), are refused by name; explicit 0 = all and a single-segment load still apply. | FND-204, FND-207 |
 | `apps/nec-cli/tests/mpie_multi_source.rs` | 1 | FND-202: two fed dipoles on `--solver mpie` match nec2c on both ports, in phase and antiphase, at two meshes. | FND-202 |
 | `apps/nec-cli/tests/mpie_ground_image.rs` | 3 | FND-238 / FND-239 — `--solver mpie` near a ground is within 3 % / 1.2 % of nec2c's converged value at 1× / 3× and the finer is nearer: over a perfect ground (an L bent 0.05 m and 0.3 m up, a vertical dipole 0.05 m up) and over `GN 2` (an L 0.05 m up, four radials 0.1 m up, a vertical dipole 0.05 m up, none with a caveat); a σ = 10⁷ ground reads as `GN 1`, and sea water as the removed potential-form path (nec2c is no reference there) | FND-238, FND-239 |
-| `apps/nec-cli/tests/mpie_solver_cli.rs` | 15 | PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring. | PH9-CHK-007 |
+| `apps/nec-cli/tests/mpie_solver_cli.rs` | 16 | PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring; FND-229: an apex-fed 90° inverted V converges to nec2c's converged value. | PH9-CHK-007 |
 | `apps/nec-cli/tests/near_field_ground.rs` | 3 | FND-201: near fields over ground — over PEC a monopole and a horizontal dipole equal their free-space doubles (E and H), a vertical dipole matches nec2c; a finite ground carries a caveat. | FND-201 |
 | `apps/nec-cli/tests/near_field_spherical.rs` | 2 | PH9-CHK-004: spherical NE/NH near-field grids (NEC-2 I1=1). | PH9-CHK-004 |
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
@@ -141,7 +141,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=729 --> **729** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=730 --> **730** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -166,7 +166,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=625 --> **625** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1361 --> **1361** = 625 unit + 729 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1362 --> **1362** = 625 unit + 730 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

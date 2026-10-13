@@ -66,6 +66,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The MPIE's "3 % at a sharp apex" was nec2c's** (FND-229, rejected). An
+  inverted V fed on the segment beside its 90° apex differed from nec2c by 3 %
+  however fine the mesh — measured at the same mesh. Against nec2c's own converged
+  value fnec converges (1.6 → 1.0 → 0.6 % at 21 / 41 / 81 segments an arm), and
+  it is nec2c whose error grows with its source on the segment touching the bend
+  (1.8 → 3.3 %); a test now holds the MPIE to the converged value. (#576)
 - **The raised-radial remedy says how to solve it** (FND-240): with `--solver mpie`
   and the segments near the ground shorter than their height. The default solve of
   raised radials that low is approximate (a vertical and two radials 1 m over `GN 2`:

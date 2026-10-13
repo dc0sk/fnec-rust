@@ -507,3 +507,46 @@ fn the_mpie_is_not_moved_by_the_free_end_refinement() {
         "MPIE broadside gain moved:\n{stdout}"
     );
 }
+
+/// FND-229 — a free-space 90° inverted V fed on the segment beside the apex (the
+/// parity sweep's deck) converges to nec2c's own converged value: nec2c on a 9×
+/// mesh, the feed on the sub-segment at the original segment's midpoint
+/// (`scripts/nec2c-fine-mesh.py`), 54.803 + j121.84.
+///
+/// It was recorded as a 3 % residual that does not shrink with the mesh, measured
+/// against nec2c at the same mesh with the feed kept on the apex segment. That
+/// residual is nec2c's: with its source on the segment touching the bend, nec2c at
+/// N = 21 / 41 / 81 per arm reads 55.55 + j123.93, 56.00 + j124.65, 56.43 +
+/// j125.45 — 1.8, 2.6, 3.3 % from its own converged values for those three feed
+/// positions (54.80 + j121.84, 54.83 + j121.85, 54.87 + j121.90) — while the MPIE
+/// at N reads 53.91 + j120.12, 54.30 + j120.79, 54.56 + j121.23: 1.6, 1.0, 0.6 %,
+/// converging. A bend-angle sweep (180° to 60°, nec2c 9×) shows the same: the MPIE
+/// at 9× within 0.2 % of nec2c at every angle.
+#[test]
+fn an_apex_fed_inverted_v_converges_to_nec2c() {
+    let reference: (f64, f64) = (54.803, 121.84);
+    let z_at = |s: u32| {
+        let n = 21 * s;
+        let feed = 21 * s - (s - 1) / 2;
+        let deck = write_deck(
+            &format!("apex_v_{s}"),
+            &format!(
+                "CE\nGW 1 {n} -4 0 -2 0 0 2 .001\nGW 2 {n} 0 0 2 4 0 -2 .001\nGE 0\n\
+                 EX 0 1 {feed} 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"
+            ),
+        );
+        let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+        assert!(out.status.success(), "{out:?}");
+        feedpoint_z(&String::from_utf8_lossy(&out.stdout))
+    };
+    let dist = |a: (f64, f64)| (a.0 - reference.0).hypot(a.1 - reference.1);
+    let scale = reference.0.hypot(reference.1);
+    let (coarse, fine) = (z_at(1), z_at(3));
+    // Measured: 1.45 % at 1×, 0.56 % at 3×.
+    assert!(
+        dist(coarse) < 0.03 * scale,
+        "1x {coarse:?} vs {reference:?}"
+    );
+    assert!(dist(fine) < 0.012 * scale, "3x {fine:?} vs {reference:?}");
+    assert!(dist(fine) < dist(coarse), "refining moved away from nec2c");
+}
