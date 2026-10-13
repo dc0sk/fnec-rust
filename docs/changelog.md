@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver mpie` close to a perfect ground** (FND-238). A bend or junction closer
+  to the ground than about one segment read a wildly wrong reactance with no
+  warning — an L 0.05 m over `GN 1` gave 53.4 − j4766.9 Ω where nec2c gives
+  39.96 + j22.69 — because the ground term was evaluated once per segment pair, at
+  the midpoints. Over a perfect ground it is now the exact image for every
+  geometry: that L reads 39.97 + j22.54, converging to nec2c's own converged value.
+  Over a finite ground the coarse term remains (FND-239), and a run where it matters
+  now says so and names the remedy. (#573)
 - **A card fnec does not model no longer solves a different antenna** (FND-236).
   Every card the parser did not know was skipped with one warning and the deck
   solved anyway: a deck scaled from feet with `GS 0 0 0.3048` read 290.5 + j218.5 Ω
