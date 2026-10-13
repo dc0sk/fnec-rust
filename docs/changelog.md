@@ -15,6 +15,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-14 — Close to the ground
+
+`--solver mpie` is right close to the ground — a perfect one by its exact image,
+a finite one by that image scaled plus a tabulated remainder — where it read
+reactances hundreds of ohms off without a warning. **A deck with a card fnec does
+not model is now refused instead of solved as a different antenna** (the reason
+for the minor version), and comma-separated fields are read. The GPU path retries
+a driver fault instead of falling back for the rest of the run. The findings
+ledger went from 233 / 0 open to **240 / 0 open**.
+
 ### Fixed
 
 - **`--solver mpie` close to a finite ground** (FND-239). Over `GN 0` / `GN 2`
