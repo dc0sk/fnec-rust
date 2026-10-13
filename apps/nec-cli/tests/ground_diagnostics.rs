@@ -576,7 +576,7 @@ fn low_dipole_free_space_is_quiet() {
 }
 
 /// A deck through the CLI: (exit success, stderr).
-fn run_cli(name: &str, deck: &str) -> (bool, String) {
+fn run_cli(name: &str, args: &[&str], deck: &str) -> (bool, String, String) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
@@ -584,43 +584,118 @@ fn run_cli(name: &str, deck: &str) -> (bool, String) {
     let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
     fs::write(&path, deck).expect("write deck");
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(args)
         .arg(&path)
         .output()
         .expect("run fnec");
     let _ = fs::remove_file(&path);
     (
         out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
 }
 
+/// The first feedpoint impedance of a run's report.
+fn feed_z(stdout: &str) -> (f64, f64) {
+    let f: Vec<f64> = stdout
+        .lines()
+        .skip_while(|l| *l != "FEEDPOINTS")
+        .nth(2)
+        .expect("feedpoint row")
+        .split_whitespace()
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    (f[6], f[7])
+}
+
+/// A remedy the refusal names, run at two meshes against nec2c's converged value
+/// (its 9× mesh): within `tol` × |Z| at the coarse mesh, within half that at the
+/// fine one, and nearer there. "It solves" is not enough — a run can be accepted and
+/// wrong, and an earlier wording named a remedy one solver answered 200 Ω off
+/// (FND-238, FND-240).
+fn assert_remedy_converges(
+    name: &str,
+    args: &[&str],
+    decks: [String; 2],
+    reference: (f64, f64),
+    tol: f64,
+) {
+    let scale = reference.0.hypot(reference.1);
+    let mut errs = Vec::new();
+    for deck in &decks {
+        let (ok, stdout, stderr) = run_cli(name, args, deck);
+        assert!(ok, "{name}: the remedy must solve:\n{stderr}");
+        let z = feed_z(&stdout);
+        errs.push(((z.0 - reference.0).hypot(z.1 - reference.1), z));
+    }
+    eprintln!("{name}: {errs:?} against {reference:?}");
+    assert!(
+        errs[0].0 < tol * scale,
+        "{name}: coarse {:?} vs {reference:?}",
+        errs[0].1
+    );
+    assert!(
+        errs[1].0 < 0.5 * tol * scale,
+        "{name}: fine {:?} vs {reference:?}",
+        errs[1].1
+    );
+    assert!(
+        errs[1].0 < errs[0].0,
+        "{name}: refining moved away from nec2c"
+    );
+}
+
 /// The finite-ground contact refusal says why — NEC-2's own answer does not
-/// converge there — and names two models that do solve; each of them is run
-/// here, so the message cannot point at a refusal.
+/// converge there — and names two models that do solve; each is run here and
+/// checked against nec2c, so the message cannot point at a refusal or a wrong answer.
 #[test]
 fn the_finite_ground_contact_refusal_names_models_that_solve() {
     let tail = "EX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
-    let (ok, stderr) = run_cli(
+    let (ok, _, stderr) = run_cli(
         "gn2-contact",
+        &[],
         &format!("GW 1 21 0 0 0 0 0 5.28 .001\nGE 1\nGN 2 0 0 0 13 .005\n{tail}"),
     );
     assert!(!ok, "contact with finite ground must be refused:\n{stderr}");
     for says in [
         "does not converge",
         "GN 1 with the ground loss as a series resistance at the base",
-        "radials raised strictly above the ground",
+        "radials raised strictly above the ground (z > 0) and solved with --solver mpie",
+        "segments near the ground shorter than their height",
     ] {
         assert!(stderr.contains(says), "missing {says:?} in:\n{stderr}");
     }
 
-    let (ok, stderr) = run_cli(
+    // GN 1 and a 30-ohm base loss: nec2c 69.505+j22.904, 69.657+j22.975 and
+    // 69.744+j23.038 at 21, 63 and 189 segments (captured 2026-10-13).
+    let base =
+        |n: u32| format!("GW 1 {n} 0 0 0 0 0 5.28 .001\nGE 1\nGN 1\nLD 4 1 1 1 30 0\n{tail}");
+    assert_remedy_converges(
         "gn1-base-loss",
-        &format!("GW 1 21 0 0 0 0 0 5.28 .001\nGE 1\nGN 1\nLD 4 1 1 1 30 0\n{tail}"),
+        &[],
+        [base(21), base(63)],
+        (69.744, 23.038),
+        0.015,
     );
-    assert!(ok, "GN 1 with a base resistance must solve:\n{stderr}");
 
-    let radials = "GW 1 21 0 0 0.1 0 0 5.38 .001\nGW 2 10 0 0 0.1 5.3 0 0.1 .001\n\
-                   GW 3 10 0 0 0.1 -5.3 0 0.1 .001\nGE 0\nGN 2 0 0 0 13 .005\n";
-    let (ok, stderr) = run_cli("gn2-raised-radials", &format!("{radials}{tail}"));
-    assert!(ok, "radials raised above the ground must solve:\n{stderr}");
+    // A vertical and two radials raised 1 m over GN 2, 11 segments each and three
+    // times that: nec2c 35.116+j3.355, 35.193+j3.549 and 35.237+j3.696 at 1x, 3x and
+    // 9x (captured 2026-10-13). On --solver mpie, as the refusal says.
+    let raised = |s: u32| {
+        let n = 11 * s;
+        let feed = 2 * s - (s - 1) / 2;
+        format!(
+            "GW 1 {n} 0 0 1 0 0 6.28 .001\nGW 2 {n} 0 0 1 5.3 0 1 .001\n\
+             GW 3 {n} 0 0 1 -5.3 0 1 .001\nGE 0\nGN 2 0 0 0 13 .005\n\
+             EX 0 1 {feed} 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"
+        )
+    };
+    assert_remedy_converges(
+        "gn2-raised-radials",
+        &["--solver", "mpie"],
+        [raised(1), raised(3)],
+        (35.237, 3.696),
+        0.04,
+    );
 }

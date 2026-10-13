@@ -42,7 +42,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
-| `apps/nec-cli/tests/ground_diagnostics.rs` | 14 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred; the finite-ground contact refusal names two models, each run and solved | PRT-001, PH2-CHK-001/002 |
+| `apps/nec-cli/tests/ground_diagnostics.rs` | 14 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/junction_feedpoint.rs` | 10 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary: a T or loop the section graph takes solves without the guard; one it refuses (a one-segment run) still warns. | PH9-CHK-002, PH9-CHK-005 |
