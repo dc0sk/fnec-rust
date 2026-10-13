@@ -488,96 +488,6 @@ pub fn reflected_ex_horizontal(
     Complex64::new(k0 * ETA0 / (8.0 * std::f64::consts::PI), 0.0) * (ip + ie)
 }
 
-/// Quadrature sample count for the reflected **potential** kernels. The `1/λ²`
-/// factor in `G_Φ` makes the small-λ region delicate, but the sin/cosh
-/// substitution keeps the integrand smooth; this reproduces the Python oracle
-/// (`efie_mpie_ground.py`) to ~1e-4.
-const N_QUAD_POT: usize = 3000;
-
-/// Reflected mixed-potential Green's functions for a **horizontal** current
-/// element over a half-space, used to add the Sommerfeld ground to the MPIE
-/// Z-matrix (PH9-CHK-007 Phase D). Returns `(G_A, G_Φ)` where
-///
-/// ```text
-/// G_A = −j·S{R_TE},   G_Φ = −j·S{(k0² R_TE + kz0² R_TM)/λ²},
-/// S{f}(ρ,d) = ∫₀^∞ (λ/kz0) f J0(λρ) e^{−j kz0 d} dλ,
-/// ```
-///
-/// at horizontal offset `rho` and height-sum `d = z + z' > 0`. `pec = true` is
-/// the perfect-conductor limit. The `−j` matches the Sommerfeld identity
-/// `S{1} = +j·e^{−jkr}/r`, so the PEC limit reproduces the exact image and the
-/// kernels drop into the Z-fill exactly where the free-space `e^{−jkR}/R` sits
-/// (validated in `studies/sommerfeld-ground/efie_mpie_ground.py`).
-///
-/// The reduced kernel `R = √(ρ²+a²)` is **not** applied here — the height-sum `d`
-/// keeps source and image separated (`d > 0`), so the integrand is non-singular.
-pub fn reflected_potential_kernels(
-    rho: f64,
-    d: f64,
-    freq_hz: f64,
-    eps_r: f64,
-    sigma: f64,
-    pec: bool,
-) -> (Complex64, Complex64) {
-    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
-    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c;
-    let k0sq = Complex64::new(k0 * k0, 0.0);
-    let neg_j = Complex64::new(0.0, -1.0);
-
-    // Accumulate S{R_TE} (→ G_A) and S{(k0²R_TE+kz0²R_TM)/λ²} (→ G_Φ) together;
-    // they share the reflection coefficients, J0, and phase at each spectral point.
-    let integrate = |lambda: f64, kz0: Complex64, measure: Complex64| -> (Complex64, Complex64) {
-        let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
-        let (r_te, r_tm) = fresnel_spectral(kz0, kz1, eps_c, pec);
-        let base = measure * (neg_j * kz0 * d).exp() * bessel_j0(lambda * rho);
-        let f_phi = (k0sq * r_te + kz0 * kz0 * r_tm) / Complex64::new(lambda * lambda, 0.0);
-        (base * r_te, base * f_phi)
-    };
-
-    // Propagating branch: λ = k0 sinθ, kz0 = k0 cosθ, (λ/kz0)dλ = k0 sinθ dθ.
-    let (mut sa, mut sp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
-    let a0 = 1e-7;
-    let b0 = std::f64::consts::FRAC_PI_2 - 1e-7;
-    let h0 = (b0 - a0) / N_QUAD_POT as f64;
-    for i in 0..=N_QUAD_POT {
-        let theta = a0 + h0 * i as f64;
-        let measure = Complex64::new(k0 * theta.sin(), 0.0);
-        let (da, dp) = integrate(
-            k0 * theta.sin(),
-            Complex64::new(k0 * theta.cos(), 0.0),
-            measure,
-        );
-        let wgt = if i == 0 || i == N_QUAD_POT { 0.5 } else { 1.0 };
-        sa += wgt * da;
-        sp += wgt * dp;
-    }
-    sa *= h0;
-    sp *= h0;
-
-    // Evanescent branch: λ = k0 cosh t, kz0 = −j k0 sinh t, (λ/kz0)dλ = j k0 cosh t dt.
-    let t_max = if d > 0.0 {
-        (40.0 / (k0 * d)).asinh()
-    } else {
-        8.0
-    };
-    let (mut ea, mut ep) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
-    let a1 = 1e-7;
-    let h1 = (t_max - a1) / N_QUAD_POT as f64;
-    for i in 0..=N_QUAD_POT {
-        let t = a1 + h1 * i as f64;
-        let measure = Complex64::new(0.0, k0 * t.cosh());
-        let (da, dp) = integrate(k0 * t.cosh(), Complex64::new(0.0, -k0 * t.sinh()), measure);
-        let wgt = if i == 0 || i == N_QUAD_POT { 0.5 } else { 1.0 };
-        ea += wgt * da;
-        ep += wgt * dp;
-    }
-    ea *= h1;
-    ep *= h1;
-
-    (neg_j * (sa + ea), neg_j * (sp + ep))
-}
-
 /// Azimuth / radial sample counts for the general dyadic (PH9-CHK-006 Levels 1-2).
 /// The 2-D integrand is smooth under the sin/cosh radial substitution; these give
 /// ~1e-6 PEC agreement (validated in `studies/sommerfeld-ground/general_dyadic.py`).
@@ -769,6 +679,373 @@ pub fn reflected_e_projected_fast(
     ie *= h1;
 
     Complex64::new(k0 * ETA0 / (8.0 * pi * pi), 0.0) * (ip + ie)
+}
+
+/// The quasi-static image factor of the ground, `K = (εc − 1)/(εc + 1)`: the
+/// large-`λ` limit of `R_TM`. A finite ground's reflected field is split as
+/// `K ×` the perfect ground's exact image plus the [`ReflectedRemainder`] (FND-239).
+pub fn ground_image_factor(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    (eps_c - 1.0) / (eps_c + 1.0)
+}
+
+/// The six radial integrals the reflected field of any source and observation
+/// direction is a combination of (see [`reflected_e_projected_fast`]'s `B(λ)`),
+/// each `∫ (λ/kz0) e^{−j kz0 d} c(λ) J_n(λρ) dλ`:
+/// `c = R_TE` (J0, J2), `R_TM·P²` (J0, J2), `R_TM·P·Q` (J1), `R_TM·Q²` (J0).
+const SIX_ORDER: [usize; 6] = [0, 2, 0, 2, 1, 0];
+
+/// The six integrals of the **remainder** — the reflected field minus `K ×` the
+/// perfect ground's image, i.e. with `(R_TE + K, R_TM − K)` in place of the
+/// reflection coefficients (FND-239).
+///
+/// That remainder is `~1/R` near the image, not `~1/R³`, but its integrand tends
+/// to a constant at large `λ` — `c∞ = (K, K, −Kε/(ε+1), −Kε/(ε+1), −jKε/(ε+1),
+/// Kε/(ε+1))`, because `R_TM − K ≈ Kεk0²/((ε+1)λ²)` (`kg² = εk0²`) — so its
+/// evanescent tail oscillates out to `λ ≈ 45/d` and aliases where `ρ ≫ d` (9 % off
+/// at `ρ/d = 1000`, and the full kernel worse). `c∞·j·e^{−λd}·J_n` is subtracted
+/// inside the integrand and added back in closed form:
+/// `∫e^{−λd}J0(λρ)dλ = 1/R`, `∫e^{−λd}J1 = ρ/(R(R+d))`, `∫e^{−λd}J2 = ρ²/(R(R+d)²)`.
+///
+/// The integrand is O(1) and oscillating up to `λ ≈ |kg|` (it decays only beyond
+/// the ground's own wavenumber), so the evanescent branch is split at
+/// `λ_cap = min(45/d, 4(|kg| + k0))` and sampled finer than half a radian of
+/// `λρ` per step below it.
+fn remainder_integrals(rho: f64, d: f64, k0: f64, eps_c: Complex64) -> [Complex64; 6] {
+    let kg2 = Complex64::new(k0 * k0, 0.0) * eps_c;
+    let kk = (eps_c - 1.0) / (eps_c + 1.0);
+    let ke = kk * eps_c / (eps_c + 1.0);
+    let j = Complex64::new(0.0, 1.0);
+    let c_inf = [kk, kk, -ke, -ke, -j * ke, ke];
+    let mut out = [Complex64::new(0.0, 0.0); 6];
+    // One spectral sample: `measure` is (λ/kz0)dλ·weight, `dl` is dλ·weight.
+    let mut sample = |lambda: f64, kz0: Complex64, measure: Complex64, dl: f64| {
+        let kz1 = sqrt_im_neg(kg2 - Complex64::new(lambda * lambda, 0.0));
+        let (r_te, r_tm) = fresnel_spectral(kz0, kz1, eps_c, false);
+        let (r_te, r_tm) = (r_te + kk, r_tm - kk);
+        let p = kz0 / k0;
+        let q = lambda / k0;
+        let phase = (-j * kz0 * d).exp() * measure;
+        let x = lambda * rho;
+        let jn = [bessel_j0(x), bessel_j1(x), bessel_j2(x)];
+        let c = [
+            r_te,
+            r_te,
+            r_tm * p * p,
+            r_tm * p * p,
+            r_tm * p * q,
+            r_tm * q * q,
+        ];
+        let tail = j * (-lambda * d).exp() * dl;
+        for i in 0..6 {
+            out[i] += (phase * c[i] - tail * c_inf[i]) * jn[SIX_ORDER[i]];
+        }
+    };
+    // Trapezoid over [lo, hi] in n steps of a substitution `at(s) -> (λ, kz0,
+    // (λ/kz0)dλ/ds, dλ/ds)`.
+    let mut trapezoid =
+        |lo: f64, hi: f64, n: usize, at: &dyn Fn(f64) -> (f64, Complex64, Complex64, f64)| {
+            let h = (hi - lo) / n as f64;
+            for i in 0..=n {
+                let w = if i == 0 || i == n { 0.5 * h } else { h };
+                let (lambda, kz0, m, dl) = at(lo + h * i as f64);
+                sample(lambda, kz0, m * w, dl * w);
+            }
+        };
+    // Propagating: λ = k0 sinθ, kz0 = k0 cosθ, (λ/kz0)dλ = k0 sinθ dθ.
+    let n_prop = 1000.max((8.0 * k0 * rho).ceil() as usize);
+    trapezoid(
+        1e-9,
+        std::f64::consts::FRAC_PI_2 - 1e-9,
+        n_prop,
+        &|th: f64| {
+            (
+                k0 * th.sin(),
+                Complex64::new(k0 * th.cos(), 0.0),
+                Complex64::new(k0 * th.sin(), 0.0),
+                k0 * th.cos(),
+            )
+        },
+    );
+    // Evanescent: λ = k0 cosh t, kz0 = −j k0 sinh t, (λ/kz0)dλ = j k0 cosh t dt.
+    let evanescent = |t: f64| {
+        (
+            k0 * t.cosh(),
+            Complex64::new(0.0, -k0 * t.sinh()),
+            Complex64::new(0.0, k0 * t.cosh()),
+            k0 * t.sinh(),
+        )
+    };
+    let t_max = (45.0 / (k0 * d)).asinh();
+    let scale = kg2.norm().sqrt() + k0;
+    let lambda_cap = (45.0 / d).min(4.0 * scale);
+    let t_cap = (lambda_cap / k0).max(1.0).acosh().clamp(1e-6, t_max);
+    let n_cap = 1000.max((t_cap * rho * lambda_cap / 0.5).ceil() as usize);
+    trapezoid(1e-9, t_cap, n_cap.min(MAX_REMAINDER_SAMPLES), &evanescent);
+    // Beyond λ_cap the integrand decays as (|kg|/λ)² but still oscillates as λρ:
+    // uniform in λ at under half a radian per step out to 30·(|kg| + k0), then the
+    // t-substitution's geometric steps to e^{−45}. Measured: 300 in place of 30
+    // moves Z by ≤ 0.06 %, four radials 50 µm over sea water included.
+    let lambda_tail = (45.0 / d).min(30.0 * scale);
+    if lambda_tail > lambda_cap {
+        let n_tail = 200.max(((lambda_tail - lambda_cap) * rho / 0.5).ceil() as usize);
+        trapezoid(
+            lambda_cap,
+            lambda_tail,
+            n_tail.min(MAX_REMAINDER_SAMPLES),
+            &|lambda: f64| {
+                let u = (lambda * lambda - k0 * k0).sqrt();
+                (
+                    lambda,
+                    Complex64::new(0.0, -u),
+                    Complex64::new(0.0, lambda / u),
+                    1.0,
+                )
+            },
+        );
+    }
+    let t_tail = (lambda_tail / k0).max(1.0).acosh().clamp(t_cap, t_max);
+    if t_max > t_tail {
+        trapezoid(t_tail, t_max, 1000, &evanescent);
+    }
+    let r = (rho * rho + d * d).sqrt();
+    let laplace = [
+        1.0 / r,
+        rho / (r * (r + d)),
+        rho * rho / (r * (r + d) * (r + d)),
+    ];
+    for i in 0..6 {
+        out[i] += j * c_inf[i] * laplace[SIX_ORDER[i]];
+    }
+    out
+}
+
+/// A bound on one remainder integral's sampling below `λ_cap` (a ground far
+/// more conductive than sea water at a long distance would ask for more).
+const MAX_REMAINDER_SAMPLES: usize = 400_000;
+
+/// The reflected field projected on `obs_dir` from a unit moment along `src_dir`
+/// given the six radial integrals at that `(ρ, d)` — the combination of
+/// [`reflected_e_projected_fast`]'s doc comment.
+fn project_six(
+    src: [f64; 3],
+    obs: [f64; 3],
+    dx: f64,
+    dy: f64,
+    six: &[Complex64; 6],
+    k0: f64,
+) -> Complex64 {
+    let pi = std::f64::consts::PI;
+    let rho = (dx * dx + dy * dy).sqrt();
+    let (cf, sf) = if rho > 0.0 {
+        (dx / rho, dy / rho)
+    } else {
+        (1.0, 0.0)
+    };
+    let (c2, s2) = (cf * cf - sf * sf, 2.0 * cf * sf);
+    let ss = src[0] * obs[0] + src[1] * obs[1];
+    let dd = (src[0] * obs[0] - src[1] * obs[1]) * c2 + (src[0] * obs[1] + src[1] * obs[0]) * s2;
+    let s_rho = src[0] * cf + src[1] * sf;
+    let o_rho = obs[0] * cf + obs[1] * sf;
+    let j = Complex64::new(0.0, 1.0);
+    let b = (six[0] - six[2]) * (pi * ss)
+        + (six[1] + six[3]) * (pi * dd)
+        + six[4] * (j * 2.0 * pi * (src[2] * o_rho - obs[2] * s_rho))
+        + six[5] * (2.0 * pi * src[2] * obs[2]);
+    Complex64::new(k0 * ETA0 / (8.0 * pi * pi), 0.0) * b
+}
+
+/// The remainder kernel evaluated directly (no table): the reflected field minus
+/// `K ×` the perfect ground's. For the tests that pin the split and the table.
+#[allow(clippy::too_many_arguments)]
+pub fn reflected_remainder_direct(
+    src_dir: [f64; 3],
+    obs_dir: [f64; 3],
+    dx: f64,
+    dy: f64,
+    d: f64,
+    freq_hz: f64,
+    eps_r: f64,
+    sigma: f64,
+) -> Complex64 {
+    let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+    let rho = (dx * dx + dy * dy).sqrt();
+    let six = remainder_integrals(rho, d, k0, eps_c);
+    project_six(src_dir, obs_dir, dx, dy, &six, k0)
+}
+
+/// Node spacing of the [`ReflectedRemainder`] table in both coordinates. Measured
+/// (14.2 MHz, εr 13, σ 0.005, d ∈ [0.002, 2] m, ρ ≤ 15 m, 300 points): worst
+/// 4.6e-4, mean 1.5e-4 of the largest of the six, on 27 × 50 nodes.
+const REMAINDER_STEP: f64 = 0.3;
+
+/// The remainder's six integrals tabulated once per solve (FND-239), so the
+/// Z-fill can integrate it as finely as the ground's nearness asks at the cost of
+/// an interpolation per sample, not a Sommerfeld integral.
+///
+/// Coordinates: `x = ln d` and `y = asinh(ρ/d) + k0·ρ` — logarithmic in `ρ` near
+/// the image, where the remainder varies on the scale `d`, and linear in `kρ` far
+/// from it, where it varies on the wavelength. Each node stores the six times
+/// `R·e^{jk0R}`, which takes out the `~e^{−jk0R}/R` behaviour; interpolation is
+/// Catmull-Rom (third order measured; bilinear was second order and 60× worse at
+/// the same spacing), with one padding node on each side — below `ρ = 0` by parity
+/// (`J1` odd, `J0`/`J2` even). A coordinate with no extent — every pair at one
+/// height sum (a horizontal wire), or every pair on one vertical (`ρ = 0`) — is a
+/// single node and is not interpolated.
+pub struct ReflectedRemainder {
+    k0: f64,
+    x: Axis,
+    y: Axis,
+    nodes: Vec<[Complex64; 6]>,
+}
+
+/// One table coordinate: `n` nodes from `lo` in steps of `REMAINDER_STEP`, plus a
+/// padding node on each side; `n == 1` means a collapsed coordinate.
+struct Axis {
+    lo: f64,
+    n: usize,
+}
+
+impl Axis {
+    fn new(lo: f64, hi: f64) -> Self {
+        if hi - lo <= 1e-9 * (1.0 + lo.abs()) {
+            return Self { lo, n: 1 };
+        }
+        let n = ((hi - lo) / REMAINDER_STEP).ceil() as usize + 1;
+        Self { lo, n }
+    }
+
+    /// Stored node count (with padding).
+    fn stored(&self) -> usize {
+        if self.n == 1 {
+            1
+        } else {
+            self.n + 2
+        }
+    }
+
+    /// The coordinate of stored node `i`.
+    fn at(&self, i: usize) -> f64 {
+        if self.n == 1 {
+            self.lo
+        } else {
+            self.lo + REMAINDER_STEP * (i as f64 - 1.0)
+        }
+    }
+
+    /// The four stored nodes and Catmull-Rom weights around coordinate `v`.
+    fn weights(&self, v: f64) -> ([usize; 4], [f64; 4], usize) {
+        if self.n == 1 {
+            return ([0; 4], [1.0, 0.0, 0.0, 0.0], 1);
+        }
+        let f = ((v - self.lo) / REMAINDER_STEP).clamp(0.0, (self.n - 1) as f64);
+        let i = (f.floor() as usize).min(self.n - 2);
+        let t = f - i as f64;
+        let (t2, t3) = (t * t, t * t * t);
+        (
+            [i, i + 1, i + 2, i + 3],
+            [
+                0.5 * (-t3 + 2.0 * t2 - t),
+                0.5 * (3.0 * t3 - 5.0 * t2 + 2.0),
+                0.5 * (-3.0 * t3 + 4.0 * t2 + t),
+                0.5 * (t3 - t2),
+            ],
+            4,
+        )
+    }
+}
+
+impl ReflectedRemainder {
+    /// Tabulate for every pair of points whose height sum lies in `[d_min, d_max]`
+    /// (`d_min > 0`) and whose horizontal offset is at most `rho_max`.
+    pub fn new(freq_hz: f64, eps_r: f64, sigma: f64, d_min: f64, d_max: f64, rho_max: f64) -> Self {
+        assert!(
+            d_min > 0.0 && d_max >= d_min,
+            "height sums {d_min}..{d_max}"
+        );
+        let k0 = 2.0 * std::f64::consts::PI * freq_hz / C0;
+        let eps_c = complex_permittivity(freq_hz, eps_r, sigma);
+        let x = Axis::new(d_min.ln(), d_max.ln());
+        let y_hi = if rho_max > 1e-9 * d_min {
+            Self::y_of(rho_max, d_min, k0)
+        } else {
+            0.0
+        };
+        let y = Axis::new(0.0, y_hi);
+        let mut nodes = Vec::with_capacity(x.stored() * y.stored());
+        for ix in 0..x.stored() {
+            let d = x.at(ix).exp();
+            for iy in 0..y.stored() {
+                let yv = y.at(iy);
+                let rho = Self::rho_of(yv.abs(), d, k0);
+                let mut six = remainder_integrals(rho, d, k0, eps_c);
+                if yv < 0.0 {
+                    six[4] = -six[4]; // J1 is odd in ρ
+                }
+                let r = (rho * rho + d * d).sqrt();
+                let w = Complex64::from_polar(r, k0 * r);
+                nodes.push(six.map(|v| v * w));
+            }
+        }
+        Self { k0, x, y, nodes }
+    }
+
+    fn y_of(rho: f64, d: f64, k0: f64) -> f64 {
+        (rho / d).asinh() + k0 * rho
+    }
+
+    /// The `ρ ≥ 0` at which `y_of` is `y ≥ 0`: bisection, since both terms grow
+    /// and the root is below either one's own inverse.
+    fn rho_of(y: f64, d: f64, k0: f64) -> f64 {
+        let (mut lo, mut hi) = (0.0, (d * y.sinh()).min(y / k0));
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if Self::y_of(mid, d, k0) < y {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
+    /// The remainder's reflected field projected on `obs_dir` from a unit moment
+    /// along `src_dir`, at horizontal offset `(dx, dy)` and height sum `d`, in
+    /// [`reflected_e_projected_fast`]'s normalisation.
+    pub fn kernel(
+        &self,
+        src_dir: [f64; 3],
+        obs_dir: [f64; 3],
+        dx: f64,
+        dy: f64,
+        d: f64,
+    ) -> Complex64 {
+        let rho = (dx * dx + dy * dy).sqrt();
+        let (ix, wx, nx) = self.x.weights(d.ln());
+        let (iy, wy, ny) = self.y.weights(Self::y_of(rho, d, self.k0));
+        let stride = self.y.stored();
+        let mut six = [Complex64::new(0.0, 0.0); 6];
+        for a in 0..nx {
+            for b in 0..ny {
+                let node = &self.nodes[ix[a] * stride + iy[b]];
+                let w = wx[a] * wy[b];
+                for (s, v) in six.iter_mut().zip(node) {
+                    *s += v * w;
+                }
+            }
+        }
+        let r = (rho * rho + d * d).sqrt();
+        let unweight = Complex64::from_polar(1.0 / r, -self.k0 * r);
+        project_six(
+            src_dir,
+            obs_dir,
+            dx,
+            dy,
+            &six.map(|v| v * unweight),
+            self.k0,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,41 +1326,6 @@ mod tests {
         assert!((bessel_j2(5.0) - 0.0465651163).abs() < 1e-6);
     }
 
-    /// The reflected potential kernels reproduce the Python oracle
-    /// (`efie_mpie_ground.py::sommerfeld`) to ~1e-3 (14.2 MHz, εr=13, σ=0.005).
-    /// Reference `(ρ/λ, d/λ) → (G_A, G_Φ[, G_A^pec])`.
-    #[test]
-    fn potential_kernels_match_python_oracle() {
-        let f = 14.2e6;
-        let lam = C0 / f;
-        let (er, sig) = (13.0, 0.005);
-        let cases = [
-            // rho/λ, d/λ, GA_re, GA_im, GP_re, GP_im
-            (0.1, 0.1, -0.15841, 0.09312, -0.17705, 0.23844),
-            (0.3, 0.1, 0.03542, 0.11865, 0.05740, 0.12078),
-            (0.05, 0.05, -0.26906, -0.04053, -0.52118, 0.28015),
-            (0.2, 0.2, 0.00576, 0.10586, 0.03638, 0.14491),
-        ];
-        for (rl, dl, ga_re, ga_im, gp_re, gp_im) in cases {
-            let (ga, gp) = reflected_potential_kernels(rl * lam, dl * lam, f, er, sig, false);
-            assert!(
-                (ga - Complex64::new(ga_re, ga_im)).norm() < 2e-3,
-                "GA(ρ={rl}λ,d={dl}λ)={ga} vs oracle {ga_re}{ga_im:+}j"
-            );
-            assert!(
-                (gp - Complex64::new(gp_re, gp_im)).norm() < 2e-3,
-                "GΦ(ρ={rl}λ,d={dl}λ)={gp} vs oracle {gp_re}{gp_im:+}j"
-            );
-        }
-
-        // PEC limit at (0.05λ, 0.05λ): oracle G_A^pec = −0.60483 + 0.28792j.
-        let (ga_pec, _) = reflected_potential_kernels(0.05 * lam, 0.05 * lam, f, er, sig, true);
-        assert!(
-            (ga_pec - Complex64::new(-0.60483, 0.28792)).norm() < 2e-3,
-            "GA_pec={ga_pec} vs oracle −0.60483+0.28792j"
-        );
-    }
-
     /// PEC self-check: the reflected-field integral with (R_TE=−1, R_TM=+1) must
     /// reproduce the exact opposite-current image field (x-element of current −1 at
     /// (0,0,−h), observed at (ρ,0,h)). This pins every prefactor/sign and validates
@@ -1219,5 +1461,125 @@ mod permittivity_tests {
         // The positive form at 14.2 MHz: 0.005 S/m is ε'' = σ/(ωε₀) ≈ 6.33.
         let e = complex_permittivity(14.2e6, 13.0, 0.005);
         assert!((e.im + 6.329).abs() < 1e-3, "{e}");
+    }
+}
+
+/// FND-239: the finite ground's reflected field as `K ×` the perfect image plus a
+/// tabulated remainder.
+#[cfg(test)]
+mod remainder_tests {
+    use super::*;
+
+    const FREQ: f64 = 14.2e6;
+    const GROUNDS: [(f64, f64); 2] = [(13.0, 0.005), (81.0, 5.0)];
+    const DIRS: [[f64; 3]; 4] = [
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.6, 0.0, 0.8],
+        [0.0, 1.0, 0.0],
+    ];
+
+    /// The split is an identity: the full reflected kernel equals `K ×` the perfect
+    /// ground's plus the remainder, for every orientation pair — vertical against
+    /// horizontal included, where the `J1` cross terms carry the sign — at offsets
+    /// where the full kernel's own quadrature converges (`ρ/d ≤ 10`).
+    #[test]
+    fn the_full_kernel_is_k_times_the_image_plus_the_remainder() {
+        for (eps_r, sigma) in GROUNDS {
+            let k = ground_image_factor(FREQ, eps_r, sigma);
+            for (dx, dy, d) in [
+                (0.0, 0.0, 0.1),
+                (0.05, 0.03, 0.1),
+                (0.3, 0.0, 0.1),
+                (1.0, 0.5, 0.2),
+                (0.2, 0.0, 1.0),
+                (3.0, 1.0, 0.5),
+            ] {
+                for s in DIRS {
+                    for o in DIRS {
+                        let full =
+                            reflected_e_projected_fast(s, o, dx, dy, d, FREQ, eps_r, sigma, false);
+                        let pec =
+                            reflected_e_projected_fast(s, o, dx, dy, d, FREQ, eps_r, sigma, true);
+                        let rem = reflected_remainder_direct(s, o, dx, dy, d, FREQ, eps_r, sigma);
+                        // Measured: ≤ 2.4e-5 (εr 13) and ≤ 1.5e-3 (sea water)
+                        // absolute, against |remainder| ≥ 0.1 at these points.
+                        assert!(
+                            (full - k * pec - rem).norm() < 5e-3,
+                            "εr {eps_r} σ {sigma} {s:?}→{o:?} at ({dx}, {dy}, {d}): \
+                             full {full}, K·image {}, remainder {rem}",
+                            k * pec
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The table reproduces the direct remainder to 2e-3 of the reflected field at
+    /// that point: at fixed-seed random points over the whole admissible
+    /// range — down to the 21 µm a wire may sit above the ground, offsets to
+    /// `ρ/d ≈ 4·10⁵` — at offsets between the first two `ρ` nodes (the padding
+    /// below `ρ = 0`), and on the collapsed tables of a horizontal wire (one `d`)
+    /// and a vertical one (`ρ = 0`).
+    #[test]
+    fn the_remainder_table_reproduces_the_direct_integral() {
+        let mut seed = 0x2391_u64;
+        let mut rnd = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let check = |table: &ReflectedRemainder, rho: f64, phi: f64, d: f64, eps_r, sigma| {
+            let (dx, dy) = (rho * phi.cos(), rho * phi.sin());
+            let mut err = 0.0_f64;
+            let mut mag = 0.0_f64;
+            for s in DIRS {
+                for o in DIRS {
+                    let direct = reflected_remainder_direct(s, o, dx, dy, d, FREQ, eps_r, sigma);
+                    err = err.max((table.kernel(s, o, dx, dy, d) - direct).norm());
+                    mag = mag.max(direct.norm());
+                }
+            }
+            // The scale is the reflected field's: the remainder, or `K ×` the
+            // image's dipole field where that is larger — over sea water the
+            // remainder far out is ~1 % of it. Measured worst: 1.1e-3, sea water
+            // at d = 57 µm, ρ = 12 m (2.7 % of the remainder alone there); the
+            // impedance it moves is gated in `apps/nec-cli/tests/mpie_ground_image.rs`.
+            let k0 = 2.0 * std::f64::consts::PI * FREQ / C0;
+            let r = (rho * rho + d * d).sqrt();
+            let image = ground_image_factor(FREQ, eps_r, sigma).norm() * ETA0 * k0
+                / (4.0 * std::f64::consts::PI)
+                * (1.0 / r + 1.0 / (k0 * r * r) + 1.0 / (k0 * k0 * r * r * r));
+            assert!(
+                err < 2e-3 * mag.max(image),
+                "εr {eps_r} σ {sigma} ρ {rho} d {d}: table off by {err:.3e} \
+                 (remainder {mag:.3e}, image field {image:.3e})"
+            );
+        };
+        for (eps_r, sigma) in GROUNDS {
+            let (d_min, d_max, rho_max) = (4.2e-5, 2.0, 15.0);
+            let table = ReflectedRemainder::new(FREQ, eps_r, sigma, d_min, d_max, rho_max);
+            for i in 0..40 {
+                let d = d_min * (d_max / d_min).powf(rnd());
+                let rho = if i % 2 == 0 {
+                    rho_max * rnd()
+                } else {
+                    d * (rho_max / d).powf(rnd())
+                };
+                check(&table, rho, 6.3 * rnd(), d, eps_r, sigma);
+            }
+            check(&table, 0.05 * 0.3 * d_min, 0.7, d_min, eps_r, sigma);
+            check(&table, 0.0, 0.0, 0.3, eps_r, sigma);
+            let horizontal = ReflectedRemainder::new(FREQ, eps_r, sigma, 0.2, 0.2, 10.0);
+            for rho in [0.0, 0.01, 0.3, 2.0, 9.9] {
+                check(&horizontal, rho, 0.4, 0.2, eps_r, sigma);
+            }
+            let vertical = ReflectedRemainder::new(FREQ, eps_r, sigma, 0.004, 21.0, 0.0);
+            for d in [0.004, 0.05, 1.3, 20.0] {
+                check(&vertical, 0.0, 0.0, d, eps_r, sigma);
+            }
+        }
     }
 }

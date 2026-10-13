@@ -140,8 +140,7 @@ pub fn buried_wire_geometry_error(segs: &[Segment], ground: &GroundModel) -> Opt
                      vertical on average ground reads 154, 254, 454, 851, 1627 ohm resistance \
                      at 21 to 321 segments). Models that do solve: GN 1 with the ground loss \
                      as a series resistance at the base (an LD card), or the radials raised \
-                     strictly above the ground (z > 0) and solved with --solver mpie, with \
-                     the segments near the ground shorter than their height",
+                     strictly above the ground (z > 0) and solved with --solver mpie",
                     s.tag, s.tag_index
                 )
             }),
@@ -458,44 +457,6 @@ pub fn mpie_mixed_radius_caveat(segs: &[Segment]) -> Option<String> {
         "the MPIE solver models a single wire radius; this deck mixes radii, so all \
 segments are solved with the first wire's radius ({r0} m) — impedance for the \
 differently-sized wires will be approximate"
-    ))
-}
-
-/// The non-horizontal segment closest to the ground relative to its own length:
-/// `(height of its lowest point, its length)`, where that height is below the
-/// length. `None` when every such segment is at least its own length up.
-fn mpie_ground_under_resolved(segs: &[Segment]) -> Option<(f64, f64)> {
-    let z0 = segs.first()?.start[2];
-    let level = segs
-        .iter()
-        .all(|s| (s.start[2] - z0).abs() < 1e-9 && (s.end[2] - z0).abs() < 1e-9);
-    if level {
-        return None; // the horizontal path integrates the potential form, ~1 % here
-    }
-    segs.iter()
-        .map(|s| (s.start[2].min(s.end[2]), s.deck_length()))
-        .filter(|&(z, len)| z >= 0.0 && z < len)
-        .min_by(|a, b| (a.0 / a.1).total_cmp(&(b.0 / b.1)))
-}
-
-/// The MPIE over a finite ground evaluates the reflected field of a bent or
-/// non-horizontal wire too coarsely where a segment is closer to the ground than
-/// its own length (FND-238): an L 0.1 m up with 0.25 m segments read a reactance
-/// ~200 Ω off, sign flipped, and a vertical dipole 0.05 m up with 0.5 m segments
-/// 30 % off. Over a perfect ground the exact image is used and no caveat applies.
-/// Until the finite-ground term is resolved too, the run says so and names the
-/// remedy that measured right: segments shorter than their height (an L at 0.1 m
-/// with 0.065 m segments agreed with nec2c to 0.4 Ω).
-pub fn mpie_ground_resolution_caveat(segs: &[Segment], ground: &GroundModel) -> Option<String> {
-    if !matches!(ground, GroundModel::SimpleFiniteGround { .. }) {
-        return None;
-    }
-    let (z, len) = mpie_ground_under_resolved(segs)?;
-    Some(format!(
-        "a segment is {z:.3} m above the finite ground, closer than its own length \
-         ({len:.3} m); the MPIE's reflected term is under-resolved there and the reactance \
-         can be far off (FND-238) — near the ground, use segments shorter than their \
-         height, or --solver hallen"
     ))
 }
 
@@ -1017,10 +978,7 @@ pub(crate) fn mpie_low_ground_measured(deck: &NecDeck, segs: &[Segment]) -> bool
         degree[s[0]] += 1;
         degree[s[1]] += 1;
     }
-    degree.iter().all(|&d| (1..=2).contains(&d))
-        && degree.iter().filter(|&&d| d == 1).count() == 2
-        // Not where the MPIE's own finite-ground term is under-resolved (FND-238).
-        && mpie_ground_under_resolved(segs).is_none()
+    degree.iter().all(|&d| (1..=2).contains(&d)) && degree.iter().filter(|&&d| d == 1).count() == 2
 }
 
 /// The low-ground caveat over a sweep, with the remedies — what
@@ -1935,13 +1893,7 @@ pub fn diagnose(
         // would be false — and the topology one would recommend the solver
         // already running. Its own limitation is the single-radius kernel.
         SolverKind::Mpie => {
-            for w in [
-                mpie_mixed_radius_caveat(segs),
-                mpie_ground_resolution_caveat(segs, ground),
-            ]
-            .into_iter()
-            .flatten()
-            {
+            if let Some(w) = mpie_mixed_radius_caveat(segs) {
                 out.push(ValidationDiagnostic::warning(w));
             }
         }

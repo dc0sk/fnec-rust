@@ -30,21 +30,6 @@ pub(super) fn warn_mpie_mixed_radius(solver_mode: SolverMode, segs: &[Segment]) 
     }
 }
 
-/// Print the shared caveat for an MPIE run whose finite-ground term is
-/// under-resolved near the ground (FND-238).
-pub(super) fn warn_mpie_ground_resolution(
-    solver_mode: SolverMode,
-    segs: &[Segment],
-    ground: &GroundModel,
-) {
-    if !matches!(solver_mode, SolverMode::Mpie) {
-        return;
-    }
-    if let Some(w) = nec_solver::validate::mpie_ground_resolution_caveat(segs, ground) {
-        eprintln!("warning: {w}");
-    }
-}
-
 pub(super) fn warn_deferred_ground_model(ground: &GroundModel) {
     if let Some(w) = nec_solver::validate::deferred_ground_warning(ground) {
         eprintln!("warning: {w}");

@@ -49,7 +49,7 @@
 
 use crate::geometry::{GroundModel, Segment};
 use crate::linear::{solve_square_in_place, SolveError};
-use crate::sommerfeld::{reflected_e_projected_fast, reflected_potential_kernels};
+use crate::sommerfeld::{ground_image_factor, ReflectedRemainder};
 use num_complex::Complex64;
 
 const C0: f64 = 299_792_458.0;
@@ -455,12 +455,16 @@ fn assemble(
 /// replaced a reflected kernel evaluated once per segment pair at the midpoints,
 /// which read a reactance ~200 Ω off, sign flipped, at a bend 0.1 m up with
 /// 0.25 m segments.
+///
+/// `scale` is 1 over a perfect ground; over a finite one it is the image factor
+/// `K` and [`add_ground_remainder`] adds the rest (FND-239).
 fn add_pec_image(
     z: &mut [Vec<Complex64>],
     segs: &[SegGeom],
     bases: &[Vec<Leg>],
     radius: f64,
     freq_hz: f64,
+    scale: Complex64,
 ) {
     let n = segs.len();
     let mut both: Vec<SegGeom> = Vec::with_capacity(2 * n);
@@ -490,7 +494,7 @@ fn add_pec_image(
     let nb = bases.len();
     for m in 0..nb {
         for k in m..nb {
-            let refl = -reaction(&both, &bases[m], &mirrored[k], radius, freq_hz);
+            let refl = -scale * reaction(&both, &bases[m], &mirrored[k], radius, freq_hz);
             z[m][k] += refl;
             if k != m {
                 z[k][m] += refl;
@@ -528,50 +532,6 @@ pub fn solve_mpie(
     })
 }
 
-/// A uniform ρ-grid of the reflected potential kernels `(G_A, G_Φ)` at a fixed
-/// height-sum `d`, precomputed once and linearly interpolated during the Z-fill
-/// (the direct per-element Sommerfeld integral is far too slow). This is the
-/// oracle's acceleration and keeps the ground fill at free-space cost + O(grid).
-struct GroundKernelGrid {
-    d_rho: f64,
-    ga: Vec<Complex64>,
-    gp: Vec<Complex64>,
-}
-
-impl GroundKernelGrid {
-    fn new(
-        max_rho: f64,
-        d: f64,
-        freq_hz: f64,
-        eps_r: f64,
-        sigma: f64,
-        pec: bool,
-        n: usize,
-    ) -> Self {
-        let d_rho = max_rho / n as f64;
-        let mut ga = Vec::with_capacity(n + 1);
-        let mut gp = Vec::with_capacity(n + 1);
-        for i in 0..=n {
-            let rho = (i as f64 * d_rho).max(1e-6);
-            let (a, p) = reflected_potential_kernels(rho, d, freq_hz, eps_r, sigma, pec);
-            ga.push(a);
-            gp.push(p);
-        }
-        Self { d_rho, ga, gp }
-    }
-
-    /// Linear interpolation at horizontal offset `rho` (clamped to the grid).
-    fn interp(&self, rho: f64) -> (Complex64, Complex64) {
-        let t = (rho / self.d_rho).max(0.0);
-        let i = (t.floor() as usize).min(self.ga.len() - 2);
-        let f = t - i as f64;
-        (
-            self.ga[i] * (1.0 - f) + self.ga[i + 1] * f,
-            self.gp[i] * (1.0 - f) + self.gp[i + 1] * f,
-        )
-    }
-}
-
 /// The MPIE's ground needs the wire wholly above the plane: `Some` where a node of
 /// `geom` touches or crosses it. The one copy of that test — the session asks it
 /// before placing feeds, so a base-fed monopole is refused for touching the ground,
@@ -600,12 +560,10 @@ pub fn ground_contact_error(
 /// themselves (not just the feed Z).
 ///
 /// Over a **perfect** ground every geometry takes the exact image
-/// ([`add_pec_image`], FND-238). Over a finite ground it supports any wire
-/// **above ground**: a horizontal wire uses the fast reflected
-/// potential kernels (Phase D); a vertical / tilted / sloping straight wire uses
-/// the general reflected-E-field-dyadic reaction on a `(Δs, Σs)` grid; and a bent
-/// wire uses the per-segment-pair reflected reaction. A wire that reaches the
-/// `z = 0` plane returns [`MpieError::UnsupportedGround`].
+/// ([`add_pec_image`], FND-238). Over a **finite** ground, every geometry — straight
+/// or bent, horizontal or not — takes `K ×` that image plus the remainder
+/// ([`add_ground_remainder`], FND-239). A wire that reaches the `z = 0` plane
+/// returns [`MpieError::UnsupportedGround`].
 pub fn assemble_with_ground(
     geom: &MpieGeometry,
     freq_hz: f64,
@@ -615,299 +573,221 @@ pub fn assemble_with_ground(
     let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
     let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
 
-    let (pec, eps_r, sigma) = match ground {
+    let (eps_r, sigma) = match ground {
         GroundModel::FreeSpace | GroundModel::Deferred { .. } => return Ok(z),
-        GroundModel::PerfectConductor => (true, 1.0, 0.0),
-        GroundModel::SimpleFiniteGround { eps_r, sigma } => (false, *eps_r, *sigma),
+        GroundModel::PerfectConductor => {
+            if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
+                return Err(e);
+            }
+            add_pec_image(
+                &mut z,
+                &segs,
+                &bases,
+                geom.radius,
+                freq_hz,
+                Complex64::new(1.0, 0.0),
+            );
+            return Ok(z);
+        }
+        GroundModel::SimpleFiniteGround { eps_r, sigma } => (*eps_r, *sigma),
     };
-
     if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
         return Err(e);
     }
-    if pec {
-        add_pec_image(&mut z, &segs, &bases, geom.radius, freq_hz);
-        return Ok(z);
-    }
-    let lam = C0 / freq_hz;
-    let z0 = geom.nodes[0][2];
-    let horizontal = geom.nodes.iter().all(|n| (n[2] - z0).abs() < 1e-6 * lam);
-
-    if !horizontal {
-        // Non-horizontal straight wire (vertical / tilted / sloping): the
-        // reflected term uses the general reflected-E-field dyadic as a Galerkin
-        // reaction added to the free-space Z. Bent geometry over ground is handled
-        // separately by add_bent_ground_reaction (per-segment-pair reflected term).
-        add_general_ground_reaction(&mut z, geom, &segs, &bases, freq_hz, pec, eps_r, sigma)?;
-        return Ok(z);
-    }
-    let d = 2.0 * z0; // source-to-image separation (both at height z0)
-
-    // Grid spans the largest horizontal offset between any two quadrature points.
-    let mut max_rho = 0.0_f64;
-    for a in &geom.nodes {
-        for b in &geom.nodes {
-            let dr = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
-            max_rho = max_rho.max(dr);
-        }
-    }
-    let grid = GroundKernelGrid::new(max_rho * 1.05 + 1e-6, d, freq_hz, eps_r, sigma, pec, 240);
-
-    let w = 2.0 * std::f64::consts::PI * freq_hz;
-    let pre_a = Complex64::new(0.0, w * MU0 / (4.0 * std::f64::consts::PI));
-    let pre_p =
-        Complex64::new(1.0, 0.0) / Complex64::new(0.0, w * EPS0 * 4.0 * std::f64::consts::PI);
-    let nb = bases.len();
-    for m in 0..nb {
-        for n in m..nb {
-            let mut za = Complex64::new(0.0, 0.0);
-            let mut zp = Complex64::new(0.0, 0.0);
-            for lm in &bases[m] {
-                let sm = &segs[lm.seg];
-                let tm = lm.flow_tangent(&segs);
-                let cm = lm.charge(&segs);
-                for ln in &bases[n] {
-                    let sn = &segs[ln.seg];
-                    let tt = dot(tm, ln.flow_tangent(&segs));
-                    let cc = cm * ln.charge(&segs);
-                    for gi in 0..6 {
-                        let ua = 0.5 * (GL_NODES[gi] + 1.0);
-                        let wa = 0.5 * GL_WEIGHTS[gi] * sm.len;
-                        let ra = quad_point(sm, ua);
-                        let fm = lm.f_scalar(ua);
-                        for gj in 0..6 {
-                            let ub = 0.5 * (GL_NODES[gj] + 1.0);
-                            let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
-                            let rb = quad_point(sn, ub);
-                            let fn_ = ln.f_scalar(ub);
-                            let rho = ((ra[0] - rb[0]).powi(2) + (ra[1] - rb[1]).powi(2)).sqrt();
-                            let (ga, gp) = grid.interp(rho);
-                            za += wa * wb * fm * fn_ * tt * ga;
-                            zp += wa * wb * cc * gp;
-                        }
-                    }
-                }
-            }
-            let refl = pre_a * za + pre_p * zp;
-            z[m][n] += refl;
-            if n != m {
-                z[n][m] += refl;
-            }
-        }
-    }
+    let k = ground_image_factor(freq_hz, eps_r, sigma);
+    add_pec_image(&mut z, &segs, &bases, geom.radius, freq_hz, k);
+    add_ground_remainder(&mut z, &segs, &bases, freq_hz, eps_r, sigma);
     Ok(z)
 }
 
-/// Add the Sommerfeld reflected contribution for a **straight, non-horizontal**
-/// wire (vertical / tilted / sloping) as a Galerkin reaction of the general
-/// reflected-E-field dyadic (`reflected_e_projected_fast`) — which equals the
-/// reflected mutual impedance and therefore adds directly to the free-space Z
-/// (verified: the E-field reaction reproduces the free-space potential-form Z).
+/// Add the finite ground's reflected term beyond `K ×` the perfect image
+/// (FND-239): the Galerkin reaction of [`ReflectedRemainder`]'s kernel, which is
+/// `~1/R` at the image distance `R ≥ d = z + z'` rather than the full term's
+/// `~1/R³`, and is tabulated once per solve so it can be integrated as finely as
+/// the ground's nearness asks.
 ///
-/// The kernel depends only on `(Δs, Σs)` along the wire axis for a straight wire,
-/// so it is precomputed on a grid and bilinearly interpolated (as in the Level-1
-/// feedpoint correction). A bent wire is dispatched to [`add_bent_ground_reaction`].
-#[allow(clippy::too_many_arguments)]
-fn add_general_ground_reaction(
-    z: &mut [Vec<Complex64>],
-    geom: &MpieGeometry,
-    segs: &[SegGeom],
-    bases: &[Vec<Leg>],
-    freq_hz: f64,
-    pec: bool,
-    eps_r: f64,
-    sigma: f64,
-) -> Result<(), MpieError> {
-    let axis = segs[0].tangent;
-    // Anything but ONE straight line uses the per-segment-pair reflected reaction;
-    // one line uses the faster (Δs, Σs) grid below, which measures every separation
-    // along the axis from the centroid's height. "All segments parallel" admitted
-    // parallel wires that are not one line — a second dipole 5 λ away at another
-    // height moved the fed one's Z by 34 % (FND-223), the same assumption FND-206
-    // removed from the Sommerfeld correction. One collinearity test for both.
-    let midpoints: Vec<[f64; 3]> = segs
-        .iter()
-        .map(|s| {
-            [
-                0.5 * (s.p0[0] + s.p1[0]),
-                0.5 * (s.p0[1] + s.p1[1]),
-                0.5 * (s.p0[2] + s.p1[2]),
-            ]
-        })
-        .collect();
-    if segs.iter().any(|s| dot(s.tangent, axis).abs() < 1.0 - 1e-6)
-        || !crate::sommerfeld::collinear(&midpoints, axis)
-    {
-        add_bent_ground_reaction(z, segs, bases, freq_hz, pec, eps_r, sigma);
-        return Ok(());
-    }
-
-    // Centroid and signed arc-position range along the axis.
-    let nn = geom.nodes.len() as f64;
-    let mut c = [0.0; 3];
-    for p in &geom.nodes {
-        c[0] += p[0] / nn;
-        c[1] += p[1] / nn;
-        c[2] += p[2] / nn;
-    }
-    let (mut smin, mut smax) = (f64::INFINITY, f64::NEG_INFINITY);
-    for p in &geom.nodes {
-        let s = dot(sub(*p, c), axis);
-        smin = smin.min(s);
-        smax = smax.max(s);
-    }
-
-    // Precompute the reflected kernel on a (Δs, Σs) grid; dx=Δs·ax, dy=Δs·ay,
-    // d = 2·c_z + Σs·az (the height-sum of two axis points about the centroid).
-    const NG: usize = 40;
-    let ds_lo = smin - smax;
-    let ds_sp = 2.0 * (smax - smin);
-    let sg_lo = 2.0 * smin;
-    let sg_sp = 2.0 * (smax - smin);
-    let mut grid = vec![Complex64::new(0.0, 0.0); NG * NG];
-    for i in 0..NG {
-        let ds = ds_lo + ds_sp * i as f64 / (NG - 1) as f64;
-        for k in 0..NG {
-            let sg = sg_lo + sg_sp * k as f64 / (NG - 1) as f64;
-            let d = 2.0 * c[2] + sg * axis[2];
-            grid[i * NG + k] = reflected_e_projected_fast(
-                axis,
-                axis,
-                ds * axis[0],
-                ds * axis[1],
-                d,
-                freq_hz,
-                eps_r,
-                sigma,
-                pec,
-            );
-        }
-    }
-    let interp = |ds: f64, sg: f64| -> Complex64 {
-        let fi = if ds_sp > 0.0 {
-            ((ds - ds_lo) / ds_sp * (NG - 1) as f64).clamp(0.0, (NG - 1) as f64)
-        } else {
-            0.0
-        };
-        let fk = if sg_sp > 0.0 {
-            ((sg - sg_lo) / sg_sp * (NG - 1) as f64).clamp(0.0, (NG - 1) as f64)
-        } else {
-            0.0
-        };
-        let (i0, k0) = (
-            (fi.floor() as usize).min(NG - 2),
-            (fk.floor() as usize).min(NG - 2),
-        );
-        let (a, b) = (fi - i0 as f64, fk - k0 as f64);
-        grid[i0 * NG + k0] * (1.0 - a) * (1.0 - b)
-            + grid[(i0 + 1) * NG + k0] * a * (1.0 - b)
-            + grid[i0 * NG + k0 + 1] * (1.0 - a) * b
-            + grid[(i0 + 1) * NG + k0 + 1] * a * b
-    };
-
-    // Galerkin fill with the signed current ramps: the reflected E-field kernel is
-    // linear in the source/observation directions, so K(σ_m·axis, σ_n·axis) =
-    // σ_m·σ_n·K(axis, axis) with σ = flow_tangent·axis (±1 on a straight wire).
-    let nb = bases.len();
-    for m in 0..nb {
-        for n in m..nb {
-            let mut acc = Complex64::new(0.0, 0.0);
-            for lm in &bases[m] {
-                let sm = &segs[lm.seg];
-                let sig_m = dot(lm.flow_tangent(segs), axis);
-                for ln in &bases[n] {
-                    let sn = &segs[ln.seg];
-                    let sig = sig_m * dot(ln.flow_tangent(segs), axis);
-                    for gi in 0..6 {
-                        let ua = 0.5 * (GL_NODES[gi] + 1.0);
-                        let wa = 0.5 * GL_WEIGHTS[gi] * sm.len;
-                        let ra = quad_point(sm, ua);
-                        let fm = lm.f_scalar(ua);
-                        let sa = dot(sub(ra, c), axis);
-                        for gj in 0..6 {
-                            let ub = 0.5 * (GL_NODES[gj] + 1.0);
-                            let wb = 0.5 * GL_WEIGHTS[gj] * sn.len;
-                            let rb = quad_point(sn, ub);
-                            let fn_ = ln.f_scalar(ub);
-                            let sb = dot(sub(rb, c), axis);
-                            acc += wa * wb * fm * fn_ * sig * interp(sa - sb, sa + sb);
-                        }
-                    }
-                }
-            }
-            z[m][n] += acc;
-            if n != m {
-                z[n][m] += acc;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Reflected ground reaction for a **bent** wire (segments not all parallel).
-///
-/// The reflected E-field kernel is smooth (source and image are separated by
-/// `d = z + z' > 0`), so it is precomputed **once per segment pair** at the
-/// segment midpoints — `nseg²` evaluations — and each basis pair is filled with
-/// the analytic triangle overlap `∬ f = (ℓ_m/2)(ℓ_n/2)`. The kernel is linear in
-/// the source/observation directions, so the flow-tangent orientation enters as
-/// `σ = flow·tangent (±1)`. This handles arbitrary per-segment orientations that
-/// the straight-wire `(Δs, Σs)` grid cannot.
-#[allow(clippy::too_many_arguments)]
-fn add_bent_ground_reaction(
+/// It replaced three paths that sampled the full reflected kernel too coarsely
+/// near the ground — once per segment pair at the midpoints (bent), a 40 × 40
+/// `(Δs, Σs)` grid (straight, not horizontal), a 240-point ρ-grid (horizontal) —
+/// which read four radials 0.1 m over `GN 2` as 496 − j848 Ω (nec2c 38.47 +
+/// j22.35) and a vertical dipole 0.05 m up 115 + j81 at 21 segments and 133 +
+/// j112 at 63, moving away from nec2c's 107.70 + j56.75.
+fn add_ground_remainder(
     z: &mut [Vec<Complex64>],
     segs: &[SegGeom],
     bases: &[Vec<Leg>],
     freq_hz: f64,
-    pec: bool,
     eps_r: f64,
     sigma: f64,
 ) {
-    let nseg = segs.len();
-    let mid: Vec<[f64; 3]> = segs
+    let n = segs.len();
+    let ends: Vec<[f64; 3]> = segs.iter().flat_map(|s| [s.p0, s.p1]).collect();
+    let (z_lo, z_hi) = ends
         .iter()
-        .map(|s| {
-            [
-                0.5 * (s.p0[0] + s.p1[0]),
-                0.5 * (s.p0[1] + s.p1[1]),
-                0.5 * (s.p0[2] + s.p1[2]),
-            ]
-        })
-        .collect();
-    // Kseg[a][b]: reflected E on segment a (obs) from a source element on segment b.
-    let mut kseg = vec![vec![Complex64::new(0.0, 0.0); nseg]; nseg];
-    for a in 0..nseg {
-        for b in 0..nseg {
-            kseg[a][b] = reflected_e_projected_fast(
-                segs[b].tangent,
-                segs[a].tangent,
-                mid[a][0] - mid[b][0],
-                mid[a][1] - mid[b][1],
-                mid[a][2] + mid[b][2],
-                freq_hz,
-                eps_r,
-                sigma,
-                pec,
-            );
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p[2]), hi.max(p[2]))
+        });
+    let mut rho_max = 0.0_f64;
+    for a in &ends {
+        for b in &ends {
+            rho_max = rho_max.max((a[0] - b[0]).hypot(a[1] - b[1]));
         }
     }
+    let table = ReflectedRemainder::new(freq_hz, eps_r, sigma, 2.0 * z_lo, 2.0 * z_hi, rho_max);
+
+    // moments[a·n + b][i][j] = ∬ g_i(u) g_j(v) E_rem(obs a(u), src b(v)), with
+    // g_0 = 1 − u and g_1 = u; reciprocity gives the (b, a) entry as the transpose.
+    let mut moments = vec![[[Complex64::new(0.0, 0.0); 2]; 2]; n * n];
+    for a in 0..n {
+        for b in a..n {
+            let m = remainder_pair_moments(&table, &segs[a], &segs[b]);
+            let mt = [[m[0][0], m[1][0]], [m[0][1], m[1][1]]];
+            if a == b {
+                moments[a * n + a] = [
+                    [m[0][0], 0.5 * (m[0][1] + m[1][0])],
+                    [0.5 * (m[0][1] + m[1][0]), m[1][1]],
+                ];
+            } else {
+                moments[a * n + b] = m;
+                moments[b * n + a] = mt;
+            }
+        }
+    }
+    let ramp = |l: &Leg| usize::from(l.v_is_p1);
     let nb = bases.len();
     for m in 0..nb {
-        for n in m..nb {
+        for k in m..nb {
             let mut acc = Complex64::new(0.0, 0.0);
             for lm in &bases[m] {
                 let sig_m = dot(lm.flow_tangent(segs), segs[lm.seg].tangent);
-                for ln in &bases[n] {
+                for ln in &bases[k] {
                     let sig = sig_m * dot(ln.flow_tangent(segs), segs[ln.seg].tangent);
-                    let overlap = 0.25 * segs[lm.seg].len * segs[ln.seg].len;
-                    acc += sig * overlap * kseg[lm.seg][ln.seg];
+                    acc += sig * moments[lm.seg * n + ln.seg][ramp(lm)][ramp(ln)];
                 }
             }
-            z[m][n] += acc;
-            if n != m {
-                z[n][m] += acc;
+            z[m][k] += acc;
+            if k != m {
+                z[k][m] += acc;
             }
         }
     }
+}
+
+/// The four ramp moments of the remainder between observation segment `sa` and
+/// source segment `sb`. Both integrals are 6-point Gauss on panels graded
+/// geometrically away from the point nearest the image — the outer around the
+/// closest approach of `sa` to the mirrored `sb`, the inner around each outer
+/// point's nearest point on the mirrored `sb` — starting at that distance, so a
+/// `~1/R` kernel is resolved however close the ground is and however long the
+/// segment.
+fn remainder_pair_moments(
+    table: &ReflectedRemainder,
+    sa: &SegGeom,
+    sb: &SegGeom,
+) -> [[Complex64; 2]; 2] {
+    let mirror = |p: [f64; 3]| [p[0], p[1], -p[2]];
+    let (mb0, mb1) = (mirror(sb.p0), mirror(sb.p1));
+    let (ua, _, r_min) = closest_between_segments(sa.p0, sa.p1, mb0, mb1);
+    let mut m = [[Complex64::new(0.0, 0.0); 2]; 2];
+    for (lo, hi) in graded_panels(ua * sa.len, sa.len, r_min) {
+        for gi in 0..6 {
+            let ta = lo + 0.5 * (GL_NODES[gi] + 1.0) * (hi - lo);
+            let wa = 0.5 * GL_WEIGHTS[gi] * (hi - lo);
+            let u = ta / sa.len;
+            let ra = quad_point(sa, u);
+            let (vb, r_near) = closest_on_segment(mirror(ra), sb.p0, sb.p1);
+            let mut inner = [Complex64::new(0.0, 0.0); 2];
+            for (lo_b, hi_b) in graded_panels(vb * sb.len, sb.len, r_near) {
+                for gj in 0..6 {
+                    let tb = lo_b + 0.5 * (GL_NODES[gj] + 1.0) * (hi_b - lo_b);
+                    let wb = 0.5 * GL_WEIGHTS[gj] * (hi_b - lo_b);
+                    let v = tb / sb.len;
+                    let rb = quad_point(sb, v);
+                    let e = table.kernel(
+                        sb.tangent,
+                        sa.tangent,
+                        ra[0] - rb[0],
+                        ra[1] - rb[1],
+                        ra[2] + rb[2],
+                    );
+                    inner[0] += wb * (1.0 - v) * e;
+                    inner[1] += wb * v * e;
+                }
+            }
+            for j in 0..2 {
+                m[0][j] += wa * (1.0 - u) * inner[j];
+                m[1][j] += wa * u * inner[j];
+            }
+        }
+    }
+    m
+}
+
+/// Panels covering `[0, len]`, graded geometrically away from `at`: widths `h`,
+/// `2h`, `4h`, … on each side, `h` the distance to the kernel's nearest
+/// approach. One panel where that distance is at least the length.
+fn graded_panels(at: f64, len: f64, h: f64) -> Vec<(f64, f64)> {
+    let h = h.max(1e-9 * len);
+    if h >= len {
+        return vec![(0.0, len)];
+    }
+    let at = at.clamp(0.0, len);
+    let mut panels = Vec::new();
+    let (mut a, mut w) = (at, h);
+    while a > 0.0 {
+        let b = (a - w).max(0.0);
+        panels.push((b, a));
+        a = b;
+        w *= 2.0;
+    }
+    let (mut a, mut w) = (at, h);
+    while a < len {
+        let b = (a + w).min(len);
+        panels.push((a, b));
+        a = b;
+        w *= 2.0;
+    }
+    panels
+}
+
+/// The parameter `t ∈ [0, 1]` of the point on segment `p0 → p1` nearest `q`, and
+/// the distance to it.
+fn closest_on_segment(q: [f64; 3], p0: [f64; 3], p1: [f64; 3]) -> (f64, f64) {
+    let d = sub(p1, p0);
+    let t = (dot(sub(q, p0), d) / dot(d, d)).clamp(0.0, 1.0);
+    let c = [p0[0] + t * d[0], p0[1] + t * d[1], p0[2] + t * d[2]];
+    (t, norm(sub(q, c)))
+}
+
+/// Closest approach of segments `a0 → a1` and `b0 → b1`: the parameters on each
+/// and the distance (Ericson, *Real-Time Collision Detection*, §5.1.9).
+fn closest_between_segments(
+    a0: [f64; 3],
+    a1: [f64; 3],
+    b0: [f64; 3],
+    b1: [f64; 3],
+) -> (f64, f64, f64) {
+    let (d1, d2, r) = (sub(a1, a0), sub(b1, b0), sub(a0, b0));
+    let (aa, ee, ff) = (dot(d1, d1), dot(d2, d2), dot(d2, r));
+    let c = dot(d1, r);
+    let bb = dot(d1, d2);
+    let denom = aa * ee - bb * bb;
+    let mut s = if denom > 1e-12 * aa * ee {
+        ((bb * ff - c * ee) / denom).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mut t = (bb * s + ff) / ee;
+    if t < 0.0 {
+        t = 0.0;
+        s = (-c / aa).clamp(0.0, 1.0);
+    } else if t > 1.0 {
+        t = 1.0;
+        s = ((bb - c) / aa).clamp(0.0, 1.0);
+    }
+    let pa = [a0[0] + s * d1[0], a0[1] + s * d1[1], a0[2] + s * d1[2]];
+    let pb = [b0[0] + t * d2[0], b0[1] + t * d2[1], b0[2] + t * d2[2]];
+    (s, t, norm(sub(pa, pb)))
 }
 
 /// Solve the MPIE with a Sommerfeld half-space (any straight wire above ground)
@@ -1306,5 +1186,153 @@ mod tests {
             solve_mpie(&geom, FREQ, 0),
             Err(MpieError::InvalidFeed { node: 0 })
         ));
+    }
+}
+
+/// FND-239: the remainder's pair integrals resolve the ground however close it is.
+#[cfg(test)]
+mod remainder_fill_tests {
+    use super::*;
+
+    const FREQ: f64 = 14.2e6;
+
+    fn seg(p0: [f64; 3], p1: [f64; 3]) -> SegGeom {
+        let d = sub(p1, p0);
+        let len = norm(d);
+        SegGeom {
+            p0,
+            p1,
+            tangent: [d[0] / len, d[1] / len, d[2] / len],
+            len,
+        }
+    }
+
+    /// The same four moments on `panels` uniform panels per segment.
+    fn uniform_moments(
+        table: &ReflectedRemainder,
+        sa: &SegGeom,
+        sb: &SegGeom,
+        panels: usize,
+    ) -> [[Complex64; 2]; 2] {
+        let points = |s: &SegGeom| -> Vec<(f64, f64)> {
+            (0..panels)
+                .flat_map(|p| {
+                    (0..6).map(move |g| {
+                        let h = 1.0 / panels as f64;
+                        (
+                            (p as f64 + 0.5 * (GL_NODES[g] + 1.0)) * h,
+                            0.5 * GL_WEIGHTS[g] * h * s.len,
+                        )
+                    })
+                })
+                .collect()
+        };
+        let (pa, pb) = (points(sa), points(sb));
+        let mut m = [[Complex64::new(0.0, 0.0); 2]; 2];
+        for &(u, wa) in &pa {
+            let ra = quad_point(sa, u);
+            for &(v, wb) in &pb {
+                let rb = quad_point(sb, v);
+                let e = table.kernel(
+                    sb.tangent,
+                    sa.tangent,
+                    ra[0] - rb[0],
+                    ra[1] - rb[1],
+                    ra[2] + rb[2],
+                );
+                let (gu, gv) = ([1.0 - u, u], [1.0 - v, v]);
+                for i in 0..2 {
+                    for j in 0..2 {
+                        m[i][j] += wa * wb * gu[i] * gv[j] * e;
+                    }
+                }
+            }
+        }
+        m
+    }
+
+    fn worst(a: &[[Complex64; 2]; 2], b: &[[Complex64; 2]; 2]) -> (f64, f64) {
+        let mut err = 0.0_f64;
+        let mut mag = 0.0_f64;
+        for i in 0..2 {
+            for j in 0..2 {
+                err = err.max((a[i][j] - b[i][j]).norm());
+                mag = mag.max(b[i][j].norm());
+            }
+        }
+        (err, mag)
+    }
+
+    /// 0.25 m segments 2.5 mm above the ground — a hundredth of their length — the
+    /// graded panels match 150 uniform panels (each a sixth of the height sum) on a
+    /// horizontal pair, a vertical pair, a bend and two horizontal segments side by
+    /// side; and swapping observer and source gives the transpose (reciprocity),
+    /// which the fill relies on and an asymmetric panel rule would break.
+    #[test]
+    fn graded_panels_resolve_a_segment_a_hundredth_of_its_length_up() {
+        let h = 0.0025;
+        let table = ReflectedRemainder::new(FREQ, 13.0, 0.005, 2.0 * h, 2.0 * (h + 0.25), 0.36);
+        let horizontal = seg([0.0, 0.0, h], [0.25, 0.0, h]);
+        let next = seg([0.25, 0.0, h], [0.5, 0.0, h]);
+        let vertical = seg([0.0, 0.0, h], [0.0, 0.0, h + 0.25]);
+        let beside = seg([0.0, 0.1, h], [0.25, 0.1, h]);
+        for (name, a, b) in [
+            ("horizontal self", &horizontal, &horizontal),
+            ("horizontal neighbours", &horizontal, &next),
+            ("vertical self", &vertical, &vertical),
+            ("bend", &vertical, &horizontal),
+            ("side by side", &horizontal, &beside),
+        ] {
+            let graded = remainder_pair_moments(&table, a, b);
+            let (err, mag) = worst(&graded, &uniform_moments(&table, a, b, 150));
+            assert!(
+                err < 1e-4 * mag,
+                "{name}: graded off by {err:.3e} of {mag:.3e}"
+            );
+            let swapped = remainder_pair_moments(&table, b, a);
+            let t = [
+                [swapped[0][0], swapped[1][0]],
+                [swapped[0][1], swapped[1][1]],
+            ];
+            let (err, mag) = worst(&t, &graded);
+            assert!(
+                err < 1e-4 * mag,
+                "{name}: (b, a) is not the transpose: {err:.3e} of {mag:.3e}"
+            );
+        }
+    }
+
+    /// Over a ground conducting like a perfect one, the finite-ground fill is the
+    /// perfect ground's: `K → 1` and the remainder vanishes. An L 0.05 m up.
+    #[test]
+    fn a_nearly_perfect_finite_ground_is_the_perfect_one() {
+        let mut nodes = vec![];
+        for i in 0..=8 {
+            nodes.push([0.0, 0.0, 0.05 + 5.28 * (8 - i) as f64 / 8.0]);
+        }
+        for i in 1..=8 {
+            nodes.push([5.3 * i as f64 / 8.0, 0.0, 0.05]);
+        }
+        let geom = MpieGeometry {
+            segments: (0..16).map(|i| [i, i + 1]).collect(),
+            nodes,
+            radius: 0.001,
+        };
+        let pec = assemble_with_ground(&geom, FREQ, &GroundModel::PerfectConductor).unwrap();
+        let near = assemble_with_ground(
+            &geom,
+            FREQ,
+            &GroundModel::SimpleFiniteGround {
+                eps_r: 1.0,
+                sigma: 1e7,
+            },
+        )
+        .unwrap();
+        let scale = pec.iter().flatten().map(|v| v.norm()).fold(0.0, f64::max);
+        for (rp, rn) in pec.iter().zip(&near) {
+            for (p, n) in rp.iter().zip(rn) {
+                assert!((p - n).norm() < 1e-3 * scale, "{p} vs {n} (scale {scale})");
+            }
+        }
     }
 }
