@@ -140,7 +140,8 @@ pub fn buried_wire_geometry_error(segs: &[Segment], ground: &GroundModel) -> Opt
                      vertical on average ground reads 154, 254, 454, 851, 1627 ohm resistance \
                      at 21 to 321 segments). Models that do solve: GN 1 with the ground loss \
                      as a series resistance at the base (an LD card), or the radials raised \
-                     strictly above the ground (z > 0)",
+                     strictly above the ground (z > 0) and solved with --solver mpie, with \
+                     the segments near the ground shorter than their height",
                     s.tag, s.tag_index
                 )
             }),

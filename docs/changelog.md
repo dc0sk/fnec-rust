@@ -48,6 +48,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The raised-radial remedy says how to solve it** (FND-240): with `--solver mpie`
+  and the segments near the ground shorter than their height. The default solve of
+  raised radials that low is approximate (a vertical and two radials 1 m over `GN 2`:
+  31.0 + j1.1 Ω on Hallén against nec2c's 35.2 + j3.7), and the test now checks each
+  named remedy against nec2c's converged value at two meshes instead of only that it
+  solves. (#574)
 - **The refusal of a wire touching a finite ground says why, and what solves.**
   NEC-2's own answer does not converge there: a base-fed quarter-wave vertical on
   average ground reads 154, 254, 454, 851 and 1627 Ω resistance at 21 to 321
