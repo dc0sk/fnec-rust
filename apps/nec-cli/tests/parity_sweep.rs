@@ -1804,7 +1804,8 @@ fn parity_sweep() {
         }
     }
     let device_stages = *DEVICE_STAGES.lock().unwrap();
-    if pollster::block_on(nec_accel::hardware_adapter_present()) {
+    // One device stage of hundreds suffices, so one driver fault cannot fail it.
+    if nec_accel::gpu_test::gpu_expected() {
         assert!(
             device_stages > 0,
             "a hardware GPU is present, but no stage of any Holds cell ran on it: S-exec \

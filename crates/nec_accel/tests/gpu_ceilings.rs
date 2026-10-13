@@ -13,9 +13,10 @@
 //! The grid, the capacity arithmetic and the shaders' indexing run anywhere; the
 //! device tests skip only where there is no hardware adapter.
 
+use nec_accel::gpu_test::{fill_miss_is_transient, gpu_attempt, gpu_expected};
 use nec_accel::{
-    dense_matrix_capacity, fill_zmatrix_wgpu, hardware_adapter_present, linear_dispatch_grid,
-    shared_device_dense_capacity, solve_hallen_gpu_resident, GpuSolveDeclined, ZSegmentInput,
+    dense_matrix_capacity, fill_zmatrix_wgpu, linear_dispatch_grid, shared_device_dense_capacity,
+    solve_hallen_gpu_resident, GpuSolveDeclined, ZSegmentInput,
 };
 
 #[test]
@@ -122,28 +123,24 @@ fn straight_wire(n: usize) -> Vec<ZSegmentInput> {
         .collect()
 }
 
-fn gpu_present() -> bool {
-    pollster::block_on(hardware_adapter_present())
-}
-
 /// N = 2049: one past the first size that panicked.
 #[test]
 fn a_fill_past_the_old_dispatch_limit_runs_on_the_device() {
-    if !gpu_present() {
+    if !gpu_expected() {
         eprintln!("no hardware GPU adapter — skipped");
         return;
     }
     let n = 2049;
-    let z = match pollster::block_on(fill_zmatrix_wgpu(&straight_wire(n), 14.2e6)) {
-        Ok(z) => z,
-        // The host driver can lose the device under any process (FND-190); that
-        // decline names itself and is not this test's subject.
-        Err(why) if why.contains("device is lost") => {
-            eprintln!("NOTE: the driver lost the device (FND-190): {why}");
-            return;
+    // The host driver can lose the device under any process (FND-190): that miss
+    // earns one re-run (FND-215); any other decline is this test's failure.
+    let z = gpu_attempt("a 2049-segment fill", || {
+        match pollster::block_on(fill_zmatrix_wgpu(&straight_wire(n), 14.2e6)) {
+            Err(why) if fill_miss_is_transient(&why) => Err(why),
+            Err(why) => panic!("a GPU is present and the fill declined: {why}"),
+            ok => ok,
         }
-        Err(why) => panic!("a GPU is present and the fill declined: {why}"),
-    };
+    })
+    .expect("a GPU is expected");
     assert_eq!(z.len(), n * n);
     // The last row was the part a 1-D grid could not reach; its self term (the
     // diagonal) is the largest entry of its row, so it cannot be zero or NaN.
@@ -161,16 +158,17 @@ fn a_fill_past_the_old_dispatch_limit_runs_on_the_device() {
 /// storage binding — before building any buffer.
 #[test]
 fn a_system_past_the_device_capacity_declines_with_its_reason() {
-    if !gpu_present() {
+    if !gpu_expected() {
         eprintln!("no hardware GPU adapter — skipped");
         return;
     }
     // A straight wire with two free ends is square: S = N + 2.
-    // `None` with a GPU present is the driver losing the device (FND-190).
-    let Some(capacity) = shared_device_dense_capacity() else {
-        eprintln!("NOTE: no shared device although an adapter is present (FND-190)");
-        return;
-    };
+    // `None` with a GPU present is the driver losing the device (FND-190): one
+    // re-run (FND-215).
+    let capacity = gpu_attempt("the shared device's capacity", || {
+        shared_device_dense_capacity().ok_or("no shared device")
+    })
+    .expect("a GPU is expected");
     let n = capacity - 1;
     let segs = straight_wire(n);
     let zeros = vec![num_complex::Complex64::new(0.0, 0.0); n];

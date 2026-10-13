@@ -11,7 +11,8 @@
 //!
 //! Skips vacuously when no wgpu adapter is available.
 
-use nec_accel::{hardware_adapter_present, microbench_zmatrix_dispatch, ZSegmentInput};
+use nec_accel::gpu_test::gpu_attempt;
+use nec_accel::{microbench_zmatrix_dispatch, ZSegmentInput};
 
 /// Build a straight N-segment wire along Z for a deterministic fill workload.
 fn line_segments(n: usize) -> Vec<ZSegmentInput> {
@@ -35,12 +36,12 @@ fn gpu_microbench_isolates_dispatch_from_device_init() {
     let segs = line_segments(160);
     let reps = 12;
 
-    let Some(mb) = pollster::block_on(microbench_zmatrix_dispatch(&segs, 14.2e6, reps)) else {
-        // A skip only where there is no GPU (FND-163).
-        assert!(
-            !pollster::block_on(hardware_adapter_present()),
-            "PH7-CHK-002: a hardware adapter is present but the microbenchmark returned nothing"
-        );
+    // A skip only where no GPU is expected (FND-163); with one, a fault earns one
+    // re-run (FND-215).
+    let Ok(mb) = gpu_attempt("PH7-CHK-002 microbenchmark", || {
+        pollster::block_on(microbench_zmatrix_dispatch(&segs, 14.2e6, reps))
+            .ok_or("returned nothing")
+    }) else {
         eprintln!("PH7-CHK-002: no wgpu adapter — microbenchmark skipped (software fallback)");
         return;
     };

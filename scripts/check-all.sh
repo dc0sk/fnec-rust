@@ -46,6 +46,17 @@ done
 # shellcheck source=scripts/host-build-lock.sh
 source "$ROOT/scripts/host-build-lock.sh" "check-all"
 
+# GPU tests decide "skip or fail" and "re-run or fail" through nec_accel::gpu_test
+# (FND-215). On a host whose NVIDIA driver lists a GPU, a test that sees none
+# fails instead of skipping; and each one-off re-run after a driver fault
+# (FND-190) is logged, so a passing gate still reports it.
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q '^GPU '; then
+    export FNEC_GPU_REQUIRED=1
+fi
+GPU_RERUN_LOG="${XDG_CACHE_HOME:-$HOME/.cache}/fnec/gate-gpu-reruns.log"
+mkdir -p "$(dirname "$GPU_RERUN_LOG")" && : > "$GPU_RERUN_LOG"
+export FNEC_GPU_RERUN_LOG="$GPU_RERUN_LOG"
+
 pytest_bindings() {
     local venv="$ROOT/target/pytest-venv" module="$ROOT/target/pytest-module"
     if ! "$venv/bin/python" -c 'import pytest' 2>/dev/null; then
@@ -156,6 +167,9 @@ if [[ $COVERAGE -eq 1 ]]; then
 fi
 
 echo
+reruns=$(wc -l < "$GPU_RERUN_LOG")
+echo "GPU re-runs after a driver fault (FND-190): $reruns${FNEC_GPU_REQUIRED:+ (a GPU was required)}"
+sed 's/^/    /' "$GPU_RERUN_LOG"
 if [[ ${#FAILED[@]} -eq 0 ]]; then
     echo "all gates passed"
     exit 0

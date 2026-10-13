@@ -70,6 +70,9 @@ pub mod kernel_reference;
 pub mod wgpu_device;
 
 #[cfg(feature = "wgpu")]
+pub mod gpu_test;
+
+#[cfg(feature = "wgpu")]
 pub use wgpu_device::{
     dense_matrix_capacity, fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present,
     linear_dispatch_grid, microbench_zmatrix_dispatch, preferred_adapter_info, shared_adapter_info,

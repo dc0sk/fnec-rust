@@ -361,6 +361,26 @@ fn invalidate_gpu_context() {
     }
 }
 
+/// Drop the shared compute context, so the next caller builds a fresh one.
+///
+/// For [`crate::gpu_test`]'s re-run (FND-215): a failed adapter or device request
+/// is cached for the process, so without this a re-run after a driver fault is
+/// handed the first attempt's failure and retries nothing.
+#[doc(hidden)]
+pub fn forget_shared_gpu_context() {
+    invalidate_gpu_context();
+}
+
+/// Pin a failed device request in the shared context, as a driver fault at
+/// `request_device` does (FND-190). For the test that a re-run is not handed the
+/// cached failure (FND-215); nothing else may call it.
+#[doc(hidden)]
+pub fn pin_shared_gpu_failure_for_test(why: &str) {
+    if let Ok(mut c) = GPU_CACHE.lock() {
+        *c = GpuCache::DeviceFailed(why.to_string());
+    }
+}
+
 /// The shared compute context, building it on first use.
 ///
 /// Not used by [`microbench_zmatrix_dispatch`], which **times** device

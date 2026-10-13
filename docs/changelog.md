@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 ---
 
 # Changelog
@@ -14,6 +14,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+### Changed
+
+- **Every GPU test re-runs once on a driver fault, and skips only where no GPU is
+  expected** (FND-215). One policy, `nec_accel::gpu_test`, replaces the per-test
+  handling: five tests failed outright on one lost device, two passed having run
+  nothing, and a re-run after a failed device request was handed the cached failure
+  instead of a fresh device. On a host whose NVIDIA driver lists a GPU,
+  `scripts/check-all.sh` makes a test that sees none fail rather than skip, and
+  reports how many re-runs the gate took. A structural test keeps every test on the
+  policy. (#568)
 
 ## [0.21.7] — 2026-10-12 — Free ends
 

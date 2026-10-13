@@ -187,15 +187,24 @@ fn at_the_calibrated_crossover_the_pick_is_the_gpu_where_there_is_one() {
     let deck = dipole(551, 1);
     let (auto_out, auto_err) = run_with("551", &deck, &[], &cal);
     let (cpu_out, _) = run_with("551cpu", &deck, &["--exec", "cpu"], &cal);
-    let _ = std::fs::remove_file(&cal);
     if key.is_none() {
+        let _ = std::fs::remove_file(&cal);
         assert_eq!(selected(&auto_err), "cpu", "{auto_err}");
         assert!(auto_err.contains("no hardware GPU"), "{auto_err}");
         assert_eq!(auto_out, cpu_out, "no GPU: the CPU's answer to the byte");
         return;
     }
     assert_eq!(selected(&auto_err), "gpu", "{auto_err}");
-    common::assert_gpu_exec_label(&auto_err);
+    // A re-run's answer is the one compared, so a fallback cannot make the
+    // comparison below the CPU against itself.
+    let rerun_out = std::cell::RefCell::new(None);
+    common::assert_gpu_exec_label(&auto_err, || {
+        let (o, e) = run_with("551again", &deck, &[], &cal);
+        *rerun_out.borrow_mut() = Some(o);
+        e
+    });
+    let _ = std::fs::remove_file(&cal);
+    let auto_out = rerun_out.into_inner().unwrap_or(auto_out);
     let (g, c) = (feed_z(&auto_out), feed_z(&cpu_out));
     assert!(
         (g.0 - c.0).abs() < 2.0 && (g.1 - c.1).abs() < 2.0,

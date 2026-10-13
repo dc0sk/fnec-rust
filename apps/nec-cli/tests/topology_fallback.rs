@@ -303,7 +303,10 @@ fn hybrid_and_gpu_points_say_what_ran_without_a_seam_warning() {
         !gpu_stderr.contains("scheduling seam"),
         "the removed seam warning came back:\n{gpu_stderr}"
     );
-    common::assert_gpu_exec_label(&gpu_stderr);
+    common::assert_gpu_exec_label(&gpu_stderr, || {
+        String::from_utf8_lossy(&run_solver_on_reference_dipole_with_exec("hallen", "gpu").stderr)
+            .into_owned()
+    });
 }
 
 #[test]

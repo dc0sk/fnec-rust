@@ -7,9 +7,7 @@
 //! normal case. Its own test binary, because the build counter is process-global:
 //! any other GPU test in the same process would move it.
 
-use nec_accel::{
-    fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present, ZSegmentInput,
-};
+use nec_accel::{fill_zmatrix_wgpu, gpu_context_build_count, ZSegmentInput};
 use std::sync::Barrier;
 
 #[test]
@@ -35,7 +33,9 @@ fn eight_first_callers_build_one_device() {
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
 
-    if pollster::block_on(hardware_adapter_present()) {
+    // No re-run here: the subject is the process's first context build, which a
+    // second attempt cannot repeat — a driver fault (FND-190) fails this test.
+    if nec_accel::gpu_test::gpu_expected() {
         assert!(
             results.iter().all(|ok| *ok),
             "a GPU is present and a fill failed"

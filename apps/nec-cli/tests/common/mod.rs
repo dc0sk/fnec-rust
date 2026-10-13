@@ -117,28 +117,77 @@ impl Drop for TempDeck {
 
 /// Assert the `exec` label of an `--exec gpu` run of a deck the device solves:
 /// `gpu` where a hardware adapter is present, `gpu(cpu-fallback)` where none is.
-/// The label used to read `gpu(cpu-fallback)` on every point, including the ones
-/// the device solved — so tests that asserted it were false on a GPU host.
+/// What an `--exec gpu` run's stderr says the device did: the one reading of
+/// fnec's GPU fallback messages that every CLI GPU test shares (FND-215).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GpuRun {
+    /// No fallback message: the device did the work.
+    OnDevice,
+    /// A transient miss — no adapter seen, the device not created or lost, a
+    /// readback that failed. Worth one re-run where a GPU is expected.
+    Missed(String),
+    /// A deterministic decline — a system past the device's storage binding, or an
+    /// f32 solve that failed its residual check. It fails the same way every time.
+    Declined(String),
+}
+
+/// A run whose device work missed, kept so a test without a GPU can still read
+/// its fallback output; prints as its reason only.
+pub struct GpuMiss {
+    pub why: String,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl std::fmt::Debug for GpuMiss {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.why)
+    }
+}
+
+pub fn classify_gpu_stderr(stderr: &str) -> GpuRun {
+    let fallbacks: Vec<&str> = stderr
+        .lines()
+        .filter(|l| {
+            l.contains("solve_hallen_gpu_resident:")
+                || l.contains("falling back to CPU Z-matrix fill")
+                || l.contains("falling back to CPU RP")
+        })
+        .collect();
+    let deterministic =
+        |l: &&str| l.contains("storage binding holds") || l.contains("did not converge");
+    if let Some(l) = fallbacks.iter().find(|l| !deterministic(l)) {
+        return GpuRun::Missed(l.to_string());
+    }
+    match fallbacks.first() {
+        Some(l) => GpuRun::Declined(l.to_string()),
+        None => GpuRun::OnDevice,
+    }
+}
+
+/// The run's `exec=` label: `gpu` where a GPU is expected, `gpu(cpu-fallback)`
+/// where none is. The label used to read `gpu(cpu-fallback)` on every point,
+/// including the ones the device solved — so tests that asserted it were false
+/// on a GPU host.
 ///
-/// One fallback is accepted on a GPU host, and only with its reason on stderr:
-/// the driver losing the device under the process (FND-190). On the GTX 1080 Ti
-/// host the NVIDIA driver raises Xid 13 during GPU initialisation — logged even
-/// for a probe that only enumerated adapters — and a process using the GPU at that
-/// moment gets "Parent device is lost". fnec falls back to the CPU and says so,
-/// which is the behaviour to test; any OTHER decline still fails.
-pub fn assert_gpu_exec_label(stderr: &str) {
-    if !pollster::block_on(nec_accel::hardware_adapter_present()) {
-        assert_diag_field(stderr, "exec", "gpu(cpu-fallback)");
-        return;
+/// `first` is the run's stderr; `rerun` runs it again and returns its stderr. A
+/// fallback where a GPU is expected — the driver losing the device or hiding the
+/// adapter (FND-190) — earns exactly one re-run under the shared policy
+/// (FND-215); a second fails. It used to be accepted on its reason with no
+/// re-run, so a GPU-host run passed with the device solving nothing.
+pub fn assert_gpu_exec_label(first: &str, mut rerun: impl FnMut() -> String) {
+    let mut given = Some(first.to_string());
+    let attempt = nec_accel::gpu_test::gpu_attempt("the --exec gpu label", || {
+        let s = given.take().unwrap_or_else(&mut rerun);
+        if diag_field(&s, "exec") == Some("gpu") {
+            Ok(s)
+        } else {
+            Err(s)
+        }
+    });
+    if let Err(s) = attempt {
+        assert_diag_field(&s, "exec", "gpu(cpu-fallback)");
     }
-    if diag_field(stderr, "exec") == Some("gpu(cpu-fallback)") && stderr.contains("device is lost")
-    {
-        eprintln!(
-            "NOTE: the driver lost the GPU device under this run (FND-190); fallback accepted"
-        );
-        return;
-    }
-    assert_diag_field(stderr, "exec", "gpu");
 }
 
 /// Every `exec=` field of a hybrid run names what solved its point — `cpu`, or
@@ -158,37 +207,31 @@ pub fn assert_points_say_what_ran(stderr: &str) {
     }
 }
 
-/// A multi-point `--exec hybrid` run on a deck the GPU solves: with a hardware
-/// GPU the lane runs and reports how many points it solved; without one the run
-/// says it is CPU-only, and why.
+/// A multi-point `--exec hybrid` run on a deck the GPU solves: where a GPU is
+/// expected the lane runs and reports how many points it solved; where none is,
+/// the run says it is CPU-only, and why.
 ///
 /// FND-190: this host's driver has momentarily hidden the GPU from adapter
-/// enumeration — the run said "no hardware GPU" while this check found one. Only
-/// that disagreement earns one re-run (`rerun` returns its stderr): a transient
-/// passes on it, while a hybrid that cannot find a present GPU fails both.
-pub fn assert_hybrid_lane_reported(stderr: &str, points: usize, rerun: impl FnOnce() -> String) {
+/// enumeration — the run said "no hardware GPU" while a probe found one. A run
+/// without its lane where a GPU is expected earns one re-run under the shared
+/// policy (`rerun` returns its stderr; FND-215): a transient passes on it, while
+/// a hybrid that cannot find a present GPU fails both.
+pub fn assert_hybrid_lane_reported(stderr: &str, points: usize, mut rerun: impl FnMut() -> String) {
     const CPU_ONLY: &str = "--exec hybrid runs on the CPU only: no hardware GPU";
-    if pollster::block_on(nec_accel::hardware_adapter_present()) {
-        let lane = format!("of {points} sweep points solved on the GPU");
-        if !stderr.contains(&lane) && stderr.contains(CPU_ONLY) {
-            let second = rerun();
-            assert!(
-                second.contains(&lane),
-                "a GPU is present and two hybrid runs reported no lane:\n{stderr}\n---\n{second}"
-            );
-            eprintln!(
-                "NOTE: the first run did not see the GPU, the second did (FND-190); accepted"
-            );
-            return;
+    let lane = format!("of {points} sweep points solved on the GPU");
+    let mut given = Some(stderr.to_string());
+    let attempt = nec_accel::gpu_test::gpu_attempt("the --exec hybrid lane", || {
+        let s = given.take().unwrap_or_else(&mut rerun);
+        if s.contains(&lane) {
+            Ok(s)
+        } else {
+            Err(s)
         }
+    });
+    if let Err(s) = attempt {
         assert!(
-            stderr.contains(&lane),
-            "a GPU is present and the hybrid run reported no lane:\n{stderr}"
-        );
-    } else {
-        assert!(
-            stderr.contains("--exec hybrid runs on the CPU only: no hardware GPU"),
-            "no GPU, and the hybrid run did not say it is CPU-only:\n{stderr}"
+            s.contains(CPU_ONLY),
+            "no GPU, and the hybrid run did not say it is CPU-only:\n{s}"
         );
     }
 }

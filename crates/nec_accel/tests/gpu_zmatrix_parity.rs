@@ -14,8 +14,9 @@
 //! The test passes vacuously (prints a skip notice) when no wgpu adapter is
 //! available, matching the pattern used by other GPU gate tests in this crate.
 
+use nec_accel::fill_zmatrix_wgpu;
+use nec_accel::gpu_test::{fill_miss_is_transient, gpu_attempt};
 use nec_accel::ZSegmentInput;
-use nec_accel::{fill_zmatrix_wgpu, hardware_adapter_present};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,22 +84,15 @@ fn build_test_inputs() -> (Vec<ZSegmentInput>, Vec<[f64; 2]>, usize, f64) {
 fn gpu_zmatrix_fill_matches_cpu_within_1e4_relative() {
     let (gpu_segs, cpu_flat, n, freq_hz) = build_test_inputs();
 
-    let mut gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
-    // One re-run on a present adapter, as G5 and the hybrid lane's tests have
-    // (#519, #536): the NVIDIA driver faulted this test's own process with Xid 32
-    // on 2026-10-04 and again on 2026-10-05 on the RTX 2080 Ti (FND-190), failing
-    // it as if the fill were wrong. A second failure in a row still fails.
-    if gpu_result.is_err() && pollster::block_on(hardware_adapter_present()) {
-        eprintln!("G6 gate: the fill returned nothing on a present adapter; re-running once");
-        gpu_result = pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz));
-    }
-
-    let Ok(gpu_flat) = gpu_result else {
-        // A skip only where there is no GPU (FND-163).
-        assert!(
-            !pollster::block_on(hardware_adapter_present()),
-            "G6: a hardware adapter is present but the GPU fill returned nothing, twice"
-        );
+    // The NVIDIA driver faulted this test's own process with Xid 32 on 2026-10-04
+    // and 2026-10-05 (FND-190), failing it as if the fill were wrong: one re-run
+    // where a GPU is expected, a skip only where none is (FND-163, FND-215).
+    let Ok(gpu_flat) = gpu_attempt("G6 Z-matrix fill", || {
+        match pollster::block_on(fill_zmatrix_wgpu(&gpu_segs, freq_hz)) {
+            Err(why) if !fill_miss_is_transient(&why) => panic!("the fill declined: {why}"),
+            r => r,
+        }
+    }) else {
         eprintln!("G6 gate: no hardware GPU adapter — parity gate skipped (software fallback)");
         return;
     };
