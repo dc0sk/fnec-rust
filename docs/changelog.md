@@ -40,6 +40,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The refusal of a wire touching a finite ground says why, and what solves.**
+  NEC-2's own answer does not converge there: a base-fed quarter-wave vertical on
+  average ground reads 154, 254, 454, 851 and 1627 Ω resistance at 21 to 321
+  segments in nec2c, so there is no reference to build a contact model against. The
+  message now says so and names two models that do solve — `GN 1` with the ground
+  loss as a series resistance at the base, or radials raised above the ground — and
+  a test runs both. (#572)
 - **`docs/nec4-support.md` says where fnec stands on NEC-4, and nothing else**
   (FND-235). It had described Phase 1 — PEC ground only, no JSON, no near fields —
   in two card tables that contradicted the canonical card-support matrix on almost

@@ -115,8 +115,14 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
 pub fn buried_wire_geometry_error(segs: &[Segment], ground: &GroundModel) -> Option<String> {
     // Wires touching PEC ground are solved by explicit images (FND-082); the
     // shapes that cannot be are refused by the same function the solve uses.
-    // Finite ground has no trustworthy contact model (nec2c answers a λ/4
-    // vertical on average ground with 179 − j261 Ω), so contact stays refused.
+    // Finite ground has no trustworthy contact model, and no reference to build
+    // one against: nec2c's own answer for a wire reaching a lossy ground does not
+    // converge. A base-fed λ/4 vertical (5.28 m, r = 1 mm, 14.2 MHz) on GN 2
+    // (εr 13, σ 0.005) reads R = 154, 254, 454, 851, 1627 Ω at 21, 41, 81, 161,
+    // 321 segments — about doubling per mesh doubling — and fed 1.32 m up its X
+    // still drifts −209 → −854 Ω; on GN 1 the same wire converges to
+    // 39.8 + j23.1 Ω (measured 2026-10-13). So contact stays refused, and the
+    // message names the models that do solve.
     match ground {
         GroundModel::PerfectConductor => {
             // Only the geometry matters here; the image deck is built at solve time.
@@ -129,9 +135,12 @@ pub fn buried_wire_geometry_error(segs: &[Segment], ground: &GroundModel) -> Opt
                 format!(
                     "unsupported buried-wire geometry for active ground model: tag {} seg {} \
                      touches or crosses the finite ground (eps_r={eps_r:.3}, \
-                     sigma={sigma:.6}). fnec models wires touching PERFECT ground (GN 1) by \
-                     images; a connection to finite ground has no trustworthy model. Use \
-                     GN 1, or move the geometry strictly above the ground (z > 0)",
+                     sigma={sigma:.6}). A wire connected to a lossy ground has no trustworthy \
+                     model: NEC-2's own answer does not converge there (a base-fed quarter-wave \
+                     vertical on average ground reads 154, 254, 454, 851, 1627 ohm resistance \
+                     at 21 to 321 segments). Models that do solve: GN 1 with the ground loss \
+                     as a series resistance at the base (an LD card), or the radials raised \
+                     strictly above the ground (z > 0)",
                     s.tag, s.tag_index
                 )
             }),

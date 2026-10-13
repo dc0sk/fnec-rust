@@ -117,8 +117,12 @@ fn unrepresentable_contacts_are_refused() {
              GW 4 10 0 0 3 -3 0 3 0.001\nGE 1\nGN 1\n",
             "one segment long",
         ),
-        // Finite ground has no trustworthy contact model.
-        ("GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 2 0 0 0 13 0.005\n", "PERFECT ground"),
+        // Finite ground has no trustworthy contact model: NEC-2's own answer does
+        // not converge there, and the refusal says so.
+        (
+            "GW 1 26 0 0 0 0 0 5.282 0.001\nGE 1\nGN 2 0 0 0 13 0.005\n",
+            "does not converge",
+        ),
     ] {
         let err = solve(&format!("CE\n{geometry}EX 0 1 2 0 1.0 0.0\n{TAIL}"), (1, 2))
             .expect_err(geometry);
