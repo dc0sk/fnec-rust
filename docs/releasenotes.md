@@ -2,10 +2,62 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-12
+last_updated: 2026-10-14
 ---
 
 # Release Notes
+
+## 0.22.0 — Close to the ground
+
+`--solver mpie` put the ground's reflected term into the matrix with one kernel
+evaluation per segment pair, at the midpoints. That holds where the ground is far
+away next to a segment's length, and fails without a warning close to it: a bend or
+a junction a few centimetres up read a reactance hundreds of ohms off. 0.22.0 uses
+the exact image over a perfect ground (`GN 1`), and over a finite one that image
+scaled by the ground's quasi-static factor plus a Sommerfeld remainder tabulated
+once per solve and integrated as finely as the ground's nearness asks.
+
+Measured on the release build against the published 0.21.7 binary. nec2c 1.3.1 is
+its converged value (the deck on a mesh nine times finer) for the ground rows, and
+the deck as written for the card rows:
+
+| | 0.21.7 | 0.22.0 | nec2c |
+|---|---|---|---|
+| `--solver mpie`, an L (5.28 m vertical + 5.3 m radial) bent 0.05 m over `GN 1`, 21 / 63 segments a wire | 36.68 − j1645.77 / 39.39 − j111.57 Ω | 39.97 + j22.54 / 40.06 + j22.92 Ω | 40.12 + j23.21 Ω |
+| `--solver mpie`, four radials 0.1 m over `GN 2`, 21 / 63 segments a wire | 128.37 + j131.75 / 38.57 + j23.38 Ω | 38.39 + j21.57 / 38.48 + j21.89 Ω | 38.47 + j22.35 Ω |
+| the same deck at 63 segments a wire: solve time | 111 s | 0.96 s | — |
+| `--solver mpie`, a vertical dipole 0.05 m over `GN 2`, 21 / 63 segments | 115.15 + j81.13 / 133.38 + j111.59 Ω | 105.85 + j54.84 / 107.02 + j56.16 Ω | 107.70 + j56.75 Ω |
+| a dipole written in feet with `GS 0 0 0.3048` | 254.82 + j462.20 Ω, one "unknown card" warning | refused, naming `GS` | 78.90 + j45.03 Ω |
+| the half-wave dipole written with commas (`GW,1,21,…`) | "no EX card" — every card unknown | 78.86 + j42.90 Ω, as its spaced twin | 78.94 + j45.28 Ω |
+
+- **A card fnec does not model is refused** (FND-236). Cards that change the antenna
+  (`GA`, `GH`, `GS`, `GX`, `GC`, `GF`, `GD`, `SP`, `SM`, `SC`, `NX`, `SY`) and any
+  card fnec does not know stop the run by name, as nec2c does; cards that cannot
+  change it (`XQ`, `EK`, `KH`, `CP`, `PQ`, `PL`, `WG`) warn and are skipped, each
+  saying why. **A deck that solved with an "unknown card" warning now stops** —
+  this is the change that makes the release 0.22.0. A `'` line is a comment, and a
+  `GW` radius of 0 or below is refused with its reason (FND-237: fields may be
+  separated by commas).
+- **Every finite-ground `--solver mpie` answer moves**, by ≤ 0.1 % where the old
+  term was resolved (FND-239); close to the ground it now converges on nec2c, and a
+  segment longer than its height is fine. Over a ground as conductive as sea water,
+  close to it, nec2c is not a reference: its `GN 2` does not tend to its own `GN 1`
+  as σ grows for horizontal wires (a horizontal dipole 0.1 m up: 2.05 + j30.42 Ω
+  at σ = 10⁵ S/m against 0.05 + j4.17), and fnec is held to that limit instead.
+- **A wire touching a finite ground is still refused, and now says why**: nec2c's
+  own answer does not converge there (a base-fed quarter-wave vertical on average
+  ground: 154, 254, 454, 851, 1627 Ω resistance at 21 to 321 segments). The refusal
+  names two models that do solve, and a test checks each against nec2c's converged
+  value at two meshes (FND-240).
+- **The GPU path retries a driver fault** (FND-234): a failed adapter or device is
+  retried after 1, 2, 4 … s, at most a minute, instead of sending the rest of an
+  `--exec gpu` sweep or a `fnec worker`'s tasks to the CPU.
+- **The MPIE's "3 % at a sharp apex" was nec2c's** (FND-229, rejected): against
+  nec2c's converged value an apex-fed 90° inverted V converges (0.6 % at 81
+  segments an arm), while nec2c's same-mesh error grows with its source on the
+  segment touching the bend.
+- **`docs/nec4-support.md` says where fnec stands on NEC-4** (FND-235), with the card
+  tables in `docs/card-support-matrix.md` alone.
 
 ## 0.21.7 — Free ends
 
