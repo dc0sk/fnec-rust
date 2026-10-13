@@ -17,6 +17,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver mpie` close to a finite ground** (FND-239). Over `GN 0` / `GN 2`
+  the ground term of a bent or non-horizontal wire was still sampled too coarsely
+  near the ground: four radials 0.1 m over `GN 2` read 128.4 + j131.7 Ω where
+  nec2c gives 38.5 + j22.3, and a vertical dipole 0.05 m up read 115 + j81 at
+  21 segments and 133 + j112 at 63, moving away from nec2c's 107.7 + j56.7 as the
+  mesh was refined. The finite ground is now the exact image scaled by the
+  ground's quasi-static factor, plus a remainder tabulated once per solve and
+  integrated on panels graded toward the image, for every geometry: those decks
+  read 38.4 + j21.6 and 105.8 + j54.8, converging on nec2c's converged value, and
+  segments longer than their height no longer matter. The caveat #573 added is
+  gone, and the raised-radial remedy (FND-240) no longer asks for short segments.
+  Finite-ground MPIE runs are also faster — that four-radial deck at 315 segments
+  from 107 s to 0.9 s. Every finite-ground `--solver mpie` answer moves a little
+  (≤ 0.1 % where the old paths were resolved). Over a ground as conductive as sea
+  water, close to it, nec2c's `GN 2` is not a reference — it does not tend to its
+  own `GN 1` as σ grows (a horizontal dipole 0.1 m up: 2.05 + j30.42 Ω at
+  σ = 10⁵ S/m against 0.05 + j4.17) — and fnec's is held to that limit and to an
+  independent formulation instead. (#575)
 - **`--solver mpie` close to a perfect ground** (FND-238). A bend or junction closer
   to the ground than about one segment read a wildly wrong reactance with no
   warning — an L 0.05 m over `GN 1` gave 53.4 − j4766.9 Ω where nec2c gives

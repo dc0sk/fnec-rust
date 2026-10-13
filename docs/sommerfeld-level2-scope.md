@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sommerfeld-level2-scope.md
 status: living
-last_updated: 2026-10-06
+last_updated: 2026-10-13
 ---
 
 # Sommerfeld–Norton "Level 2" — scoping the real remaining gap (BL-IMPR-015)
@@ -23,10 +23,10 @@ scoping layer on top of it.
   integral (`sommerfeld::ground_z_correction`). Declines bent geometry (keeps RCM).
 - **`--solver mpie` (+ Sommerfeld kernels in the Z-fill)** — already produces the
   full near-ground solution — **per-segment currents AND radiation pattern** — for
-  **straight and bent** wires entirely above ground. It fills the reflected
-  potential kernels (`sommerfeld::reflected_potential_kernels`) on a ρ-grid and
-  adds them to the free-space Z, so ground fill is ~free-space cost + O(grid)
-  (`mpie.rs`).
+  **straight and bent** wires entirely above ground. Since FND-239 it adds
+  `K ×` the exact image (`K = (εc − 1)/(εc + 1)`) plus a remainder tabulated once
+  per solve (`sommerfeld::ReflectedRemainder`) to the free-space Z (`mpie.rs`); the
+  potential-kernel ρ-grid described here was removed then.
 
 Verified 2026-08-22: `fnec --solver mpie --ground-solver sommerfeld` on a low
 horizontal dipole over GN2 (`GN 2 … 13.0 0.005`, height 0.14 λ) emits 22 current
@@ -79,7 +79,8 @@ blocker). This is a phased numerical implementation, not a research dead-end.
 
 Following the project's prototype-first method, `studies/sommerfeld-ground/dcim_probe.py`
 implements one-level DCIM and validates it against fnec's **exact** reflected
-potential kernels (a Python port of `sommerfeld::reflected_potential_kernels`).
+potential kernels (a Python port of `sommerfeld::reflected_potential_kernels`, removed
+from the Rust tree with FND-239).
 The machinery is **validated as correct**: sampling the spectral reflection
 coefficient along the deformed contour `kz0 = k0(1 − jτ)`, a GPOF (matrix-pencil)
 fit `g(kz0) ≈ Σ aᵢ e^{j kz0 bᵢ}`, and the Sommerfeld identity

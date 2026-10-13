@@ -662,7 +662,6 @@ fn the_finite_ground_contact_refusal_names_models_that_solve() {
         "does not converge",
         "GN 1 with the ground loss as a series resistance at the base",
         "radials raised strictly above the ground (z > 0) and solved with --solver mpie",
-        "segments near the ground shorter than their height",
     ] {
         assert!(stderr.contains(says), "missing {says:?} in:\n{stderr}");
     }
@@ -681,7 +680,9 @@ fn the_finite_ground_contact_refusal_names_models_that_solve() {
 
     // A vertical and two radials raised 1 m over GN 2, 11 segments each and three
     // times that: nec2c 35.116+j3.355, 35.193+j3.549 and 35.237+j3.696 at 1x, 3x and
-    // 9x (captured 2026-10-13). On --solver mpie, as the refusal says.
+    // 9x (captured 2026-10-13). On --solver mpie, as the refusal says. Since FND-239
+    // the segment length near the ground no longer matters: 0.25 m segments 0.05 m
+    // and 0.1 m up are gated in mpie_ground_image.rs.
     let raised = |s: u32| {
         let n = 11 * s;
         let feed = 2 * s - (s - 1) / 2;

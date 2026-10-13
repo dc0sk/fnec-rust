@@ -37,6 +37,12 @@
 //   Gate E3 (bent): an inverted-V (bent) over GN2 solves and captures the
 //     surface-wave ground shift (the per-segment-pair reflected reaction).
 //   Gate E4 (boundary): a buried wire (crossing z ≤ 0) is rejected.
+//
+// Since FND-239 the three paths above are one fill for every geometry over a
+// finite ground — `K ×` the exact image plus a tabulated remainder — so these
+// gates now hold that one fill to nec2c on each geometry class, and E2 holds it
+// continuous from horizontal to slightly tilted. (The old paths and the new agreed
+// to ≤ 0.1 % wherever the old were resolved; recorded in the FND-239 ledger row.)
 
 use nec_solver::{solve_mpie_ground, straight_wire, GroundModel, MpieError, MpieGeometry};
 
@@ -137,10 +143,9 @@ fn vertical_dipole_gn2_matches_nec2c() {
     );
 }
 
-/// Gate E2 (consistency): the general E-field-reaction path reproduces the
-/// Phase-D horizontal potential-kernel result — a wire tilted just 2° off
-/// horizontal gives ≈ the horizontal 67.61 + j52.42 (64.00 + j49.18 before
-/// FND-157's self-term fix).
+/// Gate E2 (consistency): a wire tilted just 2° off horizontal gives ≈ the
+/// horizontal 67.61 + j52.42 (64.00 + j49.18 before FND-157's self-term fix) — a
+/// separate potential-kernel path for horizontal wires until FND-239.
 #[test]
 fn general_path_reproduces_horizontal_limit() {
     let lam = C0 / FREQ;

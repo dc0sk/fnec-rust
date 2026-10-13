@@ -288,10 +288,12 @@ vector and scalar potentials separately. It solves:
 - **closed loops** — a cyclic chain with no endpoint condition (likewise also
   solved by the Hallén section graph).
 - **near-ground currents (Sommerfeld)** — with `GN`/finite ground, the reflected
-  potential kernels put the surface wave into the current solution itself, for
-  **any wire above ground**: horizontal, vertical, or tilted straight wires, and
-  bent geometry via the per-segment-pair reflected reaction. Only a wire that
-  reaches or crosses the `z = 0` plane is rejected.
+  field enters the matrix, so the surface wave is in the current solution itself,
+  for **any wire above ground**, straight or bent, however close to it: the exact
+  image over `GN 1`, and over a finite ground that image scaled by the ground's
+  quasi-static factor plus a tabulated remainder (FND-238, FND-239). Segments
+  longer than their height are fine. Only a wire that reaches or crosses the
+  `z = 0` plane is rejected.
 
 On the 51-segment λ/2 dipole the MPIE gives 79.15 + j45.95 Ω, against
 Hallén's 79.33 + j45.04 Ω and nec2c's 79.35 + j46.22 Ω. It is now the most accurate
