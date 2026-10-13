@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-10-04
+last_updated: 2026-10-13
 ---
 
 # NEC Card Support Matrix
@@ -122,9 +122,38 @@ The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 |------|---------|-------|
 | RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section; `XNDA` A-digit → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%; a loaded free-space dipole 0.454 vs 0.458) (PH9-CHK-004). Gains are directivity × radiation efficiency over every ground, so lossy loads cost gain in free space and over PEC as in nec2c (FND-200). The `N`/`D` digits (gain-component labeling / dB-vs-ratio output-format toggles) are deferred — fnec always emits vertical/horizontal/total gain in dBi |
 
-## Unknown / other cards
+## Cards fnec does not model
 
-Any unrecognised card mnemonic is skipped with a parser warning emitted to stderr.  The solve proceeds on the remaining deck.
+Every NEC card fnec does not parse is listed here, with what it does (FND-236).
+**Ignored** cards cannot change the solved problem: each is skipped with one
+warning saying why. **Refused** cards would — skipping one solves a different
+antenna (a `GS` scale card skipped gave 290.5 + j218.5 Ω where nec2c gives
+84.8 + j45.8) — so the deck is refused with an error naming the card. A mnemonic
+in neither list is refused as unknown, as nec2c refuses it. A line starting with
+`'` is a comment. This table and `nec_parser::OTHER_CARDS` are checked against
+each other (`crates/nec_parser/tests/card_matrix.rs`).
+
+| Card | Treatment | What it is, and why |
+|------|-----------|---------------------|
+| XQ | Ignored | fnec always executes the deck, once, at its last `FR` card (an earlier `FR` is reported as replaced, FND-057); a pattern `XQ` asks for (I1 ≠ 0) is not produced — use an `RP` card |
+| EK | Ignored | NEC's extended thin-wire kernel; fnec's kernel does not change, and NEC's thin-wire limit with `EK` (segment/radius > 2) is not fnec's |
+| KH | Ignored | NEC's interaction-approximation range; fnec computes every interaction exactly |
+| CP | Ignored | NEC's maximum-coupling calculation; its output is not produced |
+| PQ | Ignored | Charge-density print control; fnec prints no charge densities |
+| PL | Ignored | xnec2c's plot-file output; no plot file is written |
+| WG | Ignored | Writes a Numerical Green's Function file; none is written |
+| GA | Refused | A wire arc |
+| GH | Refused | A helix or spiral |
+| GS | Refused | A scaling of the whole structure |
+| GX | Refused | A reflected copy of the structure |
+| GC | Refused | A tapered wire (a `GW` radius of 0 is refused too) |
+| GF | Refused | A structure read from a Numerical Green's Function file |
+| GD | Refused | Additional ground parameters: a cliff or a second medium |
+| SP | Refused | A surface patch |
+| SM | Refused | A set of surface patches |
+| SC | Refused | A surface-patch continuation |
+| NX | Refused | A further structure in the same file |
+| SY | Refused | Symbol definitions — write the deck with `$NAME` templates and pass the values with `--vars` |
 
 ---
 

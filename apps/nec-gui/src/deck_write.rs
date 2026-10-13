@@ -379,8 +379,8 @@ mod tests {
                 continue;
             }
             let text = fs::read_to_string(&path).expect("read deck");
-            // Only decks the parser fully accepts (no unknown cards) are a fair
-            // oracle — an unknown card is dropped on the way in and can't be
+            // Only decks the parser fully accepts (no ignored cards) are a fair
+            // oracle — an ignored card is dropped on the way in and can't be
             // reproduced. All current corpus decks parse cleanly.
             let Ok(first) = parse(&text) else { continue };
             if !first.warnings.is_empty() {

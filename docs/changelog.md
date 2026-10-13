@@ -17,6 +17,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A card fnec does not model no longer solves a different antenna** (FND-236).
+  Every card the parser did not know was skipped with one warning and the deck
+  solved anyway: a deck scaled from feet with `GS 0 0 0.3048` read 290.5 + j218.5 Ω
+  where nec2c gives 84.8 + j45.8, and a `GH` helix simply vanished. Cards that
+  would change the antenna (`GA`, `GH`, `GS`, `GX`, `GC`, `GF`, `GD`, `SP`, `SM`,
+  `SC`, `NX`, `SY`) are now refused by name, and so is any card fnec does not know,
+  as nec2c does; cards that cannot change it (`XQ`, `EK`, `KH`, `CP`, `PQ`, `PL`,
+  `WG`) still warn and are skipped, each saying why. A `'` line is a comment, and a
+  `GW` radius of 0 or below is refused with its reason. **A deck that solved with an
+  "unknown card" warning now stops**: remove the card, or for `SY` use `$NAME`
+  templates with `--vars`. (#570)
+- **Comma-separated fields are read** (FND-237), as NEC reads them:
+  `GW,1,21,0,0,-2.5,0,0,2.5,.001` solves as its spaced twin. (#570)
 - **One driver fault no longer sends the rest of a run to the CPU** (FND-234). A
   failed adapter or device request was cached for the life of the process, so on a
   host whose driver hides the GPU or loses the device for a moment (FND-190) every

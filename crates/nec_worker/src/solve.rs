@@ -96,16 +96,27 @@ mod tests {
     /// anything driving the public `run_worker_stdio`.
     #[test]
     fn a_parse_caveat_reaches_the_caller_instead_of_being_dropped() {
-        // An unrecognised card is a *warning*, not an error: the deck still
-        // solves, and the user still needs to know a line was ignored.
-        let deck = "CM unknown card\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
-                    ZZ 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        // A card that cannot change the antenna is a *warning*, not an error: the
+        // deck still solves, and the user still needs to know a line was ignored.
+        let deck = "CM ignored card\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    PQ 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let r = solve_deck_at_frequency(deck, 14.2e6, "hallen").expect("deck still solves");
         assert!(
-            r.warnings.iter().any(|w| w.contains("ZZ")),
+            r.warnings.iter().any(|w| w.contains("PQ ignored")),
             "the ignored card must reach the caller: {:?}",
             r.warnings
         );
+    }
+
+    /// FND-236: an unknown card is refused on the worker as on the CLI — it used
+    /// to be skipped with a warning and the deck solved as a different antenna.
+    #[test]
+    fn an_unknown_card_is_a_parse_error_on_the_worker() {
+        let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
+                    ZZ 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let err = solve_deck_at_frequency(deck, 14.2e6, "hallen")
+            .expect_err("an unknown card is refused");
+        assert!(format!("{err:?}").contains("ZZ"), "{err:?}");
     }
 
     #[test]
@@ -230,9 +241,11 @@ mod tests {
 
     #[test]
     fn solve_rejects_garbage_input() {
+        // Refused at the parse since FND-236 — "NOT" is no card fnec knows — where
+        // it used to be skipped and fail later as an empty geometry.
         let err = solve_deck_at_frequency("NOT A NEC DECK", 14.0e6, "hallen").unwrap_err();
         assert!(
-            matches!(err, SolveError::GeometryError(_)),
+            matches!(err, SolveError::ParseError(_)),
             "garbage input produced: {err}"
         );
     }

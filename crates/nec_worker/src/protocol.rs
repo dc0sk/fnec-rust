@@ -150,7 +150,7 @@ mod tests {
             frequency_hz: 14.2e6,
             error_code: ErrorCode::SingularMatrix,
             error_message: "matrix is singular".into(),
-            warnings: vec!["line 5: unknown card 'ZZ'".into()],
+            warnings: vec!["line 5: PQ ignored".into()],
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: TaskResult = serde_json::from_str(&json).unwrap();
@@ -161,7 +161,7 @@ mod tests {
         let TaskResult::Error { warnings, .. } = back else {
             panic!("expected the error variant");
         };
-        assert_eq!(warnings, vec!["line 5: unknown card 'ZZ'".to_string()]);
+        assert_eq!(warnings, vec!["line 5: PQ ignored".to_string()]);
     }
 
     /// The `Error` variant's half of the back-compat contract. The `Ok` variant

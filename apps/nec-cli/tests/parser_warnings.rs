@@ -3,38 +3,57 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[test]
-fn unknown_card_emits_parser_warning_but_run_succeeds() {
+/// Run `fnec --solver hallen` on `deck`: (exit success, stderr).
+fn run_deck(name: &str, deck: &str) -> (bool, String) {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-unknown-card-{now}.nec"));
-
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nZZ 123\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary deck with unknown card");
-
+    let deck_path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
+    fs::write(&deck_path, deck).expect("failed to write temporary deck");
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
         .arg("hallen")
         .arg(&deck_path)
         .current_dir(&workspace_root)
         .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for parser warning test: {e}"));
-
+        .unwrap_or_else(|e| panic!("Failed to run fnec: {e}"));
     let _ = fs::remove_file(&deck_path);
-
-    assert!(
+    (
         output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// FND-236: a card that cannot change the antenna warns and the run solves; one
+/// that would — or one fnec does not know — refuses the deck by name. Both used
+/// to warn and solve: `GS 0 0 0.3048` ignored gave 290.5 + j218.5 Ω where nec2c,
+/// scaling the wire to metres, gives 84.8 + j45.8.
+#[test]
+fn an_ignored_card_warns_and_a_card_that_changes_the_antenna_is_refused() {
+    let tail = "EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let wire = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\n";
+
+    let (ok, stderr) = run_deck("ignored-card", &format!("{wire}PQ 0\n{tail}"));
+    assert!(ok, "an ignored card must not stop the run:\n{stderr}");
+    assert!(
+        stderr.contains("warning: line 2: PQ ignored: charge-density print control"),
+        "expected the ignored-card warning, got:\n{stderr}"
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let (ok, stderr) = run_deck("refused-card", &format!("{wire}GS 0 0 0.3048\n{tail}"));
+    assert!(!ok, "a GS deck must be refused:\n{stderr}");
     assert!(
-        stderr.contains("warning: line 2: unknown card 'ZZ'"),
-        "expected parser warning in stderr, got:\n{stderr}"
+        stderr.contains("line 2: fnec does not model GS (a scaling of the whole structure)"),
+        "expected GS refused by name, got:\n{stderr}"
+    );
+
+    let (ok, stderr) = run_deck("unknown-card", &format!("{wire}ZZ 123\n{tail}"));
+    assert!(!ok, "an unknown card must be refused:\n{stderr}");
+    assert!(
+        stderr.contains("line 2: unknown card 'ZZ'"),
+        "expected the unknown card named, got:\n{stderr}"
     );
 }
 

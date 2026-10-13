@@ -135,7 +135,7 @@ fn report_headers_are_machine_parseable_on_stdout() {
 // VERIFIES: NFR-005 (script-friendly stdout/stderr separation)
 fn warnings_stay_on_stderr_not_stdout() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nXX 1 2 3\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nPQ 0\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     let deck_path = write_temp_deck("scriptable-warn-stream", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -158,7 +158,7 @@ fn warnings_stay_on_stderr_not_stdout() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("warning: line 2: unknown card 'XX'"),
+        stderr.contains("warning: line 2: PQ ignored"),
         "expected parser warning in stderr, got:\n{stderr}"
     );
     assert!(
@@ -260,7 +260,7 @@ fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
     // Phase-2: GE is parsed; LD is now parsed and applied.
     // The LOADS section appears in the report.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nXX 1 2 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nLD 2 1 26 26 5.0 1e-6 0.0\nPQ 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     let deck_path = write_temp_deck("scriptable-load-table-stream", deck);
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -296,7 +296,7 @@ fn load_table_stays_on_stdout_while_warnings_stay_on_stderr() {
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{stderr}"
     );
     assert!(
-        stderr.contains("warning: line 4: unknown card 'XX'"),
+        stderr.contains("warning: line 4: PQ ignored"),
         "expected parser warning in stderr, got:\n{stderr}"
     );
     assert!(
