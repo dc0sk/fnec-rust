@@ -11,6 +11,10 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+use common::{classify_gpu_stderr, GpuMiss, GpuRun};
+use nec_accel::gpu_test::{gpu_attempt, gpu_expected};
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -19,34 +23,56 @@ fn workspace_root() -> PathBuf {
 /// the first FEEDPOINTS row.
 fn feedpoint_impedance(deck: &str, exec: &str) -> (f64, f64) {
     let deck_path = workspace_root().join("corpus").join(deck);
-    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .args(["--solver", "hallen", "--exec", exec])
-        .arg(&deck_path)
-        .output()
-        .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
-    assert!(
-        out.status.success(),
-        "fnec --exec {exec} {deck} failed:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    // FND-163: at 51 segments the f32 solve is accurate, so on a host with a GPU
-    // it must not decline at all. A fallback would make the comparison in the
-    // test below the CPU against itself — it passed with the device solve forced
-    // to fail. Without a GPU, "no adapter" is the one expected decline.
-    if exec == "gpu" {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if let Some(line) = stderr
-            .lines()
-            .find(|l| l.contains("solve_hallen_gpu_resident:"))
-        {
-            assert!(
-                line.contains("no wgpu adapter available")
-                    && !pollster::block_on(nec_accel::hardware_adapter_present()),
-                "{deck}: the GPU-resident solve declined on this host:\n{line}"
-            );
+    let run = || {
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--solver", "hallen", "--exec", exec])
+            .arg(&deck_path)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
+        assert!(
+            out.status.success(),
+            "fnec --exec {exec} {deck} failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    // FND-163: at 51 segments the f32 solve is accurate, so where a GPU is
+    // expected it must not decline at all. A fallback would make the comparison
+    // in the test below the CPU against itself — it passed with the device solve
+    // forced to fail. A lost device earns one re-run (FND-215); without a GPU,
+    // "no adapter" is the one expected decline.
+    let stdout = if exec == "gpu" {
+        let attempt = gpu_attempt(deck, || {
+            let (stdout, stderr) = run();
+            match classify_gpu_stderr(&stderr) {
+                GpuRun::OnDevice => Ok(stdout),
+                GpuRun::Missed(why) => Err(GpuMiss {
+                    why,
+                    stdout,
+                    stderr,
+                }),
+                GpuRun::Declined(line) => {
+                    panic!("{deck}: the GPU-resident solve declined on this host:\n{line}")
+                }
+            }
+        });
+        match attempt {
+            Ok(stdout) => stdout,
+            Err(miss) => {
+                assert!(
+                    miss.why.contains("no wgpu adapter available"),
+                    "{deck}: no GPU is expected, yet the solve declined: {}",
+                    miss.why
+                );
+                miss.stdout
+            }
         }
-    }
+    } else {
+        run().0
+    };
 
     let mut lines = stdout.lines();
     // Find the FEEDPOINTS header, skip the column header, read the first data row.
@@ -142,30 +168,26 @@ EN
     };
 
     let (cpu, _) = run("cpu");
-    let (gpu, gpu_stderr) = run("gpu");
+    // The one decline this test expects is its subject: the f32 solve failing
+    // its residual check at this size, and falling back. A device fault earns
+    // one re-run (FND-215); any OTHER decline — an out-of-class input — means the
+    // GPU path is broken and the comparison below would compare the CPU with
+    // itself (FND-163).
+    let attempt = gpu_attempt("the 301-segment sweep", || {
+        let (z, stderr) = run("gpu");
+        match classify_gpu_stderr(&stderr) {
+            GpuRun::Missed(why) => Err(why),
+            GpuRun::Declined(line) if !line.contains("did not converge") => panic!(
+                "the GPU-resident solve declined for a reason other than its residual check:\n{line}"
+            ),
+            _ => Ok(z),
+        }
+    });
     let _ = std::fs::remove_file(&path);
-
-    if gpu_stderr.contains("no wgpu adapter available") {
-        assert!(
-            !pollster::block_on(nec_accel::hardware_adapter_present()),
-            "a hardware adapter is present but the solve found none:\n{gpu_stderr}"
-        );
+    let Ok(gpu) = attempt else {
         eprintln!("SKIP: no wgpu adapter on this host — the GPU solve never ran");
         return;
-    }
-    // The one decline this test expects is its subject: the f32 solve failing
-    // its residual check at this size, and falling back. Any OTHER decline — a
-    // device fault, an out-of-class input — means the GPU path is broken and the
-    // comparison below would compare the CPU with itself (FND-163).
-    for line in gpu_stderr
-        .lines()
-        .filter(|l| l.contains("solve_hallen_gpu_resident:"))
-    {
-        assert!(
-            line.contains("did not converge"),
-            "the GPU-resident solve declined for a reason other than its residual check:\n{line}"
-        );
-    }
+    };
 
     assert_eq!(cpu.len(), 3, "expected 3 sweep points, got {cpu:?}");
     assert_eq!(
@@ -198,7 +220,7 @@ EN
 /// device about 1.3 s (3.5 s before the triangular solves ran per column). Measured 2026-09-30, `--exec cpu`: 79.692336 + j46.433387.
 #[test]
 fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
-    if !pollster::block_on(nec_accel::hardware_adapter_present()) {
+    if !gpu_expected() {
         eprintln!("SKIP: no hardware GPU adapter");
         return;
     }
@@ -208,26 +230,28 @@ fn a_deck_past_the_old_gpu_ceilings_solves_on_the_device() {
         "GW 1 2049 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 1025 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
     )
     .expect("write deck");
-    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .args(["--solver", "hallen", "--exec", "gpu"])
-        .arg(&path)
-        .output()
-        .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
-    let _ = std::fs::remove_file(&path);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "fnec exited {:?}:\n{stderr}",
-        out.status.code()
-    );
-    for line in stderr.lines() {
+    // Any decline of its size is this test's failure; a lost device earns one
+    // re-run (FND-215).
+    let stdout = gpu_attempt("the 2049-segment solve", || {
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--solver", "hallen", "--exec", "gpu"])
+            .arg(&path)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to spawn fnec: {e}"));
+        let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
-            !line.contains("solve_hallen_gpu_resident:")
-                && !line.contains("falling back to CPU Z-matrix fill"),
-            "the device declined: {line}"
+            out.status.success(),
+            "fnec exited {:?}:\n{stderr}",
+            out.status.code()
         );
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout);
+        match classify_gpu_stderr(&stderr) {
+            GpuRun::OnDevice => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
+            GpuRun::Missed(why) => Err(why),
+            GpuRun::Declined(line) => panic!("the device declined: {line}"),
+        }
+    })
+    .expect("a GPU is expected");
+    let _ = std::fs::remove_file(&path);
     let row = stdout
         .lines()
         .skip_while(|l| *l != "FEEDPOINTS")

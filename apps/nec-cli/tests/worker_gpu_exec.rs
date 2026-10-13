@@ -34,13 +34,25 @@ fn task(task_id: &str, freq: f64, exec: &str) -> nec_worker::TaskMessage {
 #[test]
 fn mixed_pool_gpu_and_cpu_dispatch_matches_local() {
     let fnec = env!("CARGO_BIN_EXE_fnec");
-    let mut gpu_worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn gpu worker");
     let mut cpu_worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn cpu worker");
 
     let freq = 14.2e6;
-    let r_gpu = gpu_worker
-        .dispatch(&task("gpu-task", freq, "gpu"))
-        .expect("gpu-task dispatch");
+    // Where a GPU is expected the gpu lane must solve on it: a fallback reports
+    // `exec_used = cpu` and matches the local CPU by construction (FND-163). A
+    // driver fault earns one re-run (FND-215) — on a fresh worker, since a worker
+    // process keeps its failed device for good.
+    let attempt = nec_accel::gpu_test::gpu_attempt("the worker's gpu lane", || {
+        let mut gpu_worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn gpu worker");
+        let r = gpu_worker
+            .dispatch(&task("gpu-task", freq, "gpu"))
+            .expect("gpu-task dispatch");
+        gpu_worker.shutdown().ok();
+        match &r {
+            nec_worker::TaskResult::Ok { exec_used, .. } if exec_used != "gpu" => Err(Box::new(r)),
+            _ => Ok(r),
+        }
+    });
+    let r_gpu = attempt.unwrap_or_else(|fallback| *fallback);
     let r_cpu = cpu_worker
         .dispatch(&task("cpu-task", freq, "cpu"))
         .expect("cpu-task dispatch");
@@ -71,22 +83,10 @@ fn mixed_pool_gpu_and_cpu_dispatch_matches_local() {
         }
     }
 
-    // With a GPU present the gpu lane must have solved on it: a fallback reports
-    // `exec_used = cpu` and matches the local CPU by construction (FND-163).
-    if pollster::block_on(nec_accel::hardware_adapter_present()) {
-        if let nec_worker::TaskResult::Ok { exec_used, .. } = &r_gpu {
-            assert_eq!(
-                exec_used, "gpu",
-                "gpu lane fell back to the CPU on a GPU host"
-            );
-        }
-    }
-
     // The cpu-lane must always report a CPU solve.
     if let nec_worker::TaskResult::Ok { exec_used, .. } = &r_cpu {
         assert_eq!(exec_used, "cpu", "cpu lane must use CPU");
     }
 
-    gpu_worker.shutdown().ok();
     cpu_worker.shutdown().ok();
 }

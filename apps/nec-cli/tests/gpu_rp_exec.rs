@@ -85,7 +85,23 @@ fn run_fnec(args: &[&str]) -> (String, String) {
 #[test]
 fn exec_gpu_rp_output_matches_cpu_or_falls_back_gracefully() {
     let (cpu_stdout, _cpu_stderr) = run_fnec(&["--exec", "cpu"]);
-    let (gpu_stdout, gpu_stderr) = run_fnec(&["--exec", "gpu"]);
+    // One re-run where a GPU is expected and the device missed (FND-215).
+    let attempt = nec_accel::gpu_test::gpu_attempt("G4 RP", || {
+        let (stdout, stderr) = run_fnec(&["--exec", "gpu"]);
+        match common::classify_gpu_stderr(&stderr) {
+            common::GpuRun::Missed(why) => Err(common::GpuMiss {
+                why,
+                stdout,
+                stderr,
+            }),
+            _ => Ok((stdout, stderr)),
+        }
+    });
+    let no_adapter = attempt.is_err();
+    let (gpu_stdout, gpu_stderr) = match attempt {
+        Ok(run) => run,
+        Err(miss) => (miss.stdout, miss.stderr),
+    };
 
     let cpu_gains = parse_gain_total_column(&cpu_stdout);
     let gpu_gains = parse_gain_total_column(&gpu_stdout);
@@ -105,13 +121,7 @@ fn exec_gpu_rp_output_matches_cpu_or_falls_back_gracefully() {
         "CPU and GPU runs produced different numbers of pattern rows"
     );
 
-    let no_adapter = gpu_stderr.contains("no wgpu adapter available");
-
     if no_adapter {
-        assert!(
-            !pollster::block_on(nec_accel::hardware_adapter_present()),
-            "a hardware adapter is present but the RP path found none:\n{gpu_stderr}"
-        );
         // Fallback to CPU — output must still be present (already asserted above).
         // Just verify the warning was correctly emitted.
         eprintln!("note: no wgpu adapter — fallback path exercised");
@@ -137,7 +147,7 @@ fn exec_gpu_rp_output_matches_cpu_or_falls_back_gracefully() {
 #[test]
 fn exec_gpu_diag_line_shows_gpu_exec_mode() {
     let (_stdout, stderr) = run_fnec(&["--exec", "gpu"]);
-    common::assert_gpu_exec_label(&stderr);
+    common::assert_gpu_exec_label(&stderr, || run_fnec(&["--exec", "gpu"]).1);
 }
 
 /// FND-205: over ground the pattern must not take the device's far-field kernel,

@@ -16,10 +16,28 @@
 //!
 //! Skips vacuously when no wgpu adapter is available.
 
-use nec_accel::{
-    hardware_adapter_present, solve_hallen_gpu_resident, GpuSolveDeclined, ZSegmentInput,
-};
+use nec_accel::gpu_test::gpu_attempt;
+use nec_accel::{solve_hallen_gpu_resident, GpuSolveDeclined, ZSegmentInput};
 use num_complex::Complex64;
+
+/// The device solve under the shared re-run policy (FND-215): `None` only where
+/// no GPU is expected. A lost device or a hidden adapter earns one re-run; a
+/// deterministic decline (out of class, not converged) fails the test at once.
+fn on_device(
+    what: &str,
+    solve: impl Fn() -> Result<Vec<Complex64>, GpuSolveDeclined>,
+) -> Option<Vec<Complex64>> {
+    let attempt = gpu_attempt(what, || match solve() {
+        Err(e @ (GpuSolveDeclined::NoAdapter | GpuSolveDeclined::DeviceFailed)) => Err(e),
+        Err(other) => panic!("{what}: the device solve declined: {other:?}"),
+        ok => ok,
+    });
+    match attempt {
+        Ok(x) => Some(x),
+        Err(GpuSolveDeclined::NoAdapter) => None,
+        Err(e) => panic!("{what}: no GPU is expected, yet the solve declined with {e:?}"),
+    }
+}
 
 fn build_dipole() -> (
     Vec<nec_solver::Segment>,
@@ -98,32 +116,27 @@ fn gpu_resident_hallen_solve_within_2_ohm_of_cpu() {
         })
         .collect();
 
-    let gpu_solution = match pollster::block_on(solve_hallen_gpu_resident(
-        &z_inputs,
-        &rhs.rhs,
-        &rhs.cos_vec,
-        &rhs.sin_vec,
-        &wire_endpoints,
-        &nec_solver::sin_eligible(&wire_endpoints, &[]),
-        &nec_solver::hallen_constraint_rows(
+    let gpu_solution = match on_device("PH7-CHK-003", || {
+        pollster::block_on(solve_hallen_gpu_resident(
+            &z_inputs,
+            &rhs.rhs,
+            &rhs.cos_vec,
+            &rhs.sin_vec,
             &wire_endpoints,
-            &[],
-            &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
-        ),
-        freq_hz,
-    )) {
-        Ok(c) => c,
-        // The only decline a gate may skip on — and not on a host that has a GPU,
-        // where "no adapter" means the adapter selection itself broke.
-        Err(GpuSolveDeclined::NoAdapter) => {
-            assert!(
-                !pollster::block_on(hardware_adapter_present()),
-                "PH7-CHK-003: a hardware adapter is present but the solve found none"
-            );
+            &nec_solver::sin_eligible(&wire_endpoints, &[]),
+            &nec_solver::hallen_constraint_rows(
+                &wire_endpoints,
+                &[],
+                &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+            ),
+            freq_hz,
+        ))
+    }) {
+        Some(c) => c,
+        None => {
             eprintln!("PH7-CHK-003 gate: no hardware GPU adapter — gate skipped");
             return;
         }
-        Err(other) => panic!("PH7-CHK-003: the device solve declined: {other:?}"),
     };
 
     // Full solution is length S = N + W; currents are the first N entries.
@@ -193,30 +206,27 @@ fn gpu_resident_solve_tracks_the_cpu_on_asymmetric_feeds() {
                 radius: s.radius,
             })
             .collect();
-        let gpu = match pollster::block_on(solve_hallen_gpu_resident(
-            &z_inputs,
-            &rhs.rhs,
-            &rhs.cos_vec,
-            &rhs.sin_vec,
-            &ep,
-            &nec_solver::sin_eligible(&ep, &[]),
-            &nec_solver::hallen_constraint_rows(
+        let gpu = match on_device(&format!("FND-158 L={len}"), || {
+            pollster::block_on(solve_hallen_gpu_resident(
+                &z_inputs,
+                &rhs.rhs,
+                &rhs.cos_vec,
+                &rhs.sin_vec,
                 &ep,
-                &[],
-                &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
-            ),
-            freq_hz,
-        )) {
-            Ok(gpu) => gpu,
-            Err(GpuSolveDeclined::NoAdapter) => {
-                assert!(
-                    !pollster::block_on(hardware_adapter_present()),
-                    "L={len}: a hardware adapter is present but the solve found none"
-                );
+                &nec_solver::sin_eligible(&ep, &[]),
+                &nec_solver::hallen_constraint_rows(
+                    &ep,
+                    &[],
+                    &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+                ),
+                freq_hz,
+            ))
+        }) {
+            Some(gpu) => gpu,
+            None => {
                 eprintln!("FND-158 GPU gate: no hardware GPU adapter — gate skipped");
                 return;
             }
-            Err(other) => panic!("L={len}: the device solve declined: {other:?}"),
         };
         let one = Complex64::new(1.0, 0.0);
         let (zc, zg) = (one / cpu, one / gpu[idx]);
@@ -280,30 +290,23 @@ fn dipole_cpu_gpu(nseg: u32) -> (Complex64, Option<Complex64>) {
             radius: s.radius,
         })
         .collect();
-    let gpu = match pollster::block_on(solve_hallen_gpu_resident(
-        &z_inputs,
-        &rhs.rhs,
-        &rhs.cos_vec,
-        &rhs.sin_vec,
-        &ep,
-        &nec_solver::sin_eligible(&ep, &[]),
-        &nec_solver::hallen_constraint_rows(
+    let gpu = on_device(&format!("{nseg} segments"), || {
+        pollster::block_on(solve_hallen_gpu_resident(
+            &z_inputs,
+            &rhs.rhs,
+            &rhs.cos_vec,
+            &rhs.sin_vec,
             &ep,
-            &[],
-            &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
-        ),
-        freq_hz,
-    )) {
-        Ok(x) => Some(one / x[feed]),
-        Err(GpuSolveDeclined::NoAdapter) => {
-            assert!(
-                !pollster::block_on(hardware_adapter_present()),
-                "a hardware adapter is present but the solve found none"
-            );
-            None
-        }
-        Err(other) => panic!("{nseg} segments: the device solve declined: {other:?}"),
-    };
+            &nec_solver::sin_eligible(&ep, &[]),
+            &nec_solver::hallen_constraint_rows(
+                &ep,
+                &[],
+                &segs.iter().map(|s| s.length).collect::<Vec<_>>(),
+            ),
+            freq_hz,
+        ))
+    })
+    .map(|x| one / x[feed]);
     (one / cpu.currents[feed], gpu)
 }
 

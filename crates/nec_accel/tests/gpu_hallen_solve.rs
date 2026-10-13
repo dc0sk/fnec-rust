@@ -12,7 +12,8 @@
 //! The test passes vacuously (prints a skip notice) when no wgpu adapter is
 //! available, matching the pattern used by other GPU gate tests in this crate.
 
-use nec_accel::{fill_zmatrix_wgpu, hardware_adapter_present, ZSegmentInput};
+use nec_accel::gpu_test::{fill_miss_is_transient, gpu_attempt};
+use nec_accel::{fill_zmatrix_wgpu, ZSegmentInput};
 use nec_solver::ZMatrix;
 use num_complex::Complex64;
 
@@ -118,15 +119,14 @@ fn gpu_hallen_path_feedpoint_impedance_within_2_ohm_of_cpu() {
         })
         .collect();
 
-    let gpu_result = pollster::block_on(fill_zmatrix_wgpu(&z_inputs, freq_hz));
-
-    let Ok(gpu_elems) = gpu_result else {
-        // `Err` is a skip only where there is no GPU to run on; with one, it
-        // is a device fault the gate must not wave through (FND-163).
-        assert!(
-            !pollster::block_on(hardware_adapter_present()),
-            "G7: a hardware adapter is present but the GPU fill returned nothing"
-        );
+    // `Err` is a skip only where no GPU is expected; with one, a fault earns one
+    // re-run and a second fails the gate (FND-163, FND-215).
+    let Ok(gpu_elems) = gpu_attempt("G7 Z-matrix fill", || {
+        match pollster::block_on(fill_zmatrix_wgpu(&z_inputs, freq_hz)) {
+            Err(why) if !fill_miss_is_transient(&why) => panic!("the fill declined: {why}"),
+            r => r,
+        }
+    }) else {
         eprintln!("G7 gate: no hardware GPU adapter — gate skipped (software fallback)");
         return;
     };
