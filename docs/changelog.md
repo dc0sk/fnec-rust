@@ -40,6 +40,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **`docs/nec4-support.md` says where fnec stands on NEC-4, and nothing else**
+  (FND-235). It had described Phase 1 — PEC ground only, no JSON, no near fields —
+  in two card tables that contradicted the canonical card-support matrix on almost
+  every row. Card status now lives only in `docs/card-support-matrix.md`, and a test
+  holds that table to every card the parser reads. The AutoEZ purchase review, due
+  2026-09-30, is recorded: still no purchase, next review 2027-04-13. (#571)
+
 - **Every GPU test re-runs once on a driver fault, and skips only where no GPU is
   expected** (FND-215). One policy, `nec_accel::gpu_test`, replaces the per-test
   handling: five tests failed outright on one lost device, two passed having run

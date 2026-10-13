@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/architecture-design-index.md
 status: living
-last_updated: 2026-07-02
+last_updated: 2026-10-13
 ---
 
 # Architecture & design index
@@ -27,7 +27,7 @@ maps decision → document.
 
 | Document | Decision recorded | Requirement IDs |
 |:---------|:------------------|:----------------|
-| `docs/nec4-support.md` | NEC-4 feature boundary: supported/deferred card set; card status index | GAP-002, BLK-002, COMP-003 |
+| `docs/nec4-support.md` | NEC-4 feature boundary: where fnec stands on the features NEC-4 adds (card status is in `card-support-matrix.md`) | GAP-002, BLK-002, COMP-003 |
 | `docs/card-support-matrix.md` | Per-card support state (Full/Partial/Deferred) | COMP-003, CP-003 |
 | `docs/corpus-validation-strategy.md` | Corpus + tolerance strategy; NEC-5-informed matrix (`PH2N5-*`, `PH6N5-*`) | PRT-010, GAP-013 |
 | `docs/gpu-arch.md` | GPU architecture: wgpu choice, target matrix, G1–G7 gate sequence | GAP-007, DEC-003 |

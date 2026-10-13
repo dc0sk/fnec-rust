@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/contributing.md
 status: living
-last_updated: 2026-04-30
+last_updated: 2026-10-13
 ---
 
 # Contributing
@@ -63,7 +63,7 @@ cargo test -p nec-cli --test corpus_validation
 Run a single test by name:
 
 ```
-cargo test -p nec-cli --test corpus_validation par001
+cargo test -p nec-cli --test corpus_validation every_external_gate
 ```
 
 ### Corpus and CI gates
@@ -171,8 +171,9 @@ For new contributors the recommended reading order is:
 
 1. [docs/architecture.md](architecture.md) — crate graph, pipeline stages, and compatibility model.
 2. [docs/design.md](design.md) — product and UX direction.
-3. [docs/nec4-support.md](nec4-support.md) — which NEC cards are recognized and what their
-   current status is (parser vs. functional).
+3. [docs/card-support-matrix.md](card-support-matrix.md) — which NEC cards fnec reads, ignores
+   or refuses, and what each does; [docs/nec4-support.md](nec4-support.md) — where fnec stands
+   on the features NEC-4 adds.
 4. [docs/requirements.md](requirements.md) — formal requirement tags referenced in code comments.
 5. `crates/nec_parser/src/lib.rs` — the entry point for deck parsing.
 6. `crates/nec_solver/src/lib.rs` — the top-level solver dispatch.

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-evidence-memo.md
 status: living
-last_updated: 2026-04-26
+last_updated: 2026-10-13
 ---
 
 # PAR-011 Drop-In Compatibility Evidence Memo
@@ -57,6 +57,14 @@ Key points from `nec2mp-readme.pdf` extraction:
 - DLL/runtime dependencies are not documented in the readme text.
 
 ## Evidence checklist
+
+## Status of the open items
+
+**2026-10-13:** every item still unticked below is an observation of a real 4nec2
+installation on Windows — how it invokes its kernel, what files it writes, which
+DLLs it loads. No such installation is available to the project, so none can be
+measured here, and none is ticked on inference. They stay open under CP-012
+(drop-in kernel mode, LOW, deferred to Phase 4-5 in `docs/roadmap.md`).
 
 ## Binary-name contract
 
