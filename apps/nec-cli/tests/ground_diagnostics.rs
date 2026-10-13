@@ -574,3 +574,53 @@ fn low_dipole_free_space_is_quiet() {
         "free-space deck must not trip the finite-ground low-height guard; stderr:\n{stderr}"
     );
 }
+
+/// A deck through the CLI: (exit success, stderr).
+fn run_cli(name: &str, deck: &str) -> (bool, String) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
+    fs::write(&path, deck).expect("write deck");
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg(&path)
+        .output()
+        .expect("run fnec");
+    let _ = fs::remove_file(&path);
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// The finite-ground contact refusal says why — NEC-2's own answer does not
+/// converge there — and names two models that do solve; each of them is run
+/// here, so the message cannot point at a refusal.
+#[test]
+fn the_finite_ground_contact_refusal_names_models_that_solve() {
+    let tail = "EX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let (ok, stderr) = run_cli(
+        "gn2-contact",
+        &format!("GW 1 21 0 0 0 0 0 5.28 .001\nGE 1\nGN 2 0 0 0 13 .005\n{tail}"),
+    );
+    assert!(!ok, "contact with finite ground must be refused:\n{stderr}");
+    for says in [
+        "does not converge",
+        "GN 1 with the ground loss as a series resistance at the base",
+        "radials raised strictly above the ground",
+    ] {
+        assert!(stderr.contains(says), "missing {says:?} in:\n{stderr}");
+    }
+
+    let (ok, stderr) = run_cli(
+        "gn1-base-loss",
+        &format!("GW 1 21 0 0 0 0 0 5.28 .001\nGE 1\nGN 1\nLD 4 1 1 1 30 0\n{tail}"),
+    );
+    assert!(ok, "GN 1 with a base resistance must solve:\n{stderr}");
+
+    let radials = "GW 1 21 0 0 0.1 0 0 5.38 .001\nGW 2 10 0 0 0.1 5.3 0 0.1 .001\n\
+                   GW 3 10 0 0 0.1 -5.3 0 0.1 .001\nGE 0\nGN 2 0 0 0 13 .005\n";
+    let (ok, stderr) = run_cli("gn2-raised-radials", &format!("{radials}{tail}"));
+    assert!(ok, "radials raised above the ground must solve:\n{stderr}");
+}
