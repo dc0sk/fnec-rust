@@ -21,9 +21,11 @@
 
 use std::process::Command;
 
-/// A zero wire radius: a plausible deck typo, not an exotic input, and already
-/// a hard error on the driven path.
-const DEGENERATE: &str = "0.0";
+/// A subnormal wire radius: positive, so it passes the parse, and the solve's
+/// currents still come out non-finite. A zero radius did the same until FND-236
+/// refused it at the parse, before any solve — which would leave this file
+/// testing the parser instead of the guard on each drive.
+const DEGENERATE: &str = "1e-320";
 const HEALTHY: &str = "0.001";
 
 fn deck(radius: &str, extra: &str) -> String {
