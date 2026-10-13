@@ -26,7 +26,7 @@
 //! `step_type` is **linear** — the CLI's "start alone" is wrong there too, while
 //! `fnec_py` was right.
 //!
-//! fnec has no execution-card sequencing: it drops `XQ` as an unknown card and
+//! fnec has no execution-card sequencing: it ignores `XQ` (with a warning) and
 //! runs one implicit execution, so "the `FR` in force at that execution" is the
 //! last one before `EN`. A deck written as `FR/XQ/FR/RP` expected both to run,
 //! which fnec cannot do — so a superseded card earns a warning rather than

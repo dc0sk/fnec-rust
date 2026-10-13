@@ -18,7 +18,7 @@ binding (`bindings/fnec_py/`).
 Text → typed AST. Parses NEC cards into `NecDeck`; provides `$VAR` templating.
 Serves **FR-003, COMP-001, PH3-CHK-007**.
 
-- `src/lib.rs` — parses `CM/CE/GW/GE/GM/GR/GN/EX/FR/RP/LD/TL/NT/PT/EN` into `NecDeck`; `ParseError`; unknown cards non-fatal.
+- `src/lib.rs` — parses `CM/CE/GW/GE/GM/GR/GN/EX/FR/RP/NE/NH/LD/TL/NT/PT/EN` into `NecDeck`; `ParseError`; every other NEC card is in `OTHER_CARDS`, ignored with a warning when it cannot change the antenna and refused when it would, and an unknown mnemonic is refused (FND-236).
 - `src/template.rs` — `$VARNAME` substitution (`$$` escapes `$`); `TemplateError` on undefined vars.
 
 ## nec_model — shared data model

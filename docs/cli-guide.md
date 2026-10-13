@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-13
 ---
 
 # CLI Guide — fnec (v0.21.7)
@@ -864,7 +864,9 @@ Quick reference:
 | NT | Partial | Two-port network (Y11 Y12 Y22) solved across the port gaps in parallel, as in NEC-2; `--solver hallen` with voltage sources only. Unusable cards are errors, not warnings |
 | CM / CE | Full | Comment cards; preserved in parse, ignored at runtime |
 | EN | Full | Terminates parse |
-| Other | Warning | Unknown cards print a warning and are skipped |
+| XQ, EK, KH, CP, PQ, PL, WG | Warning | Cannot change the solved problem: skipped with one warning saying why (`XQ`: fnec runs once, at the last `FR`) |
+| GA, GH, GS, GX, GC, GF, GD, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
+| Other | Refused | A card fnec does not know is refused, as nec2c refuses it. A line starting with `'` is a comment; commas separate fields (FND-237). See [card-support-matrix.md](card-support-matrix.md#cards-fnec-does-not-model) |
 
 ### Load (LD) card support
 

@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn a_refused_deck_still_reports_the_caveats_it_earned() {
         let deck = "CM flawed and refused\nCE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\n\
-                    ZZ 1 2 3\nEX 1 1 1 0 0.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+                    PQ 0\nEX 1 1 1 0 0.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
         let result = process_task(&task_line(deck));
         let TaskResult::Error {
             error_code,
@@ -631,7 +631,7 @@ mod tests {
             "expected the receive-deck exit, got: {error_message}"
         );
         assert!(
-            warnings.iter().any(|w| w.contains("ZZ")),
+            warnings.iter().any(|w| w.contains("PQ ignored")),
             "the ignored card must survive the refusal: {warnings:?}"
         );
     }

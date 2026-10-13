@@ -7,8 +7,11 @@
 //! `CM`, `CE`, `GW`, `GE`, `GM`, `GR`, `GN`, `EX`, `FR`, `RP`, `NE`, `NH`,
 //! `LD`, `TL`, `NT`, `PT`, `EN`.
 //!
-//! Unknown cards produce a [`ParseError::UnknownCard`] but do not stop
-//! parsing — callers decide whether to treat them as fatal.
+//! Every other card is in [`OTHER_CARDS`]: one fnec ignores with a warning,
+//! because it cannot change the solved problem, or one it refuses, because it
+//! would — and a mnemonic in neither list is refused too (FND-236). It used to be
+//! skipped with a warning, and the deck solved as a different antenna: a `GS`
+//! scale card ignored gave 290.5 + j218.5 Ω where nec2c gives 84.8 + j45.8.
 
 pub mod template;
 
@@ -21,8 +24,22 @@ use nec_model::deck::NecDeck;
 /// A parse error.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseError {
-    /// A card mnemonic was encountered that this parser does not recognise.
+    /// A card mnemonic in neither the parsed cards nor [`OTHER_CARDS`]: fatal,
+    /// because fnec cannot tell whether skipping it changes the antenna.
     UnknownCard { line: usize, mnemonic: String },
+    /// A known NEC card fnec does not model and that would change the solved
+    /// problem — `what` says what it would change. Fatal.
+    RefusedCard {
+        line: usize,
+        mnemonic: String,
+        what: &'static str,
+    },
+    /// A known NEC card that cannot change the solved problem, skipped. A warning.
+    IgnoredCard {
+        line: usize,
+        mnemonic: String,
+        why: &'static str,
+    },
     /// A field could not be converted to the expected numeric type.
     BadField {
         line: usize,
@@ -55,9 +72,25 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::UnknownCard { line, mnemonic } => {
-                write!(f, "line {line}: unknown card '{mnemonic}'")
-            }
+            ParseError::UnknownCard { line, mnemonic } => write!(
+                f,
+                "line {line}: unknown card '{mnemonic}'; fnec cannot tell whether skipping it \
+                 changes the antenna, so the deck is refused"
+            ),
+            ParseError::RefusedCard {
+                line,
+                mnemonic,
+                what,
+            } => write!(
+                f,
+                "line {line}: fnec does not model {mnemonic} ({what}); skipping it would solve \
+                 a different antenna, so the deck is refused"
+            ),
+            ParseError::IgnoredCard {
+                line,
+                mnemonic,
+                why,
+            } => write!(f, "line {line}: {mnemonic} ignored: {why}"),
             ParseError::BadField {
                 line,
                 card,
@@ -89,10 +122,94 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+/// How fnec treats a NEC card it does not parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtherCard {
+    /// Cannot change the solved problem: skipped with a warning saying why.
+    Ignored(&'static str),
+    /// Would change the solved problem: the deck is refused, saying what.
+    Refused(&'static str),
+}
+
+/// Every NEC card fnec knows of but does not parse, and what it does with it
+/// (FND-236). `docs/card-support-matrix.md` lists the same cards, checked by a
+/// test; a mnemonic in neither this list nor the parser's is refused as unknown.
+pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
+    (
+        "XQ",
+        OtherCard::Ignored(
+            "fnec always executes the deck, once, at its last FR card (an earlier FR \
+             is reported as replaced, FND-057); a pattern XQ asks for (I1 != 0) is not \
+             produced -- use an RP card",
+        ),
+    ),
+    (
+        "EK",
+        OtherCard::Ignored(
+            "NEC's extended thin-wire kernel; fnec's kernel does not change, and NEC's \
+             thin-wire limit with EK (segment/radius > 2) is not fnec's",
+        ),
+    ),
+    (
+        "KH",
+        OtherCard::Ignored(
+            "NEC's interaction-approximation range; fnec computes every interaction exactly",
+        ),
+    ),
+    (
+        "CP",
+        OtherCard::Ignored("NEC's maximum-coupling calculation; its output is not produced"),
+    ),
+    (
+        "PQ",
+        OtherCard::Ignored("charge-density print control; fnec prints no charge densities"),
+    ),
+    (
+        "PL",
+        OtherCard::Ignored("xnec2c's plot-file output; no plot file is written"),
+    ),
+    (
+        "WG",
+        OtherCard::Ignored("writes a Numerical Green's Function file; none is written"),
+    ),
+    ("GA", OtherCard::Refused("a wire arc")),
+    ("GH", OtherCard::Refused("a helix or spiral")),
+    ("GS", OtherCard::Refused("a scaling of the whole structure")),
+    (
+        "GX",
+        OtherCard::Refused("a reflected copy of the structure"),
+    ),
+    ("GC", OtherCard::Refused("a tapered wire")),
+    (
+        "GF",
+        OtherCard::Refused("a structure read from a Numerical Green's Function file"),
+    ),
+    (
+        "GD",
+        OtherCard::Refused("additional ground parameters: a cliff or a second medium"),
+    ),
+    ("SP", OtherCard::Refused("a surface patch")),
+    ("SM", OtherCard::Refused("a set of surface patches")),
+    ("SC", OtherCard::Refused("a surface-patch continuation")),
+    (
+        "NX",
+        OtherCard::Refused("a further structure in the same file"),
+    ),
+    (
+        "SY",
+        OtherCard::Refused(
+            "symbol definitions; write the deck with $NAME templates and pass the values \
+             with --vars",
+        ),
+    ),
+];
+
 /// Result of parsing a NEC deck.
 ///
-/// Non-fatal errors (unknown cards) are collected in `errors` while parsing
-/// continues.  Fatal errors (bad field values) are returned early via `Err`.
+/// Non-fatal warnings (cards that cannot change the solved problem) are
+/// collected in `warnings` while parsing continues. Fatal errors — a bad field,
+/// or a card fnec does not model that would change the antenna — are returned
+/// early via `Err`.
 pub struct ParseResult {
     pub deck: NecDeck,
     /// Non-fatal warnings accumulated during parsing.
@@ -113,6 +230,12 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 
         // Skip blank lines and lines that are entirely whitespace.
         if line.is_empty() {
+            continue;
+        }
+
+        // A line starting with `'` is a comment (4nec2's editor convention); it
+        // cannot change the problem.
+        if line.starts_with('\'') {
             continue;
         }
 
@@ -148,7 +271,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         parse_f64(lineno, "GW", 7, fields[6])?,
                         parse_f64(lineno, "GW", 8, fields[7])?,
                     ],
-                    radius: parse_f64(lineno, "GW", 9, fields[8])?,
+                    radius: parse_radius(lineno, fields[8])?,
                 }));
             }
             "GE" => {
@@ -470,12 +593,26 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // Stop at EN per NEC spec.
                 break;
             }
-            other => {
-                warnings.push(ParseError::UnknownCard {
+            other => match OTHER_CARDS.iter().find(|(m, _)| *m == other) {
+                Some((_, OtherCard::Ignored(why))) => warnings.push(ParseError::IgnoredCard {
                     line: lineno,
                     mnemonic: other.to_string(),
-                });
-            }
+                    why,
+                }),
+                Some((_, OtherCard::Refused(what))) => {
+                    return Err(ParseError::RefusedCard {
+                        line: lineno,
+                        mnemonic: other.to_string(),
+                        what,
+                    });
+                }
+                None => {
+                    return Err(ParseError::UnknownCard {
+                        line: lineno,
+                        mnemonic: other.to_string(),
+                    });
+                }
+            },
         }
     }
 
@@ -486,15 +623,44 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// A GW radius: positive and finite. Zero is NEC's tapered wire, whose radii a
+/// GC card gives and fnec does not model; it used to reach the solve and end as
+/// "a current that is not a finite number" (FND-236).
+fn parse_radius(line: usize, raw: &str) -> Result<f64, ParseError> {
+    let r = parse_f64(line, "GW", 9, raw)?;
+    if r > 0.0 && r.is_finite() {
+        return Ok(r);
+    }
+    Err(ParseError::UnsupportedValue {
+        line,
+        card: "GW".to_string(),
+        field: 9,
+        raw: raw.to_string(),
+        reason: if r == 0.0 {
+            "a zero radius is NEC's tapered wire (its radii on a GC card), which fnec does not \
+             model; give the wire its radius"
+                .to_string()
+        } else {
+            "a wire radius must be positive".to_string()
+        },
+    })
+}
+
+/// A field separator: whitespace or a comma, as NEC reads them — nec2c solves
+/// `GW,1,21,0,0,-2.5,0,0,2.5,.001` (FND-237).
+fn is_separator(c: char) -> bool {
+    c.is_ascii_whitespace() || c == ','
+}
+
 fn split_mnemonic(line: &str) -> (&str, &str) {
-    match line.find(|c: char| c.is_ascii_whitespace()) {
+    match line.find(is_separator) {
         Some(pos) => (&line[..pos], &line[pos..]),
         None => (line, ""),
     }
 }
 
 fn parse_fields(s: &str) -> Vec<&str> {
-    s.split_whitespace().collect()
+    s.split(is_separator).filter(|f| !f.is_empty()).collect()
 }
 
 /// Recognise fnec's retired TL layout, `TL t1 s1 t2 s2 NSEG TYPE Z0 LEN [VF]`, and
@@ -825,15 +991,101 @@ EN
         assert_eq!(cards[6], Card::En(EnCard));
     }
 
+    /// FND-236: a mnemonic fnec does not know is refused — it used to be skipped
+    /// with a warning, and the deck solved as a different antenna.
     #[test]
-    fn unknown_card_is_warning_not_error() {
-        let input = "CM test\nXX some unknown card\nEN\n";
-        let result = parse(input).expect("should not be a fatal error");
-        assert_eq!(result.warnings.len(), 1);
-        assert!(matches!(
-            &result.warnings[0],
-            ParseError::UnknownCard { mnemonic, .. } if mnemonic == "XX"
-        ));
+    fn an_unknown_card_is_refused() {
+        let err = parse("CM test\nXX some unknown card\nEN\n")
+            .err()
+            .expect("an unknown card is fatal");
+        assert!(
+            matches!(&err, ParseError::UnknownCard { line: 2, mnemonic } if mnemonic == "XX"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_card_that_would_change_the_antenna_is_refused_by_name() {
+        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGS 0 0 0.3048\nGE 0\nEN\n";
+        let err = parse(deck).err().expect("GS is refused");
+        assert!(
+            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GS"),
+            "{err:?}"
+        );
+        assert!(
+            err.to_string().contains("scaling of the whole structure"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_card_that_cannot_change_the_antenna_is_a_warning() {
+        let r = parse("GW 1 11 0 0 -1 0 0 1 .001\nGE 0\nEK\nXQ\nEN\n").expect("parses");
+        let names: Vec<&str> = r
+            .warnings
+            .iter()
+            .map(|w| match w {
+                ParseError::IgnoredCard { mnemonic, .. } => mnemonic.as_str(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(names, ["EK", "XQ"]);
+    }
+
+    /// FND-237: commas separate fields, as in NEC — the whole line used to be one
+    /// unknown mnemonic.
+    #[test]
+    fn comma_separated_fields_parse_as_spaced_ones() {
+        let spaced =
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
+        let commas =
+            "GW,1,21,0,0,-2.5,0,0,2.5,.001\nGE,0\nEX, 0,1,11,0,1,0\nFR,0,1,0,0,29.9,0\nEN\n";
+        assert_eq!(
+            parse(commas).expect("commas").deck,
+            parse(spaced).expect("spaces").deck
+        );
+    }
+
+    #[test]
+    fn an_apostrophe_line_is_a_comment() {
+        let r = parse("' a 4nec2 comment\nGW 1 11 0 0 -1 0 0 1 .001\nEN\n").expect("parses");
+        assert!(r.warnings.is_empty());
+        assert_eq!(r.deck.cards.len(), 2);
+    }
+
+    #[test]
+    fn a_zero_or_negative_gw_radius_is_refused() {
+        for (r, says) in [("0", "tapered wire"), ("-0.001", "must be positive")] {
+            let err = parse(&format!("GW 1 11 0 0 -1 0 0 1 {r}\nEN\n"))
+                .err()
+                .expect("refused");
+            assert!(err.to_string().contains(says), "{r}: {err}");
+        }
+    }
+
+    /// Every NEC-2 card is parsed, ignored or refused by name — none falls to the
+    /// unknown-card refusal, whose message cannot say what the card would do. The
+    /// list is NEC-2's card set (NEC-2 User's Guide, Part III) plus xnec2c's PL
+    /// and 4nec2's SY.
+    #[test]
+    fn every_nec2_card_has_a_named_treatment() {
+        const NEC2: [&str; 36] = [
+            "CM", "CE", "GA", "GC", "GD", "GE", "GF", "GH", "GM", "GR", "GS", "GW", "GX", "SC",
+            "SM", "SP", "CP", "EK", "EN", "EX", "FR", "GN", "KH", "LD", "NE", "NH", "NT", "NX",
+            "PQ", "PT", "RP", "TL", "WG", "XQ", "PL", "SY",
+        ];
+        for m in NEC2 {
+            if let Err(ParseError::UnknownCard { .. }) = parse(&format!("{m}\n")) {
+                panic!("{m} has no named treatment");
+            }
+        }
+        // And the list holds no card the parser also parses.
+        for (m, _) in OTHER_CARDS {
+            assert!(
+                !matches!(parse(&format!("{m}\n")), Ok(ref r) if r.warnings.is_empty()),
+                "{m} is in OTHER_CARDS but parses silently"
+            );
+        }
     }
 
     #[test]
