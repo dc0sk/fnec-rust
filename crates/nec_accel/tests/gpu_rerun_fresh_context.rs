@@ -24,7 +24,13 @@ fn a_re_run_is_not_handed_the_cached_device_failure() {
             radius: 0.001,
         })
         .collect();
-    pin_shared_gpu_failure_for_test("Parent device is lost (pinned by the test)");
+    // Pinned just now: its backoff (1 s, FND-234) has not passed, so without the
+    // re-run's context drop the second attempt would be handed it too.
+    pin_shared_gpu_failure_for_test(
+        "Parent device is lost (pinned by the test)",
+        1,
+        std::time::Duration::ZERO,
+    );
     let runs = std::cell::Cell::new(0);
     let z = gpu_attempt_with(
         || true,

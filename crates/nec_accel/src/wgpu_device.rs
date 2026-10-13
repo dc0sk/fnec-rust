@@ -55,7 +55,7 @@ fn await_map<E: std::fmt::Display>(
         // to one of the uncached callers, in which case this discards a healthy
         // context — that costs one rebuild and is cheaper than the alternative.
         if fault.device_suspect {
-            invalidate_gpu_context();
+            invalidate_gpu_context(&fault.why);
         }
         fault.why
     })
@@ -175,14 +175,62 @@ enum GpuAcquire {
     DeviceFailed(String),
 }
 
-/// Cache state. `Unavailable` is remembered too — on a host with no adapter,
-/// retrying the probe on every call is the same waste this cache exists to
-/// remove.
+/// Cache state. A failure is remembered too, but not for good (FND-234): this
+/// host's driver hides the adapter or loses the device for a moment (FND-190), and
+/// a failure pinned for the process sent every later point of a sweep, and every
+/// task of a worker, to the CPU. It is returned without asking the driver until
+/// [`backoff`] has passed, then the next caller tries again.
 enum GpuCache {
     Untried,
-    Ready(std::sync::Arc<GpuContext>),
-    NoAdapter(String),
-    DeviceFailed(String),
+    Ready {
+        ctx: std::sync::Arc<GpuContext>,
+        /// Consecutive failures before this build; carried so a device that dies
+        /// at every dispatch backs off instead of rebuilding at every point.
+        failures: u32,
+        built: std::time::Instant,
+    },
+    Failed {
+        kind: GpuFailure,
+        why: String,
+        failures: u32,
+        at: std::time::Instant,
+    },
+}
+
+/// What failed, so a cached failure reports as the original did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuFailure {
+    /// `request_adapter` found none — a host with no GPU, or one hidden for a
+    /// moment (FND-190). Backed off like the others: a GPU-less host re-probes a
+    /// few times in its first minute and once a minute after, each cheap.
+    NoAdapter,
+    /// `request_device` failed.
+    DeviceFailed,
+    /// The device failed under a dispatch (lost, hung or unmappable).
+    Lost,
+}
+
+/// How long a cached failure is returned before the next caller retries:
+/// 1, 2, 4 … s after the 1st, 2nd, 3rd … consecutive failure, at most 60 s.
+fn backoff(failures: u32) -> std::time::Duration {
+    let secs = 1u64 << failures.saturating_sub(1).min(6);
+    std::time::Duration::from_secs(secs.min(60))
+}
+
+/// Whether a failure cached `failures` times, last at `at`, is retried at `now`.
+fn retry_due(failures: u32, at: std::time::Instant, now: std::time::Instant) -> bool {
+    now.saturating_duration_since(at) >= backoff(failures)
+}
+
+/// The consecutive-failure count after a device built at `built`, `failures`
+/// failures after the last success, fails under a dispatch at `now`. A device that
+/// served for longer than the longest backoff starts the count again.
+fn failures_after_loss(failures: u32, built: std::time::Instant, now: std::time::Instant) -> u32 {
+    if now.saturating_duration_since(built) > backoff(u32::MAX) {
+        1
+    } else {
+        failures + 1
+    }
 }
 
 static GPU_CACHE: std::sync::Mutex<GpuCache> = std::sync::Mutex::new(GpuCache::Untried);
@@ -349,35 +397,77 @@ pub fn gpu_context_build_count() -> usize {
     GPU_BUILDS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Drop the cached context so the next caller builds a fresh one.
-///
-/// Called when a kernel sees the device fail mid-run. Without this a transient
-/// device loss (a driver reset, say) would pin every later solve to the CPU
-/// fallback for the rest of the process, which is worse than what the
-/// build-every-time code did.
-fn invalidate_gpu_context() {
+/// Drop the cached context: a kernel saw the device fail mid-run. Without this a
+/// transient device loss (a driver reset, say) would pin every later solve to the
+/// CPU fallback for the rest of the process, which is worse than what the
+/// build-every-time code did. It is recorded as a failure, so the rebuild backs off
+/// (FND-234): a device that dies at every dispatch — each of which can wait out
+/// [`GPU_WAIT_TIMEOUT`] — is not rebuilt at every point.
+fn invalidate_gpu_context(why: &str) {
     if let Ok(mut c) = GPU_CACHE.lock() {
-        *c = GpuCache::Untried;
+        let now = std::time::Instant::now();
+        let failures = match &*c {
+            GpuCache::Ready {
+                failures, built, ..
+            } => failures_after_loss(*failures, *built, now),
+            GpuCache::Failed { failures, .. } => failures + 1,
+            GpuCache::Untried => 1,
+        };
+        *c = GpuCache::Failed {
+            kind: GpuFailure::Lost,
+            why: why.to_string(),
+            failures,
+            at: now,
+        };
     }
 }
 
 /// Drop the shared compute context, so the next caller builds a fresh one.
 ///
 /// For [`crate::gpu_test`]'s re-run (FND-215): a failed adapter or device request
-/// is cached for the process, so without this a re-run after a driver fault is
-/// handed the first attempt's failure and retries nothing.
+/// is cached until its backoff passes (at least 1 s, FND-234), so without this a
+/// re-run straight after a driver fault is handed the first attempt's failure and
+/// retries nothing.
 #[doc(hidden)]
 pub fn forget_shared_gpu_context() {
-    invalidate_gpu_context();
+    if let Ok(mut c) = GPU_CACHE.lock() {
+        *c = GpuCache::Untried;
+    }
 }
 
 /// Pin a failed device request in the shared context, as a driver fault at
-/// `request_device` does (FND-190). For the test that a re-run is not handed the
-/// cached failure (FND-215); nothing else may call it.
+/// `request_device` does (FND-190): the `failures`-th in a row, `ago` before now.
+/// For the tests of the re-run (FND-215) and the backoff (FND-234); nothing else
+/// may call it.
 #[doc(hidden)]
-pub fn pin_shared_gpu_failure_for_test(why: &str) {
+pub fn pin_shared_gpu_failure_for_test(why: &str, failures: u32, ago: std::time::Duration) {
     if let Ok(mut c) = GPU_CACHE.lock() {
-        *c = GpuCache::DeviceFailed(why.to_string());
+        *c = GpuCache::Failed {
+            kind: GpuFailure::DeviceFailed,
+            why: why.to_string(),
+            failures,
+            at: std::time::Instant::now() - ago,
+        };
+    }
+}
+
+/// Record a device lost under a dispatch, as [`await_map`] does on a fault. For
+/// the backoff test (FND-234); nothing else may call it.
+#[doc(hidden)]
+pub fn lose_shared_gpu_device_for_test(why: &str) {
+    invalidate_gpu_context(why);
+}
+
+/// The shared context's consecutive-failure count: `None` when it is untried or
+/// ready. For the backoff test (FND-234).
+#[doc(hidden)]
+pub fn shared_gpu_failures_for_test() -> Option<u32> {
+    match &*GPU_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        GpuCache::Failed { failures, .. } => Some(*failures),
+        _ => None,
     }
 }
 
@@ -397,12 +487,33 @@ async fn shared_gpu_context() -> GpuAcquire {
     let mut cache = GPU_CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match &*cache {
-        GpuCache::Ready(ctx) => return GpuAcquire::Ready(ctx.clone()),
-        GpuCache::NoAdapter(why) => return GpuAcquire::NoAdapter(why.clone()),
-        GpuCache::DeviceFailed(why) => return GpuAcquire::DeviceFailed(why.clone()),
-        GpuCache::Untried => {}
-    }
+    let now = std::time::Instant::now();
+    let prior = match &*cache {
+        GpuCache::Ready { ctx, .. } => return GpuAcquire::Ready(ctx.clone()),
+        GpuCache::Failed {
+            kind,
+            why,
+            failures,
+            at,
+        } => {
+            if !retry_due(*failures, *at, now) {
+                return match kind {
+                    GpuFailure::NoAdapter => GpuAcquire::NoAdapter(why.clone()),
+                    GpuFailure::DeviceFailed | GpuFailure::Lost => {
+                        GpuAcquire::DeviceFailed(why.clone())
+                    }
+                };
+            }
+            *failures
+        }
+        GpuCache::Untried => 0,
+    };
+    let failed = |kind, why: &String| GpuCache::Failed {
+        kind,
+        why: why.clone(),
+        failures: prior + 1,
+        at: now,
+    };
 
     // Always taken after GPU_CACHE, never before it, so the two cannot deadlock.
     let _init = wgpu_init_guard();
@@ -415,7 +526,7 @@ async fn shared_gpu_context() -> GpuAcquire {
         Ok(a) => a,
         Err(e) => {
             let why = e.to_string();
-            *cache = GpuCache::NoAdapter(why.clone());
+            *cache = failed(GpuFailure::NoAdapter, &why);
             return GpuAcquire::NoAdapter(why);
         }
     };
@@ -447,7 +558,7 @@ async fn shared_gpu_context() -> GpuAcquire {
             Ok(dq) => dq,
             Err(e) => {
                 let why = e.to_string();
-                *cache = GpuCache::DeviceFailed(why.clone());
+                *cache = failed(GpuFailure::DeviceFailed, &why);
                 return GpuAcquire::DeviceFailed(why);
             }
         };
@@ -458,7 +569,16 @@ async fn shared_gpu_context() -> GpuAcquire {
         queue,
         adapter: AdapterInfo::of(&info),
     });
-    *cache = GpuCache::Ready(ctx.clone());
+    if prior > 0 {
+        eprintln!(
+            "info: GPU device rebuilt after {prior} failure(s); the device solves again (FND-234)"
+        );
+    }
+    *cache = GpuCache::Ready {
+        ctx: ctx.clone(),
+        failures: prior,
+        built: now,
+    };
     GpuAcquire::Ready(ctx)
 }
 
@@ -1781,7 +1901,7 @@ pub fn shared_adapter_info() -> Option<AdapterInfo> {
 /// on a run that may never use the device — a device build costs ~0.35 s. `None`
 /// without an adapter.
 pub fn preferred_adapter_info() -> Option<AdapterInfo> {
-    if let GpuCache::Ready(ctx) = &*GPU_CACHE
+    if let GpuCache::Ready { ctx, .. } = &*GPU_CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
     {
@@ -2418,6 +2538,52 @@ mod env_logger_tests {
     fn with_no_level_given_nothing_is_logged() {
         let (l, _) = EnvLogger::parse("wgpu_hal=debug");
         assert_eq!(l.level_for("nec_accel"), LevelFilter::Off);
+    }
+}
+
+#[cfg(test)]
+mod backoff_tests {
+    use super::{backoff, failures_after_loss, retry_due};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_backoff_doubles_from_one_second_to_a_sixty_second_cap() {
+        let secs: Vec<u64> = (1..=9).map(|n| backoff(n).as_secs()).collect();
+        assert_eq!(secs, [1, 2, 4, 8, 16, 32, 60, 60, 60]);
+        assert_eq!(backoff(u32::MAX), Duration::from_secs(60));
+        // A zero count (never produced) does not underflow.
+        assert_eq!(backoff(0), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_cached_failure_is_retried_only_once_its_backoff_has_passed() {
+        let at = Instant::now();
+        assert!(!retry_due(1, at, at));
+        assert!(!retry_due(1, at, at + Duration::from_millis(999)));
+        assert!(retry_due(1, at, at + Duration::from_secs(1)));
+        assert!(!retry_due(3, at, at + Duration::from_secs(3)));
+        assert!(retry_due(3, at, at + Duration::from_secs(4)));
+        assert!(!retry_due(20, at, at + Duration::from_secs(59)));
+        assert!(retry_due(20, at, at + Duration::from_secs(60)));
+        // A clock that reads earlier than the failure never retries early.
+        assert!(!retry_due(1, at + Duration::from_secs(5), at));
+    }
+
+    #[test]
+    fn a_device_lost_soon_after_its_build_counts_on_one_that_served_starts_again() {
+        let built = Instant::now();
+        assert_eq!(
+            failures_after_loss(0, built, built + Duration::from_secs(1)),
+            1
+        );
+        assert_eq!(
+            failures_after_loss(4, built, built + Duration::from_secs(30)),
+            5
+        );
+        assert_eq!(
+            failures_after_loss(4, built, built + Duration::from_secs(61)),
+            1
+        );
     }
 }
 

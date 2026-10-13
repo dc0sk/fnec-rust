@@ -15,6 +15,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **One driver fault no longer sends the rest of a run to the CPU** (FND-234). A
+  failed adapter or device request was cached for the life of the process, so on a
+  host whose driver hides the GPU or loses the device for a moment (FND-190) every
+  later point of an `--exec gpu` sweep, and every task of a `fnec worker`, fell back
+  to the CPU. A failure is now retried after 1, 2, 4 … s, at most a minute, and a
+  device lost mid-run backs off the same way instead of being rebuilt at every
+  point. (#569)
+
 ### Changed
 
 - **Every GPU test re-runs once on a driver fault, and skips only where no GPU is
