@@ -91,6 +91,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-gui/tests/gui_smoke.rs` | 133 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
 | `crates/nec_accel/tests/gpu_microbench.rs` | 1 | Microbench separates per-dispatch time from device init | PH7-CHK-002 |
+| `crates/nec_accel/tests/gpu_backoff.rs` | 1 | FND-234 — a cached device failure is returned without a rebuild until its backoff passes (also past the 60 s cap), a device lost under a dispatch is one more counted failure, and past the backoff the next caller asks the driver again: a fresh device on a GPU host, a counted fresh failure without one; its own binary, because the cache is process-global | FND-234 |
 | `crates/nec_accel/tests/gpu_ceilings.rs` | 5 | The GPU size ceilings (FND-188/189): the 2-D dispatch grid at the 65 535 boundary, the storage-binding capacity, every indexed shader entry reads the grid (structural), a 2049-segment fill on the device, a decline one past the device's capacity names its reason; device tests skip without a hardware adapter | FND-188, FND-189 |
 | `crates/nec_accel/tests/gpu_concurrent_init.rs` | 1 | FND-186: four threads' first wgpu use must not segfault; alone in its binary, because the crash needs an uninitialised driver (10 of 10 with the lock removed) | FND-186 |
 | `crates/nec_accel/tests/gpu_rerun_fresh_context.rs` | 1 | FND-215 — with a failed device request pinned in the shared context, a re-run builds a fresh device and the fill succeeds on the second attempt; its own binary, because the cache is process-global | FND-215 |
@@ -138,7 +139,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=723 --> **723** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=724 --> **724** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -154,16 +155,16 @@ functions across the `tests/` binaries listed above.
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 30 | lib, template |
-| `nec_accel` | 37 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), `gpu_test` re-run policy 4 (FND-215) |
+| `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=612 --> **612** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=615 --> **615** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1342 --> **1342** = 612 unit + 723 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1346 --> **1346** = 615 unit + 724 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
