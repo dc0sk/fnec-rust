@@ -2,262 +2,51 @@
 project: fnec-rust
 doc: docs/nec4-support.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-13
 ---
 
 # NEC-4 Support Boundary
 
-This document explicitly defines which NEC-2/NEC-4 cards and features are supported in fnec-rust, which are partially supported (with caveats), and which are deferred to future phases.
+What fnec offers where NEC-4 goes beyond NEC-2, and where it stops. fnec reads
+NEC-2 decks; it is not a NEC-4 implementation, and claims no NEC-4 parity.
 
-**Goal**: Make the scope boundary transparent to users so there are no surprises about what is and isn't available in a given version.
+**The status of each card is in [card-support-matrix.md](card-support-matrix.md)**,
+the one canonical table, checked against the parser by
+`crates/nec_parser/tests/card_matrix.rs`. This page used to carry two card tables of
+its own, written for Phase 1, and they had drifted from the parser on almost every
+row (FND-235); it carries none now.
 
-## Support status definitions
+## NEC-4 features and fnec's position
 
-| Status | Meaning |
-|:-------|:--------|
-| **FULL** | Fully implemented and tested. Behavior matches NEC-2/NEC-4 reference. |
-| **PARTIAL** | Implemented with limitations (e.g., subset of options, caveats documented). |
-| **EXPERIMENTAL** | Implemented but known to diverge from reference or have numerical issues. Not production-ready. |
-| **DEFERRED** | Recognized but not yet implemented. Future phases or backlog. |
-| **OUT OF SCOPE** | Will not be implemented in fnec-rust (design decision). Reason documented. |
+Each line was checked against the 0.21.7 binary on 2026-10-13.
 
-## NEC card support matrix
+| NEC-4 feature | fnec |
+|:--------------|:-----|
+| Segment current source (`EX 4` in NEC-4's sense) | **Solved** on `--solver hallen`: the specified current is forced and `Z = V/i0` is reported. fnec's `EX 4` is this NEC-4-flavoured segment current, not NEC-2's Hertzian point source. Details and limits: [card-support-matrix.md](card-support-matrix.md#excitation-cards) |
+| Sommerfeld ground for wires near the ground | **Solved.** `--ground-solver sommerfeld` corrects the feedpoint impedance of a straight wire over `GN 2`; `--solver mpie` uses the exact Sommerfeld kernel for currents and patterns of any wire above the ground, straight or bent ([mpie-solver-scope.md](mpie-solver-scope.md)) |
+| Wires touching or crossing a finite ground (ground stakes, buried radials) | **Refused**, naming the segment: no trustworthy contact model exists in fnec. A wire standing on *perfect* ground (`GN 1`) is solved by images |
+| NEC-4-only cards (`IS` insulated wire and the rest) | **Refused** as unknown cards, as nec2c refuses them (FND-236) |
+| Structured output | `--output-format json` writes one record per frequency point ([json-output-schema.md](json-output-schema.md)) |
+| Larger problems | A dense solve on the CPU, or on a GPU where this host's calibration says it is faster ([cli-guide.md](cli-guide.md)) |
 
-### Structure cards
+## Solvers
 
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| CM | Comment | FULL | Parsed and ignored as per spec |
-| CE | Comment end | FULL | Parsed and ignored |
-| GW | Wire segment | FULL | Straight wire; segments, radius, endpoints fully supported |
-| GE | Geometry end | FULL | Parsed; GE I1=1 infers PEC ground when no GN card is present. GE I1=-1 emits a below-ground warning; other unknown values warn with valid range hint; both fall back to free-space. |
-| SP | Special segment | OUT OF SCOPE | Complex wire types (Taconite spheres, absorbers). Complex geometry patterns belong in CAD, not NEC deck. Consider import from external tool. |
-| GM | Move segments | FULL | NEC-2 semantics, pinned against nec2c in `crates/nec_solver/tests/gm_nec2c.rs`: I2 = NRPT (number of new structures, 0 = move in place), F7 = ITS (the tag whose first segment begins the affected suffix, in definition order, 0 = whole structure), copies cumulative and tagged `tag + k*ITGI`, an in-place move retagged too, tag-0 segments never retagged, an ITS naming no wire refused. Trailing fields may be omitted. NOT supported, and refused by name: a negative ITGI, which yields negative tags nec2c accepts and fnec's unsigned tags cannot represent. Previously PARTIAL and, in two fields, simply wrong (FND-119). |
-| GR | Repeat segments | PARTIAL | Supported subset: repeats existing wires by successive z-axis rotations. Each copy is rotated by a cumulative multiple of `angle_deg` with incremented tag numbers. Broader NEC GR semantics should be reviewed before claiming full parity. |
-| GF | Scale segments | DEFERRED | Geometry scaling. Phase 2. |
+| Mode | Status |
+|:-----|:-------|
+| `--solver hallen` (default) | Production. The 51-segment λ/2 reference dipole is 79.33 + j45.04 Ω against nec2c's 79.35 + j46.22 on the same mesh |
+| `--solver sinusoidal` | Production for straight wires and collinear chains, in any card order; refuses bends and junctions |
+| `--solver mpie` | Production; junctions, loops and wires over ground, including the Sommerfeld kernel |
+| `--solver pulse`, `continuity` | Unvalidated: refused unless `--experimental-solver` is given, and then every result carries a caveat (FND-080) |
 
-### Excitation cards
+## Out of scope
 
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| EX type 0 | Voltage source (voltage-driven dipole) | FULL | Supported at any segment, with complex voltage. Primary excitation type. |
-| EX type 1 | Current source (magnetic dipole) | PARTIAL | `--solver pulse` now enforces EX type 1 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
-| EX type 2 | Incident plane wave | PARTIAL | Accepted in parser/solver path as a staged portability fallback. Current runtime behavior treats EX type 2 like EX type 0 and emits a warning that incident-plane-wave semantics are pending. |
-| EX type 3 | Normalized voltage source | PARTIAL | Accepted in parser/solver path. Default runtime mode treats EX type 3 like EX type 0 and warns on non-default I4; optional CLI mode `--ex3-i4-mode divide-by-i4` enables experimental I4-divisor normalization semantics. |
-| EX type 4 | Segment current | PARTIAL | `--solver pulse` now enforces EX type 4 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
-| EX type 5 | Electromagnetic current source (qdsrc) | PARTIAL | `--solver pulse` now enforces EX type 5 as a driven-segment current source and reports the resulting source voltage/impedance. Hallen and other non-pulse paths still use the staged portability fallback and emit the pending-semantics warning. |
-| PT | Transmission line source | PARTIAL | Parsed for staged portability. Current runtime behavior emits an explicit deferred-support warning and ignores PT electrical semantics. |
-| LD | Load impedance | PARTIAL | Types 0 (series RLC), 1 (parallel RLC), 2 (series RL), 3 (series RC), 4 (series Z), and 5 (distributed conductivity) are implemented. Other load types, a type-5 load with σ ≤ 0, and a card naming no segment are refused with an error (FND-161). |
-
-### Frequency and output cards
-
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| FR | Frequency specification | FULL | Single frequency (NP=0, NF≥1). Frequency step (NF>1) supported. Step count respected. |
-| RP | Radiation pattern request | PARTIAL | Parsed and executed in the CLI report path. `RADIATION_PATTERN` section is emitted with THETA/PHI and gain columns. Scope is currently text-report output only (no JSON/CSV/plot export, no near-field `XQ`). |
-| XQ | Near/far field request | DEFERRED | Near-field analysis. Phase 2+. |
-
-### Ground cards
-
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| GN | Ground definition | PARTIAL | Types 0/2 (finite conductivity, scoped simple approximation) and type 1 (perfect conductor, z=0 PEC image method) supported. Types 0 and 2 share the same scoped `SimpleFiniteGround` path using the parsed `EPSE`/`SIG` medium parameters (or defaults 13.0/0.005 when omitted). GN type -1 is treated as free-space per spec. Other types (`GN 3`, etc.) emit a runtime warning and fall back to free-space. Full Sommerfeld/Norton ground-wave correction is DEFERRED (Phase 2+). |
-| EN | End of input | FULL | Terminates deck parse. |
-
-### Advanced/specialized cards
-
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| CP | Control program | OUT OF SCOPE | Procedural looping / iteration. Belongs in user scripts or CAD tool. |
-| SY | Symbol definition | OUT OF SCOPE | Parametric expressions in deck. Use pre-processing / template tool instead. |
-| TL | Transmission line (network) | PARTIAL | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]` (F1 = Z0, negative = crossed; F2 = length, ≤ 0 = centre-to-centre distance; F3–F6 = end shunt admittances; fnec extensions F7 = velocity factor, F8 = matched-line loss dB). Solved as a two-port network across the port gaps, in parallel (NEC-2's model), on `--solver hallen` with voltage sources only; nec2c-gated (FND-111, FND-123). Endpoint `segment=0` maps to the tag centre segment (lower centre for even counts). fnec's retired `NSEG TYPE` layout and any unusable card are refused with an error. See `docs/card-support-matrix.md`. |
-| NT | Network definition | PARTIAL | Y11 Y12 Y22 two-port solved across the port gaps in parallel, as for TL (FND-123); `--solver hallen`, voltage sources only; unusable cards refused with an error. |
-| CH | Characteristic impedance | DEFERRED | Wire impedance tagging. Phase 2. |
-| MA | Matériel (material) definition | DEFERRED | Lossy wire materials (copper, aluminum, etc.). Phase 2. |
-
-### Control/metadata cards (NEC-4)
-
-| Card | Description | Status | Notes |
-|:-----|:------------|:-------|:------|
-| NM | Program control (NEC-4) | DEFERRED | Version/control flags. Phase 2. |
-| NE | Program end (NEC-4) | DEFERRED | Extension to EN. Phase 2. |
-
-## PH3-CHK-001 complete card status index
-
-This flat table lists every NEC-2/NEC-4 mnemonic known to fnec-rust with its exact parser status and functional status.  It is the authoritative machine-checkable index for `par001_card_status_table_complete`.
-
-**Parser status values:**
-
-| Value | Meaning |
-|:------|:--------|
-| `recognized` | Parser has an explicit match arm; card is stored in the `NecDeck`. |
-| `unknown` | Falls through to the unknown-card warning path; card is not stored. |
-
-| Mnemonic | Description | Parser status | Functional status | Notes |
-|:---------|:------------|:--------------|:------------------|:------|
-| CE | Comment end | `recognized` | FULL | Parsed and stored as comment; ends comment block. |
-| CH | Characteristic impedance | `unknown` | DEFERRED | Wire impedance tagging. Phase 2+. |
-| CM | Comment | `recognized` | FULL | Parsed and stored as comment; free text. |
-| CP | Control program | `unknown` | OUT OF SCOPE | Procedural looping belongs in user scripts. |
-| EN | End of input | `recognized` | FULL | Terminates deck parse per NEC spec. |
-| EX | Excitation | `recognized` | PARTIAL | Type 0 (voltage) FULL; types 1/4/5 PARTIAL in pulse mode; types 2/3 staged portability fallback. |
-| FR | Frequency specification | `recognized` | FULL | Single frequency and step sweep fully supported. |
-| GE | Geometry end | `recognized` | FULL | Ground-reflection flag preserved; GE I1=1 infers PEC ground. |
-| GF | Scale segments | `unknown` | DEFERRED | Geometry scaling. Phase 2+. |
-| GM | Move segments | `recognized` | FULL | NEC-2 field meanings throughout (NRPT, ITS), cumulative copies, in-place retagging, absent-ITS refusal; oracle-pinned. A negative ITGI is refused by name. See FND-119. |
-| GN | Ground definition | `recognized` | PARTIAL | Types 0/2 finite-conductivity (Fresnel), type 1 PEC image, type -1 free-space implemented. Full Sommerfeld/Norton deferred. |
-| GR | Repeat segments | `recognized` | PARTIAL | Parsed and forwarded to geometry builder for z-axis rotation repeat. Each copy rotated by cumulative multiple of `angle_deg` with incremented tag numbers. |
-| GW | Wire segment | `recognized` | FULL | Straight wire; tag, segments, endpoints, radius fully supported. |
-| LD | Load impedance | `recognized` | PARTIAL | Types 0–5 implemented (series/parallel RLC, series RL/RC/Z, distributed conductivity). Other types are refused (FND-161). |
-| MA | Matériel (material) definition | `unknown` | DEFERRED | Lossy wire materials. Phase 2+. |
-| NE | Program end (NEC-4) | `unknown` | DEFERRED | Extension to EN. Phase 2+. |
-| NM | Program control (NEC-4) | `unknown` | DEFERRED | Version/control flags. Phase 2+. |
-| NT | Network definition | `recognized` | PARTIAL | Solved as a two-port network across the port gaps (Hallén, voltage sources only); unusable cards are errors. |
-| PT | Print/store control | `recognized` | PARTIAL | Parsed for staged portability; runtime emits explicit deferred-support warning. Portability path only. |
-| RP | Radiation pattern request | `recognized` | PARTIAL | THETA/PHI far-field pattern executed and reported in `RADIATION_PATTERN` section; no near-field, no JSON/CSV/plot export. |
-| SP | Special segment | `unknown` | OUT OF SCOPE | Complex geometry types (spheres, absorbers) belong in CAD tools. |
-| SY | Symbol definition | `unknown` | OUT OF SCOPE | Parametric expressions; use pre-processing/template tool (PH3-CHK-007). |
-| TL | Transmission line | `recognized` | PARTIAL | NEC-2 layout; solved as a two-port network across the port gaps (Hallén, voltage sources only); retired `NSEG TYPE` layout and unusable cards are refused. |
-| XQ | Near/far field request | `unknown` | DEFERRED | Near-field analysis. Phase 2+. |
-
-## Source type support matrix
-
-| Source Type | Status | Notes |
-|:------------|:-------|:------|
-| Voltage excitation (EX 0) | FULL | Complex voltage at any segment. Primary production mode. |
-| Current excitation (magnetic dipole) | PARTIAL | `--solver pulse` now implements first slices for EX 1 and EX 5 using driven-segment current constraints. Hallen and other non-pulse paths still map both to EX 0 with explicit runtime warnings while broader semantics remain deferred. |
-| Plane wave incidence | PARTIAL | EX 2 is accepted as a staged portability fallback, currently mapped to EX 0 behavior with an explicit runtime warning; full scattering semantics remain deferred. |
-| Segment-current excitation | PARTIAL | `--solver pulse` now implements a first EX 4 segment-current slice using a driven-segment current constraint. Hallen and other non-pulse paths still map EX 4 to EX 0 with an explicit runtime warning while broader semantics remain deferred. |
-| Multi-port sources | PARTIAL | NT (and TL) are solved as two-port networks across the port gaps (FND-123; `--solver hallen`, voltage sources only). PT is parsed for staged portability with explicit deferred-support warnings. |
-
-## Solver mode support
-
-| Mode | Status | Notes |
-|:-----|:-------|:------|
-| Hallén (augmented integral equation) | FULL | Validated: 51-segment λ/2 dipole $$Z_{\mathrm{in}} \approx 79.33 + j\,45.04\,\Omega$$ (free ends refined, FND-227) vs nec2c (79.35 + j46.22). Production-ready. Supports non-collinear and junctioned multi-wire topologies via segmented hybrid formulation. |
-| Sinusoidal (piecewise-sinusoidal basis) | FULL | NEC2-style `tbf`/`sbf`/`trio` matrix assembly. Residual-guided fallback to Hallen when convergence is poor (`--sin-fallback-rel-max`). |
-| Pocklington pulse basis | EXPERIMENTAL | Known divergence for thin-wire antennas. Prefer sinusoidal or Hallen for production work. |
-| Pocklington continuity basis | EXPERIMENTAL | Rooftop basis transform. Same divergence issue as pulse. |
-
-## Ground model support
-
-| Model | Status | Notes |
-|:-----|:-------|:------|
-| Free space (no ground) | FULL | Baseline. No coupling to ground plane. |
-| Perfect conductor (infinite, ideal) | PARTIAL | Implemented via image method. Phase 1. Sommerfeld corrections (Phase 2) for accuracy near ground. |
-| Finite conductivity (simple scoped model) | PARTIAL | GN types 0 and 2 map to the scoped `SimpleFiniteGround` path using Fresnel-reflection approximation with parsed EPSE/SIG. Strictly above-ground wire classes (`z > 0`) are in-scope and corpus-gated; buried or interface-touching wires are deferred. Full Sommerfeld/Norton ground-wave integrals deferred to Phase 2+. |
-| Layered earth | DEFERRED | Multi-layer soil models. Phase 3. |
-| Seawater effects | DEFERRED | Conductive media. Phase 3. |
-
-## PAR-002 scoped ground parity plan
-
-PAR-002 focuses on moving beyond PEC-only ground by adding a finite-conductivity near-ground subset that is externally validated and CI-gated.
-
-Planned PAR-002 scope:
-
-1. Add an explicit finite-conductivity GN subset in runtime behavior (while keeping unsupported GN variants as warning+fallback paths).
-2. Add near-ground corpus fixtures that isolate finite-conductivity effects from unrelated feature changes.
-
-Current scoped coverage:
-
-- `GN 2` low above-ground wire cases are in-scope and regression-gated via `corpus/dipole-gn2-near-ground-51seg.nec`; wires touching or crossing FINITE ground remain refused (no trustworthy contact model). Wires standing on PERFECT ground (GN 1) are solved by explicit images since FND-082 (`corpus/monopole-pec-26seg.nec`, nec2c-gated); a wire lying in the ground plane, grounded at both ends, or several wires meeting at one ground point are refused.
-- Buried `z < 0` active-ground wire classes remain out of scope for now and fail fast with actionable diagnostics (`corpus/dipole-gn2-buried-unsupported.nec`).
-3. Add tolerance-gated external-reference comparisons for those fixtures in `corpus/reference-results.json` and `apps/nec-cli/tests/corpus_validation.rs`.
-4. Keep existing GN type 1 PEC behavior unchanged and regression-protected while finite-ground support expands.
-
-PAR-002 non-goals for this slice:
-
-1. Full layered-earth modeling.
-2. Seawater-specific propagation models.
-3. Broad near-field feature parity.
-
-PAR-002 completion evidence (document-level):
-
-1. `docs/corpus-validation-strategy.md` contains a finite-ground capture workflow and acceptance checklist.
-2. Backlog PAR-002 entry includes concrete progress notes tied to implemented corpus and validation artifacts.
-3. This support matrix remains synchronized with the exact GN subset actually implemented.
-
-## Output format support
-
-| Format | Status | Notes |
-|:-----|:-------|:------|
-| Text (4nec2-like) | FULL | Impedance per source, segment currents, residual diagnostics. Defined in Phase 1. |
-| JSON | DEFERRED | Structured output for automation. Phase 2. |
-| CSV | DEFERRED | Spreadsheet compatibility. Phase 2. |
-| Plot data (pattern, current) | DEFERRED | gnuplot, matplotlib data. Phase 2. |
-
-## Numerical feature support
-
-| Feature | Status | Notes |
-|:-----|:-------|:------|
-| Complex impedance (R + jX) | FULL | All computations in complex domain. |
-| Frequency sweep | FULL | Multiple frequencies in single deck (FR card with NF > 1). |
-| Multi-source (multiple EX cards) | PARTIAL | Multiple `EX 0` sources on **distinct tags** are solved and reported as one feedpoint row per excited segment. Two sources on the **same tag** are rejected with a clear error in the Hallén path (unsupported; pulse path handles it without this restriction). Advanced multi-port/network features remain deferred to `PT`/`NT`. |
-| Segment current calculation | FULL | Complex current per segment, phase and magnitude. |
-| Feedpoint impedance | FULL | Computed via: $$Z_{\mathrm{in}} = \frac{V_{\mathrm{source}}}{I_{\mathrm{source}}} = R + jX$$ at driven segment. |
-| Gain computation | PARTIAL | RP-driven far-field gain table is implemented in text report output (`GAIN_DB`, `GAIN_V_DB`, `GAIN_H_DB`). Structured exports and additional parity metrics remain deferred. |
-| Radiation pattern | PARTIAL | `RP` cards now produce a `RADIATION_PATTERN` section in CLI text output. Near-field and external plot/export workflows remain deferred. |
-
-## Phase progression
-
-| Phase | Cumulative Support |
-|:------|:------------------|
-| Phase 1 (current) | GW, partial GM/GR, EX type 0, staged EX types 1/2/4/5 and EX3 mode-gated normalization path, FR, RP report-path support, GE, GN type 1 (PEC), LD types 0/1/2/3/4/5, TL subset (`type=0`, `NSEG>=0`, segment-0 center mapping), PT/NT staged parsing, Hallén solver, free space + perfect ground, text output, complex impedance, frequency sweep, multi-source reporting |
-| Phase 2 | Add: GN finite-conductivity models (Sommerfeld), remaining LD load types, more advanced ground, EX types 1–4 (magnetic dipole, plane wave, normalized, multi-port), JSON/CSV output, sinusoidal Pocklington basis, GF (geometry scaling), richer pattern/gain parity |
-| Phase 3 | Add: TL/NT (transmission lines), seawater effects, near-field analysis, advanced ground layering, plugin system integration |
-| Phase 4+ | Additional NEC-4 specialty features as demanded |
-
-## Compatibility with xnec2c vs 4nec2
-
-fnec-rust is **4nec2-first**. The parser and solver primarily target 4nec2 compatibility.
-
-| Tool | Dialect support |
-|:-----|:----------------|
-| 4nec2 | Primary (default) |
-| xnec2c | Secondary (auto-detect or via flag). Subset of features from xnec2c accepted where they overlap with 4nec2; xnec2c-only features (e.g., custom Lua scripts) are out of scope. |
-| NEC2 (FORTRAN reference) | Implicit (xnec2c is the working reference). |
-| NEC4 (commercial) | Incremental adoption; Phase-gated. No guarantee of 100% parity. |
-
-## Parsing robustness
-
-| Aspect | Status |
-|:-------|:-------|
-| Unknown cards | FULL | Parsed as warnings; does not halt. User sees diagnostic. |
-| Malformed cards | FULL | Validation errors printed; parse halts with clear message. |
-| Numeric field errors | FULL | Type/bounds checking; fails with diagnostic. |
-| Blank lines and comments | FULL | Gracefully skipped. |
-
-## Known limitations and caveats
-
-### Phase 1 known issues
-
-1. **Pulse/continuity solver modes diverge** for thin-wire antennas. Use Hallén mode (`--solver hallen`) for production work. These modes are marked EXPERIMENTAL with a runtime warning.
-
-2. **Perfect-ground scope only**: `GN 1` is implemented (PEC image method at z=0). Other GN variants currently warn and fall back to free-space. Finite-conductivity Sommerfeld/Norton models remain deferred to Phase 2+.
-
-3. **Text output only**: No JSON, CSV, or plot data export yet. Scripting to post-process text output is the current workaround.
-
-4. **Pattern/gain scope is partial**: `RP` cards are executed and rendered in text output, but JSON/CSV export and near-field parity remain deferred.
-
-5. **No near fields**: Current output is limited to feedpoint impedance, segment currents, and residual diagnostics. Near-field analysis is deferred to Phase 2.
-
-6. **Single frequency per run**: Frequency sweep works (multiple points), but each frequency is a separate line in output. Batch sweeps need external scripting or await Phase 2+ reporting improvements.
-
-## Acceptance criteria for Phase 1 → Phase 2 gate
-
-- [ ] This document (`docs/nec4-support.md`) is written and ratified.
-- [ ] All FULL cards have integration test coverage.
-- [ ] All PARTIAL cards have explicit documentation of limitations in this file.
-- [ ] All DEFERRED cards have planned Phase assignment and backlog entry.
-- [ ] Golden corpus passes all tolerance gates (BLK-001, BLK-003).
-- [ ] Known limitations (`corpus/README.md`) align with this support matrix.
-- [ ] User-facing error messages direct users to this document for unsupported features.
+- Buried conductors and wires reaching a finite ground, as above.
+- Surface patches (`SP`, `SM`, `SC`), refused by name.
+- Symbol definitions (`SY`), refused by name. fnec's own `$NAME` templates with
+  `--vars` take their place.
 
 ## References
 
 - **NEC-2 Theory of Operation**: Burke & Poggio, LLNL 1981 (FORTRAN reference implementation)
 - **xnec2c source**: https://github.com/KJ7LNW/xnec2c (working C reference)
 - **4nec2 documentation**: https://www.4nec2.net/ (user-facing reference)
-- `docs/requirements.md` — Tolerance matrix and numerical compatibility policy
-- `docs/roadmap.md` — Phase definitions and deliverables
-- `corpus/README.md` — Golden reference corpus cases and validation

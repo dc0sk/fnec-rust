@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-13
 ---
 
 # Traceability matrix
@@ -100,7 +100,7 @@ Delivered as roadmap key-deliverables rather than numbered CHK rows. Chain:
 
 | ID | Req | Design | Impl | Tests | Result | S |
 |:---|:----|:-------|:-----|:------|:-------|:-:|
-| PH3-CHK-001 | GAP-002 | `nec4-support.md` | card status index | `corpus_validation.rs` | 25-row card table | ✅ |
+| PH3-CHK-001 | GAP-002 | `card-support-matrix.md` | card status table (`nec_parser::OTHER_CARDS`) | `nec_parser/tests/card_matrix.rs` | every parsed card has a row; the not-modelled cards match the parser's table (FND-235, FND-236) | ✅ |
 | PH3-CHK-002 | PRT-004, GAP-009 | `contributing.md` | docs | frontmatter gate | contributor guide | ✅ |
 | PH3-CHK-003 | GAP-004, BLK-004 | `plugin-api-design.md` | `nec_model`, `nec_report` (EP-1/2) | doctests | EP-1/EP-2 exercised | ✅ |
 | PH3-CHK-004/005 | PRT-004, GAP-010 | `project-format.md` | `nec_project/lib.rs` | `project_roundtrip.rs` | project + run history | ✅ |

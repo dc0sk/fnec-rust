@@ -24,7 +24,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 |:----------|:--|:----------|:------|
 | `apps/nec-cli/tests/core_flags_contract.rs` | 19 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
-| `apps/nec-cli/tests/corpus_validation.rs` | 10 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
 | `apps/nec-cli/tests/converged_reference.rs` | 4 | FND-232 — the corpus's nec2c references are nec2c on a 9× mesh: exactly the 11 expected cases carry one, each stored 1 / 3 / 9 × series contracts to its reference, fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh. | FND-232 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
@@ -99,7 +99,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_accel/tests/gpu_context_once.rs` | 1 | FND-186: eight concurrent first callers build one shared device (own binary: the build counter is process-global) | FND-186 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 5 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163); a 301-segment dipole solves on the device; the solve shader uses no storage barrier (FND-185); no single-invocation entry point reads the LU factor (the triangular solves run one dispatch per column) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
-| `crates/nec_parser/tests/card_matrix.rs` | 1 | FND-236 — `docs/card-support-matrix.md` lists exactly `nec_parser::OTHER_CARDS`, each with the same treatment (ignored or refused) | FND-236 |
+| `crates/nec_parser/tests/card_matrix.rs` | 2 | `docs/card-support-matrix.md`, the one card table, lists exactly `nec_parser::OTHER_CARDS` with the same treatment (FND-236), and has a row for every card the parser reads (PH3-CHK-001, FND-235) | FND-235, FND-236, PH3-CHK-001 |
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
 | `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
 | `crates/nec_solver/tests/bend_corner_nec2c.rs` | 3 | Hallén on bent conductors vs nec2c at two meshes each — a 90° L, a two-bend U (the interior-section branch), an off-apex inverted-V; the error must shrink with refinement (FND-162 stage 1b) | FND-162 |
