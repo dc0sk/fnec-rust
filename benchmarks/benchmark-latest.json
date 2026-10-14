@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "generated_at": "2026-10-14T20:44:07Z",
-  "git_sha": "a8955bc",
+  "generated_at": "2026-10-14T21:45:08Z",
+  "git_sha": "d464b2a",
   "runner_nproc": 4,
   "runs": [
     {
@@ -14,13 +14,13 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -44,24 +44,18 @@
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 8
+      "elapsed_ms": 10
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 4
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-single",
       "elapsed_ms": 3
     },
     {
@@ -79,50 +73,44 @@
     {
       "deck": "dipole-freesp-51seg",
       "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-freesp-51seg",
-      "solver": "pulse",
-      "exec_mode": "gpu",
-      "elapsed_ms": 3
-    },
-    {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
       "exec_mode": "cpu-single",
-      "elapsed_ms": 4
+      "elapsed_ms": 2
     },
     {
-      "deck": "dipole-ground-51seg",
-      "solver": "hallen",
-      "exec_mode": "cpu-single",
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
       "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
+    },
+    {
+      "deck": "dipole-freesp-51seg",
+      "solver": "pulse",
+      "exec_mode": "gpu",
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
@@ -133,38 +121,50 @@
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
-      "exec_mode": "cpu-multi",
-      "elapsed_ms": 4
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-single",
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
+    },
+    {
+      "deck": "dipole-ground-51seg",
+      "solver": "hallen",
+      "exec_mode": "cpu-multi",
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
-      "elapsed_ms": 4
+      "elapsed_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
@@ -188,37 +188,37 @@
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
-      "elapsed_ms": 3
+      "elapsed_ms": 2
     }
   ],
   "summary": [
@@ -227,8 +227,8 @@
       "solver": "hallen",
       "exec_mode": "cpu-single",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
+      "avg_ms": 2,
+      "min_ms": 2,
       "max_ms": 3
     },
     {
@@ -246,8 +246,8 @@
       "exec_mode": "gpu",
       "n_runs": 3,
       "avg_ms": 5,
-      "min_ms": 4,
-      "max_ms": 8
+      "min_ms": 3,
+      "max_ms": 10
     },
     {
       "deck": "dipole-freesp-51seg",
@@ -256,15 +256,15 @@
       "n_runs": 3,
       "avg_ms": 2,
       "min_ms": 2,
-      "max_ms": 3
+      "max_ms": 2
     },
     {
       "deck": "dipole-freesp-51seg",
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
+      "avg_ms": 2,
+      "min_ms": 2,
       "max_ms": 3
     },
     {
@@ -272,9 +272,9 @@
       "solver": "pulse",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
+      "avg_ms": 2,
+      "min_ms": 2,
+      "max_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
@@ -283,25 +283,25 @@
       "n_runs": 3,
       "avg_ms": 3,
       "min_ms": 3,
-      "max_ms": 4
+      "max_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 4,
-      "min_ms": 4,
-      "max_ms": 4
+      "avg_ms": 3,
+      "min_ms": 3,
+      "max_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "hallen",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 4,
-      "min_ms": 4,
-      "max_ms": 4
+      "avg_ms": 3,
+      "min_ms": 3,
+      "max_ms": 3
     },
     {
       "deck": "dipole-ground-51seg",
@@ -317,18 +317,18 @@
       "solver": "pulse",
       "exec_mode": "cpu-multi",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
+      "avg_ms": 2,
+      "min_ms": 2,
+      "max_ms": 2
     },
     {
       "deck": "dipole-ground-51seg",
       "solver": "pulse",
       "exec_mode": "gpu",
       "n_runs": 3,
-      "avg_ms": 3,
-      "min_ms": 3,
-      "max_ms": 3
+      "avg_ms": 2,
+      "min_ms": 2,
+      "max_ms": 2
     }
   ]
 }
