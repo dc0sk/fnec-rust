@@ -344,6 +344,15 @@ fn viewport_tab_selectable() {
     assert_eq!(state.active_tab, ActiveTab::Solve);
 }
 
+/// A GA arc deck, which only the MPIE solves (the Hallén geometry refuses it),
+/// still draws: its own segments are the solved mesh.
+#[test]
+fn an_arc_deck_draws_its_own_segments() {
+    let deck = "CE\nGA 1 10 0.5 0 180 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 100 0\nEN\n";
+    let geo = nec_gui::solve::load_geometry_str(deck).expect("an arc deck draws");
+    assert_eq!(geo.wires.len(), 10, "the arc's ten segments");
+}
+
 /// GUI-CHK-002: loading a deck's geometry builds a scene mesh, bumps the scene
 /// revision, and frames the camera on the geometry — all headlessly.
 #[test]

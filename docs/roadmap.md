@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Roadmap
@@ -422,7 +422,7 @@ Execution order: PH10-CHK-001 → 005 → 002 (one card at a time) → 003 → 0
 | Checklist ID | Implementation target | Done signal | Status |
 |:-------------|:----------------------|:------------|:-------|
 | PH10-CHK-001 | `GE`/`GN` read as nec2c reads them: ground from the last `GN` alone, `GE` joins ends at the ground, nec2c's contact band, undefined values refused (FND-241/242/243) | `apps/nec-cli/tests/ground_flags_nec2c.rs` | Done (#579) |
-| PH10-CHK-002 | The geometry cards 0.22.0 refuses: `GS`, then `GX`, then `GA`/`GH`, then `GC` (one PR each, nec2c the oracle; `GC` interacts with PH10-CHK-003) | per card: the deck equals its hand-expanded equivalent in fnec, nec2c gives the two the same answer, and refining approaches nec2c's converged value | In progress: `GS` (#581), `GX` (#582), `GR`'s NEC-2 reading (FND-247, #583); next `GA`/`GH` |
+| PH10-CHK-002 | The geometry cards 0.22.0 refuses: `GS`, then `GX`, then `GA`/`GH`, then `GC` (one PR each, nec2c the oracle; `GC` interacts with PH10-CHK-003) | per card: the deck equals its hand-expanded equivalent in fnec, nec2c gives the two the same answer, and refining approaches nec2c's converged value | In progress: `GS` (#581), `GX` (#582), `GR`'s NEC-2 reading (FND-247, #583), `GA`/`GH` (#584, MPIE only); next `GC` |
 | PH10-CHK-003 | MPIE with mixed wire radii: per-segment radius in the kernels instead of the first wire's for all (`validate.rs` caveat, `mpie.rs`) | a mixed-radius deck converging to nec2c's converged value, the caveat removed | Open |
 | PH10-CHK-004 | Lumped `LD` loads on the MPIE (it refuses them today), so a loaded antenna close to the ground has an accurate path | loaded near-ground decks vs nec2c at two meshes | Open |
 | PH10-CHK-005 | Tracker hygiene: PAR-011 reopened, card-matrix `LD 5` formula, stale solver-findings sections, changelog compare links (now checked), FND-244 recorded | this table | Done (this PR) |

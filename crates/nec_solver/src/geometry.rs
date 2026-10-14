@@ -17,7 +17,7 @@
 //!   order: NEC's segment number within a tag, as nec2c's `isegno` counts it
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GmCard, GrCard, GwCard, GxCard};
+use nec_model::card::{Card, GaCard, GhCard, GmCard, GrCard, GwCard, GxCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -126,6 +126,104 @@ fn snap_ground_contacts(segments: &mut [Segment]) {
             s.rederive_from_ends();
         }
     }
+}
+
+/// One segment from its ends, numbered as the `i`-th (0-based) of its card.
+fn segment_between(
+    tag: u32,
+    i: u32,
+    start: [f64; 3],
+    end: [f64; 3],
+    radius: f64,
+    at: usize,
+) -> Segment {
+    let mut s = Segment {
+        tag,
+        tag_index: i + 1,
+        global_index: at,
+        start,
+        end,
+        midpoint: [0.0; 3],
+        direction: [0.0; 3],
+        length: 0.0,
+        radius,
+        part: SegmentPart::Whole,
+    };
+    s.rederive_from_ends();
+    s
+}
+
+/// `GA`: nec2c's `arc`. `NS` segments on a circle of radius `RADA` in the plane
+/// y = 0, from `ANG1` toward `ANG2` (degrees, from +x toward +z), each starting at
+/// the previous one's end (carried, as nec2c carries it, so the ends are shared
+/// floats). The parser refused what nec2c builds wrong.
+fn expand_arc(ga: &GaCard, out: &mut Vec<Segment>) -> Result<(), GeometryError> {
+    check_segment_budget(out.len(), u64::from(ga.segments), "GA")?;
+    let to_rad = std::f64::consts::PI / 180.0;
+    let mut ang = ga.ang1_deg * to_rad;
+    let dang = (ga.ang2_deg - ga.ang1_deg) * to_rad / f64::from(ga.segments);
+    let mut p = [ga.arc_radius * ang.cos(), 0.0, ga.arc_radius * ang.sin()];
+    for i in 0..ga.segments {
+        ang += dang;
+        let q = [ga.arc_radius * ang.cos(), 0.0, ga.arc_radius * ang.sin()];
+        let at = out.len();
+        out.push(segment_between(ga.tag, i, p, q, ga.radius, at));
+        p = q;
+    }
+    Ok(())
+}
+
+/// `GH`: nec2c's `helix`. `NS` segments from z = 0 rising by |`HL`|/`NS` (the
+/// heights accumulated as nec2c accumulates them, so the ends are shared floats),
+/// `x = a(z)·cos(2πz/S)`, `y = b(z)·sin(2πz/S)`: constant (`A1`, `B1`, `B1 = 0`
+/// reading as `A1`) when `A2 = A1`, else linear from (`A1`, `B1`) to (`A2`, `B2`,
+/// `B2 = 0` reading as `A2`); `HL < 0` swaps x and y. The parser refused the
+/// spellings nec2c reads otherwise than NEC-2 defines.
+fn expand_helix(gh: &GhCard, out: &mut Vec<Segment>) -> Result<(), GeometryError> {
+    check_segment_budget(out.len(), u64::from(gh.segments), "GH")?;
+    let hl = gh.length.abs();
+    let zinc = hl / f64::from(gh.segments);
+    let uniform = gh.a2 == gh.a1;
+    let b1 = if uniform && gh.b1 == 0.0 {
+        gh.a1
+    } else {
+        gh.b1
+    };
+    let b2 = if !uniform && gh.b2 == 0.0 {
+        gh.a2
+    } else {
+        gh.b2
+    };
+    let two_pi = 2.0 * std::f64::consts::PI;
+    let point = |z: f64| -> [f64; 3] {
+        let (a, b) = if uniform {
+            (gh.a1, b1)
+        } else {
+            (gh.a1 + (gh.a2 - gh.a1) * z / hl, b1 + (b2 - b1) * z / hl)
+        };
+        let t = two_pi * z / gh.turn_spacing;
+        let (x, y) = (a * t.cos(), b * t.sin());
+        if gh.length > 0.0 {
+            [x, y, z]
+        } else {
+            [y, x, z]
+        }
+    };
+    let mut z1 = 0.0;
+    for i in 0..gh.segments {
+        let z2 = z1 + zinc;
+        let at = out.len();
+        out.push(segment_between(
+            gh.tag,
+            i,
+            point(z1),
+            point(z2),
+            gh.radius,
+            at,
+        ));
+        z1 = z2;
+    }
+    Ok(())
 }
 
 /// `GS`: multiply every segment defined so far — ends and radius — by `scale`,
@@ -292,6 +390,12 @@ pub enum GeometryError {
     /// killed the process without emitting a result line at all, which the
     /// controller cannot tell from a dead worker (FND-113).
     TagOverflow { card: &'static str, detail: String },
+    /// A `GA` arc or `GH` helix asked of the Hallén geometry. Each is a bend at
+    /// every node, so every straight run is one segment long; Hallén's section
+    /// graph refuses that, and the per-wire fallback read a half-circle arc 40 %
+    /// off nec2c (39.1 + j115.9 against 63.9 + j90.8, with only a warning) and a
+    /// full circle as a false zero-current error. The MPIE models the bends.
+    CurvedForHallen { card: &'static str },
     /// A `GX` reflection of a segment that lies in, or crosses, its plane of
     /// symmetry: the copy would coincide with or overlap the original. nec2c stops
     /// on it ("LIES IN PLANE OF SYMMETRY").
@@ -327,6 +431,13 @@ impl std::fmt::Display for GeometryError {
                 f,
                 "GM card: no segment has tag {tag}, so there is nothing to move \
                  from there"
+            ),
+            GeometryError::CurvedForHallen { card } => write!(
+                f,
+                "geometry contains {card}, which is a bend at every segment; the Hallén solve \
+                 cannot model a bend on a straight run one segment long (a half-circle arc \
+                 reads 40 % off nec2c), so the deck is refused — solve it with the MPIE \
+                 (`--solver mpie` on a local run), which models the bends (PH9-CHK-007)"
             ),
             GeometryError::InSymmetryPlane { tag, segment, axis } => write!(
                 f,
@@ -1061,6 +1172,16 @@ fn has_high_degree_node(segs: &[Segment]) -> bool {
 ///
 /// Segments are assigned consecutive `global_index` values in output order.
 pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
+    // The Hallén geometry: every Hallén route builds it here, and none can take a
+    // GA or GH (see GeometryError::CurvedForHallen). The MPIE's build_deck_geometry
+    // and the GUI's viewport, which draws the deck's own segments, do not refuse.
+    if let Some(card) = deck.cards.iter().find_map(|c| match c {
+        Card::Ga(_) => Some("a wire arc (GA)"),
+        Card::Gh(_) => Some("a helix (GH)"),
+        _ => None,
+    }) {
+        return Err(GeometryError::CurvedForHallen { card });
+    }
     let segments = build_unnumbered(deck)?;
     let grounded = matches!(
         ground_model_from_deck(deck),
@@ -1110,6 +1231,8 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
             }
             Card::Gs(gs) => apply_gs(gs.scale, &mut segments),
             Card::Gx(gx) => apply_gx(gx, &mut segments)?,
+            Card::Ga(ga) => expand_arc(ga, &mut segments)?,
+            Card::Gh(gh) => expand_helix(gh, &mut segments)?,
             _ => {}
         }
     }
@@ -2193,6 +2316,144 @@ mod tests {
 
     fn parsed(text: &str) -> NecDeck {
         nec_parser::parse(text).expect("parses").deck
+    }
+
+    /// GA / GH segment tables against nec2c 1.3.1's printed SEGMENTATION DATA
+    /// (centre x, y, z and length, to its 1e-4 print), captured 2026-10-14. The
+    /// arc's angle convention, the helix's defaults, taper, cone and handedness all
+    /// show here — nec2c's impedance cannot see handedness (a circular helix reads
+    /// the same for HL = ±0.5), so this table is the handedness test.
+    #[test]
+    fn ga_and_gh_segments_match_nec2cs_segmentation_table() {
+        let cases: [(&str, &[[f64; 4]]); 7] = [
+            (
+                "GA 1 6 0.5 0 180 .001",
+                &[
+                    [0.4665, 0.0, 0.1250, 0.2588],
+                    [0.3415, 0.0, 0.3415, 0.2588],
+                    [0.1250, 0.0, 0.4665, 0.2588],
+                    [-0.1250, 0.0, 0.4665, 0.2588],
+                    [-0.3415, 0.0, 0.3415, 0.2588],
+                    [-0.4665, 0.0, 0.1250, 0.2588],
+                ],
+            ),
+            (
+                "GA 1 8 0.5 0 360 .001",
+                &[
+                    [0.4268, 0.0, 0.1768, 0.3827],
+                    [0.1768, 0.0, 0.4268, 0.3827],
+                    [-0.1768, 0.0, 0.4268, 0.3827],
+                    [-0.4268, 0.0, 0.1768, 0.3827],
+                    [-0.4268, 0.0, -0.1768, 0.3827],
+                    [-0.1768, 0.0, -0.4268, 0.3827],
+                    [0.1768, 0.0, -0.4268, 0.3827],
+                    [0.4268, 0.0, -0.1768, 0.3827],
+                ],
+            ),
+            (
+                "GA 1 4 0.5 90 -30 .001",
+                &[
+                    [0.1250, 0.0, 0.4665, 0.2588],
+                    [0.3415, 0.0, 0.3415, 0.2588],
+                    [0.4665, 0.0, 0.1250, 0.2588],
+                    [0.4665, 0.0, -0.1250, 0.2588],
+                ],
+            ),
+            (
+                "GH 1 8 0.2 0.4 0.1 0.1 0.1 0.1 .0005",
+                &[
+                    [0.0500, 0.0500, 0.0250, 0.1500],
+                    [-0.0500, 0.0500, 0.0750, 0.1500],
+                    [-0.0500, -0.0500, 0.1250, 0.1500],
+                    [0.0500, -0.0500, 0.1750, 0.1500],
+                    [0.0500, 0.0500, 0.2250, 0.1500],
+                    [-0.0500, 0.0500, 0.2750, 0.1500],
+                    [-0.0500, -0.0500, 0.3250, 0.1500],
+                    [0.0500, -0.0500, 0.3750, 0.1500],
+                ],
+            ),
+            (
+                "GH 1 8 0.2 0.4 0.1 0.1 0.05 0.05 .0005",
+                &[
+                    [0.0500, 0.0469, 0.0250, 0.1459],
+                    [-0.0438, 0.0469, 0.0750, 0.1376],
+                    [-0.0437, -0.0406, 0.1250, 0.1295],
+                    [0.0375, -0.0406, 0.1750, 0.1214],
+                    [0.0375, 0.0344, 0.2250, 0.1134],
+                    [-0.0313, 0.0344, 0.2750, 0.1055],
+                    [-0.0312, -0.0281, 0.3250, 0.0978],
+                    [0.0250, -0.0281, 0.3750, 0.0904],
+                ],
+            ),
+            (
+                "GH 1 8 0.2 -0.4 0.1 0.15 0.1 0.15 .0005",
+                &[
+                    [0.0750, 0.0500, 0.0250, 0.1871],
+                    [0.0750, -0.0500, 0.0750, 0.1871],
+                    [-0.0750, -0.0500, 0.1250, 0.1871],
+                    [-0.0750, 0.0500, 0.1750, 0.1871],
+                    [0.0750, 0.0500, 0.2250, 0.1871],
+                    [0.0750, -0.0500, 0.2750, 0.1871],
+                    [-0.0750, -0.0500, 0.3250, 0.1871],
+                    [-0.0750, 0.0500, 0.3750, 0.1871],
+                ],
+            ),
+            (
+                "GH 1 8 0.2 0.4 0 0 0.1 0.1 .0005",
+                &[
+                    [0.0, 0.0063, 0.0250, 0.0515],
+                    [-0.0125, 0.0062, 0.0750, 0.0573],
+                    [-0.0125, -0.0188, 0.1250, 0.0673],
+                    [0.0250, -0.0187, 0.1750, 0.0800],
+                    [0.0250, 0.0313, 0.2250, 0.0944],
+                    [-0.0375, 0.0312, 0.2750, 0.1097],
+                    [-0.0375, -0.0438, 0.3250, 0.1256],
+                    [0.0500, -0.0437, 0.3750, 0.1420],
+                ],
+            ),
+        ];
+        // B1 = 0 in a uniform helix reads as A1 (nec2c's default): the same table
+        // as B1 = A1, which nec2c prints for it too.
+        let defaulted = ("GH 1 8 0.2 0.4 0.1 0 0.1 0 .0005", cases[3].1);
+        for (card, table) in cases.into_iter().chain([defaulted]) {
+            let segs =
+                build_deck_geometry(&parsed(&format!("{card}\nGE 0\nEN\n"))).expect("builds");
+            assert_eq!(segs.len(), table.len(), "{card}");
+            for (i, (s, row)) in segs.iter().zip(table).enumerate() {
+                let got = [s.midpoint[0], s.midpoint[1], s.midpoint[2], s.length];
+                for k in 0..4 {
+                    assert!(
+                        (got[k] - row[k]).abs() <= 5.1e-5,
+                        "{card} segment {}: {got:?} vs nec2c {row:?}",
+                        i + 1
+                    );
+                }
+                // Each segment starts where the last ended, exactly (shared ends).
+                if i > 0 {
+                    assert_eq!(s.start, segs[i - 1].end, "{card} segment {}", i + 1);
+                }
+            }
+        }
+    }
+
+    /// The Hallén geometry refuses GA/GH, naming the MPIE; the deck geometry
+    /// (the MPIE's, and the viewport's) builds them.
+    #[test]
+    fn the_hallen_geometry_refuses_arcs_and_helices() {
+        for card in [
+            "GA 1 10 0.5 0 180 .001",
+            "GH 1 8 0.2 0.4 0.1 0.1 0.1 0.1 .0005",
+        ] {
+            let deck = parsed(&format!("{card}\nGE 0\nEN\n"));
+            let e = build_geometry(&deck).expect_err(card);
+            assert!(
+                matches!(e, GeometryError::CurvedForHallen { .. }),
+                "{card}: {e:?}"
+            );
+            assert!(e.to_string().contains("--solver mpie"), "{e}");
+            assert!(build_deck_geometry(&deck).is_ok(), "{card}");
+        }
+        assert!(build_geometry(&parsed("GW 1 3 0 0 0 0 0 1 .001\nGE 0\nEN\n")).is_ok());
     }
 
     /// Exactly the two tips of a dipole are free; inside the wire nothing is.

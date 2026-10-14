@@ -16,8 +16,8 @@
 pub mod template;
 
 use nec_model::card::{
-    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GsCard, GwCard,
-    GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
+    Card, CommentCard, EnCard, ExCard, FrCard, GaCard, GeCard, GhCard, GmCard, GnCard, GrCard,
+    GsCard, GwCard, GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -187,8 +187,6 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
         "WG",
         OtherCard::Ignored("writes a Numerical Green's Function file; none is written"),
     ),
-    ("GA", OtherCard::Refused("a wire arc")),
-    ("GH", OtherCard::Refused("a helix or spiral")),
     ("GC", OtherCard::Refused("a tapered wire")),
     (
         "GF",
@@ -262,7 +260,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 
         let upper = mnemonic.to_ascii_uppercase();
         if let Some(ge_line) = ge_line {
-            if matches!(upper.as_str(), "GW" | "GM" | "GR" | "GS" | "GX" | "GE") {
+            if matches!(
+                upper.as_str(),
+                "GW" | "GM" | "GR" | "GS" | "GX" | "GA" | "GH" | "GE"
+            ) {
                 return Err(ParseError::GeometryAfterGe {
                     line: lineno,
                     mnemonic: upper,
@@ -300,7 +301,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         parse_f64(lineno, "GW", 7, fields[6])?,
                         parse_f64(lineno, "GW", 8, fields[7])?,
                     ],
-                    radius: parse_radius(lineno, fields[8])?,
+                    radius: parse_radius(lineno, "GW", 9, fields[8])?,
                 }));
             }
             "GE" => {
@@ -340,21 +341,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let f = |i: usize| -> &str { fields.get(i).copied().unwrap_or("0") };
                 // Integer fields, whole values only: nec2c stops on `GX 0 1.5`, and
                 // `parse_i32` would truncate it to a plane selection. `100.` is fine.
-                for (i, raw) in [(1usize, f(0)), (2, f(1))] {
-                    let v = parse_finite_f64_field(lineno, "GX", i, raw)?;
-                    if v.fract() != 0.0 {
-                        return Err(ParseError::UnsupportedValue {
-                            line: lineno,
-                            card: "GX".to_string(),
-                            field: i,
-                            raw: raw.to_string(),
-                            reason: "an integer field; nec2c stops on a fractional value \
-                                     here"
-                                .to_string(),
-                        });
-                    }
-                }
-                let itg = parse_i32(lineno, "GX", 1, f(0))?;
+                let itg = parse_whole_i32(lineno, "GX", 1, f(0))?;
                 if itg < 0 {
                     return Err(ParseError::UnsupportedValue {
                         line: lineno,
@@ -367,7 +354,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                             .to_string(),
                     });
                 }
-                let ns = parse_i32(lineno, "GX", 2, f(1))?;
+                let ns = parse_whole_i32(lineno, "GX", 2, f(1))?;
                 if !(0..=999).contains(&ns) {
                     return Err(ParseError::UnsupportedValue {
                         line: lineno,
@@ -386,6 +373,190 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     x: ns / 100 != 0,
                     y: (ns / 10) % 10 != 0,
                     z: ns % 10 != 0,
+                }));
+            }
+            "GA" => {
+                // GA ITG NS RADA ANG1 ANG2 RAD, nec2c's `arc`. What nec2c builds wrong
+                // or hangs on is refused here (Fable's review of the design probed
+                // each): a zero radius hangs it, a negative one is the arc turned
+                // 180 degrees, NS <= 0 adds nothing or miscounts the structure, and
+                // a segment spanning 180 degrees or more is a chord through the
+                // centre (GA 1 1 0.5 0 360 solved a 6e-17 m wire, silently).
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GA", &fields, 6)?;
+                let refuse = |field: usize, reason: String| ParseError::UnsupportedValue {
+                    line: lineno,
+                    card: "GA".to_string(),
+                    field,
+                    raw: fields[field - 1].to_string(),
+                    reason,
+                };
+                let tag = parse_whole_i32(lineno, "GA", 1, fields[0])?;
+                if tag < 0 {
+                    return Err(refuse(1, "a tag must not be negative".to_string()));
+                }
+                let ns = parse_whole_i32(lineno, "GA", 2, fields[1])?;
+                if ns < 1 {
+                    return Err(refuse(
+                        2,
+                        "the number of segments must be at least 1; nec2c adds nothing for \
+                         0 and miscounts the structure for a negative value"
+                            .to_string(),
+                    ));
+                }
+                let rada = parse_f64(lineno, "GA", 3, fields[2])?;
+                if rada <= 0.0 {
+                    return Err(refuse(
+                        3,
+                        "an arc radius must be positive; nec2c reads a negative radius as the \
+                         arc turned 180 degrees about y (spell that with ANG1 + 180), and a \
+                         zero radius hangs it"
+                            .to_string(),
+                    ));
+                }
+                let ang1 = parse_f64(lineno, "GA", 4, fields[3])?;
+                let ang2 = parse_f64(lineno, "GA", 5, fields[4])?;
+                let span = (ang2 - ang1).abs();
+                if span == 0.0 {
+                    return Err(refuse(
+                        5,
+                        "the arc spans no angle (ANG2 = ANG1), so every segment is zero \
+                         length; nec2c stops on it with a segment data error"
+                            .to_string(),
+                    ));
+                }
+                if span >= 360.00001 {
+                    return Err(refuse(
+                        5,
+                        "the arc spans more than 360 degrees; nec2c stops with \"ARC ANGLE \
+                         EXCEEDS 360 DEGREES\""
+                            .to_string(),
+                    ));
+                }
+                if span / f64::from(ns) >= 180.0 {
+                    let need = (span / 180.0).floor() as i32 + 1;
+                    return Err(refuse(
+                        2,
+                        format!(
+                            "each segment would span {} degrees of the arc: a segment of 180 \
+                             degrees or more is a chord through the centre, not an arc (nec2c \
+                             solves a zero-length or doubled wire there); use at least {need} \
+                             segments",
+                            span / f64::from(ns)
+                        ),
+                    ));
+                }
+                deck.cards.push(Card::Ga(GaCard {
+                    tag: tag as u32,
+                    segments: ns as u32,
+                    arc_radius: rada,
+                    ang1_deg: ang1,
+                    ang2_deg: ang2,
+                    radius: parse_radius(lineno, "GA", 6, fields[5])?,
+                }));
+            }
+            "GH" => {
+                // GH ITG NS S HL A1 B1 A2 B2 RAD, nec2c's `helix`, with what it hangs
+                // on or builds as something other than the deck says refused (Fable's
+                // review probed each). NEC-2's manual gives B1/B2 no default; nec2c's
+                // code reads B1 = 0 as A1 in a uniform helix and B2 = 0 as A2 in a
+                // taper, which decks lean on and which fnec copies — but the two
+                // spellings whose readings diverge are refused.
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GH", &fields, 9)?;
+                let refuse = |field: usize, reason: String| ParseError::UnsupportedValue {
+                    line: lineno,
+                    card: "GH".to_string(),
+                    field,
+                    raw: fields[field - 1].to_string(),
+                    reason,
+                };
+                let tag = parse_whole_i32(lineno, "GH", 1, fields[0])?;
+                if tag < 0 {
+                    return Err(refuse(1, "a tag must not be negative".to_string()));
+                }
+                let ns = parse_whole_i32(lineno, "GH", 2, fields[1])?;
+                if ns < 1 {
+                    return Err(refuse(
+                        2,
+                        "the number of segments must be at least 1".to_string(),
+                    ));
+                }
+                let s = parse_f64(lineno, "GH", 3, fields[2])?;
+                if s <= 0.0 {
+                    return Err(refuse(
+                        3,
+                        "the spacing between turns must be positive; nec2c hangs on 0 and \
+                         reads a negative spacing as a mirrored helix, which NEC-2 does not \
+                         define — a left-handed helix is HL < 0"
+                            .to_string(),
+                    ));
+                }
+                let hl = parse_f64(lineno, "GH", 4, fields[3])?;
+                if hl == 0.0 {
+                    return Err(refuse(
+                        4,
+                        "a zero axial length is NEC-2's flat spiral, which nec2c cannot build \
+                         (every segment is zero length and the solve is NaN); fnec does not \
+                         model it"
+                            .to_string(),
+                    ));
+                }
+                let r: Vec<f64> = (5..=8)
+                    .map(|i| parse_f64(lineno, "GH", i, fields[i - 1]))
+                    .collect::<Result<_, _>>()?;
+                let (a1, b1, a2, b2) = (r[0], r[1], r[2], r[3]);
+                if let Some(i) = r.iter().position(|v| *v < 0.0) {
+                    return Err(refuse(
+                        i + 5,
+                        "a helix radius must not be negative; nec2c reads one as the helix \
+                         turned 180 degrees, which NEC-2 does not define"
+                            .to_string(),
+                    ));
+                }
+                if a2 == a1 {
+                    let b1e = if b1 == 0.0 { a1 } else { b1 };
+                    if b2 != 0.0 && b2 != b1e {
+                        return Err(refuse(
+                            8,
+                            format!(
+                                "with A2 = A1 nec2c ignores B2 and builds the whole helix with \
+                                 B1 = {b1e}, while NEC-2 defines B2 as the y radius at z = HL; \
+                                 spell the helix you mean — B2 = B1 for a uniform helix, or \
+                                 A2 != A1 for a taper"
+                            ),
+                        ));
+                    }
+                    if a1 == 0.0 {
+                        return Err(refuse(
+                            5,
+                            "every radius is zero, so the helix is a straight wire on the z \
+                             axis; write it as a GW"
+                                .to_string(),
+                        ));
+                    }
+                } else if b1 == 0.0 && a1 != 0.0 {
+                    return Err(refuse(
+                        6,
+                        format!(
+                            "in a tapered helix nec2c reads B1 = 0 as a y radius of zero at z = 0 \
+                             (the helix starts flattened), while it reads B1 = 0 as B1 = A1 in a \
+                             uniform helix and B2 = 0 as B2 = A2 here; NEC-2 defines no default \
+                             — write B1 = A1 (= {a1}) for the round helix, or a small B1 for the \
+                             flattened start"
+                        ),
+                    ));
+                }
+                deck.cards.push(Card::Gh(GhCard {
+                    tag: tag as u32,
+                    segments: ns as u32,
+                    turn_spacing: s,
+                    length: hl,
+                    a1,
+                    b1,
+                    a2,
+                    b2,
+                    radius: parse_radius(lineno, "GH", 9, fields[8])?,
                 }));
             }
             "GS" => {
@@ -461,21 +632,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "GR", &fields, 2)?;
                 let f = |i: usize| -> &str { fields.get(i).copied().unwrap_or("0") };
-                for (i, raw) in [(1usize, f(0)), (2, f(1))] {
-                    let v = parse_finite_f64_field(lineno, "GR", i, raw)?;
-                    if v.fract() != 0.0 {
-                        return Err(ParseError::UnsupportedValue {
-                            line: lineno,
-                            card: "GR".to_string(),
-                            field: i,
-                            raw: raw.to_string(),
-                            reason: "an integer field; nec2c stops on a fractional value \
-                                     here"
-                                .to_string(),
-                        });
-                    }
-                }
-                let itg = parse_i32(lineno, "GR", 1, f(0))?;
+                let itg = parse_whole_i32(lineno, "GR", 1, f(0))?;
                 if itg < 0 {
                     return Err(ParseError::UnsupportedValue {
                         line: lineno,
@@ -488,7 +645,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                             .to_string(),
                     });
                 }
-                let n = parse_i32(lineno, "GR", 2, f(1))?;
+                let n = parse_whole_i32(lineno, "GR", 2, f(1))?;
                 if n < 1 {
                     return Err(ParseError::UnsupportedValue {
                         line: lineno,
@@ -860,17 +1017,18 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 /// A GW radius: positive and finite. Zero is NEC's tapered wire, whose radii a
 /// GC card gives and fnec does not model; it used to reach the solve and end as
 /// "a current that is not a finite number" (FND-236).
-fn parse_radius(line: usize, raw: &str) -> Result<f64, ParseError> {
-    let r = parse_f64(line, "GW", 9, raw)?;
+/// A wire radius, positive and finite: `GW`'s, `GA`'s and `GH`'s, one rule.
+fn parse_radius(line: usize, card: &str, field: usize, raw: &str) -> Result<f64, ParseError> {
+    let r = parse_f64(line, card, field, raw)?;
     if r > 0.0 && r.is_finite() {
         return Ok(r);
     }
     Err(ParseError::UnsupportedValue {
         line,
-        card: "GW".to_string(),
-        field: 9,
+        card: card.to_string(),
+        field,
         raw: raw.to_string(),
-        reason: if r == 0.0 {
+        reason: if r == 0.0 && card == "GW" {
             "a zero radius is NEC's tapered wire (its radii on a GC card), which fnec does not \
              model; give the wire its radius"
                 .to_string()
@@ -878,6 +1036,23 @@ fn parse_radius(line: usize, raw: &str) -> Result<f64, ParseError> {
             "a wire radius must be positive".to_string()
         },
     })
+}
+
+/// An integer field written as a whole number (`4` or `4.`), as nec2c needs:
+/// it stops on a fractional value where `parse_i32` would truncate it. Shared by
+/// every card that refuses one, so they cannot word or test it differently.
+fn parse_whole_i32(line: usize, card: &str, field: usize, raw: &str) -> Result<i32, ParseError> {
+    let v = parse_finite_f64_field(line, card, field, raw)?;
+    if v.fract() != 0.0 {
+        return Err(ParseError::UnsupportedValue {
+            line,
+            card: card.to_string(),
+            field,
+            raw: raw.to_string(),
+            reason: "an integer field; nec2c stops on a fractional value here".to_string(),
+        });
+    }
+    Ok(v as i32)
 }
 
 /// A field separator: whitespace or a comma, as NEC reads them — nec2c solves
@@ -1240,13 +1415,13 @@ EN
 
     #[test]
     fn a_card_that_would_change_the_antenna_is_refused_by_name() {
-        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGA 2 11 1 0 90 .001\nGE 0\nEN\n";
-        let err = parse(deck).err().expect("GA is refused");
+        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGC 0 0 1 .001 .002\nGE 0\nEN\n";
+        let err = parse(deck).err().expect("GC is refused");
         assert!(
-            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GA"),
+            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GC"),
             "{err:?}"
         );
-        assert!(err.to_string().contains("a wire arc"), "{err}");
+        assert!(err.to_string().contains("a tapered wire"), "{err}");
     }
 
     #[test]

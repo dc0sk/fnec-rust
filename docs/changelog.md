@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Changelog
@@ -23,6 +23,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `GS 0 0 0.3048` solves again — refused since 0.22.0, and before that solved
   unscaled with a warning (290.5 + j218.5 Ω where nec2c gives 84.8 + j45.8). A
   factor that is missing or not positive is refused, as nec2c stops on it.
+- **The `GA` (wire arc) and `GH` (helix) cards** (PH10-CHK-002), built as
+  nec2c's `arc` and `helix` build them — segment tables pinned against nec2c's —
+  and **solved with `--solver mpie`**, which converges to nec2c (a half-circle
+  arc 1.3 % from nec2c's 90-segment value at 90). Every node is a bend, so the
+  Hallén solve refuses them by name, naming the MPIE: its per-wire fallback read
+  a half circle 40 % off. What nec2c hangs on or builds wrong is refused (a zero
+  arc radius or turn spacing, a flat spiral, a segment of 180° or more), and so
+  are the two `GH` spellings nec2c reads otherwise than NEC-2 defines. The GUI
+  viewport draws such a deck's own segments, the mesh the MPIE solves.
 - **The `GX` card reflects the structure** (PH10-CHK-002), as nec2c's `reflc`
   does: the planes `I2`'s digits select, z then y then x, each pass copying every
   segment present with its tag increased (tag 0 stays 0) and the increment

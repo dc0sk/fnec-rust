@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # fnec-gui user guide
@@ -91,6 +91,10 @@ frequency, resistance, reactance, and |Z| are shown.
 > the wire block, which comes before a `GS` that follows the wires, so the new wire
 > is scaled with the rest — as NEC reads that deck. The same holds for `GX`: a wire
 > added before it is reflected too, so it appears twice (or four or eight times).
+>
+> A deck with a `GA` arc or `GH` helix draws in the viewport, but solves only with
+> the MPIE solver selected: every node of an arc or helix is a bend, which the
+> Hallén solve cannot model, and it says so.
 
 ## Sweep tab
 

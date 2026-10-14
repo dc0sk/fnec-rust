@@ -407,7 +407,9 @@ impl PostSlot {
                 | Card::Gm(_)
                 | Card::Gr(_)
                 | Card::Gs(_)
-                | Card::Gx(_) => 0,
+                | Card::Gx(_)
+                | Card::Ga(_)
+                | Card::Gh(_) => 0,
                 Card::En(_) => 9,
                 _ => 5,
             },

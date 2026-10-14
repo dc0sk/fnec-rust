@@ -420,6 +420,50 @@ pub struct GxCard {
     pub z: bool,
 }
 
+/// GA — A wire arc, as nec2c's `arc` builds it.
+///
+/// `GA ITG NS RADA ANG1 ANG2 RAD`: `NS` segments on a circle of radius `RADA`
+/// centred at the origin in the plane y = 0, from `ANG1` to `ANG2` degrees
+/// measured from +x toward +z, each segment starting where the last ended. Move
+/// it with `GM`. Fields are kept as written, so a deck round-trips.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GaCard {
+    pub tag: u32,
+    pub segments: u32,
+    /// The arc's radius (m), `RADA`.
+    pub arc_radius: f64,
+    /// First angle (degrees), `ANG1`.
+    pub ang1_deg: f64,
+    /// Second angle (degrees), `ANG2`.
+    pub ang2_deg: f64,
+    /// The wire radius (m), `RAD`.
+    pub radius: f64,
+}
+
+/// GH — A helix or spiral, as nec2c's `helix` builds it.
+///
+/// `GH ITG NS S HL A1 B1 A2 B2 RAD`: `NS` segments rising from z = 0 by |`HL`|/`NS`
+/// each, `x = a(z)·cos(2πz/S)`, `y = b(z)·sin(2πz/S)`, with `a`, `b` constant
+/// (`A1`, `B1`; `B1 = 0` reads as `A1`) when `A2 = A1`, else linear from
+/// (`A1`, `B1`) to (`A2`, `B2`; `B2 = 0` reads as `A2`); `HL < 0` swaps x and y
+/// (the other handedness). Fields are kept as written; the geometry applies
+/// nec2c's defaults.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GhCard {
+    pub tag: u32,
+    pub segments: u32,
+    /// Spacing between turns (m), `S`.
+    pub turn_spacing: f64,
+    /// Axial length (m), `HL`; negative for the other handedness.
+    pub length: f64,
+    pub a1: f64,
+    pub b1: f64,
+    pub a2: f64,
+    pub b2: f64,
+    /// The wire radius (m), `RAD`.
+    pub radius: f64,
+}
+
 /// GS — Scale the structure.
 ///
 /// `GS I1 I2 F1`: every segment defined so far — `GM`/`GR` copies included —
@@ -507,6 +551,8 @@ pub enum Card {
     Gm(GmCard),
     Gr(GrCard),
     Gs(GsCard),
+    Ga(GaCard),
+    Gh(GhCard),
     Gx(GxCard),
     Ge(GeCard),
     Gn(GnCard),
