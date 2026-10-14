@@ -51,4 +51,17 @@ for file in "${required_files[@]}"; do
   fi
 done
 
+# The changelog's compare links: a release adds its own and moves [Unreleased] on.
+# Nothing checked them, and they stopped at v0.19.0 for eleven releases.
+changelog="$(git show "${head_ref}:docs/changelog.md" 2>/dev/null || true)"
+repo="https://github.com/dc0sk/fnec-rust"
+for line in \
+  "[Unreleased]: ${repo}/compare/v${head_version}...HEAD" \
+  "[${head_version}]: ${repo}/compare/v${base_version}...v${head_version}"; do
+  if ! printf '%s\n' "$changelog" | grep -Fxq -- "$line"; then
+    echo "Version bump to $head_version requires this compare link in docs/changelog.md: $line"
+    missing=1
+  fi
+done
+
 exit "$missing"

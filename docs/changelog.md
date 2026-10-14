@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # Changelog
@@ -23,6 +23,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   edits and commits to the tree it is certifying. A second gate on the same checkout
   is refused (exit 75) instead of racing the first. Where the helper is absent, as in
   CI, nothing changes.
+- **A release's changelog compare links are checked.** `scripts/check-version-bump-docs.sh`
+  now requires, on a version bump, the new version's compare link and an
+  `[Unreleased]` link from it. The links had stopped at v0.19.0 for eleven
+  releases; 0.20.0–0.22.0 are filled in.
 
 ### Fixed
 
@@ -3501,7 +3505,17 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/dc0sk/fnec-rust/compare/v0.21.7...v0.22.0
+[0.21.7]: https://github.com/dc0sk/fnec-rust/compare/v0.21.6...v0.21.7
+[0.21.6]: https://github.com/dc0sk/fnec-rust/compare/v0.21.5...v0.21.6
+[0.21.5]: https://github.com/dc0sk/fnec-rust/compare/v0.21.4...v0.21.5
+[0.21.4]: https://github.com/dc0sk/fnec-rust/compare/v0.21.3...v0.21.4
+[0.21.3]: https://github.com/dc0sk/fnec-rust/compare/v0.21.2...v0.21.3
+[0.21.2]: https://github.com/dc0sk/fnec-rust/compare/v0.21.1...v0.21.2
+[0.21.1]: https://github.com/dc0sk/fnec-rust/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/dc0sk/fnec-rust/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/dc0sk/fnec-rust/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/dc0sk/fnec-rust/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dc0sk/fnec-rust/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/dc0sk/fnec-rust/compare/v0.16.0...v0.17.0
