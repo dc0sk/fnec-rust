@@ -387,22 +387,18 @@ pub struct GmCard {
     pub start_tag: u32,
 }
 
-/// GR — Geometry repeat card.
+/// GR — Geometry repeat card, as NEC-2 reads it (FND-247).
 ///
-/// Repeats existing wires by successive rotation about the z-axis.
-///
-/// NEC field mapping:
-///   I1 = tag increment between copies
-///   I2 = number of times to repeat (additional copies, not including original)
-///   F1 = rotation angle per step (degrees, about z-axis)
+/// `GR I1 I2`: the structure so far occurs `I2` times in all, the original
+/// included, each occurrence rotated 360°/`I2` about z from the one before, with
+/// tags `+ I1` per occurrence (tag 0 kept). NEC-2's card has no angle field;
+/// fnec read `I2` as additional copies at an `F1` angle until FND-247.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrCard {
-    /// Tag number increment between successive copies.
+    /// Tag increment from one occurrence to the next (`I1`).
     pub tag_increment: u32,
-    /// Number of additional copies to create (0 = no-op).
-    pub count: u32,
-    /// Rotation angle per copy, degrees about z-axis.
-    pub angle_deg: f64,
+    /// Occurrences in all, the original included (`I2`, at least 1).
+    pub occurrences: u32,
 }
 
 /// GX — Reflect the structure in coordinate planes.

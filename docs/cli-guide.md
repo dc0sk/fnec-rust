@@ -846,7 +846,7 @@ Quick reference:
 | GW | Full | Wire segment geometry definition |
 | GE | Full | Geometry end; `GE 1` joins wire ends on the ground plane to their images, `GE 0`/`-1` leaves them open. The ground itself is the last `GN` card's; `GE 1` without one is refused (FND-241), and so is a wire on the ground without `GE 1` (FND-242) — see the card matrix |
 | GM | Full | Geometry move: rotate/translate in place, or append transformed copies |
-| GR | Full | Geometry repeat (successive z-axis rotation copies) |
+| GR | Full | Geometry repeat as NEC-2 reads it: `GR I1 I2` = `I2` occurrences in all, 360°/`I2` apart about z (e.g. `GR 1 4` for four radials from one). A third field other than 0 or 360/`I2` is refused: it is fnec's pre-0.23 reading (FND-247) |
 | GS | Full | Scale the structure: every segment defined so far, ends and radius, by `F1` (e.g. `GS 0 0 0.3048` for a deck in feet); wires after it are not scaled |
 | GX | Full | Reflect the structure in the planes `I2`'s digits `XYZ` select (e.g. `GX 0 001` makes a dipole from its upper half); copies tagged `tag + I1`, doubling per plane |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |

@@ -1,7 +1,7 @@
-CM Two parallel half-wave dipoles generated via GR 180-degree rotation
+CM Two parallel half-wave dipoles generated via GR: two occurrences, 180 degrees apart
 CE
 GW 1 51 0.5 0 -5.282 0.5 0 5.282 0.001
-GR 1 1 180.0
+GR 1 2
 GE
 EX 0 1 26 0 1.0 0.0
 EX 0 2 26 0 1.0 0.0

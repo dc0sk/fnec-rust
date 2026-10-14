@@ -1055,8 +1055,9 @@ fn has_high_degree_node(segs: &[Segment]) -> bool {
 /// - `GW` appends new segments.
 /// - `GM` transforms (rotate + translate) a range of existing wires, optionally
 ///   creating numbered copies when `tag_increment > 0`.
-/// - `GR` creates additional copies of all existing wires, each rotated about
-///   the z-axis by successive multiples of `angle_deg`.
+/// - `GR I1 I2` makes the structure so far occur `I2` times in all, 360°/`I2`
+///   apart about z (NEC-2's reading, FND-247).
+/// - `GS` scales and `GX` reflects everything defined so far.
 ///
 /// Segments are assigned consecutive `global_index` values in output order.
 pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
@@ -1466,20 +1467,24 @@ fn apply_gx(gx: &GxCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
     Ok(())
 }
 
-/// Apply a GR card: repeat existing wires `count` times, rotating each copy
-/// about the z-axis by successive multiples of `angle_deg`.
+/// Apply a GR card as NEC-2 reads it (FND-247): the structure so far occurs
+/// `occurrences` times in all, copy `k` rotated `k·360°/occurrences` about z and
+/// tagged `+ k·I1` (tag 0 kept). nec2c builds each copy from the one before by one
+/// step; the direct `k·360/n` agrees with it far below printed digits (its own
+/// TP carries 2e-10 rad of error) and is exact at 90°, 180°, 270°.
 fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
-    if gr.count == 0 {
+    if gr.occurrences <= 1 {
         return Ok(());
     }
     // Snapshot original set of segments (before any copies).
     let originals: Vec<Segment> = segs.clone();
     check_segment_budget(
         segs.len(),
-        originals.len() as u64 * u64::from(gr.count),
+        originals.len() as u64 * u64::from(gr.occurrences - 1),
         "GR",
     )?;
-    for copy_idx in 1..=gr.count {
+    let step_deg = 360.0 / f64::from(gr.occurrences);
+    for copy_idx in 1..gr.occurrences {
         // Loop-invariant, and the multiply is where the overflow actually happens.
         let step =
             gr.tag_increment
@@ -1488,7 +1493,7 @@ fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
                     card: "GR",
                     detail: format!("tag increment {} times copy {copy_idx}", gr.tag_increment),
                 })?;
-        let total_angle_deg = gr.angle_deg * copy_idx as f64;
+        let total_angle_deg = step_deg * copy_idx as f64;
         let cos_a = total_angle_deg.to_radians().cos();
         let sin_a = total_angle_deg.to_radians().sin();
         for orig in &originals {
@@ -1876,8 +1881,7 @@ mod tests {
         deck.cards.push(Card::Gw(one_segment_wire(1)));
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 1,
-            count: 100_000,
-            angle_deg: 10.0,
+            occurrences: 100_001,
         }));
         let err = build_geometry(&deck).expect_err("100k copies must be refused");
         assert!(
@@ -2018,8 +2022,7 @@ mod tests {
         // increment * copy_idx overflows on the second copy: 3e9 * 2 > u32::MAX.
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 3_000_000_000,
-            count: 2,
-            angle_deg: 10.0,
+            occurrences: 3,
         }));
         let err = build_geometry(&deck).expect_err("3e9 * 2 overflows u32");
         assert!(
@@ -2045,8 +2048,7 @@ mod tests {
         }
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 5,
-            count: 1,
-            angle_deg: 180.0,
+            occurrences: 2,
         }));
         let segs = build_geometry(&deck).expect("builds");
         let tags: Vec<u32> = segs
@@ -2072,8 +2074,7 @@ mod tests {
         }));
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 1,
-            count: 3,
-            angle_deg: 90.0,
+            occurrences: 4,
         }));
         // The deck's expansion; the free-end refinement is tested separately.
         let segs = build_deck_geometry(&deck).expect("a 4-fold turnstile is an ordinary deck");
@@ -2126,8 +2127,7 @@ mod tests {
         }));
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 1,
-            count: 3,
-            angle_deg: 90.0,
+            occurrences: 4,
         }));
         // The deck's expansion; the free-end refinement is tested separately.
         let segs = build_deck_geometry(&deck).unwrap();
@@ -2139,7 +2139,7 @@ mod tests {
         assert_eq!(segs[3].tag, 4);
     }
 
-    /// GR 90-degree rotation moves (1,0,0) to (0,1,0).
+    /// GR 1 4 (four occurrences, 90° apart) moves (1,0,0) to (0,1,0) first.
     #[test]
     fn gr_rotation_is_correct() {
         let mut deck = NecDeck::new();
@@ -2152,13 +2152,12 @@ mod tests {
         }));
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 1,
-            count: 1,
-            angle_deg: 90.0,
+            occurrences: 4,
         }));
         // The deck's expansion; the free-end refinement is tested separately.
         let segs = build_deck_geometry(&deck).unwrap();
-        assert_eq!(segs.len(), 2);
-        // Copy should be at y=1..2, x≈0
+        assert_eq!(segs.len(), 4, "GR 1 4: four occurrences in all");
+        // The first copy is a quarter turn on: y=1..2, x≈0
         assert!((segs[1].start[0]).abs() < 1e-12, "x should be ~0");
         assert!((segs[1].start[1] - 1.0).abs() < 1e-12, "y should be ~1");
         assert!((segs[1].end[0]).abs() < 1e-12);
@@ -2178,8 +2177,7 @@ mod tests {
         }));
         deck.cards.push(Card::Gr(GrCard {
             tag_increment: 1,
-            count: 2,
-            angle_deg: 120.0,
+            occurrences: 3,
         }));
         // The deck's expansion; the free-end refinement is tested separately.
         let segs = build_deck_geometry(&deck).unwrap();

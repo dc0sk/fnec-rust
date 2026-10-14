@@ -44,6 +44,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/ground_flags_nec2c.rs` | 5 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band | FND-241, FND-242, FND-243 |
+| `apps/nec-cli/tests/gr_card_nec2c.rs` | 4 | FND-247 — the `GR` card as NEC-2 reads it (`I2` occurrences in all, 360°/`I2` apart): four radials from one, tags up by `I1` per occurrence (asymmetric with a parasite so the tag order shows), the corpus deck equal to the explicit pair; what nec2c stops on and fnec's old reading refused by name, with the NEC-2 spelling | FND-247 |
 | `apps/nec-cli/tests/gs_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GS` card as nec2c reads it: a deck in feet equals the metres deck, a wire after the card is not scaled, two cards compound and `I1`/`I2` are ignored, `GM` copies before it are scaled; each against its hand-scaled equivalent, with refining approaching nec2c's converged value; a factor that is not positive and a geometry card after `GE` refused (FND-245) | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/gx_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GX` card as nec2c reads it: half a dipole reflected in z is the dipole, two planes copy and tag as nec2c does, tag 0 stays 0, `GX` composes with `GS` and later wires, each against its written-out equivalent; a segment in or across its plane, bad fields, `GX` after `GE` and a buried z-copy refused | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
@@ -144,7 +145,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=742 --> **742** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=746 --> **746** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -169,7 +170,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=625 --> **625** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1374 --> **1374** = 625 unit + 742 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1378 --> **1378** = 625 unit + 746 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
