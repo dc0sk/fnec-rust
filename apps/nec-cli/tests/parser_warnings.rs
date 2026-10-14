@@ -29,7 +29,8 @@ fn run_deck(name: &str, deck: &str) -> (bool, String) {
 /// FND-236: a card that cannot change the antenna warns and the run solves; one
 /// that would — or one fnec does not know — refuses the deck by name. Both used
 /// to warn and solve: `GS 0 0 0.3048` ignored gave 290.5 + j218.5 Ω where nec2c,
-/// scaling the wire to metres, gives 84.8 + j45.8.
+/// scaling the wire to metres, gives 84.8 + j45.8 (GS is modelled now,
+/// `gs_card_nec2c.rs`; `GX` stands in as the refused card).
 #[test]
 fn an_ignored_card_warns_and_a_card_that_changes_the_antenna_is_refused() {
     let tail = "EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
@@ -42,11 +43,11 @@ fn an_ignored_card_warns_and_a_card_that_changes_the_antenna_is_refused() {
         "expected the ignored-card warning, got:\n{stderr}"
     );
 
-    let (ok, stderr) = run_deck("refused-card", &format!("{wire}GS 0 0 0.3048\n{tail}"));
-    assert!(!ok, "a GS deck must be refused:\n{stderr}");
+    let (ok, stderr) = run_deck("refused-card", &format!("{wire}GX 1 100\n{tail}"));
+    assert!(!ok, "a GX deck must be refused:\n{stderr}");
     assert!(
-        stderr.contains("line 2: fnec does not model GS (a scaling of the whole structure)"),
-        "expected GS refused by name, got:\n{stderr}"
+        stderr.contains("line 2: fnec does not model GX (a reflected copy of the structure)"),
+        "expected GX refused by name, got:\n{stderr}"
     );
 
     let (ok, stderr) = run_deck("unknown-card", &format!("{wire}ZZ 123\n{tail}"));

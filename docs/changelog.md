@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **The `GS` card scales the structure** (PH10-CHK-002), as nec2c does: every
+  segment defined so far, ends and radius, `GM`/`GR` copies included; wires after
+  it are not scaled, and two cards compound. A deck written in feet with
+  `GS 0 0 0.3048` solves again — refused since 0.22.0, and before that solved
+  unscaled with a warning (290.5 + j218.5 Ω where nec2c gives 84.8 + j45.8). A
+  factor that is missing or not positive is refused, as nec2c stops on it.
+
 ### Changed
 
 - **`scripts/check-all.sh` holds the checkout while it runs.** Where the agent-skills
@@ -30,6 +39,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A geometry card after `GE` is refused** (FND-245), as nec2c refuses it. A
+  `GW`, `GM`, `GR`, `GS` or second `GE` after `GE` used to be read and solved.
 - **`GE` and `GN` read as nec2c reads them** (FND-241, FND-242, FND-243). **Some
   decks that solved before are now refused, and one answer changes.**
   - The ground is the last `GN` card's. `GE 1` with no `GN` was read as a perfect

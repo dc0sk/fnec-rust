@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-09-30
+last_updated: 2026-10-14
 ---
 
 # fnec-gui user guide
@@ -86,6 +86,10 @@ frequency, resistance, reactance, and |Z| are shown.
 > undefined `GN` type or `GE` flag, `GE 1` without a `GN`, a wire on the ground
 > without `GE 1`) and warnings for unsupported loads. The deck editor does not edit
 > `GE`; change it in the deck text.
+>
+> A `GS` scale card stays where it is in the deck. A wire added in the table joins
+> the wire block, which comes before a `GS` that follows the wires, so the new wire
+> is scaled with the rest — as NEC reads that deck.
 
 ## Sweep tab
 

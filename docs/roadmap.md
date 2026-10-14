@@ -422,13 +422,13 @@ Execution order: PH10-CHK-001 → 005 → 002 (one card at a time) → 003 → 0
 | Checklist ID | Implementation target | Done signal | Status |
 |:-------------|:----------------------|:------------|:-------|
 | PH10-CHK-001 | `GE`/`GN` read as nec2c reads them: ground from the last `GN` alone, `GE` joins ends at the ground, nec2c's contact band, undefined values refused (FND-241/242/243) | `apps/nec-cli/tests/ground_flags_nec2c.rs` | Done (#579) |
-| PH10-CHK-002 | The geometry cards 0.22.0 refuses: `GS`, then `GX`, then `GA`/`GH`, then `GC` (one PR each, nec2c the oracle; `GC` interacts with PH10-CHK-003) | per card: geometry identical to nec2c's segment table, and feedpoint Z within the project's tolerances | Open |
+| PH10-CHK-002 | The geometry cards 0.22.0 refuses: `GS`, then `GX`, then `GA`/`GH`, then `GC` (one PR each, nec2c the oracle; `GC` interacts with PH10-CHK-003) | per card: the deck equals its hand-expanded equivalent in fnec, nec2c gives the two the same answer, and refining approaches nec2c's converged value | In progress: `GS` (#581) |
 | PH10-CHK-003 | MPIE with mixed wire radii: per-segment radius in the kernels instead of the first wire's for all (`validate.rs` caveat, `mpie.rs`) | a mixed-radius deck converging to nec2c's converged value, the caveat removed | Open |
 | PH10-CHK-004 | Lumped `LD` loads on the MPIE (it refuses them today), so a loaded antenna close to the ground has an accurate path | loaded near-ground decks vs nec2c at two meshes | Open |
 | PH10-CHK-005 | Tracker hygiene: PAR-011 reopened, card-matrix `LD 5` formula, stale solver-findings sections, changelog compare links (now checked), FND-244 recorded | this table | Done (this PR) |
 | PH10-CHK-006 | FND-193: try wgpu/naga 30 for the `ArrayStride` validation errors (gfx-rs/wgpu#9295 still open); a shader-side workaround if they persist | `WGPU_VALIDATION=1` clean on the GPU suite | Open |
 
-Also tracked here, not scheduled: FND-244 (the worker pipe write is unbounded),
+Also tracked here, not scheduled: FND-244 (the worker pipe write is unbounded), FND-246 (wire ends join within an absolute 1 µm, not nec2c's relative band),
 and PAR-011 (4nec2 drop-in evidence), blocked on the maintainer's Wine + 4nec2
 install.
 

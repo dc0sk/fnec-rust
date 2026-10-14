@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/test-catalog.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # Test catalog
@@ -44,6 +44,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/ground_flags_nec2c.rs` | 5 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band | FND-241, FND-242, FND-243 |
+| `apps/nec-cli/tests/gs_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GS` card as nec2c reads it: a deck in feet equals the metres deck, a wire after the card is not scaled, two cards compound and `I1`/`I2` are ignored, `GM` copies before it are scaled; each against its hand-scaled equivalent, with refining approaching nec2c's converged value; a factor that is not positive and a geometry card after `GE` refused (FND-245) | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/junction_feedpoint.rs` | 10 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary: a T or loop the section graph takes solves without the guard; one it refuses (a one-segment run) still warns. | PH9-CHK-002, PH9-CHK-005 |
@@ -61,7 +62,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
 | `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
 | `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=609 --> **609** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
-| `apps/nec-cli/tests/parser_warnings.rs` | 23 | A card that cannot change the antenna warns and solves, one that would (`GS`) or an unknown one is refused by name (FND-236); `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
+| `apps/nec-cli/tests/parser_warnings.rs` | 23 | A card that cannot change the antenna warns and solves, one that would (`GX`) or an unknown one is refused by name (FND-236); `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
 | `apps/nec-cli/tests/pt_print_control.rs` | 4 | PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment current output by mode / tag / segment range. | PH9-CHK-004 |
 | `apps/nec-cli/tests/receive_junction.rs` | 2 | CLI junctioned receive: split-dipole receive sweep has dipole shape and matches transmit by reciprocity (0.025 dB) | PH9-CHK-002 |
@@ -142,7 +143,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=732 --> **732** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=737 --> **737** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -167,7 +168,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=624 --> **624** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1363 --> **1363** = 624 unit + 732 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1368 --> **1368** = 624 unit + 737 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

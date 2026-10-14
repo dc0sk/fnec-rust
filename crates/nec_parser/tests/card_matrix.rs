@@ -85,6 +85,8 @@ fn the_card_matrix_lists_exactly_the_cards_fnec_does_not_model() {
         .collect();
     rows.sort();
     table.sort();
-    assert!(rows.len() >= 19, "only {} rows read: {rows:?}", rows.len());
+    // A floor against a reader that silently reads nothing; the equality below is
+    // the check. It drops as cards become modelled (GS, PH10-CHK-002: 19 -> 18).
+    assert!(rows.len() >= 18, "only {} rows read: {rows:?}", rows.len());
     assert_eq!(rows, table);
 }

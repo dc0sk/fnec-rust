@@ -22,7 +22,9 @@ with it).
 
 import sys
 
-KNOWN = {"CM", "CE", "GW", "GE", "GN", "EK", "EX", "LD", "NT", "TL", "PT", "FR", "RP", "NE", "NH", "XQ", "EN"}
+# GS names no segment and scales length and radius alike, so it passes through and
+# the thin-wire check on the unscaled GW stays right.
+KNOWN = {"CM", "CE", "GW", "GS", "GE", "GN", "EK", "EX", "LD", "NT", "TL", "PT", "FR", "RP", "NE", "NH", "XQ", "EN"}
 
 
 def fail(msg):
