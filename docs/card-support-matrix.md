@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # NEC Card Support Matrix
@@ -59,7 +59,7 @@ no longer silently treated as EX type 0.
 | LD type 2 | Full | Series RL: `Z = R + jωL` |
 | LD type 3 | Full | Series RC: `Z = R − j/(ωC)` |
 | LD type 4 | Full | Series impedance (frequency-independent): `Z = R + jX` |
-| LD type 5 | Full | Distributed wire conductivity: `Z = dl / (2π·a·σ)` |
+| LD type 5 | Full | Wire conductivity: the exact internal impedance of a solid round wire, `Z = dl · γ/(2π a σ) · I0(γa)/I1(γa)` with `γ = (1+j)/δ`, `δ = √(2/(ωμ0σ))` (`loads.rs`, `wire_internal_impedance`). It reduces to the DC resistance `dl/(σπa²)` at low frequency and to the surface impedance `dl(1+j)/(2πaσδ)` once δ ≪ a, as NEC-2's `LD 5` does; the row used to give `dl/(2π·a·σ)`, which is neither |
 | LD other | Refused | Any other type, a type-5 load with σ ≤ 0, or an LD naming no segment is an error naming the card (FND-161). It used to be skipped with a warning, which solved the antenna without the load |
 
 ### LD field mapping

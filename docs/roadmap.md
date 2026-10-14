@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/roadmap.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # Roadmap
@@ -403,6 +403,34 @@ geometry): PH9-CHK-001 → 003 → 002 → 004 → 005 → 006.
 **draft for review** — the theme ordering and which frontier to attempt first
 (receive-side breadth vs advanced ground vs difficult-geometry accuracy) are
 product decisions.
+
+## Phase 10 (in progress): every common deck, answered as NEC answers it
+
+**Goals**: the ledger stood at 240 findings / 0 open after v0.22.0, and the
+remaining distance to "a 4nec2 user's deck runs and agrees with nec2c" sits in
+untracked limits found by a 2026-10-14 sweep of the docs and code: ground cards
+read differently from nec2c, geometry cards that 0.22.0 refuses, and two MPIE
+limits on the solver fnec recommends close to the ground.
+
+**Rule carried over**: each item is gated against nec2c absolutely, and what fnec
+does not model is refused by name rather than solved as something else (FND-236).
+
+### Phase 10 implementation checklist
+
+Execution order: PH10-CHK-001 → 005 → 002 (one card at a time) → 003 → 004 → 006.
+
+| Checklist ID | Implementation target | Done signal | Status |
+|:-------------|:----------------------|:------------|:-------|
+| PH10-CHK-001 | `GE`/`GN` read as nec2c reads them: ground from the last `GN` alone, `GE` joins ends at the ground, nec2c's contact band, undefined values refused (FND-241/242/243) | `apps/nec-cli/tests/ground_flags_nec2c.rs` | Done (#579) |
+| PH10-CHK-002 | The geometry cards 0.22.0 refuses: `GS`, then `GX`, then `GA`/`GH`, then `GC` (one PR each, nec2c the oracle; `GC` interacts with PH10-CHK-003) | per card: geometry identical to nec2c's segment table, and feedpoint Z within the project's tolerances | Open |
+| PH10-CHK-003 | MPIE with mixed wire radii: per-segment radius in the kernels instead of the first wire's for all (`validate.rs` caveat, `mpie.rs`) | a mixed-radius deck converging to nec2c's converged value, the caveat removed | Open |
+| PH10-CHK-004 | Lumped `LD` loads on the MPIE (it refuses them today), so a loaded antenna close to the ground has an accurate path | loaded near-ground decks vs nec2c at two meshes | Open |
+| PH10-CHK-005 | Tracker hygiene: PAR-011 reopened, card-matrix `LD 5` formula, stale solver-findings sections, changelog compare links (now checked), FND-244 recorded | this table | Done (this PR) |
+| PH10-CHK-006 | FND-193: try wgpu/naga 30 for the `ArrayStride` validation errors (gfx-rs/wgpu#9295 still open); a shader-side workaround if they persist | `WGPU_VALIDATION=1` clean on the GPU suite | Open |
+
+Also tracked here, not scheduled: FND-244 (the worker pipe write is unbounded),
+and PAR-011 (4nec2 drop-in evidence), blocked on the maintainer's Wine + 4nec2
+install.
 
 ## Gaps and blockers (from requirements.md)
 

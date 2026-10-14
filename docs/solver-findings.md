@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/solver-findings.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-14
 ---
 
 # Solver Findings
@@ -134,132 +134,24 @@ correction.
 **For future validation of the Pocklington EFIE path (if/when implemented), use NEC2
 as the direct reference.**
 
-### EX type 3 source handling — REGRESSION-COVERED
+### EX types 1–5, PT and NT — SUPERSEDED (2026-10-14 note)
 
-As of 2026-04-27, EX type 3 support is locked at three layers while normalization
-semantics remain intentionally deferred:
+Until 2026-10-14 this section described the April 2026 *compatibility bridges*:
+`EX 1`–`5` solved as if they were `EX 0`, and `PT`/`NT` were parsed but ignored with
+a "deferred-support" warning. None of that is current, and the text read as if it
+were. What replaced each bridge, with its gate:
 
-- Solver unit regression in `crates/nec_solver/src/excitation.rs`:
-	`ex_type3_matches_ex_type0_vector`
-- CLI integration regression in `apps/nec-cli/tests/ex_cards.rs`:
-	`ex_type3_matches_ex_type0_feedpoint_impedance`
-- Corpus regression deck and reference case:
-	`corpus/dipole-ex3-freesp-51seg.nec` / `dipole-ex3-freesp-51seg`
+- `EX 1`/`2`/`3` are incident plane waves (linear, right- and left-hand elliptic),
+  solved as receive problems and gated against nec2c (PH8-CHK-002, FND-170). The
+  `--ex3-i4-mode` flag is an obsolete no-op.
+- `EX 4` is a current source (PH8-CHK-001, FND-118).
+- `EX 5` is a voltage source on fnec's applied-field method (PH8-CHK-003); NEC's
+  current-slope numerics are a documented non-goal.
+- `NT` two-port networks are stamped into the solve (PH8-CHK-004, FND-123).
+- `PT` print control is applied to the `CURRENTS` output (PH9-CHK-004).
 
-Current behavior is explicit and test-locked: EX type 3 is accepted and produces
-the same electrical excitation result as EX type 0 for equivalent card inputs.
-Future changes to NEC normalization semantics should update these locks together.
-
-On 2026-04-27, a non-breaking solver scaffold for EX type 3 normalization was
-introduced in `nec_solver::excitation` via `Ex3NormalizationMode` and
-`build_excitation_with_options(...)`. The production path still uses
-`LegacyTreatAsType0`. As of 2026-04-28, CLI runtime wiring is available via
-`--ex3-i4-mode <legacy|divide-by-i4>`, and Hallen RHS uses the same mode so
-EX type 3 source normalization is consistent across solver paths.
-
-### EX type 1 staged portability handling — REGRESSION-COVERED
-
-As of 2026-04-28, EX type 1 is accepted on the same solver path currently used for
-EX type 0 so portable decks no longer fail fast on this source family.
-
-Current behavior is explicit and test-locked: EX type 1 is accepted, emits a CLI
-warning that current-source semantics are still pending, and presently produces the
-same excitation vector and Hallen feed behavior as EX type 0.
-
-This is intentionally a compatibility bridge, not a physical implementation of NEC
-current-source semantics.
-
-Regression coverage exists at three layers:
-- solver unit tests in `crates/nec_solver/src/excitation.rs`
-- CLI warning/parity tests in `apps/nec-cli/tests/parser_warnings.rs` and `apps/nec-cli/tests/ex_cards.rs`
-- corpus portability coverage via `dipole-ex1-freesp-51seg`
-
-When true EX type 1 semantics are implemented, update all three layers together.
-
-### EX type 2 staged portability handling — REGRESSION-COVERED
-
-As of 2026-04-28, EX type 2 is accepted on the same solver path currently used for
-EX type 0 so portable decks no longer fail fast on this source family.
-
-Current behavior is explicit and test-locked: EX type 2 is accepted, emits a CLI
-warning that incident-plane-wave semantics are still pending, and presently
-produces the same excitation vector and Hallen feed behavior as EX type 0.
-
-This is intentionally a compatibility bridge, not a physical implementation of
-NEC incident-plane-wave excitation semantics.
-
-Regression coverage exists at three layers:
-- solver unit tests in `crates/nec_solver/src/excitation.rs`
-- CLI warning/parity tests in `apps/nec-cli/tests/parser_warnings.rs` and `apps/nec-cli/tests/ex_cards.rs`
-- corpus portability coverage via `dipole-ex2-freesp-51seg`
-
-When true EX type 2 semantics are implemented, update all three layers together.
-
-### EX type 4 staged portability handling — REGRESSION-COVERED
-
-As of 2026-04-28, EX type 4 is accepted on the same solver path currently used for
-EX type 0 so portable decks no longer fail fast on this source family.
-
-Current behavior is explicit and test-locked: EX type 4 is accepted, emits a CLI
-warning that segment-current semantics are still pending, and presently
-produces the same excitation vector and Hallen feed behavior as EX type 0.
-
-This is intentionally a compatibility bridge, not a physical implementation of
-NEC segment-current excitation semantics.
-
-Regression coverage exists at three layers:
-- solver unit tests in `crates/nec_solver/src/excitation.rs`
-- CLI warning/parity tests in `apps/nec-cli/tests/parser_warnings.rs` and `apps/nec-cli/tests/ex_cards.rs`
-- corpus portability coverage via `dipole-ex4-freesp-51seg`
-
-When true EX type 4 semantics are implemented, update all three layers together.
-
-### EX type 5 staged portability handling — REGRESSION-COVERED
-
-As of 2026-04-28, EX type 5 is accepted on the same solver path currently used for
-EX type 0 so portable decks no longer fail fast on this source family.
-
-Current behavior is explicit and test-locked: EX type 5 is accepted, emits a CLI
-warning that qdsrc semantics are still pending, and presently
-produces the same excitation vector and Hallen feed behavior as EX type 0.
-
-This is intentionally a compatibility bridge, not a physical implementation of
-NEC qdsrc excitation semantics.
-
-Regression coverage exists at three layers:
-- solver unit tests in `crates/nec_solver/src/excitation.rs`
-- CLI warning/parity tests in `apps/nec-cli/tests/parser_warnings.rs` and `apps/nec-cli/tests/ex_cards.rs`
-- corpus portability coverage via `dipole-ex5-freesp-51seg`
-
-When true EX type 5 semantics are implemented, update all three layers together.
-
-### PT staged portability parsing — REGRESSION-COVERED
-
-As of 2026-04-28, PT cards are parsed into the deck model so mainstream decks no
-longer fall back to generic unknown-card warnings when PT appears.
-
-Current behavior is explicit and test-locked: runtime emits a deferred-support
-warning and PT electrical semantics are intentionally ignored.
-
-Regression coverage exists at two layers:
-- CLI warning-contract test in `apps/nec-cli/tests/parser_warnings.rs`
-- corpus portability coverage via `dipole-pt-freesp-51seg`
-
-When PT runtime semantics are implemented, update both layers together.
-
-### NT staged portability parsing — REGRESSION-COVERED
-
-As of 2026-04-28, NT cards are parsed into the deck model so mainstream decks no
-longer fall back to generic unknown-card warnings when NT appears.
-
-Current behavior is explicit and test-locked: runtime emits a deferred-support
-warning and NT electrical semantics are intentionally ignored.
-
-Regression coverage exists at two layers:
-- CLI warning-contract test in `apps/nec-cli/tests/parser_warnings.rs`
-- corpus portability coverage via `dipole-nt-freesp-51seg`
-
-When NT runtime semantics are implemented, update both layers together.
+`docs/card-support-matrix.md` is the current statement for every card, and a test
+holds it to the parser. The bridge history is in the changelog (0.4.x–0.6.x).
 
 ### Hallén with GN=1 (PEC image method) — REGRESSION-COVERED
 
