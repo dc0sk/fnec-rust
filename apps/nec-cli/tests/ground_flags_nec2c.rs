@@ -187,7 +187,11 @@ fn an_end_within_nec2c_contact_band_is_on_the_ground() {
             "{z0}: {e}"
         );
     }
-    // Outside the band (2.64/21 m segments: 1.26e-4 m) the end is not snapped.
+    // Outside the band (2.64/21 m segments: 1.26e-4 m) the end is not snapped,
+    // and not refused when unjoined either: both sides of the band, on both
+    // routes. The unjoined end is split into thirds (FND-227), so a band measured
+    // on the wrong length, or widened, moves only that route's edge.
     let off = solves(&monopole(2e-4, 21, "GE 1\nGN 1"));
     assert!(dist(off, on) > 100.0, "a base 0.2 mm up snapped: {off:?}");
+    solves(&monopole(2e-4, 21, "GE 0\nGN 1"));
 }
