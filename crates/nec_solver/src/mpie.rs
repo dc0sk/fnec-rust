@@ -541,10 +541,7 @@ pub fn ground_contact_error(
     freq_hz: f64,
     ground: &GroundModel,
 ) -> Option<MpieError> {
-    if matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    ) {
+    if matches!(ground, GroundModel::FreeSpace) {
         return None;
     }
     let lam = C0 / freq_hz;
@@ -574,7 +571,7 @@ pub fn assemble_with_ground(
     let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
 
     let (eps_r, sigma) = match ground {
-        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return Ok(z),
+        GroundModel::FreeSpace => return Ok(z),
         GroundModel::PerfectConductor => {
             if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
                 return Err(e);
@@ -836,10 +833,7 @@ pub fn solve_mpie_sources(
 ) -> Result<Vec<Complex64>, MpieError> {
     check_geometry(geom)?;
     let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
+    let has_ground = !matches!(ground, GroundModel::FreeSpace);
     let mut z = if has_ground {
         assemble_with_ground(geom, freq_hz, ground)?
     } else {

@@ -24,6 +24,25 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   is refused (exit 75) instead of racing the first. Where the helper is absent, as in
   CI, nothing changes.
 
+### Fixed
+
+- **`GE` and `GN` read as nec2c reads them** (FND-241, FND-242, FND-243). **Some
+  decks that solved before are now refused, and one answer changes.**
+  - The ground is the last `GN` card's. `GE 1` with no `GN` was read as a perfect
+    ground, where nec2c solves free space; it is now refused, naming `GN 1` (the
+    ground fnec used to infer) and `GE 0` as the two fixes.
+  - `GE I1` decides only whether a wire end on the ground is joined to its image.
+    A wire standing on the ground under `GE 0`, `GE -1` or with no `GE` card was
+    solved joined; nec2c leaves the base open there and its answer does not
+    converge (a λ/4 monopole on `GN 1`: 58 − j7611 Ω at 21 segments, 56 − j15556
+    at 63). Refused now, naming `GE 1`.
+  - An end within 10⁻³ of its segment's length of z = 0 is on the ground, as in
+    nec2c, and is snapped to it under `GE 1`. A monopole whose base sat 1 µm up
+    read 29.26 − j5497 Ω instead of nec2c's 39.88 + j23.11, with no warning.
+  - `GE` outside `-1..=1` and `GN` outside `-1..=2` are refused by name: `GN 3`
+    used to solve free space with a warning. The two warnings that said "treating
+    as free-space" while solving over the ground (`GE -1`, `GE 2`) are gone.
+
 ## [0.22.0] — 2026-10-14 — Close to the ground
 
 `--solver mpie` is right close to the ground — a perfect one by its exact image,

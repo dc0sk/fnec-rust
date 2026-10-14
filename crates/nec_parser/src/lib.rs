@@ -223,6 +223,10 @@ pub struct ParseResult {
 pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
     let mut deck = NecDeck::new();
     let mut warnings = Vec::new();
+    // The GE card's line and flag, and the last GN's type: nec2c takes the ground
+    // from the last GN alone, and GE 1 with none is refused below (FND-241).
+    let mut ge_one_line: Option<usize> = None;
+    let mut last_gn_type: Option<i32> = None;
 
     for (idx, raw_line) in input.lines().enumerate() {
         let lineno = idx + 1;
@@ -281,6 +285,24 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 } else {
                     parse_i32(lineno, "GE", 1, fields[0])?
                 };
+                // FND-241: NEC-2 defines -1, 0 and 1. nec2c reads any other value
+                // by its sign, which is its code, not the format, so it is refused.
+                if !(-1..=1).contains(&ground_reflection_flag) {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GE".to_string(),
+                        field: 1,
+                        raw: fields[0].to_string(),
+                        reason: "not a NEC-2 ground flag (1 = wire ends at z = 0 joined to \
+                                 the ground image, 0 or -1 = left unjoined); nec2c reads other \
+                                 values by their sign, which NEC-2 does not define, so the deck \
+                                 is refused"
+                            .to_string(),
+                    });
+                }
+                if ground_reflection_flag == 1 {
+                    ge_one_line = Some(lineno);
+                }
                 deck.cards.push(Card::Ge(GeCard {
                     ground_reflection_flag,
                 }));
@@ -355,8 +377,26 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     None
                 };
 
+                let ground_type = parse_i32(lineno, "GN", 1, fields[0])?;
+                // FND-241: NEC-2 defines -1..=2. nec2c solves another type
+                // inconsistently: the currents over a perfect ground, the pattern
+                // over a finite one. fnec solved free space with a warning.
+                if !(-1..=2).contains(&ground_type) {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GN".to_string(),
+                        field: 1,
+                        raw: fields[0].to_string(),
+                        reason: "not a NEC-2 ground type (-1 none, 0 finite by reflection \
+                                 coefficient, 1 perfect, 2 finite by Sommerfeld); nec2c solves \
+                                 it inconsistently (perfect-ground currents under a finite-ground \
+                                 pattern), so the deck is refused"
+                            .to_string(),
+                    });
+                }
+                last_gn_type = Some(ground_type);
                 deck.cards.push(Card::Gn(GnCard {
-                    ground_type: parse_i32(lineno, "GN", 1, fields[0])?,
+                    ground_type,
                     eps_r,
                     sigma,
                 }));
@@ -613,6 +653,26 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     });
                 }
             },
+        }
+    }
+
+    // FND-241: GE 1 declares a ground plane, but only GN defines one. nec2c then
+    // solves free space while joining any wire end at z = 0 to an image that is
+    // not there (a quarter-wave monopole reads 16.28 - j1905 ohm); fnec inferred a
+    // perfect ground. Neither is the deck's antenna, so it is refused.
+    if let Some(line) = ge_one_line {
+        if matches!(last_gn_type, None | Some(-1)) {
+            return Err(ParseError::UnsupportedValue {
+                line,
+                card: "GE".to_string(),
+                field: 1,
+                raw: "1".to_string(),
+                reason: "GE 1 declares a ground plane but no GN card defines one; NEC-2 then \
+                         solves in free space and joins any wire end at z = 0 to an image that \
+                         is not there. Add `GN 1` for the perfect ground fnec used to infer \
+                         here, or set `GE 0` for free space"
+                    .to_string(),
+            });
         }
     }
 

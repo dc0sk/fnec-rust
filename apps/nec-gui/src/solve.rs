@@ -197,10 +197,7 @@ pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, 
     if segs.is_empty() {
         return Err("deck has no wire geometry (no GW cards?)".to_string());
     }
-    let has_ground = !matches!(
-        ground_model_from_deck(deck),
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
+    let has_ground = !matches!(ground_model_from_deck(deck), GroundModel::FreeSpace);
     let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
     let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
     Ok(crate::mesh::SceneGeometry::from_segments(wires, has_ground))
@@ -251,10 +248,7 @@ pub fn load_currents_str(
         v_vec: _v_vec,
         port_voltage: _port_voltage,
     } = solve_for_currents(deck_text, solver)?;
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
+    let has_ground = !matches!(ground, GroundModel::FreeSpace);
     let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
     let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
     let currents_ma = currents
@@ -327,10 +321,7 @@ pub fn pattern_grid_str(
         .map(|r| (r.gain_total_dbi + delta_db) as f32)
         .collect();
 
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
+    let has_ground = !matches!(ground, GroundModel::FreeSpace);
     let f3 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
     let wires = segs.iter().map(|s| (f3(s.start), f3(s.end))).collect();
     Ok(crate::mesh::PatternSolve {

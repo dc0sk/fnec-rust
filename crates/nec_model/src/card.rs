@@ -39,10 +39,10 @@ pub struct GwCard {
 /// field is preserved for diagnostics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeCard {
-    /// Optional GE ground-reflection flag.
-    ///
-    /// `0` disables geometry reflection. Non-zero values request reflected
-    /// geometry handling that is currently deferred in Phase 1.
+    /// `GE I1`: whether wire ends on the ground plane are joined to their
+    /// images (`1`) or left open (`0`, `-1`), as nec2c's `conect` reads it. It
+    /// does not select a ground; the last `GN` card does. `0` when omitted; the
+    /// parser refuses values outside `-1..=1` (FND-241).
     pub ground_reflection_flag: i32,
 }
 

@@ -551,10 +551,7 @@ fn integrate_power_for_ground(
     k: f64,
     ground: &GroundModel,
 ) -> f64 {
-    let has_ground = !matches!(
-        ground,
-        GroundModel::FreeSpace | GroundModel::Deferred { .. }
-    );
+    let has_ground = !matches!(ground, GroundModel::FreeSpace);
     let (n_theta, theta_max_deg): (usize, f64) = if has_ground { (91, 90.0) } else { (181, 180.0) };
     let n_phi = 360usize;
     let d_theta = theta_max_deg.to_radians() / (n_theta as f64 - 1.0);

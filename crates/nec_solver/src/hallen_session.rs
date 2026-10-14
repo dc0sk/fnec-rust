@@ -119,10 +119,7 @@ pub fn gpu_resident_class(
                     (a bend, split, junction, loop, or a drive other than a voltage gap)",
         );
     }
-    if !matches!(
-        ground,
-        crate::geometry::GroundModel::FreeSpace | crate::geometry::GroundModel::Deferred { .. }
-    ) {
+    if !matches!(ground, crate::geometry::GroundModel::FreeSpace) {
         return Err("the device solves free space only");
     }
     Ok(())
@@ -538,7 +535,7 @@ pub(crate) fn corner_sources(
         })
         .collect();
     let gamma = match ground {
-        crate::GroundModel::FreeSpace | crate::GroundModel::Deferred { .. } => return out,
+        crate::GroundModel::FreeSpace => return out,
         crate::GroundModel::PerfectConductor => one,
         crate::GroundModel::SimpleFiniteGround { eps_r, sigma } => {
             crate::matrix::fresnel_reflection_scalar(freq_hz, *eps_r, *sigma)
@@ -867,7 +864,7 @@ pub(crate) fn plane_wave_ground_problem(
         return None;
     }
     let which = match ground {
-        crate::GroundModel::FreeSpace | crate::GroundModel::Deferred { .. } => return None,
+        crate::GroundModel::FreeSpace => return None,
         crate::GroundModel::SimpleFiniteGround { .. } => "ground",
         crate::GroundModel::PerfectConductor => "perfect ground",
     };

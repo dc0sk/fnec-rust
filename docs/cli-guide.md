@@ -420,7 +420,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `route` | The solve route the run took: `plain`, `paths` (conductor paths or the section graph), `unsupported` (a topology the graph declines), `mpie`, `pulse` |
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
 | `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
-| `ground` | `free`, `pec`, `finite`, `deferred` |
+| `ground` | `free`, `pec`, `finite` |
 | `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise |
 | `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
 | `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
@@ -844,7 +844,7 @@ Quick reference:
 | Card | Support | Notes |
 |------|---------|-------|
 | GW | Full | Wire segment geometry definition |
-| GE | Full | Geometry end; `GE I1=1` infers PEC ground when no `GN` card is present |
+| GE | Full | Geometry end; `GE 1` joins wire ends on the ground plane to their images, `GE 0`/`-1` leaves them open. The ground itself is the last `GN` card's; `GE 1` without one is refused (FND-241), and so is a wire on the ground without `GE 1` (FND-242) — see the card matrix |
 | GM | Full | Geometry move: rotate/translate in place, or append transformed copies |
 | GR | Full | Geometry repeat (successive z-axis rotation copies) |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |

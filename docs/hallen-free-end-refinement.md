@@ -65,9 +65,10 @@ one site covers them all — no per-pipeline opt-in that one pipeline forgets.
 A **free end** is a segment endpoint that:
 - coincides (within `JUNCTION_TOL_M`) with no endpoint of any other segment, and
 - lies on no other segment's interior (the `split_at_touching_ends` touch rule), and
-- is not on the ground plane (`z ≤ GROUND_CONTACT_EPS_M`) when the deck has a ground,
-  as `ground_model_from_deck` decides it (`GE 1` without `GN` is PEC): a grounded end
-  is a junction with its image.
+- is not on the ground plane (`z ≤ GROUND_CONTACT_EPS_M`) when the deck has a ground
+  (the last `GN` card's, `ground_model_from_deck`): a grounded end is a junction with
+  its image. Under `GE 1` an end within nec2c's band (10⁻³ of its segment's length) has
+  already been snapped to z = 0 (FND-243); without `GE 1` such a deck is refused (FND-242).
 
 A one-segment wire with two free ends is split once (3 sub-segments), not twice.
 Decided on the final geometry, one predicate, a new `pub fn free_end_segments`.

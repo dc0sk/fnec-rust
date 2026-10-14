@@ -17,7 +17,7 @@
 //!   order: NEC's segment number within a tag, as nec2c's `isegno` counts it
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GeCard, GmCard, GrCard, GwCard};
+use nec_model::card::{Card, GmCard, GrCard, GwCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -41,74 +41,102 @@ pub enum GroundModel {
         /// Conductivity in S/m (SIG).
         sigma: f64,
     },
-    /// GN card was present, but the requested ground type is not implemented.
-    ///
-    /// The current Phase-1 behavior is to fall back to free-space while
-    /// emitting a runtime warning in the CLI.
-    Deferred {
-        gn_type: i32,
-        /// Relative dielectric constant (EPSE) from the GN card, if present.
-        eps_r: Option<f64>,
-        /// Conductivity in S/m (SIG) from the GN card, if present.
-        sigma: Option<f64>,
-    },
 }
 
 /// Extract the ground model from a parsed deck.
 ///
-/// Resolution order:
-/// 1. If a `GN` card is present it takes priority.
-///    - `GN -1` → [`GroundModel::FreeSpace`] (null ground; equivalent to no GN card).
-///    - `GN 1`  → [`GroundModel::PerfectConductor`].
-///    - `GN 0`  → [`GroundModel::SimpleFiniteGround`] using parsed EPSE/SIG
-///      (or conservative defaults when omitted).
-///    - `GN 2`  → [`GroundModel::SimpleFiniteGround`] (Phase-2 scoped
-///      runtime path; currently reuses the simple finite-ground approximation).
-///    - Other GN types → [`GroundModel::Deferred`].
-/// 2. If no `GN` card is present but a `GE` card has `ground_reflection_flag > 0`
-///    (the standard NEC flag for "enable image-method PEC ground at z = 0"),
-///    infer [`GroundModel::PerfectConductor`].
-/// 3. Otherwise returns [`GroundModel::FreeSpace`].
+/// The ground is the **last** `GN` card's, as in nec2c, where each `GN`
+/// overwrites the one before and `GN -1` resets to free space. `GE I1` does not
+/// select a ground: nec2c reads it only to decide whether wire ends at z = 0 are
+/// joined to their images ([`ge_flag`], [`snap_ground_contacts`]). fnec used to
+/// infer a perfect ground from `GE 1` with no `GN`, where nec2c solves free space
+/// (FND-241); that deck is now refused at the parse.
+///
+/// - `GN -1` or no `GN` → [`GroundModel::FreeSpace`].
+/// - `GN 1` → [`GroundModel::PerfectConductor`].
+/// - `GN 0` / `GN 2` → [`GroundModel::SimpleFiniteGround`] using parsed EPSE/SIG
+///   (or average-ground defaults when omitted).
+///
+/// Other `GN` types are refused at the parse (FND-241), so they do not reach here.
 pub fn ground_model_from_deck(deck: &NecDeck) -> GroundModel {
-    // GN card takes priority.
-    for card in &deck.cards {
-        if let Card::Gn(gn) = card {
-            return match gn.ground_type {
-                // -1 = null ground: NEC spec says this is equivalent to no
-                // GN card — treat as free-space without emitting a warning.
-                -1 => GroundModel::FreeSpace,
-                1 => GroundModel::PerfectConductor,
-                0 | 2 => GroundModel::SimpleFiniteGround {
-                    // Keep GN0 usable even when medium params are omitted.
-                    // Values are the same "average ground" defaults commonly
-                    // used in NEC workflows. GN2 shares this scoped scalar-Γ
-                    // approximation by default; the exact Sommerfeld treatment is
-                    // opt-in via `--ground-solver sommerfeld` / `--solver mpie`.
-                    eps_r: gn.eps_r.unwrap_or(13.0),
-                    sigma: gn.sigma.unwrap_or(0.005),
-                },
-                other => GroundModel::Deferred {
-                    gn_type: other,
-                    eps_r: gn.eps_r,
-                    sigma: gn.sigma,
-                },
-            };
-        }
+    let Some(gn) = deck.cards.iter().rev().find_map(|card| match card {
+        Card::Gn(gn) => Some(gn),
+        _ => None,
+    }) else {
+        return GroundModel::FreeSpace;
+    };
+    match gn.ground_type {
+        1 => GroundModel::PerfectConductor,
+        0 | 2 => GroundModel::SimpleFiniteGround {
+            // Keep GN0 usable even when medium params are omitted.
+            // Values are the same "average ground" defaults commonly
+            // used in NEC workflows. GN2 shares this scoped scalar-Γ
+            // approximation by default; the exact Sommerfeld treatment is
+            // opt-in via `--ground-solver sommerfeld` / `--solver mpie`.
+            eps_r: gn.eps_r.unwrap_or(13.0),
+            sigma: gn.sigma.unwrap_or(0.005),
+        },
+        // -1 is the null ground. Any other type is refused at the parse.
+        _ => GroundModel::FreeSpace,
     }
-    // No GN card: check GE flag.  GE I1=1 is the conventional NEC shorthand
-    // for "perfect electric conductor ground, apply image method", and GE I1=-1
-    // is a half-space variant that is not yet supported.
-    for card in &deck.cards {
-        if let Card::Ge(GeCard {
-            ground_reflection_flag,
-        }) = card
-        {
-            if *ground_reflection_flag == 1 {
-                return GroundModel::PerfectConductor;
+}
+
+/// The deck's `GE I1`: `1` joins wire ends at the ground to their images, `0`
+/// and `-1` leave them open (nec2c's `conect`). A deck with no `GE` card reads as
+/// `0`; the parser refuses values outside `-1..=1` (FND-241).
+pub fn ge_flag(deck: &NecDeck) -> i32 {
+    deck.cards
+        .iter()
+        .find_map(|c| match c {
+            Card::Ge(ge) => Some(ge.ground_reflection_flag),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+/// nec2c's ground-contact tolerance (`SMIN`, nec2c.h): a segment end within this
+/// fraction of its segment's length of z = 0 is on the ground (FND-243). fnec
+/// used an absolute 1 nm, so a base 1 µm up was a free end hanging over the
+/// plane: a λ/4 monopole on `GN 1` read 29.26 − j5497 Ω where nec2c snaps the
+/// end to the ground and reads 39.88 + j23.11.
+pub const GROUND_CONTACT_FRACTION: f64 = 1.0e-3;
+
+/// Whether a point at height `z` on a segment of length `len` is on the ground
+/// plane, by nec2c's rule: `|z| <= 1e-3 * len`. Below that band it is buried.
+pub fn on_ground_plane(z: f64, len: f64) -> bool {
+    z.abs() <= GROUND_CONTACT_FRACTION * len
+}
+
+/// Snap every segment end within [`GROUND_CONTACT_FRACTION`] of z = 0 onto it,
+/// as nec2c does under `GE 1` over a ground: there such an end is joined to its
+/// image, and the solvers' contact handling keys on z = 0 exactly. Not applied
+/// under `GE 0` / `-1`, where a deck reaching the ground is refused instead
+/// ([`crate::validate::ground_contact_topology_error`]).
+fn snap_ground_contacts(segments: &mut [Segment]) {
+    for s in segments {
+        let len = s.length;
+        let mut moved = false;
+        for p in [&mut s.start, &mut s.end] {
+            if p[2] != 0.0 && on_ground_plane(p[2], len) {
+                p[2] = 0.0;
+                moved = true;
             }
         }
+        if moved {
+            let d = [
+                s.end[0] - s.start[0],
+                s.end[1] - s.start[1],
+                s.end[2] - s.start[2],
+            ];
+            s.length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            s.direction = [d[0] / s.length, d[1] / s.length, d[2] / s.length];
+            s.midpoint = [
+                0.5 * (s.start[0] + s.end[0]),
+                0.5 * (s.start[1] + s.end[1]),
+                0.5 * (s.start[2] + s.end[2]),
+            ];
+        }
     }
-    GroundModel::FreeSpace
 }
 
 /// A single NEC wire segment.
@@ -1047,6 +1075,9 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
 
     if segments.is_empty() {
         return Err(GeometryError::NoWires);
+    }
+    if ge_flag(deck) == 1 && !matches!(ground_model_from_deck(deck), GroundModel::FreeSpace) {
+        snap_ground_contacts(&mut segments);
     }
     Ok(segments)
 }

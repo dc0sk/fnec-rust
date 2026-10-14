@@ -82,8 +82,10 @@ frequency, resistance, reactance, and |Z| are shown.
 > on that solver rather than solved with the card ignored. Switch back to Hallén
 > for loaded decks.
 >
-> The GUI also surfaces warnings for deferred ground models (treated as free
-> space) and unsupported loads.
+> The GUI also surfaces the refusals for ground cards fnec does not model (an
+> undefined `GN` type or `GE` flag, `GE 1` without a `GN`, a wire on the ground
+> without `GE 1`) and warnings for unsupported loads. The deck editor does not edit
+> `GE`; change it in the deck text.
 
 ## Sweep tab
 

@@ -115,6 +115,7 @@ EN
 # standing on the plane until FND-082 made that solvable by images.)
 BURIED_OVER_PEC = """GW 1 21 -5 0 0 5 0 0 0.001
 GE 1
+GN 1
 EX 0 1 11 0 1.0 0.0
 FR 0 1 0 0 14.2 0.0
 EN
@@ -165,7 +166,7 @@ def test_a_deck_with_two_faults_names_the_one_the_cli_names():
     "deck,fragment",
     [
         (CROSSING_WIRES, "intersecting-wire"),
-        (BURIED_OVER_PEC, "ground plane"),
+        (BURIED_OVER_PEC, "lies in the ground plane"),
     ],
 )
 def test_geometry_the_cli_refuses_is_refused_here_too(deck, fragment):
