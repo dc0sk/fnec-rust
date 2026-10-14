@@ -323,14 +323,14 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 **Geometry**:
 - Frequency: 14.2 MHz
 - Start with one vertical half-wave dipole centered at x = +0.5 m
-- `GR 1 1 180.0` generates one additional copy by rotating 180 degrees about z, placing the second dipole at x = -0.5 m
+- `GR 1 2` makes the structure occur twice, 180 degrees apart about z, placing the second dipole at x = -0.5 m (NEC-2's reading: `I2` occurrences in all, 360°/`I2` apart). The deck said `GR 1 1 180.0` in fnec's old reading until FND-247; nec2c makes no copy of that one at all. nec2c reads 163.20 + j68.53 Ω for both sources
 - Both dipoles are center-fed at 1.0 V
 - Ground: None
 
 **Expected results** (current regression gate):
 - Same feedpoint impedances as `multi-source.nec`
-- Source 1: 152.352342 + j31.560296 Ω
-- Source 2: 152.352339 + j31.560296 Ω
+- Source 1: 163.320157 + j66.758391 Ω
+- Source 2: 163.320157 + j66.758390 Ω
 
 **Tolerance gates**: Same as `multi-source.nec`.
 
@@ -349,8 +349,8 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 
 **Expected results** (current regression gate):
 - Same feedpoint impedances as `multi-source.nec`
-- Source 1: 152.352342 + j31.560296 Ω
-- Source 2: 152.352339 + j31.560296 Ω
+- Source 1: 163.320157 + j66.758391 Ω
+- Source 2: 163.320157 + j66.758390 Ω
 
 **Tolerance gates**: Same as `multi-source.nec`.
 
@@ -369,8 +369,8 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 | 4 | dipole-loaded.nec | ≈51 | 2 | 1 | None | [TBD] |
 | 5 | frequency-sweep-dipole.nec | 51 | 1 | 1 (5× freq) | None | [TBD] × 5 |
 | 6 | multi-source.nec | 51 | 2 | 2 | None | [TBD] × 2 |
-| 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
-| 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 152.35 + j31.56 × 2 |
+| 7 | multi-source-gr-180.nec | 51 | 2 | 2 | None | 163.32 + j66.76 × 2 |
+| 8 | multi-source-gm-copy.nec | 51 | 2 | 2 | None | 163.32 + j66.76 × 2 |
 
 **Total**: 11 benchmark families, ≈19 individual frequency/source points.
 

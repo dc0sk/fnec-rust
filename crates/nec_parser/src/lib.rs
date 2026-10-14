@@ -455,13 +455,84 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "GR" => {
-                // GR I1 I2 F1
+                // GR I1 I2, as NEC-2 reads it (FND-247): I2 occurrences in all,
+                // 360/I2 apart. Whole integers only (parse_u32 would truncate 2.5
+                // and saturate -2 to 0); `4.0` is fine.
                 let fields = parse_fields(rest);
-                require_fields(lineno, "GR", &fields, 3)?;
+                require_fields(lineno, "GR", &fields, 2)?;
+                let f = |i: usize| -> &str { fields.get(i).copied().unwrap_or("0") };
+                for (i, raw) in [(1usize, f(0)), (2, f(1))] {
+                    let v = parse_finite_f64_field(lineno, "GR", i, raw)?;
+                    if v.fract() != 0.0 {
+                        return Err(ParseError::UnsupportedValue {
+                            line: lineno,
+                            card: "GR".to_string(),
+                            field: i,
+                            raw: raw.to_string(),
+                            reason: "an integer field; nec2c stops on a fractional value \
+                                     here"
+                                .to_string(),
+                        });
+                    }
+                }
+                let itg = parse_i32(lineno, "GR", 1, f(0))?;
+                if itg < 0 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GR".to_string(),
+                        field: 1,
+                        raw: f(0).to_string(),
+                        reason: "a negative tag increment produces tags below the \
+                                 original's (nec2c gives tags 1, 0, -1 for GR -1 3), which \
+                                 fnec's unsigned tags cannot represent"
+                            .to_string(),
+                    });
+                }
+                let n = parse_i32(lineno, "GR", 2, f(1))?;
+                if n < 1 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GR".to_string(),
+                        field: 2,
+                        raw: f(1).to_string(),
+                        reason: "the number of occurrences, the original included, must be \
+                                 at least 1; nec2c stops on 0 or a negative count"
+                            .to_string(),
+                    });
+                }
+                // NEC-2's GR has no angle: nec2c ignores a third field. fnec read
+                // one, as the step between I2 *additional* copies, until FND-247,
+                // so a deck in that reading would now silently change. A third
+                // field that is 0 (padding) or 360/I2 means the same either way;
+                // any other value is that old reading, refused with its spelling.
+                let f1 = parse_finite_f64_field(lineno, "GR", 3, f(2))?;
+                let step = 360.0 / f64::from(n);
+                if f1 != 0.0 && (f1 - step).abs() > 1e-6 * step {
+                    let k = n as f64;
+                    let closes = ((k + 1.0) * f1 - 360.0).abs() <= 1e-6 * 360.0;
+                    let spelling = if closes {
+                        format!("GR {itg} {}", n + 1)
+                    } else {
+                        format!("GM {itg} {n} 0 0 {} 0 0 0", f(2))
+                    };
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GR".to_string(),
+                        field: 3,
+                        raw: f(2).to_string(),
+                        reason: format!(
+                            "NEC-2's GR has no angle: it makes {n} occurrence(s) in all, the \
+                             original included, {step} degrees apart, and nec2c ignores this \
+                             field. fnec before 0.23.0 read GR {itg} {n} {} as {n} additional \
+                             copies {} degrees apart; that structure is `{spelling}`",
+                            f(2),
+                            f(2)
+                        ),
+                    });
+                }
                 deck.cards.push(Card::Gr(GrCard {
-                    tag_increment: parse_u32(lineno, "GR", 1, fields[0])?,
-                    count: parse_u32(lineno, "GR", 2, fields[1])?,
-                    angle_deg: parse_f64(lineno, "GR", 3, fields[2])?,
+                    tag_increment: itg as u32,
+                    occurrences: n as u32,
                 }));
             }
             "GN" => {
@@ -1434,7 +1505,7 @@ EN
 
     #[test]
     fn parser_recognises_gr_card() {
-        let input = "GW 1 3 0.5 0 1 0.5 0 4 0.001\nGR 1 1 180.0\nEN\n";
+        let input = "GW 1 3 0.5 0 1 0.5 0 4 0.001\nGR 1 2\nEN\n";
         let result = parse(input).expect("parse must succeed");
         assert!(result.warnings.is_empty());
 
@@ -1452,8 +1523,7 @@ EN
             gr,
             Some(&GrCard {
                 tag_increment: 1,
-                count: 1,
-                angle_deg: 180.0,
+                occurrences: 2,
             })
         );
     }
@@ -1518,7 +1588,11 @@ EN
 
     #[test]
     fn gr_too_few_fields_is_error() {
-        let input = "GR 1 1\nEN\n";
-        assert!(parse(input).is_err());
+        // GR I1 I2 (FND-247): two fields are the card; one is too few.
+        assert!(matches!(
+            parse("GR 1\nEN\n"),
+            Err(ParseError::TooFewFields { .. })
+        ));
+        assert!(parse("GW 1 3 0.5 0 1 0.5 0 4 0.001\nGR 1 1\nEN\n").is_ok());
     }
 }

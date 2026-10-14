@@ -44,6 +44,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`GR` is read as NEC-2 reads it** (FND-247). **Breaking for decks written in
+  fnec's old reading.** `GR I1 I2` makes the structure occur `I2` times in all,
+  the original included, 360°/`I2` apart; fnec read `I2` as *additional* copies
+  at an angle from a third field NEC-2's card does not have. A ground plane with
+  four radials written `GR 1 4` was refused for a missing field, and written
+  `GR 1 4 90` solved five overlapping radial sets to −24.26 − j3702 Ω where
+  nec2c gives 22.77 + j4.46. A third field is now accepted when it is 0 or
+  360/`I2`, and refused otherwise, naming the old reading's structure in NEC-2
+  spelling (`GR 1 1 180` → `GR 1 2`; a partial fan → a `GM`). The decks that
+  change silently are the ones that were garbage before: a third field of 0
+  (coincident copies, −25.2 − j3852 Ω) or of 360/`I2` (one copy too many,
+  coinciding with the original); `GR n 0 …`, a no-op before, is refused.
+  `corpus/multi-source-gr-180.nec` is rewritten `GR 1 2`, same structure.
 - **A `GR` copy of a tag-0 wire keeps tag 0** (FND-248), as nec2c keeps it and as
   `GM` already did; `GM`, `GR` and `GX` now share one tag rule.
 - **A geometry card after `GE` is refused** (FND-245), as nec2c refuses it. A

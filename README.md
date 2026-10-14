@@ -9,7 +9,8 @@ fnec-rust is a Rust-native antenna modeling workspace targeting near-100% practi
 
 - Parse 4nec2 / NEC2 deck files (GW, GM, GR, GE, GN, EX, FR, RP, EN cards)
 	- **GM** (Geometry Move): rotate and/or translate wire ranges in place, or append one transformed copy when `tag_increment > 0`
-	- **GR** (Geometry Repeat): supported subset repeats existing wires by successive z-axis rotation
+	- **GR** (Geometry Repeat): as NEC-2 reads it — `GR I1 I2` makes the structure occur `I2` times, 360°/`I2` apart about z
+	- **GS** (scale) and **GX** (reflect), as nec2c reads them
 	- **EX types 1 / 2 / 3** (incident plane wave: linear, right- and left-elliptic): solved on `--solver hallen` as a *receiving* antenna — induced segment currents rather than a feedpoint impedance. A `RECEIVE_PATTERN` table is emitted only when the card defines more than one incidence direction (NTHETA·NPHI > 1). Straight and bent wires, degree-3+ junctions and closed loops (on the section graph, FND-162 stage 5); a loaded junction or loop deck is refused on this path
 	- **EX type 4** (current source): solved; the feedpoint reports `Z = V_port / i0`, which matches the voltage-source impedance on the same geometry because impedance is a property of the port and not of the drive
 	- **EX type 5** (NEC's current-slope-discontinuity voltage source): fnec models it by the applied-field method, so it solves and gives the same answer as type 0. That is a documented approximation of NEC's numerics, not an identity of the two cards

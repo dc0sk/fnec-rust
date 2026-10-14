@@ -64,7 +64,7 @@ pub fn write_card(card: &Card) -> String {
             f(c.translate_z),
             u(c.start_tag),
         ]),
-        Card::Gr(c) => join(&["GR".into(), u(c.tag_increment), u(c.count), f(c.angle_deg)]),
+        Card::Gr(c) => join(&["GR".into(), u(c.tag_increment), u(c.occurrences)]),
         Card::Gs(c) => join(&["GS".into(), "0".into(), "0".into(), f(c.scale)]),
         Card::Gx(c) => join(&[
             "GX".into(),
