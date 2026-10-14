@@ -405,6 +405,18 @@ pub struct GrCard {
     pub angle_deg: f64,
 }
 
+/// GS — Scale the structure.
+///
+/// `GS I1 I2 F1`: every segment defined so far — `GM`/`GR` copies included —
+/// has its ends and radius multiplied by `F1`; wires defined after it are not
+/// scaled, and later `GM` translations are in the new units. `I1`/`I2` are
+/// read and ignored, as nec2c ignores them (its `datagn`, card "gs").
+#[derive(Debug, Clone, PartialEq)]
+pub struct GsCard {
+    /// The scale factor, finite and positive (the parser refuses others).
+    pub scale: f64,
+}
+
 /// TL — Transmission line card, in the NEC-2 layout (FND-111).
 ///
 /// `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`
@@ -479,6 +491,7 @@ pub enum Card {
     Gw(GwCard),
     Gm(GmCard),
     Gr(GrCard),
+    Gs(GsCard),
     Ge(GeCard),
     Gn(GnCard),
     Ld(LdCard),

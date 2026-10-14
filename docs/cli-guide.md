@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 ---
 
 # CLI Guide — fnec (v0.22.0)
@@ -847,6 +847,7 @@ Quick reference:
 | GE | Full | Geometry end; `GE 1` joins wire ends on the ground plane to their images, `GE 0`/`-1` leaves them open. The ground itself is the last `GN` card's; `GE 1` without one is refused (FND-241), and so is a wire on the ground without `GE 1` (FND-242) — see the card matrix |
 | GM | Full | Geometry move: rotate/translate in place, or append transformed copies |
 | GR | Full | Geometry repeat (successive z-axis rotation copies) |
+| GS | Full | Scale the structure: every segment defined so far, ends and radius, by `F1` (e.g. `GS 0 0 0.3048` for a deck in feet); wires after it are not scaled |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |
 | GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
 | GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) — with voltage or current sources, loads, `TL`/`NT` networks and plane waves |
@@ -867,7 +868,7 @@ Quick reference:
 | CM / CE | Full | Comment cards; preserved in parse, ignored at runtime |
 | EN | Full | Terminates parse |
 | XQ, EK, KH, CP, PQ, PL, WG | Warning | Cannot change the solved problem: skipped with one warning saying why (`XQ`: fnec runs once, at the last `FR`) |
-| GA, GH, GS, GX, GC, GF, GD, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
+| GA, GH, GX, GC, GF, GD, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
 | Other | Refused | A card fnec does not know is refused, as nec2c refuses it. A line starting with `'` is a comment; commas separate fields (FND-237). See [card-support-matrix.md](card-support-matrix.md#cards-fnec-does-not-model) |
 
 ### Load (LD) card support

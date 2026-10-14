@@ -65,6 +65,7 @@ pub fn write_card(card: &Card) -> String {
             u(c.start_tag),
         ]),
         Card::Gr(c) => join(&["GR".into(), u(c.tag_increment), u(c.count), f(c.angle_deg)]),
+        Card::Gs(c) => join(&["GS".into(), "0".into(), "0".into(), f(c.scale)]),
         Card::Ge(c) => join(&["GE".into(), i(c.ground_reflection_flag)]),
         Card::Gn(c) => {
             // Bare form `GN <type>` when no medium is given; otherwise the full

@@ -16,8 +16,8 @@
 pub mod template;
 
 use nec_model::card::{
-    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GwCard, LdCard,
-    NearFieldCard, NtCard, PtCard, RpCard, TlCard,
+    Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GsCard, GwCard,
+    LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -59,6 +59,12 @@ pub enum ParseError {
         field: usize,
         raw: String,
         reason: String,
+    },
+    /// A geometry card after `GE`, which ends the geometry (FND-245).
+    GeometryAfterGe {
+        line: usize,
+        mnemonic: String,
+        ge_line: usize,
     },
     /// A card did not have enough fields.
     TooFewFields {
@@ -108,6 +114,15 @@ impl std::fmt::Display for ParseError {
             } => {
                 write!(f, "line {line}: {card} field {field} = '{raw}': {reason}")
             }
+            ParseError::GeometryAfterGe {
+                line,
+                mnemonic,
+                ge_line,
+            } => write!(
+                f,
+                "line {line}: {mnemonic} after GE (line {ge_line}): GE ends the geometry, \
+                 and nec2c refuses a geometry card after it; move it above the GE card"
+            ),
             ParseError::TooFewFields {
                 line,
                 card,
@@ -174,7 +189,6 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
     ),
     ("GA", OtherCard::Refused("a wire arc")),
     ("GH", OtherCard::Refused("a helix or spiral")),
-    ("GS", OtherCard::Refused("a scaling of the whole structure")),
     (
         "GX",
         OtherCard::Refused("a reflected copy of the structure"),
@@ -226,6 +240,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
     // The GE card's line and flag, and the last GN's type: nec2c takes the ground
     // from the last GN alone, and GE 1 with none is refused below (FND-241).
     let mut ge_one_line: Option<usize> = None;
+    // FND-245: the GE card's line. nec2c refuses a geometry card after GE
+    // ("FAULTY DATA CARD LABEL AFTER GEOMETRY SECTION"); fnec solved it, and a GS
+    // appended after GE would have scaled the whole structure without a word.
+    let mut ge_line: Option<usize> = None;
     let mut last_gn_type: Option<i32> = None;
 
     for (idx, raw_line) in input.lines().enumerate() {
@@ -246,7 +264,18 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
         // The mnemonic is the first whitespace-delimited token.
         let (mnemonic, rest) = split_mnemonic(line);
 
-        match mnemonic.to_ascii_uppercase().as_str() {
+        let upper = mnemonic.to_ascii_uppercase();
+        if let Some(ge_line) = ge_line {
+            if matches!(upper.as_str(), "GW" | "GM" | "GR" | "GS" | "GE") {
+                return Err(ParseError::GeometryAfterGe {
+                    line: lineno,
+                    mnemonic: upper,
+                    ge_line,
+                });
+            }
+        }
+
+        match upper.as_str() {
             "CM" => {
                 deck.cards.push(Card::Comment(CommentCard {
                     text: rest.trim().to_string(),
@@ -279,6 +308,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "GE" => {
+                ge_line = Some(lineno);
                 let fields = parse_fields(rest);
                 let ground_reflection_flag = if fields.is_empty() {
                     0
@@ -306,6 +336,28 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 deck.cards.push(Card::Ge(GeCard {
                     ground_reflection_flag,
                 }));
+            }
+            "GS" => {
+                // GS I1 I2 F1: F1 scales every segment defined so far. nec2c reads
+                // I1/I2 and ignores them; a missing F1 reads as 0 there, and a
+                // factor <= 0 ends in its "SEGMENT DATA ERROR" at GE, so refusing
+                // those is nec2c's own outcome, said earlier.
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GS", &fields, 3)?;
+                let scale = parse_finite_f64_field(lineno, "GS", 3, fields[2])?;
+                if scale <= 0.0 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GS".to_string(),
+                        field: 3,
+                        raw: fields[2].to_string(),
+                        reason: "a scale factor must be positive: zero collapses the \
+                                 structure and a negative one mirrors it, and nec2c stops \
+                                 on both with a segment data error"
+                            .to_string(),
+                    });
+                }
+                deck.cards.push(Card::Gs(GsCard { scale }));
             }
             "GM" => {
                 // GM ITGI NRPT ROX ROY ROZ XS YS ZS ITS
@@ -1066,14 +1118,14 @@ EN
 
     #[test]
     fn a_card_that_would_change_the_antenna_is_refused_by_name() {
-        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGS 0 0 0.3048\nGE 0\nEN\n";
-        let err = parse(deck).err().expect("GS is refused");
+        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGX 1 100\nGE 0\nEN\n";
+        let err = parse(deck).err().expect("GX is refused");
         assert!(
-            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GS"),
+            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GX"),
             "{err:?}"
         );
         assert!(
-            err.to_string().contains("scaling of the whole structure"),
+            err.to_string().contains("reflected copy of the structure"),
             "{err}"
         );
     }

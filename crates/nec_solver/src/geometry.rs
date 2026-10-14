@@ -123,19 +123,21 @@ fn snap_ground_contacts(segments: &mut [Segment]) {
             }
         }
         if moved {
-            let d = [
-                s.end[0] - s.start[0],
-                s.end[1] - s.start[1],
-                s.end[2] - s.start[2],
-            ];
-            s.length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            s.direction = [d[0] / s.length, d[1] / s.length, d[2] / s.length];
-            s.midpoint = [
-                0.5 * (s.start[0] + s.end[0]),
-                0.5 * (s.start[1] + s.end[1]),
-                0.5 * (s.start[2] + s.end[2]),
-            ];
+            s.rederive_from_ends();
         }
+    }
+}
+
+/// `GS`: multiply every segment defined so far — ends and radius — by `scale`,
+/// as nec2c's `datagn` does. The midpoint, length and direction are re-derived
+/// from the scaled ends rather than scaled themselves, so they agree with the
+/// ends exactly, as nec2c's (recomputed at `GE`) do.
+fn apply_gs(scale: f64, segments: &mut [Segment]) {
+    for s in segments {
+        s.start = s.start.map(|c| c * scale);
+        s.end = s.end.map(|c| c * scale);
+        s.radius *= scale;
+        s.rederive_from_ends();
     }
 }
 
@@ -196,6 +198,24 @@ pub enum SegmentPart {
 }
 
 impl Segment {
+    /// Recompute `midpoint`, `length` and `direction` from `start` and `end`,
+    /// after an operation that moved the ends other than rigidly (the `GS` scale,
+    /// the ground-contact snap).
+    fn rederive_from_ends(&mut self) {
+        let d = [
+            self.end[0] - self.start[0],
+            self.end[1] - self.start[1],
+            self.end[2] - self.start[2],
+        ];
+        self.length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        self.direction = [d[0] / self.length, d[1] / self.length, d[2] / self.length];
+        self.midpoint = [
+            0.5 * (self.start[0] + self.end[0]),
+            0.5 * (self.start[1] + self.end[1]),
+            0.5 * (self.start[2] + self.end[2]),
+        ];
+    }
+
     /// Whether this is a segment the deck names — every one but a flank. Outputs
     /// listing segments list these.
     pub fn is_deck_segment(&self) -> bool {
@@ -1069,6 +1089,7 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
             Card::Gr(gr) => {
                 apply_gr(gr, &mut segments)?;
             }
+            Card::Gs(gs) => apply_gs(gs.scale, &mut segments),
             _ => {}
         }
     }
