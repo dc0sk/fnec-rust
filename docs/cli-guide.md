@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # CLI Guide — fnec (v0.22.0)
@@ -849,6 +849,8 @@ Quick reference:
 | GR | Full | Geometry repeat as NEC-2 reads it: `GR I1 I2` = `I2` occurrences in all, 360°/`I2` apart about z (e.g. `GR 1 4` for four radials from one). A third field other than 0 or 360/`I2` is refused: it is fnec's pre-0.23 reading (FND-247) |
 | GS | Full | Scale the structure: every segment defined so far, ends and radius, by `F1` (e.g. `GS 0 0 0.3048` for a deck in feet); wires after it are not scaled |
 | GX | Full | Reflect the structure in the planes `I2`'s digits `XYZ` select (e.g. `GX 0 001` makes a dipole from its upper half); copies tagged `tag + I1`, doubling per plane |
+| GA | Partial | A wire arc (nec2c's `arc`); solve it with `--solver mpie` — the Hallén solve refuses it, every node being a bend |
+| GH | Partial | A helix or spiral (nec2c's `helix`), read as NEC-2 / nec2c reads it; `--solver mpie` only, as `GA` |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |
 | GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
 | GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) — with voltage or current sources, loads, `TL`/`NT` networks and plane waves |
@@ -869,7 +871,7 @@ Quick reference:
 | CM / CE | Full | Comment cards; preserved in parse, ignored at runtime |
 | EN | Full | Terminates parse |
 | XQ, EK, KH, CP, PQ, PL, WG | Warning | Cannot change the solved problem: skipped with one warning saying why (`XQ`: fnec runs once, at the last `FR`) |
-| GA, GH, GC, GF, GD, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
+| GC, GF, GD, SP, SM, SC, NX, SY | Refused | Would change the antenna, so the deck is refused naming the card (FND-236); for `SY` use `$NAME` templates with `--vars` |
 | Other | Refused | A card fnec does not know is refused, as nec2c refuses it. A line starting with `'` is a comment; commas separate fields (FND-237). See [card-support-matrix.md](card-support-matrix.md#cards-fnec-does-not-model) |
 
 ### Load (LD) card support

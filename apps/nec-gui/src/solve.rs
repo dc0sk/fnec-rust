@@ -193,7 +193,16 @@ pub fn load_geometry_path(
 pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
-    let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+    // The view draws the mesh that is solved: Hallén's (free ends in thirds,
+    // FND-227) — except for a GA/GH deck, which Hallén refuses and only the MPIE
+    // solves, so its own segments are the solved mesh and what the view shows.
+    let segs = match build_geometry(deck) {
+        Err(nec_solver::GeometryError::CurvedForHallen { .. }) => {
+            nec_solver::build_deck_geometry(deck)
+        }
+        other => other,
+    }
+    .map_err(|e| e.to_string())?;
     if segs.is_empty() {
         return Err("deck has no wire geometry (no GW cards?)".to_string());
     }

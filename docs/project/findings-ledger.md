@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/findings-ledger.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 ---
 
 # Findings ledger
@@ -42,6 +42,7 @@ An `open` row is not a failure — it is the point. What the process forbids is 
 
 | ID | Found | State | Finding | Evidence / owner |
 |:---|:------|:------|:--------|:-----------------|
+| FND-251 | 2026-10-15 | open | **[medium] A closed loop whose straight runs are all one segment long gets no topology caveat, and fails with a false "no current flows at the feedpoint" diagnosis.** Twenty one-segment `GW` wires round a 0.5 m circle, fed on tag 5 at 100 MHz: the section graph refuses the one-segment runs, the per-wire fallback returns a current of exactly zero, and fnec says the source may have zero amplitude or the frequency underflows, where the deck is valid (nec2c 138.33 − j10.378; `--solver mpie` 138.79 − j11.70). The open-path case (a polygon arc) warns and solves 40 % off. Found by Fable's review of the `GA`/`GH` design; `GA`/`GH` themselves are refused on Hallén (#584), but the same geometry written as `GW` cards is not. | Phase 10, not scheduled: refuse a one-segment-run loop by name with the MPIE remedy, as `GA` is |
 | FND-250 | 2026-10-14 | open | **[low] Overlapping (coincident) segments are reported as "no current flows at the feedpoint", which names the wrong cause.** A deck that places a segment on top of another solves a singular structure; the refusal fnec gives is true but points at the excitation, not the geometry. nec2c solves such a deck to garbage (4e-11 − j2.9e-4 Ω for a dipole reflected onto itself). Found by Fable's review of `GX`. | Phase 10, not scheduled: name coincident segments as the cause, in the geometry check every frontend calls |
 | FND-249 | 2026-10-14 | open | **[low] Two collinear wires meeting start-to-start (anti-parallel) are not merged into one chain, so a dipole written as two halves takes the section-graph route, the GPU declines it, and `--solver sinusoidal` refuses it as a junction.** `merge_collinear_wire_endpoints` merges end-to-start only (`dot > 0`). The impedance is right on Hallén and the MPIE (equal to the one-wire dipole to every printed digit); the cost is the route and the refusals. `GX 0 001` makes this the natural way to write a dipole. Found by Fable's review of `GX`. | Phase 10, not scheduled; pinned by `gx_card_nec2c.rs`'s half-dipole case, which equals the one-wire dipole |
 | FND-248 | 2026-10-14 | fixed | **[low] A `GR` copy of a tag-0 wire was given a tag, where nec2c keeps tag 0 (as fnec's `GM` did).** "N copies, one diverged": `GM` had the tag-0 rule, `GR` did not. Found by Fable's review of `GX`. | `geometry::copy_tag`, shared by `GM`, `GR` and `GX`; unit test `a_gr_copy_of_tag_zero_keeps_tag_zero` (#582) |
