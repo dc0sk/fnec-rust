@@ -23,8 +23,10 @@ with it).
 import sys
 
 # GS names no segment and scales length and radius alike, so it passes through and
-# the thin-wire check on the unscaled GW stays right.
-KNOWN = {"CM", "CE", "GW", "GS", "GE", "GN", "EK", "EX", "LD", "NT", "TL", "PT", "FR", "RP", "NE", "NH", "XQ", "EN"}
+# the thin-wire check on the unscaled GW stays right. GX names none either: its
+# copies take tag positions n+j, and S*(n+j) - (S-1)/2 is the centre of the copy's
+# j-th segment, so a reference into a copy still maps.
+KNOWN = {"CM", "CE", "GW", "GS", "GX", "GE", "GN", "EK", "EX", "LD", "NT", "TL", "PT", "FR", "RP", "NE", "NH", "XQ", "EN"}
 
 
 def fail(msg):

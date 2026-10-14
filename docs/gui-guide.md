@@ -89,7 +89,8 @@ frequency, resistance, reactance, and |Z| are shown.
 >
 > A `GS` scale card stays where it is in the deck. A wire added in the table joins
 > the wire block, which comes before a `GS` that follows the wires, so the new wire
-> is scaled with the rest — as NEC reads that deck.
+> is scaled with the rest — as NEC reads that deck. The same holds for `GX`: a wire
+> added before it is reflected too, so it appears twice (or four or eight times).
 
 ## Sweep tab
 
