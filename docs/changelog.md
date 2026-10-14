@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **`scripts/check-all.sh` holds the checkout while it runs.** Where the agent-skills
+  `hold-checkout.sh` is installed (override the path with `FNEC_HOLD_CHECKOUT`), the
+  gate takes a per-checkout flock for its whole run, so a `guard-inflight` hook denies
+  edits and commits to the tree it is certifying. A second gate on the same checkout
+  is refused (exit 75) instead of racing the first. Where the helper is absent, as in
+  CI, nothing changes.
+
 ## [0.22.0] — 2026-10-14 — Close to the ground
 
 `--solver mpie` is right close to the ground — a perfect one by its exact image,

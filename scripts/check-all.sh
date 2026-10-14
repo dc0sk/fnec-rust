@@ -41,6 +41,20 @@ for arg in "$@"; do
     esac
 done
 
+# Mark this checkout as having a gate in flight, for the whole run. The gate reads
+# the tree at every step, so an edit or commit made meanwhile (in any file) leaves
+# a verdict that belongs to no state of the repo. On 2026-10-13 an agent `sed -i`'d
+# a source file while its own sabotage run was live. The marker is a flock taken by
+# hold-checkout.sh from the agent-skills repo; a guard-inflight PreToolUse hook then
+# denies edits here until the gate exits. It is re-entrant through HOLD_CHECKOUT, so
+# a gate wrapper that already holds it (or the pre-push hook under one) passes
+# straight through. A second gate on this checkout while one runs is refused (75).
+# Where the helper is absent (CI, another host), the gate runs as before.
+HOLD="${FNEC_HOLD_CHECKOUT:-$HOME/git/coding-agent-skills/scripts/hooks/hold-checkout.sh}"
+if [ -z "${HOLD_CHECKOUT:-}" ] && [ -x "$HOLD" ]; then
+    exec "$HOLD" "$ROOT" -- "$ROOT/scripts/check-all.sh" "$@"
+fi
+
 # Queue behind any other heavy build on this machine, in any project, rather
 # than race it for RAM. See the helper for why this is host-wide.
 # shellcheck source=scripts/host-build-lock.sh
