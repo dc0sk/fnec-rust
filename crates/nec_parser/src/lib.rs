@@ -17,7 +17,7 @@ pub mod template;
 
 use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GeCard, GmCard, GnCard, GrCard, GsCard, GwCard,
-    LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
+    GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -189,10 +189,6 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
     ),
     ("GA", OtherCard::Refused("a wire arc")),
     ("GH", OtherCard::Refused("a helix or spiral")),
-    (
-        "GX",
-        OtherCard::Refused("a reflected copy of the structure"),
-    ),
     ("GC", OtherCard::Refused("a tapered wire")),
     (
         "GF",
@@ -266,7 +262,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 
         let upper = mnemonic.to_ascii_uppercase();
         if let Some(ge_line) = ge_line {
-            if matches!(upper.as_str(), "GW" | "GM" | "GR" | "GS" | "GE") {
+            if matches!(upper.as_str(), "GW" | "GM" | "GR" | "GS" | "GX" | "GE") {
                 return Err(ParseError::GeometryAfterGe {
                     line: lineno,
                     mnemonic: upper,
@@ -335,6 +331,61 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }
                 deck.cards.push(Card::Ge(GeCard {
                     ground_reflection_flag,
+                }));
+            }
+            "GX" => {
+                // GX I1 I2: I2's digits XYZ select the planes, read as nec2c reads
+                // them (each nonzero digit selects; a missing I2 is 0, a no-op).
+                let fields = parse_fields(rest);
+                let f = |i: usize| -> &str { fields.get(i).copied().unwrap_or("0") };
+                // Integer fields, whole values only: nec2c stops on `GX 0 1.5`, and
+                // `parse_i32` would truncate it to a plane selection. `100.` is fine.
+                for (i, raw) in [(1usize, f(0)), (2, f(1))] {
+                    let v = parse_finite_f64_field(lineno, "GX", i, raw)?;
+                    if v.fract() != 0.0 {
+                        return Err(ParseError::UnsupportedValue {
+                            line: lineno,
+                            card: "GX".to_string(),
+                            field: i,
+                            raw: raw.to_string(),
+                            reason: "an integer field; nec2c stops on a fractional value \
+                                     here"
+                                .to_string(),
+                        });
+                    }
+                }
+                let itg = parse_i32(lineno, "GX", 1, f(0))?;
+                if itg < 0 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GX".to_string(),
+                        field: 1,
+                        raw: f(0).to_string(),
+                        reason: "a negative tag increment produces tags below the \
+                                 original's (nec2c gives a tag-1 wire's copy tag 0 for \
+                                 -1), which fnec's unsigned tags cannot represent"
+                            .to_string(),
+                    });
+                }
+                let ns = parse_i32(lineno, "GX", 2, f(1))?;
+                if !(0..=999).contains(&ns) {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GX".to_string(),
+                        field: 2,
+                        raw: f(1).to_string(),
+                        reason: "the planes are three digits XYZ, 0 to 999; nec2c reads \
+                                 a sign or a thousands digit by C integer arithmetic \
+                                 (1001 as X and Z, -11 as Y and Z), which is a typo's \
+                                 reading, not the format"
+                            .to_string(),
+                    });
+                }
+                deck.cards.push(Card::Gx(GxCard {
+                    tag_increment: itg as u32,
+                    x: ns / 100 != 0,
+                    y: (ns / 10) % 10 != 0,
+                    z: ns % 10 != 0,
                 }));
             }
             "GS" => {
@@ -1118,16 +1169,13 @@ EN
 
     #[test]
     fn a_card_that_would_change_the_antenna_is_refused_by_name() {
-        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGX 1 100\nGE 0\nEN\n";
-        let err = parse(deck).err().expect("GX is refused");
+        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGA 2 11 1 0 90 .001\nGE 0\nEN\n";
+        let err = parse(deck).err().expect("GA is refused");
         assert!(
-            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GX"),
+            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GA"),
             "{err:?}"
         );
-        assert!(
-            err.to_string().contains("reflected copy of the structure"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("a wire arc"), "{err}");
     }
 
     #[test]

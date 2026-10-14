@@ -402,7 +402,12 @@ impl PostSlot {
             PostSlot::Ex(_) => 3,
             PostSlot::Fr(_) => 4,
             PostSlot::Other(c) => match c {
-                Card::Comment(_) | Card::Ge(_) | Card::Gm(_) | Card::Gr(_) | Card::Gs(_) => 0,
+                Card::Comment(_)
+                | Card::Ge(_)
+                | Card::Gm(_)
+                | Card::Gr(_)
+                | Card::Gs(_)
+                | Card::Gx(_) => 0,
                 Card::En(_) => 9,
                 _ => 5,
             },

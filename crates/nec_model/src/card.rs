@@ -405,6 +405,25 @@ pub struct GrCard {
     pub angle_deg: f64,
 }
 
+/// GX — Reflect the structure in coordinate planes.
+///
+/// `GX I1 I2`: `I2` read as digits `XYZ` (a nonzero digit selects that plane's
+/// normal: X reflects in the yz-plane, and so on). As in nec2c's `reflc`, the
+/// reflections run z, then y, then x; each copies every segment present at that
+/// point, tagging the copies `tag + increment` (tag 0 stays 0), and the
+/// increment doubles after each pass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GxCard {
+    /// Tag increment for the first pass's copies (`I1`).
+    pub tag_increment: u32,
+    /// Reflect in the yz-plane (x → −x).
+    pub x: bool,
+    /// Reflect in the xz-plane (y → −y).
+    pub y: bool,
+    /// Reflect in the xy-plane (z → −z).
+    pub z: bool,
+}
+
 /// GS — Scale the structure.
 ///
 /// `GS I1 I2 F1`: every segment defined so far — `GM`/`GR` copies included —
@@ -492,6 +511,7 @@ pub enum Card {
     Gm(GmCard),
     Gr(GrCard),
     Gs(GsCard),
+    Gx(GxCard),
     Ge(GeCard),
     Gn(GnCard),
     Ld(LdCard),

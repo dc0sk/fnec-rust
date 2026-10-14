@@ -17,7 +17,7 @@
 //!   order: NEC's segment number within a tag, as nec2c's `isegno` counts it
 //! - `global_index`  — 0-based index in the flat segment list
 
-use nec_model::card::{Card, GmCard, GrCard, GwCard};
+use nec_model::card::{Card, GmCard, GrCard, GwCard, GxCard};
 use nec_model::deck::NecDeck;
 
 /// Ground model extracted from a GN card (or absence thereof).
@@ -292,6 +292,18 @@ pub enum GeometryError {
     /// killed the process without emitting a result line at all, which the
     /// controller cannot tell from a dead worker (FND-113).
     TagOverflow { card: &'static str, detail: String },
+    /// A `GX` reflection of a segment that lies in, or crosses, its plane of
+    /// symmetry: the copy would coincide with or overlap the original. nec2c stops
+    /// on it ("LIES IN PLANE OF SYMMETRY").
+    InSymmetryPlane {
+        /// The tag of the segment.
+        tag: u32,
+        /// Its absolute position in the structure so far (1-based), as nec2c
+        /// names it.
+        segment: usize,
+        /// The coordinate the plane negates: 'x', 'y' or 'z'.
+        axis: char,
+    },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -315,6 +327,12 @@ impl std::fmt::Display for GeometryError {
                 f,
                 "GM card: no segment has tag {tag}, so there is nothing to move \
                  from there"
+            ),
+            GeometryError::InSymmetryPlane { tag, segment, axis } => write!(
+                f,
+                "GX card: segment {segment} (tag {tag}) lies in or crosses the plane {axis} = 0 \
+                 it reflects in, so its copy would coincide with or overlap it; nec2c stops \
+                 on it too. Model the half that lies on one side of the plane"
             ),
             GeometryError::TagOverflow { card, detail } => write!(
                 f,
@@ -1090,6 +1108,7 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
                 apply_gr(gr, &mut segments)?;
             }
             Card::Gs(gs) => apply_gs(gs.scale, &mut segments),
+            Card::Gx(gx) => apply_gx(gx, &mut segments)?,
             _ => {}
         }
     }
@@ -1350,17 +1369,7 @@ fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
     };
     let suffix_len = segs.len() - start_idx;
 
-    let retag = |tag: u32| -> Result<u32, GeometryError> {
-        // nec2c never retags a tag-0 segment, in either branch.
-        if tag == 0 {
-            return Ok(0);
-        }
-        tag.checked_add(gm.tag_increment)
-            .ok_or_else(|| GeometryError::TagOverflow {
-                card: "GM",
-                detail: format!("tag {tag} plus tag increment {}", gm.tag_increment),
-            })
-    };
+    let retag = |tag: u32| copy_tag(tag, gm.tag_increment, "GM");
 
     if gm.repeat_count == 0 {
         for seg in segs.iter_mut().skip(start_idx) {
@@ -1400,6 +1409,63 @@ fn apply_gm(gm: &GmCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
     Ok(())
 }
 
+/// The tag of a copy that a `GM`, `GR` or `GX` card makes of a segment tagged
+/// `tag`: `tag + step`, except that tag 0 stays 0, as nec2c keeps it on all three
+/// (its `move`, the rotation branch and `reflc`). One rule, so the three cannot
+/// differ: `GR` did — it retagged tag-0 copies (found by Fable's review of `GX`).
+fn copy_tag(tag: u32, step: u32, card: &'static str) -> Result<u32, GeometryError> {
+    if tag == 0 {
+        return Ok(0);
+    }
+    tag.checked_add(step)
+        .ok_or_else(|| GeometryError::TagOverflow {
+            card,
+            detail: format!("tag {tag} plus tag increment {step}"),
+        })
+}
+
+/// `GX`: reflect in the selected planes, z then y then x, as nec2c's `reflc`
+/// does. Each pass appends a mirrored copy of every segment present, tagged
+/// `tag + step` (tag 0 stays 0), and `step` doubles for the next pass. A segment
+/// in or across the plane is refused by nec2c's absolute test (`|e1| + |e2| <=
+/// 1e-5` m), and fnec refuses any crossing at all: nec2c lets one under
+/// 1 mm × 1 mm through (`e1·e2 < -1e-6`) and then solves a structure with
+/// overlapping segments (Fable's review measured 4e-11 − j2.9e-4 Ω).
+fn apply_gx(gx: &GxCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
+    let mut step = Some(gx.tag_increment);
+    for (on, axis) in [(gx.z, 2usize), (gx.y, 1), (gx.x, 0)] {
+        if !on {
+            continue;
+        }
+        let step_now = step.ok_or_else(|| GeometryError::TagOverflow {
+            card: "GX",
+            detail: format!("tag increment {} doubled per plane", gx.tag_increment),
+        })?;
+        for (i, s) in segs.iter().enumerate() {
+            let (e1, e2) = (s.start[axis], s.end[axis]);
+            if e1.abs() + e2.abs() <= 1.0e-5 || e1 * e2 < 0.0 {
+                return Err(GeometryError::InSymmetryPlane {
+                    tag: s.tag,
+                    segment: i + 1,
+                    axis: ['x', 'y', 'z'][axis],
+                });
+            }
+        }
+        check_segment_budget(segs.len(), segs.len() as u64, "GX")?;
+        let originals = segs.clone();
+        for orig in &originals {
+            let mut seg = orig.clone();
+            seg.tag = copy_tag(seg.tag, step_now, "GX")?;
+            seg.start[axis] = -seg.start[axis];
+            seg.end[axis] = -seg.end[axis];
+            seg.rederive_from_ends();
+            segs.push(seg);
+        }
+        step = step_now.checked_mul(2);
+    }
+    Ok(())
+}
+
 /// Apply a GR card: repeat existing wires `count` times, rotating each copy
 /// about the z-axis by successive multiples of `angle_deg`.
 fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
@@ -1427,13 +1493,7 @@ fn apply_gr(gr: &GrCard, segs: &mut Vec<Segment>) -> Result<(), GeometryError> {
         let sin_a = total_angle_deg.to_radians().sin();
         for orig in &originals {
             let mut seg = orig.clone();
-            seg.tag = seg
-                .tag
-                .checked_add(step)
-                .ok_or_else(|| GeometryError::TagOverflow {
-                    card: "GR",
-                    detail: format!("tag {} plus tag increment {step}", seg.tag),
-                })?;
+            seg.tag = copy_tag(seg.tag, step, "GR")?;
             seg.start = rotate_z(seg.start, cos_a, sin_a);
             seg.end = rotate_z(seg.end, cos_a, sin_a);
             seg.midpoint = rotate_z(seg.midpoint, cos_a, sin_a);
@@ -1966,6 +2026,35 @@ mod tests {
             matches!(err, GeometryError::TagOverflow { card: "GR", .. }),
             "{err:?}"
         );
+    }
+
+    /// A GR copy of a tag-0 segment keeps tag 0, as nec2c's rotation branch keeps
+    /// it and as GM always did; GR alone retagged it, before `copy_tag` made the
+    /// three copying cards share one rule. A tagged wire's copy is still retagged.
+    #[test]
+    fn a_gr_copy_of_tag_zero_keeps_tag_zero() {
+        let mut deck = NecDeck::new();
+        for (tag, x) in [(0, 1.0), (7, 3.0)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments: 1,
+                start: [x, 0.0, -1.0],
+                end: [x, 0.0, 1.0],
+                radius: 0.001,
+            }));
+        }
+        deck.cards.push(Card::Gr(GrCard {
+            tag_increment: 5,
+            count: 1,
+            angle_deg: 180.0,
+        }));
+        let segs = build_geometry(&deck).expect("builds");
+        let tags: Vec<u32> = segs
+            .iter()
+            .filter(|s| s.is_deck_segment())
+            .map(|s| s.tag)
+            .collect();
+        assert_eq!(tags, vec![0, 7, 0, 12], "{tags:?}");
     }
 
     /// Negative control: the ordinary GR replication a real deck uses still

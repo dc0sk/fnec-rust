@@ -23,6 +23,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `GS 0 0 0.3048` solves again — refused since 0.22.0, and before that solved
   unscaled with a warning (290.5 + j218.5 Ω where nec2c gives 84.8 + j45.8). A
   factor that is missing or not positive is refused, as nec2c stops on it.
+- **The `GX` card reflects the structure** (PH10-CHK-002), as nec2c's `reflc`
+  does: the planes `I2`'s digits select, z then y then x, each pass copying every
+  segment present with its tag increased (tag 0 stays 0) and the increment
+  doubling. Half a dipole with `GX 0 001` solves as the dipole. A segment in or
+  across its plane is refused, as nec2c stops on it.
 
 ### Changed
 
@@ -39,8 +44,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A `GR` copy of a tag-0 wire keeps tag 0** (FND-248), as nec2c keeps it and as
+  `GM` already did; `GM`, `GR` and `GX` now share one tag rule.
 - **A geometry card after `GE` is refused** (FND-245), as nec2c refuses it. A
-  `GW`, `GM`, `GR`, `GS` or second `GE` after `GE` used to be read and solved.
+  `GW`, `GM`, `GR`, `GS`, `GX` or second `GE` after `GE` used to be read and solved.
 - **`GE` and `GN` read as nec2c reads them** (FND-241, FND-242, FND-243). **Some
   decks that solved before are now refused, and one answer changes.**
   - The ground is the last `GN` card's. `GE 1` with no `GN` was read as a perfect
