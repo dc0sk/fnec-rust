@@ -260,19 +260,6 @@ fn an_elliptic_wave_over_perfect_ground_receives_like_nec2c() {
     assert_converges("elliptic wave over GN 1", e21, e41, 0.07);
 }
 
-/// A ground type fnec does not model solves in free space and says so; its
-/// receive answer must be exactly the free-space one — no reflected wave over a
-/// matrix without images.
-#[test]
-fn a_deferred_ground_receives_exactly_as_free_space() {
-    let wave = "EX 1 1 1 0 45 0 0\n";
-    let deferred = receive(&dipole(21), "GE 1\nGN 3\n", wave).unwrap();
-    let free = receive(&dipole(21), "GE 0\n", wave).unwrap();
-    for (a, b) in deferred.iter().zip(&free) {
-        assert!((a - b).norm() <= 1e-12 * b.norm().max(1e-12), "{a} vs {b}");
-    }
-}
-
 /// Still refused, each with its reason: a wave from below the ground plane —
 /// single or as a receive-sweep row, over perfect or finite ground — and a wire
 /// lying in the ground plane. Grazing incidence (θ = 90°) solves, and so do wires

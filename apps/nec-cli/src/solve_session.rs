@@ -1144,10 +1144,7 @@ pub(super) fn solve_frequency_point(
             const MIN_GPU_ZMATRIX_SEGS: usize = 128;
             let try_gpu = execution_mode == ExecutionMode::Gpu
                 && segs.len() >= MIN_GPU_ZMATRIX_SEGS
-                && matches!(
-                    ground,
-                    GroundModel::FreeSpace | GroundModel::Deferred { .. }
-                );
+                && matches!(ground, GroundModel::FreeSpace);
             if try_gpu {
                 let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
                     .iter()
@@ -1558,11 +1555,8 @@ pub(super) fn solve_frequency_point(
     // −3.12 / −0.26 / −15.04 — while the solve had correctly declined the ground
     // deck to the CPU (FND-205). The deck class keys the solve; it keys the
     // pattern too.
-    let gpu_pattern = execution_mode == ExecutionMode::Gpu
-        && matches!(
-            ground,
-            GroundModel::FreeSpace | GroundModel::Deferred { .. }
-        );
+    let gpu_pattern =
+        execution_mode == ExecutionMode::Gpu && matches!(ground, GroundModel::FreeSpace);
     if execution_mode == ExecutionMode::Gpu && !gpu_pattern && !pattern_points.is_empty() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
@@ -1856,7 +1850,6 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         GroundModel::FreeSpace => "free",
         GroundModel::PerfectConductor => "pec",
         GroundModel::SimpleFiniteGround { .. } => "finite",
-        GroundModel::Deferred { .. } => "deferred",
     };
     let gsolver = match (d.ground, d.ground_solver, d.sommerfeld_outcome) {
         // The MPIE fills the exact Sommerfeld kernels into its own matrix over a

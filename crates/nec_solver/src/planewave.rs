@@ -167,15 +167,14 @@ impl IncidentField {
 }
 
 /// nec2c's `(rrv, rrh)` for the wave's incidence angle (`etmns`, matrix.c), or
-/// `None` where nothing reflects: free space, and `Deferred` ground, which solves
-/// in free space and says so.
+/// `None` where nothing reflects: free space.
 fn reflection_coefficients(
     wave: &IncidentPlaneWave,
     ground: &GroundModel,
     freq_hz: f64,
 ) -> Option<(Complex64, Complex64)> {
     match ground {
-        GroundModel::FreeSpace | GroundModel::Deferred { .. } => None,
+        GroundModel::FreeSpace => None,
         GroundModel::PerfectConductor => {
             Some((Complex64::new(-1.0, 0.0), Complex64::new(-1.0, 0.0)))
         }

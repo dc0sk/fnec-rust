@@ -42,7 +42,8 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
-| `apps/nec-cli/tests/ground_diagnostics.rs` | 14 | `GN`/`GE` handling: PEC inference, GN0/GN2 active, GN3 deferred; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
+| `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
+| `apps/nec-cli/tests/ground_flags_nec2c.rs` | 5 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band | FND-241, FND-242, FND-243 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/junction_feedpoint.rs` | 10 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary: a T or loop the section graph takes solves without the guard; one it refuses (a one-segment run) still warns. | PH9-CHK-002, PH9-CHK-005 |
@@ -134,14 +135,14 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/transverse_nec2c.rs` | 3 | The transverse-divergence term from sources sharing no node (FND-162 stage 4, FND-171, FND-174) vs nec2c at two meshes, converging: a 45° dipole over PEC, an inverted-V over PEC (== its explicit image in free space), a wire over a vertical dipole (antisymmetric at 0.7 m and 5 cm) | FND-162, FND-171, FND-174 |
 | `crates/nec_solver/tests/graph_nec2c.rs` | 20 | Hallén on the section graph (FND-162 stages 2+3) vs nec2c at two meshes, converging: a stem-fed Y and T, a T fed on its node, a dipole with a centre stub (a regression gate — the fallback passes it too), a 1 λ square loop, a loop with a stub, the loop over PEC; and Kirchhoff at the Y's node read off the solved currents (1e-9); stage 5: a loaded Y, a T with a coil on its node segment, a loop loaded beside a corner, and the exact feed-load identity; on PEC ground: a top-hat monopole equals its free-space H, the H against the MPIE with its FND-191 gap to nec2c pinned, a folded monopole against nec2c, and neither flagged nor warned; a current source on a Y, a loop and a loaded T equals the voltage gap; a Y with a TL between its arms and two loops on a phasing line against nec2c | FND-162 |
 | `crates/nec_solver/tests/graph_receive_nec2c.rs` | 7 | FND-162 stage 5: the plane-wave receive solve on the section graph — a 1 λ loop broadside and a T at 45° against nec2c's currents at two meshes, converging; a loaded plane-wave junction deck is refused; loaded decks (FND-197/198): a loaded T and loop vs nec2c at two meshes, the compensation identity through the driven graph, a loaded current source pricing as the voltage source, no loads given for an LD deck refused (the loaded-refusal test is gone) | FND-162 |
-| `crates/nec_solver/tests/planewave_ground_nec2c.rs` | 7 | FND-170: a plane wave over perfect ground against nec2c's currents at two meshes, converging — a horizontal and a vertical dipole, an inverted-V (bent-path route), a T (section graph), an elliptic wave; a deferred ground receives exactly as free space; a wave from below the plane (single or a sweep row), wires touching the ground and finite ground are refused by name | FND-170 |
+| `crates/nec_solver/tests/planewave_ground_nec2c.rs` | 6 | FND-170: a plane wave over perfect ground against nec2c's currents at two meshes, converging — a horizontal and a vertical dipole, an inverted-V (bent-path route), a T (section graph), an elliptic wave; a wave from below the plane (single or a sweep row), wires touching the ground and finite ground are refused by name | FND-170 |
 | `crates/nec_solver/tests/planewave_ground_contact.rs` | 5 | FND-170: a plane wave on wires touching PEC ground — the contact deck equals its free-space double lit from θ and from 180° − θ to round-off (straight and bent); a monopole and an inverted-L against nec2c at two meshes, converging; the sweep route doubles the structure too; a loaded contact deck equals its loaded double on both routes (FND-197) | FND-170 |
 | `crates/nec_solver/tests/planewave_finite_ground_nec2c.rs` | 4 | FND-170 PR 2: a plane wave over finite ground — the ratio of the current over `GN 2` to the same deck's free-space current against nec2c's, 3 λ up, one deck per polarization (θ̂ isolates `rrv`, φ̂ `rrh`), converging; a pinned band at 0.24 λ that measures fnec's matrix model; a ground of εr = 1, σ = 0 receives exactly as free space | FND-170 |
 | `crates/nec_solver/tests/negative_sigma.rs` | 1 | FND-194: a `GN` card with a negative `SIG` (NEC's ε'' form) solves exactly as its conductivity equivalent, through the matrix (feedpoint impedance) and the far field (gain over ground), and not as the lossless ground it was clamped to | FND-194 |
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=730 --> **730** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=732 --> **732** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -152,7 +153,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 257 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 256 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 96 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -162,11 +163,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=625 --> **625** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=624 --> **624** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1362 --> **1362** = 625 unit + 730 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1363 --> **1363** = 624 unit + 732 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

@@ -460,28 +460,6 @@ differently-sized wires will be approximate"
     ))
 }
 
-/// A `GN` type outside the supported set is treated as free space; say so, and
-/// echo the parsed medium parameters so the user can see what was read.
-pub fn deferred_ground_warning(ground: &GroundModel) -> Option<String> {
-    let GroundModel::Deferred {
-        gn_type,
-        eps_r,
-        sigma,
-    } = ground
-    else {
-        return None;
-    };
-    let params = match (eps_r, sigma) {
-        (Some(e), Some(s)) => format!(" [parsed: EPSE={e}, SIG={s} S/m]"),
-        (Some(e), None) => format!(" [parsed: EPSE={e}]"),
-        (None, Some(s)) => format!(" [parsed: SIG={s} S/m]"),
-        (None, None) => String::new(),
-    };
-    Some(format!(
-        "GN type {gn_type} is not yet supported; treating this deck as free-space{params}"
-    ))
-}
-
 /// `NE`/`NH` over a finite ground: the near field is the sum over the solved
 /// currents, and over a finite ground it does not include the field the ground
 /// reflects — only the currents see that ground. Over PEC the images are summed
@@ -507,31 +485,6 @@ pub fn near_field_over_finite_ground_warning(
          the ground plane can be far off — over PEC (GN 1) the image is exact"
             .to_string(),
     )
-}
-
-/// `GE I1` selects the ground-reflection treatment. `0` (free space) and `1` (PEC
-/// image) are handled; anything else falls back to free space and is reported.
-pub fn ge_ground_reflection_warning(deck: &NecDeck) -> Option<String> {
-    let flag = deck.cards.iter().find_map(|c| {
-        if let Card::Ge(ge) = c {
-            Some(ge.ground_reflection_flag)
-        } else {
-            None
-        }
-    })?;
-    match flag {
-        0 | 1 => None,
-        -1 => Some(
-            "GE I1=-1 requests below-ground wire handling (no image method); \
-             treating as free-space"
-                .to_string(),
-        ),
-        _ => Some(format!(
-            "GE I1={flag} is not a recognised ground-reflection flag \
-             (valid values: 0=free-space, 1=PEC image, -1=below-ground); \
-             treating as free-space"
-        )),
-    }
 }
 
 /// PH9-CHK-002 / PH9-CHK-005: a **closed loop** or a **degree-3+ (T/Y) junction**
@@ -1458,7 +1411,7 @@ pub fn slanted_over_ground_warning(
     mpie_remedy: Option<&str>,
 ) -> Option<String> {
     let over = match ground {
-        GroundModel::FreeSpace | GroundModel::Deferred { .. } => return None,
+        GroundModel::FreeSpace => return None,
         GroundModel::PerfectConductor => "perfect ground",
         GroundModel::SimpleFiniteGround { .. } => "finite ground",
     };
@@ -1633,7 +1586,63 @@ pub fn swept_low_ground_caveat(
 pub fn geometry_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
     segment_intersection_error(segs)
         .or_else(|| source_risk_geometry_error(deck, segs))
+        // Before the finite-ground contact refusal: that one names GN 1 as a
+        // remedy, which this one would then refuse in turn.
+        .or_else(|| ground_contact_topology_error(deck, segs, ground))
         .or_else(|| buried_wire_geometry_error(segs, ground))
+}
+
+/// A wire end on the ground plane, over a ground, without `GE 1` (FND-242).
+///
+/// `GE I1` is what NEC-2 reads to join a wire end at z = 0 to its image (1) or
+/// leave it open (0, -1; nec2c's `conect`). Left open, nec2c solves the base as an
+/// open end, and its answer does not converge: a λ/4 vertical on `GN 1` (2.64 m,
+/// r = 1 mm, 28.4 MHz, base-fed) reads 58.04 − j7610.7 Ω at 21 segments and
+/// 56.32 − j15556 at 63. fnec solved every such deck joined, a different
+/// antenna, with no word. A deck with no `GE` card counts as unjoined; nec2c
+/// refuses it outright. "On the plane" is nec2c's band
+/// ([`crate::geometry::on_ground_plane`]), on the deck segment's length.
+pub fn ground_contact_topology_error(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+) -> Option<String> {
+    if matches!(ground, GroundModel::FreeSpace) {
+        return None;
+    }
+    let ge = deck.cards.iter().find_map(|c| match c {
+        Card::Ge(ge) => Some(ge.ground_reflection_flag),
+        _ => None,
+    });
+    if ge == Some(1) {
+        return None;
+    }
+    // On the deck segment's length, as nec2c measures it: an unjoined end is a
+    // free end, so it is split into thirds here (FND-227), and a third's own
+    // length would narrow the band threefold — a base 0.1 mm up on a 0.126 m
+    // segment slipped through and solved 29.24 - j5500 ohm.
+    let deck_len = |s: &Segment| match s.part {
+        crate::geometry::SegmentPart::Whole => s.length,
+        _ => 3.0 * s.length,
+    };
+    let on = |z: f64, s: &Segment| crate::geometry::on_ground_plane(z, deck_len(s));
+    let s = segs.iter().find(|s| on(s.start[2], s) || on(s.end[2], s))?;
+    let seg = match s.part {
+        crate::geometry::SegmentPart::Flank { parent } => parent,
+        _ => s.tag_index,
+    };
+    let why = match ge {
+        Some(v) => format!("GE I1={v} leaves wire ends at the ground unjoined"),
+        None => "the deck has no GE card, so wire ends at the ground are left unjoined".to_string(),
+    };
+    Some(format!(
+        "tag {} seg {} ends on the ground plane but {why}: NEC-2 then solves the base as \
+         an open end and its answer does not converge (a quarter-wave vertical on GN 1 reads \
+         58 - j7611 ohm at 21 segments, 56 - j15556 at 63); fnec does not model that end. \
+         Set `GE 1` if the wire stands on the ground (nec2c 39.88 + j23.11 ohm, fnec 39.80 + \
+         j22.37 at 21 segments), or raise it strictly above z = 0",
+        s.tag, seg
+    ))
 }
 
 /// A deck that nothing drives at all, if that is the case.
@@ -1856,18 +1865,6 @@ pub fn diagnose(
             out.push(ValidationDiagnostic::error(u.to_string()));
         }
     }
-
-    // Solver-independent: these describe the deck and the ground model, not the
-    // basis that will be used on them.
-    for w in [
-        ge_ground_reflection_warning(deck),
-        deferred_ground_warning(ground),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        out.push(ValidationDiagnostic::warning(w));
-    }
     // Solver-independent too: an `EX` type nothing recognises is a fact about the
     // deck, and both solvers refuse it.
     for w in unrecognised_excitation_warnings(deck) {
@@ -2038,7 +2035,7 @@ mod tests {
     #[test]
     fn a_wire_touching_an_active_ground_is_a_hard_error_but_only_over_active_ground() {
         let (_deck, segs) = deck_and_segs(
-            "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 21 0 0 0 0 0 10 0.001\nGE 1\nGN 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         // FND-082: over PEC a wire standing on the ground is solved by images.
         assert_eq!(
@@ -2048,7 +2045,7 @@ mod tests {
         );
         // ...but one lying IN the ground plane is not (its image coincides).
         let (_d, flat) = deck_and_segs(
-            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nGN 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         let pec = buried_wire_geometry_error(&flat, &GroundModel::PerfectConductor)
             .expect("a wire in the ground plane must be rejected");
@@ -2578,7 +2575,7 @@ mod tests {
         // Ordering matters: this deck is clean until the ground model is known.
         let (deck, segs) = deck_and_segs(
             // In the ground plane: refused over PEC, fine in free space (FND-082).
-            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 21 -5 0 0 5 0 0 0.001\nGE 1\nGN 1\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         assert_eq!(geometry_error(&deck, &segs, &GroundModel::FreeSpace), None);
         assert!(geometry_error(&deck, &segs, &GroundModel::PerfectConductor).is_some());
@@ -2983,27 +2980,6 @@ mod tests {
             SolverContext::cli_hallen(),
         );
         assert!(!has_error(&hallen), "the LD deck must solve on Hallén");
-    }
-
-    #[test]
-    fn an_unrecognised_ge_flag_and_a_deferred_gn_type_each_warn() {
-        let (deck, _segs) = deck_and_segs(
-            "GW 1 21 -5.278 0 1 5.278 0 1 0.001\nGE 7\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-        );
-        let w = ge_ground_reflection_warning(&deck).expect("GE I1=7 is not recognised");
-        assert!(w.contains("GE I1=7"), "{w}");
-        // The supported flags are silent.
-        let (ok, _) = deck_and_segs(CLEAN_DIPOLE);
-        assert_eq!(ge_ground_reflection_warning(&ok), None);
-
-        let deferred = GroundModel::Deferred {
-            gn_type: 4,
-            eps_r: Some(13.0),
-            sigma: Some(0.005),
-        };
-        let w = deferred_ground_warning(&deferred).expect("a deferred GN type warns");
-        assert!(w.contains("GN type 4") && w.contains("EPSE=13"), "{w}");
-        assert_eq!(deferred_ground_warning(&GroundModel::FreeSpace), None);
     }
 }
 

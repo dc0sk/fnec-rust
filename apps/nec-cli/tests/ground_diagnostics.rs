@@ -64,8 +64,10 @@ fn gn0_is_active_without_deferred_warning() {
 }
 
 #[test]
-fn ge1_without_gn_infers_pec_ground() {
-    // GE 1 without an explicit GN card should infer PEC image-method ground.
+fn ge1_with_gn1_solves_over_the_pec_ground() {
+    // A perfect ground is `GN 1`. Until FND-241 fnec also read `GE 1` with no GN
+    // card as one, where nec2c solves free space; that deck is now refused
+    // (tests/ground_flags_nec2c.rs), so this one says GN 1.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -74,7 +76,7 @@ fn ge1_without_gn_infers_pec_ground() {
     let deck_path = std::env::temp_dir().join(format!("fnec-ge1-pec-{now}.nec"));
 
     let deck =
-        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE 1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE 1\nGN 1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary GE1 deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -141,43 +143,6 @@ fn ge1_without_gn_infers_pec_ground() {
 }
 
 #[test]
-fn ge_negative_flag_emits_unsupported_warning() {
-    // GE I1=-1 is parsed and should emit the explicit unsupported warning.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-ge-neg-{now}.nec"));
-
-    let deck =
-        "GW 1 51 0 0 4.718 0 0 15.282 0.001\nGE -1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GE-1 deck");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg(&deck_path)
-        .current_dir(&workspace_root)
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for GE negative flag test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("GE I1=-1 requests below-ground wire handling"),
-        "expected GE I1=-1 warning in stderr, got:\n{stderr}"
-    );
-}
-
-#[test]
 fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
     // GN type 2 is mapped to the simple finite-ground path and must not use
     // the deferred-ground warning.
@@ -233,43 +198,6 @@ fn gn_type2_runs_without_deferred_warning_and_changes_impedance() {
     assert!(
         (z_re - 76.472132).abs() < 0.05,
         "GN2 regression mismatch: got Z_RE={z_re}, expected ~76.47"
-    );
-}
-
-#[test]
-fn gn_type3_deferred_emits_warning_and_falls_back_to_free_space() {
-    // GN type 3 is deferred and should emit the deferred-ground warning.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-gn3-{now}.nec"));
-
-    let deck =
-        "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGN 3\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary GN-3 deck");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg(&deck_path)
-        .current_dir(&workspace_root)
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for GN type 3 diagnostics test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-
-    assert!(
-        output.status.success(),
-        "fnec failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("GN type 3 is not yet supported; treating this deck as free-space"),
-        "expected deferred GN3 warning, got:\n{stderr}"
     );
 }
 
@@ -418,7 +346,9 @@ fn interface_touching_wire_with_active_ground_fails_fast_with_material_context()
     let deck_path = std::env::temp_dir().join(format!("fnec-gn2-interface-{now}.nec"));
 
     let deck =
-        "GW 1 51 0 0 0.0 0 0 10.564 0.001\nGE\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        "GW 1 51 0 0 0.0 0 0 10.564 0.001\nGE 1\nGN 2 0 0 0 13.0 0.005\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    // `GE 1`: with `GE 0` the deck is refused earlier, for leaving the base
+    // unjoined (FND-242), before the finite-ground contact refusal it tests here.
     fs::write(&deck_path, deck).expect("failed to write temporary interface-touching deck");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
