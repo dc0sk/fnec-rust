@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-contract.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-15
 ---
 
 # PAR-011 4nec2 Drop-In Contract
@@ -296,7 +296,52 @@ The next evidence-oriented pass should capture the following in one run where pr
 Until the external capture bundle above is completed, the project should not assume:
 
 - side-by-side kernel selection is automatic
-- no runtime DLLs are required outside the observed package root
-- file side effects are limited to the current best-guess template
-- timeout/exit semantics match the current fnec CLI contract
+- no runtime DLLs are required outside the observed package root (the bundled kernel imports only `KERNEL32.dll` and `msvcrt.dll`; Windows loader behaviour is unobserved)
+- file side effects are limited to the current best-guess template (superseded under Wine: see the memo)
+- timeout/exit semantics match the current fnec CLI contract (they do not: the kernel exits 0 on a deck error, and success is the output file's `RUN TIME` line; see the memo)
 - throughput gains are uniform across all segment-band binaries
+
+## Observed contract and implementation plan (2026-10-15)
+
+The process contract, file effects, `.inp` preprocessing and the output 4nec2
+accepts have now been observed with a real 4nec2 V5.9.3 under Wine. The results
+are in `docs/par011-dropin-evidence-memo.md` § *Observed under Wine*, and the
+fixture pairs are in `apps/nec-cli/tests/fixtures/par011/`. Three of those facts
+decide the design:
+
+- **The layout must be NEC-2D's.** 4nec2 rejects nec2c's valid output, so a drop-in
+  must print the original Fortran NEC-2D layout. Every block 4nec2 reads must be
+  present: structure, segmentation, the card echo, input parameters, currents,
+  power budget, patterns and the final `RUN TIME` line.
+- **Errors go into the output file.** The failure contract is the output text, not
+  the exit code. A refusal writes its message and omits `RUN TIME`, and 4nec2 shows
+  it to the user.
+- **Free-text lines are tolerated** anywhere tested, so fnec's caveats and a banner
+  naming fnec can be printed without breaking the parse.
+
+Fable reviewed the plan. Three of its points shaped it: kernel mode is an explicit
+subcommand, the writer follows the NEC-2 FORMAT statements, and the work is split
+in two (output format first, kernel mode second).
+
+1. **P2a: `--output-format nec2d`.** The normal CLI writes the NEC-2D layout. The
+   writer transcribes one shared result structure; anything it lacks is added there
+   first, so the writer never computes physics of its own. Two gates check it:
+   - a layout gate: the fixtures' lines are compared with fnec's after
+     width-preserving numeric masking, and must match byte for byte;
+   - a transcription gate: every printed number equals fnec's own result to print
+     precision.
+
+   Fortran number printing (`1PE12.5`, `F10.5`, zero and overflow cases) gets its
+   own unit tests.
+2. **P2b: kernel mode.** `fnec nec2d-kernel` reads the two paths from stdin, and the
+   `nec2dxs*` names dispatch to it when given no deck argument; a TTY stdin prints
+   usage. It treats end-of-file as `EN` and writes failures to the file. A deck
+   whose card sequence fnec's solve model cannot follow is refused: a second `FR`
+   or a geometry card after `XQ` or `RP`, `GN 2` until fnec's Sommerfeld path is
+   chosen for it, surface patches, and NEC-4 mode. The filename-steered `--exec
+   hybrid` scaffold is retired in the same change.
+3. **P3: Windows build.** An x86_64 Windows build (the observed prefix is win64),
+   shipped under the six `nec2dxs*` names and defaulting to `--exec cpu` unless the
+   host has been calibrated. It is installed into this host's 4nec2 by the
+   documented backup procedure and checked end to end. The Wine harness is a manual
+   check, self-tested by feeding it nec2c's output, which 4nec2 must reject.
