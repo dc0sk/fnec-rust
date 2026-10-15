@@ -1659,15 +1659,23 @@ pub(super) fn solve_frequency_point(
     // directivity; convert to gain here so the reported dBi matches nec2c's gain.
     // Over every ground: this was gated on a lossy finite ground, so a lossy load
     // in free space or over PEC printed its directivity as gain (FND-200).
+    // The shared producer, not a second inline sum. It computed a different
+    // number for a current source than this loop did, and since only the GUI
+    // called it, the divergence was invisible from here (FND-114). Identical
+    // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
+    // already run and aborts the session on any feedpoint it cannot price, so
+    // no feedpoint can reach this that the rows skipped.
+    let p_in: f64 =
+        nec_solver::feedpoint_input_power(deck, segs, v_vec, &feed_i_vec, current_source_port);
+    // NEC-2's power budget (PAR-011): the loads' dissipation from the wire
+    // currents and the diagonal the solve stamped; a network's loss is not
+    // separated here, so a deck with one has none.
+    let power_budget = (!rows.is_empty()).then(|| nec_report::PowerBudget {
+        input_w: p_in,
+        structure_loss_w: nec_solver::structure_loss_w(&i_vec, &stamps.diagonal),
+        network_loss_w: (!stamps.has_networks).then_some(0.0),
+    });
     if !pattern_table.is_empty() {
-        // The shared producer, not a second inline sum. It computed a different
-        // number for a current source than this loop did, and since only the GUI
-        // called it, the divergence was invisible from here (FND-114). Identical
-        // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
-        // already run and aborts the session on any feedpoint it cannot price, so
-        // no feedpoint can reach this that the rows skipped.
-        let p_in: f64 =
-            nec_solver::feedpoint_input_power(deck, segs, v_vec, &feed_i_vec, current_source_port);
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)
@@ -1751,6 +1759,7 @@ pub(super) fn solve_frequency_point(
             .iter()
             .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
         avg_power_gain,
+        power_budget,
     }));
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",

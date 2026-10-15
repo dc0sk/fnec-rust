@@ -371,6 +371,19 @@ fn far_field_components(
 const MU0: f64 = 4.0 * PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
 
+/// NEC-2's STRUCTURE LOSS: the power the series loads dissipate,
+/// `½·Σ |Iₙ|²·Re Zₙ` over the per-segment load impedances (peak amplitudes, as
+/// [`feedpoint_input_power`] prices the input). NEC-2 reports the radiated power
+/// as the input less this and the network loss (PAR-011), not as a pattern
+/// integral.
+pub fn structure_loss_w(i_vec: &[Complex64], load_diagonal: &[Complex64]) -> f64 {
+    i_vec
+        .iter()
+        .zip(load_diagonal)
+        .map(|(i, z)| 0.5 * i.norm_sqr() * z.re)
+        .sum()
+}
+
 /// The dB to add to a directivity to make it a **gain**: `10·log10 η`, with
 /// `η = P_radiated / P_input` from [`radiation_efficiency`].
 ///

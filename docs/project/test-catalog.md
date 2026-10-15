@@ -139,6 +139,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/nt_network.rs` | 2 | PH8-CHK-004: `NT` networks, read as the admittance parameters they are (FND-123). | FND-123, PH8-CHK-004 |
 | `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve through the production seams: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity — angle spread AND the absolute level `R·λ²/(π·η₀·|Z|²)` from the transmit solve (0.09 %; the spread alone could not see a bend error) | PH9-CHK-002, FND-162 |
 | `crates/nec_solver/tests/planewave_nec2c.rs` | 10 | PH8-CHK-002: validate the incident-plane-wave Hallén solve. | PH8-CHK-002 |
+| `crates/nec_solver/tests/power_budget_nec2c.rs` | 1 | PAR-011: NEC-2's structure loss (½·Σ\|Iₙ\|²·Re Zₙ) and efficiency (input less losses) against nec2c converged at 9×, on a series RLC with copper, copper alone and a parallel RLC; each nec2c series asserted settled within a third of the bound; fnec within 0.003 / 0.002 in loss fraction and 0.3 / 0.25 points of efficiency at 1× / 3×, not moving away. | PAR-011 |
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/regularisation_bias.rs` | 1 | FND-164 — the Hallén solve's Tikhonov term must not bias the answer. | FND-164 |
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
@@ -153,7 +154,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=774 --> **774** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=775 --> **775** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -178,7 +179,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=639 --> **639** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1420 --> **1420** = 639 unit + 774 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1421 --> **1421** = 639 unit + 775 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

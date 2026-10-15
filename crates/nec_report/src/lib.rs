@@ -175,6 +175,34 @@ pub struct PointReport {
     pub near_h_field_table: Vec<NearHFieldRow>,
     pub normalize_pattern: bool,
     pub avg_power_gain: Option<f64>,
+    /// NEC-2's power budget; `None` when nothing is driven (a receive deck).
+    pub power_budget: Option<PowerBudget>,
+}
+
+/// One frequency point's power budget as NEC-2 reports it (PAR-011): watts,
+/// peak amplitudes. NEC-2 takes the radiated power as the input less the losses,
+/// not as a pattern integral.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PowerBudget {
+    pub input_w: f64,
+    /// The power the series loads dissipate, `½·Σ|Iₙ|²·Re Zₙ`.
+    pub structure_loss_w: f64,
+    /// The power networks and transmission lines dissipate, or `None` where fnec
+    /// does not separate it (a deck with `NT` or `TL`).
+    pub network_loss_w: Option<f64>,
+}
+
+impl PowerBudget {
+    /// The input less both losses, when both are known.
+    pub fn radiated_w(&self) -> Option<f64> {
+        self.network_loss_w
+            .map(|net| self.input_w - self.structure_loss_w - net)
+    }
+
+    /// The radiated power over the input, in percent.
+    pub fn efficiency_pct(&self) -> Option<f64> {
+        self.radiated_w().map(|rad| 100.0 * rad / self.input_w)
+    }
 }
 
 impl PointReport {
