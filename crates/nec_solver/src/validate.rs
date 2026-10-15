@@ -76,9 +76,15 @@ pub fn segment_intersection_error(segs: &[Segment]) -> Option<String> {
     None
 }
 
-pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
-    const MIN_SOURCE_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
+/// The shortest segment, in wire radii, that fnec will drive or build from a
+/// taper: below it the thin-wire kernel both codes use is outside its validity
+/// (a 5 m GC taper of RDEL 0.6, whose last segment is 0.07 radii, reads
+/// 125.33 + j56.663 Ω in nec2c and 123.13 + j37.435 in fnec, fed far from it).
+/// One bound for the source check and the GC
+/// check, so they cannot drift apart.
+pub(crate) const MIN_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
 
+pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
     // Only a DRIVEN source sits on a segment and carries this risk (FND-035).
     // This used to iterate every `EX` card with no type filter, so a plane wave —
     // whose tag/segment fields carry NTHETA and NPHI, not a driven segment —
@@ -97,7 +103,7 @@ pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<St
         // The deck segment's length: refinement (FND-227) makes the fed segment a
         // third as long, and a feed that passed before must pass after.
         let length_to_radius = seg.deck_length() / seg.radius;
-        if length_to_radius < MIN_SOURCE_LENGTH_TO_RADIUS_RATIO {
+        if length_to_radius < MIN_LENGTH_TO_RADIUS_RATIO {
             return Some(format!(
                 "unsupported source-risk geometry: EX on tiny segment tag {} seg {} (length={:.6e} m, radius={:.6e} m, L/r={:.3}). Increase segment length or reduce wire radius; tiny-loop/source-risk classes are deferred",
                 ex.tag,
@@ -456,7 +462,8 @@ pub fn mpie_mixed_radius_caveat(segs: &[Segment]) -> Option<String> {
     Some(format!(
         "the MPIE solver models a single wire radius; this deck mixes radii, so all \
 segments are solved with the first wire's radius ({r0} m) — impedance for the \
-differently-sized wires will be approximate"
+differently-sized wires will be approximate; the Hallén solver (`--solver hallen`) \
+models each segment's own radius"
     ))
 }
 

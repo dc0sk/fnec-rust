@@ -403,6 +403,8 @@ impl PostSlot {
             PostSlot::Fr(_) => 4,
             PostSlot::Other(c) => match c {
                 Card::Comment(_)
+                | Card::Gw(_)
+                | Card::Gc(_)
                 | Card::Ge(_)
                 | Card::Gm(_)
                 | Card::Gr(_)
@@ -528,7 +530,11 @@ impl ModelDoc {
         let mut seen_wire = false;
         for card in &deck.cards {
             match card {
-                Card::Gw(gw) if post.is_empty() => {
+                // A tapered wire (radius 0) is not a table row: its GC must stay
+                // the very next card, and a row added, deleted or given a radius
+                // there would split the pair. It ends the block and is kept
+                // verbatim with its GC, as is every GW after it.
+                Card::Gw(gw) if post.is_empty() && gw.radius != 0.0 => {
                     // Extend the (first) contiguous wire block.
                     wires.push(WireRow::from_card(gw));
                     seen_wire = true;
@@ -1159,5 +1165,39 @@ EN
             .unwrap();
         d.delete_control(ex_idx);
         assert_eq!(d.post_slots().len(), before);
+    }
+
+    /// A tapered wire is kept out of the wire table with its GC (before the table
+    /// when it leads the deck, else after it with every later GW), so no edit can
+    /// come between the pair: adding a wire row and a
+    /// GN still writes a deck the parser (and nec2c) reads — the GN used to sort
+    /// before a GW kept in the post cards, into the geometry block.
+    #[test]
+    fn a_tapered_wire_and_its_gc_stay_together_through_edits() {
+        for deck in [
+            "CE\nGW 1 5 0 0 -1 0 0 1 .001\nGW 2 9 1 0 -1 1 0 1 0\nGC 0 0 1.1 .001 .002\n\
+             GW 3 5 2 0 -1 2 0 1 .001\nGE 0\nEX 0 1 3 0 1\nFR 0 1 0 0 100 0\nEN\n",
+            "CE\nGW 2 9 1 0 -1 1 0 1 0\nGC 0 0 1.1 .001 .002\nGW 3 5 2 0 -1 2 0 1 .001\n\
+             GE 0\nEX 0 3 3 0 1\nFR 0 1 0 0 100 0\nEN\n",
+        ] {
+            let original = parse(deck).unwrap().deck;
+            let mut d = ModelDoc::from_deck(&original);
+            assert!(d.wires.iter().all(|w| w.tag != "2"), "{deck}");
+            let unedited = d.to_deck().unwrap();
+            assert_eq!(
+                parse(&write_deck(&unedited)).unwrap().deck.cards,
+                original.cards
+            );
+            d.add_wire();
+            d.add_control(ControlKind::Gn);
+            let written = write_deck(&d.to_deck().unwrap());
+            let reparsed = parse(&written).unwrap_or_else(|e| panic!("{written}\n{e}"));
+            assert_eq!(nec_model::card::taper_pairing(&reparsed.deck.cards), Ok(()));
+            let at = |f: fn(&Card) -> bool| reparsed.deck.cards.iter().position(f).unwrap();
+            assert!(
+                at(|c| matches!(c, Card::Gn(_))) > at(|c| matches!(c, Card::Ge(_))),
+                "the GN was put in the geometry:\n{written}"
+            );
+        }
     }
 }

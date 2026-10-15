@@ -149,6 +149,11 @@ EN
         stderr.contains("single wire radius") || stderr.contains("mixes radii"),
         "expected a mixed-radius warning on the MPIE path:\n{stderr}"
     );
+    // A caveat names the spelling that works.
+    assert!(
+        stderr.contains("`--solver hallen`"),
+        "the mixed-radius caveat names no remedy:\n{stderr}"
+    );
 }
 
 /// A uniform-radius deck must NOT emit the mixed-radius warning (no false positive).

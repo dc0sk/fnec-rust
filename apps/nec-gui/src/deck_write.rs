@@ -87,6 +87,14 @@ pub fn write_card(card: &Card) -> String {
             f(c.b2),
             f(c.radius),
         ]),
+        Card::Gc(c) => join(&[
+            "GC".into(),
+            "0".into(),
+            "0".into(),
+            f(c.length_ratio),
+            f(c.radius_start),
+            f(c.radius_end),
+        ]),
         Card::Gx(c) => join(&[
             "GX".into(),
             u(c.tag_increment),

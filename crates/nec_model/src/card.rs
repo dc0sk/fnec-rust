@@ -476,6 +476,76 @@ pub struct GsCard {
     pub scale: f64,
 }
 
+/// GC — The taper of the `GW` before it, as nec2c's `wire` builds it.
+///
+/// `GC I1 I2 RDEL RAD1 RAD2` follows a `GW` whose radius is 0: each segment of
+/// that wire is `RDEL` times as long as the one before, and the radii run
+/// geometrically from `RAD1` on the first segment to `RAD2` on the last. `I1`/`I2`
+/// are read and ignored, as NEC-2 defines them and nec2c reads them. The pairing
+/// is one rule, [`taper_pairing`], for every builder of a deck.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GcCard {
+    /// Each segment's length over the one before (`RDEL`), positive.
+    pub length_ratio: f64,
+    /// The first segment's radius (m), `RAD1`.
+    pub radius_start: f64,
+    /// The last segment's radius (m), `RAD2`.
+    pub radius_end: f64,
+}
+
+/// How a deck breaks the `GW`–`GC` pairing: what nec2c stops on with
+/// "GEOMETRY DATA CARD ERROR".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaperPairingError {
+    /// The `GW` at this card index has radius 0 and the next card is not a `GC`.
+    WireWithoutTaper { index: usize, tag: u32 },
+    /// The `GC` at this card index does not directly follow a `GW` of radius 0.
+    TaperWithoutWire { index: usize },
+}
+
+impl std::fmt::Display for TaperPairingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WireWithoutTaper { tag, .. } => write!(
+                f,
+                "GW tag {tag} has radius 0, NEC's tapered wire, so the next card must be the \
+                 GC giving its radii; give the wire its radius, or follow it with \
+                 `GC 0 0 RDEL RAD1 RAD2`"
+            ),
+            Self::TaperWithoutWire { .. } => f.write_str(
+                "a GC tapers the GW directly before it, whose radius must be 0; \
+                 write the pair as `GW … 0` then `GC 0 0 RDEL RAD1 RAD2`",
+            ),
+        }
+    }
+}
+
+/// The `GC` tapering the card at `index`: `Some` when that card is a `GW` of
+/// radius 0 and the next is a `GC`. Every consumer reads the pairing here.
+pub fn taper_of(cards: &[Card], index: usize) -> Option<&GcCard> {
+    match (cards.get(index), cards.get(index + 1)) {
+        (Some(Card::Gw(gw)), Some(Card::Gc(gc))) if gw.radius == 0.0 => Some(gc),
+        _ => None,
+    }
+}
+
+/// Every radius-0 `GW` directly followed by its `GC`, and every `GC` directly
+/// after one: the first card that breaks the pairing, else `Ok`.
+pub fn taper_pairing(cards: &[Card]) -> Result<(), TaperPairingError> {
+    for (index, card) in cards.iter().enumerate() {
+        match card {
+            Card::Gw(gw) if gw.radius == 0.0 && taper_of(cards, index).is_none() => {
+                return Err(TaperPairingError::WireWithoutTaper { index, tag: gw.tag });
+            }
+            Card::Gc(_) if index == 0 || taper_of(cards, index - 1).is_none() => {
+                return Err(TaperPairingError::TaperWithoutWire { index });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 /// TL — Transmission line card, in the NEC-2 layout (FND-111).
 ///
 /// `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`
@@ -553,6 +623,7 @@ pub enum Card {
     Gs(GsCard),
     Ga(GaCard),
     Gh(GhCard),
+    Gc(GcCard),
     Gx(GxCard),
     Ge(GeCard),
     Gn(GnCard),
