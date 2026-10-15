@@ -32,6 +32,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   arc radius or turn spacing, a flat spiral, a segment of 180° or more), and so
   are the two `GH` spellings nec2c reads otherwise than NEC-2 defines. The GUI
   viewport draws such a deck's own segments, the mesh the MPIE solves.
+- **The `GC` card tapers a wire** (PH10-CHK-002), as nec2c's `wire` builds it:
+  `GW … 0` then `GC 0 0 RDEL RAD1 RAD2`, each segment `RDEL` times the one
+  before and the radii geometric from `RAD1` to `RAD2`. Each taper equals its
+  written-out `GW` twin and refining approaches nec2c's value. The Hallén solve
+  models every segment's radius; `--solver mpie` solves a radius taper with one
+  radius, and its mixed-radius caveat now names `--solver hallen`. Refused by
+  name: a radius-0 `GW` without its `GC` directly after it, a `GC` after anything
+  else, a ratio or radius that is not positive, one segment given two radii
+  (nec2c silently uses `RAD1`), and a taper whose segments fall under two radii
+  or 3 µm (RDEL 0.6 on a 1 mm wire: nec2c and fnec 19 Ω apart in X). The GUI keeps a
+  tapered wire out of its wire table, so no edit can split it from its `GC`.
 - **The `GX` card reflects the structure** (PH10-CHK-002), as nec2c's `reflc`
   does: the planes `I2`'s digits select, z then y then x, each pass copying every
   segment present with its tag increased (tag 0 stays 0) and the increment

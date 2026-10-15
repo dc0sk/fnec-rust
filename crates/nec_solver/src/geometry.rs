@@ -408,6 +408,20 @@ pub enum GeometryError {
         /// The coordinate the plane negates: 'x', 'y' or 'z'.
         axis: char,
     },
+    /// A radius-0 `GW` without its `GC`, or a `GC` without its `GW` — in a deck
+    /// built other than by the parser, which refuses both with a line number.
+    TaperPairing(nec_model::card::TaperPairingError),
+    /// A `GC` taper whose segment `segment` (1-based within its tag) is shorter
+    /// than [`crate::validate::MIN_LENGTH_TO_RADIUS_RATIO`] radii, or than three
+    /// junction tolerances — the Hallén refinement thirds an end segment, and a
+    /// third under [`crate::hallen_session::JUNCTION_TOL_M`] would join wires
+    /// that do not touch.
+    TaperTooShort {
+        tag: u32,
+        segment: u32,
+        length: f64,
+        radius: f64,
+    },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -445,6 +459,34 @@ impl std::fmt::Display for GeometryError {
                  it reflects in, so its copy would coincide with or overlap it; nec2c stops \
                  on it too. Model the half that lies on one side of the plane"
             ),
+            GeometryError::TaperPairing(e) => write!(f, "{e}"),
+            GeometryError::TaperTooShort {
+                tag,
+                segment,
+                length,
+                radius,
+            } => {
+                // Each bound says itself, so a test can tell which one refused.
+                let ratio = crate::validate::MIN_LENGTH_TO_RADIUS_RATIO;
+                let why = if *length < ratio * radius {
+                    format!(
+                        "shorter than {ratio} radii, where the thin-wire kernel is outside its \
+                         validity and nec2c and fnec disagree"
+                    )
+                } else {
+                    format!(
+                        "shorter than {MIN_TAPER_SEGMENT_M:.0e} m, three junction tolerances, \
+                         under which the Hallén refinement would join it to wires it does not \
+                         touch"
+                    )
+                };
+                write!(
+                    f,
+                    "GC card: segment {segment} of tag {tag} tapers to {length:.3e} m against a \
+                     radius of {radius:.3e} m, {why}. Bring the length ratio nearer 1 or use \
+                     fewer segments"
+                )
+            }
             GeometryError::TagOverflow { card, detail } => write!(
                 f,
                 "{card} card: {detail} leaves the u32 tag-number space (largest \
@@ -1216,13 +1258,22 @@ pub fn geometry_for(
 }
 
 fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
+    nec_model::card::taper_pairing(&deck.cards).map_err(GeometryError::TaperPairing)?;
     let mut segments: Vec<Segment> = Vec::new();
+    // The segments each GC made, by index: GM, GR and GX only append and GS keeps
+    // the order, so the indices hold to the end, where the lengths are final.
+    let mut tapered: Vec<std::ops::Range<usize>> = Vec::new();
 
-    for card in &deck.cards {
+    for (i, card) in deck.cards.iter().enumerate() {
         match card {
-            Card::Gw(gw) => {
-                expand_wire(gw, &mut segments)?;
-            }
+            Card::Gw(gw) => match nec_model::card::taper_of(&deck.cards, i) {
+                Some(gc) => {
+                    let first = segments.len();
+                    expand_tapered_wire(gw, gc, &mut segments)?;
+                    tapered.push(first..segments.len());
+                }
+                None => expand_wire(gw, &mut segments)?,
+            },
             Card::Gm(gm) => {
                 apply_gm(gm, &mut segments)?;
             }
@@ -1239,6 +1290,17 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
 
     if segments.is_empty() {
         return Err(GeometryError::NoWires);
+    }
+    for s in tapered.into_iter().flat_map(|r| segments[r].iter()) {
+        let ratio = crate::validate::MIN_LENGTH_TO_RADIUS_RATIO;
+        if s.length < ratio * s.radius || s.length < MIN_TAPER_SEGMENT_M {
+            return Err(GeometryError::TaperTooShort {
+                tag: s.tag,
+                segment: s.tag_index,
+                length: s.length,
+                radius: s.radius,
+            });
+        }
     }
     if ge_flag(deck) == 1 && !matches!(ground_model_from_deck(deck), GroundModel::FreeSpace) {
         snap_ground_contacts(&mut segments);
@@ -1404,6 +1466,63 @@ fn check_segment_budget(have: usize, adding: u64, card: &'static str) -> Result<
     let projected = have as u64 + adding;
     if projected > MAX_SEGMENTS as u64 {
         return Err(GeometryError::SegmentBudgetExceeded { card, projected });
+    }
+    Ok(())
+}
+
+/// The shortest segment a `GC` taper may make, absolute: three junction
+/// tolerances, since the Hallén refinement splits a free-end segment into thirds
+/// before the tolerance is applied to them (FND-227).
+const MIN_TAPER_SEGMENT_M: f64 = 3.0 * crate::hallen_session::JUNCTION_TOL_M;
+
+/// A `GW` of radius 0 tapered by its `GC`: nec2c's `wire`, in its float order.
+/// Each segment `RDEL` times the one before (the first `L(1 − RDEL)/(1 − RDEL^NS)`;
+/// within 1e-6 of 1, `NS` equal steps of `(P2 − P1)/NS`), each starting at the
+/// previous one's end, the last ending at `P2` exactly; the radii from `RAD1` by
+/// `(RAD2/RAD1)^(1/(NS − 1))` per segment, accumulated.
+fn expand_tapered_wire(
+    gw: &GwCard,
+    gc: &nec_model::card::GcCard,
+    out: &mut Vec<Segment>,
+) -> Result<(), GeometryError> {
+    if gw.segments == 0 {
+        return Err(GeometryError::ZeroSegments { tag: gw.tag });
+    }
+    if gw.start == gw.end {
+        return Err(GeometryError::ZeroLengthWire { tag: gw.tag });
+    }
+    check_segment_budget(out.len(), u64::from(gw.segments), "GW")?;
+    let ns = gw.segments;
+    let mut d: [f64; 3] = std::array::from_fn(|k| gw.end[k] - gw.start[k]);
+    let (mut delz, rd) = if (gc.length_ratio - 1.0).abs() >= 1.0e-6 {
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        d = d.map(|c| c / len);
+        let r = gc.length_ratio;
+        (len * (1.0 - r) / (1.0 - r.powf(f64::from(ns))), r)
+    } else {
+        let fns = f64::from(ns);
+        d = d.map(|c| c / fns);
+        (1.0, 1.0)
+    };
+    // NS = 1 has no step (the parser refused one with RAD2 ≠ RAD1); nec2c's
+    // 1/(NS − 1) is then infinite, but only multiplies after the one segment.
+    let rrad = if ns > 1 {
+        (gc.radius_end / gc.radius_start).powf(1.0 / (f64::from(ns) - 1.0))
+    } else {
+        1.0
+    };
+    let mut radz = gc.radius_start;
+    let mut p = gw.start;
+    for i in 0..ns {
+        let mut q = [p[0] + d[0] * delz, p[1] + d[1] * delz, p[2] + d[2] * delz];
+        if i + 1 == ns {
+            q = gw.end;
+        }
+        let at = out.len();
+        out.push(segment_between(gw.tag, i, p, q, radz, at));
+        delz *= rd;
+        radz *= rrad;
+        p = q;
     }
     Ok(())
 }
@@ -2434,6 +2553,122 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A `GC` taper as nec2c builds it: its segmentation table for a slanted
+    /// wire tapered by length (RDEL 1.2) and radius (0.1 → 0.3, large so its
+    /// 4-decimal radius column resolves the steps), nec2c 1.3.1, 2026-10-15. Ends
+    /// shared, the last at P2 exactly.
+    #[test]
+    fn a_gc_taper_matches_nec2cs_segmentation_table() {
+        let nec2c: [[f64; 5]; 5] = [
+            [0.1202, -0.1664, -0.8320, 0.3450, 0.1000],
+            [0.1645, -0.0925, -0.4625, 0.4140, 0.1316],
+            [0.2177, -0.0038, -0.0190, 0.4968, 0.1732],
+            [0.2816, 0.1026, 0.5131, 0.5961, 0.2280],
+            [0.3582, 0.2303, 1.1517, 0.7153, 0.3000],
+        ];
+        let deck = "GW 3 5 0.1 -0.2 -1 0.4 0.3 1.5 0\nGC 0 0 1.2 .1 .3\nGE 0\nEN\n";
+        let segs = build_deck_geometry(&parsed(deck)).expect("builds");
+        assert_eq!(segs.len(), 5);
+        for (i, (s, row)) in segs.iter().zip(&nec2c).enumerate() {
+            let got = [
+                s.midpoint[0],
+                s.midpoint[1],
+                s.midpoint[2],
+                s.length,
+                s.radius,
+            ];
+            for k in 0..5 {
+                assert!(
+                    (got[k] - row[k]).abs() <= 5.1e-5,
+                    "segment {}: {got:?} vs nec2c {row:?}",
+                    i + 1
+                );
+            }
+            assert_eq!(s.tag, 3);
+            if i > 0 {
+                assert_eq!(s.start, segs[i - 1].end, "segment {}", i + 1);
+            }
+        }
+        assert_eq!(segs[4].end, [0.4, 0.3, 1.5]);
+        // RDEL 1 with equal radii is the plain GW, to round-off.
+        let tapered = build_deck_geometry(&parsed(
+            "GW 1 7 0 0 -1 0.3 0 1 0\nGC 0 0 1 .002 .002\nGE 0\nEN\n",
+        ))
+        .expect("builds");
+        let plain =
+            build_deck_geometry(&parsed("GW 1 7 0 0 -1 0.3 0 1 .002\nGE 0\nEN\n")).expect("builds");
+        for (t, p) in tapered.iter().zip(&plain) {
+            for k in 0..3 {
+                assert!(
+                    (t.midpoint[k] - p.midpoint[k]).abs() < 1e-15,
+                    "{t:?} vs {p:?}"
+                );
+            }
+            assert_eq!(t.radius, p.radius);
+        }
+    }
+
+    /// The pairing is the builder's rule as well as the parser's: a deck built
+    /// in code with a radius-0 GW and no GC, or a GC and no GW, is refused, not
+    /// built with the wire vanished or the taper given to another card.
+    #[test]
+    fn the_builder_refuses_a_broken_taper_pairing() {
+        let mut deck = parsed("GW 1 5 0 0 -1 0 0 1 .001\nGE 0\nEN\n");
+        let Card::Gw(gw) = &mut deck.cards[0] else {
+            unreachable!()
+        };
+        gw.radius = 0.0;
+        assert!(matches!(
+            build_deck_geometry(&deck),
+            Err(GeometryError::TaperPairing(
+                nec_model::card::TaperPairingError::WireWithoutTaper { index: 0, tag: 1 }
+            ))
+        ));
+        let mut deck = parsed("GW 1 5 0 0 -1 0 0 1 .001\nGE 0\nEN\n");
+        deck.cards.insert(
+            1,
+            Card::Gc(nec_model::card::GcCard {
+                length_ratio: 1.0,
+                radius_start: 0.001,
+                radius_end: 0.002,
+            }),
+        );
+        assert!(matches!(
+            build_geometry(&deck),
+            Err(GeometryError::TaperPairing(
+                nec_model::card::TaperPairingError::TaperWithoutWire { index: 1 }
+            ))
+        ));
+    }
+
+    /// A taper may not make a segment shorter than two radii (the thin-wire
+    /// limit: nec2c and fnec read RDEL 0.6 19 Ω apart in X, fed far from its end) or
+    /// three junction tolerances — judged on the final structure, so a taper
+    /// drawn small and scaled up by GS builds. Each refusal beside one that builds.
+    #[test]
+    fn a_taper_too_short_for_the_kernel_or_the_junction_tolerance_is_refused() {
+        let build = |cards: &str| build_deck_geometry(&parsed(&format!("{cards}\nGE 0\nEN\n")));
+        // Refused by the bound whose words are `says`.
+        let short = |r: Result<Vec<Segment>, GeometryError>, says: &str| match r {
+            Err(e @ GeometryError::TaperTooShort { .. }) => e.to_string().contains(says),
+            _ => false,
+        };
+        // Δ/a alone: RDEL 0.6 on 21 segments of a 5 m wire ends at 73 µm, over the
+        // absolute bound and 0.07 radii; 0.8 ends at 12 mm.
+        assert!(short(
+            build("GW 1 21 0 0 -2.5 0 0 2.5 0\nGC 0 0 0.6 .001 .001"),
+            "2 radii"
+        ));
+        assert!(build("GW 1 21 0 0 -2.5 0 0 2.5 0\nGC 0 0 0.8 .001 .001").is_ok());
+        // Absolute: 2.5 µm segments of a 1 µm wire pass Δ/a but not 3 µm.
+        assert!(short(
+            build("GW 1 3 0 0 0 0 0 7.5e-6 0\nGC 0 0 1 1e-6 1e-6"),
+            "three junction tolerances"
+        ));
+        assert!(build("GW 1 3 0 0 0 0 0 1.2e-5 0\nGC 0 0 1 1e-6 1e-6").is_ok());
+        assert!(build("GW 1 3 0 0 0 0 0 7.5e-6 0\nGC 0 0 1 1e-6 1e-6\nGS 0 0 1000").is_ok());
     }
 
     /// The Hallén geometry refuses GA/GH, naming the MPIE; the deck geometry

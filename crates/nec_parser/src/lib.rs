@@ -16,8 +16,8 @@
 pub mod template;
 
 use nec_model::card::{
-    Card, CommentCard, EnCard, ExCard, FrCard, GaCard, GeCard, GhCard, GmCard, GnCard, GrCard,
-    GsCard, GwCard, GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
+    Card, CommentCard, EnCard, ExCard, FrCard, GaCard, GcCard, GeCard, GhCard, GmCard, GnCard,
+    GrCard, GsCard, GwCard, GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
 use nec_model::deck::NecDeck;
 
@@ -65,6 +65,13 @@ pub enum ParseError {
         line: usize,
         mnemonic: String,
         ge_line: usize,
+    },
+    /// A `GW` of radius 0 without its `GC`, or a `GC` without its `GW`: nec2c's
+    /// "GEOMETRY DATA CARD ERROR". The rule is `nec_model`'s, one for every
+    /// builder of a deck.
+    TaperPairing {
+        line: usize,
+        error: nec_model::card::TaperPairingError,
     },
     /// A card did not have enough fields.
     TooFewFields {
@@ -123,6 +130,7 @@ impl std::fmt::Display for ParseError {
                 "line {line}: {mnemonic} after GE (line {ge_line}): GE ends the geometry, \
                  and nec2c refuses a geometry card after it; move it above the GE card"
             ),
+            ParseError::TaperPairing { line, error } => write!(f, "line {line}: {error}"),
             ParseError::TooFewFields {
                 line,
                 card,
@@ -187,7 +195,6 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
         "WG",
         OtherCard::Ignored("writes a Numerical Green's Function file; none is written"),
     ),
-    ("GC", OtherCard::Refused("a tapered wire")),
     (
         "GF",
         OtherCard::Refused("a structure read from a Numerical Green's Function file"),
@@ -239,6 +246,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
     // appended after GE would have scaled the whole structure without a word.
     let mut ge_line: Option<usize> = None;
     let mut last_gn_type: Option<i32> = None;
+    // A GW of radius 0 just parsed: (its line, tag, segment count). nec2c reads
+    // the very next card as its GC, raw, so nothing may come between — not a CM,
+    // not a `'` comment; only a blank line, which is no card.
+    let mut taper_pending: Option<(usize, u32, u32)> = None;
 
     for (idx, raw_line) in input.lines().enumerate() {
         let lineno = idx + 1;
@@ -247,6 +258,18 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
         // Skip blank lines and lines that are entirely whitespace.
         if line.is_empty() {
             continue;
+        }
+
+        if let Some((gw_line, tag, _)) = taper_pending {
+            if !split_mnemonic(line).0.eq_ignore_ascii_case("GC") {
+                return Err(ParseError::TaperPairing {
+                    line: gw_line,
+                    error: nec_model::card::TaperPairingError::WireWithoutTaper {
+                        index: deck.cards.len() - 1,
+                        tag,
+                    },
+                });
+            }
         }
 
         // A line starting with `'` is a comment (4nec2's editor convention); it
@@ -262,7 +285,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
         if let Some(ge_line) = ge_line {
             if matches!(
                 upper.as_str(),
-                "GW" | "GM" | "GR" | "GS" | "GX" | "GA" | "GH" | "GE"
+                "GW" | "GC" | "GM" | "GR" | "GS" | "GX" | "GA" | "GH" | "GE"
             ) {
                 return Err(ParseError::GeometryAfterGe {
                     line: lineno,
@@ -288,9 +311,18 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             "GW" => {
                 let fields = parse_fields(rest);
                 require_fields(lineno, "GW", &fields, 9)?;
+                let tag = parse_u32(lineno, "GW", 1, fields[0])?;
+                let segments = parse_u32(lineno, "GW", 2, fields[1])?;
+                // Radius 0 is NEC's tapered wire: the next card is its GC.
+                let radius = if parse_f64(lineno, "GW", 9, fields[8])? == 0.0 {
+                    taper_pending = Some((lineno, tag, segments));
+                    0.0
+                } else {
+                    parse_radius(lineno, "GW", 9, fields[8])?
+                };
                 deck.cards.push(Card::Gw(GwCard {
-                    tag: parse_u32(lineno, "GW", 1, fields[0])?,
-                    segments: parse_u32(lineno, "GW", 2, fields[1])?,
+                    tag,
+                    segments,
                     start: [
                         parse_f64(lineno, "GW", 3, fields[2])?,
                         parse_f64(lineno, "GW", 4, fields[3])?,
@@ -301,7 +333,54 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         parse_f64(lineno, "GW", 7, fields[6])?,
                         parse_f64(lineno, "GW", 8, fields[7])?,
                     ],
-                    radius: parse_radius(lineno, "GW", 9, fields[8])?,
+                    radius,
+                }));
+            }
+            "GC" => {
+                // GC I1 I2 RDEL RAD1 RAD2, the taper of the radius-0 GW before it.
+                // nec2c reads I1/I2 and ignores them, as NEC-2 defines them.
+                let Some((_, _, segments)) = taper_pending.take() else {
+                    return Err(ParseError::TaperPairing {
+                        line: lineno,
+                        error: nec_model::card::TaperPairingError::TaperWithoutWire {
+                            index: deck.cards.len(),
+                        },
+                    });
+                };
+                let fields = parse_fields(rest);
+                require_fields(lineno, "GC", &fields, 5)?;
+                let length_ratio = parse_f64(lineno, "GC", 3, fields[2])?;
+                if length_ratio <= 0.0 {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GC".to_string(),
+                        field: 3,
+                        raw: fields[2].to_string(),
+                        reason: "a segment-length ratio must be positive: at 0 nec2c makes \
+                                 every segment after the first zero-length, and below it \
+                                 reverses every other one; 1 is a uniform wire"
+                            .to_string(),
+                    });
+                }
+                let radius_start = parse_radius(lineno, "GC", 4, fields[3])?;
+                let radius_end = parse_radius(lineno, "GC", 5, fields[4])?;
+                if segments == 1 && radius_end != radius_start {
+                    return Err(ParseError::UnsupportedValue {
+                        line: lineno,
+                        card: "GC".to_string(),
+                        field: 5,
+                        raw: fields[4].to_string(),
+                        reason: format!(
+                            "one segment cannot taper: nec2c gives it RAD1 and ignores RAD2; \
+                             write the wire as a GW of radius {radius_start}, or give it more \
+                             segments"
+                        ),
+                    });
+                }
+                deck.cards.push(Card::Gc(GcCard {
+                    length_ratio,
+                    radius_start,
+                    radius_end,
                 }));
             }
             "GE" => {
@@ -987,6 +1066,17 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
         }
     }
 
+    if let Some((line, tag, _)) = taper_pending {
+        return Err(ParseError::TaperPairing {
+            line,
+            error: nec_model::card::TaperPairingError::WireWithoutTaper {
+                index: deck.cards.len() - 1,
+                tag,
+            },
+        });
+    }
+    debug_assert_eq!(nec_model::card::taper_pairing(&deck.cards), Ok(()));
+
     // FND-241: GE 1 declares a ground plane, but only GN defines one. nec2c then
     // solves free space while joining any wire end at z = 0 to an image that is
     // not there (a quarter-wave monopole reads 16.28 - j1905 ohm); fnec inferred a
@@ -1014,10 +1104,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// A GW radius: positive and finite. Zero is NEC's tapered wire, whose radii a
-/// GC card gives and fnec does not model; it used to reach the solve and end as
-/// "a current that is not a finite number" (FND-236).
-/// A wire radius, positive and finite: `GW`'s, `GA`'s and `GH`'s, one rule.
+/// A wire radius, positive and finite: `GW`'s, `GA`'s, `GH`'s and `GC`'s, one
+/// rule. (A GW's zero, NEC's tapered wire, is read before this is asked; it used
+/// to reach the solve and end as "a current that is not a finite number",
+/// FND-236.)
 fn parse_radius(line: usize, card: &str, field: usize, raw: &str) -> Result<f64, ParseError> {
     let r = parse_f64(line, card, field, raw)?;
     if r > 0.0 && r.is_finite() {
@@ -1028,13 +1118,7 @@ fn parse_radius(line: usize, card: &str, field: usize, raw: &str) -> Result<f64,
         card: card.to_string(),
         field,
         raw: raw.to_string(),
-        reason: if r == 0.0 && card == "GW" {
-            "a zero radius is NEC's tapered wire (its radii on a GC card), which fnec does not \
-             model; give the wire its radius"
-                .to_string()
-        } else {
-            "a wire radius must be positive".to_string()
-        },
+        reason: "a wire radius must be positive".to_string(),
     })
 }
 
@@ -1415,13 +1499,63 @@ EN
 
     #[test]
     fn a_card_that_would_change_the_antenna_is_refused_by_name() {
-        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGC 0 0 1 .001 .002\nGE 0\nEN\n";
-        let err = parse(deck).err().expect("GC is refused");
+        let deck = "GW 1 21 0 0 -8.2 0 0 8.2 .04\nGF 0\nGE 0\nEN\n";
+        let err = parse(deck).err().expect("GF is refused");
         assert!(
-            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GC"),
+            matches!(&err, ParseError::RefusedCard { line: 2, mnemonic, .. } if mnemonic == "GF"),
             "{err:?}"
         );
-        assert!(err.to_string().contains("a tapered wire"), "{err}");
+        assert!(
+            err.to_string().contains("Numerical Green's Function"),
+            "{err}"
+        );
+    }
+
+    /// nec2c reads the card after a radius-0 GW as its GC, raw: anything else
+    /// between them — a CM, a `'` comment, the end of the deck — is its "GEOMETRY
+    /// DATA CARD ERROR", and so is a GC after anything but a radius-0 GW. A blank
+    /// line is no card, and the pair beside them parses.
+    #[test]
+    fn a_gc_is_the_card_directly_after_its_radius_zero_gw() {
+        let gw = "GW 1 9 0 0 -1 0 0 1 0";
+        let gc = "GC 0 0 1.1 .001 .002";
+        for (deck, line, wire_first) in [
+            (format!("{gw}\nCM between\n{gc}\nEN\n"), 1, true),
+            (format!("{gw}\n' between\n{gc}\nEN\n"), 1, true),
+            (format!("{gw}\nGE 0\nEN\n"), 1, true),
+            (format!("CE\n{gw}"), 2, true),
+            (format!("{gc}\nEN\n"), 1, false),
+            (format!("GW 1 9 0 0 -1 0 0 1 .001\n{gc}\nEN\n"), 2, false),
+        ] {
+            let err = parse(&deck)
+                .err()
+                .unwrap_or_else(|| panic!("{deck} parsed"));
+            let ParseError::TaperPairing { line: at, error } = &err else {
+                panic!("{deck}: {err:?}");
+            };
+            assert_eq!(
+                (
+                    *at,
+                    matches!(
+                        error,
+                        nec_model::card::TaperPairingError::WireWithoutTaper { .. }
+                    )
+                ),
+                (line, wire_first),
+                "{deck}"
+            );
+        }
+        for deck in [
+            format!("{gw}\n{gc}\nEN\n"),
+            format!("{gw}\n\n{gc}\nEN\n"),
+            format!("{gw}\nGC 7 -3 1.1 .001 .002\nEN\n"),
+        ] {
+            let cards = parse(&deck)
+                .unwrap_or_else(|e| panic!("{deck}: {e}"))
+                .deck
+                .cards;
+            assert_eq!(nec_model::card::taper_pairing(&cards), Ok(()), "{deck}");
+        }
     }
 
     #[test]
