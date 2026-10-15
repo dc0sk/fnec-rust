@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The clippy below is a workspace-wide build, so it queues behind any other heavy
+# build on this machine like every gate here (FND-261). Re-entrant: a commit made
+# under a gate that already holds the lock passes straight through.
+ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=scripts/host-build-lock.sh
+source "$ROOT/scripts/host-build-lock.sh" "pre-commit"
+
 cargo fmt --all -- --check
 # Warnings-as-errors, matching the CI clippy gate so a warning can't slip past
 # a commit here and only surface in CI.
