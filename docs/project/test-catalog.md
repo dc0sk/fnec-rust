@@ -105,6 +105,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_accel/tests/gpu_rerun_fresh_context.rs` | 1 | FND-215 — with a failed device request pinned in the shared context, a re-run builds a fresh device and the fill succeeds on the second attempt; its own binary, because the cache is process-global | FND-215 |
 | `crates/nec_accel/tests/shader_structure.rs` | 2 | FND-193: no shader declares a `const` array (naga gives its function-local copy an `ArrayStride` that Vulkan validation rejects); and none uses workgroup memory or a barrier (the LU solve's reductions go through per-lane partials and a dispatch boundary); scans the shader directory, so a new shader is covered | FND-193 |
 | `crates/nec_accel/tests/gpu_context_once.rs` | 1 | FND-186: eight concurrent first callers build one shared device (own binary: the build counter is process-global) | FND-186 |
+| `crates/nec_accel/tests/gpu_pivot.rs` | 2 | FND-254 — the GPU solve's pivot search on chosen matrices (column maxima off the diagonal, zeros in the diagonal lane's rows), through the production resident solve, against f64 partial-pivoting elimination: fewer rows than lanes, and more | FND-254 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 5 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163); a 301-segment dipole solves on the device; the solve shader uses no storage barrier (FND-185); no single-invocation entry point reads the LU factor (the triangular solves run one dispatch per column) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
 | `crates/nec_parser/tests/card_matrix.rs` | 2 | `docs/card-support-matrix.md`, the one card table, lists exactly `nec_parser::OTHER_CARDS` with the same treatment (FND-236), and has a row for every card the parser reads (PH3-CHK-001, FND-235) | FND-235, FND-236, PH3-CHK-001 |
@@ -150,7 +151,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=770 --> **770** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=772 --> **772** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -175,7 +176,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=635 --> **635** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1412 --> **1412** = 635 unit + 770 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1414 --> **1414** = 635 unit + 772 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
