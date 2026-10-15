@@ -68,8 +68,13 @@ pub struct PatternRow {
     pub gain_theta_dbi: f64,
     /// Phi-polarised (horizontal) component directivity (dBi).
     pub gain_phi_dbi: f64,
-    /// Axial ratio |E_θ| / |E_φ|.
+    /// Polarization axial ratio in NEC-2's signed convention: minor over major
+    /// axis in `[-1, 1]`, 0 linear, ±1 circular, the sign the rotation sense.
     pub axial_ratio: f64,
+    /// `(R·E_θ, R·E_φ)` in volts, as NEC-2 prints them (`e^{-jkR}` dropped);
+    /// `None` when the pattern was computed where the fields are not kept (the
+    /// GPU pattern path returns gains only).
+    pub e_field: Option<(Complex64, Complex64)>,
 }
 
 /// One row of an incident-plane-wave receive pattern (PH9-CHK-001): the antenna's
@@ -679,6 +684,7 @@ mod tests {
             gain_theta_dbi: 2.1428,
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -703,6 +709,7 @@ mod tests {
             gain_theta_dbi: 2.14,
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
+            e_field: None,
         }];
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
@@ -974,6 +981,7 @@ mod tests {
             gain_theta_dbi: f64::NAN,
             gain_phi_dbi: f64::NEG_INFINITY,
             axial_ratio: 0.0,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -1009,6 +1017,7 @@ mod tests {
             gain_theta_dbi: 1e6,
             gain_phi_dbi: -1e6,
             axial_ratio: 1e9,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -1030,6 +1039,7 @@ mod tests {
                 gain_theta_dbi: 2.15,
                 gain_phi_dbi: -999.99,
                 axial_ratio: 0.0,
+                e_field: None,
             };
             let line = format_pattern_row(&row);
             let cols: Vec<&str> = line.split_whitespace().collect();

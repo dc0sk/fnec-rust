@@ -168,6 +168,19 @@ pub(super) struct PulseCurrentSourceConstraint {
     pub(super) original_row: Vec<Complex64>,
 }
 
+/// A CPU far-field result as a pattern-table row, its fields kept.
+fn pattern_row(r: &nec_solver::farfield::FarFieldResult) -> PatternRow {
+    PatternRow {
+        theta_deg: r.theta_deg,
+        phi_deg: r.phi_deg,
+        gain_total_dbi: r.gain_total_dbi,
+        gain_theta_dbi: r.gain_theta_dbi,
+        gain_phi_dbi: r.gain_phi_dbi,
+        axial_ratio: r.axial_ratio,
+        e_field: Some((r.e_theta, r.e_phi)),
+    }
+}
+
 /// What a frequency point prints: the local solve's tables, or the text a remote
 /// worker's result was formatted to (the worker sends a feedpoint, not tables).
 pub(super) enum PointOutput {
@@ -1622,6 +1635,8 @@ pub(super) fn solve_frequency_point(
                         gain_theta_dbi: r.gain_theta_dbi,
                         gain_phi_dbi: r.gain_phi_dbi,
                         axial_ratio: r.axial_ratio,
+                        // The device path computes gains only.
+                        e_field: None,
                     })
                     .collect()
             }
@@ -1630,33 +1645,13 @@ pub(super) fn solve_frequency_point(
                 eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU RP");
                 let results =
                     compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
-                results
-                    .iter()
-                    .map(|r| PatternRow {
-                        theta_deg: r.theta_deg,
-                        phi_deg: r.phi_deg,
-                        gain_total_dbi: r.gain_total_dbi,
-                        gain_theta_dbi: r.gain_theta_dbi,
-                        gain_phi_dbi: r.gain_phi_dbi,
-                        axial_ratio: r.axial_ratio,
-                    })
-                    .collect()
+                results.iter().map(pattern_row).collect()
             }
         }
     } else {
         // Standard CPU path
         let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
-        results
-            .iter()
-            .map(|r| PatternRow {
-                theta_deg: r.theta_deg,
-                phi_deg: r.phi_deg,
-                gain_total_dbi: r.gain_total_dbi,
-                gain_theta_dbi: r.gain_theta_dbi,
-                gain_phi_dbi: r.gain_phi_dbi,
-                axial_ratio: r.axial_ratio,
-            })
-            .collect()
+        results.iter().map(pattern_row).collect()
     };
 
     // PH9-CHK-003: the pattern gain is the directivity reduced by the radiation

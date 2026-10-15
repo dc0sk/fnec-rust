@@ -119,6 +119,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/current_source.rs` | 4 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 5 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
+| `crates/nec_solver/tests/farfield_e_field_nec2c.rs` | 1 | PAR-011: the far field's complex components `R·E_θ`, `R·E_φ` (NEC-2's scaling and phase) against nec2c converged at 9× — free space, perfect ground, `GN 0`, and crossed dipoles in quadrature (elliptical) — each nec2c series asserted settled (r < 0.7, tail ≤ tol/3), fnec within 4.0 % at 1× and 1.75 % at 3×, shrinking. | PAR-011 |
 | `crates/nec_solver/tests/finite_ground_rp.rs` | 5 | PH8-CHK-006: radiation pattern over finite ground via the Fresnel reflection-coefficient far field. | PH8-CHK-006 |
 | `crates/nec_solver/tests/general_junction.rs` | 10 | PH9-CHK-002 (general junction case): a single physical conductor whose two arms meet at a degree-2 junction — start-to-start splits and bent inverted-V feeds — must solve to a p… | PH9-CHK-002 |
 | `crates/nec_solver/tests/gm_nec2c.rs` | 8 | FND-119 — the `GM` card, pinned against `nec2c`. | FND-119 |
@@ -152,7 +153,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=773 --> **773** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=774 --> **774** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -163,7 +164,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 265 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 266 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -173,11 +174,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=638 --> **638** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=639 --> **639** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1418 --> **1418** = 638 unit + 773 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1420 --> **1420** = 639 unit + 774 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
