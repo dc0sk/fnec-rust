@@ -851,7 +851,7 @@ Quick reference:
 | GX | Full | Reflect the structure in the planes `I2`'s digits `XYZ` select (e.g. `GX 0 001` makes a dipole from its upper half); copies tagged `tag + I1`, doubling per plane |
 | GA | Partial | A wire arc (nec2c's `arc`); solve it with `--solver mpie` — the Hallén solve refuses it, every node being a bend |
 | GH | Partial | A helix or spiral (nec2c's `helix`), read as NEC-2 / nec2c reads it; `--solver mpie` only, as `GA` |
-| GC | Full | The taper of the `GW` directly before it, whose radius is 0: `GC 0 0 RDEL RAD1 RAD2`, each segment `RDEL` times the one before, radii geometric from `RAD1` to `RAD2`, as nec2c's `wire` builds it. The Hallén solve models each segment's radius; `--solver mpie` solves a radius taper with one radius and says so. A segment tapered under 2 radii (or 3 µm) is refused |
+| GC | Full | The taper of the `GW` directly before it, whose radius is 0: `GC 0 0 RDEL RAD1 RAD2`, each segment `RDEL` times the one before, radii geometric from `RAD1` to `RAD2`, as nec2c's `wire` builds it. Both solvers take each segment's radius; the Hallén solve under-models a radius taper or step and says so, naming `--solver mpie` (FND-252). A segment tapered under 2 radii (or 3 µm) is refused |
 | GN type −1 | Full | Explicit free space (same as omitting `GN`) |
 | GN type 0 | Partial | Finite ground via a normal-incidence scalar reflection coefficient on the image; accurate for heights ≥ ~0.2 λ. Below 0.1 λ it misses the surface wave and warns — use `--ground-solver sommerfeld` or `--solver mpie` |
 | GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) — with voltage or current sources, loads, `TL`/`NT` networks and plane waves |

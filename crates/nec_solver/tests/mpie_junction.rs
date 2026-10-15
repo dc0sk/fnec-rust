@@ -61,14 +61,7 @@ fn build_y(nseg_arm: usize) -> (MpieGeometry, usize) {
     // Arm-0 nodes are indices 1..=nseg_arm; the midpoint (position 0.5) is index
     // nseg_arm/2.
     let feed_node = nseg_arm / 2;
-    (
-        MpieGeometry {
-            nodes,
-            segments,
-            radius: 0.001,
-        },
-        feed_node,
-    )
+    (MpieGeometry::uniform(nodes, segments, 0.001), feed_node)
 }
 
 fn solve_y(nseg_arm: usize) -> (f64, f64, usize) {
@@ -144,11 +137,7 @@ fn inverted_v_bend_solves_and_converges() {
             }
         }
         (
-            MpieGeometry {
-                nodes,
-                segments,
-                radius: 0.001,
-            },
+            MpieGeometry::uniform(nodes, segments, 0.001),
             0, // apex (degree-2) feed
         )
     };
@@ -202,22 +191,18 @@ fn feed_reference_sign_flips_for_a_start_to_start_junction() {
         }
     }
     // Start-to-start: both arms' first segments leave the apex (apex at `p0`).
-    let s2s = MpieGeometry {
-        nodes: nodes.clone(),
-        segments: out_segments.clone(),
-        radius: 0.001,
-    };
+    let s2s = MpieGeometry::uniform(nodes.clone(), out_segments.clone(), 0.001);
     // End-to-start: arm 1 is traversed inward, so its last segment arrives at the
     // apex (apex at `p1`) — the same wires, written as a continuous chain.
-    let chain = MpieGeometry {
+    let chain = MpieGeometry::uniform(
         nodes,
-        segments: out_segments
+        out_segments
             .iter()
             .enumerate()
             .map(|(i, &[a, b])| if i < nseg { [b, a] } else { [a, b] })
             .collect(),
-        radius: 0.001,
-    };
+        0.001,
+    );
 
     // Arm 1's apex segment: index 0 in both, but reversed in `chain`.
     assert_eq!(

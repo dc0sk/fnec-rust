@@ -36,9 +36,7 @@ use solve_session::{
 };
 use std::process::ExitCode;
 use std::time::Instant;
-use warnings::{
-    warn_mpie_mixed_radius, warn_near_field_over_finite_ground, warn_pulse_mode_experimental,
-};
+use warnings::{warn_near_field_over_finite_ground, warn_pulse_mode_experimental};
 
 /// Print every point a sweep computed, and report the ones that failed.
 ///
@@ -659,8 +657,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
-    warn_mpie_mixed_radius(solver_mode, &segs);
 
     let pattern_points: Vec<FarFieldPoint> = deck
         .cards

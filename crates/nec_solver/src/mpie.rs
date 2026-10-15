@@ -92,6 +92,14 @@ pub enum MpieError {
     /// The geometry is empty or contains a zero-length (self-coincident) segment,
     /// which has no defined tangent — the reduced kernel cannot be built.
     DegenerateGeometry,
+    /// `radii` does not give every segment one positive radius: its length is not
+    /// the segment count, or a radius is zero, negative or NaN.
+    InvalidRadii {
+        /// Number of segments in the geometry.
+        segments: usize,
+        /// Number of radii given.
+        radii: usize,
+    },
 }
 
 impl std::fmt::Display for MpieError {
@@ -109,18 +117,31 @@ impl std::fmt::Display for MpieError {
                 f,
                 "MPIE geometry is empty or has a zero-length segment (no defined tangent)"
             ),
+            MpieError::InvalidRadii { segments, radii } => write!(
+                f,
+                "MPIE geometry needs one positive radius per segment: {radii} radii for \
+                 {segments} segments, or a radius that is not positive"
+            ),
         }
     }
 }
 
-/// Reject an empty geometry or one with a zero-length (self-coincident) segment,
-/// which would otherwise divide by a zero segment length in the reduced kernel.
+/// Reject an empty geometry, one with a zero-length (self-coincident) segment,
+/// which would otherwise divide by a zero segment length in the reduced kernel, or
+/// one without a positive radius for every segment.
 fn check_geometry(geom: &MpieGeometry) -> Result<(), MpieError> {
     if geom.segments.is_empty() || geom.nodes.is_empty() {
         return Err(MpieError::DegenerateGeometry);
     }
     if geom.segments.iter().any(|&[a, b]| a == b) {
         return Err(MpieError::DegenerateGeometry);
+    }
+    if geom.radii.len() != geom.segments.len() || geom.radii.iter().any(|&a| a.is_nan() || a <= 0.0)
+    {
+        return Err(MpieError::InvalidRadii {
+            segments: geom.segments.len(),
+            radii: geom.radii.len(),
+        });
     }
     Ok(())
 }
@@ -134,15 +155,27 @@ impl From<SolveError> for MpieError {
 }
 
 /// A wire graph for the MPIE solver: `nodes` in metres, `segments` as node-index
-/// pairs, and a uniform `radius` for the reduced kernel.
+/// pairs, and each segment's own radius for the reduced kernel.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MpieGeometry {
     /// Node positions (metres).
     pub nodes: Vec<[f64; 3]>,
     /// Segments as `[node_start, node_end]` index pairs.
     pub segments: Vec<[usize; 2]>,
-    /// Wire radius (metres) for the reduced thin-wire kernel.
-    pub radius: f64,
+    /// Wire radius (metres) of each segment, in the order of `segments`.
+    pub radii: Vec<f64>,
+}
+
+impl MpieGeometry {
+    /// A wire graph whose every segment has the same `radius`.
+    pub fn uniform(nodes: Vec<[f64; 3]>, segments: Vec<[usize; 2]>, radius: f64) -> Self {
+        let radii = vec![radius; segments.len()];
+        MpieGeometry {
+            nodes,
+            segments,
+            radii,
+        }
+    }
 }
 
 /// A single open wire chain (convenience wrapper over [`MpieGeometry`]).
@@ -163,11 +196,7 @@ impl MpieWire {
         let segments = (0..self.nodes.len().saturating_sub(1))
             .map(|i| [i, i + 1])
             .collect();
-        MpieGeometry {
-            nodes: self.nodes.clone(),
-            segments,
-            radius: self.radius,
-        }
+        MpieGeometry::uniform(self.nodes.clone(), segments, self.radius)
     }
 }
 
@@ -190,6 +219,8 @@ struct SegGeom {
     tangent: [f64; 3],
     /// Segment length (metres).
     len: f64,
+    /// Wire radius (metres).
+    radius: f64,
 }
 
 /// One leg of a triangle basis: a segment, whether the shared node `V` is at the
@@ -213,10 +244,13 @@ fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
 }
 
-fn seg_geom(geom: &MpieGeometry) -> Vec<SegGeom> {
-    geom.segments
+fn seg_geom(geom: &MpieGeometry) -> Result<Vec<SegGeom>, MpieError> {
+    check_geometry(geom)?;
+    Ok(geom
+        .segments
         .iter()
-        .map(|&[n0, n1]| {
+        .zip(&geom.radii)
+        .map(|(&[n0, n1], &radius)| {
             let p0 = geom.nodes[n0];
             let p1 = geom.nodes[n1];
             let d = sub(p1, p0);
@@ -231,9 +265,10 @@ fn seg_geom(geom: &MpieGeometry) -> Vec<SegGeom> {
                 p1,
                 tangent,
                 len,
+                radius,
             }
         })
-        .collect()
+        .collect())
 }
 
 impl Leg {
@@ -333,6 +368,17 @@ fn near_pair(a: &SegGeom, b: &SegGeom) -> bool {
     norm(sub(quad_point(a, 0.5), quad_point(b, 0.5))) < 1.01 * (a.len + b.len)
 }
 
+/// The radius the reduced kernel takes between two segments: their geometric
+/// mean, so `Z_mn = Z_nm` holds term by term as the Galerkin form needs — the fill
+/// computes one triangle and mirrors it. The source's radius alone (NEC-2's choice)
+/// or the observer's breaks that symmetry; mirrored, either read a 5:1 radius step
+/// as 50 − j445 Ω or 19 959 + j30 813 Ω. Among symmetric means the choice is not
+/// visible in an impedance: max, min, RMS and geometric mean agree within 0.06 Ω
+/// on that deck, and it reaches only pairs near enough to see the radius.
+fn pair_radius(a: &SegGeom, b: &SegGeom) -> f64 {
+    (a.radius * b.radius).sqrt()
+}
+
 /// Position at parameter `u ∈ [0, 1]` along a segment (`p0 → p1`).
 fn quad_point(seg: &SegGeom, u: f64) -> [f64; 3] {
     [
@@ -357,9 +403,9 @@ fn leg_pair_integrals(
     lm: &Leg,
     sn: &SegGeom,
     ln: &Leg,
-    radius: f64,
     k: f64,
 ) -> (Complex64, Complex64) {
+    let radius = pair_radius(sm, sn);
     let (mut za, mut zp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
     let near = near_pair(sm, sn);
     let outer = if near { NEAR_OUTER_PANELS } else { 1 };
@@ -401,7 +447,7 @@ fn leg_pair_integrals(
 }
 
 /// The free-space reaction of basis `bm` on basis `bn` (legs into `segs`).
-fn reaction(segs: &[SegGeom], bm: &[Leg], bn: &[Leg], radius: f64, freq_hz: f64) -> Complex64 {
+fn reaction(segs: &[SegGeom], bm: &[Leg], bn: &[Leg], freq_hz: f64) -> Complex64 {
     let w = 2.0 * std::f64::consts::PI * freq_hz;
     let k = w / C0;
     let pre_a = Complex64::new(0.0, w * MU0 / (4.0 * std::f64::consts::PI));
@@ -417,7 +463,7 @@ fn reaction(segs: &[SegGeom], bm: &[Leg], bn: &[Leg], radius: f64, freq_hz: f64)
             let sn = &segs[ln.seg];
             let tt = dot(tm, ln.flow_tangent(segs));
             let cc = cm * ln.charge(segs);
-            let (a, p) = leg_pair_integrals(sm, lm, sn, ln, radius, k);
+            let (a, p) = leg_pair_integrals(sm, lm, sn, ln, k);
             za += tt * a;
             zp += cc * p;
         }
@@ -427,17 +473,12 @@ fn reaction(segs: &[SegGeom], bm: &[Leg], bn: &[Leg], radius: f64, freq_hz: f64)
 
 /// Assemble the dense free-space MPIE impedance matrix over the given bases.
 /// Galerkin-symmetric by construction (upper triangle filled and mirrored).
-fn assemble(
-    segs: &[SegGeom],
-    bases: &[Vec<Leg>],
-    radius: f64,
-    freq_hz: f64,
-) -> Vec<Vec<Complex64>> {
+fn assemble(segs: &[SegGeom], bases: &[Vec<Leg>], freq_hz: f64) -> Vec<Vec<Complex64>> {
     let nb = bases.len();
     let mut z = vec![vec![Complex64::new(0.0, 0.0); nb]; nb];
     for m in 0..nb {
         for n in m..nb {
-            let entry = reaction(segs, &bases[m], &bases[n], radius, freq_hz);
+            let entry = reaction(segs, &bases[m], &bases[n], freq_hz);
             z[m][n] = entry;
             z[n][m] = entry;
         }
@@ -462,7 +503,6 @@ fn add_pec_image(
     z: &mut [Vec<Complex64>],
     segs: &[SegGeom],
     bases: &[Vec<Leg>],
-    radius: f64,
     freq_hz: f64,
     scale: Complex64,
 ) {
@@ -473,12 +513,14 @@ fn add_pec_image(
         p1: s.p1,
         tangent: s.tangent,
         len: s.len,
+        radius: s.radius,
     }));
     both.extend(segs.iter().map(|s| SegGeom {
         p0: [s.p0[0], s.p0[1], -s.p0[2]],
         p1: [s.p1[0], s.p1[1], -s.p1[2]],
         tangent: [s.tangent[0], s.tangent[1], -s.tangent[2]],
         len: s.len,
+        radius: s.radius,
     }));
     let mirrored: Vec<Vec<Leg>> = bases
         .iter()
@@ -494,7 +536,7 @@ fn add_pec_image(
     let nb = bases.len();
     for m in 0..nb {
         for k in m..nb {
-            let refl = -scale * reaction(&both, &bases[m], &mirrored[k], radius, freq_hz);
+            let refl = -scale * reaction(&both, &bases[m], &mirrored[k], freq_hz);
             z[m][k] += refl;
             if k != m {
                 z[k][m] += refl;
@@ -510,8 +552,7 @@ pub fn solve_mpie(
     freq_hz: f64,
     feed_node: usize,
 ) -> Result<MpieSolution, MpieError> {
-    check_geometry(geom)?;
-    let segs = seg_geom(geom);
+    let segs = seg_geom(geom)?;
     let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
     let feed_basis = node_feed
         .get(feed_node)
@@ -519,7 +560,7 @@ pub fn solve_mpie(
         .flatten()
         .ok_or(MpieError::InvalidFeed { node: feed_node })?;
 
-    let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
+    let mut z = assemble(&segs, &bases, freq_hz);
     let nb = z.len();
     let mut v = vec![Complex64::new(0.0, 0.0); nb];
     v[feed_basis] = Complex64::new(1.0, 0.0);
@@ -566,9 +607,9 @@ pub fn assemble_with_ground(
     freq_hz: f64,
     ground: &GroundModel,
 ) -> Result<Vec<Vec<Complex64>>, MpieError> {
-    let segs = seg_geom(geom);
+    let segs = seg_geom(geom)?;
     let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
-    let mut z = assemble(&segs, &bases, geom.radius, freq_hz);
+    let mut z = assemble(&segs, &bases, freq_hz);
 
     let (eps_r, sigma) = match ground {
         GroundModel::FreeSpace => return Ok(z),
@@ -576,14 +617,7 @@ pub fn assemble_with_ground(
             if let Some(e) = ground_contact_error(geom, freq_hz, ground) {
                 return Err(e);
             }
-            add_pec_image(
-                &mut z,
-                &segs,
-                &bases,
-                geom.radius,
-                freq_hz,
-                Complex64::new(1.0, 0.0),
-            );
+            add_pec_image(&mut z, &segs, &bases, freq_hz, Complex64::new(1.0, 0.0));
             return Ok(z);
         }
         GroundModel::SimpleFiniteGround { eps_r, sigma } => (*eps_r, *sigma),
@@ -592,7 +626,7 @@ pub fn assemble_with_ground(
         return Err(e);
     }
     let k = ground_image_factor(freq_hz, eps_r, sigma);
-    add_pec_image(&mut z, &segs, &bases, geom.radius, freq_hz, k);
+    add_pec_image(&mut z, &segs, &bases, freq_hz, k);
     add_ground_remainder(&mut z, &segs, &bases, freq_hz, eps_r, sigma);
     Ok(z)
 }
@@ -837,7 +871,7 @@ pub fn solve_mpie_sources(
     let mut z = if has_ground {
         assemble_with_ground(geom, freq_hz, ground)?
     } else {
-        assemble(&seg_geom(geom), &bases, geom.radius, freq_hz)
+        assemble(&seg_geom(geom)?, &bases, freq_hz)
     };
     let mut v = vec![Complex64::new(0.0, 0.0); z.len()];
     for &(node, volts) in feeds {
@@ -852,11 +886,14 @@ pub fn solve_mpie_sources(
 }
 
 /// Assemble the dense free-space MPIE impedance matrix for a straight/bent chain.
-pub fn assemble_free_space_z(wire: &MpieWire, freq_hz: f64) -> Vec<Vec<Complex64>> {
+pub fn assemble_free_space_z(
+    wire: &MpieWire,
+    freq_hz: f64,
+) -> Result<Vec<Vec<Complex64>>, MpieError> {
     let geom = wire.geometry();
-    let segs = seg_geom(&geom);
+    let segs = seg_geom(&geom)?;
     let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
-    assemble(&segs, &bases, geom.radius, freq_hz)
+    Ok(assemble(&segs, &bases, freq_hz))
 }
 
 /// Solve the free-space MPIE for a chain with a delta-gap at interior node
@@ -892,11 +929,11 @@ pub fn geometry_from_segments(segs: &[Segment]) -> MpieGeometry {
         let b = find_or_add(s.end, &mut nodes);
         segments.push([a, b]);
     }
-    let radius = segs.first().map(|s| s.radius).unwrap_or(0.001);
+    let radii = segs.iter().map(|s| s.radius).collect();
     MpieGeometry {
         nodes,
         segments,
-        radius,
+        radii,
     }
 }
 
@@ -963,8 +1000,8 @@ pub fn segment_currents(geom: &MpieGeometry, basis_currents: &[Complex64]) -> Ve
 
 /// Build far-field-ready [`Segment`]s from the wire graph. Pair with
 /// [`segment_currents`] and feed both into `compute_radiation_pattern`.
-pub fn segments_for_farfield(geom: &MpieGeometry) -> Vec<Segment> {
-    seg_geom(geom)
+pub fn segments_for_farfield(geom: &MpieGeometry) -> Result<Vec<Segment>, MpieError> {
+    Ok(seg_geom(geom)?
         .iter()
         .enumerate()
         .map(|(i, s)| Segment {
@@ -980,10 +1017,10 @@ pub fn segments_for_farfield(geom: &MpieGeometry) -> Vec<Segment> {
             ],
             direction: s.tangent,
             length: s.len,
-            radius: geom.radius,
+            radius: s.radius,
             part: crate::geometry::SegmentPart::Whole,
         })
-        .collect()
+        .collect())
 }
 
 /// Build a straight wire of `nseg` equal segments from `start` to `end`.
@@ -1020,13 +1057,17 @@ mod tests {
     /// segment by ~(kΔ)⁻², so swapping the rising and falling ramp moments of the
     /// extraction passed all three nec2c gates AND an element-wise check at 2e-3.
     /// Brute force here is a midpoint rule on 1024 panels per leg, finer than the
-    /// 1 mm kernel peak on a 0.2 m leg.
+    /// 1 mm kernel peak on a 0.2 m leg. The bound is 2e-4, not 1e-4: with a pair
+    /// radius near 1.5 mm the adjacent pair reads 1.2–1.4e-4 whether the three
+    /// segments share it or not, and 4096 panels move that only to 1.16e-4 — the
+    /// quadrature's own floor, under 0.01 % of an impedance, not the brute force's.
     #[test]
     fn leg_pair_integrals_match_brute_force_term_by_term() {
-        // Three segments: self, adjacent and distant pairs, at a cost a unit test can afford.
-        let wire = straight_wire([0.0, 0.0, 0.0], [0.0, 0.0, 0.6], 3, 0.001);
-        let geom = wire.geometry();
-        let segs = seg_geom(&geom);
+        // Three segments: self, adjacent and distant pairs, at a cost a unit test can
+        // afford — each its own radius, so the pairs across a radius step are checked.
+        let mut geom = straight_wire([0.0, 0.0, 0.0], [0.0, 0.0, 0.6], 3, 0.001).geometry();
+        geom.radii = vec![0.001, 0.003, 0.002];
+        let segs = seg_geom(&geom).expect("valid geometry");
         let k = 2.0 * std::f64::consts::PI * FREQ / C0;
         const P: usize = 1024;
         let legs: Vec<Leg> = (0..segs.len())
@@ -1041,7 +1082,7 @@ mod tests {
         for lm in &legs {
             for ln in &legs {
                 let (sm, sn) = (&segs[lm.seg], &segs[ln.seg]);
-                let (a, pot) = leg_pair_integrals(sm, lm, sn, ln, geom.radius, k);
+                let (a, pot) = leg_pair_integrals(sm, lm, sn, ln, k);
                 let (mut ba, mut bp) = (Complex64::new(0.0, 0.0), Complex64::new(0.0, 0.0));
                 let w = sm.len * sn.len / (P * P) as f64;
                 for i in 0..P {
@@ -1049,14 +1090,16 @@ mod tests {
                     let ra = quad_point(sm, ua);
                     for j in 0..P {
                         let ub = (j as f64 + 0.5) / P as f64;
-                        let g = g_reduced(norm(sub(ra, quad_point(sn, ub))), geom.radius, k) * w;
+                        let g =
+                            g_reduced(norm(sub(ra, quad_point(sn, ub))), pair_radius(sm, sn), k)
+                                * w;
                         ba += lm.f_scalar(ua) * ln.f_scalar(ub) * g;
                         bp += g;
                     }
                 }
                 let (ra_, rp) = ((a - ba).norm() / ba.norm(), (pot - bp).norm() / bp.norm());
                 assert!(
-                    ra_ < 1e-4 && rp < 1e-4,
+                    ra_ < 2e-4 && rp < 2e-4,
                     "legs {}/{} → {}/{}: A-term {ra_:.2e}, charge term {rp:.2e}",
                     lm.seg,
                     lm.v_is_p1,
@@ -1074,7 +1117,7 @@ mod tests {
         let empty = MpieGeometry {
             nodes: vec![],
             segments: vec![],
-            radius: 0.001,
+            radii: vec![],
         };
         assert!(matches!(
             solve_mpie(&empty, FREQ, 0),
@@ -1084,7 +1127,7 @@ mod tests {
         let self_loop = MpieGeometry {
             nodes: vec![[0.0, 0.0, 1.0]],
             segments: vec![[0, 0]],
-            radius: 0.001,
+            radii: vec![0.001],
         };
         assert!(matches!(
             solve_mpie(&self_loop, FREQ, 0),
@@ -1096,10 +1139,82 @@ mod tests {
         ));
     }
 
+    /// A geometry without one positive radius per segment is refused by name on
+    /// every entry, including `assemble_with_ground`, which has no feed to check —
+    /// before the radius was checked where the segments are built, a short `radii`
+    /// built fewer segments than the bases index and panicked out of bounds.
+    #[test]
+    fn a_geometry_without_one_positive_radius_per_segment_is_refused() {
+        let wire = straight_wire([0.0, 0.0, 1.0], [0.0, 0.0, 6.0], 4, 0.001).geometry();
+        let short = MpieGeometry {
+            radii: vec![0.001],
+            ..wire.clone()
+        };
+        let zero = MpieGeometry {
+            radii: vec![0.001, 0.0, 0.001, 0.001],
+            ..wire.clone()
+        };
+        let nan = MpieGeometry {
+            radii: vec![0.001, f64::NAN, 0.001, 0.001],
+            ..wire.clone()
+        };
+        for (geom, radii) in [(&short, 1), (&zero, 4), (&nan, 4)] {
+            let refused = Err(MpieError::InvalidRadii { segments: 4, radii });
+            assert_eq!(solve_mpie(geom, FREQ, 2).map(|_| ()), refused);
+            assert_eq!(
+                solve_mpie_sources(
+                    geom,
+                    FREQ,
+                    &GroundModel::FreeSpace,
+                    &[(2, Complex64::new(1.0, 0.0))]
+                )
+                .map(|_| ()),
+                refused
+            );
+            for ground in [GroundModel::PerfectConductor, GroundModel::FreeSpace] {
+                assert_eq!(
+                    assemble_with_ground(geom, FREQ, &ground).map(|_| ()),
+                    refused
+                );
+            }
+            assert_eq!(segments_for_farfield(geom).map(|_| ()), refused);
+        }
+        assert!(solve_mpie(&wire, FREQ, 2).is_ok());
+        assert!(MpieError::InvalidRadii {
+            segments: 4,
+            radii: 1
+        }
+        .to_string()
+        .contains("one positive radius per segment"));
+    }
+
+    /// With mixed radii the reaction is symmetric term by term, `reaction(m, n) ==
+    /// reaction(n, m)`, which the fill assumes when it mirrors one triangle. A test
+    /// on the assembled matrix could not see this — the fill makes it symmetric
+    /// whatever the pair radius — so it asks `reaction` both ways round: the
+    /// source's radius alone, or the observer's, fails here and nowhere else.
+    #[test]
+    fn the_reaction_is_symmetric_across_a_radius_step() {
+        let mut geom = straight_wire([0.0, 0.0, 0.0], [0.0, 0.0, 1.2], 6, 0.001).geometry();
+        geom.radii = vec![0.005, 0.005, 0.005, 0.001, 0.001, 0.001];
+        let segs = seg_geom(&geom).expect("valid geometry");
+        let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
+        for m in 0..bases.len() {
+            for n in 0..bases.len() {
+                let mn = reaction(&segs, &bases[m], &bases[n], FREQ);
+                let nm = reaction(&segs, &bases[n], &bases[m], FREQ);
+                assert!(
+                    (mn - nm).norm() <= 1e-9 * mn.norm(),
+                    "bases {m}, {n}: {mn} vs {nm}"
+                );
+            }
+        }
+    }
+
     /// Gate A1: the Galerkin impedance matrix is symmetric (Z_mn = Z_nm).
     #[test]
     fn z_matrix_is_symmetric() {
-        let z = assemble_free_space_z(&half_wave_dipole(20), FREQ);
+        let z = assemble_free_space_z(&half_wave_dipole(20), FREQ).expect("valid geometry");
         let nb = z.len();
         assert!(nb > 0);
         for m in 0..nb {
@@ -1159,7 +1274,7 @@ mod tests {
     #[test]
     fn geometry_from_segments_round_trips_a_dipole() {
         let wire = half_wave_dipole(20);
-        let segs = segments_for_farfield(&wire.geometry());
+        let segs = segments_for_farfield(&wire.geometry()).expect("valid geometry");
         let rebuilt = geometry_from_segments(&segs);
         assert_eq!(rebuilt.segments.len(), 20);
         let feed = feed_node_for_segment(&rebuilt, 10).unwrap();
@@ -1198,6 +1313,7 @@ mod remainder_fill_tests {
             p1,
             tangent: [d[0] / len, d[1] / len, d[2] / len],
             len,
+            radius: 0.001,
         }
     }
 
@@ -1307,11 +1423,7 @@ mod remainder_fill_tests {
         for i in 1..=8 {
             nodes.push([5.3 * i as f64 / 8.0, 0.0, 0.05]);
         }
-        let geom = MpieGeometry {
-            segments: (0..16).map(|i| [i, i + 1]).collect(),
-            nodes,
-            radius: 0.001,
-        };
+        let geom = MpieGeometry::uniform(nodes, (0..16).map(|i| [i, i + 1]).collect(), 0.001);
         let pec = assemble_with_ground(&geom, FREQ, &GroundModel::PerfectConductor).unwrap();
         let near = assemble_with_ground(
             &geom,

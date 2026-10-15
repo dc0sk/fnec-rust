@@ -42,8 +42,11 @@ impedance. fnec is no exception; measured 2026-08-21 on a 10 m dipole at 14 MHz
 | Uniform 12.5 mm (thick) | 66.65 − 24.33j Ω | ~26 Ω less reactance — diameter matters |
 | **Stepped** (thin tips + thick centre) | **64.54 − 50.83j Ω** | ≈ identical to the all-**thin** case |
 
-The MPIE reduced kernel collapses the whole element to the *first* wire's radius
-(with a mixed-radius warning), so the thick centre is ignored; the Hallén solver
+(Measured 2026-08-21. Since PH10-CHK-003 the MPIE models each segment's radius,
+and a stepped element converges within a few ohms of its Leeson equivalent;
+Hallén under-models the step and warns, FND-252.) The MPIE reduced kernel then
+collapsed the whole element to the *first* wire's radius (with a mixed-radius
+warning), so the thick centre was ignored; the Hallén solver
 instead breaks at the radius-change junctions (−4 Ω negative resistance). Either
 way fnec's answer for a tapered element is wrong.
 

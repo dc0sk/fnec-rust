@@ -56,14 +56,7 @@ fn build_square_loop(circ_lam: f64, nseg_side: usize) -> (MpieGeometry, usize) {
     let segments = (0..n).map(|k| [k, (k + 1) % n]).collect();
     // Bottom side spans arc [0, a]; its midpoint node is at index nseg_side/2.
     let feed_node = nseg_side / 2;
-    (
-        MpieGeometry {
-            nodes,
-            segments,
-            radius: 0.001,
-        },
-        feed_node,
-    )
+    (MpieGeometry::uniform(nodes, segments, 0.001), feed_node)
 }
 
 fn solve_loop(circ_lam: f64, nseg_side: usize) -> (f64, f64) {

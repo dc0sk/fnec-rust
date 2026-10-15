@@ -124,11 +124,12 @@ fn mpie_impedance_is_independent_of_source_voltage() {
     );
 }
 
-/// The MPIE reduced kernel uses one wire radius for the whole geometry; a deck
-/// mixing radii under `--solver mpie` must warn (rather than silently solve the
-/// thin and fat wires with the same radius).
+/// The MPIE models each segment's own radius (PH10-CHK-003), so a deck joining
+/// a fat and a thin wire solves without a caveat there; Hallén, which
+/// under-models the step (FND-252), warns and names the MPIE. It used one radius
+/// for the whole geometry and warned instead.
 #[test]
-fn mpie_warns_on_mixed_radii() {
+fn mixed_radii_warn_on_hallen_not_on_the_mpie() {
     let deck = write_deck(
         "mixed_radii",
         "\
@@ -144,27 +145,15 @@ EN
 ",
     );
     let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("radius"), "{stderr}");
+    let out = run_fnec(&["--solver", "hallen", deck.to_str().unwrap()]);
+    assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("single wire radius") || stderr.contains("mixes radii"),
-        "expected a mixed-radius warning on the MPIE path:\n{stderr}"
-    );
-    // A caveat names the spelling that works.
-    assert!(
-        stderr.contains("`--solver hallen`"),
-        "the mixed-radius caveat names no remedy:\n{stderr}"
-    );
-}
-
-/// A uniform-radius deck must NOT emit the mixed-radius warning (no false positive).
-#[test]
-fn mpie_uniform_radius_no_mixed_warning() {
-    let deck = write_deck("uniform_radius", DIPOLE);
-    let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !stderr.contains("mixes radii"),
-        "uniform-radius deck should not warn about mixed radii:\n{stderr}"
+        stderr.contains("changes radius along its length") && stderr.contains("--solver mpie"),
+        "{stderr}"
     );
 }
 

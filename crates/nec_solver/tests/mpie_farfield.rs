@@ -31,7 +31,7 @@ fn dipole_pattern(nseg: usize, points: &[FarFieldPoint]) -> Vec<f64> {
     let wire = straight_wire([0.0, 0.0, -half], [0.0, 0.0, half], nseg, 0.001);
     let sol = solve_mpie_free_space(&wire, FREQ, nseg / 2 - 1).unwrap();
     let geom = wire.geometry();
-    let segs = segments_for_farfield(&geom);
+    let segs = segments_for_farfield(&geom).expect("valid geometry");
     let ivec = segment_currents(&geom, &sol.basis_currents);
     compute_radiation_pattern(&segs, &ivec, FREQ, points, &GroundModel::FreeSpace)
         .iter()
@@ -112,14 +112,7 @@ fn build_y(nseg_arm: usize) -> (MpieGeometry, usize) {
             prev = idx;
         }
     }
-    (
-        MpieGeometry {
-            nodes,
-            segments,
-            radius: 0.001,
-        },
-        nseg_arm / 2,
-    )
+    (MpieGeometry::uniform(nodes, segments, 0.001), nseg_arm / 2)
 }
 
 /// Gate C1 (junction pattern): the planar Y-junction radiates broadside to its
@@ -128,7 +121,7 @@ fn build_y(nseg_arm: usize) -> (MpieGeometry, usize) {
 fn y_junction_pattern_gain_matches_nec2c() {
     let (geom, feed) = build_y(20);
     let sol = solve_mpie(&geom, FREQ, feed).unwrap();
-    let segs = segments_for_farfield(&geom);
+    let segs = segments_for_farfield(&geom).expect("valid geometry");
     let ivec = segment_currents(&geom, &sol.basis_currents);
     let points: Vec<FarFieldPoint> = (0..=180)
         .step_by(10)

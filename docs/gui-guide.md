@@ -74,9 +74,9 @@ frequency, resistance, reactance, and |Z| are shown.
 >
 > On Hallén, a near-ground deck, or a junction or loop deck outside the
 > section-graph scope, shows a warning naming the MPIE.
-> On MPIE, that warning is absent — the MPIE models those cases correctly — and
-> the caveat you may see instead is about **mixed wire radii**, since the MPIE
-> solves the whole geometry with the first wire's radius.
+> On MPIE, that warning is absent — the MPIE models those cases correctly. So
+> is the Hallén caveat on a wire whose **radius changes along it** (a stepped or
+> tapered element), which the MPIE models and Hallén does not (FND-252).
 >
 > The MPIE cannot represent loads: a deck with `LD`, `TL` or `NT` is **refused**
 > on that solver rather than solved with the card ignored. Switch back to Hallén

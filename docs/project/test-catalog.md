@@ -45,7 +45,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
 | `apps/nec-cli/tests/ground_flags_nec2c.rs` | 5 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band | FND-241, FND-242, FND-243 |
 | `apps/nec-cli/tests/ga_gh_card_nec2c.rs` | 5 | PH10-CHK-002 — `GA` and `GH` on the MPIE: a half circle, a full circle and a helix each equal their `GW` polygon and converge to nec2c (90 / 180 / 120 segments); a quarter arc + `GM` + `GR` is the full circle, `GS` scales an arc; the Hallén refusal and nec2c's hang/garbage inputs refused by name beside the decks that solve | PH10-CHK-002 |
-| `apps/nec-cli/tests/gc_card_nec2c.rs` | 4 | PH10-CHK-002 — the `GC` tapered wire as nec2c's `wire` builds it: a radius taper, a length taper and both each equal their written-out `GW` twin (Hallén and MPIE) and approach nec2c's 189-segment value step by step; `GS` scales a taper; the MPIE caveat names `--solver hallen`; the pairing, non-positive ratio/radius, a one-segment taper and a taper under 2 radii refused by name beside the spellings that solve | PH10-CHK-002 |
+| `apps/nec-cli/tests/gc_card_nec2c.rs` | 4 | PH10-CHK-002 — the `GC` tapered wire as nec2c's `wire` builds it: a radius taper, a length taper and both each equal their written-out `GW` twin (Hallén and MPIE) and approach nec2c's 189-segment value step by step; `GS` scales a taper; a radius taper warns on Hallén (FND-252) and not on the MPIE; the pairing, non-positive ratio/radius, a one-segment taper and a taper under 2 radii refused by name beside the spellings that solve | PH10-CHK-002 |
 | `apps/nec-cli/tests/gr_card_nec2c.rs` | 4 | FND-247 — the `GR` card as NEC-2 reads it (`I2` occurrences in all, 360°/`I2` apart): four radials from one, tags up by `I1` per occurrence (asymmetric with a parasite so the tag order shows), the corpus deck equal to the explicit pair; what nec2c stops on and fnec's old reading refused by name, with the NEC-2 spelling | FND-247 |
 | `apps/nec-cli/tests/gs_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GS` card as nec2c reads it: a deck in feet equals the metres deck, a wire after the card is not scaled, two cards compound and `I1`/`I2` are ignored, `GM` copies before it are scaled; each against its hand-scaled equivalent, with refining approaching nec2c's converged value; a factor that is not positive and a geometry card after `GE` refused (FND-245) | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/gx_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GX` card as nec2c reads it: half a dipole reflected in z is the dipole, two planes copy and tag as nec2c does, tag 0 stays 0, `GX` composes with `GS` and later wires, each against its written-out equivalent; a segment in or across its plane, bad fields, `GX` after `GE` and a buried z-copy refused | PH10-CHK-002, FND-245 |
@@ -59,7 +59,8 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/loads_config_validation.rs` | 3 | FND-204/207: a `--loads-config` load naming no segment, and a malformed loads file (unknown key or table, missing or non-integer index, no loads), are refused by name; explicit 0 = all and a single-segment load still apply. | FND-204, FND-207 |
 | `apps/nec-cli/tests/mpie_multi_source.rs` | 1 | FND-202: two fed dipoles on `--solver mpie` match nec2c on both ports, in phase and antiphase, at two meshes. | FND-202 |
 | `apps/nec-cli/tests/mpie_ground_image.rs` | 3 | FND-238 / FND-239 — `--solver mpie` near a ground is within 3 % / 1.2 % of nec2c's converged value at 1× / 3× and the finer is nearer: over a perfect ground (an L bent 0.05 m and 0.3 m up, a vertical dipole 0.05 m up) and over `GN 2` (an L 0.05 m up, four radials 0.1 m up, a vertical dipole 0.05 m up, none with a caveat); a σ = 10⁷ ground reads as `GN 1`, and sea water as the removed potential-form path (nec2c is no reference there) | FND-238, FND-239 |
-| `apps/nec-cli/tests/mpie_solver_cli.rs` | 16 | PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring; FND-229: an apex-fed 90° inverted V converges to nec2c's converged value. | PH9-CHK-007 |
+| `apps/nec-cli/tests/mpie_mixed_radii.rs` | 4 | PH10-CHK-003 — the MPIE takes each segment's own radius: a Yagi's 10 mm reflector and 2 mm driven element converge to nec2c (its extended kernel at the finest mesh); a radius step's reactance matches the first-order closed form; a stepped Yagi element converges within 2 Ω R / 4 Ω X of its Leeson equivalent under nec2c; Hallén warns on a radius change along a conductor (FND-252) and not on separate wires | PH10-CHK-003 |
+| `apps/nec-cli/tests/mpie_solver_cli.rs` | 15 | PH9-CHK-007 MPIE Phase E — `--solver mpie` CLI wiring; FND-229: an apex-fed 90° inverted V converges to nec2c's converged value; mixed radii warn on Hallén, not on the MPIE. | PH9-CHK-007 |
 | `apps/nec-cli/tests/near_field_ground.rs` | 3 | FND-201: near fields over ground — over PEC a monopole and a horizontal dipole equal their free-space doubles (E and H), a vertical dipole matches nec2c; a finite ground carries a caveat. | FND-201 |
 | `apps/nec-cli/tests/near_field_spherical.rs` | 2 | PH9-CHK-004: spherical NE/NH near-field grids (NEC-2 I1=1). | PH9-CHK-004 |
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
@@ -124,7 +125,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
 | `crates/nec_solver/tests/mpie_farfield.rs` | 3 | PH9-CHK-007 MPIE Phase C — far-field from the recovered MPIE currents. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_free_space.rs` | 4 | PH9-MPIE Phase A — free-space MPIE straight-wire core, external gates. | — |
-| `crates/nec_solver/tests/mpie_ground.rs` | 7 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. | PH9-CHK-007 |
+| `crates/nec_solver/tests/mpie_ground.rs` | 8 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. The perfect-ground image keeps each segment's radius (PH10-CHK-003). | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_junction.rs` | 4 | PH9-CHK-007 MPIE Phase B — degree-N junctions, external gates. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_loop.rs` | 2 | PH9-CHK-007 MPIE Phase B (B3) — closed loops. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_nec2c.rs` | 8 | MPIE vs nec2c through the session: dipole, 5-element Yagi, Y-junction (FND-157) | NFR-004 |
@@ -147,7 +148,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=756 --> **756** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=760 --> **760** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -158,7 +159,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 262 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 265 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -168,11 +169,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=632 --> **632** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=635 --> **635** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1395 --> **1395** = 632 unit + 756 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1402 --> **1402** = 635 unit + 760 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
