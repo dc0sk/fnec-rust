@@ -19,7 +19,7 @@ use nec_model::card::{
     Card, CommentCard, EnCard, ExCard, FrCard, GaCard, GcCard, GeCard, GhCard, GmCard, GnCard,
     GrCard, GsCard, GwCard, GxCard, LdCard, NearFieldCard, NtCard, PtCard, RpCard, TlCard,
 };
-use nec_model::deck::NecDeck;
+use nec_model::deck::{NecDeck, ProgramCard};
 
 /// A parse error.
 #[derive(Debug, Clone, PartialEq)]
@@ -293,6 +293,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     ge_line,
                 });
             }
+        }
+
+        if is_program_card(&upper) {
+            deck.program_cards.push(program_card(lineno, &upper, rest));
         }
 
         match upper.as_str() {
@@ -1139,6 +1143,52 @@ fn parse_whole_i32(line: usize, card: &str, field: usize, raw: &str) -> Result<i
     Ok(v as i32)
 }
 
+/// Whether a card is a program card, echoed by NEC-2D's output: any card that is
+/// neither a comment nor part of the geometry section.
+fn is_program_card(mnemonic: &str) -> bool {
+    !matches!(
+        mnemonic,
+        "CM" | "CE"
+            | "GW"
+            | "GC"
+            | "GM"
+            | "GR"
+            | "GS"
+            | "GX"
+            | "GA"
+            | "GH"
+            | "GE"
+            | "SP"
+            | "SM"
+            | "SC"
+    )
+}
+
+/// A program card's fields as NEC reads them: I1–I4 as integers, F1–F6 as reals,
+/// each missing one as zero, anything after the tenth ignored. An integer written
+/// as a real (`4.`) is read as its integer part, as `parse_i32` reads it. A field
+/// that is no finite number leaves the fields unreadable (`None`), which only a
+/// card fnec ignores can carry: every card fnec parses has checked its fields.
+fn program_card(line: usize, mnemonic: &str, rest: &str) -> ProgramCard {
+    let raw = parse_fields(rest);
+    let number = |s: &str| s.parse::<f64>().ok().filter(|v| v.is_finite());
+    let mut ints = [0_i32; 4];
+    let mut floats = [0.0_f64; 6];
+    let mut readable = true;
+    for (i, field) in raw.iter().take(10).enumerate() {
+        match number(field) {
+            Some(v) if i < 4 => ints[i] = v as i32,
+            Some(v) => floats[i - 4] = v,
+            None => readable = false,
+        }
+    }
+    ProgramCard {
+        line,
+        mnemonic: mnemonic.to_string(),
+        fields: readable.then_some((ints, floats)),
+    }
+}
+
 /// A field separator: whitespace or a comma, as NEC reads them — nec2c solves
 /// `GW,1,21,0,0,-2.5,0,0,2.5,.001` (FND-237).
 fn is_separator(c: char) -> bool {
@@ -1903,5 +1953,72 @@ EN
             Err(ParseError::TooFewFields { .. })
         ));
         assert!(parse("GW 1 3 0.5 0 1 0.5 0 4 0.001\nGR 1 1\nEN\n").is_ok());
+    }
+
+    /// PAR-011: every program card is recorded with its fields as NEC reads them,
+    /// in source order, including the cards fnec ignores and the fields its typed
+    /// cards drop. None of the 4nec2 fixtures carries GN I2–I4 or an EK, so they
+    /// are pinned here.
+    #[test]
+    fn program_cards_keep_every_field_nec_reads() {
+        let deck = parse(
+            "CM a comment\nCE\nGW 1 5 0 0 -1 0 0 1 .001\nGE 0\nEK\n\
+             GN 2 4 1 0 13 .005 1.5 .002\nEX 0 1 3 0 1 0\nFR 0 1 0 0 14.2\n\
+             RP 0 7 13 1003 0 0 30 30\nXQ 1\nEN\n",
+        )
+        .unwrap()
+        .deck;
+        let got: Vec<(&str, usize, [i32; 4], [f64; 6])> = deck
+            .program_cards
+            .iter()
+            .map(|c| {
+                let (i, f) = c.fields.expect("readable");
+                (c.mnemonic.as_str(), c.line, i, f)
+            })
+            .collect();
+        let zero = [0.0; 6];
+        assert_eq!(
+            got,
+            vec![
+                ("EK", 5, [0, 0, 0, 0], zero),
+                ("GN", 6, [2, 4, 1, 0], [13.0, 0.005, 1.5, 0.002, 0.0, 0.0]),
+                ("EX", 7, [0, 1, 3, 0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                ("FR", 8, [0, 1, 0, 0], [14.2, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                ("RP", 9, [0, 7, 13, 1003], [0.0, 0.0, 30.0, 30.0, 0.0, 0.0]),
+                ("XQ", 10, [1, 0, 0, 0], zero),
+                ("EN", 11, [0, 0, 0, 0], zero),
+            ]
+        );
+    }
+
+    /// An integer written as a real is read as its integer part, a separator may be
+    /// a comma, and an eleventh field is ignored, as NEC reads them.
+    #[test]
+    fn program_card_fields_are_read_as_nec_reads_them() {
+        let deck = parse(
+            "GW 1 5 0 0 -1 0 0 1 .001\nGE\nEX,0.,1,3.,0,1,0,0,0,0,0,7\nFR 0 1 0 0 14.2\nEN\n",
+        )
+        .unwrap()
+        .deck;
+        assert_eq!(
+            deck.program_cards[0].fields,
+            Some(([0, 1, 3, 0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+        );
+    }
+
+    /// A card fnec ignores is not checked, so its fields may not be numbers; the
+    /// record says so instead of inventing zeros, and the deck still parses.
+    #[test]
+    fn an_unreadable_field_on_an_ignored_card_is_recorded_as_unreadable() {
+        let deck = parse("GW 1 5 0 0 -1 0 0 1 .001\nGE\nXQ x\nEX 0 1 3 0 1\nFR 0 1 0 0 14.2\nEN\n")
+            .unwrap()
+            .deck;
+        let xq = &deck.program_cards[0];
+        assert_eq!((xq.mnemonic.as_str(), xq.fields), ("XQ", None));
+        assert!(
+            deck.program_cards[1].fields.is_some(),
+            "EX: {:?}",
+            deck.program_cards[1]
+        );
     }
 }
