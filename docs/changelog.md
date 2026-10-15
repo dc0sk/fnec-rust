@@ -97,6 +97,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GPU solve's shaders pass Vulkan validation** (FND-193): its two
+  reductions used workgroup arrays, which naga decorates with `ArrayStride` —
+  rejected by the validation layer and liable to be misread by a strict driver.
+  They now leave one partial per lane in storage and the next dispatch reduces
+  them; the shader has no workgroup memory and no barrier, the answers are
+  byte-identical, and the layer reports nothing. Without waiting on
+  gfx-rs/wgpu#9295.
+- **The GPU solve's accuracy gate declines a solve whose residual norms are
+  missing** (FND-253). A zero right-hand-side norm read as a relative residual
+  of 0 and passed.
 - **`GR` is read as NEC-2 reads it** (FND-247). **Breaking for decks written in
   fnec's old reading.** `GR I1 I2` makes the structure occur `I2` times in all,
   the original included, 360°/`I2` apart; fnec read `I2` as *additional* copies
