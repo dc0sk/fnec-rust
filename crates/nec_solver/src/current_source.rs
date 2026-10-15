@@ -47,7 +47,7 @@ pub enum CurrentSourceError {
     },
     Excitation(ExcitationError),
     Solve(SolveError),
-    /// A junction or loop the section graph takes: that solve needs the matrix
+    /// A junction, loop or radius step the section graph takes: that solve needs the matrix
     /// UNSTAMPED, with the loads as graph columns, while this entry's contract is
     /// a stamped matrix — so it is reached through
     /// [`crate::hallen_session::solve_hallen_routed`], which decides before
@@ -74,8 +74,8 @@ impl std::fmt::Display for CurrentSourceError {
             Self::Solve(e) => write!(f, "{e}"),
             Self::NeedsRoutedSolve => write!(
                 f,
-                "EX: a current source on a junction or loop is solved on the section \
-                 graph from the unstamped matrix; call solve_hallen_routed, which takes \
+                "EX: a current source on a junction, loop or radius step is solved on the \
+                 section graph from the unstamped matrix; call solve_hallen_routed, which takes \
                  it before stamping the loads"
             ),
         }
@@ -141,6 +141,15 @@ pub fn solve_current_source_hallen(
     // `dipole-ex4-collinear-split-51seg.nec` — which solves today — down the
     // `UnsupportedTopology` path (FND-140).
     let ground = crate::ground_model_from_deck(deck);
+    // A geometry the section graph takes — a junction, a loop or a radius step —
+    // is the unit-gap voltage solve scaled to the impressed current, exactly, so
+    // the graph solve serves it unchanged (FND-162 stage 5). Asked before the
+    // path split: a stepped wire's paths are non-trivial, and solving it here would
+    // give the one-`(C, D)` answer the routed voltage solve no longer gives
+    // (FND-252).
+    if crate::hallen_session::graph_geometry(deck, segs).is_some() {
+        return Err(CurrentSourceError::NeedsRoutedSolve);
+    }
     match crate::hallen_session::classify_paths(segs, &ground) {
         crate::hallen_session::PathRoute::NonTrivial(paths) => {
             let (shape, cos_vec, sin_vec, src_seg) =
@@ -163,12 +172,6 @@ pub fn solve_current_source_hallen(
         }
         crate::hallen_session::PathRoute::Reducible => {}
         crate::hallen_session::PathRoute::Unsupported => {
-            // A junction or loop the section graph takes: a current source is the
-            // unit-gap voltage solve scaled to its impressed current, exactly, so
-            // the graph solve serves it unchanged (FND-162 stage 5).
-            if crate::hallen_session::graph_geometry(deck, segs).is_some() {
-                return Err(CurrentSourceError::NeedsRoutedSolve);
-            }
             if !detect_wire_junctions(segs, &wire_endpoints_from_segs(segs)).is_empty() {
                 // Out-of-scope junction topology (degree-3+ T/Y, closed loop).
                 return Err(CurrentSourceError::UnsupportedTopology);

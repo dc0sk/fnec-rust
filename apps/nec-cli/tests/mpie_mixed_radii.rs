@@ -58,8 +58,8 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
     (a.0 - b.0).hypot(a.1 - b.1)
 }
 
-/// The Hallén caveat on a radius change along a conductor (FND-252).
-const STEP_CAVEAT: &str = "changes radius along its length";
+/// The Hallén caveat on a radius step it cannot put a node at (FND-252).
+const STEP_CAVEAT: &str = "changes radius where wires join";
 
 /// A two-element Yagi at 14.2 MHz: a 10.8 m reflector of 10 mm radius 4.2 m
 /// behind a 10.2 m driven element of 2 mm, fed at its centre, `n` segments each.
@@ -115,7 +115,8 @@ fn feed_step(thin: f64) -> String {
 /// the capacitance it removes, weighted by the charge squared. The MPIE's ΔX over
 /// its own uniform wire is 2.11 Ω for a 5 % step and 9.61 for 25 %, against 1.97
 /// and 8.95; at 2:1, 30.08 against 27.79, the second order showing. Hallén's is
-/// 0.26, 1.18 and 3.64 (FND-252).
+/// 0.26, 1.18 and 3.64 on one homogeneous solution across the step (FND-252);
+/// on the section graph, which puts a node at each step, 2.06, 9.47 and 29.82.
 ///
 /// This does not tell one symmetric pair radius from another (geometric mean,
 /// RMS, max, min agree within 0.06 Ω at 5:1); it tells a per-segment radius from
@@ -127,16 +128,19 @@ fn a_radius_step_adds_the_first_order_reactance() {
     let (h, l) = (5.2_f64, 1.26_f64);
     let weight =
         ((2.0 * k * (h - l)).sin() - (2.0 * k * h).sin()) / (2.0 * k * (k * h).sin().powi(2));
-    let uniform = solve(&feed_step(0.005), MPIE).0;
-    for thin in [0.005 / 1.05, 0.004] {
-        let (z, stderr) = solve(&feed_step(thin), MPIE);
-        let expected = 2.0 * f * mu0 * (0.005 / thin).ln() * weight;
-        let dx = z.1 - uniform.1;
-        assert!(
-            (dx - expected).abs() < 0.1 * expected,
-            "{thin} m: ΔX {dx:.3} Ω over the uniform wire, first order {expected:.3}"
-        );
-        assert!(!stderr.contains("radius"), "{stderr}");
+    for args in [MPIE, HALLEN] {
+        let uniform = solve(&feed_step(0.005), args).0;
+        for thin in [0.005 / 1.05, 0.004] {
+            let (z, stderr) = solve(&feed_step(thin), args);
+            let expected = 2.0 * f * mu0 * (0.005 / thin).ln() * weight;
+            let dx = z.1 - uniform.1;
+            assert!(
+                (dx - expected).abs() < 0.1 * expected,
+                "{args:?}, {thin} m: ΔX {dx:.3} Ω over the uniform wire, first order \
+                 {expected:.3}"
+            );
+            assert!(!stderr.contains("radius"), "{stderr}");
+        }
     }
 }
 
@@ -161,10 +165,13 @@ fn stepped_element(m: u32) -> String {
 /// 75.114 + j16.518 at 189 segments, 75.110 + j16.495 with its extended kernel.
 /// The MPIE converges, 76.26 + j13.21 at m = 7 and 76.37 + j13.40 at m = 21,
 /// within 1.3 Ω in R and 3.2 in X of it; Leeson's is an engineering equivalent,
-/// not an exact one, so the bound is 2 Ω and 4 Ω. Hallén reads 77.46 + j38.33 and
-/// 77.65 + j38.85, and nec2c on the stepped element itself drifts from j31.81 to
-/// j35.73 toward it. Uniform, the same element agrees on all three (nec2c 80.19 +
-/// j42.73, MPIE 80.00 + j42.27, Hallén 80.13 + j41.82).
+/// not an exact one, so the bound is 2 Ω and 4 Ω. Hallén, on the section graph,
+/// reads 76.26 + j12.84 and 76.40 + j14.16 — within the same bounds at m = 21 and
+/// 0.76 Ω of the MPIE there; it read 77.46 + j38.33 and 77.65 + j38.85 on one
+/// homogeneous solution across every step (FND-252), and nec2c on the stepped
+/// element itself drifts from j31.81 to j35.73 toward that. Uniform, the same
+/// element agrees on all three (nec2c 80.19 + j42.73, MPIE 80.00 + j42.27, Hallén
+/// 80.13 + j41.82).
 #[test]
 fn a_stepped_yagi_element_is_its_leeson_equivalent() {
     let leeson = (75.114, 16.518);
@@ -179,26 +186,43 @@ fn a_stepped_yagi_element_is_its_leeson_equivalent() {
         (z21.0 - leeson.0).abs() < 2.0 && (z21.1 - leeson.1).abs() < 4.0,
         "MPIE {z21:?} vs the Leeson equivalent {leeson:?}"
     );
+    let (h21, stderr) = solve(&stepped_element(21), HALLEN);
+    assert!(!stderr.contains("radius"), "{stderr}");
+    assert!(
+        (h21.0 - leeson.0).abs() < 2.0 && (h21.1 - leeson.1).abs() < 4.0 && dist(h21, z21) < 1.0,
+        "Hallén {h21:?} vs the Leeson equivalent {leeson:?} and the MPIE {z21:?}"
+    );
 }
 
-/// Hallén warns on a radius change along a conductor, naming the MPIE; not on
-/// separate wires of different radius, not on a uniform one, and the MPIE warns
-/// on neither.
+/// Hallén warns on a radius step only where it cannot put a node there, and
+/// names why and the MPIE: here a step beside a run one segment long, which the
+/// section graph refuses. Where it can — every step of the stepped element, a
+/// step of 1 % — it is silent, as on separate wires of different radius and on a
+/// uniform wire. The MPIE warns on none of them.
 #[test]
-fn hallen_warns_on_a_radius_change_along_a_conductor() {
-    let (_, stderr) = solve(&stepped_element(7), HALLEN);
+fn hallen_warns_on_a_radius_step_only_where_it_cannot_model_it() {
+    let one_segment_run =
+        "CE\nGW 1 72 0 0 -5.2 0 0 -1.36 0.005\nGW 4 1 0 0 -1.36 0 0 -1.26 0.004\n\
+                           GW 2 45 0 0 -1.26 0 0 1.26 0.005\nGW 3 72 0 0 1.26 0 0 5.2 0.005\nGE 0\n\
+                           EX 0 2 23 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let (_, stderr) = solve(one_segment_run, HALLEN);
     assert!(
         stderr.contains(STEP_CAVEAT)
-            && stderr.contains("1.056 mm to 1.944 mm")
+            && stderr.contains("4 mm to 5 mm")
+            && stderr.contains("tag 4 segment 1 is one segment long")
             && stderr.contains("--solver mpie")
             && stderr.contains("FND-252"),
         "{stderr}"
     );
-    // A step of 1 % fires; the conductor is named by its thinnest segment.
-    let (_, stderr) = solve(&feed_step(0.00495), HALLEN);
-    assert!(stderr.contains("through tag 2"), "{stderr}");
-    for deck in [feed_step(0.005), yagi(21)] {
+    let (_, stderr) = solve(one_segment_run, MPIE);
+    assert!(!stderr.contains("radius"), "{stderr}");
+    for deck in [
+        stepped_element(7),
+        feed_step(0.00495),
+        feed_step(0.005),
+        yagi(21),
+    ] {
         let (_, stderr) = solve(&deck, HALLEN);
-        assert!(!stderr.contains(STEP_CAVEAT), "{deck}\n{stderr}");
+        assert!(!stderr.contains("radius"), "{deck}\n{stderr}");
     }
 }

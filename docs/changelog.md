@@ -78,12 +78,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   mixed-radius caveat is gone, and an `MpieGeometry` carries `radii`, one per
   segment (`MpieGeometry::uniform` for one radius); a geometry without one
   positive radius per segment is refused by name.
-- **Hallén warns on a wire whose radius changes along it** (FND-252) — two wires
-  of different radius joined, or a `GC` taper — naming `--solver mpie`: it carries
-  a tenth of a step's reactance or less, 25 Ω off on a Yagi element stepped 2:1.
-  nec2c is no reference there; it drifts with the mesh toward Hallén's value.
-  Separate wires of different radius, as a Yagi's elements, solve correctly and do
-  not warn.
+- **Hallén models a radius step** (FND-252). A straight stepped wire was one
+  section with one homogeneous solution, which made the current jump at the step
+  and carried a tenth of its reactance or less — 25 Ω off on a Yagi element
+  stepped 2:1, and nec2c drifts the same way, so it is no reference there. It now
+  takes the step on the section graph (current continuous, potential equal), on
+  every drive: a feed step matches the first-order closed form, and the stepped
+  element reads 76.40 + j14.16 against its Leeson equivalent's 75.11 + j16.52
+  (it read 77.65 + j38.85). Hallén warns, naming `--solver mpie`, only where it
+  still cannot: a `GC` taper along one wire, or a step beside a run one segment
+  long. Separate wires of different radius, as a Yagi's elements, never warn.
 - **`scripts/check-all.sh` holds the checkout while it runs.** Where the agent-skills
   `hold-checkout.sh` is installed (override the path with `FNEC_HOLD_CHECKOUT`), the
   gate takes a per-checkout flock for its whole run, so a `guard-inflight` hook denies

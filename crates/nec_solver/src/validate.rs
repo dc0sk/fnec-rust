@@ -440,26 +440,71 @@ pub fn mpie_compatible_deck(deck: &NecDeck) -> bool {
 /// dipole's reactance, where the MPIE and the closed form agree.
 const RADIUS_STEP_RATIO: f64 = 1.01;
 
-/// A conductor whose radius changes along it — two wires of different radius
-/// joined, or a `GC` taper — solved by Hallén (FND-252).
+/// A radius change along a conductor that the Hallén solve leaves unmodelled
+/// (FND-252): a wire whose own radius changes along it (a `GC` taper), or two
+/// wires of different radius joined on a deck the section graph does not take.
 ///
 /// A radius change along a wire adds a series reactance, first order in
-/// `ln(a₁/a₂)`; the MPIE reproduces that closed form within 0.2 Ω up to a 5:1
-/// step, and Hallén carries a tenth of it or less. On a Yagi element stepped
-/// 2:1 from a thick centre to thin tips (29.9 MHz, 5 m) Hallén reads 77.65 +
-/// j38.85 Ω, the MPIE 76.37 + j13.40 and the Leeson-equivalent uniform element
-/// under nec2c 75.11 + j16.52. nec2c itself is no reference here: on the same
-/// element it drifts with the mesh (j31.8 → j35.7) toward Hallén's value.
+/// `ln(a₁/a₂)`. One `(C, D)` across a step, which the path solve gave every
+/// straight run, forces the current to jump there and carries a tenth of that
+/// reactance or less: a Yagi element stepped 2:1 from a thick centre to thin tips
+/// (29.9 MHz, 5 m) read 77.65 + j38.85 Ω, where the MPIE gives 76.37 + j13.40 and
+/// the Leeson-equivalent uniform element under nec2c 75.11 + j16.52. Where wires
+/// join, the section graph puts a node — current continuous, potential equal —
+/// and gives 76.40 + j14.16; the solve takes it there
+/// ([`crate::hallen_session::takes_graph`]), and this caveat is silent. Not along
+/// one wire, where there is no node, and not where the graph refuses the deck (a
+/// run one segment long). nec2c is no reference on a step: on the same element it
+/// drifts with the mesh (j31.8 → j35.7) toward the one-`(C, D)` value.
 ///
 /// Wires of different radius that do not touch — a Yagi's elements — are not a
-/// step and are solved correctly; the conductor is found by clustering wire ends
-/// closer than [`crate::hallen_session::JUNCTION_TOL_M`], as the section graph does.
+/// step; conductors are found by clustering wire ends closer than
+/// [`crate::hallen_session::JUNCTION_TOL_M`], as the section graph does.
 pub fn radius_step_warning(
     deck: &NecDeck,
     segs: &[Segment],
     mpie_remedy: Option<&str>,
 ) -> Option<String> {
     let wires = crate::geometry::wire_endpoints_from_segs(segs);
+    // A taper runs along one wire, and the junction rows never reach inside it.
+    let span = |first: usize, last: usize| {
+        let (mut lo, mut hi) = (f64::INFINITY, 0.0_f64);
+        for s in &segs[first..=last] {
+            lo = lo.min(s.radius);
+            hi = hi.max(s.radius);
+        }
+        (lo, hi)
+    };
+    let taper = wires
+        .iter()
+        .map(|&(first, last)| (first, span(first, last)))
+        .filter(|&(_, (lo, hi))| hi > RADIUS_STEP_RATIO * lo)
+        .max_by(|a, b| (a.1 .1 / a.1 .0).total_cmp(&(b.1 .1 / b.1 .0)));
+    let or_mpie = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
+        format!("; {mpie_remedy}, which models each segment's own radius")
+    } else {
+        String::new()
+    };
+    // A taper's radii are accumulated products: print them to four figures in mm.
+    let mm = |r: f64| {
+        let t = format!("{:.4}", r * 1e3);
+        t.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    if let Some((first, (lo, hi))) = taper {
+        return Some(format!(
+            "the wire through tag {} tapers in radius along its length, {} mm to {} mm \
+             ({:.2}:1); the Hallén solve models a radius change only where two wires join, \
+             not along one wire, so the reactance can be far off (FND-252){or_mpie}; or \
+             write the taper as one GW per radius, each at least two segments long",
+            segs[first].tag,
+            mm(lo),
+            mm(hi),
+            hi / lo
+        ));
+    }
+    if crate::hallen_session::takes_graph(deck, segs) {
+        return None;
+    }
     let tol2 = crate::hallen_session::JUNCTION_TOL_M * crate::hallen_session::JUNCTION_TOL_M;
     let near = |a: [f64; 3], b: [f64; 3]| {
         let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -503,20 +548,15 @@ pub fn radius_step_warning(
         .flatten()
         .filter(|&(lo, hi, _)| hi > RADIUS_STEP_RATIO * lo)
         .max_by(|a, b| (a.1 / a.0).total_cmp(&(b.1 / b.0)))?;
-    let or_mpie = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
-        format!("; {mpie_remedy}, which models each segment's own radius")
-    } else {
-        String::new()
-    };
-    // A taper's radii are accumulated products: print them to four figures in mm.
-    let mm = |r: f64| {
-        let t = format!("{:.4}", r * 1e3);
-        t.trim_end_matches('0').trim_end_matches('.').to_string()
+    // Why the graph does not take it, in the builder's own words where it has them.
+    let why = match crate::section_graph::section_graph(segs) {
+        Err(refusal) => format!("{refusal}, so the Hallén solve cannot put a node at the step"),
+        Ok(_) => "the Hallén solve cannot put a node at the step on this deck".to_string(),
     };
     Some(format!(
-        "the conductor through tag {} changes radius along its length, {} mm to {} mm \
-         ({:.2}:1); the Hallén solve under-models a radius change along a wire, so the \
-         reactance can be far off — measured 25 Ω on a Yagi element stepped 2:1 \
+        "the conductor through tag {} changes radius where wires join, {} mm to {} mm \
+         ({:.2}:1), but {why}; one homogeneous solution across a step carries a tenth of \
+         its reactance or less — measured 25 Ω on a Yagi element stepped 2:1 \
          (FND-252){or_mpie}; for a stepped Yagi element, `fnec taper` gives its uniform \
          equivalent",
         segs[at].tag,
@@ -3044,34 +3084,40 @@ mod tests {
         assert!(!has_error(&hallen), "the TL deck must solve on Hallén");
     }
 
-    /// A radius change along a conductor is a caveat on Hallén, which every
-    /// frontend shows through `diagnose`, and nothing on the MPIE, which models it
-    /// (FND-252, PH10-CHK-003). Separate wires of different radius are no step,
-    /// and the cluster rule is the section graph's: ends 2 µm apart do not join.
+    /// A radius change the Hallén solve leaves unmodelled is a caveat on Hallén,
+    /// which every frontend shows through `diagnose`, and nothing on the MPIE,
+    /// which models it (FND-252, PH10-CHK-003): a `GC` taper, and a step beside a
+    /// run one segment long, which the section graph refuses. A step the graph
+    /// takes is no caveat. Separate wires of different radius are no step, and the
+    /// cluster rule is the section graph's: ends 2 µm apart do not join.
     #[test]
-    fn a_radius_change_along_a_conductor_is_a_hallen_caveat_only() {
-        let deck_of = |gap: f64| {
-            deck_and_segs(&format!(
-                "GW 1 20 0 0 -2.5 0 0 0 0.002\nGW 2 21 0 0 {gap} 0 0 2.5 0.0005\nGE 0\n\
-                 EX 0 1 10 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n"
-            ))
-        };
-        let caveat = |deck: &NecDeck, segs: &[Segment], kind| {
+    fn a_radius_change_hallen_cannot_model_is_a_hallen_caveat_only() {
+        let feed = "GE 0\nEX 0 1 10 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let caveat = |text: &str, kind| {
+            let (deck, segs) = deck_and_segs(&format!("{text}{feed}"));
             let ctx = SolverContext {
                 kind,
                 ..SolverContext::cli_hallen()
             };
-            diagnose(deck, segs, &GroundModel::FreeSpace, 14.2e6, ctx)
+            diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, ctx)
                 .into_iter()
-                .filter(|d| d.message.contains("changes radius along its length"))
+                .filter(|d| d.message.contains("FND-252"))
                 .count()
         };
-        let (deck, segs) = deck_of(0.0);
-        assert_eq!(caveat(&deck, &segs, SolverKind::Hallen), 1);
-        assert_eq!(caveat(&deck, &segs, SolverKind::Mpie), 0);
-        let (deck, segs) = deck_of(2e-6);
-        assert_eq!(caveat(&deck, &segs, SolverKind::Hallen), 0);
-        assert_eq!(radius_step_warning(&deck, &segs, None), None);
+        let taper = "GW 1 21 0 0 -2.5 0 0 2.5 0\nGC 0 0 1 0.0005 0.002\n";
+        let one_segment_run = "GW 1 20 0 0 -2.5 0 0 0 0.002\nGW 3 1 0 0 0 0 0 0.1 0.001\n\
+                               GW 2 20 0 0 0.1 0 0 2.5 0.0005\n";
+        let joined = "GW 1 20 0 0 -2.5 0 0 0 0.002\nGW 2 21 0 0 0 0 0 2.5 0.0005\n";
+        let apart = "GW 1 20 0 0 -2.5 0 0 0 0.002\nGW 2 21 0 0 2e-6 0 0 2.5 0.0005\n";
+        for text in [taper, one_segment_run] {
+            assert_eq!(caveat(text, SolverKind::Hallen), 1, "{text}");
+            assert_eq!(caveat(text, SolverKind::Mpie), 0, "{text}");
+        }
+        for text in [joined, apart] {
+            assert_eq!(caveat(text, SolverKind::Hallen), 0, "{text}");
+            let (deck, segs) = deck_and_segs(&format!("{text}{feed}"));
+            assert_eq!(radius_step_warning(&deck, &segs, None), None, "{text}");
+        }
     }
 }
 

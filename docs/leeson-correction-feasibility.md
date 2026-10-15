@@ -44,7 +44,7 @@ impedance. fnec is no exception; measured 2026-08-21 on a 10 m dipole at 14 MHz
 
 (Measured 2026-08-21. Since PH10-CHK-003 the MPIE models each segment's radius,
 and a stepped element converges within a few ohms of its Leeson equivalent;
-Hallén under-models the step and warns, FND-252.) The MPIE reduced kernel then
+since FND-252 Hallén takes each step on its section graph and agrees.) The MPIE reduced kernel then
 collapsed the whole element to the *first* wire's radius (with a mixed-radius
 warning), so the thick centre was ignored; the Hallén solver
 instead breaks at the radius-change junctions (−4 Ω negative resistance). Either

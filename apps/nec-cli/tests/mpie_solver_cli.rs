@@ -124,12 +124,13 @@ fn mpie_impedance_is_independent_of_source_voltage() {
     );
 }
 
-/// The MPIE models each segment's own radius (PH10-CHK-003), so a deck joining
-/// a fat and a thin wire solves without a caveat there; Hallén, which
-/// under-models the step (FND-252), warns and names the MPIE. It used one radius
-/// for the whole geometry and warned instead.
+/// A deck joining a fat and a thin wire solves without a radius caveat on both
+/// solvers: the MPIE models each segment's own radius (PH10-CHK-003), and Hallén
+/// takes the step on the section graph (FND-252). The MPIE used one radius for
+/// the whole geometry and warned; then Hallén warned, solving the step with one
+/// homogeneous solution across it.
 #[test]
-fn mixed_radii_warn_on_hallen_not_on_the_mpie() {
+fn mixed_radii_solve_without_a_caveat_on_both_solvers() {
     let deck = write_deck(
         "mixed_radii",
         "\
@@ -151,10 +152,7 @@ EN
     let out = run_fnec(&["--solver", "hallen", deck.to_str().unwrap()]);
     assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("changes radius along its length") && stderr.contains("--solver mpie"),
-        "{stderr}"
-    );
+    assert!(!stderr.contains("radius"), "{stderr}");
 }
 
 /// The MPIE stamps an `LD` load (PH10-CHK-004): a 100 Ω reactance on the fed

@@ -8,7 +8,8 @@
 //! the direction within 1e-6 rad and equal radii, `is_trivial` the direction
 //! within 4.5e-5 rad and no radius at all. A path between the two was called
 //! trivial, then not merged, and took the plain basis's pairwise junction row:
-//! garbage, silently. Expectations are nec2c 1.3.1, captured 2026-09-28.
+//! garbage, silently. Expectations are nec2c 1.3.1, captured 2026-09-28, except at
+//! a radius step, where nec2c is no reference and the MPIE stands in (FND-252).
 
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, ground_model_from_deck, solve_hallen_routed,
@@ -59,33 +60,46 @@ fn a_wire_split_with_rounded_coordinates_is_one_wire() {
 /// middle. The merge refuses unequal radii, so it is a conductor path, not one
 /// wire; it was −7.35 − j1181 on the plain junction rows. Two meshes, converging.
 ///
-/// Against nec2c on a 3× mesh (the feed on segment 3k − 1, the same point),
-/// captured 2026-10-10 — the finest mesh on which the thick segments stay at
-/// least 3 radii long. On a fat wire nec2c's reactance keeps rising with the mesh
-/// (31.98 / 37.10 / 39.13 / 40.84 at 1 / 3 / 5 / 9 × the coarse deck) until the
-/// thin-wire kernel breaks down (27× reads 99.99 − j2.97 on the fine deck); since
-/// FND-227 refined the free ends fnec sits inside that band (76.02 + j39.74,
-/// 76.31 + j40.56), so nec2c on the deck's own mesh was no longer a reference.
+/// Against the MPIE, not nec2c: at a radius step nec2c is no reference (FND-252).
+/// This test pinned Hallén within 5 % of nec2c (76.865 + j39.710 on a 3× mesh),
+/// and both were wrong the same way: one homogeneous solution across each step
+/// made the current jump there, carrying a tenth of the step's reactance or less.
+/// The thick centre shortens the element electrically — the first-order closed
+/// form puts it about 32 Ω of reactance below the uniform 4 mm wire — and on the
+/// section graph Hallén reads 78.082 + j11.178 and 78.299 + j12.230, the MPIE
+/// 78.151 + j12.144 and 78.345 + j12.499. The finer mesh is the finest whose
+/// thick segments stay over 8 radii long; at twice it they are 4.6, and both
+/// solvers drift apart as the thin-wire kernel breaks down.
 #[test]
-fn a_stepped_radius_element_tracks_nec2c() {
+fn a_stepped_radius_element_tracks_the_mpie() {
     let element = |a: u32, b: u32| {
         format!(
             "GW 1 {a} 0 0 -5.282 0 0 -1.5 .004\nGW 2 {b} 0 0 -1.5 0 0 1.5 .008\nGW 3 {a} 0 0 1.5 0 0 5.282 .004\n"
         )
     };
-    let coarse = rel(
-        z_in(&element(15, 21), (2, 11)),
-        Complex64::new(76.877, 37.098),
-    );
-    let fine = rel(
-        z_in(&element(30, 41), (2, 21)),
-        Complex64::new(76.865, 39.710),
-    );
+    let mpie = |a: u32, b: u32, feed: u32| {
+        let text = format!(
+            "CE\n{}GE 0\nEX 0 2 {feed} 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
+            element(a, b)
+        );
+        let deck = nec_parser::parse(&text).expect("parses").deck;
+        let segs = nec_solver::build_deck_geometry(&deck).expect("geometry");
+        let i =
+            nec_solver::solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), FREQ, &[])
+                .expect("solves");
+        let idx = segs
+            .iter()
+            .position(|s| s.tag == 2 && s.tag_index == feed)
+            .expect("feed");
+        Complex64::new(1.0, 0.0) / i[idx]
+    };
+    let coarse = rel(z_in(&element(15, 21), (2, 11)), mpie(15, 21, 11));
+    let fine = rel(z_in(&element(30, 41), (2, 21)), mpie(30, 41, 21));
     println!(
-        "stepped radius: {:.2} % -> {:.2} %",
+        "stepped radius: {:.2} % -> {:.2} % from the MPIE",
         coarse * 100.0,
         fine * 100.0
     );
-    assert!(fine < 0.05, "{:.2} % from nec2c", fine * 100.0);
-    assert!(fine < coarse, "the error must shrink with refinement");
+    assert!(fine < 0.005, "{:.2} % from the MPIE", fine * 100.0);
+    assert!(fine < coarse, "the gap must shrink with refinement");
 }

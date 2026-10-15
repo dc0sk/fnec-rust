@@ -187,11 +187,24 @@ pub(crate) fn graph_geometry(
     ) {
         return None;
     }
-    if !matches!(classify_paths(segs, &ground), PathRoute::Unsupported) {
-        return None;
-    }
-    crate::section_graph::build_section_graph(segs)
-        .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
+    graph_of(segs, &ground)
+}
+
+/// The section graph a solve on `segs` over `ground` takes, whatever drives it, or
+/// `None`: a junction or loop the conductor paths cannot carry, or a radius step
+/// they model wrongly — one `(C, D)` across the step makes the current jump (FND-252:
+/// a tenth of the step's reactance or less). The one copy, read by every drive's
+/// choice ([`graph_geometry`], [`planewave_graph`]).
+pub(crate) fn graph_of(
+    segs: &[Segment],
+    ground: &crate::GroundModel,
+) -> Option<crate::section_graph::SectionGraph> {
+    let graph = crate::section_graph::build_section_graph(segs)?;
+    let needed = match classify_paths(segs, ground) {
+        PathRoute::Unsupported => graph.has_junction_or_loop(),
+        PathRoute::NonTrivial(_) | PathRoute::Reducible => graph.has_radius_step(segs),
+    };
+    needed.then_some(graph)
 }
 
 /// The currents of `graph`'s system driven by a 1 V gap at segment `src`, with
@@ -288,10 +301,10 @@ pub fn hallen_route(deck: &NecDeck, segs: &[Segment]) -> HallenRoute {
         Ok(Some(img)) => classify_paths(&img.segs, &crate::GroundModel::FreeSpace),
         _ => classify_paths(segs, &crate::ground_model_from_deck(deck)),
     };
-    // A junction or loop driven by voltage sources takes the section graph: a
-    // path-basis solve (the device must decline it), no longer unsupported. For
-    // a deck on PEC ground it is the image problem that takes it.
-    let graph = matches!(class, PathRoute::Unsupported) && takes_graph(deck, segs);
+    // A junction, a loop or a radius step takes the section graph: a path-basis
+    // solve (the device must decline it), and a junction or loop is no longer
+    // unsupported. For a deck on PEC ground it is the image problem that takes it.
+    let graph = takes_graph(deck, segs);
     HallenRoute {
         drive,
         paths: matches!(class, PathRoute::NonTrivial(_)) || graph,
@@ -889,19 +902,14 @@ fn plane_wave_thetas(deck: &NecDeck) -> impl Iterator<Item = f64> + '_ {
     })
 }
 
-/// The section graph a plane-wave solve takes on `segs` over `ground`, or `None`:
-/// a junction or loop the conductor paths cannot carry. The one copy, read by the
-/// plan and by the routed path's choice not to stamp loads (FND-197).
+/// The section graph a plane-wave solve takes on `segs` over `ground`, or `None`
+/// ([`graph_of`]). Read by the plan and by the routed path's choice not to stamp
+/// loads (FND-197).
 pub(crate) fn planewave_graph(
     segs: &[Segment],
     ground: &crate::GroundModel,
 ) -> Option<crate::section_graph::SectionGraph> {
-    if matches!(classify_paths(segs, ground), PathRoute::Unsupported) {
-        crate::section_graph::build_section_graph(segs)
-            .filter(crate::section_graph::SectionGraph::has_junction_or_loop)
-    } else {
-        None
-    }
+    graph_of(segs, ground)
 }
 
 /// Build the [`PlaneWavePlan`] for `segs` at `freq_hz` over `ground` — the ground
@@ -2044,5 +2052,64 @@ mod end_row_tests {
             residual.abs() < 1e-12,
             "row {row:?} leaves {residual} on a path current that is zero at the tip"
         );
+    }
+}
+
+#[cfg(test)]
+mod radius_step_route_tests {
+    use super::*;
+
+    fn deck_and_segs(text: &str) -> (NecDeck, Vec<Segment>) {
+        let deck = nec_parser::parse(text).expect("parses").deck;
+        let segs = crate::build_geometry(&deck).expect("geometry");
+        (deck, segs)
+    }
+
+    /// A dipole thinned to `thin` within 1.26 m of its feed, driven by `ex`, over
+    /// `ground` (a `GN` card or nothing).
+    fn stepped(thin: f64, ex: &str, ground: &str) -> String {
+        format!(
+            "GW 1 72 0 0 -5.2 0 0 -1.26 0.005\nGW 2 45 0 0 -1.26 0 0 1.26 {thin}\n\
+             GW 3 72 0 0 1.26 0 0 5.2 0.005\nGE 0\n{ground}{ex}\nFR 0 1 0 0 14.2 0\nEN\n"
+        )
+    }
+
+    /// FND-252: every drive takes a radius step on the section graph, through the
+    /// one predicate — the voltage source, the current source, a plane wave — and
+    /// so does a stepped monopole on perfect ground, through its image problem.
+    /// Below the builder's own tolerance (1 µm) the radii are one and the wire
+    /// keeps the plain route; a `GC` taper is one wire, with no node inside it.
+    #[test]
+    fn a_radius_step_takes_the_section_graph_on_every_drive() {
+        let free = crate::GroundModel::FreeSpace;
+        for ex in ["EX 0 2 23 0 1 0", "EX 4 2 23 0 1 0"] {
+            let (deck, segs) = deck_and_segs(&stepped(0.004, ex, ""));
+            assert!(graph_geometry(&deck, &segs).is_some(), "{ex}");
+            assert!(takes_graph(&deck, &segs), "{ex}");
+        }
+        let (deck, segs) = deck_and_segs(&stepped(0.004, "EX 1 1 1 0 90 0 0 0 0 0", ""));
+        assert!(planewave_graph(&segs, &free).is_some());
+        assert!(takes_graph(&deck, &segs));
+
+        let monopole = "GW 1 22 0 0 0 0 0 1.26 0.004\nGW 2 72 0 0 1.26 0 0 5.2 0.005\nGE 1\n\
+                        GN 1\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let (deck, segs) = deck_and_segs(monopole);
+        assert!(
+            takes_graph(&deck, &segs),
+            "the stepped monopole's image problem"
+        );
+
+        let (deck, segs) = deck_and_segs(&stepped(0.005 - 0.5e-6, "EX 0 2 23 0 1 0", ""));
+        assert!(!takes_graph(&deck, &segs));
+        assert!(
+            !hallen_route(&deck, &segs).paths,
+            "a 0.5 µm difference is one radius"
+        );
+
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -2.5 0 0 2.5 0\nGC 0 0 1 0.0005 0.002\nGE 0\nEX 0 1 11 0 1 0\n\
+             FR 0 1 0 0 29.9 0\nEN\n",
+        );
+        assert!(!takes_graph(&deck, &segs), "a taper has no node to take");
     }
 }
