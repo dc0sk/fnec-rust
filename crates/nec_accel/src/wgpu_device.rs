@@ -1993,6 +1993,79 @@ pub async fn solve_hallen_gpu_resident(
     constraint_rows: &[(usize, Option<usize>, f64, f64)],
     freq_hz: f64,
 ) -> Result<Vec<num_complex::Complex64>, GpuSolveDeclined> {
+    solve_resident(
+        segments,
+        None,
+        rhs,
+        cos_vec,
+        sin_vec,
+        wire_endpoints,
+        sin_eligible,
+        constraint_rows,
+        freq_hz,
+    )
+    .await
+}
+
+/// [`solve_hallen_gpu_resident`] on a Z matrix the caller gives (row-major,
+/// `n × n`, `n = rhs.len()`) instead of the one the fill kernel computes: the same
+/// augmented system, column scaling, LU, refinement and residual gate, on a matrix
+/// a test can choose. For the pivot search, which no antenna's matrix exercises —
+/// a Hallén matrix's largest entry in a column is on its diagonal, so a search
+/// that looked at the diagonal alone gave the same bits (FND-254). Not for
+/// production: the GPU path exists to keep Z on the device.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub async fn solve_hallen_gpu_resident_with_z_for_test(
+    z: &[num_complex::Complex64],
+    rhs: &[num_complex::Complex64],
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+    sin_eligible: &[bool],
+    constraint_rows: &[(usize, Option<usize>, f64, f64)],
+) -> Result<Vec<num_complex::Complex64>, GpuSolveDeclined> {
+    let n = rhs.len();
+    if z.len() != n * n {
+        return Err(GpuSolveDeclined::OutOfClass("z is not n × n"));
+    }
+    // The fill kernel never runs, so the segments only carry the count.
+    let segments = vec![
+        ZSegmentInput {
+            midpoint: [0.0; 3],
+            direction: [0.0, 0.0, 1.0],
+            length: 1.0,
+            radius: 1e-3,
+        };
+        n
+    ];
+    solve_resident(
+        &segments,
+        Some(z),
+        rhs,
+        cos_vec,
+        sin_vec,
+        wire_endpoints,
+        sin_eligible,
+        constraint_rows,
+        1.0e6,
+    )
+    .await
+}
+
+/// The resident solve, on the fill kernel's Z (`host_z` `None`) or on a given one.
+#[allow(clippy::too_many_arguments)]
+async fn solve_resident(
+    segments: &[ZSegmentInput],
+    host_z: Option<&[num_complex::Complex64]>,
+    rhs: &[num_complex::Complex64],
+    cos_vec: &[f64],
+    sin_vec: &[f64],
+    wire_endpoints: &[(usize, usize)],
+    sin_eligible: &[bool],
+    constraint_rows: &[(usize, Option<usize>, f64, f64)],
+    freq_hz: f64,
+) -> Result<Vec<num_complex::Complex64>, GpuSolveDeclined> {
     use wgpu::util::DeviceExt;
 
     let n = segments.len();
@@ -2142,12 +2215,22 @@ pub async fn solve_hallen_gpu_resident(
     });
 
     // ---- device-resident Z buffer (never copied back) ----------------------
-    let z_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("hallen-z"),
-        size: (2 * n * n * std::mem::size_of::<f32>()) as u64,
-        usage: wgpu::BufferUsages::STORAGE,
-        mapped_at_creation: false,
-    });
+    let z_buf = match host_z {
+        None => device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hallen-z"),
+            size: (2 * n * n * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        }),
+        Some(z) => {
+            let flat: Vec<f32> = z.iter().flat_map(|v| [v.re as f32, v.im as f32]).collect();
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("hallen-z"),
+                contents: bytemuck::cast_slice(&flat),
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        }
+    };
 
     // ---- solve buffers -----------------------------------------------------
     let solve_params = SolveParams {
@@ -2412,7 +2495,7 @@ pub async fn solve_hallen_gpu_resident(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("hallen-encoder"),
     });
-    {
+    if host_z.is_none() {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("hallen-zfill-pass"),
             timestamp_writes: None,

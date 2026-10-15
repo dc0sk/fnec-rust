@@ -76,8 +76,9 @@ pub mod gpu_test;
 pub use wgpu_device::{
     dense_matrix_capacity, fill_zmatrix_wgpu, gpu_context_build_count, hardware_adapter_present,
     linear_dispatch_grid, microbench_zmatrix_dispatch, preferred_adapter_info, shared_adapter_info,
-    shared_device_dense_capacity, solve_hallen_gpu_resident, GpuMicrobench, GpuSolveDeclined,
-    ZElem, ZSegmentInput, MIN_GPU_RESIDENT_SEGS,
+    shared_device_dense_capacity, solve_hallen_gpu_resident,
+    solve_hallen_gpu_resident_with_z_for_test, GpuMicrobench, GpuSolveDeclined, ZElem,
+    ZSegmentInput, MIN_GPU_RESIDENT_SEGS,
 };
 
 pub use kernel_reference::{
