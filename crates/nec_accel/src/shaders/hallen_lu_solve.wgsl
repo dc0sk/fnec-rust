@@ -19,8 +19,11 @@
 // guarantee that one dispatch's storage writes are visible to the next dispatch
 // in the pass, so each phase below is its own entry point, the host encodes a
 // pivot search, a row swap and an elimination dispatch per column, and no entry point reads a
-// storage location another invocation of the same dispatch writes. The only
-// barrier left is over WORKGROUP memory (the pivot reduction).
+// storage location another invocation of the same dispatch writes. There is no
+// barrier and no workgroup memory: the two reductions (the pivot search and the
+// residual norms) leave one partial per invocation in storage, and the next
+// dispatch reduces them. naga emits `ArrayStride` on a workgroup array, which
+// Vulkan validation rejects (FND-193); `tests/shader_structure.rs` bans both.
 //
 // Numerics: the class this route takes (straight wires, two free ends each) is
 // square, R = N + nc = S, so M is factored directly — the normal equations
@@ -33,7 +36,8 @@
 //   1 params(uniform)        : n, s, nc
 //   2 aux   (storage, read)  : per-segment block then constraint block (below)
 //   3 lu    (storage, rw)    : S×S complex, the scaled M factored in place
-//   4 vec   (storage, rw)    : complex vectors of stride R+1 (slots below)
+//   4 vec   (storage, rw)    : complex vectors of stride R+1 (slots below), then
+//                              WG complex partials at 7*(R+1)
 //   5 step  (uniform, dynamic offset) : col, mode for this dispatch
 //
 // aux layout (f32):
@@ -73,10 +77,10 @@ const SLOT_T: u32 = 3u;    // M-space residual y − Mx; [R] = (‖y−Mx‖², 
 const SLOT_OUT: u32 = 4u;  // unscaled result for readback
 const SLOT_D: u32 = 5u;    // column scale D_c in .x
 const SLOT_PIV: u32 = 6u;  // pivot row of column c in .x
-
-var<workgroup> red_val: array<f32, 64>;
-var<workgroup> red_idx: array<u32, 64>;
-var<workgroup> red_sum: array<vec2<f32>, 64>;
+// One partial per reduction lane, after the slots: (|v|², row) from the pivot
+// search, (‖t‖², ‖y‖²) from the norms. Not a stride-sized slot — WG entries,
+// whatever the stride.
+const PARTIALS: u32 = 7u;
 
 fn cmul(a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
@@ -173,10 +177,11 @@ fn cs_build(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgrou
     lu_set(i, j, m_full(i, j) * (1.0 / vget(SLOT_D, j).x));
 }
 
-// Column `step.col`: find the pivot row and record it (a reduction over WORKGROUP
-// memory — the only barrier in this shader, and not a storage hand-off). One
-// workgroup. The swap is the next dispatch: doing it here would write entries of
-// the pivot column that other invocations of this dispatch have just read.
+// Column `step.col`: each lane's best pivot candidate among its strided rows, into
+// its own partial. One workgroup. The swap, the next dispatch, reduces the
+// partials: reducing here would need workgroup memory and a barrier (FND-193), and
+// swapping here would write entries of the pivot column other invocations of this
+// dispatch have just read.
 @compute @workgroup_size(64)
 fn cs_pivot_search(@builtin(local_invocation_id) lid: vec3<u32>) {
     let tid = lid.x;
@@ -192,24 +197,20 @@ fn cs_pivot_search(@builtin(local_invocation_id) lid: vec3<u32>) {
         if nv > best { best = nv; best_row = r; }
         r += WG;
     }
-    red_val[tid] = best;
-    red_idx[tid] = best_row;
-    workgroupBarrier();
-    var width = WG / 2u;
-    loop {
-        if width == 0u { break; }
-        if tid < width {
-            let o = tid + width;
-            // Ties go to the lower row, as the serial scan did.
-            if red_val[o] > red_val[tid] || (red_val[o] == red_val[tid] && red_idx[o] < red_idx[tid]) {
-                red_val[tid] = red_val[o];
-                red_idx[tid] = red_idx[o];
-            }
-        }
-        workgroupBarrier();
-        width = width / 2u;
+    vset(PARTIALS, tid, vec2<f32>(best, f32(best_row)));
+}
+
+// The pivot row of column `step.col`: the largest |v|² among the search's lane
+// partials, ties to the lower row — a strict total order over distinct rows, so the
+// answer does not depend on the order it is reduced in. Every swap invocation
+// reduces the WG partials itself; they are the previous dispatch's writes.
+fn pivot_row() -> u32 {
+    var best = vget(PARTIALS, 0u);
+    for (var i: u32 = 1u; i < WG; i++) {
+        let c = vget(PARTIALS, i);
+        if c.x > best.x || (c.x == best.x && c.y < best.y) { best = c; }
     }
-    if tid == 0u { vset(SLOT_PIV, col, vec2<f32>(f32(red_idx[0]), 0.0)); }
+    return u32(best.y);
 }
 
 // Column `step.col`: swap the pivot row into place across all columns, one
@@ -219,7 +220,10 @@ fn cs_pivot_swap(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_wor
     let k = linear(gid, nwg);
     let col = step.col;
     if k >= params.s { return; }
-    let pv = u32(vget(SLOT_PIV, col).x);
+    let pv = pivot_row();
+    // Recorded for `cs_permute` before any return: a column that needs no swap
+    // still needs its own row there. Nothing in this dispatch reads the slot.
+    if k == 0u { vset(SLOT_PIV, col, vec2<f32>(f32(pv), 0.0)); }
     if pv == col { return; }
     let a = lu_get(col, k);
     let b = lu_get(pv, k);
@@ -327,7 +331,8 @@ fn cs_residual(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workg
     vset(SLOT_B, r, acc);
 }
 
-// (‖y − Mx‖², ‖y‖²) into SLOT_T[R], which no invocation reads here.
+// Each lane's share of (‖y − Mx‖², ‖y‖²), into its own partial; `cs_norms_sum`
+// adds them in the next dispatch.
 @compute @workgroup_size(64)
 fn cs_norms(@builtin(local_invocation_id) lid: vec3<u32>) {
     let tid = lid.x;
@@ -340,13 +345,16 @@ fn cs_norms(@builtin(local_invocation_id) lid: vec3<u32>) {
         part += vec2<f32>(t.x * t.x + t.y * t.y, y.x * y.x + y.y * y.y);
         r += WG;
     }
-    red_sum[tid] = part;
-    workgroupBarrier();
-    if tid == 0u {
-        var sum = vec2<f32>(0.0, 0.0);
-        for (var i: u32 = 0u; i < WG; i++) { sum += red_sum[i]; }
-        vset(SLOT_T, rows(), sum);
-    }
+    vset(PARTIALS, tid, part);
+}
+
+// (‖y − Mx‖², ‖y‖²) into SLOT_T[R]: the norms' partials summed in lane order, as
+// one invocation summed them before. One invocation, once per solve.
+@compute @workgroup_size(1)
+fn cs_norms_sum() {
+    var sum = vec2<f32>(0.0, 0.0);
+    for (var i: u32 = 0u; i < WG; i++) { sum += vget(PARTIALS, i); }
+    vset(SLOT_T, rows(), sum);
 }
 
 // SLOT_OUT = x, for the readback.

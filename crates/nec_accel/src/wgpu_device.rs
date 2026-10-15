@@ -2174,12 +2174,15 @@ pub async fn solve_hallen_gpu_resident(
         mapped_at_creation: false,
     });
     // vec_: 7 complex vectors of stride R + 1 (x, b, w, t, out, d, piv); index R
-    // of slot t carries the residual norms, where no invocation reads.
+    // of slot t carries the residual norms, where no invocation reads. Then one
+    // complex partial per reduction lane (the shader's `PARTIALS`, WG = 64 of
+    // them whatever the stride), which replaced workgroup memory (FND-193).
+    const REDUCTION_LANES: usize = 64;
     let rows = n + nc;
     let stride = rows + 1;
     let vec_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("hallen-vec"),
-        size: (2 * 7 * stride * std::mem::size_of::<f32>()) as u64,
+        size: (2 * (7 * stride + REDUCTION_LANES) * std::mem::size_of::<f32>()) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
@@ -2368,6 +2371,7 @@ pub async fn solve_hallen_gpu_resident(
     let p_update_x = pipe("cs_update_x");
     let p_residual = pipe("cs_residual");
     let p_norms = pipe("cs_norms");
+    let p_norms_sum = pipe("cs_norms_sum");
     let p_copy_out = pipe("cs_copy_out");
     let solve_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("hallen-solve-bg"),
@@ -2469,6 +2473,7 @@ pub async fn solve_hallen_gpu_resident(
         // Final residual for the host's gate, then the solution.
         run(&p_residual, 0, groups(rows));
         run(&p_norms, 0, (1, 1));
+        run(&p_norms_sum, 0, (1, 1));
         run(&p_copy_out, 0, groups(s));
     }
     encoder.copy_buffer_to_buffer(
@@ -2514,10 +2519,14 @@ pub async fn solve_hallen_gpu_resident(
     // once it reaches the report. See GPU_SOLVE_MAX_REL_RESIDUAL for the measured
     // split between the two. Reject the bad ones so the caller takes the f64 CPU
     // path instead of reporting a wrong number.
+    // A zero ‖y‖² is not a solve with nothing to do — every solve here has a feed
+    // — but norms that were never written: the buffer is zeroed when created. It
+    // read as a relative residual of 0 and passed, so a solve whose norms went
+    // missing reported whatever it had (FND-253). Not a number, so it declines.
     let rel = if rhs_sq > 0.0 {
         (res_sq / rhs_sq).sqrt()
     } else {
-        0.0
+        f64::NAN
     };
     if !rel.is_finite() || rel > GPU_SOLVE_MAX_REL_RESIDUAL {
         eprintln!(
