@@ -149,6 +149,51 @@ pub struct ReportInput<'a> {
     pub avg_power_gain: Option<f64>,
 }
 
+/// One frequency point's result, owned: the tables [`ReportInput`] borrows.
+///
+/// The solve returns this rather than rendered text, so that each output format
+/// prints the same tables (PAR-011: the NEC-2D writer transcribes what the text
+/// report prints, and must not compute a second answer of its own).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PointReport {
+    pub solver_mode: String,
+    pub pulse_rhs: String,
+    pub caveat: Option<String>,
+    pub frequency_hz: f64,
+    pub rows: Vec<FeedpointRow>,
+    pub source_table: Vec<SourceRow>,
+    pub load_table: Vec<LoadRow>,
+    pub current_table: Vec<CurrentRow>,
+    pub pattern_table: Vec<PatternRow>,
+    pub receive_pattern_table: Vec<ReceivePatternRow>,
+    pub near_field_table: Vec<NearFieldRow>,
+    pub near_h_field_table: Vec<NearHFieldRow>,
+    pub normalize_pattern: bool,
+    pub avg_power_gain: Option<f64>,
+}
+
+impl PointReport {
+    /// The borrowed view the text renderer reads.
+    pub fn as_input(&self) -> ReportInput<'_> {
+        ReportInput {
+            solver_mode: &self.solver_mode,
+            pulse_rhs: &self.pulse_rhs,
+            caveat: self.caveat.as_deref(),
+            frequency_hz: self.frequency_hz,
+            rows: &self.rows,
+            source_table: &self.source_table,
+            load_table: &self.load_table,
+            current_table: &self.current_table,
+            pattern_table: &self.pattern_table,
+            receive_pattern_table: &self.receive_pattern_table,
+            near_field_table: &self.near_field_table,
+            near_h_field_table: &self.near_h_field_table,
+            normalize_pattern: self.normalize_pattern,
+            avg_power_gain: self.avg_power_gain,
+        }
+    }
+}
+
 /// **Extension point EP-2 — feedpoint result filter.**
 ///
 /// Implementors receive the slice of [`FeedpointRow`] values computed for a

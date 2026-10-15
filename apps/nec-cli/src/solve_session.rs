@@ -114,7 +114,7 @@ pub(super) struct BenchRecord {
     pub(super) sin_rel_res: f64,
 }
 use nec_report::{
-    render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
+    render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, PointReport, SourceRow,
 };
 // The plane-wave builders and path solvers are deliberately absent: the CLI no
 // longer assembles a plane-wave system itself, it asks
@@ -168,8 +168,25 @@ pub(super) struct PulseCurrentSourceConstraint {
     pub(super) original_row: Vec<Complex64>,
 }
 
+/// What a frequency point prints: the local solve's tables, or the text a remote
+/// worker's result was formatted to (the worker sends a feedpoint, not tables).
+pub(super) enum PointOutput {
+    Tables(Box<PointReport>),
+    Text(String),
+}
+
+impl PointOutput {
+    /// The point's text report.
+    pub(super) fn text(&self) -> String {
+        match self {
+            PointOutput::Tables(point) => render_text_report(&point.as_input()),
+            PointOutput::Text(text) => text.clone(),
+        }
+    }
+}
+
 pub(super) struct FrequencySolveResult {
-    pub(super) report: String,
+    pub(super) report: PointOutput,
     pub(super) diag_line: String,
     pub(super) bench: BenchRecord,
     pub(super) sweep_summary: Option<SweepPointSummary>,
@@ -1709,26 +1726,8 @@ pub(super) fn solve_frequency_point(
         None
     };
 
-    let report = render_text_report(&ReportInput {
-        solver_mode: diag_label,
-        pulse_rhs: pulse_rhs_mode.as_contract_str(),
-        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
-            .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
-        frequency_hz: freq_hz,
-        rows: &rows,
-        source_table: &source_table,
-        load_table: &load_table,
-        current_table: &current_table,
-        pattern_table: &pattern_table,
-        receive_pattern_table: &receive_pattern_table,
-        near_field_table: &near_field_table,
-        near_h_field_table: &near_h_field_table,
-        normalize_pattern: deck
-            .cards
-            .iter()
-            .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
-        avg_power_gain,
-    });
+    let pattern_rows = pattern_table.len();
+    let near_field_points = near_field_table.len() + near_h_field_table.len();
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,
         tag: row.tag,
@@ -1738,6 +1737,26 @@ pub(super) fn solve_frequency_point(
         caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
             .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
     });
+    let report = PointOutput::Tables(Box::new(PointReport {
+        solver_mode: diag_label.to_string(),
+        pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
+        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
+            .then(|| crate::cli_args::UNVALIDATED_SOLVER_CAVEAT.to_string()),
+        frequency_hz: freq_hz,
+        rows,
+        source_table,
+        load_table,
+        current_table,
+        pattern_table,
+        receive_pattern_table,
+        near_field_table,
+        near_h_field_table,
+        normalize_pattern: deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
+        avg_power_gain,
+    }));
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",
         pulse_rhs_mode,
@@ -1758,9 +1777,9 @@ pub(super) fn solve_frequency_point(
             deck_loaded,
             config_loaded: !laplace_loads.is_empty(),
             solved_on_device: ran_on_gpu,
-            pattern_rows: pattern_table.len(),
+            pattern_rows,
             pattern_on_device: rp_on_device,
-            near_field_points: near_field_table.len() + near_h_field_table.len(),
+            near_field_points,
         }),
     );
 
