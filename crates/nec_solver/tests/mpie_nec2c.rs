@@ -20,7 +20,7 @@ fn z_mpie(text: &str, feed: (u32, u32)) -> Complex64 {
     // The MPIE solves the deck's own segments (FND-227).
     let segs = build_deck_geometry(&deck).expect("geometry");
     let currents =
-        solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F).expect("solves");
+        solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F, &[]).expect("solves");
     let idx = segs
         .iter()
         .position(|s| s.tag == feed.0 && s.tag_index == feed.1)
@@ -106,7 +106,8 @@ mod centred_feed {
             let deck = nec_parser::parse(&dipole(n, &[n / 2 + 1])).unwrap().deck;
             // The MPIE solves the deck's own segments (FND-227).
             let segs = build_deck_geometry(&deck).unwrap();
-            let i = solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F).unwrap();
+            let i =
+                solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F, &[]).unwrap();
             let (first, last) = (i[0].norm(), i[i.len() - 1].norm());
             assert!(
                 (first - last).abs() < 1e-9 * first,
@@ -154,7 +155,7 @@ mod centred_feed {
         let deck = nec_parser::parse(&dipole(21, &[1])).unwrap().deck;
         // The MPIE solves the deck's own segments (FND-227).
         let segs = build_deck_geometry(&deck).unwrap();
-        let err = solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F)
+        let err = solve_mpie_session(&deck, &segs, &ground_model_from_deck(&deck), F, &[])
             .expect_err("an end-segment feed must be refused");
         assert!(err.to_string().contains("free wire end"), "{err}");
     }

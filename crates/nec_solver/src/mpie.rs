@@ -100,6 +100,14 @@ pub enum MpieError {
         /// Number of radii given.
         radii: usize,
     },
+    /// A load vector that is neither empty nor one impedance per segment, or that
+    /// holds a non-finite impedance.
+    InvalidLoads {
+        /// Number of segments in the geometry.
+        segments: usize,
+        /// Number of loads given.
+        loads: usize,
+    },
 }
 
 impl std::fmt::Display for MpieError {
@@ -121,6 +129,11 @@ impl std::fmt::Display for MpieError {
                 f,
                 "MPIE geometry needs one positive radius per segment: {radii} radii for \
                  {segments} segments, or a radius that is not positive"
+            ),
+            MpieError::InvalidLoads { segments, loads } => write!(
+                f,
+                "MPIE loads must be empty or one finite impedance per segment: {loads} loads \
+                 for {segments} segments, or a load that is not finite"
             ),
         }
     }
@@ -864,8 +877,19 @@ pub fn solve_mpie_sources(
     freq_hz: f64,
     ground: &GroundModel,
     feeds: &[(usize, Complex64)],
+    loads: &[Complex64],
 ) -> Result<Vec<Complex64>, MpieError> {
     check_geometry(geom)?;
+    if !(loads.is_empty() || loads.len() == geom.segments.len())
+        || loads
+            .iter()
+            .any(|z| !(z.re.is_finite() && z.im.is_finite()))
+    {
+        return Err(MpieError::InvalidLoads {
+            segments: geom.segments.len(),
+            loads: loads.len(),
+        });
+    }
     let (bases, node_feed) = build_bases(geom.nodes.len(), &geom.segments);
     let has_ground = !matches!(ground, GroundModel::FreeSpace);
     let mut z = if has_ground {
@@ -873,6 +897,9 @@ pub fn solve_mpie_sources(
     } else {
         assemble(&seg_geom(geom)?, &bases, freq_hz)
     };
+    // Once, after the ground: the image and the remainder fold into the same
+    // basis matrix, with no image segments a load could be stamped on again.
+    stamp_loads(&mut z, &readout_rows(&bases, geom.segments.len()), loads);
     let mut v = vec![Complex64::new(0.0, 0.0); z.len()];
     for &(node, volts) in feeds {
         let basis = node_feed
@@ -987,15 +1014,51 @@ pub fn feed_reference_sign(geom: &MpieGeometry, feed_node: usize, seg_idx: usize
 /// which is exactly the radiation moment per unit length).
 pub fn segment_currents(geom: &MpieGeometry, basis_currents: &[Complex64]) -> Vec<Complex64> {
     let (bases, _) = build_bases(geom.nodes.len(), &geom.segments);
-    let mut i = vec![Complex64::new(0.0, 0.0); geom.segments.len()];
+    readout_rows(&bases, geom.segments.len())
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|&(b, t)| basis_currents.get(b).copied().unwrap_or_default() * t)
+                .sum()
+        })
+        .collect()
+}
+
+/// Each segment's midpoint current as a row over the bases, `I_mid = Σ t_b·I_b`:
+/// `t_b = ½·s_b` for every basis with a leg on the segment, `s_b` that leg's
+/// flow along the segment's `p0 → p1`. One basis at a free end; two along a
+/// wire; beside a junction the reference arm has a leg in every junction basis.
+///
+/// The one copy of that projection: the readout ([`segment_currents`]) and the
+/// load stamp ([`stamp_loads`]) both take it, so a load is the transpose of the
+/// readout, as the `EX` feed is (FND-224).
+fn readout_rows(bases: &[Vec<Leg>], n_segments: usize) -> Vec<Vec<(usize, f64)>> {
+    let mut rows = vec![Vec::new(); n_segments];
     for (bi, basis) in bases.iter().enumerate() {
-        let c = basis_currents.get(bi).copied().unwrap_or_default();
         for leg in basis {
             let sign = if leg.v_is_p1 { 1.0 } else { -1.0 } * if leg.toward { 1.0 } else { -1.0 };
-            i[leg.seg] += c * (0.5 * sign);
+            rows[leg.seg].push((bi, 0.5 * sign));
         }
     }
-    i
+    rows
+}
+
+/// Stamp a series load `z_i` on each segment: `Z_mn += z_i·t_m·t_n`, `t` the
+/// segment's readout row. The load's drop `z_i·I_mid` is a source on the segment,
+/// projected on the bases as the `EX` gap is, so a load on the fed segment raises
+/// the input impedance by exactly `z_i` — NEC's own model, the centre current
+/// times the load, for lumped and distributed loads alike.
+fn stamp_loads(z: &mut [Vec<Complex64>], rows: &[Vec<(usize, f64)>], loads: &[Complex64]) {
+    for (row, &zl) in rows.iter().zip(loads) {
+        if zl == Complex64::new(0.0, 0.0) {
+            continue;
+        }
+        for &(m, tm) in row {
+            for &(n, tn) in row {
+                z[m][n] += zl * (tm * tn);
+            }
+        }
+    }
 }
 
 /// Build far-field-ready [`Segment`]s from the wire graph. Pair with
@@ -1166,7 +1229,8 @@ mod tests {
                     geom,
                     FREQ,
                     &GroundModel::FreeSpace,
-                    &[(2, Complex64::new(1.0, 0.0))]
+                    &[(2, Complex64::new(1.0, 0.0))],
+                    &[]
                 )
                 .map(|_| ()),
                 refused
@@ -1186,6 +1250,40 @@ mod tests {
         }
         .to_string()
         .contains("one positive radius per segment"));
+    }
+
+    /// A load vector must be empty or give every segment one finite impedance: a
+    /// short one would stamp the wrong segments, a NaN one poison the solve.
+    #[test]
+    fn a_load_vector_without_one_finite_load_per_segment_is_refused() {
+        let wire = straight_wire([0.0, 0.0, 1.0], [0.0, 0.0, 6.0], 4, 0.001).geometry();
+        let one = Complex64::new(1.0, 0.0);
+        let solve = |loads: &[Complex64]| {
+            solve_mpie_sources(&wire, FREQ, &GroundModel::FreeSpace, &[(2, one)], loads).map(|_| ())
+        };
+        let z = Complex64::new(50.0, 0.0);
+        assert_eq!(
+            solve(&[z]),
+            Err(MpieError::InvalidLoads {
+                segments: 4,
+                loads: 1
+            })
+        );
+        assert_eq!(
+            solve(&[z, Complex64::new(f64::NAN, 0.0), z, z]),
+            Err(MpieError::InvalidLoads {
+                segments: 4,
+                loads: 4
+            })
+        );
+        assert_eq!(solve(&[]), Ok(()));
+        assert_eq!(solve(&[z; 4]), Ok(()));
+        assert!(MpieError::InvalidLoads {
+            segments: 4,
+            loads: 1
+        }
+        .to_string()
+        .contains("one finite impedance per segment"));
     }
 
     /// With mixed radii the reaction is symmetric term by term, `reaction(m, n) ==

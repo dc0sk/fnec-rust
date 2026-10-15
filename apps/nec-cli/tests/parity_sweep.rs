@@ -776,8 +776,7 @@ fn cells() -> Vec<Cell> {
 
     // S-fr: the deck's own FR against the same frequency from --sweep-config, which
     // replaces it — and the sweep's frequency in place of a different deck FR. Every
-    // solver, every placement, unloaded (so the MPIE solves here, where S-load's loads
-    // refuse it). FND-210.
+    // solver, every placement, unloaded. FND-210.
     for (g, gr) in placements() {
         for solver in SOLVERS {
             let id = format!("S-fr/{}/{}/{solver}", g.name, gr.name());
@@ -1004,14 +1003,15 @@ fn cells() -> Vec<Cell> {
             // The negative-resistance caveat says to check the loads: no flag cures it.
             &[],
         ),
-        // A junction deck with a load from a file: the topology caveat named the MPIE,
-        // which refuses --loads-config (FND-222, FND-209's shape on another caveat). Its
-        // one-segment arm sits between the junction and a bend (FND-227), as above.
+        // A junction deck with a load from a file: the topology caveat names the MPIE,
+        // which takes --loads-config as it takes LD (it refused it until PH10-CHK-004,
+        // and the caveat was withheld then: FND-222). Its one-segment arm sits between
+        // the junction and a bend (FND-227), as above.
         (
             "tee-loads-config",
             "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![("--loads-config", "[[laplace_load]]\ntag = 2\nseg_first = 5\nnumerator = [50.0]\ndenominator = [1.0]\n".into())],
-            &[],
+            &["--solver mpie"],
         ),
         (
             "negative-load-card",
@@ -1523,54 +1523,63 @@ fn cells() -> Vec<Cell> {
 
     // R-loss: a resistive load at the feed costs exactly its share of the input power:
     // gain_loaded - gain_unloaded = 10·log10(1 - R_L / Re Z_in,loaded), from printed
-    // values only. Every raised placement, free space and PEC (FND-200) and finite ground.
+    // values only. Every raised placement, free space and PEC (FND-200) and finite ground,
+    // on Hallén and on the MPIE, which stamps loads since PH10-CHK-004.
     for (g, gr) in placements() {
         if g.feed2.is_some() || g.contact {
             continue;
         }
-        let id = format!("R-loss/{}/{}", g.name, gr.name());
-        v.push((
-            id.clone(),
-            Box::new(move || {
-                let r_l = 50.0;
-                let ld = format!("LD 4 {} {} {} {r_l} 0\n", g.feed.0, g.feed.1, g.feed.1);
-                let a = run(
-                    &format!("{id}/bare"),
-                    &deck(&g, gr, "", Drive::Voltage),
-                    &["--exec", "cpu"],
-                    &[],
-                );
-                let b = run(
-                    &format!("{id}/loaded"),
-                    &deck(&g, gr, &ld, Drive::Voltage),
-                    &["--exec", "cpu"],
-                    &[],
-                );
-                if !(a.ok && b.ok) {
-                    return Err(format!("bare ok={} loaded ok={}", a.ok, b.ok));
-                }
-                let z = feed_z(&b);
-                let want = 10.0 * (1.0 - r_l / z.0).log10();
-                let (pa, pb) = (
-                    &a.sections["RADIATION_PATTERN"],
-                    &b.sections["RADIATION_PATTERN"],
-                );
-                for (ra, rb) in pa.iter().zip(pb) {
-                    // THETA PHI GAIN_DB …
-                    if ra.len() < 3 || ra[2] < -900.0 || rb[2] < -900.0 {
-                        continue;
+        for solver in ["hallen", "mpie"] {
+            // Hallén's cells keep the ids they had before the MPIE took loads.
+            let id = if solver == "hallen" {
+                format!("R-loss/{}/{}", g.name, gr.name())
+            } else {
+                format!("R-loss/{}/{}/{solver}", g.name, gr.name())
+            };
+            v.push((
+                id.clone(),
+                Box::new(move || {
+                    let r_l = 50.0;
+                    let ld = format!("LD 4 {} {} {} {r_l} 0\n", g.feed.0, g.feed.1, g.feed.1);
+                    let args = ["--solver", solver, "--exec", "cpu"];
+                    let a = run(
+                        &format!("{id}/bare"),
+                        &deck(&g, gr, "", Drive::Voltage),
+                        &args,
+                        &[],
+                    );
+                    let b = run(
+                        &format!("{id}/loaded"),
+                        &deck(&g, gr, &ld, Drive::Voltage),
+                        &args,
+                        &[],
+                    );
+                    if !(a.ok && b.ok) {
+                        return Err(format!("bare ok={} loaded ok={}", a.ok, b.ok));
                     }
-                    let got = rb[2] - ra[2];
-                    if (got - want).abs() > 0.05 {
-                        return Err(format!(
+                    let z = feed_z(&b);
+                    let want = 10.0 * (1.0 - r_l / z.0).log10();
+                    let (pa, pb) = (
+                        &a.sections["RADIATION_PATTERN"],
+                        &b.sections["RADIATION_PATTERN"],
+                    );
+                    for (ra, rb) in pa.iter().zip(pb) {
+                        // THETA PHI GAIN_DB …
+                        if ra.len() < 3 || ra[2] < -900.0 || rb[2] < -900.0 {
+                            continue;
+                        }
+                        let got = rb[2] - ra[2];
+                        if (got - want).abs() > 0.05 {
+                            return Err(format!(
                             "θ {} φ {}: gain moved {got:.4} dB, the load's share is {want:.4} dB",
                             ra[0], ra[1]
                         ));
+                        }
                     }
-                }
-                Ok(holds(&a))
-            }),
-        ));
+                    Ok(holds(&a))
+                }),
+            ));
+        }
     }
 
     v

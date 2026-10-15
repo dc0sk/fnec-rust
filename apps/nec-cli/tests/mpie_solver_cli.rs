@@ -157,30 +157,48 @@ EN
     );
 }
 
-/// Loads are not modelled by the MPIE triangle-basis system, so an `LD` deck is
-/// rejected rather than silently ignored.
+/// The MPIE stamps an `LD` load (PH10-CHK-004): a 100 Ω reactance on the fed
+/// segment adds exactly j100 to the input impedance. A `TL` it has no solve for,
+/// so that deck is refused by name rather than solved with the line ignored.
 #[test]
-fn loads_rejected_with_mpie() {
-    let deck = write_deck(
-        "loaded",
-        "\
+fn loads_solve_and_networks_are_refused_with_mpie() {
+    let loaded = "\
 CM loaded dipole
 CE
 GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
 GE 0
-LD 0 1 21 21 0.0 100.0 0.0
+LD 4 1 21 21 0.0 100.0
 FR 0 1 0 0 14.2 0
 EX 0 1 21 0 1.0 0.0
 XQ
 EN
-",
+";
+    let z = |name: &str, text: &str| {
+        let deck = write_deck(name, text);
+        let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        feedpoint_z(&String::from_utf8_lossy(&out.stdout))
+    };
+    let (r1, x1) = z("loaded", loaded);
+    let (r0, x0) = z("unloaded", &loaded.replace("LD 4 1 21 21 0.0 100.0\n", ""));
+    assert!(
+        (r1 - r0).abs() < 1e-4 && (x1 - x0 - 100.0).abs() < 1e-4,
+        "loaded {r1} + j{x1}, unloaded {r0} + j{x0}"
+    );
+    let deck = write_deck(
+        "networked",
+        &loaded.replace("LD 4 1 21 21 0.0 100.0", "TL 1 15 1 27 50.0 0.0 0 0 0 0"),
     );
     let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
-    assert!(!out.status.success(), "expected LD rejection");
+    assert!(!out.status.success(), "expected TL rejection");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("not supported with --solver mpie"),
-        "missing LD rejection message:\n{stderr}"
+        stderr.contains("TL") && stderr.contains("not supported with --solver mpie"),
+        "missing TL rejection message:\n{stderr}"
     );
 }
 

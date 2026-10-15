@@ -9,11 +9,13 @@
 //! CLI the only frontend that could solve a deck needing the MPIE (FND-007).
 //!
 //! The refusals travel **with** the solve, in [`MpieSessionError::Unsupported`].
-//! They are not advisory: the MPIE's triangle basis has nowhere to stamp a load,
-//! and its delta-gap feed cannot represent an incident field, so a deck carrying
-//! either would be solved with the offending card silently ignored. Sharing the
-//! solve without its refusals is how one frontend's wrong answer becomes four —
-//! the mistake FND-048 caught on the current-source path before it shipped.
+//! They are not advisory: the MPIE has no network solve for `TL`/`NT`, and its
+//! delta-gap feed cannot represent an incident field, so a deck carrying either
+//! would be solved with the offending card silently ignored. Sharing the solve
+//! without its refusals is how one frontend's wrong answer becomes four — the
+//! mistake FND-048 caught on the current-source path before it shipped. Loads
+//! (`LD`, and `--loads-config`'s Laplace loads) are built here too, for the same
+//! reason: a caller that forgot them would solve the antenna unloaded.
 
 use num_complex::Complex64;
 
@@ -39,7 +41,7 @@ pub enum MpieUnsupported {
     /// An impressed current source (`EX` type 4), which the Hallén path solves by
     /// forcing a current and recovering the port voltage.
     CurrentSource,
-    /// A card whose effect the MPIE's basis cannot stamp: `LD`, `TL`, or `NT`.
+    /// A card the MPIE has no solve for: `TL` or `NT`.
     UnstampableCard(&'static str),
 }
 
@@ -90,6 +92,9 @@ pub enum MpieSessionError {
     Solve(MpieError),
     /// The solve returned, but not with numbers (FND-126).
     NonFiniteCurrents(crate::NonFiniteCurrents),
+    /// A load that cannot be applied: an `LD` card or a Laplace load naming no
+    /// segment, or a Laplace load that cannot be evaluated at this frequency.
+    Load(String),
 }
 
 impl std::fmt::Display for MpieSessionError {
@@ -115,6 +120,7 @@ impl std::fmt::Display for MpieSessionError {
             ),
             Self::Solve(e) => write!(f, "{e}"),
             Self::NonFiniteCurrents(e) => write!(f, "{e}"),
+            Self::Load(e) => write!(f, "{e}"),
         }
     }
 }
@@ -123,15 +129,11 @@ impl std::fmt::Display for MpieSessionError {
 ///
 /// Exposed separately from the solve so a frontend can refuse *before* offering
 /// the MPIE — greying out a picker entry reads better than solving and failing.
-/// `LD` is reported ahead of `TL`/`NT` only by card order; the first blocker wins.
-///
-/// Laplace loads are deliberately absent: they arrive through the CLI's
-/// `--loads-config`, never through the deck, so no deck-only predicate can see
-/// them. That guard stays with the frontend that owns the input.
+/// The first blocker in card order wins. Loads are not among them: the MPIE
+/// stamps `LD` and Laplace loads ([`solve_mpie_session`]).
 pub fn mpie_unsupported(deck: &NecDeck) -> Option<MpieUnsupported> {
     for card in &deck.cards {
         let found = match card {
-            Card::Ld(_) => MpieUnsupported::UnstampableCard("LD (loads)"),
             Card::Tl(_) => MpieUnsupported::UnstampableCard("TL (transmission line)"),
             Card::Nt(_) => MpieUnsupported::UnstampableCard("NT (network)"),
             Card::Ex(ex) if ex.kind().is_plane_wave() => MpieUnsupported::PlaneWave,
@@ -153,14 +155,39 @@ pub fn mpie_unsupported(deck: &NecDeck) -> Option<MpieUnsupported> {
 /// and the whole gap goes there (first-order in the mesh); a segment at a free wire
 /// end is refused (FND-228). The MPIE's value is the topologies the Hallén basis
 /// cannot reach (degree-3 junctions, closed loops, near-ground currents).
+///
+/// Loads are the deck's `LD` cards and `laplace` (`--loads-config`; a frontend
+/// without that input passes `&[]`), built here at `freq_hz` and stamped as the
+/// transpose of the segment-current readout. A load naming no segment, or a
+/// Laplace load that cannot be evaluated here, is refused rather than dropped.
 pub fn solve_mpie_session(
     deck: &NecDeck,
     segs: &[Segment],
     ground: &GroundModel,
     freq_hz: f64,
+    laplace: &[crate::loads::LaplaceLoad],
 ) -> Result<Vec<Complex64>, MpieSessionError> {
     if let Some(u) = mpie_unsupported(deck) {
         return Err(MpieSessionError::Unsupported(u));
+    }
+    // Checked here, not only by `pre_solve_error`: `build_loads` gives a card that
+    // names no segment zero load, so a caller that skipped the pre-solve check
+    // would solve the antenna unloaded (FND-161, FND-204).
+    for card in &deck.cards {
+        if let Card::Ld(ld) = card {
+            if let Some(problem) = crate::loads::ld_card_problem(ld, segs) {
+                return Err(MpieSessionError::Load(problem));
+            }
+        }
+    }
+    if let Some(problem) = crate::loads::laplace_load_error(laplace, segs) {
+        return Err(MpieSessionError::Load(problem));
+    }
+    let (mut loads, _) = crate::loads::build_loads(deck, segs, freq_hz);
+    if let Some(problem) =
+        crate::loads::add_laplace_loads(&mut loads, laplace, segs, freq_hz).first()
+    {
+        return Err(MpieSessionError::Load(format!("--loads-config: {problem}")));
     }
     // Delta gaps only (`EX` types 0 and 5). The older `!is_plane_wave()` test
     // admitted a type-4 current source and any unrecognised type, and was safe
@@ -244,8 +271,8 @@ pub fn solve_mpie_session(
         return Err(MpieSessionError::NoVoltageSource);
     }
 
-    let basis_currents =
-        solve_mpie_sources(&geom, freq_hz, ground, &feeds).map_err(MpieSessionError::Solve)?;
+    let basis_currents = solve_mpie_sources(&geom, freq_hz, ground, &feeds, &loads)
+        .map_err(MpieSessionError::Solve)?;
     let currents = segment_currents(&geom, &basis_currents);
     // The MPIE had no finiteness check anywhere: a diverged solve whose feed
     // current happened to stay finite printed NaN rows for every other segment
@@ -293,7 +320,6 @@ mod tests {
     #[test]
     fn unstampable_cards_are_refused_by_name() {
         for (card, name) in [
-            ("LD 0 1 21 21 10.0 0.0 0.0", "LD (loads)"),
             ("TL 1 21 1 22 50.0 1.0 0 0 0 0", "TL (transmission line)"),
             ("NT 1 21 1 22 0.0 0.0 0.0 0.0 0.0 0.0", "NT (network)"),
         ] {
@@ -344,7 +370,7 @@ mod tests {
             "the guard does not cover this"
         );
         let segs = crate::build_geometry(&deck).expect("geometry builds");
-        let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6)
+        let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, &[])
             .expect_err("an unrecognised EX type must not silently drive the MPIE");
         assert!(
             matches!(err, MpieSessionError::NoVoltageSource),
@@ -355,10 +381,10 @@ mod tests {
     #[test]
     fn the_refusal_travels_with_the_solve() {
         // The guard is inside `solve_mpie_session`, not merely beside it: a caller
-        // that forgets `mpie_unsupported` still cannot solve a load-bearing deck.
-        let deck = deck_of(&DIPOLE.replace("GE 0", "GE 0\nLD 0 1 21 21 10.0 0.0 0.0"));
+        // that forgets `mpie_unsupported` still cannot solve a network deck.
+        let deck = deck_of(&DIPOLE.replace("GE 0", "GE 0\nTL 1 21 1 22 50.0 1.0 0 0 0 0"));
         let segs = crate::build_geometry(&deck).expect("geometry builds");
-        let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6)
+        let err = solve_mpie_session(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, &[])
             .expect_err("a loaded deck must be refused by the solve itself");
         assert!(
             matches!(

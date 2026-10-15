@@ -59,7 +59,7 @@ no longer silently treated as EX type 0.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| LD type 0 | Full | Series RLC: `Z = R + j(ωL − 1/(ωC))` |
+| LD type 0 | Full | Series RLC: `Z = R + j(ωL − 1/(ωC))`. Every `LD` type is stamped on Hallén and, since PH10-CHK-004, on `--solver mpie` — there as the load times the segment's centre current, NEC's own model, projected on the triangle bases as the `EX` gap is |
 | LD type 1 | Full | Parallel RLC: `Z = 1 / (1/R + 1/(jωL) + jωC)` |
 | LD type 2 | Full | Series RL: `Z = R + jωL` |
 | LD type 3 | Full | Series RC: `Z = R − j/(ωC)` |

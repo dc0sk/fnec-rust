@@ -533,7 +533,7 @@ fn solve_currents(
     // refusals travel inside `solve_mpie_session` (#414), so this branch cannot
     // hand it a deck it would answer wrongly.
     if solver == SolverKind::Mpie {
-        let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz)
+        let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz, &[])
             .map_err(|e| e.to_string())?;
         return Ok(SolvedCurrents {
             source_currents: currents.clone(),

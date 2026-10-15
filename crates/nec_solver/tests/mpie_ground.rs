@@ -314,6 +314,7 @@ fn the_perfect_ground_image_keeps_each_segments_radius() {
         100e6,
         &GroundModel::FreeSpace,
         &[(feed, one), (feed + n + 1, -one)],
+        &[],
     )
     .expect("solves in free space");
     for (b, i) in over.basis_currents.iter().enumerate() {

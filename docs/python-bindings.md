@@ -83,7 +83,7 @@ print(result)
 reach for on near-ground geometry, where the Hallén formulation is documented as
 unreliable — see [mpie-solver-scope.md](mpie-solver-scope.md). Degree-3 (T/Y)
 junctions and closed loops solve on `"hallen"` too (its section-graph route,
-for voltage-source decks without loads or perfect-ground contact); `"mpie"` is
+for voltage-source decks without perfect-ground contact); `"mpie"` is
 an alternative there, and the one the warning names for a junction or loop deck
 outside that scope.
 

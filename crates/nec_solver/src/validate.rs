@@ -314,8 +314,8 @@ pub struct SolverContext<'a> {
 /// The remedies a frontend can offer, as the geometry caveats name them.
 #[derive(Debug, Clone, Copy)]
 pub struct Remedies<'a> {
-    /// See [`SolverContext::mpie_remedy`]; `None` when this run cannot take the MPIE
-    /// whatever the deck says — a `--loads-config` load, which it refuses (FND-222).
+    /// See [`SolverContext::mpie_remedy`]; `None` for a frontend that cannot offer
+    /// the MPIE.
     pub mpie: Option<&'a str>,
     /// The MPIE as the low-ground caveat's remedy, or `None` where that advice does
     /// not fit: `sweep --resonance`, whose search itself runs Hallén, so the value
@@ -342,10 +342,6 @@ impl<'a> Remedies<'a> {
 /// that must not read them off the deck's cards (FND-209).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RunLoads {
-    /// Loads came from outside the deck (`--loads-config`), so a deck-only
-    /// predicate such as [`mpie_compatible_deck`] cannot see them — and the MPIE
-    /// refuses them.
-    pub outside_deck: bool,
     /// Some resolved load has negative resistance at a solved frequency, so a
     /// negative feedpoint resistance may be the load's own, not a solver defect.
     pub negative: bool,
@@ -353,16 +349,13 @@ pub struct RunLoads {
 
 impl RunLoads {
     /// No loads beyond what the deck shows, none negative.
-    pub const NONE: Self = Self {
-        outside_deck: false,
-        negative: false,
-    };
+    pub const NONE: Self = Self { negative: false };
 
     /// From a solved load diagonal (`DeckStamps::diagonal`, with any Laplace
-    /// loads added) and whether any of it came from outside the deck.
-    pub fn of(diagonal: &[Complex64], outside_deck: bool) -> Self {
+    /// loads added). Whether a load came from outside the deck no longer matters:
+    /// the MPIE stamps `--loads-config` loads as it stamps `LD` (FND-222 lifted).
+    pub fn of(diagonal: &[Complex64]) -> Self {
         Self {
-            outside_deck,
             negative: diagonal.iter().any(|z| z.re < 0.0),
         }
     }
@@ -371,7 +364,6 @@ impl RunLoads {
     /// the deck's load diagonal at each of `freqs_hz`.
     pub fn of_deck(deck: &NecDeck, segs: &[Segment], freqs_hz: &[f64]) -> Self {
         Self {
-            outside_deck: false,
             negative: freqs_hz.iter().any(|&f| {
                 crate::build_deck_stamps(deck, segs, f)
                     .diagonal
@@ -398,7 +390,7 @@ impl<'a> SolverContext<'a> {
 
     /// The remedies this context can offer.
     pub fn remedies(&self) -> Remedies<'a> {
-        let mpie = (!self.loads.outside_deck).then_some(self.mpie_remedy);
+        let mpie = Some(self.mpie_remedy);
         Remedies {
             mpie,
             mpie_low_ground: mpie,
@@ -424,8 +416,8 @@ impl SolverContext<'static> {
 // ---------------------------------------------------------------------------
 
 /// Whether a deck can be solved on the MPIE path: driven by at least one voltage
-/// source (`EX` type 0), with no loads / transmission lines / networks and no
-/// plane-wave or current-source excitation (all unsupported by the MPIE).
+/// source (`EX` type 0), with no transmission lines / networks and no plane-wave
+/// or current-source excitation (all unsupported by the MPIE). Loads it takes.
 ///
 /// Used to decide whether a diagnostic may recommend the MPIE as a remedy.
 pub fn mpie_compatible_deck(deck: &NecDeck) -> bool {
@@ -598,8 +590,6 @@ pub fn unsupported_topology_warning(
              not model the Kirchhoff current split there"
         }
     };
-    // `None`: this run cannot take the MPIE whatever the deck says — a load from
-    // `--loads-config`, which it refuses (FND-222). The deck alone cannot show that.
     let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(
             "so the reported impedance, currents, and pattern are unreliable — {mpie_remedy}, \
@@ -835,9 +825,7 @@ pub fn negative_resistance_cause(
     let mpie_remedy = ctx.mpie_remedy;
     if has_wire_junction(segs) {
         "commonly a junctioned-geometry limitation (see PH9-CHK-002)".to_string()
-    } else if mpie_compatible_deck(deck) && !ctx.loads.outside_deck {
-        // `outside_deck`: the MPIE refuses --loads-config, which the deck-only
-        // predicate cannot see — recommending it led straight to a refusal.
+    } else if mpie_compatible_deck(deck) {
         // Saying "junctioned-geometry limitation" here would send the reader after
         // a cause the deck does not contain.
         format!(
@@ -2625,13 +2613,21 @@ mod tests {
     }
 
     #[test]
-    fn a_loaded_junctionless_deck_is_not_sent_to_a_solver_that_rejects_it() {
-        // The mirror of `an_unsupported_topology_with_a_load_is_told_support_is_deferred_not_to_use_mpie`.
-        // The MPIE rejects `LD`, so recommending it as a cross-check here would send
+    fn a_junctionless_deck_with_a_network_is_not_sent_to_a_solver_that_rejects_it() {
+        // The mirror of `an_unsupported_topology_with_a_network_is_told_support_is_deferred_not_to_use_mpie`.
+        // The MPIE rejects `TL`, so recommending it as a cross-check here would send
         // the reader to a solver that refuses the deck — the exact failure
-        // `mpie_compatible_deck` exists to prevent.
+        // `mpie_compatible_deck` exists to prevent. An `LD` it now takes.
+        let loaded = "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 0 1 11 11 50.0 0.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let (deck, segs) = deck_and_segs(loaded);
+        let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs, SolverContext::cli_hallen())
+            .expect("warning");
+        assert!(
+            w.contains("--solver mpie"),
+            "an LD deck may take the MPIE: {w}"
+        );
         let (deck, segs) = deck_and_segs(
-            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nLD 0 1 11 11 50.0 0.0 0.0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            &loaded.replace("LD 0 1 11 11 50.0 0.0 0.0", "TL 1 5 1 17 50.0 0.0 0 0 0 0"),
         );
         let w = negative_resistance_warning(-1.0, 1, 11, &deck, &segs, SolverContext::cli_hallen())
             .expect("warning");
@@ -2763,11 +2759,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unsupported_topology_with_a_load_is_told_support_is_deferred_not_to_use_mpie() {
-        // The MPIE rejects LD loads, so recommending it here would send the user
+    fn an_unsupported_topology_with_a_network_is_told_support_is_deferred_not_to_use_mpie() {
+        // The MPIE rejects TL lines, so recommending it here would send the user
         // to a solver that refuses the deck.
         let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nLD 4 1 6 6 50.0 0.0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nTL 1 3 2 8 50.0 0.0 0 0 0 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
         );
         // Neither the load nor a network refuses the section graph any more
         // (FND-162 stage 5); the one-segment stem between the node and a bend does.
@@ -2990,20 +2986,6 @@ mod tests {
         );
     }
 
-    /// A run with a load from outside the deck cannot take the MPIE, which refuses
-    /// `--loads-config`, so its caveats may not name it — whatever the deck says
-    /// (FND-222). The context withholds the remedy; every other run keeps it.
-    #[test]
-    fn a_run_with_loads_from_outside_the_deck_is_not_offered_the_mpie() {
-        let ctx = SolverContext::cli_hallen();
-        assert_eq!(ctx.remedies().mpie, Some("re-run with `--solver mpie`"));
-        let outside = ctx.with_loads(RunLoads {
-            outside_deck: true,
-            negative: false,
-        });
-        assert_eq!(outside.remedies().mpie, None);
-    }
-
     /// The CLI expands only the first `FR` card; `fnec_py` expands them all. The
     /// validator must cover the union, so a bad frequency in a later card cannot
     /// slip through on the frontend that reads it.
@@ -3022,7 +3004,7 @@ mod tests {
     }
 
     #[test]
-    fn an_mpie_deck_with_a_load_is_an_error_from_diagnose_not_a_warning() {
+    fn an_mpie_deck_with_a_network_is_an_error_from_diagnose_not_a_warning() {
         // The severity is the whole point and nothing else pins it: the shared
         // `solve_mpie_session` refuses this deck anyway and with the identical
         // text, so downgrading this arm to a Warning is invisible through any
@@ -3030,7 +3012,7 @@ mod tests {
         // pre-solve refusal, while a Warning would let the caveat strip render it
         // and the solve proceed to fail later (FND-054).
         let (deck, segs) = deck_and_segs(
-            "GW 1 41 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nLD 0 1 21 21 10.0 0.0 0.0\n\
+            "GW 1 41 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nTL 1 15 1 27 50.0 0.0 0 0 0 0\n\
              EX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
         );
         let ctx = SolverContext {
@@ -3042,9 +3024,16 @@ mod tests {
         let diags = diagnose(&deck, &segs, &GroundModel::FreeSpace, 14.2e6, ctx);
         assert!(
             has_error(&diags),
-            "an LD deck on the MPIE must be an Error, not a caveat: {diags:?}"
+            "a TL deck on the MPIE must be an Error, not a caveat: {diags:?}"
         );
-        // ...and on Hallén the same deck is fine, so this is the solver's limit.
+        // An LD deck is no longer one: the MPIE stamps loads.
+        let (ld_deck, ld_segs) = deck_and_segs(
+            "GW 1 41 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nLD 0 1 21 21 10.0 0.0 0.0\n\
+             EX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+        );
+        let ld = diagnose(&ld_deck, &ld_segs, &GroundModel::FreeSpace, 14.2e6, ctx);
+        assert!(!has_error(&ld), "an LD deck must solve on the MPIE: {ld:?}");
+        // ...and on Hallén the TL deck is fine, so this is the solver's limit.
         let hallen = diagnose(
             &deck,
             &segs,
@@ -3052,8 +3041,9 @@ mod tests {
             14.2e6,
             SolverContext::cli_hallen(),
         );
-        assert!(!has_error(&hallen), "the LD deck must solve on Hallén");
+        assert!(!has_error(&hallen), "the TL deck must solve on Hallén");
     }
+
     /// A radius change along a conductor is a caveat on Hallén, which every
     /// frontend shows through `diagnose`, and nothing on the MPIE, which models it
     /// (FND-252, PH10-CHK-003). Separate wires of different radius are no step,
@@ -3099,30 +3089,11 @@ mod run_loads_tests {
         (deck, segs)
     }
 
-    /// FND-209: the remedy may only name the MPIE when the run would reach it. A
-    /// deck the MPIE takes, solved with loads from outside the deck, is refused
-    /// there — so the cause must not send the user to it.
-    #[test]
-    fn loads_from_outside_the_deck_withdraw_the_mpie_remedy() {
-        let (deck, segs) = dipole();
-        let plain = negative_resistance_cause(&deck, &segs, SolverContext::cli_hallen());
-        assert!(plain.contains("--solver mpie"), "{plain}");
-        let outside = negative_resistance_cause(
-            &deck,
-            &segs,
-            SolverContext::cli_hallen().with_loads(RunLoads {
-                outside_deck: true,
-                negative: false,
-            }),
-        );
-        assert!(!outside.contains("--solver mpie"), "{outside}");
-    }
-
     /// A negative load is named as the cause, on every solver.
     #[test]
     fn a_negative_load_is_named_as_the_cause() {
         let (deck, segs) = dipole();
-        let loads = RunLoads::of(&[Complex64::new(-200.0, 0.0)], false);
+        let loads = RunLoads::of(&[Complex64::new(-200.0, 0.0)]);
         assert!(loads.negative);
         for kind in [SolverKind::Hallen, SolverKind::Mpie] {
             let ctx = SolverContext {
