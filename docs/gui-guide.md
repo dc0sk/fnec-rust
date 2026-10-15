@@ -75,8 +75,9 @@ frequency, resistance, reactance, and |Z| are shown.
 > On Hallén, a near-ground deck, or a junction or loop deck outside the
 > section-graph scope, shows a warning naming the MPIE.
 > On MPIE, that warning is absent — the MPIE models those cases correctly. So
-> is the Hallén caveat on a wire whose **radius changes along it** (a stepped or
-> tapered element), which the MPIE models and Hallén does not (FND-252).
+> is the Hallén caveat on a **radius taper** (a `GC` wire), or a radius step
+> beside a one-segment run, which the MPIE models and Hallén does not; a step
+> where two wires join Hallén models on its section graph (FND-252).
 >
 > The MPIE stamps `LD` loads. It has no solve for transmission lines or
 > networks: a deck with `TL` or `NT` is **refused** on that solver rather than

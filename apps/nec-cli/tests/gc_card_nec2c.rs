@@ -146,7 +146,7 @@ fn a_radius_taper_is_its_twin_and_approaches_nec2c() {
     assert!(!stderr.contains("radius"), "{stderr}");
     let (_, stderr) = fnec(&deck(&gc(21, 1.0, 0.0005, 0.002), 11), HALLEN).expect("solves");
     assert!(
-        stderr.contains("changes radius along its length") && stderr.contains("--solver mpie"),
+        stderr.contains("tapers in radius along its length") && stderr.contains("--solver mpie"),
         "{stderr}"
     );
 }

@@ -107,6 +107,31 @@ impl SectionGraph {
         }
         false
     }
+
+    /// Whether two sections meet where the wire's radius changes: a node of
+    /// degree 2 whose two end segments differ in radius by the builder's own
+    /// tolerance — the test that made it a node ([`section_graph`]'s `continues`).
+    ///
+    /// The path solve needs the graph there (FND-252): it splits a path only where
+    /// the tangent turns, so a straight stepped wire is one section with one
+    /// `(C, D)`, and the potential it forces smooth across the step makes the
+    /// current jump instead. The graph's node rows keep the current continuous and
+    /// the scalar potential equal.
+    pub fn has_radius_step(&self, segs: &[Segment]) -> bool {
+        let end_seg = |&(sec, at_end): &(usize, bool)| {
+            let s = &self.sections[sec].segs;
+            if at_end {
+                s[s.len() - 1]
+            } else {
+                s[0]
+            }
+        };
+        self.nodes.iter().any(|n| {
+            n.ends.len() == 2
+                && (segs[end_seg(&n.ends[0])].radius - segs[end_seg(&n.ends[1])].radius).abs()
+                    >= JUNCTION_TOL_M
+        })
+    }
 }
 
 /// Why the section-graph builder refused a geometry, naming the place, so a
