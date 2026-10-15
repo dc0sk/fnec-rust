@@ -36,8 +36,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   `GW … 0` then `GC 0 0 RDEL RAD1 RAD2`, each segment `RDEL` times the one
   before and the radii geometric from `RAD1` to `RAD2`. Each taper equals its
   written-out `GW` twin and refining approaches nec2c's value. The Hallén solve
-  models every segment's radius; `--solver mpie` solves a radius taper with one
-  radius, and its mixed-radius caveat now names `--solver hallen`. Refused by
+  models every segment's radius, as `--solver mpie` now does too (see Changed).
+  Refused by
   name: a radius-0 `GW` without its `GC` directly after it, a `GC` after anything
   else, a ratio or radius that is not positive, one segment given two radii
   (nec2c silently uses `RAD1`), and a taper whose segments fall under two radii
@@ -51,6 +51,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **`--solver mpie` models each segment's own radius** (PH10-CHK-003). It solved
+  every segment with the first one's and warned; a Yagi with a 10 mm reflector
+  and a 2 mm driven element read 73.63 + j41.81 Ω where nec2c gives 70.40 +
+  j29.00, and now 70.15 + j28.81. A radius step along a wire matches the
+  first-order closed form and a stepped Yagi element its Leeson equivalent. The
+  mixed-radius caveat is gone, and an `MpieGeometry` carries `radii`, one per
+  segment (`MpieGeometry::uniform` for one radius); a geometry without one
+  positive radius per segment is refused by name.
+- **Hallén warns on a wire whose radius changes along it** (FND-252) — two wires
+  of different radius joined, or a `GC` taper — naming `--solver mpie`: it carries
+  a tenth of a step's reactance or less, 25 Ω off on a Yagi element stepped 2:1.
+  nec2c is no reference there; it drifts with the mesh toward Hallén's value.
+  Separate wires of different radius, as a Yagi's elements, solve correctly and do
+  not warn.
 - **`scripts/check-all.sh` holds the checkout while it runs.** Where the agent-skills
   `hold-checkout.sh` is installed (override the path with `FNEC_HOLD_CHECKOUT`), the
   gate takes a per-checkout flock for its whole run, so a `guard-inflight` hook denies

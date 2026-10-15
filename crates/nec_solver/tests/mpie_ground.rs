@@ -191,14 +191,7 @@ fn inverted_v(tip_h_lam: f64, n: usize) -> (MpieGeometry, usize) {
         ]);
     }
     let segments = (0..nodes.len() - 1).map(|i| [i, i + 1]).collect();
-    (
-        MpieGeometry {
-            nodes,
-            segments,
-            radius: 0.001,
-        },
-        n,
-    )
+    (MpieGeometry::uniform(nodes, segments, 0.001), n)
 }
 
 /// Gate E3 (bent over ground): an apex-fed inverted-V over GN2 solves via the
@@ -246,10 +239,12 @@ fn two_wires(a: nec_solver::MpieWire, b: nec_solver::MpieWire) -> nec_solver::Mp
     nodes.extend(gb.nodes);
     let mut segments = ga.segments;
     segments.extend(gb.segments.iter().map(|s| [s[0] + off, s[1] + off]));
+    let mut radii = ga.radii;
+    radii.extend(gb.radii);
     nec_solver::MpieGeometry {
         nodes,
         segments,
-        radius: ga.radius,
+        radii,
     }
 }
 
@@ -278,6 +273,54 @@ fn a_distant_parallel_wire_at_another_height_leaves_the_fed_wire_alone() {
             100.0 * rel,
             alone.z_in,
             pair.z_in
+        );
+    }
+}
+
+/// Over a perfect ground the MPIE adds the exact image (FND-238), and the image
+/// of a segment keeps its radius: a horizontal wire 5 cm up, 5 mm thick on one
+/// half and 1 mm on the other, solved over `GN 1` equals the same wire and its
+/// mirror solved in free space, the mirror fed with the opposite voltage (the
+/// image of a horizontal current runs the other way). 5 cm is half a segment, so
+/// each segment's kernel reaches its own image and the image's radius is read.
+#[test]
+fn the_perfect_ground_image_keeps_each_segments_radius() {
+    use num_complex::Complex64;
+    let (n, h) = (10usize, 0.05);
+    let nodes: Vec<[f64; 3]> = (0..=n)
+        .map(|i| [-0.5 + i as f64 / n as f64, 0.0, h])
+        .collect();
+    let segments: Vec<[usize; 2]> = (0..n).map(|i| [i, i + 1]).collect();
+    let radii: Vec<f64> = (0..n)
+        .map(|i| if i < n / 2 { 0.005 } else { 0.001 })
+        .collect();
+    let wire = MpieGeometry {
+        nodes: nodes.clone(),
+        segments: segments.clone(),
+        radii: radii.clone(),
+    };
+    let feed = n / 2;
+    let over = solve_mpie_ground(&wire, 100e6, feed, &GroundModel::PerfectConductor)
+        .expect("solves over ground");
+
+    let mut both = wire.clone();
+    both.nodes.extend(nodes.iter().map(|p| [p[0], p[1], -p[2]]));
+    both.segments
+        .extend(segments.iter().map(|s| [s[0] + n + 1, s[1] + n + 1]));
+    both.radii.extend(radii);
+    let one = Complex64::new(1.0, 0.0);
+    let free = nec_solver::mpie::solve_mpie_sources(
+        &both,
+        100e6,
+        &GroundModel::FreeSpace,
+        &[(feed, one), (feed + n + 1, -one)],
+    )
+    .expect("solves in free space");
+    for (b, i) in over.basis_currents.iter().enumerate() {
+        assert!(
+            (i - free[b]).norm() <= 1e-9 * i.norm(),
+            "basis {b}: {i} over ground, {} with the explicit image",
+            free[b]
         );
     }
 }

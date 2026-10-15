@@ -123,7 +123,11 @@ const MESHES: [(u32, f64, u32); 3] = [(21, 1.0, 11), (63, 3.0, 32), (189, 9.0, 9
 /// 79.859 + j42.174 at 189. Hallén 79.118 + j39.223, 79.635 + j41.186, 79.881 +
 /// j42.123.
 /// (A uniform 1 mm wire converges the same way: nec2c 79.647 + j42.268 at 189,
-/// Hallén 79.609 + j41.630.) The MPIE solves a taper with one radius and says so.
+/// Hallén 79.609 + j41.630.) The MPIE, each segment its own radius, 78.842 +
+/// j41.719, 79.485 + j42.738, 79.803 + j43.121. That the three agree says little
+/// about tapers: this one is thin below the feed and thick above, and the two
+/// arms' errors cancel — a taper symmetric about the feed separates them, and
+/// there nec2c is no reference (`mpie_mixed_radii.rs`, FND-252). Hallén warns.
 #[test]
 fn a_radius_taper_is_its_twin_and_approaches_nec2c() {
     for args in [HALLEN, MPIE] {
@@ -139,8 +143,10 @@ fn a_radius_taper_is_its_twin_and_approaches_nec2c() {
         .collect();
     approaches(&zs, (79.859, 42.174), "radius taper");
     let (_, stderr) = fnec(&deck(&gc(21, 1.0, 0.0005, 0.002), 11), MPIE).expect("solves");
+    assert!(!stderr.contains("radius"), "{stderr}");
+    let (_, stderr) = fnec(&deck(&gc(21, 1.0, 0.0005, 0.002), 11), HALLEN).expect("solves");
     assert!(
-        stderr.contains("mixes radii") && stderr.contains("`--solver hallen`"),
+        stderr.contains("changes radius along its length") && stderr.contains("--solver mpie"),
         "{stderr}"
     );
 }
@@ -148,7 +154,7 @@ fn a_radius_taper_is_its_twin_and_approaches_nec2c() {
 /// A length taper, RDEL 1.1 at 21 segments, 2 mm: nec2c 146.99 + j63.828 at 21
 /// for the GC deck and its twin alike, 149.15 + j64.761 at 63, 150.10 + j65.227
 /// at 189. Hallén 145.77 + j57.388, 148.56 + j61.671, 149.78 + j63.650; the
-/// MPIE (one radius, so no caveat) 144.54 + j61.262, 148.22 + j63.782, 149.52 +
+/// MPIE 144.54 + j61.262, 148.22 + j63.782, 149.52 +
 /// j64.416. (At 5 mm the 189-segment mesh is refused: its shortest segment is
 /// 1.7 radii.)
 #[test]
@@ -170,8 +176,11 @@ fn a_length_taper_is_its_twin_and_approaches_nec2c() {
             .collect();
         approaches(&zs, (150.10, 65.227), &format!("length taper, {args:?}"));
     }
-    let (_, stderr) = fnec(&deck(&gc(21, 1.1, 0.002, 0.002), 11), MPIE).expect("solves");
-    assert!(!stderr.contains("mixes radii"), "{stderr}");
+    // One radius throughout: neither solver warns about a radius change.
+    for args in [HALLEN, MPIE] {
+        let (_, stderr) = fnec(&deck(&gc(21, 1.1, 0.002, 0.002), 11), args).expect("solves");
+        assert!(!stderr.contains("changes radius"), "{stderr}");
+    }
 }
 
 /// Both at once (RDEL 1.05, 0.5 → 2 mm; nec2c 95.595 + j44.110 for the GC deck

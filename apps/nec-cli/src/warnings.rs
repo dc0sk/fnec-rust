@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
-use nec_solver::{GroundModel, Segment};
+use nec_solver::GroundModel;
 
 use super::solve_session::SolverMode;
 
@@ -14,20 +14,6 @@ pub(super) fn warn_pulse_mode_experimental(solver_mode: SolverMode) {
 thin-wire antennas. The pulse-basis Pocklington EFIE diverges from the physical solution \
 as segment count increases. Use --solver hallen or --solver sinusoidal for accurate results."
     );
-}
-
-/// Print the shared mixed-radius caveat when this is an MPIE run.
-///
-/// The caveat itself lives in `nec_solver::validate` so every frontend can show
-/// it; the CLI only decides that its own solver mode is the MPIE and writes to
-/// stderr.
-pub(super) fn warn_mpie_mixed_radius(solver_mode: SolverMode, segs: &[Segment]) {
-    if !matches!(solver_mode, SolverMode::Mpie) {
-        return;
-    }
-    if let Some(w) = nec_solver::validate::mpie_mixed_radius_caveat(segs) {
-        eprintln!("warning: {w}");
-    }
 }
 
 pub(super) fn warn_near_field_over_finite_ground(
