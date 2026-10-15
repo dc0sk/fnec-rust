@@ -2022,8 +2022,9 @@ fn the_picker_reaches_every_solve_path() {
     );
 }
 
-/// The MPIE cannot stamp a load, so the GUI refuses such a deck rather than
-/// solving it with the `LD` silently ignored — and says so before any solve.
+/// The MPIE has no solve for a transmission line, so the GUI refuses such a deck
+/// rather than solving it with the `TL` silently ignored — and says so before any
+/// solve. An `LD` it stamps (PH10-CHK-004).
 #[test]
 fn the_gui_refuses_an_mpie_deck_the_solver_cannot_represent() {
     const LOADED: &str = "\
@@ -2036,17 +2037,22 @@ FR 0 1 0 0 14.2 0
 EX 0 1 21 0 1.0 0.0
 EN
 ";
-    let err = solve_deck_str(LOADED, nec_gui::solve::SolverKind::Mpie)
-        .expect_err("an MPIE solve of a loaded deck must be refused");
     assert!(
-        err.contains("LD"),
+        solve_deck_str(LOADED, nec_gui::solve::SolverKind::Mpie).is_ok(),
+        "a loaded deck must solve on the MPIE"
+    );
+    let networked = LOADED.replace("LD 0 1 21 21 10.0 0.0 0.0", "TL 1 15 1 27 50.0 0.0 0 0 0 0");
+    let err = solve_deck_str(&networked, nec_gui::solve::SolverKind::Mpie)
+        .expect_err("an MPIE solve of a TL deck must be refused");
+    assert!(
+        err.contains("TL"),
         "the refusal must name the offending card, got: {err}"
     );
     // ...and the same deck is fine on Hallén, so this is the solver's limit and
     // not a broken deck.
     assert!(
-        solve_deck_str(LOADED, nec_gui::solve::SolverKind::Hallen).is_ok(),
-        "the loaded deck must still solve on the Hallén path"
+        solve_deck_str(&networked, nec_gui::solve::SolverKind::Hallen).is_ok(),
+        "the TL deck must still solve on the Hallén path"
     );
 }
 
@@ -2059,33 +2065,33 @@ EN
 /// exactly why this needs its own test — the safety net hides the missing check.
 #[test]
 fn an_mpie_sweep_refuses_an_unstampable_deck_up_front() {
-    const LOADED: &str = "\
-CM loaded dipole
+    const NETWORKED: &str = "\
+CM dipole with a transmission line
 CE
 GW 1 41 0.0 0.0 -5.2782 0.0 0.0 5.2782 0.001
 GE 0
-LD 0 1 21 21 10.0 0.0 0.0
+TL 1 15 1 27 50.0 0.0 0 0 0 0
 FR 0 1 0 0 14.2 0
 EX 0 1 21 0 1.0 0.0
 EN
 ";
     let err = match nec_gui::solve::SweepJob::prepare(
-        LOADED,
+        NETWORKED,
         14.0,
         14.4,
         0.1,
         nec_gui::solve::SolverKind::Mpie,
     ) {
-        Ok(_) => panic!("preparing an MPIE sweep of a loaded deck must fail"),
+        Ok(_) => panic!("preparing an MPIE sweep of a TL deck must fail"),
         Err(e) => e,
     };
     assert!(
-        err.contains("LD"),
+        err.contains("TL"),
         "the refusal must name the offending card, got: {err}"
     );
     assert!(
         nec_gui::solve::SweepJob::prepare(
-            LOADED,
+            NETWORKED,
             14.0,
             14.4,
             0.1,

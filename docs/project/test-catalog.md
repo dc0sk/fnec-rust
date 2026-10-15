@@ -52,7 +52,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/junction_feedpoint.rs` | 10 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary: a T or loop the section graph takes solves without the guard; one it refuses (a one-segment run) still warns. | PH9-CHK-002, PH9-CHK-005 |
-| `apps/nec-cli/tests/laplace_load.rs` | 4 | End-to-end tests for the fnec-specific Laplace-domain load (`--loads-config`, BL-IMPR-016).; a Laplace load on a receiving junction deck equals its LD twin, and a Laplace-loaded current source on it prices as the voltage source (FND-197/198) | — |
+| `apps/nec-cli/tests/laplace_load.rs` | 4 | End-to-end tests for the fnec-specific Laplace-domain load (`--loads-config`, BL-IMPR-016).; a Laplace load equals its LD twin on Hallén and on the MPIE; a Laplace load on a receiving junction deck equals its LD twin, and a Laplace-loaded current source on it prices as the voltage source (FND-197/198) | — |
 | `apps/nec-cli/tests/ld_loads.rs` | 5 | `LD` types 1/2/4 change impedance; unsupported warn+continue | PRT-002, PH2-CHK-003 |
 | `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
@@ -66,7 +66,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
 | `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
-| `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=609 --> **609** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
+| `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=627 --> **627** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | A card that cannot change the antenna warns and solves, one that would (`GX`) or an unknown one is refused by name (FND-236); `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
 | `apps/nec-cli/tests/pt_print_control.rs` | 4 | PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment current output by mode / tag / segment range. | PH9-CHK-004 |
@@ -125,6 +125,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/lossy_tl.rs` | 3 | PH8-CHK-005: lossy transmission line — fnec's F8 extension (matched-line loss in dB) on the NEC-2 TL layout (FND-111). | FND-111, FND-123, PH8-CHK-005 |
 | `crates/nec_solver/tests/mpie_farfield.rs` | 3 | PH9-CHK-007 MPIE Phase C — far-field from the recovered MPIE currents. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_free_space.rs` | 4 | PH9-MPIE Phase A — free-space MPIE straight-wire core, external gates. | — |
+| `crates/nec_solver/tests/mpie_loads.rs` | 7 | PH10-CHK-004 — the MPIE stamps `LD` loads through the shared session: a load on the fed segment adds exactly its impedance (free space, `GN 1`, `GN 2`, an apex-fed inverted V); an off-centre series load, a trap dipole, a copper dipole, a Y with a loaded arm and a loaded dipole 0.05 λ over `GN 2` converge to nec2c; a load naming no segment, from a card or `--loads-config`, refused by the session itself | PH10-CHK-004 |
 | `crates/nec_solver/tests/mpie_ground.rs` | 8 | PH9-CHK-007 MPIE Phase D — Sommerfeld ground IN the Z-matrix. The perfect-ground image keeps each segment's radius (PH10-CHK-003). | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_junction.rs` | 4 | PH9-CHK-007 MPIE Phase B — degree-N junctions, external gates. | PH9-CHK-007 |
 | `crates/nec_solver/tests/mpie_loop.rs` | 2 | PH9-CHK-007 MPIE Phase B (B3) — closed loops. | PH9-CHK-007 |
@@ -148,7 +149,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=760 --> **760** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=767 --> **767** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -159,7 +160,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 265 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 264 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -169,11 +170,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=635 --> **635** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=634 --> **634** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1402 --> **1402** = 635 unit + 760 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1408 --> **1408** = 634 unit + 767 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

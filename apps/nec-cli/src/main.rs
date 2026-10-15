@@ -956,10 +956,9 @@ fn warn_negative_resistance_for_run<T>(
         .collect();
     let per_point = ok.iter().map(|r| r.negative_r.clone()).collect();
     let min_feed_re: Vec<Option<f64>> = ok.iter().map(|r| r.min_feed_re).collect();
-    // Any point's loads speak for the run: one negative load, or one load from
-    // outside the deck, changes what the aggregate may say (FND-209).
+    // Any point's loads speak for the run: one negative load changes what the
+    // aggregate may say (FND-209).
     let run_loads = nec_solver::validate::RunLoads {
-        outside_deck: ok.iter().any(|r| r.run_loads.outside_deck),
         negative: ok.iter().any(|r| r.run_loads.negative),
     };
     for w in solve_session::run_negative_resistance_warnings(

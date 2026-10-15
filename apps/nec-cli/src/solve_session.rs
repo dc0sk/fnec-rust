@@ -1105,16 +1105,9 @@ pub(super) fn solve_frequency_point(
         return Err("EX: current-source excitation requires --solver hallen".to_string());
     }
     if matches!(solver_mode, SolverMode::Mpie) {
-        // `--loads-config` is a CLI-only input that never appears in the deck, so
-        // no deck-only predicate can see it; this guard stays with the frontend
-        // that owns the flag. Everything the *deck* can carry is refused by
-        // `solve_mpie_session` itself, so no caller can bypass it.
-        if !laplace_loads.is_empty() {
-            return Err(
-                "Laplace loads (--loads-config) are not supported with --solver mpie; use --solver hallen"
-                    .to_string(),
-            );
-        }
+        // Everything the deck can carry that the MPIE cannot solve is refused by
+        // `solve_mpie_session` itself, so no caller can bypass it; loads, deck and
+        // `--loads-config` alike, it stamps (FND-222 lifted).
         if let Some(u) = nec_solver::mpie_unsupported(deck) {
             return Err(format!("{}: not supported with --solver mpie", u.subject()));
         }
@@ -1184,8 +1177,8 @@ pub(super) fn solve_frequency_point(
         }
         // The MPIE assembles and solves its own (triangle-basis) system in the
         // i_vec step below; this Hallén Z-matrix is unused by it. Assembling it
-        // keeps the downstream load/TL/NT stamps and diagnostics well-formed
-        // (MPIE decks with those cards are rejected before this point).
+        // keeps the downstream stamps and diagnostics well-formed (MPIE decks with
+        // TL/NT are rejected before this point; loads it stamps itself).
         SolverMode::Mpie => assemble_z_matrix_with_ground(segs, freq_hz, ground),
     };
 
@@ -1209,7 +1202,7 @@ pub(super) fn solve_frequency_point(
     }
     // What the negative-resistance caveat may say about loads is a property of
     // this diagonal, not of the deck's cards (FND-209).
-    let run_loads = nec_solver::validate::RunLoads::of(&stamps.diagonal, !laplace_loads.is_empty());
+    let run_loads = nec_solver::validate::RunLoads::of(&stamps.diagonal);
     // Loads enter in the form the basis that runs derives for them (FND-122,
     // FND-124). Hallen: as matrix columns, stamped by the session once the route is
     // known. Sinusoidal: the same columns, since it solves the Hallen matrix in a
@@ -1464,8 +1457,9 @@ pub(super) fn solve_frequency_point(
             // One mapping for every variant: the special-cased `NoVoltageSource`
             // arm existed only to preserve a byte-identical string, and it named
             // "EX type 0" where the shared message now correctly says type 0 or 5.
-            let currents = nec_solver::solve_mpie_session(deck, segs, ground, freq_hz)
-                .map_err(|e| format!("--solver mpie: {e}"))?;
+            let currents =
+                nec_solver::solve_mpie_session(deck, segs, ground, freq_hz, laplace_loads)
+                    .map_err(|e| format!("--solver mpie: {e}"))?;
             (currents, 0.0, 0.0, "mpie")
         }
     };
@@ -1509,9 +1503,8 @@ pub(super) fn solve_frequency_point(
                 freq_hz,
                 matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
                 nec_solver::validate::Remedies {
-                    // The MPIE refuses a load from --loads-config (FND-222).
-                    mpie: laplace_loads.is_empty().then_some(CLI_MPIE_REMEDY),
-                    mpie_low_ground: laplace_loads.is_empty().then_some(CLI_MPIE_REMEDY),
+                    mpie: Some(CLI_MPIE_REMEDY),
+                    mpie_low_ground: Some(CLI_MPIE_REMEDY),
                     // Only to a run that has not asked: one that asked and was declined
                     // already has the decline's own warning, and telling it to re-run
                     // with the flag it passed would be advice it has taken (FND-217).

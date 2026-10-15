@@ -78,9 +78,9 @@ frequency, resistance, reactance, and |Z| are shown.
 > is the Hallén caveat on a wire whose **radius changes along it** (a stepped or
 > tapered element), which the MPIE models and Hallén does not (FND-252).
 >
-> The MPIE cannot represent loads: a deck with `LD`, `TL` or `NT` is **refused**
-> on that solver rather than solved with the card ignored. Switch back to Hallén
-> for loaded decks.
+> The MPIE stamps `LD` loads. It has no solve for transmission lines or
+> networks: a deck with `TL` or `NT` is **refused** on that solver rather than
+> solved with the card ignored. Switch back to Hallén for those decks.
 >
 > The GUI also surfaces the refusals for ground cards fnec does not model (an
 > undefined `GN` type or `GE` flag, `GE 1` without a `GN`, a wire on the ground

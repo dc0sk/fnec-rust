@@ -80,26 +80,44 @@ fn laplace_rl_load_matches_equivalent_ld2_load() {
     assert!((ra - r0).abs() > 1e-3, "load had no effect on R");
 }
 
+/// The MPIE stamps a `--loads-config` load as it stamps the same `LD` card, so
+/// the two spellings give the same answer there too (FND-222, refused until the
+/// MPIE took loads; FND-209: an outcome may not depend on the spelling).
 #[test]
-fn laplace_load_rejected_on_mpie_path() {
-    let deck = tmp("mpie.nec", &DIPOLE.replace("{LD}", ""));
+fn laplace_load_matches_equivalent_ld2_load_on_the_mpie() {
+    let mpie = |extra: &[&str], deck: &common::TempDeck| {
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--solver", "mpie"])
+            .args(extra)
+            .arg(deck)
+            .output()
+            .expect("run fnec");
+        assert!(
+            out.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        feedpoint_z(&String::from_utf8_lossy(&out.stdout))
+    };
+    let card = tmp(
+        "mpie-a.nec",
+        &DIPOLE.replace("{LD}", "LD 2 1 20 20 150.0 2e-6 0.0\n"),
+    );
+    let bare = tmp("mpie-b.nec", &DIPOLE.replace("{LD}", ""));
     let cfg = tmp(
         "mpie-loads.toml",
-        "[[laplace_load]]\ntag = 1\nseg_first = 26\nnumerator = [50.0]\ndenominator = [1.0]\n",
+        "[[laplace_load]]\ntag = 1\nseg_first = 20\nnumerator = [150.0, 2.0e-6]\ndenominator = [1.0]\n",
     );
-    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .args(["--solver", "mpie", "--loads-config", cfg.to_str().unwrap()])
-        .arg(&deck)
-        .output()
-        .expect("run fnec");
+    let (ra, xa) = mpie(&[], &card);
+    let (rb, xb) = mpie(&["--loads-config", cfg.to_str().unwrap()], &bare);
     assert!(
-        !out.status.success(),
-        "mpie + laplace loads should be rejected"
+        (ra - rb).abs() < 1e-6 && (xa - xb).abs() < 1e-6,
+        "MPIE: Laplace load Z=({rb},{xb}) != LD2 load Z=({ra},{xa})"
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let (r0, _) = mpie(&[], &bare);
     assert!(
-        stderr.contains("Laplace loads") && stderr.contains("mpie"),
-        "expected an mpie-rejection message, got: {stderr}"
+        (ra - r0).abs() > 1.0,
+        "the load had no effect on R: {ra} vs {r0}"
     );
 }
 

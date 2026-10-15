@@ -49,6 +49,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   doubling. Half a dipole with `GX 0 001` solves as the dipole. A segment in or
   across its plane is refused, as nec2c stops on it.
 
+- **`--solver mpie` takes loads** (PH10-CHK-004): every `LD` type and
+  `--loads-config`'s Laplace loads, which it refused. A load is its segment's
+  centre current times its impedance, NEC's own model, stamped as the transpose of
+  the current readout — so a load on the fed segment adds exactly its impedance.
+  A series-loaded dipole 0.05 λ over `GN 2` reads 84.10 + j87.15 Ω against
+  nec2c's 84.30 + j87.41, where Hallén reads 51.1 + j81.6; a trap dipole, a copper
+  dipole and a Y with a loaded arm converge to nec2c too. `TL` and `NT` stay
+  refused on the MPIE. `solve_mpie_session` takes the Laplace loads (`&[]` for a
+  frontend without that input) and builds the deck's loads itself, refusing one
+  that names no segment by name; `solve_mpie_sources` takes a per-segment load
+  vector. `RunLoads::outside_deck` is gone: nothing withholds the MPIE remedy for a
+  `--loads-config` run any more.
+
 ### Changed
 
 - **`--solver mpie` models each segment's own radius** (PH10-CHK-003). It solved

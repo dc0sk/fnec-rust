@@ -4,23 +4,41 @@ R-converge/square-loop/free/mpie Shrinks(dZ 17 % -> 9 %)
 R-image/inverted-l Holds[route=paths contact=yes drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-image/monopole Holds[route=paths contact=yes drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/collinear-split/free Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/collinear-split/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/collinear-split/gn2 Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/collinear-split/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/collinear-split/pec Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/collinear-split/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/dipole/free Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/dipole/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/dipole/gn2 Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/dipole/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/dipole/pec Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/dipole/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/inverted-v/free Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/inverted-v/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/inverted-v/gn2 Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/inverted-v/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/inverted-v/pec Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/inverted-v/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/square-loop/free Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/square-loop/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/square-loop/gn2 Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/square-loop/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/square-loop/pec Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/square-loop/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/tee/free Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/tee/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/tee/gn2 Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/tee/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/tee/pec Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/tee/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-loss/tilted-offcentre/free Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
+R-loss/tilted-offcentre/free/mpie Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
 R-loss/tilted-offcentre/gn2 Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=none nf_exec=cpu]
+R-loss/tilted-offcentre/gn2/mpie Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=none nf_exec=cpu]
 R-loss/tilted-offcentre/pec Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
+R-loss/tilted-offcentre/pec/mpie Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=none nf_exec=cpu]
 R-lowground/dipole-0.025/hallen-sommerfeld Shrinks(dZ 1 % -> 1 %, gsolver=sommerfeld-applied)
 R-lowground/dipole-0.025/mpie Shrinks(dZ 1 % -> 0 %, gsolver=mpie-exact)
 R-lowground/dipole-0.05/hallen-sommerfeld Shrinks(dZ 2 % -> 1 %, gsolver=sommerfeld-applied)
@@ -91,9 +109,9 @@ R-remedy/sweep-config/low-inverted-v-gn2 Holds[--solver mpie]
 R-remedy/sweep-config/low-two-fed-gn2 Holds[]
 R-remedy/sweep-config/negative-load-card Holds[]
 R-remedy/sweep-config/negative-load-config Holds[]
-R-remedy/sweep-config/tee-loads-config Holds[]
+R-remedy/sweep-config/tee-loads-config Holds[--solver mpie]
 R-remedy/sweep-config/tee-one-segment-arm Holds[--solver mpie]
-R-remedy/tee-loads-config Holds[]
+R-remedy/tee-loads-config Holds[--solver mpie]
 R-remedy/tee-one-segment-arm Holds[--solver mpie]
 R-solver/collinear-split/free/mpie Holds(dZ 2 %)
 R-solver/collinear-split/free/sinusoidal Holds(dZ 1 %)
@@ -329,139 +347,139 @@ S-load-invalid/two-element-array/reversed-range Refused(the load cannot be appli
 S-load/collinear-split/free/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/free/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/collinear-split/free/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/collinear-split/free/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/gn2/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/collinear-split/gn2/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/collinear-split/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/collinear-split/gn2/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/collinear-split/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/collinear-split/gn2/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/collinear-split/pec/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/pec/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/collinear-split/pec/mpie/Voltage Refused(loads refused)
+S-load/collinear-split/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/collinear-split/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/collinear-split/pec/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/free/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/free/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/dipole/free/mpie/Voltage Refused(loads refused)
+S-load/dipole/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/dipole/free/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/gn2/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/dipole/gn2/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/dipole/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/dipole/gn2/mpie/Voltage Refused(loads refused)
+S-load/dipole/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/dipole/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/dipole/gn2/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/dipole/pec/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/pec/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/dipole/pec/mpie/Voltage Refused(loads refused)
+S-load/dipole/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/dipole/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/dipole/pec/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-l/pec/hallen/PlaneWave Holds[route=paths contact=yes drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-l/pec/hallen/Voltage Holds[route=paths contact=yes drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-l/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/inverted-l/pec/mpie/Voltage Refused(loads refused)
+S-load/inverted-l/pec/mpie/Voltage Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
 S-load/inverted-l/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/inverted-l/pec/sinusoidal/Voltage Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
 S-load/inverted-v/free/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/free/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/inverted-v/free/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/inverted-v/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/inverted-v/gn2/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/inverted-v/gn2/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/inverted-v/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/inverted-v/gn2/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/inverted-v/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/inverted-v/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/inverted-v/pec/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/pec/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/inverted-v/pec/mpie/Voltage Refused(loads refused)
+S-load/inverted-v/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/inverted-v/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/inverted-v/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/monopole/pec/hallen/PlaneWave Holds[route=paths contact=yes drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/monopole/pec/hallen/Voltage Holds[route=paths contact=yes drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/monopole/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/monopole/pec/mpie/Voltage Refused(loads refused)
+S-load/monopole/pec/mpie/Voltage Refused(error: --solver mpie: MPIE Sommerfeld ground requires the wire to lie entirely above the ground plane)
 S-load/monopole/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/monopole/pec/sinusoidal/Voltage Refused(error: wires touching the ground are supported on --solver hallen only (FND-))
 S-load/square-loop/free/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/free/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/square-loop/free/mpie/Voltage Refused(loads refused)
+S-load/square-loop/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/square-loop/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/square-loop/gn2/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/square-loop/gn2/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/square-loop/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/square-loop/gn2/mpie/Voltage Refused(loads refused)
+S-load/square-loop/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/square-loop/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/square-loop/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/square-loop/pec/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/pec/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/square-loop/pec/mpie/Voltage Refused(loads refused)
+S-load/square-loop/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/square-loop/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/square-loop/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/tee/free/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/free/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tee/free/mpie/Voltage Refused(loads refused)
+S-load/tee/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tee/free/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/tee/gn2/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/tee/gn2/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/tee/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tee/gn2/mpie/Voltage Refused(loads refused)
+S-load/tee/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/tee/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tee/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/tee/pec/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/pec/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tee/pec/mpie/Voltage Refused(loads refused)
+S-load/tee/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tee/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tee/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/tilted-offcentre/free/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/free/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tilted-offcentre/free/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tilted-offcentre/free/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/gn2/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/gn2/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tilted-offcentre/gn2/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tilted-offcentre/gn2/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/tilted-offcentre/pec/hallen/PlaneWave Holds[route=paths contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/pec/hallen/Voltage Holds[route=paths contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/tilted-offcentre/pec/mpie/Voltage Refused(loads refused)
+S-load/tilted-offcentre/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/tilted-offcentre/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/tilted-offcentre/pec/sinusoidal/Voltage Refused(error: --solver sinusoidal solves straight wires and collinear chains only; this deck has a bend, split, junction or loop, which needs the conductor-path or section-graph basis of --solver hallen (FND-))
 S-load/two-element-array/free/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/free/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/free/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/two-element-array/free/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/free/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/free/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/two-element-array/free/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/gn2/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/two-element-array/gn2/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/two-element-array/gn2/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/two-element-array/gn2/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/gn2/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=finite gsolver=mpie-exact loads=deck nf_exec=cpu]
 S-load/two-element-array/gn2/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/two-element-array/gn2/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=finite gsolver=rcm loads=deck nf_exec=cpu]
 S-load/two-element-array/pec/hallen/PlaneWave Holds[route=plain contact=no drive=planewave ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/pec/hallen/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/pec/mpie/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
-S-load/two-element-array/pec/mpie/Voltage Refused(loads refused)
+S-load/two-element-array/pec/mpie/Voltage Holds[route=mpie contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-load/two-element-array/pec/sinusoidal/PlaneWave Refused(error: EX: incident plane-wave excitation requires --solver hallen)
 S-load/two-element-array/pec/sinusoidal/Voltage Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 S-point/collinear-split/free/hallen Holds[route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none nf_exec=cpu]
@@ -611,7 +629,7 @@ S-worker/two-element-array/pec/gpu/bare Holds[route=plain contact=no drive=volta
 S-worker/two-element-array/pec/gpu/loaded Holds[route=plain contact=no drive=voltage ground=pec gsolver=n/a loads=deck nf_exec=cpu]
 count R-converge 1
 count R-image 2
-count R-loss 18
+count R-loss 36
 count R-lowground 10
 count R-network 18
 count R-reference 23
