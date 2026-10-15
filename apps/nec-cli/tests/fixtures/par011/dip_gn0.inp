@@ -1,0 +1,8 @@
+CM dipole over finite ground RCM
+CE
+GW 1 21 -5.282 0 10 5.282 0 10 0.001
+GE 1
+GN 0 0 0 0 13 0.005
+EX 0 1 11 0 1 0
+FR 0 1 0 0 14.2 0
+RP 0 4 13 1003 0 0 30 30

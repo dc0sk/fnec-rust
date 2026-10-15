@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-evidence-memo.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-15
 ---
 
 # PAR-011 Drop-In Compatibility Evidence Memo
@@ -61,10 +61,94 @@ Key points from `nec2mp-readme.pdf` extraction:
 ## Status of the open items
 
 **2026-10-13:** every item still unticked below is an observation of a real 4nec2
-installation on Windows — how it invokes its kernel, what files it writes, which
-DLLs it loads. No such installation is available to the project, so none can be
-measured here, and none is ticked on inference. They stay open under CP-012
-(drop-in kernel mode, LOW, deferred to Phase 4-5 in `docs/roadmap.md`).
+installation on Windows: how it invokes its kernel, what files it writes, which
+DLLs it loads. No such installation was available to the project, so none could
+be measured, and none was ticked on inference.
+
+**2026-10-15:** a real 4nec2 now runs on the project host under Wine, so most of
+these items have been measured; see *Observed under Wine* below. An item ticked
+from that capture says "(Wine)". What Windows itself would do differently, such
+as loader search paths or long-path handling, is still unobserved, and those
+items stay open.
+
+## Observed under Wine (2026-10-15)
+
+**Setup.** 4nec2 V5.9.3 ran under Wine 10.0 in a win64 prefix on Linux, on an Xvfb
+display driven with xdotool. Process creation was traced with `WINEDEBUG=+process`.
+
+**Kernel.** The kernel is the one 4nec2 bundles, `nec2dxs1K5.exe`, sha256
+`70cf2058…5841`: "Merged nec2d/som2d … Arie Voors", build 2.7. It is a 32-bit
+console PE that imports only `KERNEL32.dll` and `msvcrt.dll`.
+
+The fixture pairs are in `apps/nec-cli/tests/fixtures/par011/`, with their
+provenance in that directory's README.
+
+### Process contract
+
+**Invocation.** On *Generate*, 4nec2 writes `exe\nec2d.tmp` and runs
+`"C:\4nec2\exe\4nec2.bat" gen Nec2dXS1k5 NOW`. The batch file `cd`s into `exe\`
+and runs `Nec2dXS1k5.exe < nec2d.tmp`.
+
+| Field | Observed |
+|:--|:--|
+| argv | the kernel's own name only, with no arguments (`Nec2dXS1k5.exe `) |
+| cwd | the 4nec2 `exe` directory |
+| stdin | two CRLF lines, the input and output paths, relative to cwd: `..\out\NAME.inp`, `..\out\NAME.out` |
+| stdout | prompts (`ENTER NAME OF INPUT FILE >`), which 4nec2 does not read |
+| exit code | 0 even when the deck is in error; 4nec2 does not use it |
+| success marker | the output file's last line, ` RUN TIME =     0.020` |
+| failure | the kernel writes its error text into the `.out` and no `RUN TIME` line; 4nec2 then shows "NEC error ? Check output (F8)", or the error text itself |
+
+**Engine and file names.**
+- The engine name comes from 4nec2's settings. The *Generate* dialog shows
+  `[Nec2dXS1k5]` for decks of 9 to 41 segments.
+- File names are truncated to DOS 8.3 form: `dip_sweep.nec` ran as
+  `..\out\dip_swee.inp` / `.out`, and 4nec2 renamed the output to `dip_sweep.out`
+  afterwards and deleted the `.inp`.
+
+**4nec2 checks geometry before it calls the kernel.** Overlaid wires stop the run
+in 4nec2 itself, with no kernel call.
+
+### The `.inp` 4nec2 writes
+
+- **Preprocessed in full.** `SY` symbols are evaluated, `#12` wire gauges become
+  radii, `50%` segment references are resolved, and comments are stripped
+  (`Example3`).
+- **`RP` is substituted.** In *Far Field pattern* mode, 4nec2's own `RP` replaces
+  the deck's, for example `RP 0 37 73 1003 -180 0 5 5`.
+- **`EN` is usually dropped.** "Use original file" passes the deck through
+  unchanged except for removing the final `EN`, but a frequency-sweep run kept it.
+  The kernel treats end-of-file as `EN` and echoes a synthesized
+  `DATA CARD NO. n EN` that repeats the previous card's fields. nec2c refuses
+  such a deck.
+- **`GN 2` needs no grid file.** No `som2d.tmp` or grid file was written; this
+  merged kernel computes the Sommerfeld ground itself.
+
+### The `.out` 4nec2 reads
+
+**4nec2 rejects nec2c's valid output** for the same deck with "NEC error?". nec2c
+uses a different layout (dashed banners, other column titles), so 4nec2's parser
+is tied to the original Fortran NEC-2D layout that nec2dxs prints.
+
+**Removal ablation.** The kernel's `.out` was loaded with one part removed or
+changed at a time:
+
+| Removed | Effect in 4nec2 |
+|:--|:--|
+| banner text changed | none |
+| `MATRIX TIMING` | none |
+| `STRUCTURE IMPEDANCE LOADING` and `ANTENNA ENVIRONMENT` | none visible (4nec2 does show the environment text verbatim in its Environment box) |
+| `RADIATION PATTERNS` | no pattern; all else intact |
+| `CURRENTS AND LOCATION` | the input current is misread |
+| `POWER BUDGET` | voltage and current mis-scaled (4nec2 normalises to 100 W from it) |
+| the `DATA CARD` echo | impedance lost and the pattern line count wrong (4nec2 reads the `RP` parameters from the echo) |
+| `STRUCTURE SPECIFICATION` and `SEGMENTATION DATA` | everything lost |
+| the final `RUN TIME` line | "NEC error ?" |
+
+**Insertion ablation.** One free-text line was inserted at a time: at the top,
+inside `COMMENTS`, before `ANTENNA INPUT PARAMETERS`, inside `POWER BUDGET`,
+after the `EN` echo, before `RUN TIME`, and after `RUN TIME`. 4nec2 parsed every
+variant in full, with the same impedance and the same 5329 pattern lines.
 
 ## Binary-name contract
 
@@ -78,15 +162,20 @@ measured here, and none is ticked on inference. They stay open under CP-012
 - [x] Document required copy/replace steps in a standard 4nec2 Windows installation.
 	- 2026-05-30: documented in `docs/par011-dropin-contract.md` section "Windows install and rollback procedure (deterministic)".
 - [ ] Confirm whether side-by-side binaries are selected automatically by host tooling.
+	- 2026-10-15 (Wine): the engine name comes from 4nec2's settings; decks of 9 and 41 segments both ran `Nec2dXS1k5`. Whether 4nec2 switches binaries by segment count is not yet observed.
 - [x] Confirm rollback path for restoring original binaries.
 	- 2026-05-30: deterministic rollback path documented in `docs/par011-dropin-contract.md`.
 
 ## Invocation and process contract
 
-- [ ] Capture argv shape from host-to-kernel execution.
-- [ ] Capture expected working-directory assumptions.
-- [ ] Capture stdin/stdout/stderr usage and parsing assumptions.
-- [ ] Capture expected exit-code semantics for success and common failure classes.
+- [x] Capture argv shape from host-to-kernel execution.
+	- 2026-10-15 (Wine): no arguments; the kernel is run as `Nec2dXS1k5.exe < nec2d.tmp` by `4nec2.bat`.
+- [x] Capture expected working-directory assumptions.
+	- 2026-10-15 (Wine): cwd is 4nec2's `exe` directory; the paths on stdin are relative to it.
+- [x] Capture stdin/stdout/stderr usage and parsing assumptions.
+	- 2026-10-15 (Wine): stdin carries two CRLF lines (input, output path); stdout carries prompts 4nec2 ignores; the results are read from the output file only.
+- [x] Capture expected exit-code semantics for success and common failure classes.
+	- 2026-10-15 (Wine): the exit code is 0 even on a deck error; success is the output file's final ` RUN TIME =` line.
 
 Phase-0 template status:
 
@@ -94,19 +183,25 @@ Phase-0 template status:
 
 ## Filesystem side effects
 
-- [ ] Enumerate all temporary files written/read by the external-kernel contract.
-- [ ] Record overwrite/cleanup lifecycle expectations.
-- [ ] Record behavior when output files already exist.
+- [x] Enumerate all temporary files written/read by the external-kernel contract.
+	- 2026-10-15 (Wine): `exe\nec2d.tmp` (two paths), `out\NAME.inp` and `out\NAME.out` with 8.3 names; nothing else, `GN 2` included.
+- [x] Record overwrite/cleanup lifecycle expectations.
+	- 2026-10-15 (Wine): each run rewrites `nec2d.tmp`, the `.inp` and the `.out`; after a frequency sweep 4nec2 renames the 8.3 `.out` to the full name and deletes the `.inp`.
+- [x] Record behavior when output files already exist.
+	- 2026-10-15 (Wine): an existing `.out` is overwritten without a prompt.
 
 ## Dependency surface
 
-- [ ] Confirm runtime DLL dependencies, if any.
+- [x] Confirm runtime DLL dependencies, if any.
+	- 2026-10-15: the bundled `nec2dxs1K5.exe` imports only `KERNEL32.dll` and `msvcrt.dll` (`objdump -p`).
 - [ ] Confirm search-path/loader assumptions for portable and installed modes.
 
 ## Regression fixtures
 
 - [ ] Archive representative call traces for each binary-name variant.
-- [ ] Archive canonical input/output pairs suitable for CI compatibility tests.
+	- 2026-10-15 (Wine): `Nec2dXS1k5` only, recorded above; the other five names have not been seen to run.
+- [x] Archive canonical input/output pairs suitable for CI compatibility tests.
+	- 2026-10-15 (Wine): 15 pairs in `apps/nec-cli/tests/fixtures/par011/`, each `.inp` written by 4nec2 itself.
 
 ## Benchmark protocol
 

@@ -426,11 +426,11 @@ Execution order: PH10-CHK-001 → 005 → 002 (one card at a time) → 003 → 0
 | PH10-CHK-003 | MPIE with mixed wire radii: per-segment radius in the kernels instead of the first wire's for all (`validate.rs` caveat, `mpie.rs`) | a mixed-radius deck converging to nec2c's converged value, the caveat removed | Done: each segment's own radius (#586) — separate wires converge to nec2c, a radius step matches the first-order closed form and the Leeson equivalent, where nec2c is no reference; the caveat moved to Hallén, which under-models a step (FND-252) |
 | PH10-CHK-004 | Lumped `LD` loads on the MPIE (it refuses them today), so a loaded antenna close to the ground has an accurate path | loaded near-ground decks vs nec2c at two meshes | Done (#587): every `LD` type and `--loads-config` stamped as the transpose of the segment-current readout; a load on the fed segment adds exactly its impedance; a loaded dipole 0.05 λ over `GN 2` converges to nec2c (84.10 + j87.15 vs 84.30 + j87.41, where Hallén reads 51.1 + j81.6) |
 | PH10-CHK-005 | Tracker hygiene: PAR-011 reopened, card-matrix `LD 5` formula, stale solver-findings sections, changelog compare links (now checked), FND-244 recorded | this table | Done (this PR) |
-| PH10-CHK-006 | FND-193: try wgpu/naga 30 for the `ArrayStride` validation errors (gfx-rs/wgpu#9295 still open); a shader-side workaround if they persist | `WGPU_VALIDATION=1` clean on the GPU suite | Open |
+| PH10-CHK-006 | FND-193: try wgpu/naga 30 for the `ArrayStride` validation errors (gfx-rs/wgpu#9295 still open); a shader-side workaround if they persist | `WGPU_VALIDATION=1` clean on the GPU suite | Done (#589: no workgroup memory in the LU solve) |
 
 Also tracked here, not scheduled: FND-244 (the worker pipe write is unbounded), FND-246 (wire ends join within an absolute 1 µm, not nec2c's relative band),
-and PAR-011 (4nec2 drop-in evidence), blocked on the maintainer's Wine + 4nec2
-install.
+and PAR-011 (4nec2 drop-in). Its evidence was captured 2026-10-15 under Wine; the implementation plan is in
+`docs/par011-dropin-contract.md`.
 
 ## Gaps and blockers (from requirements.md)
 
