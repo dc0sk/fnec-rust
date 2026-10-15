@@ -64,6 +64,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **wgpu 30** (from 29.0.3; naga 30.0.1 with it) for the GPU path. Adapters are
+  requested with `apply_limit_buckets: false` (bucketing hides a browser's adapter
+  from untrusted content; fnec takes the real limits), and a readback whose
+  mapped range cannot be read now falls back as a failed map does. It does not fix
+  FND-193: the two workgroup-array validation errors remain until gfx-rs/wgpu#9295
+  lands.
 - **`--solver mpie` models each segment's own radius** (PH10-CHK-003). It solved
   every segment with the first one's and warned; a Yagi with a 10 mm reflector
   and a 2 mm driven element read 73.63 + j41.81 Ω where nec2c gives 70.40 +

@@ -522,6 +522,9 @@ async fn shared_gpu_context() -> GpuAcquire {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
         force_fallback_adapter: false,
+        // Limit bucketing hides a browser's adapter from untrusted content; this
+        // is a native solver, so it takes the adapter's real limits.
+        apply_limit_buckets: false,
     })) {
         Ok(a) => a,
         Err(e) => {
@@ -629,6 +632,9 @@ pub async fn run_noop_compute_pipeline() -> NoOpPipelineResult {
         power_preference: wgpu::PowerPreference::None,
         compatible_surface: None,
         force_fallback_adapter: true,
+        // Limit bucketing hides a browser's adapter from untrusted content; this
+        // is a native solver, so it takes the adapter's real limits.
+        apply_limit_buckets: false,
     })) {
         Ok(a) => a,
         Err(_) => return NoOpPipelineResult::NoAdapterAvailable,
@@ -775,6 +781,9 @@ pub async fn run_rp_farfield_wgpu(
         power_preference: wgpu::PowerPreference::None,
         compatible_surface: None,
         force_fallback_adapter: true,
+        // Limit bucketing hides a browser's adapter from untrusted content; this
+        // is a native solver, so it takes the adapter's real limits.
+        apply_limit_buckets: false,
     })) {
         Ok(a) => a,
         Err(_) => return RpPipelineResult::NoAdapterAvailable,
@@ -972,7 +981,9 @@ pub async fn run_rp_farfield_wgpu(
     if await_map(&device, &rx).is_err() {
         return RpPipelineResult::NoAdapterAvailable;
     }
-    let raw = slice.get_mapped_range();
+    let Ok(raw) = slice.get_mapped_range() else {
+        return RpPipelineResult::NoAdapterAvailable;
+    };
     let vals: &[f32] = bytemuck::cast_slice(&raw[..8]);
     let u_theta = vals[0] as f64;
     let u_phi = vals[1] as f64;
@@ -1235,7 +1246,9 @@ pub async fn run_rp_farfield_batch_wgpu(
     if await_map(device, &rx).is_err() {
         return None;
     }
-    let raw = slice.get_mapped_range();
+    let Ok(raw) = slice.get_mapped_range() else {
+        return None;
+    };
     let vals: &[f32] = bytemuck::cast_slice(&raw);
 
     let norm = if total_radiated > 0.0 {
@@ -1554,7 +1567,9 @@ pub async fn fill_zmatrix_wgpu(
     if let Err(why) = await_map(device, &rx) {
         return Err(format!("the device failed during the readback: {why}"));
     }
-    let raw = slice.get_mapped_range();
+    let raw = slice
+        .get_mapped_range()
+        .map_err(|why| format!("the device failed during the readback: {why}"))?;
     let floats: &[f32] = bytemuck::cast_slice(&raw);
 
     let results: Vec<ZElem> = floats
@@ -1625,6 +1640,9 @@ pub async fn microbench_zmatrix_dispatch(
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
         force_fallback_adapter: false,
+        // Limit bucketing hides a browser's adapter from untrusted content; this
+        // is a native solver, so it takes the adapter's real limits.
+        apply_limit_buckets: false,
     }))
     .ok()?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -1913,6 +1931,9 @@ pub fn preferred_adapter_info() -> Option<AdapterInfo> {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
         force_fallback_adapter: false,
+        // Limit bucketing hides a browser's adapter from untrusted content; this
+        // is a native solver, so it takes the adapter's real limits.
+        apply_limit_buckets: false,
     }))
     .ok()
     .map(|a| AdapterInfo::of(&a.get_info()))
@@ -2469,7 +2490,13 @@ pub async fn solve_hallen_gpu_resident(
         eprintln!("warning: solve_hallen_gpu_resident: {why} — falling back to CPU");
         return Err(GpuSolveDeclined::DeviceFailed);
     }
-    let raw = slice.get_mapped_range();
+    let raw = match slice.get_mapped_range() {
+        Ok(raw) => raw,
+        Err(why) => {
+            eprintln!("warning: solve_hallen_gpu_resident: {why} — falling back to CPU");
+            return Err(GpuSolveDeclined::DeviceFailed);
+        }
+    };
     let floats: &[f32] = bytemuck::cast_slice(&raw);
     // Slot 3 first (its entry R holds the norms), then slot 4.
     let res_sq = floats[2 * rows] as f64;
