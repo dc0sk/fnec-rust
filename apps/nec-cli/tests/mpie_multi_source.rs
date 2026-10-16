@@ -54,12 +54,18 @@ fn feedpoints(deck: &common::TempDeck) -> Vec<(u32, u32, f64, f64)> {
         .collect()
 }
 
-/// nec2c's impedance on both ports, `(segments per wire, second source, R, X)`.
+/// nec2c's impedance on both ports, `(segments per wire, second source, R, X)`:
+/// its converged value, each deck meshed 27× finer (`scripts/nec2c-converged-series.py`,
+/// captured 2026-10-16), where nec2c on the test's own mesh read 145.37 + j34.687
+/// / 145.74 + j34.515 in phase and 12.390 + j53.128 / 12.435 + j53.625 in
+/// antiphase — the antiphase X moving 85 % of the gate under nec2c's own
+/// refinement (FND-257). Both meshes feed the centre: one antenna, so the error
+/// shrinking with the mesh is measured on it.
 const NEC2C: [(u32, f64, f64, f64); 4] = [
-    (21, 1.0, 145.37, 34.687),
-    (41, 1.0, 145.74, 34.515),
-    (21, -1.0, 12.390, 53.128),
-    (41, -1.0, 12.435, 53.625),
+    (21, 1.0, 146.31, 34.425),
+    (41, 1.0, 146.37, 34.432),
+    (21, -1.0, 12.502, 54.405),
+    (41, -1.0, 12.508, 54.484),
 ];
 
 #[test]
@@ -83,10 +89,14 @@ fn two_fed_dipoles_on_the_mpie_match_nec2c_on_both_ports() {
         for (tag, seg, gr, gx) in &rows {
             let e = (gr - r).hypot(gx - x);
             eprintln!("{n} segs, v2 {v2}: {tag}/{seg} {gr:.4} {gx:+.4}j vs nec2c {r} {x:+}j");
-            // The dropped-source answer was ~100 Ω away; the MPIE's own
-            // half-segment feed offset is ~1 Ω at 21 per wire.
+            // The dropped-source answer was ~100 Ω away. Against nec2c's
+            // converged value the MPIE at 21 per wire is 1.5 Ω off in phase and
+            // 2.4 in antiphase, its own discretisation: refined (1 / 3 / 9 ×) it
+            // reads 144.80, 145.65, 146.04 in R in phase and 52.00, 53.50, 53.99
+            // in X in antiphase, heading for nec2c's limit. Hence 3 Ω, not the
+            // 1.5 that held against nec2c on the same mesh.
             assert!(
-                e < 1.5,
+                e < 3.0,
                 "{n} segs, v2 {v2}: port {tag}/{seg} {gr} + j{gx} vs nec2c {r} + j{x} (|Δ| {e:.3} Ω)"
             );
             worst = worst.max(e);

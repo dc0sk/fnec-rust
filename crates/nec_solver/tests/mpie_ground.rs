@@ -14,8 +14,8 @@
 // εr=13, σ=0.005, horizontal λ/2 dipole):
 //   free space : 78.85 + j44.70
 //   PEC  0.05λ :  6.16 + j38.18   (GN1 — image cancellation)
-//   GN2  0.05λ : 67.26 + j52.61
-//   GN2  0.025λ: 87.81 + j68.64
+//   GN2  0.05λ : 67.26 + j52.61   (converged, 27×: 67.855 + j53.589)
+//   GN2  0.025λ: 87.81 + j68.64   (converged, 27×: 88.774 + j69.557)
 // Oracle (N=40): free 74.36+j41.36, PEC 5.87+j34.11, GN2 64.00+j49.18 / 83.46+j66.26.
 //
 //   Gate D1: horizontal λ/2 dipole over GN2 at 0.05λ and 0.025λ — feed Z matches
@@ -69,24 +69,33 @@ fn gn2() -> GroundModel {
 /// the ground substantially lowers R from the 74 Ω free-space value.
 #[test]
 fn horizontal_dipole_gn2_tracks_nec2c() {
-    // 0.05λ: nec2c 67.26 + j52.61; fnec 67.61 + j52.42 since FND-157. (This
-    // pinned a Python oracle's 64.00 + j49.18, which shared the self-term
-    // quadrature defect and so agreed with the old code to the digit.)
+    // 0.05λ: nec2c 67.855 + j53.589, its converged value — the centre-fed dipole
+    // at 21 segments meshed 27× finer (`scripts/nec2c-converged-series.py`,
+    // captured 2026-10-16; 1 / 3 / 9 / 27 ×: 67.265 + j52.621, 67.612 + j53.157,
+    // 67.774 + j53.430, 67.855 + j53.589). It was nec2c's 21-segment 67.26 +
+    // j52.61, which moves 98 % of the 1 Ω gate under nec2c's own refinement
+    // (FND-257). fnec 67.61 + j52.42 since FND-157, at the 40 segments solved
+    // here: X 1.17 Ω under the converged value, so X's gate is 1.5 Ω (it was 1.0
+    // against the 21-segment figure). That is the MPIE's own mesh error: the
+    // centre-fed dipole through `--solver mpie` at 21 / 63 / 189 segments reads X
+    // 51.75, 52.90, 53.25, heading for about 53.4. (This pinned a Python
+    // oracle's 64.00 + j49.18, which shared the self-term quadrature defect and
+    // so agreed with the old code to the digit.)
     let (g05, f05) = horizontal_dipole(0.05);
     let z05 = solve_mpie_ground(&g05, FREQ, f05, &gn2()).unwrap();
     assert!(
-        (z05.z_in.re - 67.26).abs() < 1.0 && (z05.z_in.im - 52.61).abs() < 1.0,
-        "GN2 0.05λ Z={} (nec2c 67.26+j52.61)",
+        (z05.z_in.re - 67.855).abs() < 1.0 && (z05.z_in.im - 53.589).abs() < 1.5,
+        "GN2 0.05λ Z={} (nec2c 67.855+j53.589)",
         z05.z_in
     );
     // Within ~8% of nec2c on both parts.
     assert!(
-        (z05.z_in.re - 67.26).abs() / 67.26 < 0.08,
+        (z05.z_in.re - 67.855).abs() / 67.855 < 0.08,
         "R vs nec2c: {}",
         z05.z_in.re
     );
     assert!(
-        (z05.z_in.im - 52.61).abs() / 52.61 < 0.08,
+        (z05.z_in.im - 53.589).abs() / 53.589 < 0.08,
         "X vs nec2c: {}",
         z05.z_in.im
     );
@@ -97,17 +106,19 @@ fn horizontal_dipole_gn2_tracks_nec2c() {
         z05.z_in.re
     );
 
-    // 0.025λ: nec2c 87.81 + j68.64; fnec 88.59 + j68.45 since FND-157 (the
-    // shared-defect oracle said 83.46 + j66.26).
+    // 0.025λ: nec2c 88.774 + j69.557 converged the same way (1 / 3 / 9 / 27 ×:
+    // 87.811 + j68.650, 88.389 + j69.172, 88.647 + j69.415, 88.774 + j69.557);
+    // it was the 21-segment 87.81 + j68.64. fnec 88.59 + j68.45 since FND-157
+    // (the shared-defect oracle said 83.46 + j66.26).
     let (g025, f025) = horizontal_dipole(0.025);
     let z025 = solve_mpie_ground(&g025, FREQ, f025, &gn2()).unwrap();
     assert!(
-        (z025.z_in.re - 87.81).abs() < 1.5 && (z025.z_in.im - 68.64).abs() < 1.5,
-        "GN2 0.025λ Z={} (nec2c 87.81+j68.64)",
+        (z025.z_in.re - 88.774).abs() < 1.5 && (z025.z_in.im - 69.557).abs() < 1.5,
+        "GN2 0.025λ Z={} (nec2c 88.774+j69.557)",
         z025.z_in
     );
     assert!(
-        (z025.z_in.re - 87.81).abs() / 87.81 < 0.08,
+        (z025.z_in.re - 88.774).abs() / 88.774 < 0.08,
         "R vs nec2c: {}",
         z025.z_in.re
     );

@@ -1828,8 +1828,11 @@ mod routing_tests {
         // divergence from the other arm was missing. FND-162 stage 1b adds it
         // (per-section homogeneous terms, bend rows, the corner term), and the
         // path basis now answers 270.43 + j443.20, 1.8 % from nec2c — so it is
-        // gated against the oracle again, not pinned.
-        let nec2c = Complex64::new(268.56, 452.26);
+        // gated against the oracle again, not pinned. The oracle is nec2c's
+        // converged value, 280.30 + j459.75 at 27× with `EK 0`, the corpus
+        // split-V's reference (FND-255); nec2c's 268.56 + j452.26 on this mesh
+        // moves 88 % of the gate under nec2c's own refinement (FND-257).
+        let nec2c = Complex64::new(280.30, 459.75);
         assert!(
             (z_paths - nec2c).norm() / nec2c.norm() < 0.03,
             "path basis {z_paths} vs nec2c {nec2c}"
