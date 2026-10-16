@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-10-02
+last_updated: 2026-10-16
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -43,6 +43,12 @@ printed digit.
 | two-bend U, 11 / 21 per wire | 14.39 − j219.22 / 14.31 − j218.18 | — | 14.16 − j221.40 / 14.18 − j219.57 (≈ 1 %) |
 | Z shape, 11 / 21 per wire | 45.41 − j565.43 / 44.62 − j559.29 | — | 43.30 − j567.62 / 43.42 − j560.83 (≈ 1 %) |
 | steep split-V (corpus) | 268.56 + j452.26 | 344.58 + j530.33 | 270.43 + j443.20 (1.8 %) |
+
+The two "fed ¼ up an arm" rows are two antennas, not one at two meshes: segment 5
+of 21 and segment 10 of 41 sit at 0.214 and 0.232 of the arm, and nec2c's own
+figures differ by 770 Ω in X (FND-258). The gate now feeds 0.36 of the arm,
+segment 8 of 21 and 23 of 63, against nec2c's converged 933.23 + j892.42 (81×,
+`EK 0`): fnec 3.2 % at 21 per arm, 1.6 % at 63.
 
 The apex-fed inverted-V is the case to remember. Without the corner term it read
 0.7 % from nec2c at 21 segments, and the error *grew* under refinement: two errors
