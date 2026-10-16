@@ -24,6 +24,7 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `par011-wine-e2e.sh` | Install that build into a Wine 4nec2 under all six names, run fixture decks through 4nec2's Generate, check the reports 4nec2 reads (fnec banner + RUN TIME, or the refusal), restore and verify the originals (PAR-011) | Manual |
 | `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
 | `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); self-test `test-host-build-lock.sh` | Host safety |
+| `check-hooks-take-lock.py` | Every repo hook under `.githooks/` that runs cargo sources `host-build-lock.sh` first (FND-261) | `check-all.sh`, CI |
 
 ## Benchmark harnesses (`scripts/`)
 

@@ -196,6 +196,11 @@ jobs:
       # announced fnec_py 0.5.0 and published a wheel calling itself 0.4.0.
       - name: fnec_py wheel version matches its crate version
         run: python3 scripts/check-binding-version.py
+      # A repo hook's cargo run is as heavy as a gate's (the pre-commit clippy builds
+      # the whole workspace), so it must queue behind the host-wide build lock;
+      # the pre-commit hook did not (FND-261).
+      - name: Repo hooks take the host build lock before cargo
+        run: python3 scripts/check-hooks-take-lock.py
       # One toolchain pin: every `dtolnay/rust-toolchain@<version>` above names
       # rust-toolchain.toml's channel (FND-149).
       - name: Toolchain pin matches rust-toolchain.toml

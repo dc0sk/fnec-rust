@@ -137,7 +137,7 @@ run "cargo audit" cargo audit
 run "cargo deny" cargo deny check bans licenses sources
 
 for c in check-changelog-headings check-findings-ledger check-path-inventory \
-         check-release-tags check-binding-version; do
+         check-release-tags check-binding-version check-hooks-take-lock; do
     run "$c" python3 "scripts/$c.py"
 done
 # Local too: the hooks and this script lint with the `rustc` on PATH, so a

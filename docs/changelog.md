@@ -136,6 +136,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   samples were weighted by sin θ and nulls were skipped, so on a 30° grid a
   lossless dipole averaged 1.024 instead of NEC-2's 0.988 (102.4 % radiation
   efficiency in 4nec2).
+- **The pre-commit hook takes the host-wide build lock** (FND-261). Its
+  workspace-wide `cargo clippy` ran unlocked, beside any other heavy build on the
+  machine, the way the gate was OOM-killed three times before the lock existed.
+  `scripts/check-hooks-take-lock.py` now keeps every repo hook that runs cargo
+  behind the lock, in `check-all.sh` and CI.
 - **The GPU solve's shaders pass Vulkan validation** (FND-193): its two
   reductions used workgroup arrays, which naga decorates with `ArrayStride` —
   rejected by the validation layer and liable to be misread by a strict driver.
