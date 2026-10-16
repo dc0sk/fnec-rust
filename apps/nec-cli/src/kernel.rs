@@ -20,7 +20,7 @@
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::PathBuf;
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 /// The usage line for a person who runs the kernel at a terminal.
 const KERNEL_USAGE: &str =
@@ -82,11 +82,16 @@ pub(crate) fn run() -> ExitCode {
     let _ = write!(stdout, "ENTER NAME OF OUTPUT FILE > ");
     let output = lines.next().and_then(Result::ok).map(|l| kernel_path(&l));
     let _ = writeln!(stdout);
-    let (Some(input), Some(output)) = (input, output) else {
+    let Some(output) = output else {
         eprintln!("error: nec2d-kernel: stdin did not name an input and an output file");
         return ExitCode::FAILURE;
     };
-    let report = solve(&input);
+    // Whenever an output path was read, something is written there: left alone,
+    // the previous run's file would be read as this one's result.
+    let report = match input {
+        Some(input) if !input.as_os_str().is_empty() => solve(&input),
+        _ => failure("FNEC: STDIN NAMED NO INPUT FILE"),
+    };
     match std::fs::write(&output, report) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -113,9 +118,11 @@ fn solve(input: &std::path::Path) -> String {
     };
     // The same binary, as the CLI: a drop-in name with a deck argument is plain
     // fnec. The CPU path, until the host is calibrated for the device (P3).
+    // The child reads nothing: it must not inherit the half-read nec2d.tmp.
     let child = Command::new(exe)
         .args(["--exec", "cpu", "--output-format", "nec2d"])
         .arg(input)
+        .stdin(Stdio::null())
         .output();
     let child = match child {
         Ok(c) => c,

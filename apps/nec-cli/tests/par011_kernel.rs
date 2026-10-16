@@ -177,3 +177,26 @@ fn no_output_path_exits_non_zero() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("did not name an input and an output"));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Stdin names an output but no input: a failure is still written there, so an
+/// earlier run's `.out` is never read as this one's result.
+#[test]
+fn an_output_path_always_gets_a_fresh_file() {
+    let root = tree("stale", "dip_free");
+    let stale = root.join("out/dip_free.out");
+    std::fs::write(&stale, " RUN TIME =     0.000\r\n").unwrap();
+    let out = run(
+        Path::new(env!("CARGO_BIN_EXE_fnec")),
+        &["nec2d-kernel"],
+        &root.join("exe"),
+        "\r\n..\\out\\dip_free.out\r\n",
+    );
+    assert!(out.status.success());
+    let report = std::fs::read_to_string(&stale).unwrap();
+    assert!(report.contains("STDIN NAMED NO INPUT FILE"), "{report}");
+    assert!(
+        !report.contains("RUN TIME"),
+        "the stale result survived: {report}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
