@@ -54,6 +54,36 @@ pub struct FarFieldResult {
     /// of the polarization ellipse in `[-1, 1]` — 0 = linear, ±1 = circular, sign
     /// = rotation sense. See [`polarization_axial_ratio`].
     pub axial_ratio: f64,
+    /// The far field's θ component as NEC-2 prints it: `R·E_θ` in volts, the
+    /// `e^{-jkR}` factor of the range dropped, so a field at range `R` is this
+    /// divided by `R` (NEC's `RP` with no range given). Zero below a ground plane.
+    pub e_theta: Complex64,
+    /// The far field's φ component, as [`FarFieldResult::e_theta`].
+    pub e_phi: Complex64,
+}
+
+/// The polarization ellipse of a far-field point, as NEC-2 prints it in its
+/// pattern table (PAR-011): the tilt of the major axis, the unsigned axial
+/// ratio, and the rotation sense.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PolarizationEllipse {
+    /// The major axis's angle from the θ direction, in degrees, in `[-90, 90]`.
+    pub tilt_deg: f64,
+    /// Minor over major axis, in `[0, 1]`: 0 linear, 1 circular.
+    pub axial_ratio: f64,
+    pub sense: PolarizationSense,
+}
+
+/// NEC-2's rotation sense of a polarization ellipse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolarizationSense {
+    /// No field at all (both components below NEC's 1e-20 threshold): NEC
+    /// prints a blank.
+    None,
+    /// An axial ratio of at most 1e-5.
+    Linear,
+    Right,
+    Left,
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +370,19 @@ fn far_field_components(
 
 const MU0: f64 = 4.0 * PI * 1e-7; // H/m
 const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
+
+/// NEC-2's STRUCTURE LOSS: the power the series loads dissipate,
+/// `½·Σ |Iₙ|²·Re Zₙ` over the per-segment load impedances (peak amplitudes, as
+/// [`feedpoint_input_power`] prices the input). NEC-2 reports the radiated power
+/// as the input less this and the network loss (PAR-011), not as a pattern
+/// integral.
+pub fn structure_loss_w(i_vec: &[Complex64], load_diagonal: &[Complex64]) -> f64 {
+    i_vec
+        .iter()
+        .zip(load_diagonal)
+        .map(|(i, z)| 0.5 * i.norm_sqr() * z.re)
+        .sum()
+}
 
 /// The dB to add to a directivity to make it a **gain**: `10·log10 η`, with
 /// `η = P_radiated / P_input` from [`radiation_efficiency`].
@@ -698,6 +741,9 @@ pub fn compute_radiation_pattern(
     // Any ground plane confines radiation to the upper hemisphere.
     let has_ground = pec || finite;
     let total_radiated = integrate_power_for_ground(segs, i_vec, k, ground);
+    // NEC-2's far field from the current moments (its `ffld`): R·E = -j·(η₀/4π)·k
+    // times the sums `far_field_components` returns.
+    let field_scale = Complex64::new(0.0, -ETA0 * k / (4.0 * PI));
 
     points
         .iter()
@@ -711,6 +757,8 @@ pub fn compute_radiation_pattern(
                     gain_theta_dbi: -999.99,
                     gain_phi_dbi: -999.99,
                     axial_ratio: 0.0,
+                    e_theta: Complex64::new(0.0, 0.0),
+                    e_phi: Complex64::new(0.0, 0.0),
                 };
             }
 
@@ -764,6 +812,8 @@ pub fn compute_radiation_pattern(
                 gain_theta_dbi,
                 gain_phi_dbi,
                 axial_ratio,
+                e_theta: field_scale * f_t,
+                e_phi: field_scale * f_p,
             }
         })
         .collect()
@@ -787,6 +837,54 @@ pub fn polarization_axial_ratio(e_theta: Complex64, e_phi: Complex64) -> f64 {
     let s3 = 2.0 * (e_theta * e_phi.conj()).im;
     let chi = 0.5 * (s3 / s0).clamp(-1.0, 1.0).asin();
     chi.tan()
+}
+
+/// The polarization ellipse of `(E_θ, E_φ)` exactly as NEC-2's pattern routine
+/// computes it (`RDPAT`; nec2c `rdpat`), so that a NEC-2D report prints NEC's own
+/// tilt, axial ratio and sense: with `Δ` the phase of `E_φ` minus that of `E_θ`,
+/// wrapped to the shorter way round, the tilt is `½·atan2(2|E_θ||E_φ|cos Δ,
+/// |E_θ|² − |E_φ|²)`, the axis powers follow from it, and the sense is right-hand
+/// for `Δ ≤ 0`. The axial ratio equals the magnitude of
+/// [`polarization_axial_ratio`]; its sign is the sense.
+pub fn polarization_ellipse(e_theta: Complex64, e_phi: Complex64) -> PolarizationEllipse {
+    let ethm2 = e_theta.norm_sqr();
+    let ephm2 = e_phi.norm_sqr();
+    if ethm2 <= 1e-20 && ephm2 <= 1e-20 {
+        return PolarizationEllipse {
+            tilt_deg: 0.0,
+            axial_ratio: 0.0,
+            sense: PolarizationSense::None,
+        };
+    }
+    let (etha, epha) = (e_theta.arg().to_degrees(), e_phi.arg().to_degrees());
+    let mut dfaz = epha - etha;
+    let dfaz2 = if epha >= 0.0 {
+        dfaz - 360.0
+    } else {
+        dfaz + 360.0
+    };
+    if dfaz.abs() > dfaz2.abs() {
+        dfaz = dfaz2;
+    }
+    let tstor1 = ethm2 - ephm2;
+    let tstor2 = 2.0 * ethm2.sqrt() * ephm2.sqrt() * dfaz.to_radians().cos();
+    let tilt = 0.5 * tstor2.atan2(tstor1);
+    let (s, c) = tilt.sin_cos();
+    let emajr2 = -tstor1 * s * s + tstor2 * s * c + ethm2;
+    let eminr2 = (tstor1 * s * s - tstor2 * s * c + ephm2).max(0.0);
+    let axial_ratio = (eminr2 / emajr2).sqrt();
+    let sense = if axial_ratio <= 1e-5 {
+        PolarizationSense::Linear
+    } else if dfaz <= 0.0 {
+        PolarizationSense::Right
+    } else {
+        PolarizationSense::Left
+    };
+    PolarizationEllipse {
+        tilt_deg: tilt.to_degrees(),
+        axial_ratio,
+        sense,
+    }
 }
 
 /// Build the list of (θ, φ) sample points described by an RP card.
@@ -1288,6 +1386,64 @@ mod tests {
                         theta_deg, phi_deg, interp_gain, direct_gain
                     );
                 }
+            }
+        }
+    }
+
+    /// PAR-011: NEC-2's polarization ellipse, from the field nec2c printed to the
+    /// tilt, axial ratio and sense it printed beside it (nec2c 1.3.1, 2026-10-15:
+    /// two crossed dipoles fed in quadrature, both senses, and the dipole rows of
+    /// the nec2dxs fixture `dip_free`). The inputs are rounded as printed, so the
+    /// tilt is compared modulo 180° — at exactly ±90° the sign of a rounded cos Δ
+    /// picks the branch, and both name the same axis.
+    #[test]
+    fn the_polarization_ellipse_is_nec2s() {
+        use PolarizationSense::*;
+        // |E_θ|, ∠E_θ, |E_φ|, ∠E_φ, then NEC's axial ratio, tilt, sense.
+        let rows = [
+            (
+                6.4843e-01, -112.01, 6.8435e-01, -21.56, 0.9470, -85.80, Left,
+            ),
+            (4.7485e-01, -111.09, 6.8052e-01, -22.46, 0.6972, 88.13, Left),
+            (2.3813e-01, -109.88, 6.7618e-01, -23.58, 0.3512, 88.52, Left),
+            (4.9479e-01, -76.82, 6.5331e-01, 13.18, 0.7574, -90.00, Left),
+            (2.7589e-12, 70.69, 6.7402e-01, -24.27, 0.0, -90.00, Linear),
+            (
+                4.7652e-01, -133.05, 6.7852e-01, 139.34, 0.7005, 86.71, Right,
+            ),
+            (
+                2.3834e-01, -134.03, 6.7577e-01, 139.89, 0.3516, 88.42, Right,
+            ),
+            (
+                5.0047e-01, -166.82, 6.4591e-01, 103.18, 0.7748, -90.00, Right,
+            ),
+            (4.63638e-02, -121.89, 0.0, 0.0, 0.0, 0.0, Linear),
+            (5.41887e-12, 58.11, 0.0, 0.0, 0.0, 0.0, None),
+        ];
+        for (mt, at, mp, ap, ar, tilt, sense) in rows {
+            let e = polarization_ellipse(
+                Complex64::from_polar(mt, f64::to_radians(at)),
+                Complex64::from_polar(mp, f64::to_radians(ap)),
+            );
+            let dt = (e.tilt_deg - tilt).rem_euclid(180.0);
+            let dt = dt.min(180.0 - dt);
+            assert!(
+                e.sense == sense && (e.axial_ratio - ar).abs() < 1e-4 && dt < 0.1,
+                "{mt} {at} {mp} {ap}: {e:?}, nec2c {ar} {tilt} {sense:?}"
+            );
+            // The unsigned ratio is the signed one's magnitude, its sign the sense.
+            let signed = polarization_axial_ratio(
+                Complex64::from_polar(mt, f64::to_radians(at)),
+                Complex64::from_polar(mp, f64::to_radians(ap)),
+            );
+            assert!(
+                (signed.abs() - e.axial_ratio).abs() < 1e-9,
+                "{signed} {e:?}"
+            );
+            match sense {
+                Right => assert!(signed > 0.0, "{signed}"),
+                Left => assert!(signed < 0.0, "{signed}"),
+                _ => {}
             }
         }
     }

@@ -638,7 +638,10 @@ impl ModelDoc {
         for slot in &self.post {
             cards.push(slot.to_card()?);
         }
-        Ok(NecDeck { cards })
+        Ok(NecDeck {
+            cards,
+            ..NecDeck::default()
+        })
     }
 
     /// Render the current document to deck text, or the first validation error.

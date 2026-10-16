@@ -114,7 +114,7 @@ pub(super) struct BenchRecord {
     pub(super) sin_rel_res: f64,
 }
 use nec_report::{
-    render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, ReportInput, SourceRow,
+    render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, PointReport, SourceRow,
 };
 // The plane-wave builders and path solvers are deliberately absent: the CLI no
 // longer assembles a plane-wave system itself, it asks
@@ -168,8 +168,38 @@ pub(super) struct PulseCurrentSourceConstraint {
     pub(super) original_row: Vec<Complex64>,
 }
 
+/// A CPU far-field result as a pattern-table row, its fields kept.
+fn pattern_row(r: &nec_solver::farfield::FarFieldResult) -> PatternRow {
+    PatternRow {
+        theta_deg: r.theta_deg,
+        phi_deg: r.phi_deg,
+        gain_total_dbi: r.gain_total_dbi,
+        gain_theta_dbi: r.gain_theta_dbi,
+        gain_phi_dbi: r.gain_phi_dbi,
+        axial_ratio: r.axial_ratio,
+        e_field: Some((r.e_theta, r.e_phi)),
+    }
+}
+
+/// What a frequency point prints: the local solve's tables, or the text a remote
+/// worker's result was formatted to (the worker sends a feedpoint, not tables).
+pub(super) enum PointOutput {
+    Tables(Box<PointReport>),
+    Text(String),
+}
+
+impl PointOutput {
+    /// The point's text report.
+    pub(super) fn text(&self) -> String {
+        match self {
+            PointOutput::Tables(point) => render_text_report(&point.as_input()),
+            PointOutput::Text(text) => text.clone(),
+        }
+    }
+}
+
 pub(super) struct FrequencySolveResult {
-    pub(super) report: String,
+    pub(super) report: PointOutput,
     pub(super) diag_line: String,
     pub(super) bench: BenchRecord,
     pub(super) sweep_summary: Option<SweepPointSummary>,
@@ -1605,6 +1635,8 @@ pub(super) fn solve_frequency_point(
                         gain_theta_dbi: r.gain_theta_dbi,
                         gain_phi_dbi: r.gain_phi_dbi,
                         axial_ratio: r.axial_ratio,
+                        // The device path computes gains only.
+                        e_field: None,
                     })
                     .collect()
             }
@@ -1613,33 +1645,13 @@ pub(super) fn solve_frequency_point(
                 eprintln!("warning: --exec gpu: no wgpu adapter available, falling back to CPU RP");
                 let results =
                     compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
-                results
-                    .iter()
-                    .map(|r| PatternRow {
-                        theta_deg: r.theta_deg,
-                        phi_deg: r.phi_deg,
-                        gain_total_dbi: r.gain_total_dbi,
-                        gain_theta_dbi: r.gain_theta_dbi,
-                        gain_phi_dbi: r.gain_phi_dbi,
-                        axial_ratio: r.axial_ratio,
-                    })
-                    .collect()
+                results.iter().map(pattern_row).collect()
             }
         }
     } else {
         // Standard CPU path
         let results = compute_radiation_pattern(segs, &i_vec, freq_hz, pattern_points, ground);
-        results
-            .iter()
-            .map(|r| PatternRow {
-                theta_deg: r.theta_deg,
-                phi_deg: r.phi_deg,
-                gain_total_dbi: r.gain_total_dbi,
-                gain_theta_dbi: r.gain_theta_dbi,
-                gain_phi_dbi: r.gain_phi_dbi,
-                axial_ratio: r.axial_ratio,
-            })
-            .collect()
+        results.iter().map(pattern_row).collect()
     };
 
     // PH9-CHK-003: the pattern gain is the directivity reduced by the radiation
@@ -1647,15 +1659,23 @@ pub(super) fn solve_frequency_point(
     // directivity; convert to gain here so the reported dBi matches nec2c's gain.
     // Over every ground: this was gated on a lossy finite ground, so a lossy load
     // in free space or over PEC printed its directivity as gain (FND-200).
+    // The shared producer, not a second inline sum. It computed a different
+    // number for a current source than this loop did, and since only the GUI
+    // called it, the divergence was invisible from here (FND-114). Identical
+    // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
+    // already run and aborts the session on any feedpoint it cannot price, so
+    // no feedpoint can reach this that the rows skipped.
+    let p_in: f64 =
+        nec_solver::feedpoint_input_power(deck, segs, v_vec, &feed_i_vec, current_source_port);
+    // NEC-2's power budget (PAR-011): the loads' dissipation from the wire
+    // currents and the diagonal the solve stamped; a network's loss is not
+    // separated here, so a deck with one has none.
+    let power_budget = (!rows.is_empty()).then(|| nec_report::PowerBudget {
+        input_w: p_in,
+        structure_loss_w: nec_solver::structure_loss_w(&i_vec, &stamps.diagonal),
+        network_loss_w: (!stamps.has_networks).then_some(0.0),
+    });
     if !pattern_table.is_empty() {
-        // The shared producer, not a second inline sum. It computed a different
-        // number for a current source than this loop did, and since only the GUI
-        // called it, the divergence was invisible from here (FND-114). Identical
-        // arithmetic over an identical feedpoint set: `build_feedpoint_rows` has
-        // already run and aborts the session on any feedpoint it cannot price, so
-        // no feedpoint can reach this that the rows skipped.
-        let p_in: f64 =
-            nec_solver::feedpoint_input_power(deck, segs, v_vec, &feed_i_vec, current_source_port);
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)
@@ -1709,26 +1729,8 @@ pub(super) fn solve_frequency_point(
         None
     };
 
-    let report = render_text_report(&ReportInput {
-        solver_mode: diag_label,
-        pulse_rhs: pulse_rhs_mode.as_contract_str(),
-        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
-            .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
-        frequency_hz: freq_hz,
-        rows: &rows,
-        source_table: &source_table,
-        load_table: &load_table,
-        current_table: &current_table,
-        pattern_table: &pattern_table,
-        receive_pattern_table: &receive_pattern_table,
-        near_field_table: &near_field_table,
-        near_h_field_table: &near_h_field_table,
-        normalize_pattern: deck
-            .cards
-            .iter()
-            .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
-        avg_power_gain,
-    });
+    let pattern_rows = pattern_table.len();
+    let near_field_points = near_field_table.len() + near_h_field_table.len();
     let sweep_summary = rows.first().map(|row| SweepPointSummary {
         freq_mhz: freq_hz / 1e6,
         tag: row.tag,
@@ -1738,6 +1740,27 @@ pub(super) fn solve_frequency_point(
         caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
             .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
     });
+    let report = PointOutput::Tables(Box::new(PointReport {
+        solver_mode: diag_label.to_string(),
+        pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
+        caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
+            .then(|| crate::cli_args::UNVALIDATED_SOLVER_CAVEAT.to_string()),
+        frequency_hz: freq_hz,
+        rows,
+        source_table,
+        load_table,
+        current_table,
+        pattern_table,
+        receive_pattern_table,
+        near_field_table,
+        near_h_field_table,
+        normalize_pattern: deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Rp(rp) if rp.normalize)),
+        avg_power_gain,
+        power_budget,
+    }));
     let diag_line = format!(
         "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",
         pulse_rhs_mode,
@@ -1758,9 +1781,9 @@ pub(super) fn solve_frequency_point(
             deck_loaded,
             config_loaded: !laplace_loads.is_empty(),
             solved_on_device: ran_on_gpu,
-            pattern_rows: pattern_table.len(),
+            pattern_rows,
             pattern_on_device: rp_on_device,
-            near_field_points: near_field_table.len() + near_h_field_table.len(),
+            near_field_points,
         }),
     );
 

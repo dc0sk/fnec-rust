@@ -72,13 +72,19 @@ mkdir -p "$(dirname "$GPU_RERUN_LOG")" && : > "$GPU_RERUN_LOG"
 export FNEC_GPU_RERUN_LOG="$GPU_RERUN_LOG"
 
 pytest_bindings() {
-    local venv="$ROOT/target/pytest-venv" module="$ROOT/target/pytest-module"
+    # Where cargo builds the binding: its own target/ by default, or wherever
+    # CARGO_TARGET_DIR or a .cargo/config.toml sends it (a worktree's build output
+    # belongs outside the worktree).
+    local target
+    target="$(cd "$ROOT/bindings/fnec_py" && cargo metadata --format-version 1 --no-deps |
+        python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')" || return 1
+    local venv="$target/pytest-venv" module="$target/pytest-module"
     if ! "$venv/bin/python" -c 'import pytest' 2>/dev/null; then
         python3 -m venv "$venv" && "$venv/bin/pip" install -q pytest || return 1
     fi
     (cd "$ROOT/bindings/fnec_py" && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo build -q) || return 1
     mkdir -p "$module" &&
-        cp "$ROOT/bindings/fnec_py/target/debug/libfnec_py.so" "$module/fnec_py.abi3.so" || return 1
+        cp "$target/debug/libfnec_py.so" "$module/fnec_py.abi3.so" || return 1
     PYTHONPATH="$module" "$venv/bin/python" -m pytest -q "$ROOT/bindings/fnec_py/tests"
 }
 

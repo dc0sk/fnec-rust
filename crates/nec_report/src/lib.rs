@@ -68,8 +68,13 @@ pub struct PatternRow {
     pub gain_theta_dbi: f64,
     /// Phi-polarised (horizontal) component directivity (dBi).
     pub gain_phi_dbi: f64,
-    /// Axial ratio |E_θ| / |E_φ|.
+    /// Polarization axial ratio in NEC-2's signed convention: minor over major
+    /// axis in `[-1, 1]`, 0 linear, ±1 circular, the sign the rotation sense.
     pub axial_ratio: f64,
+    /// `(R·E_θ, R·E_φ)` in volts, as NEC-2 prints them (`e^{-jkR}` dropped);
+    /// `None` when the pattern was computed where the fields are not kept (the
+    /// GPU pattern path returns gains only).
+    pub e_field: Option<(Complex64, Complex64)>,
 }
 
 /// One row of an incident-plane-wave receive pattern (PH9-CHK-001): the antenna's
@@ -147,6 +152,79 @@ pub struct ReportInput<'a> {
     /// solid-angle-weighted mean gain over the pattern region — is emitted
     /// (PH9-CHK-004).
     pub avg_power_gain: Option<f64>,
+}
+
+/// One frequency point's result, owned: the tables [`ReportInput`] borrows.
+///
+/// The solve returns this rather than rendered text, so that each output format
+/// prints the same tables (PAR-011: the NEC-2D writer transcribes what the text
+/// report prints, and must not compute a second answer of its own).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PointReport {
+    pub solver_mode: String,
+    pub pulse_rhs: String,
+    pub caveat: Option<String>,
+    pub frequency_hz: f64,
+    pub rows: Vec<FeedpointRow>,
+    pub source_table: Vec<SourceRow>,
+    pub load_table: Vec<LoadRow>,
+    pub current_table: Vec<CurrentRow>,
+    pub pattern_table: Vec<PatternRow>,
+    pub receive_pattern_table: Vec<ReceivePatternRow>,
+    pub near_field_table: Vec<NearFieldRow>,
+    pub near_h_field_table: Vec<NearHFieldRow>,
+    pub normalize_pattern: bool,
+    pub avg_power_gain: Option<f64>,
+    /// NEC-2's power budget; `None` when nothing is driven (a receive deck).
+    pub power_budget: Option<PowerBudget>,
+}
+
+/// One frequency point's power budget as NEC-2 reports it (PAR-011): watts,
+/// peak amplitudes. NEC-2 takes the radiated power as the input less the losses,
+/// not as a pattern integral.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PowerBudget {
+    pub input_w: f64,
+    /// The power the series loads dissipate, `½·Σ|Iₙ|²·Re Zₙ`.
+    pub structure_loss_w: f64,
+    /// The power networks and transmission lines dissipate, or `None` where fnec
+    /// does not separate it (a deck with `NT` or `TL`).
+    pub network_loss_w: Option<f64>,
+}
+
+impl PowerBudget {
+    /// The input less both losses, when both are known.
+    pub fn radiated_w(&self) -> Option<f64> {
+        self.network_loss_w
+            .map(|net| self.input_w - self.structure_loss_w - net)
+    }
+
+    /// The radiated power over the input, in percent.
+    pub fn efficiency_pct(&self) -> Option<f64> {
+        self.radiated_w().map(|rad| 100.0 * rad / self.input_w)
+    }
+}
+
+impl PointReport {
+    /// The borrowed view the text renderer reads.
+    pub fn as_input(&self) -> ReportInput<'_> {
+        ReportInput {
+            solver_mode: &self.solver_mode,
+            pulse_rhs: &self.pulse_rhs,
+            caveat: self.caveat.as_deref(),
+            frequency_hz: self.frequency_hz,
+            rows: &self.rows,
+            source_table: &self.source_table,
+            load_table: &self.load_table,
+            current_table: &self.current_table,
+            pattern_table: &self.pattern_table,
+            receive_pattern_table: &self.receive_pattern_table,
+            near_field_table: &self.near_field_table,
+            near_h_field_table: &self.near_h_field_table,
+            normalize_pattern: self.normalize_pattern,
+            avg_power_gain: self.avg_power_gain,
+        }
+    }
 }
 
 /// **Extension point EP-2 — feedpoint result filter.**
@@ -634,6 +712,7 @@ mod tests {
             gain_theta_dbi: 2.1428,
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -658,6 +737,7 @@ mod tests {
             gain_theta_dbi: 2.14,
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
+            e_field: None,
         }];
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
@@ -929,6 +1009,7 @@ mod tests {
             gain_theta_dbi: f64::NAN,
             gain_phi_dbi: f64::NEG_INFINITY,
             axial_ratio: 0.0,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -964,6 +1045,7 @@ mod tests {
             gain_theta_dbi: 1e6,
             gain_phi_dbi: -1e6,
             axial_ratio: 1e9,
+            e_field: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -985,6 +1067,7 @@ mod tests {
                 gain_theta_dbi: 2.15,
                 gain_phi_dbi: -999.99,
                 axial_ratio: 0.0,
+                e_field: None,
             };
             let line = format_pattern_row(&row);
             let cols: Vec<&str> = line.split_whitespace().collect();

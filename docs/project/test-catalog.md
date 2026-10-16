@@ -66,6 +66,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
 | `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
+| `apps/nec-cli/tests/par011_card_echo.rs` | 1 | PAR-011: for each of the 15 fixtures 4nec2 wrote, the parser's program-card records equal the `DATA CARD` echo its own kernel printed, card for card (XQ and the XNDA and F5/F6 fields included); the echo's two `EN` rules (the end of the file read as `EN`; an `EN` echoed with the previous card's fields) and the failure prefix of `err_seg` are pinned; `sp_patch` is refused. | PAR-011 |
 | `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=627 --> **627** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | A card that cannot change the antenna warns and solves, one that would (`GX`) or an unknown one is refused by name (FND-236); `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
@@ -118,6 +119,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/current_source.rs` | 4 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 5 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
+| `crates/nec_solver/tests/farfield_e_field_nec2c.rs` | 1 | PAR-011: the far field's complex components `R·E_θ`, `R·E_φ` (NEC-2's scaling and phase) against nec2c converged at 9× — free space, perfect ground, `GN 0`, and crossed dipoles in quadrature (elliptical) — each nec2c series asserted settled (r < 0.7, tail ≤ tol/3), fnec within 4.0 % at 1× and 1.75 % at 3×, shrinking. | PAR-011 |
 | `crates/nec_solver/tests/finite_ground_rp.rs` | 5 | PH8-CHK-006: radiation pattern over finite ground via the Fresnel reflection-coefficient far field. | PH8-CHK-006 |
 | `crates/nec_solver/tests/general_junction.rs` | 10 | PH9-CHK-002 (general junction case): a single physical conductor whose two arms meet at a degree-2 junction — start-to-start splits and bent inverted-V feeds — must solve to a p… | PH9-CHK-002 |
 | `crates/nec_solver/tests/gm_nec2c.rs` | 8 | FND-119 — the `GM` card, pinned against `nec2c`. | FND-119 |
@@ -137,6 +139,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/nt_network.rs` | 2 | PH8-CHK-004: `NT` networks, read as the admittance parameters they are (FND-123). | FND-123, PH8-CHK-004 |
 | `crates/nec_solver/tests/planewave_junction.rs` | 2 | Receive-side degree-2 junction solve through the production seams: split-dipole receive == per-wire solver (~1e-11); bent inverted-V reciprocity — angle spread AND the absolute level `R·λ²/(π·η₀·|Z|²)` from the transmit solve (0.09 %; the spread alone could not see a bend error) | PH9-CHK-002, FND-162 |
 | `crates/nec_solver/tests/planewave_nec2c.rs` | 10 | PH8-CHK-002: validate the incident-plane-wave Hallén solve. | PH8-CHK-002 |
+| `crates/nec_solver/tests/power_budget_nec2c.rs` | 1 | PAR-011: NEC-2's structure loss (½·Σ\|Iₙ\|²·Re Zₙ) and efficiency (input less losses) against nec2c converged at 9×, on a series RLC with copper, copper alone and a parallel RLC; each nec2c series asserted settled within a third of the bound; fnec within 0.003 / 0.002 in loss fraction and 0.3 / 0.25 points of efficiency at 1× / 3×, not moving away. | PAR-011 |
 | `crates/nec_solver/tests/pulse_rhs_scaling.rs` | 1 | Pulse RHS inverse-wavelength scaling | PRT-002 |
 | `crates/nec_solver/tests/regularisation_bias.rs` | 1 | FND-164 — the Hallén solve's Tikhonov term must not bias the answer. | FND-164 |
 | `crates/nec_solver/tests/sommerfeld_ground.rs` | 2 | PH9-CHK-006: the Sommerfeld reflected-field kernel must reproduce nec2c's exact GN2 near-ground impedance for a horizontal dipole — in particular the surface-wave SIGN FLIP belo… | PH9-CHK-006 |
@@ -151,7 +154,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=772 --> **772** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=775 --> **775** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -162,21 +165,21 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 265 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 266 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
-| `nec_parser` | 37 | lib (incl. the FND-236 card treatments and FND-237 comma fields), template |
+| `nec_parser` | 40 | lib (incl. the FND-236 card treatments, FND-237 comma fields and the PAR-011 program-card records), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 25 | lib 25 |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=635 --> **635** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=639 --> **639** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1414 --> **1414** = 635 unit + 772 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1421 --> **1421** = 639 unit + 775 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

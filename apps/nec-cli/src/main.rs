@@ -31,7 +31,7 @@ use nec_worker::{
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
-    FrequencySolveResult, GroundSolver, PulseRhsMode, SolverMode, SweepPointSummary,
+    FrequencySolveResult, GroundSolver, PointOutput, PulseRhsMode, SolverMode, SweepPointSummary,
     SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
@@ -83,7 +83,7 @@ fn emit_sweep_points(
             if fidx > 0 {
                 println!();
             }
-            print!("{}", solved_point.report);
+            print!("{}", solved_point.report.text());
         }
         if let Some(summary) = solved_point.sweep_summary {
             if output_format == OutputFormat::Json {
@@ -1206,7 +1206,7 @@ fn run_distributed_solve(
                     caveat: None,
                 });
                 Ok(FrequencySolveResult {
-                    report,
+                    report: PointOutput::Text(report),
                     diag_line,
                     bench,
                     sweep_summary,

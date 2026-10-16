@@ -34,8 +34,9 @@ pub use excitation::{
 };
 pub use farfield::{
     bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power, gain_correction_db,
-    integrate_radiated_power, near_e_field, near_h_field, radiation_efficiency, rp_card_points,
-    FarFieldPoint, FarFieldResult, NearFieldE, NearFieldH, NearFieldPoint, RpGainGrid,
+    integrate_radiated_power, near_e_field, near_h_field, polarization_ellipse,
+    radiation_efficiency, rp_card_points, structure_loss_w, FarFieldPoint, FarFieldResult,
+    NearFieldE, NearFieldH, NearFieldPoint, PolarizationEllipse, PolarizationSense, RpGainGrid,
 };
 pub use feedpoint::{
     check_currents_finite, feedpoint_drive_voltage, feedpoint_impedance, FeedpointError,
