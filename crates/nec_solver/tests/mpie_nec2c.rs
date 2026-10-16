@@ -9,6 +9,11 @@
 //! a 200 mm segment). It read 6% low on a dipole, 35 Ω off in R on a Yagi, and
 //! 260 Ω off in X on a Y-junction — the topology MPIE exists for. The static part
 //! is now integrated exactly. nec2c 1.3.1, captured 2026-09-26.
+//!
+//! FND-257: the references are nec2c's own converged value, the deck meshed 27×
+//! finer (`scripts/nec2c-converged-series.py`, captured 2026-10-16), not nec2c
+//! on the test's mesh — which moved by up to 145 % of a gate under nec2c's own
+//! refinement.
 
 use nec_solver::{build_deck_geometry, ground_model_from_deck, solve_mpie_session};
 use num_complex::Complex64;
@@ -37,24 +42,30 @@ fn assert_near(what: &str, z: Complex64, want: (f64, f64), tol: (f64, f64)) {
     );
 }
 
-/// Was 74.44 + j41.75.
+/// Was 74.44 + j41.75. nec2c 79.107 + j45.047 at 41 segments, 79.516 + j45.622
+/// at 27×.
 #[test]
 fn a_half_wave_dipole_tracks_nec2c() {
     let d = "CE\nGW 1 41 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\nEX 0 1 21 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-    assert_near("dipole", z_mpie(d, (1, 21)), (79.107, 45.047), (0.8, 1.0));
+    assert_near("dipole", z_mpie(d, (1, 21)), (79.516, 45.622), (0.8, 1.0));
 }
 
-/// `corpus/yagi-5elm-51seg.nec`. Was 43.47 + j43.77 — R 5× the truth.
+/// `corpus/yagi-5elm-51seg.nec`. Was 43.47 + j43.77 — R 5× the truth. nec2c
+/// 8.1749 + j56.538 as written, 8.1323 + j57.907 at 27× (`EK 0`). The X gate is
+/// 2.5 Ω, not 1.5: the MPIE at 51 segments reads 8.20 + j55.78, and refined it
+/// heads for nec2c's limit (X 55.78, 56.86, 57.37 at 1 / 3 / 9×, about 57.8 by
+/// its tail), so the 2.1 Ω is its own discretisation at this mesh.
 #[test]
 fn a_five_element_yagi_tracks_nec2c() {
     let d = "CE\nGW 1 51 -3.80 0 -5.388 -3.80 0 5.388 0.001\nGW 2 51  0.00 0 -5.282  0.00 0 5.282 0.001\n\
              GW 3 51  2.64 0 -5.176  2.64 0 5.176 0.001\nGW 4 51  5.28 0 -5.092  5.28 0 5.092 0.001\n\
              GW 5 51  8.45 0 -4.965  8.45 0 4.965 0.001\nGE 0\nEX 0 2 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-    assert_near("Yagi", z_mpie(d, (2, 26)), (8.1749, 56.538), (0.5, 1.5));
+    assert_near("Yagi", z_mpie(d, (2, 26)), (8.1323, 57.907), (0.5, 2.5));
 }
 
 /// A degree-3 Y-junction — the case `--solver mpie` is recommended for. Was
-/// 63.67 − j322.20: 260 Ω of reactance off.
+/// 63.67 − j322.20: 260 Ω of reactance off. nec2c 67.215 − j63.033 as written,
+/// 67.018 − j62.129 at 27×.
 #[test]
 fn a_y_junction_tracks_nec2c() {
     let d = "CE\nGW 1 20 0 0 0 5 0 0 0.001\nGW 2 20 0 0 0 -2.5 4.330127 0 0.001\n\
@@ -62,7 +73,7 @@ fn a_y_junction_tracks_nec2c() {
     assert_near(
         "Y-junction",
         z_mpie(d, (1, 10)),
-        (67.215, -63.033),
+        (67.018, -62.129),
         (2.5, 2.5),
     );
 }
@@ -137,14 +148,22 @@ mod centred_feed {
     /// The two nodes take their own reference signs: an inverted-V fed beside its
     /// apex, both wires written outward from it, so the apex node's basis runs
     /// against the segment. With one sign for both, the gap would cancel itself.
+    ///
+    /// Each mesh is its own antenna (segment 1's centre moves with the mesh), each
+    /// against nec2c at 27× (`EK 0`): 29.636 − j374.04 and 29.574 − j373.46, where
+    /// nec2c on the test's mesh read 30.397 − j380.31 and 30.114 − j378.08. The
+    /// gate is 3 %, not 1 %: the MPIE reads 2.3 % and 1.4 % off, and refined it
+    /// heads for nec2c's limit (21 per arm: X −382.52, −377.60, −375.51 at 1 / 3 /
+    /// 9×, about −373.9 by its tail), so the gap is its discretisation. A sign
+    /// error is no 3 % effect: the gap would cancel itself.
     #[test]
     fn an_apex_fed_inverted_v_takes_each_nodes_sign() {
-        for (n, want) in [(21u32, (30.397, -380.31)), (41, (30.114, -378.08))] {
+        for (n, want) in [(21u32, (29.636, -374.04)), (41, (29.574, -373.46))] {
             let text = format!(
                 "CE\nGW 1 {n} 0 0 1.6 -3.7 0 0.6 .001\nGW 2 {n} 0 0 1.6 3.7 0 0.6 .001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n"
             );
             let gap = rel(z_mpie(&text, (1, 1)), want);
-            assert!(gap < 0.01, "{n} per arm: {:.2} % from nec2c", 100.0 * gap);
+            assert!(gap < 0.03, "{n} per arm: {:.2} % from nec2c", 100.0 * gap);
         }
     }
 

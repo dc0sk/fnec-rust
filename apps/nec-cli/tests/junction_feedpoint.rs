@@ -181,7 +181,10 @@ fn degree3_tee_junction_the_graph_refuses_is_still_guarded() {
 // A 1λ square loop (perimeter ≈ λ at 14.2 MHz), fed mid-wire — away from every
 // corner junction. The per-wire basis reported ≈20 − j1210 Ω; the section graph
 // solves the loop as a cycle, 109.09 − j143.50 against nec2c's 111.01 − j146.27
-// (1.8 %; 1.1 % at 21 and 0.6 % at 41 per side).
+// on this mesh (1.8 %; 1.1 % at 21 and 0.6 % at 41 per side). The gate is against
+// nec2c's converged value, 108.97 − j146.10 (41 a side at 27×, `EK 0`; this 11 a
+// side deck at 27× gives 109.13 − j146.14), not the 11-a-side 111.01, which moves
+// 63 % of the 3 Ω gate under nec2c's own refinement (FND-257).
 const SQUARE_LOOP_FED_MIDWIRE: &str =
     "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 11 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
@@ -198,8 +201,8 @@ fn closed_loop_now_solves() {
     );
     let r = feedpoint_r(&stdout);
     assert!(
-        (r - 111.01).abs() < 3.0,
-        "the loop must land near nec2c's 111.01 Ω at this mesh; got {r:.3}"
+        (r - 108.97).abs() < 3.0,
+        "the loop must land near nec2c's converged 108.97 Ω; got {r:.3}"
     );
 }
 

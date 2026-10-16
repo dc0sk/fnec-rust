@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Twelve gates measured against nec2c on the test's own mesh now measure against
+  nec2c's converged value** (FND-257), the deck meshed 27× finer, each series in
+  the test. nec2c's own refinement moved those references by a third of their gate
+  or more, up to 145 %. Four gates widen with their reason, each where fnec refined
+  heads for nec2c's limit and the gap is fnec's discretisation at the test's mesh:
+  the MPIE Yagi's X (1.5 → 2.5 Ω), the apex-fed V (1 → 3 %), the 0.05λ GN2
+  dipole's X (1.0 → 1.5 Ω) and the two fed dipoles (1.5 → 3.0 Ω). The MPIE loop's
+  gate tightens.
 - **A converged nec2c reference must have settled within its gate** (FND-255).
   The corpus's converged references were held only to "each refinement moves less
   than the last", which a series still drifting passes. Now the drift left past

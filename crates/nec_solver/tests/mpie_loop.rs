@@ -13,7 +13,8 @@
 //
 //   Gate B3a: a 1λ square loop (4 sides × 0.25λ, fed at a side midpoint) converges
 //     toward nec2c under refinement. nec2c (live, 14.2 MHz, a = 1 mm) at 11/21/41
-//     seg/side: 111.0 / 110.2 / 109.7 − j146.2. MPIE (concept oracle
+//     seg/side: 111.0 / 110.2 / 109.7 − j146.2; converged (41/side at 27×, EK)
+//     108.97 − j146.10, the gate's reference (FND-257). MPIE (concept oracle
 //     studies/.../mpie_junction.py + this port), seg/side = 10/20/40:
 //     115.2 − j171 / 114.9 − j151 / 113.8 − j148 — R and X both converge toward
 //     nec2c (within ~5% at 20 seg/side).
@@ -65,28 +66,32 @@ fn solve_loop(circ_lam: f64, nseg_side: usize) -> (f64, f64) {
     (z.re, z.im)
 }
 
-/// Gate B3a: the 1λ square loop converges toward nec2c (109.7 − j146.2) — the
-/// case the Hallén solver's periodic closure could not reproduce.
+/// Gate B3a: the 1λ square loop converges to nec2c — the case the Hallén solver's
+/// periodic closure could not reproduce.
+///
+/// The reference is nec2c's converged value, 108.97 − j146.10: the loop at 41
+/// segments a side meshed 27× finer (`EK 0`, `scripts/nec2c-converged-series.py`,
+/// captured 2026-10-16), where it was nec2c's 109.7 − j146.2 at 41 a side, which
+/// moves 55 % of the old 1 % R gate under nec2c's own refinement (FND-257). The
+/// MPIE at 10 / 20 / 40 / 80 a side: R 108.87, 109.07, 109.08, 109.04 — settled
+/// within 0.1 Ω of nec2c's limit from 10 a side, so R is held to 0.5 % at both
+/// meshes, not to a direction: a 0.1 Ω crossing is inside nec2c's own remaining
+/// drift. X −146.93, −146.21, −146.05, −146.01: it converges, and its gap must
+/// shrink.
 #[test]
 fn one_wavelength_loop_converges_to_nec2c() {
     let (r10, x10) = solve_loop(1.0, 10);
     let (r20, x20) = solve_loop(1.0, 20);
+    let (r_ref, x_ref) = (108.97, -146.10);
 
-    // Reactance is strongly capacitive and converges toward nec2c −146.2.
     assert!(x10 < 0.0 && x20 < 0.0, "loop X should be capacitive");
     assert!(
-        x20 > x10 && (x20 + 146.2).abs() / 146.2 < 0.05,
-        "X not converging to nec2c: {x10:.1} then {x20:.1}"
+        (x20 - x_ref).abs() < (x10 - x_ref).abs() && (x20 - x_ref).abs() / x_ref.abs() < 0.01,
+        "X not converging to nec2c's {x_ref}: {x10:.2} then {x20:.2}"
     );
-    // Resistance converges toward nec2c ~109.7 — within 1% at both meshes since
-    // FND-157 (108.9 then 109.1). It used to approach from ABOVE, which this
-    // asserted; that direction was the old self-term quadrature error, not the
-    // physics, so the gate is now closeness and a gap that does not grow.
     assert!(
-        (r10 - 109.7).abs() / 109.7 < 0.01
-            && (r20 - 109.7).abs() / 109.7 < 0.01
-            && (r20 - 109.7).abs() <= (r10 - 109.7).abs(),
-        "R not converging to nec2c: {r10:.1} then {r20:.1}"
+        (r10 - r_ref).abs() / r_ref < 0.005 && (r20 - r_ref).abs() / r_ref < 0.005,
+        "R not at nec2c's {r_ref}: {r10:.2} then {r20:.2}"
     );
 }
 
