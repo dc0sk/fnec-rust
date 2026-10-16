@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # Changelog
@@ -14,6 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). S
 from 0.13.0 and earlier predate the Keep a Changelog headings and are left as written.
 
 ## [Unreleased]
+
+## [0.23.0] — 2026-10-16 — Inside 4nec2
 
 ### Added
 
@@ -3643,7 +3645,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/dc0sk/fnec-rust/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/dc0sk/fnec-rust/compare/v0.21.7...v0.22.0
 [0.21.7]: https://github.com/dc0sk/fnec-rust/compare/v0.21.6...v0.21.7
 [0.21.6]: https://github.com/dc0sk/fnec-rust/compare/v0.21.5...v0.21.6
