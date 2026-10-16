@@ -5,7 +5,9 @@ mod bench;
 mod cli_args;
 mod exec_calibration;
 mod exec_profile;
+mod kernel;
 mod laplace_config;
+mod nec2d_out;
 mod project_cmd;
 mod resonance_search;
 mod solve_session;
@@ -16,8 +18,7 @@ mod warnings;
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
 use cli_args::{parse_args, OutputFormat, ParsedArgs, USAGE};
 use exec_profile::{
-    auto_select_execution_mode, detect_compatibility_profile, steer_execution_mode_by_profile,
-    warn_compatibility_profile, CompatibilityProfile, ExecutionMode,
+    auto_select_execution_mode, detect_compatibility_profile, CompatibilityProfile, ExecutionMode,
 };
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
@@ -60,6 +61,7 @@ fn emit_sweep_points(
     output_format: OutputFormat,
     sweep_rows: &mut Vec<SweepPointSummary>,
     json_records: &mut Vec<String>,
+    nec2d_points: &mut Vec<(nec_report::PointReport, f64)>,
     enable_benchmarking: bool,
     bench_format: BenchFormat,
     bench_target: &str,
@@ -84,6 +86,17 @@ fn emit_sweep_points(
                 println!();
             }
             print!("{}", solved_point.report.text());
+        }
+        if output_format == OutputFormat::Nec2d {
+            match &solved_point.report {
+                PointOutput::Tables(point) => {
+                    nec2d_points.push(((**point).clone(), elapsed_ms as f64 / 1000.0));
+                }
+                PointOutput::Text(_) => {
+                    eprintln!("error: --output-format nec2d: a remote point carries no tables");
+                    any_failed = true;
+                }
+            }
         }
         if let Some(summary) = solved_point.sweep_summary {
             if output_format == OutputFormat::Json {
@@ -141,6 +154,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let profile = detect_compatibility_profile(args.first().map(String::as_str).unwrap_or("fnec"));
     let exec_flag_explicitly_set = args.iter().any(|arg| arg == "--exec");
+
+    // PAR-011: 4nec2 runs its kernel with no arguments and the two file names on
+    // stdin. Under one of the kernel's names that is the kernel contract; with a
+    // deck argument the same name is plain fnec.
+    if args.get(1).map(String::as_str) == Some("nec2d-kernel")
+        || (args.len() == 1 && profile == CompatibilityProfile::FourNec2DropIn)
+    {
+        return kernel::run();
+    }
 
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
@@ -256,19 +278,6 @@ fn main() -> ExitCode {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
     };
 
-    let requested_execution_mode = execution_mode;
-    execution_mode = steer_execution_mode_by_profile(
-        requested_execution_mode,
-        profile,
-        exec_flag_explicitly_set,
-    );
-    warn_compatibility_profile(
-        profile,
-        requested_execution_mode,
-        execution_mode,
-        exec_flag_explicitly_set,
-    );
-
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
@@ -309,6 +318,37 @@ fn main() -> ExitCode {
     }
 
     let deck = &result.deck;
+
+    let run_start = std::time::Instant::now();
+    // PAR-011: the NEC-2D layout prints only what fnec computes, and one solve per
+    // deck; what it cannot print is refused here, before anything is solved, so no
+    // partial block is ever written. The inputs the layout cannot echo are refused
+    // with it: frequencies or loads from outside the deck, a remote solve, and the
+    // device pattern path, which keeps gains only.
+    if output_format == OutputFormat::Nec2d {
+        let outside = if sweep_config_path.is_some() {
+            Some("--sweep-config")
+        } else if loads_config_path.is_some() {
+            Some("--loads-config")
+        } else if hosts_path.is_some() {
+            Some("--hosts")
+        } else if execution_mode == ExecutionMode::Gpu {
+            Some("--exec gpu")
+        } else {
+            None
+        };
+        if let Some(flag) = outside {
+            eprintln!(
+                "error: --output-format nec2d cannot be combined with {flag}: the NEC-2D output \
+                 echoes the deck's own cards and needs the CPU pattern (PAR-011)"
+            );
+            return ExitCode::FAILURE;
+        }
+        if let Err(e) = nec2d_out::check_admissible(deck) {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
 
     // A deck with several `FR` cards was usually written as `FR/XQ/FR/RP`, where
     // NEC-2 runs each. fnec drops `XQ` as an unknown card and runs one execution,
@@ -757,6 +797,7 @@ fn main() -> ExitCode {
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
+    let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
     // between the local and distributed sweep paths (verified: identical md5),
@@ -768,6 +809,7 @@ fn main() -> ExitCode {
         output_format,
         &mut sweep_rows,
         &mut json_records,
+        &mut nec2d_points,
         enable_benchmarking,
         bench_format,
         &bench_target,
@@ -790,6 +832,25 @@ fn main() -> ExitCode {
 
     if output_format == OutputFormat::Json {
         println!("[{records}]", records = json_records.join(","));
+    }
+    if output_format == OutputFormat::Nec2d {
+        // A point that failed has no block, and NEC-2D has no partial run: the
+        // whole report is refused rather than printed short.
+        if any_failed {
+            return ExitCode::FAILURE;
+        }
+        match nec2d_out::render(
+            &input,
+            deck,
+            &nec2d_points,
+            run_start.elapsed().as_secs_f64(),
+        ) {
+            Ok(text) => print!("{text}"),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
     }
 
     // The exit code still says the run was not clean, so a script checking the
@@ -1265,6 +1326,7 @@ fn run_distributed_solve(
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
+    let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
     // between the local and distributed sweep paths (verified: identical md5),
@@ -1276,6 +1338,7 @@ fn run_distributed_solve(
         output_format,
         &mut sweep_rows,
         &mut json_records,
+        &mut nec2d_points,
         enable_benchmarking,
         bench_format,
         &bench_target,
@@ -1585,8 +1648,8 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, steer_execution_mode_by_profile, worker_exec_preference,
-        worker_warning_lines, CompatibilityProfile, ExecutionMode,
+        exec_fallback_warning, worker_exec_preference, worker_warning_lines, CompatibilityProfile,
+        ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use nec_solver::validate::RunLoads;
@@ -2228,30 +2291,6 @@ mod tests {
         assert_eq!(
             detect_compatibility_profile("/usr/bin/fnec"),
             CompatibilityProfile::Native
-        );
-    }
-
-    #[test]
-    fn dropin_profile_steers_default_exec_to_hybrid() {
-        assert_eq!(
-            steer_execution_mode_by_profile(
-                ExecutionMode::Cpu,
-                CompatibilityProfile::FourNec2DropIn,
-                false,
-            ),
-            ExecutionMode::Hybrid
-        );
-    }
-
-    #[test]
-    fn explicit_exec_flag_prevents_profile_steering() {
-        assert_eq!(
-            steer_execution_mode_by_profile(
-                ExecutionMode::Gpu,
-                CompatibilityProfile::FourNec2DropIn,
-                true,
-            ),
-            ExecutionMode::Gpu
         );
     }
 

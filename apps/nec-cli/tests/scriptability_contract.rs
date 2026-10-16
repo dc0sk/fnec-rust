@@ -401,12 +401,12 @@ fn dropin_alias_bench_json_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -445,12 +445,12 @@ fn fournec2_alias_bench_json_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -493,12 +493,12 @@ fn dropin_alias_explicit_exec_cpu_bench_json_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -537,12 +537,12 @@ fn dropin_alias_bench_csv_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -570,8 +570,8 @@ fn fournec2_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         stderr.contains("cannot read"),
@@ -582,8 +582,8 @@ fn fournec2_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
         "stdout must have no report output on missing-deck error, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
         !stdout.contains("cannot read"),
@@ -626,12 +626,12 @@ fn fournec2_alias_bench_csv_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -674,12 +674,12 @@ fn dropin_alias_explicit_exec_cpu_bench_csv_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -709,8 +709,8 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected drop-in warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         stderr.contains("cannot read"),
@@ -721,8 +721,8 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_on_stderr() {
         "stdout must have no report output on missing-deck error, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
         !stdout.contains("cannot read"),
@@ -758,8 +758,8 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_stde
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         stderr.contains("cannot read"),
@@ -770,8 +770,8 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_stde
         "stdout must have no report output on explicit-exec missing-deck error, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
         !stdout.contains("cannot read"),
@@ -817,12 +817,12 @@ fn fournec2_alias_explicit_exec_cpu_bench_json_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -865,12 +865,12 @@ fn fournec2_alias_explicit_exec_cpu_bench_csv_stays_on_stderr_not_stdout() {
         "stdout must stay report-only for parsers, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
 }
 
@@ -902,8 +902,8 @@ fn fournec2_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_st
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         stderr.contains("cannot read"),
@@ -914,8 +914,8 @@ fn fournec2_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_st
         "stdout must have no report output on explicit-exec missing-deck error, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
         !stdout.contains("cannot read"),
@@ -924,7 +924,7 @@ fn fournec2_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_on_st
 }
 
 #[test]
-fn dropin_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
+fn dropin_alias_no_arg_invocation_is_the_kernel_and_needs_two_files_on_stdin() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let alias = create_dropin_alias("nec2dxs500");
     let _alias_cleanup = TempPathCleanup::file(alias.clone());
@@ -936,16 +936,16 @@ fn dropin_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
 
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "expected exit code 2 for drop-in alias no-arg invocation"
+        Some(1),
+        "expected exit code 1 (the kernel, with no files named on stdin) for drop-in alias no-arg invocation"
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("Usage: fnec"),
-        "expected usage text in stderr, got:\n{stderr}"
+        stderr.contains("nec2d-kernel: stdin did not name an input and an output file"),
+        "under a kernel name with no arguments fnec is 4nec2's kernel (PAR-011), so it asks stdin for the two files, got:\n{stderr}"
     );
     assert!(
         !stdout.contains("FNEC FEEDPOINT REPORT"),
@@ -954,7 +954,7 @@ fn dropin_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
 }
 
 #[test]
-fn fournec2_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
+fn fournec2_alias_no_arg_invocation_is_the_kernel_and_needs_two_files_on_stdin() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let alias = create_dropin_alias("4nec2-kernel");
     let _alias_cleanup = TempPathCleanup::file(alias.clone());
@@ -966,16 +966,16 @@ fn fournec2_alias_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
 
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "expected exit code 2 for 4nec2 alias no-arg invocation"
+        Some(1),
+        "expected exit code 1 (the kernel, with no files named on stdin) for 4nec2 alias no-arg invocation"
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("Usage: fnec"),
-        "expected usage text in stderr, got:\n{stderr}"
+        stderr.contains("nec2d-kernel: stdin did not name an input and an output file"),
+        "under a kernel name with no arguments fnec is 4nec2's kernel (PAR-011), so it asks stdin for the two files, got:\n{stderr}"
     );
     assert!(
         !stdout.contains("FNEC FEEDPOINT REPORT"),
@@ -1022,12 +1022,12 @@ fn nec2mp_alias_matrix_bench_json_stays_on_stderr_not_stdout() {
             "stdout must stay report-only for alias '{alias_name}', got:\n{stdout}"
         );
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
-            !stdout.contains("drop-in compatibility profile detected by binary name"),
-            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+            !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
         );
     }
 }
@@ -1071,12 +1071,12 @@ fn nec2mp_alias_matrix_bench_csv_stays_on_stderr_not_stdout() {
             "stdout must stay report-only for alias '{alias_name}', got:\n{stdout}"
         );
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
-            !stdout.contains("drop-in compatibility profile detected by binary name"),
-            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+            !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
         );
     }
 }
@@ -1111,8 +1111,8 @@ fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_on_stderr() {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected drop-in warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
             stderr.contains("cannot read"),
@@ -1123,8 +1123,8 @@ fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_on_stderr() {
             "stdout must have no report output on missing-deck error for alias '{alias_name}', got:\n{stdout}"
         );
         assert!(
-            !stdout.contains("drop-in compatibility profile detected by binary name"),
-            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+            !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
         );
         assert!(
             !stdout.contains("cannot read"),
@@ -1134,7 +1134,7 @@ fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_on_stderr() {
 }
 
 #[test]
-fn nec2mp_alias_matrix_no_arg_invocation_exits_with_code_2_and_usage_on_stderr() {
+fn nec2mp_alias_matrix_no_arg_invocation_is_the_kernel_and_needs_two_files_on_stdin() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
 
     for alias_name in nec2mp_alias_names() {
@@ -1150,16 +1150,16 @@ fn nec2mp_alias_matrix_no_arg_invocation_exits_with_code_2_and_usage_on_stderr()
 
         assert_eq!(
             output.status.code(),
-            Some(2),
-            "expected exit code 2 for no-arg invocation under alias '{alias_name}'"
+            Some(1),
+            "expected exit code 1 (the kernel, with no files named on stdin) for no-arg invocation under alias '{alias_name}'"
         );
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         assert!(
-            stderr.contains("Usage: fnec"),
-            "expected usage text in stderr for alias '{alias_name}', got:\n{stderr}"
+            stderr.contains("nec2d-kernel: stdin did not name an input and an output file"),
+            "under a kernel name with no arguments fnec is 4nec2's kernel (PAR-011), so it asks stdin for the two files for alias '{alias_name}', got:\n{stderr}"
         );
         assert!(
             !stdout.contains("FNEC FEEDPOINT REPORT"),

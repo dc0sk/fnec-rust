@@ -17,6 +17,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A Windows build of fnec to install as 4nec2's kernel** (PAR-011 P3).
+  `scripts/build-windows-kernel.sh` cross-compiles it in a pinned container and
+  refuses imports Windows does not ship. `docs/4nec2-drop-in.md` gives install
+  and rollback. 4nec2 picks its kernel by segment count, so all six names are
+  replaced. Tested in 4nec2 V5.9.3 under Wine 10.0 (`scripts/par011-wine-e2e.sh`):
+  4nec2 reads fnec's report for every printable deck type and shows fnec's reason
+  for a refused one. Not tested on Windows itself, and unsigned.
+- **`fnec nec2d-kernel`: fnec as 4nec2's external kernel** (PAR-011). It reads
+  the two paths 4nec2 writes to `nec2d.tmp` from stdin and writes the NEC-2D report
+  to the output file (CRLF, with fnec's warnings where 4nec2 shows them). A
+  refused or unreadable deck becomes the kernel's failure: the reason and no
+  `RUN TIME` line, at exit 0, as 4nec2's kernel exits. Under one of the kernel's
+  names (`nec2dxs1K5` and the others) with no arguments, fnec is this kernel. Run
+  in a 4nec2-like tree by its subcommand and under the kernel's name. A Windows
+  build to put in 4nec2's `exe` folder comes next.
+- **`--output-format nec2d` writes NEC-2D's own report layout** (PAR-011). The
+  output has the sections NEC-2's Fortran kernel prints, line for line and column
+  for column, and 4nec2 reads it. 4nec2 rejects any other layout, even nec2c's valid
+  output. Every line goes through NEC-2's own FORMAT statements, via a small
+  Fortran FORMAT interpreter (`nec_report::fortran`). It is gated against 15 decks
+  4nec2 wrote and its kernel solved: the same lines, the same text, every number
+  ending in its field's column with its format's shape, and every bookkeeping
+  integer (segment and tag numbers, connection data) the kernel's. A second gate
+  checks that the numbers are fnec's own. Decks whose output it cannot yet print
+  are refused before solving (`docs/cli-guide.md`). This is the format half of the
+  4nec2 drop-in kernel; the kernel mode itself comes next.
 - **The `GS` card scales the structure** (PH10-CHK-002), as nec2c does: every
   segment defined so far, ends and radius, `GM`/`GR` copies included; wires after
   it are not scaled, and two cards compound. A deck written in feet with
@@ -64,6 +90,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The filename-steered `--exec hybrid` default for 4nec2 kernel names is
+  retired** (PAR-011), with its two warnings. A kernel name with a deck argument is
+  now plain fnec; with none, it is the kernel. The tests that pinned the steering
+  now pin its absence.
 - **wgpu 30** (from 29.0.3; naga 30.0.1 with it) for the GPU path. Adapters are
   requested with `apply_limit_buckets: false` (bucketing hides a browser's adapter
   from untrusted content; fnec takes the real limits), and a readback whose
@@ -101,6 +131,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The average power gain is NEC-2's** (FND-262). Each pattern sample now
+  carries the solid angle it stands for, and a null counts as zero gain. Before,
+  samples were weighted by sin θ and nulls were skipped, so on a 30° grid a
+  lossless dipole averaged 1.024 instead of NEC-2's 0.988 (102.4 % radiation
+  efficiency in 4nec2).
 - **The GPU solve's shaders pass Vulkan validation** (FND-193): its two
   reductions used workgroup arrays, which naga decorates with `ArrayStride` —
   rejected by the validation layer and liable to be misread by a strict driver.

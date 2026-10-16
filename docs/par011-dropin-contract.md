@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-contract.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # PAR-011 4nec2 Drop-In Contract
@@ -85,6 +85,8 @@ Use this template when observing host (4nec2) to kernel-process behavior.
 - `AT-PAR011-0003`: satisfied by process-contract template in this document.
 
 ## Phase 1 compatibility behavior specification
+
+> **Superseded 2026-10-16 (P2b).** The filename-steered `--exec hybrid` default and its two warning classes are retired. Under a kernel name with no arguments, fnec is now 4nec2's kernel (`fnec nec2d-kernel`, `docs/cli-guide.md` § 4nec2 kernel mode); with a deck argument the same name is plain fnec, and no warning is printed. The text below records the scaffold as it was; the acceptance tests AT-PAR011-0101 and 0102 no longer describe the binary.
 
 This section freezes the expected behavior of the current filename-steered compatibility scaffold. It documents the behavior that exists today; it does not claim full external-kernel parity.
 
@@ -323,7 +325,7 @@ Fable reviewed the plan. Three of its points shaped it: kernel mode is an explic
 subcommand, the writer follows the NEC-2 FORMAT statements, and the work is split
 in two (output format first, kernel mode second).
 
-1. **P2a: `--output-format nec2d`.** The normal CLI writes the NEC-2D layout. The
+1. **P2a: `--output-format nec2d`** (in place 2026-10-16; `docs/cli-guide.md` § NEC-2D output). fnec's output for a deck 4nec2 wrote loads in 4nec2: impedance, SWR, segments, geometry and the pattern show (screenshot evidence in the PR). The normal CLI writes the NEC-2D layout. The
    writer transcribes one shared result structure; anything it lacks is added there
    first, so the writer never computes physics of its own. Two gates check it:
    - a layout gate: the fixtures' lines are compared with fnec's after
@@ -333,14 +335,14 @@ in two (output format first, kernel mode second).
 
    Fortran number printing (`1PE12.5`, `F10.5`, zero and overflow cases) gets its
    own unit tests.
-2. **P2b: kernel mode.** `fnec nec2d-kernel` reads the two paths from stdin, and the
+2. **P2b: kernel mode** (in place 2026-10-16; `apps/nec-cli/tests/par011_kernel.rs` runs it in a 4nec2-like tree, by its subcommand and under the kernel's name). `fnec nec2d-kernel` reads the two paths from stdin, and the
    `nec2dxs*` names dispatch to it when given no deck argument; a TTY stdin prints
    usage. It treats end-of-file as `EN` and writes failures to the file. A deck
    whose card sequence fnec's solve model cannot follow is refused: a second `FR`
    or a geometry card after `XQ` or `RP`, `GN 2` until fnec's Sommerfeld path is
    chosen for it, surface patches, and NEC-4 mode. The filename-steered `--exec
    hybrid` scaffold is retired in the same change.
-3. **P3: Windows build.** An x86_64 Windows build (the observed prefix is win64),
+3. **P3: Windows build** (in place 2026-10-16: `scripts/build-windows-kernel.sh`, `scripts/par011-wine-e2e.sh`, `docs/4nec2-drop-in.md`; tested under Wine only). An x86_64 Windows build (the observed prefix is win64),
    shipped under the six `nec2dxs*` names and defaulting to `--exec cpu` unless the
    host has been calibrated. It is installed into this host's 4nec2 by the
    documented backup procedure and checked end to end. The Wine harness is a manual

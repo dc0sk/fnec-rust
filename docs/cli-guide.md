@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # CLI Guide — fnec (v0.22.0)
@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
 fnec project convert <in.toml|in.md> [out.md|out.toml]
@@ -24,13 +24,12 @@ fnec worker --stdio
 
 Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 
-Compatibility profile note:
+4nec2 kernel mode (PAR-011):
 
-- The CLI now includes a filename-steered compatibility profile scaffold for 4nec2-style external kernel replacement workflows.
-- Drop-in profile activation uses an explicit binary-stem contract: known NEC2MP kernel names (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`, case-insensitive) or names containing `4nec2`.
-- When that profile is active, default execution is steered to `--exec hybrid` unless `--exec` is explicitly provided.
-- Diagnostics explicitly distinguish the two cases: "default execution path steered" vs "preserving explicit --exec=...".
-- This currently changes execution-mode defaulting only; argument/output contract compatibility work remains tracked in backlog parity item `PAR-011`.
+- `fnec nec2d-kernel` is 4nec2's external-kernel contract. It reads two lines on stdin, the input deck's path and then the output file's, as 4nec2 feeds its kernel with `nec2dxs*.exe < nec2d.tmp`. It writes the NEC-2D report (see *NEC-2D output*) to the output file, with CRLF line ends and fnec's warnings as text lines before `RUN TIME`, where 4nec2 shows them on F8. Paths are taken relative to the working directory, and `\` is read as a separator off Windows.
+- A deck fnec refuses or cannot read becomes the failure 4nec2's kernel writes: its reason in the output file and no `RUN TIME` line. 4nec2 then reports a NEC error and shows the text. The exit status is 0 whenever the output file was written, as the kernel's is, and 1 when stdin names no output file. At a terminal it prints its usage and exits 2.
+- Under one of 4nec2's kernel names (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`, case-insensitive, or a name containing `4nec2`) and with no arguments, fnec is this kernel. With a deck argument the same name is plain fnec. The earlier filename-steered `--exec hybrid` default and its warnings are retired.
+- The kernel solves on the CPU (`--exec cpu`) for now.
 - In the native profile (normal `fnec` binary name), when `--exec` is omitted, startup now runs a quick execution probe and auto-selects the best available execution mode for the current workload shape.
 
 ## Options
@@ -41,13 +40,13 @@ Compatibility profile note:
 | `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie` |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--experimental-solver` | flag | off | Required to run `--solver pulse` or `continuity`, which are unvalidated (FND-080). Without it those modes are refused; with it every result carries a `CAVEAT` line (text) or `caveat` field (JSON) |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (native profile: `cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes), `hybrid` (4nec2 drop-in profile) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and, on free-space Hallén decks of ≥ 128 segments, the Z-matrix fill. It additionally takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments — a lower threshold than the fill's, and one this table previously did not distinguish — which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (`cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and, on free-space Hallén decks of ≥ 128 segments, the Z-matrix fill. It additionally takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments — a lower threshold than the fill's, and one this table previously did not distinguish — which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | — | **Obsolete no-op.** Accepted for backward compatibility and silently ignored; `EX` type 3 now solves as a left-hand elliptic incident plane wave regardless (PH8-CHK-002). Neither value changes any result |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by the GPU benchmark timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
-| `--output-format` | `text` \| `json` | `text` | Report format on stdout. `json` writes one JSON record per solved frequency point instead of the text report; diagnostics stay on stderr either way. Schema: `docs/json-output-schema.md` |
+| `--output-format` | `text` \| `json` \| `nec2d` | `text` | Report format on stdout. `json` writes one JSON record per solved frequency point instead of the text report. `nec2d` writes NEC-2D's own report layout, which 4nec2 reads (see *NEC-2D output* below). Diagnostics stay on stderr either way. Schema: `docs/json-output-schema.md` |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list). Replaces the `FR` card's frequency list for a batch solve — and **supplies** one when the deck has no `FR` card at all, which is the only way to solve such a deck (without it the run is refused). See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
 | `--loads-config` | `<file.toml>` | — | Load fnec-specific extended loads (Laplace-domain `Z(s) = N(s)/D(s)`) from a TOML file and stamp them on the solve alongside any `LD` cards, on every solver path, `--solver mpie` included. See **Laplace-domain loads** below. |
@@ -644,6 +643,29 @@ fnec --output-format json dipole.nec
 ```
 
 Writes a JSON array to stdout — one record per solved frequency point — and keeps diagnostics on stderr.
+
+### NEC-2D output
+
+```bash
+fnec --exec cpu --output-format nec2d dipole.nec > dipole.out
+```
+
+This writes fnec's answer in the report layout NEC-2's Fortran kernel prints, with the same sections, line for line, column for column. 4nec2 reads only that layout: it rejects nec2c's valid output for the same deck. So this is the output a drop-in replacement for 4nec2's kernel must write (PAR-011). The layout follows NEC-2's own FORMAT statements and is gated against 15 decks that 4nec2 wrote and its kernel solved (`apps/nec-cli/tests/fixtures/par011/`).
+
+**What the report holds.**
+- The numbers are fnec's own: its impedances, currents, fields and power budget. A line before `RUN TIME` names fnec as the solver.
+- fnec does not time the matrix fill and the factorisation separately, so `MATRIX TIMING` prints the point's whole solve as FILL.
+- The `APPROXIMATE INTEGRATION` line repeats NEC-2's default range, which fnec does not use.
+
+**What is refused.** The layout prints only what fnec computes, so these decks are refused before solving, with a non-zero exit:
+- networks and transmission lines (`NT`, `TL`);
+- Sommerfeld ground (`GN 2`);
+- arcs, helices and tapers (`GA`, `GH`, `GC`);
+- `PT`, `NH`, excitations other than `EX 0`, and per-length loads (`LD 2`, `LD 3`);
+- more than one `FR` card, or more than one card that executes (`RP`, `NE`, `XQ`);
+- an `RP` asking for major/minor axes, a normalised table, directive gain or a suppressed print.
+
+It is also refused with `--sweep-config`, `--loads-config`, `--hosts` and `--exec gpu`. The device pattern keeps no field components.
 
 ### Benchmark instrumentation
 
