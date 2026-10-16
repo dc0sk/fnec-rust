@@ -16,7 +16,7 @@
 //!
 //! The five stem-fed Y / T decks are gated against nec2c on a mesh 27 times finer
 //! (27N segments per wire, the feed, load or port on segment 27k − 13: the same
-//! point), captured 2026-10-10, under 2 % at 41 and shrinking. A feed this near a
+//! point), captured 2026-10-10, under 2.2 % (Y) or 3.5 % (T) at 41 (FND-256; was 2 %) and shrinking. A feed this near a
 //! free stem end converges slowly in every code: holding the 21-mesh feed point,
 //! nec2c reads 22.58 − j1797.6 / 21.39 − j1746.3 / 20.85 − j1723.1 / 20.53 − j1710.3
 //! at 1 / 3 / 9 / 27 × the mesh, slower than 1/N. The old criteria (1 % for a Y,
@@ -26,6 +26,19 @@
 //! 1.8 %. The same-mesh values are noted at each test. The kill criteria are the design review's
 //! (Fable), whose prototype these numbers reproduce: the Y at 11 segments per
 //! wire 20.74 − j1700, the loop at 21 per side 109.3 − j144.5.
+//!
+//! FND-256: those 27N references were nec2c's thin kernel below its thin-wire
+//! limit (segment/radius 3.6–7.7 at 27N); they are now its extended kernel (`EK 0`,
+//! up to 0.12 % apart). nec2c has not settled at 27N: its last tripling still moves
+//! 0.7–1.2 % (Y41 X −1639.4, −1612.6, −1599.4, −1591.6 at 1 / 3 / 9 / 27 ×), so a
+//! 2 % gate spent most of itself on nec2c's own drift. fnec, refined, heads for the
+//! same limit (Y41 X −1618.6, −1605.2, −1595.8, about −1574 by its tail, nec2c
+//! about −1580; T41 −1584 against −1583): the codes agree, both converge slowly at
+//! this junction. The gate at 41 is three times nec2c's tail: 2.2 % for the three
+//! Y decks (tails 0.68–0.71 %), 3.5 % for the two T decks (1.07–1.17 %); fnec sits
+//! 1.69–1.77 % from nec2c's 27N there. The Y's is kept as tight as its tail allows
+//! for a reason: with the corner term dropped the Y reads 2.71 % at 41, which 3.5 %
+//! would pass (the T reads 6.75 %).
 
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, ground_model_from_deck, solve_hallen_routed,
@@ -97,36 +110,36 @@ fn square_loop(n: u32, z0: f64) -> String {
     )
 }
 
-/// Before: −1.83 − j1673 at 11 segments per wire. Kill criterion: under 2 % of
+/// Before: −1.83 − j1673 at 11 segments per wire. Kill criterion: under 2.2 % (FND-256; was 2 %) of
 /// nec2c at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 3.19 → 1.68 → 0.74 % at 11 / 21 / 41 against nec2c on
 /// the same mesh (22.582 − j1797.6 / 21.434 − j1639.4).
 #[test]
 fn a_stem_fed_y_converges_to_nec2c() {
     let e21 = rel(
         z_in(&format!("{}EX 0 1 5 0 1 0\n", y(21)), (1, 5)),
-        Complex64::new(20.529, -1710.3),
+        Complex64::new(20.538, -1711.0),
     );
     let e41 = rel(
         z_in(&format!("{}EX 0 1 10 0 1 0\n", y(41)), (1, 10)),
-        Complex64::new(20.160, -1589.7),
+        Complex64::new(20.194, -1591.6),
     );
-    assert_converges("stem-fed Y", e21, e41, 0.02);
+    assert_converges("stem-fed Y", e21, e41, 0.022);
 }
 
-/// Before: about 0 − j1300. Kill criterion: under 2 % at 41, shrinking.
+/// Before: about 0 − j1300. Kill criterion: under 3.5 % (FND-256; was 2 %) at 41, shrinking.
 /// Measured 6.45 → 2.23 → 1.33 % against nec2c on the same mesh (28.028 − j1621.2
 /// / 27.277 − j1664.3).
 #[test]
 fn a_stem_fed_t_converges_to_nec2c() {
     let e21 = rel(
         z_in(&format!("{}EX 0 1 4 0 1 0\n", tee(21)), (1, 4)),
-        Complex64::new(25.380, -1531.7),
+        Complex64::new(25.385, -1532.1),
     );
     let e41 = rel(
         z_in(&format!("{}EX 0 1 7 0 1 0\n", tee(41)), (1, 7)),
-        Complex64::new(25.508, -1600.2),
+        Complex64::new(25.534, -1601.3),
     );
-    assert_converges("stem-fed T", e21, e41, 0.02);
+    assert_converges("stem-fed T", e21, e41, 0.035);
 }
 
 /// A dipole fed off-centre on one arm with a 2 m stub hanging from its centre:
@@ -258,7 +271,7 @@ fn the_currents_meeting_at_a_y_node_sum_to_zero() {
 // per-wire basis with pairwise junction rows. Expectations are nec2c 1.3.1,
 // captured 2026-10-01; each deck converges at the unloaded decks' rate.
 
-/// A Y with a 10 Ω + 1 µH series load mid-arm. Kill criterion: under 2 % of nec2c
+/// A Y with a 10 Ω + 1 µH series load mid-arm. Kill criterion: under 2.2 % (FND-256; was 2 %) of nec2c
 /// at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 1.67 → 0.73 % against nec2c on the same mesh (23.89 −
 /// j1791.0 / 22.69 − j1633.0). A regression gate only: the load moves Z
 /// by under 2 %, so a missing load passes it — the corner-loaded loop and the
@@ -276,13 +289,13 @@ fn a_loaded_y_converges_to_nec2c() {
     };
     let e21 = rel(
         z_in(&deck(21), (1, feed(21))),
-        Complex64::new(21.746, -1704.3),
+        Complex64::new(21.755, -1705.0),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed(41))),
-        Complex64::new(21.363, -1583.6),
+        Complex64::new(21.399, -1585.5),
     );
-    assert_converges("loaded Y", e21, e41, 0.02);
+    assert_converges("loaded Y", e21, e41, 0.022);
 }
 
 /// A T with a 1 µH coil on the arm segment that touches the node, where the
@@ -301,13 +314,13 @@ fn a_t_with_a_coil_at_its_node_converges_to_nec2c() {
     };
     let e21 = rel(
         z_in(&deck(21), (1, feed_t(21))),
-        Complex64::new(27.031, -1504.5),
+        Complex64::new(27.036, -1504.9),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed_t(41))),
-        Complex64::new(27.232, -1572.5),
+        Complex64::new(27.259, -1573.6),
     );
-    assert_converges("T, coil at the node", e21, e41, 0.02);
+    assert_converges("T, coil at the node", e21, e41, 0.035);
 }
 
 fn feed_t(n: u32) -> u32 {
@@ -413,6 +426,14 @@ fn a_grounded_top_hat_equals_its_image_h() {
 /// graph, so the H is gated against the MPIE (its port is the two gaps in
 /// series: twice the per-gap impedance), and the nec2c gap is pinned as a band so
 /// a change in either solver shows. The maintainer's decision, 2026-10-02.
+///
+/// FND-264 (open, the maintainer's): this evidence no longer holds as written.
+/// The MPIE figure below is the MPIE of 2026-10-02, before FND-224 moved its
+/// feed; today's MPIE reads 32.46 − j97.15 here and settles near 16.21 − j48.27 a
+/// gap, 3 % in X from Hallén's settled 16.695 − j49.78. And nec2c does not
+/// converge on the H: X −57.43, −56.40, −55.19, −53.32 a gap at 1 / 3 / 9 / 27 ×,
+/// the steps growing, towards fnec — so "converge to different answers" is not
+/// shown either. The gate is left as it was pending that decision.
 #[test]
 fn the_h_agrees_with_the_mpie_and_keeps_its_measured_gap_to_nec2c() {
     let hallen = z_at_7mhz(&h_in_free_space(41, 25), (1, 41));
@@ -536,7 +557,7 @@ fn a_current_source_on_a_graph_deck_is_its_voltage_gap() {
 // the least-squares solution is linear in the forcing for a fixed matrix).
 // Junction and loop decks with a TL or NT card were refused.
 
-/// A Y with a 300 Ω TL between its arms' midpoints. Kill criterion: under 2 % of
+/// A Y with a 300 Ω TL between its arms' midpoints. Kill criterion: under 2.2 % (FND-256; was 2 %) of
 /// nec2c at 27N at 41, shrinking (was 1 % of nec2c on the same mesh). Measured 1.88 → 0.84 % against nec2c on the same mesh (18.201 −
 /// j1862.9 / 17.321 − j1702.0).
 #[test]
@@ -552,13 +573,13 @@ fn a_y_with_a_line_between_its_arms_converges_to_nec2c() {
     let feed = |n: u32| (0.68 / 3.0 * f64::from(n)) as u32 + 1;
     let e21 = rel(
         z_in(&deck(21), (1, feed(21))),
-        Complex64::new(16.501, -1769.3),
+        Complex64::new(16.509, -1770.0),
     );
     let e41 = rel(
         z_in(&deck(41), (1, feed(41))),
-        Complex64::new(16.244, -1648.6),
+        Complex64::new(16.272, -1650.6),
     );
-    assert_converges("Y with a TL", e21, e41, 0.02);
+    assert_converges("Y with a TL", e21, e41, 0.022);
 }
 
 /// Two 1 λ square loops 2.5 m apart, the second fed only through a 50 Ω phasing

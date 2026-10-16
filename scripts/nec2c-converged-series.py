@@ -12,6 +12,9 @@ per feedpoint row in nec2c's order (frequency, then source). With `--ek` the dec
 gets `EK 0` after `GE` and every multiplier runs on the extended kernel, which a
 mesh below the thin-wire limit needs; the series then also carries `9x_thin`, the
 9x point on the thin kernel, so a test can check the two agree where both apply.
+Where 9x is itself below the thin-wire limit the thin kernel does not apply there:
+`9x_thin` is left out and the reason goes to stderr (FND-263: it aborted the
+whole capture).
 
 The deck is adapted for nec2c the way the corpus captures always were: leading
 `CE` comment lines become `CM` (nec2c ends the comments at the first `CE`), and
@@ -70,12 +73,18 @@ def impedances(report):
     return rows
 
 
-def run(deck, s, scratch):
+class BelowThinWireLimit(Exception):
+    pass
+
+
+def run(deck, s, scratch, optional=False):
     fine = subprocess.run(
         [sys.executable, str(HERE / "nec2c-fine-mesh.py"), str(deck), str(s)],
         capture_output=True, text=True,
     )
     if fine.returncode:
+        if optional and "segment/radius" in fine.stderr:
+            raise BelowThinWireLimit(fine.stderr.strip())
         fail(f"{s}x: {fine.stderr.strip()}")
     inp, out = scratch / f"m{s}.nec", scratch / f"m{s}.out"
     inp.write_text(fine.stdout)
@@ -110,8 +119,14 @@ def main():
         for variant, use_ek in ((("main", ek),) + ((("thin", False),) if ek else ())):
             deck = scratch / f"{variant}.nec"
             deck.write_text(adapt(text, use_ek))
-            for s in multipliers if variant == "main" else [9]:
-                series[f"{s}x" if variant == "main" else "9x_thin"] = run(deck, s, scratch)
+            if variant == "main":
+                for s in multipliers:
+                    series[f"{s}x"] = run(deck, s, scratch)
+                continue
+            try:
+                series["9x_thin"] = run(deck, 9, scratch, optional=True)
+            except BelowThinWireLimit as e:
+                print(f"nec2c-converged-series: no 9x_thin: {e}", file=sys.stderr)
     counts = {len(v) for k, v in series.items() if k != "kernel"}
     if len(counts) != 1:
         fail(f"feedpoint row counts differ across the series: {counts}")

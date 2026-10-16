@@ -82,6 +82,13 @@ const BENT_DIPOLE_FED_AWAY: &str =
 // Three wires meeting at the origin (degree-3 T/Y), fed at the node. The section
 // graph solves it: nec2c 1.3.1 gives 45.46 + j13.77 Ω at this mesh, fnec
 // 46.39 + j7.95 (12.4 %), converging to 7.0 % at 25 and 4.1 % at 49 per wire.
+//
+// FND-256: nec2c does not settle here geometrically; it drifts by a near-constant
+// step, the slow (logarithmic) convergence of a NEC-2 junction. At 1 / 3 / 9 /
+// 27 × (`scripts/nec2c-converged-series.py`, captured 2026-10-16): R 45.459,
+// 44.660, 44.735, 44.852, X 13.773, 13.553, 13.782, 13.999 — the last two R steps
+// 0.08 and 0.12 Ω. No tail can be priced for a drift like that, so the gate is
+// against the 27× point with three last steps (0.35 Ω) taken out of its 2 Ω.
 const TEE_JUNCTION_FED: &str =
     "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
@@ -156,9 +163,10 @@ fn degree3_tee_junction_fed_now_solves() {
         );
     }
     let r = feedpoint_r(&stdout);
+    let (nec2c, drift) = (44.852, 3.0 * 0.118);
     assert!(
-        (r - 45.46).abs() < 2.0,
-        "the T must land near nec2c's 45.46 Ω at this mesh; got {r:.3}"
+        (r - nec2c).abs() + drift < 2.0,
+        "the T must land within 2 Ω of nec2c's 27× {nec2c} Ω, less its drift; got {r:.3}"
     );
 }
 
