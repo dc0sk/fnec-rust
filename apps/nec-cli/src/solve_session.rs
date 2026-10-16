@@ -178,6 +178,23 @@ fn pattern_row(r: &nec_solver::farfield::FarFieldResult) -> PatternRow {
         gain_phi_dbi: r.gain_phi_dbi,
         axial_ratio: r.axial_ratio,
         e_field: Some((r.e_theta, r.e_phi)),
+        ellipse: Some(ellipse(r.e_theta, r.e_phi)),
+    }
+}
+
+/// NEC-2's polarization ellipse of a far-field point, in the report's terms.
+fn ellipse(e_theta: num_complex::Complex64, e_phi: num_complex::Complex64) -> nec_report::Ellipse {
+    use nec_solver::farfield::PolarizationSense as S;
+    let e = nec_solver::polarization_ellipse(e_theta, e_phi);
+    nec_report::Ellipse {
+        axial_ratio: e.axial_ratio,
+        tilt_deg: e.tilt_deg,
+        sense: match e.sense {
+            S::None => nec_report::Sense::None,
+            S::Linear => nec_report::Sense::Linear,
+            S::Right => nec_report::Sense::Right,
+            S::Left => nec_report::Sense::Left,
+        },
     }
 }
 
@@ -1637,6 +1654,7 @@ pub(super) fn solve_frequency_point(
                         axial_ratio: r.axial_ratio,
                         // The device path computes gains only.
                         e_field: None,
+                        ellipse: None,
                     })
                     .collect()
             }

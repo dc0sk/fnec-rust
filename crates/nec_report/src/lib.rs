@@ -15,6 +15,9 @@
 
 use num_complex::Complex64;
 
+pub mod fortran;
+pub mod nec2d;
+
 /// One row in the segment current distribution table.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurrentRow {
@@ -75,6 +78,29 @@ pub struct PatternRow {
     /// `None` when the pattern was computed where the fields are not kept (the
     /// GPU pattern path returns gains only).
     pub e_field: Option<(Complex64, Complex64)>,
+    /// The polarization ellipse NEC-2 prints beside the fields, from the same
+    /// fields; `None` exactly when `e_field` is.
+    pub ellipse: Option<Ellipse>,
+}
+
+/// A pattern point's polarization ellipse as NEC-2 prints it (PAR-011).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Ellipse {
+    /// Minor over major axis, in `[0, 1]`.
+    pub axial_ratio: f64,
+    /// The major axis's angle from the θ direction, degrees.
+    pub tilt_deg: f64,
+    pub sense: Sense,
+}
+
+/// NEC-2's rotation sense of a polarization ellipse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sense {
+    /// No field: NEC-2 prints a blank.
+    None,
+    Linear,
+    Right,
+    Left,
 }
 
 /// One row of an incident-plane-wave receive pattern (PH9-CHK-001): the antenna's
@@ -713,6 +739,7 @@ mod tests {
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
             e_field: None,
+            ellipse: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -738,6 +765,7 @@ mod tests {
             gain_phi_dbi: -999.99,
             axial_ratio: 0.0,
             e_field: None,
+            ellipse: None,
         }];
         let report = render_text_report(&ReportInput {
             solver_mode: "hallen",
@@ -1010,6 +1038,7 @@ mod tests {
             gain_phi_dbi: f64::NEG_INFINITY,
             axial_ratio: 0.0,
             e_field: None,
+            ellipse: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -1046,6 +1075,7 @@ mod tests {
             gain_phi_dbi: -1e6,
             axial_ratio: 1e9,
             e_field: None,
+            ellipse: None,
         };
         let line = format_pattern_row(&row);
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -1068,6 +1098,7 @@ mod tests {
                 gain_phi_dbi: -999.99,
                 axial_ratio: 0.0,
                 e_field: None,
+                ellipse: None,
             };
             let line = format_pattern_row(&row);
             let cols: Vec<&str> = line.split_whitespace().collect();

@@ -67,6 +67,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
 | `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
 | `apps/nec-cli/tests/par011_card_echo.rs` | 1 | PAR-011: for each of the 15 fixtures 4nec2 wrote, the parser's program-card records equal the `DATA CARD` echo its own kernel printed, card for card (XQ and the XNDA and F5/F6 fields included); the echo's two `EN` rules (the end of the file read as `EN`; an `EN` echoed with the previous card's fields) and the failure prefix of `err_seg` are pinned; `sp_patch` is refused. | PAR-011 |
+| `apps/nec-cli/tests/par011_nec2d_layout.rs` | 3 | PAR-011: `--output-format nec2d` against the 15 fixtures 4nec2 and its kernel wrote. For each of the 9 decks it prints: the same line count, every line's text with numbers blanked byte-identical, each number ending in the kernel's column with its format's shape (decimals, exponent width), and every integer (segment and tag numbers, connection data, card-echo fields) the kernel's. The other 6 are refused before solving with a non-zero exit and no output (the set is pinned). The numbers are fnec's own text report's (feedpoint Z, every current, every gain) to print precision. A tokenizer self-test covers fields that run together and overflow. Six sabotages caught: a FORMAT width, `RUN TIME` dropped, a conjugated current, flipped connection signs, tag-local feed numbering, swapped gains. | PAR-011 |
 | `apps/nec-cli/tests/parity_sweep.rs` | 2 | The parity sweep (stages 1–3, plus the near-ground gate): <!-- COUNT:PARITY-CELLS=627 --> **627** cells (plus the ignored `capture_nec2c_goldens`, which refreshes `parity_nec2c.txt` on a host with nec2c) over solver × exec × ground × load source × drive × geometry (incl. tilted and contact decks), each comparing two runs that must agree — `S-load`, `S-exec`, `S-fr`, `S-drive`, `S-worker`, `S-load-invalid`, `S-point`, `R-image`, `R-loss`, `R-network`, `R-remedy`, `R-reference` (nec2c), `R-solver`, `R-converge`, `R-lowground` (nec2c GN 2 at 0.025–0.1 λ, two meshes) — with outcomes, counts and reached decisions pinned in `parity_manifest.txt`. | FND-197..216 |
 | `apps/nec-cli/tests/parser_warnings.rs` | 23 | A card that cannot change the antenna warns and solves, one that would (`GX`) or an unknown one is refused by name (FND-236); `TL` segments; well-formed NT solved, malformed NT refused | COMP-001, PRT-002 |
 | `apps/nec-cli/tests/project_cmd.rs` | 5 | GAP-015's acceptance criterion names "explicit CLI/API entry points" for Markdown project import and export. | FND-006, FND-016, GAP-015 |
@@ -154,7 +155,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=775 --> **775** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=778 --> **778** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -171,15 +172,15 @@ functions across the `tests/` binaries listed above.
 | `apps/nec-cli` | 49 | main, exec_profile, sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 40 | lib (incl. the FND-236 card treatments, FND-237 comma fields and the PAR-011 program-card records), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
-| `nec_report` | 25 | lib 25 |
+| `nec_report` | 28 | lib 25, fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=639 --> **639** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=642 --> **642** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1421 --> **1421** = 639 unit + 775 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1427 --> **1427** = 642 unit + 778 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

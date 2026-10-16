@@ -4,12 +4,14 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio\n       fnec calibrate [--print-key]";
+pub const USAGE: &str = "Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec worker --stdio\n       fnec calibrate [--print-key]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     Text,
     Json,
+    /// NEC-2D's report layout, as 4nec2 reads its kernel's output (PAR-011).
+    Nec2d,
 }
 
 #[derive(Debug, Clone)]
@@ -154,15 +156,17 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 i += 1;
                 if i >= args.len() {
                     return Err(
-                        "missing value after --output-format (expected: text|json)".to_string()
+                        "missing value after --output-format (expected: text|json|nec2d)"
+                            .to_string(),
                     );
                 }
                 output_format = match args[i].as_str() {
                     "text" => OutputFormat::Text,
                     "json" => OutputFormat::Json,
+                    "nec2d" => OutputFormat::Nec2d,
                     other => {
                         return Err(format!(
-                            "invalid --output-format value '{other}' (expected: text|json)"
+                            "invalid --output-format value '{other}' (expected: text|json|nec2d)"
                         ))
                     }
                 };

@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-contract.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # PAR-011 4nec2 Drop-In Contract
@@ -323,7 +323,7 @@ Fable reviewed the plan. Three of its points shaped it: kernel mode is an explic
 subcommand, the writer follows the NEC-2 FORMAT statements, and the work is split
 in two (output format first, kernel mode second).
 
-1. **P2a: `--output-format nec2d`.** The normal CLI writes the NEC-2D layout. The
+1. **P2a: `--output-format nec2d`** (in place 2026-10-16; `docs/cli-guide.md` § NEC-2D output). fnec's output for a deck 4nec2 wrote loads in 4nec2: impedance, SWR, segments, geometry and the pattern show (screenshot evidence in the PR). The normal CLI writes the NEC-2D layout. The
    writer transcribes one shared result structure; anything it lacks is added there
    first, so the writer never computes physics of its own. Two gates check it:
    - a layout gate: the fixtures' lines are compared with fnec's after

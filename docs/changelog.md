@@ -17,6 +17,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`--output-format nec2d` writes NEC-2D's own report layout** (PAR-011). The
+  output has the sections NEC-2's Fortran kernel prints, line for line and column
+  for column, and 4nec2 reads it. 4nec2 rejects any other layout, even nec2c's valid
+  output. Every line goes through NEC-2's own FORMAT statements, via a small
+  Fortran FORMAT interpreter (`nec_report::fortran`). It is gated against 15 decks
+  4nec2 wrote and its kernel solved: the same lines, the same text, every number
+  ending in its field's column with its format's shape, and every bookkeeping
+  integer (segment and tag numbers, connection data) the kernel's. A second gate
+  checks that the numbers are fnec's own. Decks whose output it cannot yet print
+  are refused before solving (`docs/cli-guide.md`). This is the format half of the
+  4nec2 drop-in kernel; the kernel mode itself comes next.
 - **The `GS` card scales the structure** (PH10-CHK-002), as nec2c does: every
   segment defined so far, ends and radius, `GM`/`GR` copies included; wires after
   it are not scaled, and two cards compound. A deck written in feet with

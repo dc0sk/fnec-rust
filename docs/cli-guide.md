@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # CLI Guide — fnec (v0.22.0)
@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
 fnec project convert <in.toml|in.md> [out.md|out.toml]
@@ -47,7 +47,7 @@ Compatibility profile note:
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | — | **Obsolete no-op.** Accepted for backward compatibility and silently ignored; `EX` type 3 now solves as a left-hand elliptic incident plane wave regardless (PH8-CHK-002). Neither value changes any result |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by the GPU benchmark timing gates) |
 | `--bench-format` | `human` \| `csv` \| `json` | `human` | Emit machine-readable benchmark records to stderr as `bench_csv:` or `bench_json:` lines while keeping the normal human-readable report on stdout |
-| `--output-format` | `text` \| `json` | `text` | Report format on stdout. `json` writes one JSON record per solved frequency point instead of the text report; diagnostics stay on stderr either way. Schema: `docs/json-output-schema.md` |
+| `--output-format` | `text` \| `json` \| `nec2d` | `text` | Report format on stdout. `json` writes one JSON record per solved frequency point instead of the text report. `nec2d` writes NEC-2D's own report layout, which 4nec2 reads (see *NEC-2D output* below). Diagnostics stay on stderr either way. Schema: `docs/json-output-schema.md` |
 | `--sweep-config` | `<file.toml>` | — | Load a TOML frequency-sweep spec (range or explicit list). Replaces the `FR` card's frequency list for a batch solve — and **supplies** one when the deck has no `FR` card at all, which is the only way to solve such a deck (without it the run is refused). See `examples/sweep-spec.toml`. |
 | `--vars` | `<file.toml\|file.json>` | — | Load a flat key→value map and substitute `$VAR` tokens in the deck before parsing. TOML (any extension except `.json`) and JSON flat-object files are both accepted. An undefined token causes a non-zero exit with a diagnostic. |
 | `--loads-config` | `<file.toml>` | — | Load fnec-specific extended loads (Laplace-domain `Z(s) = N(s)/D(s)`) from a TOML file and stamp them on the solve alongside any `LD` cards, on every solver path, `--solver mpie` included. See **Laplace-domain loads** below. |
@@ -644,6 +644,29 @@ fnec --output-format json dipole.nec
 ```
 
 Writes a JSON array to stdout — one record per solved frequency point — and keeps diagnostics on stderr.
+
+### NEC-2D output
+
+```bash
+fnec --exec cpu --output-format nec2d dipole.nec > dipole.out
+```
+
+This writes fnec's answer in the report layout NEC-2's Fortran kernel prints, with the same sections, line for line, column for column. 4nec2 reads only that layout: it rejects nec2c's valid output for the same deck. So this is the output a drop-in replacement for 4nec2's kernel must write (PAR-011). The layout follows NEC-2's own FORMAT statements and is gated against 15 decks that 4nec2 wrote and its kernel solved (`apps/nec-cli/tests/fixtures/par011/`).
+
+**What the report holds.**
+- The numbers are fnec's own: its impedances, currents, fields and power budget. A line before `RUN TIME` names fnec as the solver.
+- fnec does not time the matrix fill and the factorisation separately, so `MATRIX TIMING` prints the point's whole solve as FILL.
+- The `APPROXIMATE INTEGRATION` line repeats NEC-2's default range, which fnec does not use.
+
+**What is refused.** The layout prints only what fnec computes, so these decks are refused before solving, with a non-zero exit:
+- networks and transmission lines (`NT`, `TL`);
+- Sommerfeld ground (`GN 2`);
+- arcs, helices and tapers (`GA`, `GH`, `GC`);
+- `PT`, `NH`, excitations other than `EX 0`, and per-length loads (`LD 2`, `LD 3`);
+- more than one `FR` card, or more than one card that executes (`RP`, `NE`, `XQ`);
+- an `RP` asking for major/minor axes, a normalised table, directive gain or a suppressed print.
+
+It is also refused with `--sweep-config`, `--loads-config`, `--hosts` and `--exec gpu`. The device pattern keeps no field components.
 
 ### Benchmark instrumentation
 

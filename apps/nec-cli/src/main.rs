@@ -6,6 +6,7 @@ mod cli_args;
 mod exec_calibration;
 mod exec_profile;
 mod laplace_config;
+mod nec2d_out;
 mod project_cmd;
 mod resonance_search;
 mod solve_session;
@@ -60,6 +61,7 @@ fn emit_sweep_points(
     output_format: OutputFormat,
     sweep_rows: &mut Vec<SweepPointSummary>,
     json_records: &mut Vec<String>,
+    nec2d_points: &mut Vec<(nec_report::PointReport, f64)>,
     enable_benchmarking: bool,
     bench_format: BenchFormat,
     bench_target: &str,
@@ -84,6 +86,17 @@ fn emit_sweep_points(
                 println!();
             }
             print!("{}", solved_point.report.text());
+        }
+        if output_format == OutputFormat::Nec2d {
+            match &solved_point.report {
+                PointOutput::Tables(point) => {
+                    nec2d_points.push(((**point).clone(), elapsed_ms as f64 / 1000.0));
+                }
+                PointOutput::Text(_) => {
+                    eprintln!("error: --output-format nec2d: a remote point carries no tables");
+                    any_failed = true;
+                }
+            }
         }
         if let Some(summary) = solved_point.sweep_summary {
             if output_format == OutputFormat::Json {
@@ -309,6 +322,37 @@ fn main() -> ExitCode {
     }
 
     let deck = &result.deck;
+
+    let run_start = std::time::Instant::now();
+    // PAR-011: the NEC-2D layout prints only what fnec computes, and one solve per
+    // deck; what it cannot print is refused here, before anything is solved, so no
+    // partial block is ever written. The inputs the layout cannot echo are refused
+    // with it: frequencies or loads from outside the deck, a remote solve, and the
+    // device pattern path, which keeps gains only.
+    if output_format == OutputFormat::Nec2d {
+        let outside = if sweep_config_path.is_some() {
+            Some("--sweep-config")
+        } else if loads_config_path.is_some() {
+            Some("--loads-config")
+        } else if hosts_path.is_some() {
+            Some("--hosts")
+        } else if execution_mode == ExecutionMode::Gpu {
+            Some("--exec gpu")
+        } else {
+            None
+        };
+        if let Some(flag) = outside {
+            eprintln!(
+                "error: --output-format nec2d cannot be combined with {flag}: the NEC-2D output \
+                 echoes the deck's own cards and needs the CPU pattern (PAR-011)"
+            );
+            return ExitCode::FAILURE;
+        }
+        if let Err(e) = nec2d_out::check_admissible(deck) {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
 
     // A deck with several `FR` cards was usually written as `FR/XQ/FR/RP`, where
     // NEC-2 runs each. fnec drops `XQ` as an unknown card and runs one execution,
@@ -757,6 +801,7 @@ fn main() -> ExitCode {
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
+    let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
     // between the local and distributed sweep paths (verified: identical md5),
@@ -768,6 +813,7 @@ fn main() -> ExitCode {
         output_format,
         &mut sweep_rows,
         &mut json_records,
+        &mut nec2d_points,
         enable_benchmarking,
         bench_format,
         &bench_target,
@@ -790,6 +836,25 @@ fn main() -> ExitCode {
 
     if output_format == OutputFormat::Json {
         println!("[{records}]", records = json_records.join(","));
+    }
+    if output_format == OutputFormat::Nec2d {
+        // A point that failed has no block, and NEC-2D has no partial run: the
+        // whole report is refused rather than printed short.
+        if any_failed {
+            return ExitCode::FAILURE;
+        }
+        match nec2d_out::render(
+            &input,
+            deck,
+            &nec2d_points,
+            run_start.elapsed().as_secs_f64(),
+        ) {
+            Ok(text) => print!("{text}"),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
     }
 
     // The exit code still says the run was not clean, so a script checking the
@@ -1265,6 +1330,7 @@ fn run_distributed_solve(
     let bench_solver = solver_mode.as_str().to_string();
     let mut sweep_rows: Vec<SweepPointSummary> = Vec::new();
     let mut json_records: Vec<String> = Vec::new();
+    let mut nec2d_points: Vec<(nec_report::PointReport, f64)> = Vec::new();
 
     // ONE copy of this loop, not two. It was 57 lines duplicated byte for byte
     // between the local and distributed sweep paths (verified: identical md5),
@@ -1276,6 +1342,7 @@ fn run_distributed_solve(
         output_format,
         &mut sweep_rows,
         &mut json_records,
+        &mut nec2d_points,
         enable_benchmarking,
         bench_format,
         &bench_target,
