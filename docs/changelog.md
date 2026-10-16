@@ -17,6 +17,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **`fnec nec2d-kernel`: fnec as 4nec2's external kernel** (PAR-011). It reads
+  the two paths 4nec2 writes to `nec2d.tmp` from stdin and writes the NEC-2D report
+  to the output file (CRLF, with fnec's warnings where 4nec2 shows them). A
+  refused or unreadable deck becomes the kernel's failure: the reason and no
+  `RUN TIME` line, at exit 0, as 4nec2's kernel exits. Under one of the kernel's
+  names (`nec2dxs1K5` and the others) with no arguments, fnec is this kernel. Run
+  in a 4nec2-like tree by its subcommand and under the kernel's name. A Windows
+  build to put in 4nec2's `exe` folder comes next.
 - **`--output-format nec2d` writes NEC-2D's own report layout** (PAR-011). The
   output has the sections NEC-2's Fortran kernel prints, line for line and column
   for column, and 4nec2 reads it. 4nec2 rejects any other layout, even nec2c's valid
@@ -75,6 +83,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Changed
 
+- **The filename-steered `--exec hybrid` default for 4nec2 kernel names is
+  retired** (PAR-011), with its two warnings. A kernel name with a deck argument is
+  now plain fnec; with none, it is the kernel. The tests that pinned the steering
+  now pin its absence.
 - **wgpu 30** (from 29.0.3; naga 30.0.1 with it) for the GPU path. Adapters are
   requested with `apply_limit_buckets: false` (bucketing hides a browser's adapter
   from untrusted content; fnec takes the real limits), and a readback whose

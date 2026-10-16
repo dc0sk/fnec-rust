@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/par011-dropin-evidence-memo.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-16
 ---
 
 # PAR-011 Drop-In Compatibility Evidence Memo
@@ -213,7 +213,7 @@ Phase-0 template status:
 
 - Filename-steered detection is present with an explicit known-name matrix (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`) plus `4nec2` naming fallback, and is covered by CLI unit tests.
 - Execution-mode steering is currently limited to internal mode defaults and diagnostics.
-- Full external-kernel drop-in invocation and file-contract parity is not yet implemented.
+- 2026-10-16: the external-kernel invocation and file contract are implemented (`fnec nec2d-kernel`, the NEC-2D report as `--output-format nec2d`). The filename steering is retired. A Windows build to install in 4nec2 is P3.
 - Documentation-contract capture is complete through phase 2; remaining unchecked items require external evidence capture or implementation work rather than more contract-only docs.
 
 ## Docs-only phased implementation plan

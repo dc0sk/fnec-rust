@@ -86,6 +86,8 @@ Use this template when observing host (4nec2) to kernel-process behavior.
 
 ## Phase 1 compatibility behavior specification
 
+> **Superseded 2026-10-16 (P2b).** The filename-steered `--exec hybrid` default and its two warning classes are retired. Under a kernel name with no arguments, fnec is now 4nec2's kernel (`fnec nec2d-kernel`, `docs/cli-guide.md` § 4nec2 kernel mode); with a deck argument the same name is plain fnec, and no warning is printed. The text below records the scaffold as it was; the acceptance tests AT-PAR011-0101 and 0102 no longer describe the binary.
+
 This section freezes the expected behavior of the current filename-steered compatibility scaffold. It documents the behavior that exists today; it does not claim full external-kernel parity.
 
 ### Execution-mode precedence rule
@@ -333,7 +335,7 @@ in two (output format first, kernel mode second).
 
    Fortran number printing (`1PE12.5`, `F10.5`, zero and overflow cases) gets its
    own unit tests.
-2. **P2b: kernel mode.** `fnec nec2d-kernel` reads the two paths from stdin, and the
+2. **P2b: kernel mode** (in place 2026-10-16; `apps/nec-cli/tests/par011_kernel.rs` runs it in a 4nec2-like tree, by its subcommand and under the kernel's name). `fnec nec2d-kernel` reads the two paths from stdin, and the
    `nec2dxs*` names dispatch to it when given no deck argument; a TTY stdin prints
    usage. It treats end-of-file as `EN` and writes failures to the file. A deck
    whose card sequence fnec's solve model cannot follow is refused: a second `FR`

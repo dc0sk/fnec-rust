@@ -261,7 +261,7 @@ fn gpu_exec_mode_emits_no_stub_emulation_warning() {
 }
 
 #[test]
-fn filename_steering_sets_default_exec_for_dropin_alias() {
+fn a_dropin_alias_with_a_deck_runs_as_plain_fnec() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("nec2dxs500");
@@ -288,14 +288,14 @@ fn filename_steering_sets_default_exec_for_dropin_alias() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     common::assert_points_say_what_ran(&stderr);
 }
 
 #[test]
-fn explicit_exec_overrides_dropin_filename_steering() {
+fn a_dropin_alias_with_a_deck_keeps_an_explicit_exec() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("nec2dxs3k0");
@@ -324,14 +324,14 @@ fn explicit_exec_overrides_dropin_filename_steering() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert_diag_field(&stderr, "exec", "cpu");
 }
 
 #[test]
-fn filename_steering_also_detects_4nec2_alias_names() {
+fn a_4nec2_alias_with_a_deck_runs_as_plain_fnec() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
     let alias = create_dropin_alias("4nec2-kernel");
@@ -358,8 +358,8 @@ fn filename_steering_also_detects_4nec2_alias_names() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     common::assert_points_say_what_ran(&stderr);
 }
@@ -398,12 +398,12 @@ fn dropin_alias_keeps_report_on_stdout_and_warning_on_stderr() {
         "expected stable report header on stdout, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in compatibility warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -451,8 +451,8 @@ fn dropin_alias_missing_deck_keeps_exit_code_and_error_stream_contract() {
         "expected error message on stderr for missing deck, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected compatibility-profile warning to remain on stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
 }
 
@@ -773,12 +773,12 @@ fn fournec2_alias_keeps_report_on_stdout_and_warning_on_stderr() {
         "expected stable report header on stdout, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("drop-in compatibility profile detected by binary name"),
-        "drop-in compatibility warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("drop-in compatibility profile detected by binary name"),
-        "expected compatibility-profile warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -822,12 +822,12 @@ fn dropin_alias_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_stderr()
         "expected stable report header on stdout, got:\n{stdout}"
     );
     assert!(
-        !stdout.contains("preserving explicit --exec=cpu"),
-        "explicit-exec preservation warning must not appear on stdout, got:\n{stdout}"
+        !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning in stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -874,8 +874,8 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_
         "expected error message on stderr for missing deck, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("preserving explicit --exec=cpu"),
-        "expected explicit-exec preservation warning to remain on stderr, got:\n{stderr}"
+        !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+        "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
     );
     assert!(
         !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -884,7 +884,7 @@ fn dropin_alias_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_stream_
 }
 
 #[test]
-fn nec2mp_alias_matrix_filename_steering_sets_default_exec() {
+fn nec2mp_alias_matrix_with_a_deck_runs_as_plain_fnec() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
 
@@ -909,15 +909,15 @@ fn nec2mp_alias_matrix_filename_steering_sets_default_exec() {
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected compatibility-profile warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         common::assert_points_say_what_ran(&stderr);
     }
 }
 
 #[test]
-fn nec2mp_alias_matrix_explicit_exec_cpu_overrides_filename_steering() {
+fn nec2mp_alias_matrix_with_a_deck_keeps_an_explicit_exec() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let deck_path = workspace_root.join("corpus/dipole-freesp-51seg.nec");
 
@@ -944,8 +944,8 @@ fn nec2mp_alias_matrix_explicit_exec_cpu_overrides_filename_steering() {
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("preserving explicit --exec=cpu"),
-            "expected explicit exec preservation warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert_diag_field(&stderr, "exec", "cpu");
     }
@@ -983,12 +983,12 @@ fn nec2mp_alias_matrix_keeps_report_on_stdout_and_warning_on_stderr() {
             "expected stable report header on stdout for alias '{alias_name}', got:\n{stdout}"
         );
         assert!(
-            !stdout.contains("drop-in compatibility profile detected by binary name"),
-            "drop-in warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+            !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
         );
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected compatibility-profile warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
             !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -1035,8 +1035,8 @@ fn nec2mp_alias_matrix_missing_deck_keeps_exit_code_and_error_stream_contract() 
             "expected error message on stderr for alias '{alias_name}', got:\n{stderr}"
         );
         assert!(
-            stderr.contains("drop-in compatibility profile detected by binary name"),
-            "expected compatibility-profile warning to remain on stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
     }
 }
@@ -1186,12 +1186,12 @@ fn nec2mp_alias_matrix_explicit_exec_cpu_keeps_report_on_stdout_and_warning_on_s
             "expected stable report header on stdout for alias '{alias_name}', got:\n{stdout}"
         );
         assert!(
-            !stdout.contains("preserving explicit --exec=cpu"),
-            "explicit-exec warning must not appear on stdout for alias '{alias_name}', got:\n{stdout}"
+            !stdout.contains("drop-in compatibility profile") && !stdout.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stdout, got:\n{stdout}"
         );
         assert!(
-            stderr.contains("preserving explicit --exec=cpu"),
-            "expected explicit-exec preservation warning in stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
             !stderr.contains("FNEC FEEDPOINT REPORT"),
@@ -1238,8 +1238,8 @@ fn nec2mp_alias_matrix_explicit_exec_cpu_missing_deck_keeps_exit_code_and_error_
             "expected error message on stderr for alias '{alias_name}', got:\n{stderr}"
         );
         assert!(
-            stderr.contains("preserving explicit --exec=cpu"),
-            "expected explicit-exec warning to remain on stderr for alias '{alias_name}', got:\n{stderr}"
+            !stderr.contains("drop-in compatibility profile") && !stderr.contains("preserving explicit --exec"),
+            "the retired filename steering (PAR-011) must not print its notice on stderr, got:\n{stderr}"
         );
         assert!(
             !stderr.contains("FNEC FEEDPOINT REPORT"),

@@ -5,6 +5,7 @@ mod bench;
 mod cli_args;
 mod exec_calibration;
 mod exec_profile;
+mod kernel;
 mod laplace_config;
 mod nec2d_out;
 mod project_cmd;
@@ -17,8 +18,7 @@ mod warnings;
 use bench::{emit_bench_csv_header, emit_bench_record_csv, emit_bench_record_json, BenchFormat};
 use cli_args::{parse_args, OutputFormat, ParsedArgs, USAGE};
 use exec_profile::{
-    auto_select_execution_mode, detect_compatibility_profile, steer_execution_mode_by_profile,
-    warn_compatibility_profile, CompatibilityProfile, ExecutionMode,
+    auto_select_execution_mode, detect_compatibility_profile, CompatibilityProfile, ExecutionMode,
 };
 use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
@@ -155,6 +155,15 @@ fn main() -> ExitCode {
     let profile = detect_compatibility_profile(args.first().map(String::as_str).unwrap_or("fnec"));
     let exec_flag_explicitly_set = args.iter().any(|arg| arg == "--exec");
 
+    // PAR-011: 4nec2 runs its kernel with no arguments and the two file names on
+    // stdin. Under one of the kernel's names that is the kernel contract; with a
+    // deck argument the same name is plain fnec.
+    if args.get(1).map(String::as_str) == Some("nec2d-kernel")
+        || (args.len() == 1 && profile == CompatibilityProfile::FourNec2DropIn)
+    {
+        return kernel::run();
+    }
+
     if args.len() < 2 {
         eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
         eprintln!("{USAGE}");
@@ -268,19 +277,6 @@ fn main() -> ExitCode {
     } else {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
     };
-
-    let requested_execution_mode = execution_mode;
-    execution_mode = steer_execution_mode_by_profile(
-        requested_execution_mode,
-        profile,
-        exec_flag_explicitly_set,
-    );
-    warn_compatibility_profile(
-        profile,
-        requested_execution_mode,
-        execution_mode,
-        exec_flag_explicitly_set,
-    );
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -1652,8 +1648,8 @@ mod tests {
     use super::{
         auto_select_execution_mode, detect_compatibility_profile,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, steer_execution_mode_by_profile, worker_exec_preference,
-        worker_warning_lines, CompatibilityProfile, ExecutionMode,
+        exec_fallback_warning, worker_exec_preference, worker_warning_lines, CompatibilityProfile,
+        ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use nec_solver::validate::RunLoads;
@@ -2295,30 +2291,6 @@ mod tests {
         assert_eq!(
             detect_compatibility_profile("/usr/bin/fnec"),
             CompatibilityProfile::Native
-        );
-    }
-
-    #[test]
-    fn dropin_profile_steers_default_exec_to_hybrid() {
-        assert_eq!(
-            steer_execution_mode_by_profile(
-                ExecutionMode::Cpu,
-                CompatibilityProfile::FourNec2DropIn,
-                false,
-            ),
-            ExecutionMode::Hybrid
-        );
-    }
-
-    #[test]
-    fn explicit_exec_flag_prevents_profile_steering() {
-        assert_eq!(
-            steer_execution_mode_by_profile(
-                ExecutionMode::Gpu,
-                CompatibilityProfile::FourNec2DropIn,
-                true,
-            ),
-            ExecutionMode::Gpu
         );
     }
 
