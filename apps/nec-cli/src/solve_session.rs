@@ -1723,28 +1723,35 @@ pub(super) fn solve_frequency_point(
     let near_field_table = build_near_field_rows(deck, segs, &i_vec, freq_hz, ground);
     let near_h_field_table = build_near_h_field_rows(deck, segs, &i_vec, freq_hz, ground);
 
-    // PH9-CHK-004: average power gain (RP XNDA A-digit) — the solid-angle-weighted
-    // mean gain over the pattern region (= radiation efficiency over the full
-    // sphere). Uniform (θ,φ) grid, so the Δθ·Δφ weights cancel and each point is
-    // weighted by sinθ; below-horizon nulls over ground are skipped.
-    let avg_power_gain = if deck
-        .cards
-        .iter()
-        .any(|c| matches!(c, Card::Rp(rp) if rp.avg_power_gain))
-        && !pattern_table.is_empty()
-    {
-        let (mut num, mut den) = (0.0_f64, 0.0_f64);
-        for row in &pattern_table {
-            if row.gain_total_dbi <= -900.0 {
-                continue;
+    // PH9-CHK-004: average power gain (RP XNDA A-digit), by NEC-2's rule
+    // (FND-262): each RP card's grid is averaged on its own rows (the table holds
+    // every card's grid in deck order), and the last card asking for it is the
+    // one reported.
+    let avg_power_gain = {
+        let mut offset = 0;
+        let mut avg = None;
+        for rp in deck.cards.iter().filter_map(|c| match c {
+            Card::Rp(rp) => Some(rp),
+            _ => None,
+        }) {
+            let n = (rp.n_theta * rp.n_phi) as usize;
+            if rp.avg_power_gain && offset + n <= pattern_table.len() {
+                let gains: Vec<f64> = pattern_table[offset..offset + n]
+                    .iter()
+                    .map(|r| r.gain_total_dbi)
+                    .collect();
+                avg = nec_solver::average_power_gain(
+                    &gains,
+                    rp.n_theta as usize,
+                    rp.n_phi as usize,
+                    rp.theta0,
+                    rp.d_theta,
+                    rp.d_phi,
+                );
             }
-            let w = row.theta_deg.to_radians().sin();
-            num += 10f64.powf(row.gain_total_dbi / 10.0) * w;
-            den += w;
+            offset += n;
         }
-        (den > 0.0).then(|| num / den)
-    } else {
-        None
+        avg
     };
 
     let pattern_rows = pattern_table.len();

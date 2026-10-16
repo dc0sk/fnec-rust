@@ -819,6 +819,58 @@ pub fn compute_radiation_pattern(
         .collect()
 }
 
+/// NEC-2's average power gain over an `RP` grid (RDPAT, nec2c `rdpat`): each
+/// sample's linear gain weighted by the solid angle it stands for — its θ band
+/// (half a band at the first and last θ) times its φ step (half at the first and
+/// last φ) — over the sum of those weights. For a grid with θ ≥ 0 the sum is
+/// NEC-2's own normalisation, the grid's solid angle; a grid through negative θ
+/// covers the sphere twice and the sum counts it twice, which 4nec2's kernel
+/// matches (FND-262). A null (−999.99 dB, also every point below a ground plane)
+/// is a zero gain with its weight, not a skipped point. `None` when an axis has
+/// fewer than two samples, where NEC-2 does not average.
+///
+/// `gains_dbi` are in the grid's order: φ outer, θ inner.
+pub fn average_power_gain(
+    gains_dbi: &[f64],
+    n_theta: usize,
+    n_phi: usize,
+    theta0_deg: f64,
+    d_theta_deg: f64,
+    d_phi_deg: f64,
+) -> Option<f64> {
+    if n_theta < 2 || n_phi < 2 || gains_dbi.len() != n_theta * n_phi {
+        return None;
+    }
+    let (mut sum, mut weights) = (0.0_f64, 0.0_f64);
+    for (k, &g) in gains_dbi.iter().enumerate() {
+        let (kth, kph) = (k % n_theta, k / n_theta);
+        let theta = theta0_deg + kth as f64 * d_theta_deg;
+        let lo = if kth == 0 {
+            theta
+        } else {
+            theta - 0.5 * d_theta_deg
+        };
+        let hi = if kth == n_theta - 1 {
+            theta
+        } else {
+            theta + 0.5 * d_theta_deg
+        };
+        let mut da =
+            (d_phi_deg.to_radians() * (lo.to_radians().cos() - hi.to_radians().cos())).abs();
+        if kph == 0 || kph == n_phi - 1 {
+            da *= 0.5;
+        }
+        let linear = if g <= -900.0 {
+            0.0
+        } else {
+            10f64.powf(g / 10.0)
+        };
+        sum += linear * da;
+        weights += da;
+    }
+    (weights > 0.0).then(|| sum / weights)
+}
+
 /// Polarization axial ratio of a far-field point from its complex `E_θ`/`E_φ`
 /// components, in NEC-2's convention: the **signed minor/major axis ratio** of the
 /// polarization ellipse, in `[-1, 1]` — `0` = linear, `±1` = circular, and the

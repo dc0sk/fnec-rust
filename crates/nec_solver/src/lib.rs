@@ -33,8 +33,8 @@ pub use excitation::{
     scale_excitation_for_pulse_rhs, CurrentSourceShape, ExcitationError, HallenRhs,
 };
 pub use farfield::{
-    bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power, gain_correction_db,
-    integrate_radiated_power, near_e_field, near_h_field, polarization_ellipse,
+    average_power_gain, bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power,
+    gain_correction_db, integrate_radiated_power, near_e_field, near_h_field, polarization_ellipse,
     radiation_efficiency, rp_card_points, structure_loss_w, FarFieldPoint, FarFieldResult,
     NearFieldE, NearFieldH, NearFieldPoint, PolarizationEllipse, PolarizationSense, RpGainGrid,
 };

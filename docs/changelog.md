@@ -124,6 +124,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The average power gain is NEC-2's** (FND-262). Each pattern sample now
+  carries the solid angle it stands for, and a null counts as zero gain. Before,
+  samples were weighted by sin θ and nulls were skipped, so on a 30° grid a
+  lossless dipole averaged 1.024 instead of NEC-2's 0.988 (102.4 % radiation
+  efficiency in 4nec2).
 - **The GPU solve's shaders pass Vulkan validation** (FND-193): its two
   reductions used workgroup arrays, which naga decorates with `ArrayStride` —
   rejected by the validation layer and liable to be misread by a strict driver.

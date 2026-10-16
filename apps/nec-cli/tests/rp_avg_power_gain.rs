@@ -34,15 +34,17 @@ fn avg_power_gain(stdout: &str) -> Option<f64> {
 }
 
 /// A full-sphere RP with the `A` digit set emits AVERAGE_POWER_GAIN ≈ 1
-/// (nec2c: 0.998 for this lossless free-space dipole).
+/// (nec2c: 0.99795 for this lossless free-space dipole).
 #[test]
 fn average_power_gain_matches_nec2c() {
     // RP 0 NTHETA NPHI XNDA=1002 θ0 φ0 Δθ Δφ — full sphere, A digit = 2.
     let deck = format!("{DIPOLE}RP 0 19 37 1002 0 0 10 10\nEN\n");
     let apg = avg_power_gain(&run_fnec(&deck, "sphere")).expect("AVERAGE_POWER_GAIN line");
+    // 0.5 %: fnec 0.9987, nec2c 0.99795. The bound was 2 %, which a 10° grid's
+    // sin θ weighting stayed inside while a 30° grid's was 3.6 % off (FND-262).
     assert!(
-        (apg - 0.998).abs() / 0.998 < 0.02,
-        "average power gain {apg} not within 2% of nec2c 0.998"
+        (apg - 0.99795).abs() / 0.99795 < 0.005,
+        "average power gain {apg} not within 0.5 % of nec2c 0.99795"
     );
 }
 
