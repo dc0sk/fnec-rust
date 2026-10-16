@@ -45,6 +45,8 @@ layer — they generate references, gate contracts, and benchmark performance.
 |:-----|:--------|
 | `import-reference-impedance.py` | Import external (NEC2/4nec2) reference impedances into `corpus/reference-results.json` |
 | `fix_patterns.py` | Batch-fix/normalize corpus RP pattern-sample data |
+| `nec2c-fine-mesh.py` | A deck meshed S× finer with every segment reference at the same point, refusing cards it cannot map and sub-thin-wire meshes (FND-232) |
+| `nec2c-converged-series.py` | nec2c's 1/3/9/…× feedpoint series for a corpus deck as JSON, with its kernel (`--ek`: extended, plus the 9× thin point) — what a converged reference stores (FND-255) |
 
 ## In-repo example harnesses
 

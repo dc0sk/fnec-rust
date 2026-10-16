@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-free-end-refinement.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-16
 ---
 
 # Free-end refinement (FND-227, FND-230)
@@ -235,7 +235,8 @@ silently. The worker reports a `mesh` field; the controller refuses a mismatch.
 
   The rest of the corpus's external references followed in #566 (FND-232): eleven
   cases at nec2c 9×, each with its 1 / 3 / 9 × series, gated by
-  `apps/nec-cli/tests/converged_reference.rs`. The 27× captures above sit below
+  `apps/nec-cli/tests/converged_reference.rs`. Four of them had not settled at 9×
+  within their gates and moved to 27× on the extended kernel (FND-255). The 27× captures above sit below
   nec2c's thin-wire guideline (segment/radius 8 without `EK`); with `EK` they agree to
   0.05 %.
 
