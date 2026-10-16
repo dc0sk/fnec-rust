@@ -127,6 +127,33 @@ fn remaining_drift(values: &[f64]) -> f64 {
     }
 }
 
+/// How a nec2c mesh series (×3 between points, four points or more) behaves:
+/// settling geometrically, with a tail [`remaining_drift`] can price; drifting by
+/// a near-constant step (the last two step ratios within 0.7–1.3), the slow
+/// convergence NEC-2 shows at a junction, for which no tail exists and a gate must
+/// carry the step itself; or diverging, the steps growing. FND-256.
+#[derive(Debug, PartialEq)]
+enum Series {
+    Settling,
+    LogDrift,
+    Diverging,
+}
+
+fn classify(values: &[f64]) -> Series {
+    let n = values.len();
+    assert!(n >= 4, "a class needs four points");
+    let d: Vec<f64> = values.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+    let (q1, q2) = (d[n - 3] / d[n - 4], d[n - 2] / d[n - 3]);
+    let band = |q: f64| (0.7..=1.3).contains(&q);
+    if band(q1) && band(q2) {
+        Series::LogDrift
+    } else if q2 >= 1.0 {
+        Series::Diverging
+    } else {
+        Series::Settling
+    }
+}
+
 /// The tolerance the corpus gate (`corpus_validation.rs`) holds fnec to against
 /// this reference on `axis` ("R" or "X"): `max(absolute, percent × |reference|)`,
 /// each External figure falling back to the case's own; `None` when the case
@@ -365,4 +392,38 @@ fn the_remesh_maps_a_segment_to_the_same_point_and_refuses_what_it_cannot() {
     let (ok, _, err) = remesh(&gm, 3);
     let _ = std::fs::remove_dir_all(&dir);
     assert!(!ok && err.contains("'GM' is not mapped"), "{err}");
+}
+
+/// nec2c's own series at the junction decks FND-256 found unsettled, as data:
+/// a later "re-point at nec2c's converged value" on these decks is refused here,
+/// because nec2c has no converged value to give on them. Each at 1 / 3 / 9 / 27 ×
+/// (`scripts/nec2c-converged-series.py`, captured 2026-10-16), X in ohms.
+/// The corpus gate above admits a settling series only.
+#[test]
+fn nec2c_has_no_converged_value_at_these_junctions() {
+    // The H (`graph_nec2c.rs`), 41 / 25 at 7.1 MHz, `EK 0`: the steps grow.
+    assert_eq!(
+        classify(&[-57.427, -56.402, -55.187, -53.32]),
+        Series::Diverging
+    );
+    // The T through a bar (`interior_joins.rs`), 41 per wire, `EK 0`: a constant step.
+    assert_eq!(
+        classify(&[-103.76, -103.21, -102.78, -102.35]),
+        Series::LogDrift
+    );
+    // The tee fed at its node (`junction_feedpoint.rs`), 13 per wire.
+    assert_eq!(
+        classify(&[13.773, 13.553, 13.782, 13.999]),
+        Series::LogDrift
+    );
+    // FND-252's 5:1 radius step drifts at a near-constant 9.5 Ω a tripling too.
+    assert_eq!(
+        classify(&[73.803, 65.116, 55.638, 45.771]),
+        Series::LogDrift
+    );
+    // Against them, the stem-fed Y at 41 per wire settles — slowly, a 0.71 % tail.
+    assert_eq!(
+        classify(&[-1639.4, -1612.6, -1599.4, -1591.6]),
+        Series::Settling
+    );
 }

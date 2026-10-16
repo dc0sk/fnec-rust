@@ -26,7 +26,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/core_flags_contract.rs` | 19 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
-| `apps/nec-cli/tests/converged_reference.rs` | 5 | FND-232, FND-255 — the corpus's nec2c references are nec2c on a 9× or 27× mesh: exactly the 11 expected cases carry a series, each settles within its case's gate (the drift left past its last point ≤ ⅓ of the External tolerance, on R and X), on one recorded kernel (an extended-kernel series agrees with the thin kernel at 9× within a tenth), with the reference its last point; the settle rule refuses the FND-252 5:1-step series and split-V's old 9× series; fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh. | FND-232 |
+| `apps/nec-cli/tests/converged_reference.rs` | 6 | FND-232, FND-255, FND-256 — the corpus's nec2c references are nec2c on a 9× or 27× mesh: exactly the 11 expected cases carry a series, each settles within its case's gate (the drift left past its last point ≤ ⅓ of the External tolerance, on R and X), on one recorded kernel (an extended-kernel series agrees with the thin kernel at 9× within a tenth), with the reference its last point; the settle rule refuses the FND-252 5:1-step series and split-V's old 9× series; nec2c's series at the H (diverging), the tee and the T through a bar (log drift) are pinned as data, against a settling Y; fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh. | FND-232 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
 | `apps/nec-cli/tests/deck_reference_resolver.rs` | 2 | A deck reference `(tag, segment)` becomes a segment in one place: `nec_solver::find_deck_segment`; the scan refuses an inline `tag_index ==` lookup in any product source (self-checked on a planted copy). | FND-135, FND-227 |
@@ -157,7 +157,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=787 --> **787** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=788 --> **788** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -182,7 +182,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=643 --> **643** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1437 --> **1437** = 643 unit + 787 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1438 --> **1438** = 643 unit + 788 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

@@ -17,6 +17,18 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Junction gates carry nec2c's own slow convergence** (FND-256). At a degree-3
+  junction nec2c settles slowly or not at all over the meshes its thin-wire limit
+  allows. The five stem-fed Y / T gates are held to nec2c's 27N on its extended
+  kernel, at three times nec2c's measured tail: 2.2 % for the Y decks, 3.5 % for
+  the T decks (were 2 % against nec2c's thin kernel below its thin-wire limit; fnec
+  refined heads for the same limit). The tee fed at its node and the T through a
+  bar, where nec2c drifts by a near-constant step, take three such steps out of
+  their tolerance. Two junctions are recorded open rather than re-pointed: the H,
+  whose FND-191 evidence no longer holds (FND-264), and the receive-current gates
+  (FND-265).
+- **`scripts/nec2c-converged-series.py --ek` no longer aborts** when the 9× thin-kernel
+  cross-check is below the thin-wire limit (FND-263); it leaves that point out.
 - **Twelve gates measured against nec2c on the test's own mesh now measure against
   nec2c's converged value** (FND-257), the deck meshed 27× finer, each series in
   the test. nec2c's own refinement moved those references by a third of their gate

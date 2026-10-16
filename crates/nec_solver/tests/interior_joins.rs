@@ -71,6 +71,14 @@ fn feed(n: u32) -> String {
 /// captured 2026-10-10: once FND-227 refined the free ends fnec outran nec2c on
 /// the deck's own mesh (0.24 → 0.37 %, not shrinking); against 27N it is
 /// 1.63 → 1.01 % (35.17 − j104.36 and 35.18 − j103.38).
+///
+/// FND-256: nec2c's X has not settled at 27N, it drifts by a near-constant step
+/// (41 per wire, `EK 0`: −103.76, −103.21, −102.78, −102.35 at 1 / 3 / 9 / 27 ×,
+/// 0.43 Ω a tripling; 21 per wire −104.24, −103.52, −103.04, −102.61), the slow
+/// convergence of a NEC-2 junction, which leaves no tail to price. The gate is
+/// against the 27× point with three last steps taken out of its 3 %. The 41-wire
+/// reference is nec2c's extended kernel: 27N is below the thin-wire limit there
+/// (it read 35.184 − j102.28 on the thin kernel).
 #[test]
 fn a_t_drawn_through_a_bar_joint_is_the_t() {
     for n in [21, 41] {
@@ -93,11 +101,12 @@ fn a_t_drawn_through_a_bar_joint_is_the_t() {
     );
     let e41 = rel(
         z_in(&format!("{}{}", t_drawn_through(41), feed(41)), (2, 21)),
-        Complex64::new(35.184, -102.28),
+        Complex64::new(35.183, -102.35),
     );
+    let drift = 3.0 * 0.43 / Complex64::new(35.183, -102.35).norm();
     assert!(
-        e41 < 0.03 && e41 < e21,
-        "T against nec2c: {e21:.4} -> {e41:.4}"
+        e41 + drift < 0.03 && e41 < e21,
+        "T against nec2c: {e21:.4} -> {e41:.4}, less nec2c's drift {drift:.4}"
     );
 }
 
