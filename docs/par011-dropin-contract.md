@@ -342,7 +342,7 @@ in two (output format first, kernel mode second).
    or a geometry card after `XQ` or `RP`, `GN 2` until fnec's Sommerfeld path is
    chosen for it, surface patches, and NEC-4 mode. The filename-steered `--exec
    hybrid` scaffold is retired in the same change.
-3. **P3: Windows build.** An x86_64 Windows build (the observed prefix is win64),
+3. **P3: Windows build** (in place 2026-10-16: `scripts/build-windows-kernel.sh`, `scripts/par011-wine-e2e.sh`, `docs/4nec2-drop-in.md`; tested under Wine only). An x86_64 Windows build (the observed prefix is win64),
    shipped under the six `nec2dxs*` names and defaulting to `--exec cpu` unless the
    host has been calibrated. It is installed into this host's 4nec2 by the
    documented backup procedure and checked end to end. The Wine harness is a manual

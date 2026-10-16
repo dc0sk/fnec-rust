@@ -161,8 +161,8 @@ variant in full, with the same impedance and the same 5329 pattern lines.
 
 - [x] Document required copy/replace steps in a standard 4nec2 Windows installation.
 	- 2026-05-30: documented in `docs/par011-dropin-contract.md` section "Windows install and rollback procedure (deterministic)".
-- [ ] Confirm whether side-by-side binaries are selected automatically by host tooling.
-	- 2026-10-15 (Wine): the engine name comes from 4nec2's settings; decks of 9 and 41 segments both ran `Nec2dXS1k5`. Whether 4nec2 switches binaries by segment count is not yet observed.
+- [x] Confirm whether side-by-side binaries are selected automatically by host tooling.
+	- 2026-10-16 (Wine): **yes, by segment count**: decks of 9 to 84 segments ran `Nec2dXS1k5`, a 2001-segment deck `Nec2dXS3k0` (process trace). A drop-in therefore replaces all six names (`docs/4nec2-drop-in.md`).
 - [x] Confirm rollback path for restoring original binaries.
 	- 2026-05-30: deterministic rollback path documented in `docs/par011-dropin-contract.md`.
 
@@ -199,7 +199,7 @@ Phase-0 template status:
 ## Regression fixtures
 
 - [ ] Archive representative call traces for each binary-name variant.
-	- 2026-10-15 (Wine): `Nec2dXS1k5` only, recorded above; the other five names have not been seen to run.
+	- 2026-10-15/16 (Wine): `Nec2dXS1k5` and `Nec2dXS3k0` seen to run; the other four not.
 - [x] Archive canonical input/output pairs suitable for CI compatibility tests.
 	- 2026-10-15 (Wine): 15 pairs in `apps/nec-cli/tests/fixtures/par011/`, each `.inp` written by 4nec2 itself.
 
@@ -213,7 +213,7 @@ Phase-0 template status:
 
 - Filename-steered detection is present with an explicit known-name matrix (`nec2dxs500`, `nec2dxs1K5`, `nec2dxs3k0`, `nec2dxs5k0`, `nec2dxs8k0`, `nec2dxs11k`) plus `4nec2` naming fallback, and is covered by CLI unit tests.
 - Execution-mode steering is currently limited to internal mode defaults and diagnostics.
-- 2026-10-16: the external-kernel invocation and file contract are implemented (`fnec nec2d-kernel`, the NEC-2D report as `--output-format nec2d`). The filename steering is retired. A Windows build to install in 4nec2 is P3.
+- 2026-10-16: the external-kernel invocation and file contract are implemented (`fnec nec2d-kernel`, the NEC-2D report as `--output-format nec2d`), the filename steering is retired, and a Windows build (`scripts/build-windows-kernel.sh`) installed under all six names runs inside 4nec2 under Wine: 4nec2 reads fnec's report for every printable fixture deck and shows fnec's reason for a refused one (`scripts/par011-wine-e2e.sh`; its negative control, the original kernels, fails as it must). Real Windows is untested.
 - Documentation-contract capture is complete through phase 2; remaining unchecked items require external evidence capture or implementation work rather than more contract-only docs.
 
 ## Docs-only phased implementation plan

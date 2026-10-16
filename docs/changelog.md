@@ -17,6 +17,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Added
 
+- **A Windows build of fnec to install as 4nec2's kernel** (PAR-011 P3).
+  `scripts/build-windows-kernel.sh` cross-compiles it in a pinned container and
+  refuses imports Windows does not ship. `docs/4nec2-drop-in.md` gives install
+  and rollback. 4nec2 picks its kernel by segment count, so all six names are
+  replaced. Tested in 4nec2 V5.9.3 under Wine 10.0 (`scripts/par011-wine-e2e.sh`):
+  4nec2 reads fnec's report for every printable deck type and shows fnec's reason
+  for a refused one. Not tested on Windows itself, and unsigned.
 - **`fnec nec2d-kernel`: fnec as 4nec2's external kernel** (PAR-011). It reads
   the two paths 4nec2 writes to `nec2d.tmp` from stdin and writes the NEC-2D report
   to the output file (CRLF, with fnec's warnings where 4nec2 shows them). A

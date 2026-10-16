@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/tooling-catalog.md
 status: living
-last_updated: 2026-09-29
+last_updated: 2026-10-16
 ---
 
 # Helper & validation tooling catalog
@@ -20,6 +20,8 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `check-version-bump-docs.sh` | A `Cargo.toml` version bump must ship changelog + releasenotes + SBOM changes | Release contract |
 | `stamp-doc-last-updated.sh` | Stamp `last_updated` on changed docs for PR automation | Doc contract |
 | `build-release-assets.sh` | Build CLI, GUI, wheel (+ SBOM) in the pinned manylinux container; smoke-solve the reference dipole; run the platform check (FND-168). See `docs/release-process.md` | Release contract |
+| `build-windows-kernel.sh` | Cross-compile fnec for x86_64 Windows in a digest-pinned container, refuse non-system DLL imports, write fnec.exe and 4nec2's six kernel names with BUILD-INFO (PAR-011) | Manual |
+| `par011-wine-e2e.sh` | Install that build into a Wine 4nec2 under all six names, run fixture decks through 4nec2's Generate, check the reports 4nec2 reads (fnec banner + RUN TIME, or the refusal), restore and verify the originals (PAR-011) | Manual |
 | `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
 | `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); self-test `test-host-build-lock.sh` | Host safety |
 
