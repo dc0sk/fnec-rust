@@ -15,6 +15,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **A converged nec2c reference must have settled within its gate** (FND-255).
+  The corpus's converged references were held only to "each refinement moves less
+  than the last", which a series still drifting passes. Now the drift left past
+  the last point must be at most a third of the tolerance fnec is held to against
+  it, on R and X. Four references had not settled at 9× and are re-captured at
+  27× on nec2c's extended kernel by the new `scripts/nec2c-converged-series.py`;
+  each records its kernel. One gate widens with its reason recorded:
+  `dipole-nt-tl-equiv-freesp-51seg`'s external X, 2.0 → 3.0 Ω, for fnec's own
+  discretisation at the deck's 51 segments (fnec and nec2c refined head for the
+  same limit, −209.17 and −209.14 Ω).
+
 ## [0.23.0] — 2026-10-16 — Inside 4nec2
 
 ### Added

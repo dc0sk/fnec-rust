@@ -50,13 +50,14 @@
         }
       ],
       "status": "Reference captured from Python study; xnec2c validation TBD Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External nec2c gate added 2026-09-25 (FND-156): the reference dipole had none, so a one-segment length error in every Hallen answer went ungated for its whole life. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended), captured 2026-09-25\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 79.656,
         "imag_ohm": 46.647,
         "convergence": [
@@ -77,7 +78,7 @@
           }
         ]
       },
-      "last_produced_fingerprint": "7802d586dc56f3da2638202a552c8b239ecca877052db0e142efaae9c937d60c"
+      "last_produced_fingerprint": "7b455725677b18ad894a18f47ca51f91256102e1e73e19b64fc1ae3c86b76e4c"
     },
     "dipole-ex3-freesp-51seg": {
       "deck_file": "dipole-ex3-freesp-51seg.nec",
@@ -380,13 +381,14 @@
         "ExternalX_percent_rel": 7.0
       },
       "status": "PH8-CHK-004: NT implemented; this malformed NT card is warned + skipped. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 30.551,
         "imag_ohm": -885.32,
         "convergence": [
@@ -407,11 +409,11 @@
           }
         ]
       },
-      "last_produced_fingerprint": "61b65739424670c18fb6308c0c821c8fe942b62949fbbe03c854a0920909b3d8"
+      "last_produced_fingerprint": "206226dd3dfd431e12779c3e6ebec45f36a5ab8294a99f111d00e6222ae0ed54"
     },
     "dipole-nt-tl-equiv-freesp-51seg": {
       "deck_file": "dipole-nt-tl-equiv-freesp-51seg.nec",
-      "description": "Half-wave dipole, 51 seg, 14.2 MHz, with a well-formed NT two-port network between segments 20 and 32 whose admittance parameters equal the equivalent of a lossless TL (Z0=50, len=2.0m). PH8-CHK-004: the NT admittance->Z stamp reproduces the equivalent TL feedpoint impedance end to end (matches the TL deck to ~1e-5 ohm), validating the stamp through the full solve.",
+      "description": "Half-wave dipole, 51 seg, 14.2 MHz, with a well-formed NT two-port network between segments 20 and 32 whose admittance parameters equal the equivalent of a lossless TL (Z0=50, len=2.0m). PH8-CHK-004: the NT admittance->Z stamp reproduces the equivalent TL feedpoint impedance end to end (matches the TL deck to ~1e-5 ohm), validating the stamp through the full solve. External X gate 3.0 Ω (was 2.0, FND-255): against nec2c's 27x limit fnec's own 51-segment X is 2.09 Ω off; refined (1 / 3 / 9x: -211.675, -210.495, -209.870) it heads for about -209.17, where nec2c's series heads for about -209.14, so the gap is fnec's discretisation at the deck's mesh, which a gate on that mesh against a converged reference must carry.",
       "frequency_mhz": 14.2,
       "segments": 51,
       "wires": 1,
@@ -433,18 +435,19 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "ExternalR_absolute_ohm": 2.5,
-        "ExternalX_absolute_ohm": 2.0
+        "ExternalX_absolute_ohm": 3.0
       },
       "status": "PH8-CHK-004: well-formed NT two-port stamped into Z; reproduces the equivalent TL impedance. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Until FND-123 this pinned 75.02 + j42.29 from the series-Z stamp; nec2c gives 64.51 - j212.78 for this deck, so the old model was not merely inaccurate but a different answer. Now 63.35 - j213.68. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
+        "source": "nec2c 1.3.1 on a 27x mesh (every GW's segments x27, each segment reference k -> 27k - 13: the same point; scripts/nec2c-fine-mesh.py) with the extended kernel (EK 0: 27x is below the thin-wire limit), captured 2026-10-16 by scripts/nec2c-converged-series.py --ek --to 27 (FND-255: the 1 / 3 / 9 x series of 2026-10-11 (FND-232) had not settled within the gate). The series at 1 / 3 / 9 / 27 x is in 'convergence', all on the extended kernel; '9x_thin' is the 9x point on the thin kernel, the earlier reference. Before FND-232 the reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
-        "mesh_multiple": 9,
-        "real_ohm": 63.822,
-        "imag_ohm": -210.04,
+        "mesh_multiple": 27,
+        "kernel": "extended",
+        "real_ohm": 63.71,
+        "imag_ohm": -209.59,
         "convergence": [
           {
             "point": null,
@@ -457,13 +460,21 @@
               -210.91
             ],
             "9x": [
+              63.821,
+              -210.04
+            ],
+            "27x": [
+              63.71,
+              -209.59
+            ],
+            "9x_thin": [
               63.822,
               -210.04
             ]
           }
         ]
       },
-      "last_produced_fingerprint": "fb887bb4dc3b6b93cdabf045cd919b5217dac50177bda4e4c761eff0a5d0bcc0"
+      "last_produced_fingerprint": "de6ae0b7317f55aabbccd89c576869f309aef25ee4ce5d06022d9b81967b93e4"
     },
     "dipole-pt-nt-freesp-51seg": {
       "deck_file": "dipole-pt-nt-freesp-51seg.nec",
@@ -1191,6 +1202,7 @@
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 75.073,
         "imag_ohm": 44.377,
         "convergence": [
@@ -1242,9 +1254,9 @@
         }
       ],
       "status": "GN=1 PEC image-method support active; regression-gated in CI. External reference candidate captured via nec2c 1.3.1 with XQ-appended deck copy, and now CI-gated with absolute external R/X thresholds. ExternalR gate tightened 10→8 on 2026-04-29 (actual |dR|=7.12). ExternalX gate widened 30->35 on 2026-07-08: fnec's Hallen operator carries a documented ~32 ohm systematic reactance offset vs nec2c (present in free space too: fs X 13.9 vs nec2c 46.2), so the absolute-X gate must exceed it; the PH9-CHK-006 ground-image sign fix TIGHTENED ExternalR from ~7 to 0.93 ohm and made the ground reactance delta match nec2c's sign, the meaningful checks. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 8 / X 35 ohm to R 6 / X 5: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). External R gate tightened 2026-09-26 (FND-158) from 6 to 2 ohm: with the sin homogeneous term, R agrees with nec2c to 0.51 ohm (was 2.61). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "407b812f3ed0f96e83fb06da07e05224b5f5bba6a1dd6925f4ce691911e9a912"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "ec1aa247874b36f2931af691393d5500b49e7e2a9f818534d77ba59dc992dc64"
     },
     "dipole-gn0-fresnel-51seg": {
       "deck_file": "dipole-gn0-fresnel-51seg.nec",
@@ -1458,6 +1470,7 @@
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 1129.7,
         "imag_ohm": 46.647,
         "convergence": [
@@ -1487,9 +1500,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (7422.769493 + j1428.846488) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 10.1 / X 40.4 ohm to R 2 / X 8: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "8906ef35869f59d5933d65b7016df4ef781c34542a0f79a09446196bbe39fade"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "70cc82b01f800c8305de7d42df1e4ce4dfc79357ad145c82dc83be656c4cecf8"
     },
     "dipole-ld-series-rl-51seg": {
       "deck_file": "dipole-ld-series-rl-51seg.nec",
@@ -1561,13 +1574,14 @@
         "ExternalX_absolute_ohm": 5.0
       },
       "status": "Phase-2 regression lock: TL card parsed and lossless Z-stamp applied. Z0=50 Ω, length=0.1 m stamp shifts Z_RE from no-TL base (3.305) to 3.670. External NEC2 validation pending. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Until FND-123 this pinned 0.256 + j34.698 from the series-Z stamp, against nec2c's 84.826 + j31.131: the line was effectively inert. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
       "external_reference_candidate": {
         "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 85.266,
         "imag_ohm": 31.061,
         "convergence": [
@@ -1588,7 +1602,7 @@
           }
         ]
       },
-      "last_produced_fingerprint": "4663b01978bfdd0e80861eb18a69ef3e70b906f92c2f63782333a1849967c16e"
+      "last_produced_fingerprint": "f5b93431e4ddeb936f44360d4cb820da8685663ddfe965f665f4f012686ac370"
     },
     "tl-two-dipoles-linked-seg0": {
       "deck_file": "tl-two-dipoles-linked-seg0.nec",
@@ -1636,34 +1650,43 @@
         "ExternalX_absolute_ohm": 2.0
       },
       "status": "Phase-2 regression lock: TL card with NSEG=0 shorthand treated as single-section; same Z-stamp as NSEG=1 case. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-111, FND-123): TL cards are read in the NEC-2 layout and TL/NT are solved as networks across the port gaps instead of stamped as series Z-parameters, which was inert; a malformed NT is refused rather than skipped, so this deck's filler NT became a well-formed one. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
+        "source": "nec2c 1.3.1 on a 27x mesh (every GW's segments x27, each segment reference k -> 27k - 13: the same point; scripts/nec2c-fine-mesh.py) with the extended kernel (EK 0: 27x is below the thin-wire limit), captured 2026-10-16 by scripts/nec2c-converged-series.py --ek --to 27 (FND-255: the 1 / 3 / 9 x series of 2026-10-11 (FND-232) had not settled within the gate). The series at 1 / 3 / 9 / 27 x is in 'convergence', all on the extended kernel; '9x_thin' is the 9x point on the thin kernel, the earlier reference. Before FND-232 the reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux (deck copy with XQ appended, leading CE lines as CM), captured 2026-09-26\"), which the 1x run reproduces.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
-        "mesh_multiple": 9,
-        "real_ohm": 93.959,
-        "imag_ohm": -12.289,
+        "mesh_multiple": 27,
+        "kernel": "extended",
+        "real_ohm": 93.993,
+        "imag_ohm": -12.363,
         "convergence": [
           {
             "point": null,
             "1x": [
-              93.768,
+              93.767,
               -11.855
             ],
             "3x": [
-              93.88,
+              93.879,
               -12.154
             ],
             "9x": [
+              93.956,
+              -12.289
+            ],
+            "27x": [
+              93.993,
+              -12.363
+            ],
+            "9x_thin": [
               93.959,
               -12.289
             ]
           }
         ]
       },
-      "last_produced_fingerprint": "5cdf8d496c9ac1dbb38000047e899f36eee25b4377e2fdb2008e1f3ddbe40f62"
+      "last_produced_fingerprint": "c91dda970867098e39b9d4bd107da7bfb895b4725760ba49b2efcbe2766a8e7a"
     },
     "tl-two-dipoles-linked-seg0-even52": {
       "deck_file": "tl-two-dipoles-linked-seg0-even52.nec",
@@ -1797,29 +1820,30 @@
         }
       },
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was NEC2DXS500 via Wine on the deck's own mesh (\"NEC2DXS500 via Wine (temporary XQ-inserted deck)\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
+        "source": "nec2c 1.3.1 on a 27x mesh (every GW's segments x27, each segment reference k -> 27k - 13: the same point; scripts/nec2c-fine-mesh.py) with the extended kernel (EK 0: 27x is below the thin-wire limit), captured 2026-10-16 by scripts/nec2c-converged-series.py --ek --to 27 (FND-255: the 1 / 3 / 9 x series of 2026-10-11 (FND-232) had not settled within the gate). The series at 1 / 3 / 9 / 27 x is in 'convergence', all on the extended kernel; '9x_thin' is the 9x point on the thin kernel, the earlier reference. Before FND-232 the reference was NEC2DXS500 via Wine on the deck's own mesh (\"NEC2DXS500 via Wine (temporary XQ-inserted deck)\"), which the 1x run reproduces.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
-        "mesh_multiple": 9,
+        "mesh_multiple": 27,
+        "kernel": "extended",
         "10.0": {
-          "real_ohm": 29.401,
-          "imag_ohm": -428.88
+          "real_ohm": 29.317,
+          "imag_ohm": -428.16
         },
         "12.0": {
-          "real_ohm": 47.805,
-          "imag_ohm": -192.16
+          "real_ohm": 47.736,
+          "imag_ohm": -191.94
         },
         "14.0": {
-          "real_ohm": 76.058,
-          "imag_ohm": 25.035
+          "real_ohm": 76.092,
+          "imag_ohm": 25.102
         },
         "16.0": {
-          "real_ohm": 121.42,
-          "imag_ohm": 247.18
+          "real_ohm": 121.79,
+          "imag_ohm": 247.56
         },
         "18.0": {
-          "real_ohm": 199.6,
-          "imag_ohm": 499.41
+          "real_ohm": 200.93,
+          "imag_ohm": 500.9
         },
         "convergence": [
           {
@@ -1833,6 +1857,14 @@
               -430.26
             ],
             "9x": [
+              29.401,
+              -428.89
+            ],
+            "27x": [
+              29.317,
+              -428.16
+            ],
+            "9x_thin": [
               29.401,
               -428.88
             ]
@@ -1849,6 +1881,14 @@
             ],
             "9x": [
               47.805,
+              -192.17
+            ],
+            "27x": [
+              47.736,
+              -191.94
+            ],
+            "9x_thin": [
+              47.805,
               -192.16
             ]
           },
@@ -1860,9 +1900,17 @@
             ],
             "3x": [
               75.992,
-              24.888
+              24.887
             ],
             "9x": [
+              76.057,
+              25.029
+            ],
+            "27x": [
+              76.092,
+              25.102
+            ],
+            "9x_thin": [
               76.058,
               25.035
             ]
@@ -1878,6 +1926,14 @@
               246.45
             ],
             "9x": [
+              121.41,
+              247.18
+            ],
+            "27x": [
+              121.79,
+              247.56
+            ],
+            "9x_thin": [
               121.42,
               247.18
             ]
@@ -1893,6 +1949,14 @@
               496.6
             ],
             "9x": [
+              199.59,
+              499.4
+            ],
+            "27x": [
+              200.93,
+              500.9
+            ],
+            "9x_thin": [
               199.6,
               499.41
             ]
@@ -1908,9 +1972,9 @@
         "ExternalX_absolute_ohm": 8.0
       },
       "status": "fnec now solves all FR points and CI-gates the full sweep using Hallen regression values. External NEC2DXS500+XQ candidates are now gated with absolute external R/X thresholds. Gates tightened 15/50→14/47 on 2026-04-29 (actual max |dR|=12.34, max |dX|=45.92). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 14 / X 47 ohm to R 8 / X 8: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "acf42d7eca982bca083039268e329bc65c92abfafcdc87e3596ee7c1ad9407fc"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "b8733ea80243ac4cae7b74a47efacfe80e3e1ea66fb45dc264deaf9862f9a17f"
     },
     "multi-source": {
       "deck_file": "multi-source.nec",
@@ -1936,6 +2000,7 @@
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "source_1": {
           "real_ohm": 164.06,
           "imag_ohm": 68.478
@@ -1986,9 +2051,9 @@
         "ExternalX_absolute_ohm": 10.0
       },
       "status": "Regression reference captured from fnec for both feedpoints; external candidate captured via nec2c 1.3.1 with XQ-appended deck copy and now CI-gated with absolute external R/X thresholds. Gates tightened 15/50→12/40 on 2026-04-29 (actual |dR|=10.85, |dX|=36.97). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). External gates tightened 2026-09-25 (FND-156) from R 12 / X 40 ohm to R 3 / X 10: the old X band existed to absorb the one-segment shortening, which is gone. Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "a1869c47167e852bffa54463794fe40071597f4ca75f142d0b6e165ee50f87bc"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "12cbd40870261a440d64d7a6b67f6c046e167a3eff1b22a6b3a44171e99d87cb"
     },
     "multi-source-gr-180": {
       "deck_file": "multi-source-gr-180.nec",
@@ -2118,12 +2183,13 @@
         "imag_ohm": 452.409633
       },
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on a 9x mesh (every GW's segments x9, each segment reference k -> 9k - 4: the same point; scripts/nec2c-fine-mesh.py), captured 2026-10-11 (FND-232). The previous reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux, captured 2026-08-30\"), which the 1x run reproduces; the series at 1 / 3 / 9 x is in 'convergence' and contracts. fnec refined the same way converges to the same value.",
+        "source": "nec2c 1.3.1 on a 27x mesh (every GW's segments x27, each segment reference k -> 27k - 13: the same point; scripts/nec2c-fine-mesh.py) with the extended kernel (EK 0: 27x is below the thin-wire limit), captured 2026-10-16 by scripts/nec2c-converged-series.py --ek --to 27 (FND-255: the 1 / 3 / 9 x series of 2026-10-11 (FND-232) had not settled within the gate). The series at 1 / 3 / 9 / 27 x is in 'convergence', all on the extended kernel; '9x_thin' is the 9x point on the thin kernel, the earlier reference. Before FND-232 the reference was nec2c 1.3.1 on the deck's own mesh (\"nec2c 1.3.1 on Arch Linux, captured 2026-08-30\"), which the 1x run reproduces.",
         "engine": "nec2c",
         "captured_on": "2026-10-11",
-        "mesh_multiple": 9,
-        "real_ohm": 278.64,
-        "imag_ohm": 458.66,
+        "mesh_multiple": 27,
+        "kernel": "extended",
+        "real_ohm": 280.3,
+        "imag_ohm": 459.75,
         "convergence": [
           {
             "point": null,
@@ -2132,10 +2198,18 @@
               452.26
             ],
             "3x": [
-              275.43,
+              275.42,
               456.56
             ],
             "9x": [
+              278.64,
+              458.65
+            ],
+            "27x": [
+              280.3,
+              459.75
+            ],
+            "9x_thin": [
               278.64,
               458.66
             ]
@@ -2156,9 +2230,9 @@
       "forbidden_warning_substrings": [],
       "expected_warning_counts": {},
       "status": "FND-132 gate. Pins the conductor-path basis so it cannot silently regress. Probed 2026-08-30: of every deck then in corpus/, ZERO routed to this basis, because it needs a start-to-start or end-to-end REVERSED split and an ordinary end-to-start bend reduces to trivial paths. That matters beyond coverage: FND-121 was a CRITICAL finding about this exact basis being wired to only one frontend of four, and it was found by an audit rather than by the corpus, because the corpus could not reach the code. The external tolerances were 30 % / 20 % while Hallen had no bend condition; with FND-162 stage 1b (per-section homogeneous terms, bend rows and the corner term) this deck answers within 0.7 % in R and 2 % in X of nec2c, and the band is 3 %. Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "7921479886adf6aec6059972f3a11f2ce5cc43d4b10c7ccf27e46898612585db"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "7bcb3d612147115dda5350811ae840dcb202aa664af9c1d57e96b6d41033fb99"
     },
     "monopole-pec-26seg": {
       "deck_file": "monopole-pec-26seg.nec",
@@ -2182,6 +2256,7 @@
         "engine": "nec2c",
         "captured_on": "2026-10-11",
         "mesh_multiple": 9,
+        "kernel": "thin",
         "real_ohm": 39.678,
         "imag_ohm": 23.448,
         "convergence": [
@@ -2211,9 +2286,9 @@
         "ExternalX_absolute_ohm": 4.0
       },
       "status": "FND-082 gate, added 2026-09-26. The residual against nec2c is half the half-wave dipole's (FND-156), as image theory requires. Pinned 2026-09-26 (FND-082). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "d79501ee4b31b61a6a97ea88fb575d64a04a1387697700b9c5ec5fa098619919"
+      "last_produced_on": "2026-10-16",
+      "last_produced_in": "0.23.0",
+      "last_produced_fingerprint": "671d6227e5a107a75c494f7980b5e8939e384aecf3e07d1f733681b130e75b53"
     }
   }
 }
