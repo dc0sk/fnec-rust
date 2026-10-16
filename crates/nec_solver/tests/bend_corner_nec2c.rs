@@ -76,23 +76,36 @@ fn a_two_bend_u_tracks_nec2c() {
     );
 }
 
-/// An inverted-V fed a quarter of the way up an arm, where the bend matters most:
-/// bend rows alone were 38 % off; with the corner term 9.2 % at 21 segments per
-/// arm and 5.0 % at 41.
+/// An inverted-V fed off its apex, at 0.36 of an arm: segment 8 of 21 and 23 of
+/// 63, the same point (`scripts/nec2c-fine-mesh.py`'s mapping), so the two meshes
+/// solve one antenna and the error is measured on it twice. The reference is
+/// nec2c's own converged value, 933.23 + j892.42 at 81× (1701 segments an arm,
+/// `EK 0`; `scripts/nec2c-converged-series.py --ek --to 81`, captured
+/// 2026-10-16): its 1 / 3 / 9 / 27 / 81 × R is 853.71, 896.05, 916.08, 926.52,
+/// 933.23, X 889.25 … 892.42, about 12 Ω (0.9 %) still to move in R, a third of
+/// the gate. fnec: 3.2 % at 21 per arm, 1.6 % at 63.
+///
+/// FND-258: this fed segment 5 of 21 and 10 of 41 — centres at 0.214 and 0.232 of
+/// the arm, two antennas whose nec2c values differ by 770 Ω in X — each against
+/// its own same-mesh nec2c, which then moved 17.5 % on refinement against a 7 %
+/// gate (FND-257). Not that feed point again: near 0.21 of the arm the V's current
+/// is near a minimum, |Z| ≈ 3.6 kΩ, and nec2c's R there has not settled at 81×
+/// (steps 329, 148, 75, 48 Ω, the ratio rising).
 #[test]
 fn an_off_apex_inverted_v_converges_to_nec2c() {
     let v = |n: u32| format!("GW 1 {n} -5 0 0 0 0 3 .001\nGW 2 {n} 0 0 3 5 0 0 .001\n");
-    let e21 = err(z_in(&v(21), (1, 5)), Complex64::new(3578.6, -1727.0));
-    let e41 = err(z_in(&v(41), (1, 10)), Complex64::new(3572.5, -959.31));
+    let nec2c = Complex64::new(933.23, 892.42);
+    let e21 = err(z_in(&v(21), (1, 8)), nec2c);
+    let e63 = err(z_in(&v(63), (1, 23)), nec2c);
     assert!(
-        e41 < 0.07,
-        "inverted-V, 41 per arm: {:.2} % from nec2c",
-        e41 * 100.0
+        e63 < 0.03,
+        "inverted-V, 63 per arm: {:.2} % from nec2c",
+        e63 * 100.0
     );
     assert!(
-        e41 < e21,
+        e63 < e21,
         "the error must shrink with refinement: {:.2} % -> {:.2} %",
         e21 * 100.0,
-        e41 * 100.0
+        e63 * 100.0
     );
 }

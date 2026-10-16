@@ -17,6 +17,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The off-apex inverted-V gate measures one antenna at two meshes** (FND-258).
+  It fed segment 5 of 21 and 10 of 41 per arm — 0.214 and 0.232 of the arm, two
+  antennas whose nec2c values differ by 770 Ω in X — each against nec2c on its
+  own mesh. It now feeds 0.36 of the arm at 21 and 63 per arm, against nec2c's
+  converged 933.23 + j892.42 (81×): fnec 3.2 % then 1.6 %.
 - **Junction gates carry nec2c's own slow convergence** (FND-256). At a degree-3
   junction nec2c settles slowly or not at all over the meshes its thin-wire limit
   allows. The five stem-fed Y / T gates are held to nec2c's 27N on its extended
