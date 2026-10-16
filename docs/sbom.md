@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-16
 ---
 
 # SBOM
@@ -16,9 +16,15 @@ release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the f
 transitive graph — 525 packages at v0.19.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
 
-**No dependency left or arrived between v0.21.7 and v0.22.0.** Set difference over
-`(name, versionInfo)` pairs: 525 packages before and after; the only entries that moved
-are the nine workspace members' own versions (0.21.7 → 0.22.0).
+**The wgpu 29 → 30 bump between v0.22.0 and v0.23.0** (525 packages before, 526 after;
+set difference over `(name, versionInfo)` pairs). `wgpu`, `wgpu-core`, `wgpu-hal`,
+`wgpu-types`, `wgpu-naga-bridge`, the three `wgpu-core-deps-*` and `naga` moved 29.0.3 →
+30.0.1, with `naga-types` 30.0.1 new; `gpu-descriptor` 0.3.2 and `gpu-descriptor-types`
+0.2.0 left; `bit-set` 0.9.1 → 0.10.0. The web-target crates moved with it (`wasm-bindgen`
+0.2.120 → 0.2.129 and its four siblings, `js-sys`/`web-sys` 0.3.97 → 0.3.106), and two
+arrived under them: `syn` 3.0.9 (beside the existing 2.x, for `wasm-bindgen-macro-support`)
+and `tokio` 1.53.3 (for `wasm-bindgen-futures`, reached from the GUI's `iced`). Apart from
+these, only the nine workspace members' own versions moved (0.22.0 → 0.23.0).
 
 **One dependency left between v0.18.0 and v0.19.0 and none arrived:** `sha2` 0.10.9,
 which only the unused result cache called (removed, FND-155). Established by set

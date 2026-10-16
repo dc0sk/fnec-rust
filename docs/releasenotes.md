@@ -2,10 +2,71 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-14
+last_updated: 2026-10-16
 ---
 
 # Release Notes
+
+## 0.23.0 — Inside 4nec2
+
+4nec2 is a Windows front end for NEC-2 that solves by running an external kernel,
+`nec2dxs*.exe`, and reading the report it writes. fnec can now be that kernel.
+`--output-format nec2d` writes NEC-2D's own report, line for line and column for
+column, the one layout 4nec2 accepts, and `fnec nec2d-kernel` keeps the kernel's
+contract. Under one of the kernel's names with no arguments, fnec is the kernel.
+`scripts/build-windows-kernel.sh` builds it for Windows, and `docs/4nec2-drop-in.md`
+covers install and rollback. In 4nec2 V5.9.3 under Wine 10.0, 4nec2 read fnec's
+report for every printable deck type tried: a dipole, loads, perfect and finite
+ground, a sweep, two sources, `GM`/`GX` and a near field. It shows fnec's reason for
+a deck fnec refuses. **Tested under Wine only, never on Windows; the binary is
+unsigned and 64-bit, and is not among this release's assets.**
+
+Measured on the release build against the published 0.22.0 binary. nec2c 1.3.1
+solves each deck as written:
+
+| | 0.22.0 | 0.23.0 | nec2c |
+|---|---|---|---|
+| a half-wave dipole, `--output-format nec2d` | not an option | the NEC-2D report, read by 4nec2 | — |
+| the same dipole on a 30° pattern grid: average power gain (4nec2 shows it as the radiation efficiency) | 1.0241 | 0.9892 | 0.98844 |
+| a dipole written in feet with `GS 0 0 .3048`, 21 segments | refused, naming `GS` | 78.96 + j43.54 Ω | 79.04 + j45.91 Ω |
+| a half-circle `GA` arc, `--solver mpie`, 90 segments | refused, naming `GA` | 67.35 + j100.72 Ω | 67.83 + j101.95 Ω |
+| a series-loaded dipole 0.05 λ over `GN 2`, `--solver mpie`, 189 segments | refused: `LD` not supported | 84.10 + j87.15 Ω | 84.30 + j87.41 Ω |
+| a Yagi, 10 mm reflector and 2 mm driven element, `--solver mpie`, 189 segments | 73.63 + j41.81 Ω | 70.15 + j28.81 Ω | 70.43 + j28.98 Ω |
+| four radials as `GR 1 4` | refused: `GR` needs 3 fields | 22.13 + j2.96 Ω | 22.77 + j4.45 Ω |
+| a Yagi element stepped 2:1 in radius, Hallén, 379 segments | 77.65 + j38.85 Ω | 76.40 + j14.16 Ω | not a reference¹ |
+
+¹ nec2c drifts on a radius step (j31.8 to j35.7 Ω as the mesh is refined). The
+element's Leeson equivalent, a uniform wire, gives 75.11 + j16.52 Ω under nec2c.
+
+- **fnec as 4nec2's kernel** (PAR-011): the NEC-2D report, the kernel mode, the
+  Windows build and an end-to-end harness (`scripts/par011-wine-e2e.sh`). 4nec2
+  picks its kernel by segment count, so an install replaces all six names. The old
+  filename-steered `--exec hybrid` default for those names is retired: under a
+  kernel name, fnec is plain fnec with a deck argument, and the kernel with none.
+- **More of NEC-2's geometry cards**: `GS` scales, `GA` and `GH` build arcs and
+  helices (solved by `--solver mpie`; Hallén refuses them by name), `GC` tapers a
+  wire, `GX` reflects. Each is built as nec2c builds it.
+- **`--solver mpie` takes loads** (every `LD` type and `--loads-config`), and
+  **models each segment's own radius**. **Hallén models a radius step** along a
+  wire (FND-252).
+- **`GR`, `GE` and `GN` are read as NEC-2 reads them** (FND-241 to FND-243,
+  FND-247). **Some decks that solved before are now refused, or solve to a
+  different answer.** This is what makes the release 0.23.0:
+  - `GR I1 I2` makes `I2` occurrences in all, the original included. fnec used
+    to read `I2` as additional copies, so a third field other than 0 or 360/`I2`
+    is refused, with the NEC-2 spelling named.
+  - `GE 1` with no `GN` is refused, where fnec used to infer a perfect ground.
+  - A wire standing on the ground needs `GE 1`.
+  - A geometry card after `GE` is refused.
+- **The average power gain is NEC-2's** (FND-262): each sample weighted by the
+  solid angle it stands for, a null counted as zero.
+- **The GPU path** moves to wgpu 30, and its shaders pass Vulkan validation
+  (FND-193). Its accuracy gate declines a solve whose residual norms are missing
+  (FND-253).
+
+Ledger: 240 findings at v0.22.0, 262 at 0.23.0, 11 open — the
+reference-convergence audit's FND-255 to FND-260 among them, recorded and not yet
+fixed.
 
 ## 0.22.0 — Close to the ground
 
