@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/hallen-bends.md
 status: living
-last_updated: 2026-10-16
+last_updated: 2026-10-17
 ---
 
 # Hallén on bent conductors (FND-162)
@@ -139,8 +139,8 @@ It takes a deck only when all hold: voltage (delta-gap, EX 0/5) sources, a
 current source (EX 4, solved as its unit gap and scaled — stage 5), or a plane
 wave (EX 1–3, a gap on every segment; stage 5, without `LD` loads); lumped `LD` loads are columns of the graph system and `TL`/`NT` networks are
 superposed over its unit-gap solves (both stage 5); contact with perfect ground is solved as the doubled
-image problem (a top-hat or folded monopole) — but see FND-191 for the H-shaped
-image of a top-hat; every straight section at least two segments. Anything else keeps the per-path fallback and its warning, which
+image problem (a top-hat or folded monopole) — the H-shaped image of a top-hat
+converges with the MPIE, while nec2c has not settled on it (FND-191, FND-264); every straight section at least two segments. Anything else keeps the per-path fallback and its warning, which
 names the one-segment run or the wire to split. (A one-segment run with its current
 carried unchanged across it was measured: 10.5 % off nec2c at 81 segments on a
 folded dipole's jumpers, against 0.9 % with two-segment jumpers — so it stays

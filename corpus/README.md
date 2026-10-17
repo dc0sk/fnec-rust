@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-10-10
+last_updated: 2026-10-17
 ---
 
 # Golden Reference Corpus
@@ -355,6 +355,17 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 **Tolerance gates**: Same as `multi-source.nec`.
 
 **Why this case**: It locks `GM` translated-copy behaviour into corpus validation. Note it cannot discriminate the FND-119 defect on its own: with `NRPT = 1` the old last-tag reading and the NEC reading happen to agree. `dipole-gm-nrpt2-freesp.nec` and `crates/nec_solver/tests/gm_nec2c.rs` cover the cases that separate them.
+
+## Series decks (`corpus/series/`)
+
+Decks that a captured reference series is bound to but that are not
+`corpus_validation` cases: they live one directory down so the tests that walk
+`corpus/*.nec` do not take them. Each names, in its `CM` lines, the script that
+produced its series and the test that pins it.
+
+- `h-top-hat-41-25.nec` — the H of FND-191 / FND-264; nec2c's diverging series in
+  `apps/nec-cli/tests/converged_reference.rs`, its same-mesh gap in
+  `crates/nec_solver/tests/graph_nec2c.rs`.
 
 ## Corpus metadata
 

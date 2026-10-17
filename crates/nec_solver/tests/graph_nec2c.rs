@@ -417,36 +417,111 @@ fn a_grounded_top_hat_equals_its_image_h() {
     );
 }
 
-/// FND-191: the H is where fnec and nec2c take different junction conditions.
-/// fnec closes a degree-3 node with equal scalar potential; NEC-2 with Wu–King's
-/// equal charge density. Where a near-uniform stem current meets charged hats at
-/// both ends they converge to different answers: nec2c 16.47 − j57.43 at 41/25,
-/// fnec 16.69 − j50.31, 12 % apart at every mesh and every radius. fnec's MPIE —
-/// separate code with no imposed junction condition — agrees with the Hallén
-/// graph, so the H is gated against the MPIE (its port is the two gaps in
-/// series: twice the per-gap impedance), and the nec2c gap is pinned as a band so
-/// a change in either solver shows. The maintainer's decision, 2026-10-02.
-///
-/// FND-264 (open, the maintainer's): this evidence no longer holds as written.
-/// The MPIE figure below is the MPIE of 2026-10-02, before FND-224 moved its
-/// feed; today's MPIE reads 32.46 − j97.15 here and settles near 16.21 − j48.27 a
-/// gap, 3 % in X from Hallén's settled 16.695 − j49.78. And nec2c does not
-/// converge on the H: X −57.43, −56.40, −55.19, −53.32 a gap at 1 / 3 / 9 / 27 ×,
-/// the steps growing, towards fnec — so "converge to different answers" is not
-/// shown either. The gate is left as it was pending that decision.
-#[test]
-fn the_h_agrees_with_the_mpie_and_keeps_its_measured_gap_to_nec2c() {
-    let hallen = z_at_7mhz(&h_in_free_space(41, 25), (1, 41));
-    let mpie = Complex64::new(33.386_903, -100.004_424);
-    let e_mpie = rel(hallen * 2.0, mpie);
-    assert!(
-        e_mpie < 0.01,
-        "Hallén {hallen} against the MPIE's {mpie}/2: {e_mpie:.4}"
+/// The H at `s` × 15 / 9 segments (stem 30s, hats 9s), fed by two 1 V gaps on
+/// the stem segments k → s·k − (s − 1)/2 from 15 and 16: their centres stay at
+/// ±1/6 m for every odd `s`, so each `s` solves one antenna. Returns the deck
+/// text and the two gap segments.
+fn h_at(s: u32) -> (String, (u32, u32)) {
+    let (g1, g2) = (15 * s - (s - 1) / 2, 16 * s - (s - 1) / 2);
+    let (n, m) = (30 * s, 9 * s);
+    let text = format!(
+        "CE\nGW 1 {n} 0 0 -5 0 0 5 .001\nGW 2 {m} 0 0 5 -3 0 5 .001\nGW 3 {m} 0 0 5 3 0 5 .001\n\
+         GW 4 {m} 0 0 -5 -3 0 -5 .001\nGW 5 {m} 0 0 -5 3 0 -5 .001\nGE 0\n\
+         EX 0 1 {g1} 0 1 0\nEX 0 1 {g2} 0 1 0\nFR 0 1 0 0 7.1 0\nEN\n"
     );
+    (text, (g1, g2))
+}
+
+/// The per-gap impedance at both gaps, Hallén and MPIE, each solver on the
+/// geometry its frontend builds; asserts the gaps sit at ±1/6 m on both.
+fn h_both_solvers(s: u32) -> ([Complex64; 2], [Complex64; 2]) {
+    let (text, gaps) = h_at(s);
+    let deck = nec_parser::parse(&text).expect("parses").deck;
+    let f = 7.1e6;
+    let ground = ground_model_from_deck(&deck);
+    let at = |segs: &[nec_solver::Segment], currents: &[Complex64]| {
+        [gaps.0, gaps.1].map(|g| {
+            let i = nec_solver::find_deck_segment(segs, 1, g).expect("gap");
+            let z = segs[i].midpoint[2];
+            assert!(
+                (z.abs() - 1.0 / 6.0).abs() < 1e-9,
+                "s = {s}: gap {g} centred at z = {z}, not ±1/6 m"
+            );
+            Complex64::new(1.0, 0.0) / currents[i]
+        })
+    };
+    let segs = build_geometry(&deck).expect("geometry");
+    let mut z = assemble_z_matrix_with_ground(&segs, f, &ground);
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, f, &[]).expect("Hallén solves");
+    let hallen = at(&segs, &routed.currents);
+    let segs = nec_solver::build_deck_geometry(&deck).expect("geometry");
+    let currents =
+        nec_solver::solve_mpie_session(&deck, &segs, &ground, f, &[]).expect("MPIE solves");
+    let mpie = at(&segs, &currents);
+    for (name, z) in [("Hallén", hallen), ("MPIE", mpie)] {
+        assert!(
+            rel(z[0], z[1]) < 1e-6,
+            "s = {s}: {name}'s two gaps differ: {} against {}",
+            z[0],
+            z[1]
+        );
+    }
+    (hallen, mpie)
+}
+
+/// FND-191 / FND-264: at the H's two degree-3 nodes fnec closes each node with
+/// equal scalar potential, NEC-2 with Wu–King's equal charge density. Two fnec
+/// formulations — the Hallén section graph, which imposes the condition, and the
+/// MPIE, whose single-valued scalar potential makes it intrinsic — converge
+/// together, both solved here from the live code at two meshes of one antenna:
+/// measured 2.06 % → 0.47 % → 0.093 % apart at 15 / 45 / 135 per stem half
+/// (2026-10-17), Hallén settled (X −49.43, −49.90, −49.94 a gap).
+///
+/// nec2c has no converged value to arbitrate: its series on the H drifts toward
+/// fnec with growing steps (`converged_reference.rs`). pymininec, a third code in
+/// MININEC's formulation, extrapolates within its validity regime to about
+/// 16.6 − j50.5 a gap, 1–1.5 % from fnec's settled 16.695 − j49.78 on the 41/25
+/// antenna (`docs/external/pymininec.md`). Kill criterion: under 1 % at 45 and
+/// at least halving.
+#[test]
+fn the_h_hallen_and_mpie_converge_together() {
+    let (h1, m1) = h_both_solvers(1);
+    let (h3, m3) = h_both_solvers(3);
+    let (e1, e3) = (rel(h1[0], m1[0]), rel(h3[0], m3[0]));
+    println!(
+        "H: Hallén {} / {}, MPIE {} / {}",
+        h1[0], h3[0], m1[0], m3[0]
+    );
+    assert_converges("the H, Hallén against the MPIE", e1, e3, 0.01);
+    assert!(
+        e3 < e1 / 2.0,
+        "the H: the gap must at least halve a tripling, {e1:.4} -> {e3:.4}"
+    );
+}
+
+/// The H's gap to nec2c on the same mesh, pinned as a tripwire on fnec's
+/// absolute level — the one external anchor the live Hallén–MPIE comparison
+/// above lacks, since the two share the parser and the geometry. It is a
+/// same-mesh fact, not a converged difference: nec2c's own series on this deck
+/// moves toward fnec at every tripling and has not settled (FND-264 withdrew
+/// FND-191's "converge to answers 12 % apart"). nec2c 1.3.1: 16.468 − j57.426
+/// a gap on `corpus/series/h-top-hat-41-25.nec`; fnec 16.70 − j49.76, 11.9 %.
+#[test]
+fn the_h_keeps_its_same_mesh_gap_to_nec2c() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/series/h-top-hat-41-25.nec");
+    let text = std::fs::read_to_string(&path).expect("the H deck");
+    let deck = nec_parser::parse(&text).expect("parses").deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let f = 7.1e6;
+    let mut z = assemble_z_matrix_with_ground(&segs, f, &ground_model_from_deck(&deck));
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, f, &[]).expect("solves");
+    let idx = nec_solver::find_deck_segment(&segs, 1, 41).expect("feed");
+    let hallen = Complex64::new(1.0, 0.0) / routed.currents[idx];
     let gap = rel(hallen, Complex64::new(16.468, -57.426));
     assert!(
         (0.10..0.14).contains(&gap),
-        "the junction-condition gap to nec2c moved: {:.2} % (was 11.9 %)",
+        "the H's same-mesh gap to nec2c moved: {:.2} % (was 11.9 %)",
         gap * 100.0
     );
 }

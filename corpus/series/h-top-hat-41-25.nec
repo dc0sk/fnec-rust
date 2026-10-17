@@ -1,0 +1,17 @@
+CM FND-191 / FND-264: the H, a 10 m stem between two degree-3 nodes with a
+CM two-arm 3 m hat at each end (the doubled image of a top-hat monopole on PEC
+CM ground), fed by two 1 V gaps either side of the stem centre. 41 / 25 segments
+CM (stem 82). nec2c's series on it: scripts/nec2c-converged-series.py
+CM corpus/series/h-top-hat-41-25.nec --ek --to 27, pinned in
+CM apps/nec-cli/tests/converged_reference.rs. Not a corpus_validation case.
+CE
+GW 1 82 0 0 -5 0 0 5 .001
+GW 2 25 0 0 5 -3 0 5 .001
+GW 3 25 0 0 5 3 0 5 .001
+GW 4 25 0 0 -5 -3 0 -5 .001
+GW 5 25 0 0 -5 3 0 -5 .001
+GE 0
+EX 0 1 41 0 1 0
+EX 0 1 42 0 1 0
+FR 0 1 0 0 7.1 0
+EN

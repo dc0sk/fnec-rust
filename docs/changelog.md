@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-16
+last_updated: 2026-10-17
 ---
 
 # Changelog
@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The H's junction-condition evidence is re-derived from live code** (FND-264).
+  Its gate held Hallén to an MPIE constant with no recorded producer and pinned a
+  10–14 % gap to nec2c as if the codes converged apart. Now Hallén and the MPIE are
+  both solved in the test at two meshes of one antenna and must converge together
+  (2.02 % → 0.47 %); the nec2c gap stays as a same-mesh tripwire on a checked-in
+  deck (`corpus/series/h-top-hat-41-25.nec`), and nec2c's own series on it — still
+  moving toward fnec at 27× — is pinned as diverging. FND-264's claim that today's
+  MPIE sits 3 % from Hallén was a stale-binary measurement and is withdrawn; so is
+  FND-191's "converge to answers 12 % apart". pymininec, a third code, agrees with
+  fnec within its measured validity regime. The equal-potential decision stands.
 - **The off-apex inverted-V gate measures one antenna at two meshes** (FND-258).
   It fed segment 5 of 21 and 10 of 41 per arm — 0.214 and 0.232 of the arm, two
   antennas whose nec2c values differ by 770 Ω in X — each against nec2c on its
@@ -29,9 +39,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the T decks (were 2 % against nec2c's thin kernel below its thin-wire limit; fnec
   refined heads for the same limit). The tee fed at its node and the T through a
   bar, where nec2c drifts by a near-constant step, take three such steps out of
-  their tolerance. Two junctions are recorded open rather than re-pointed: the H,
-  whose FND-191 evidence no longer holds (FND-264), and the receive-current gates
-  (FND-265).
+  their tolerance. Two junctions were recorded open rather than re-pointed: the H
+  (FND-264, above) and the receive-current gates (FND-265).
 - **`scripts/nec2c-converged-series.py --ek` no longer aborts** when the 9× thin-kernel
   cross-check is below the thin-wire limit (FND-263); it leaves that point out.
 - **Twelve gates measured against nec2c on the test's own mesh now measure against

@@ -401,7 +401,8 @@ fn the_remesh_maps_a_segment_to_the_same_point_and_refuses_what_it_cannot() {
 /// The corpus gate above admits a settling series only.
 #[test]
 fn nec2c_has_no_converged_value_at_these_junctions() {
-    // The H (`graph_nec2c.rs`), 41 / 25 at 7.1 MHz, `EK 0`: the steps grow.
+    // The H, `corpus/series/h-top-hat-41-25.nec` at 7.1 MHz, `EK 0` (`--ek --to 27`,
+    // reproduced 2026-10-17): the steps grow, toward fnec's settled −49.78 (FND-264).
     assert_eq!(
         classify(&[-57.427, -56.402, -55.187, -53.32]),
         Series::Diverging
