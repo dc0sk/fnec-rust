@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/external/pymininec.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-17
 ---
 
 # Reference: pymininec (schlatterbeck/pymininec)
@@ -80,6 +80,32 @@ formulation** alongside fnec's Hallén/MPIE solvers and the `nec2c` oracle.
 - Thin-wire assumption violations (fat wires, tight junctions, ground-plane
   contact on helices) give non-physical impedance — same failure class we guard
   against in fnec.
+
+## Measured in fnec's use: validity regime and the H (FND-264, 2026-10-17)
+
+pymininec 1.2.0 (`pip install pymininec` into a scratch venv, not a project
+dependency), run with `--option none` and the impedance read from `SOURCE DATA`.
+
+**Regime, as measured at 7.1 MHz.** On a 10 m straight dipole and on the H below
+the series converges, then turns away between a segment of 0.0625 m and
+0.031 m (stem half n = 80 → 160), at radius 1e-3 and 1e-5 alike, MININEC versions
+12 and 13 identical. So at this frequency the limit is segment length, not
+segment/radius; frequency was not varied. Inside it, MININEC carries a bias: on
+the straight dipole (a = 1e-3, X at n = 10 … 320: −969.9, −965.2, −962.2, −960.7,
+−962.0, −972.2) its best point is about 0.7 % more negative in X than nec2c's
+limit (21 / 63 / 189 / 567 segments: −988.7, −969.3, −961.2, −957.4, ≈ −954).
+
+**The H** (`corpus/series/h-top-hat-41-25.nec`'s geometry: 10 m stem, 3 m hats,
+a = 1e-3): `pymininec -f 7.1 -w 1,2n,0,0,-5,0,0,5,.001 -w 2,m,0,0,5,-3,0,5,.001
+-w 3,m,0,0,5,3,0,5,.001 -w 4,m,0,0,-5,-3,0,-5,.001 -w 5,m,0,0,-5,3,0,-5,.001
+--excitation-pulse n --option none`, m = 3n/5, one pulse at the stem centre, so
+the per-gap figure is Z/2. Per gap at n = 5 / 10 / 20 / 40 / 80: 16.24 − j62.93,
+16.47 − j56.25, 16.57 − j52.96, 16.62 − j51.54, 16.62 − j51.61 (n = 80 at the
+regime's edge; 160 reads −j54.66, 320 −j68.14). Extrapolated geometrically from
+n = 10 / 20 / 40, about 16.64 − j50.5 (from 5 / 10 / 20, −j49.8). fnec settled:
+16.695 − j49.78. MININEC sits on the same side of fnec as on the straight dipole,
+by about the same amount. nec2c on the extended kernel reads −j53.32 at 27× and
+is still moving toward fnec (`apps/nec-cli/tests/converged_reference.rs`).
 
 ## Ideas & inspiration for fnec
 
