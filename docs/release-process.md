@@ -16,15 +16,19 @@ bump, changelog, release notes and SBOM are the release PR's job, and
 The mint workflow tags **main's tip**, not the release PR's merge commit. Anything
 merged after the release PR ships in the tag, so its changelog entry belongs under
 the release's heading, not `[Unreleased]`. Move it with a docs PR before minting.
-(0.19.0: #482 folded #481 in after the release PR #480.) Any number the notes
-quote as "measured at the release commit" is re-measured at the tip.
+(0.19.0: #482 folded #481 in after the release PR #480; 0.20.0 #510 and 0.23.0 #603
+had to be fixed after the tag.) The mint workflow refuses while `[Unreleased]` has
+any content at the commit it would tag (`check-changelog-unreleased-empty.py`), so a
+merge after the release PR now blocks the mint rather than slipping into it. Any
+number the notes quote as "measured at the release commit" is re-measured at the tip.
 
 ## 2. Mint the tag
 
 Actions → **Mint release tag** → *Run workflow*, version left empty. Or:
 `gh workflow run release-tag.yml`. The workflow refuses to re-tag. It checks the
-changelog and release-notes sections, the binding version and the SBOM, and it
-requires green CI at the commit it tags. Never tag by hand.
+changelog and release-notes sections, that `[Unreleased]` is empty, the binding
+version and the SBOM, and it requires green CI at the commit it tags. Never tag
+by hand.
 
 ## 3. Build the assets in the container
 

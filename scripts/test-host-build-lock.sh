@@ -10,6 +10,9 @@
 #   2. Contention: an unrelated process must still wait while another holds it —
 #      re-entrancy must not become "the lock never blocks".
 #   3. Fail closed: an unopenable lock path refuses to run unlocked.
+#   4. Worktree build dir: in a linked worktree, a target dir inside it refuses
+#      (cargo's default, or CARGO_TARGET_DIR pointing in); one outside passes,
+#      and so does the main checkout's own target/.
 set -uo pipefail
 
 HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/host-build-lock.sh"
@@ -52,6 +55,32 @@ rc=$?
 if [[ $rc -eq 0 || "$out" == *RAN_UNLOCKED* ]]; then
     echo "FAIL fail-closed: ran without the lock (exit $rc):" >&2; echo "$out" >&2; fail=1
 fi
+
+# 4. A scratch crate with a linked worktree, each carrying a copy of the helper
+#    (it finds its repo from its own path). The caller's own CARGO_TARGET_DIR is
+#    dropped so every case names its target explicitly.
+mkdir -p "$SCRATCH/main/scripts" "$SCRATCH/main/src"
+cp "$HELPER" "$SCRATCH/main/scripts/"
+printf '[package]\nname = "hbl-probe"\nversion = "0.1.0"\nedition = "2021"\n' > "$SCRATCH/main/Cargo.toml"
+: > "$SCRATCH/main/src/lib.rs"
+git -C "$SCRATCH/main" init -q
+git -C "$SCRATCH/main" add Cargo.toml src scripts
+git -C "$SCRATCH/main" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -q -m probe
+git -C "$SCRATCH/main" worktree add -q "$SCRATCH/wt"
+probe() { # name want(run|refuse) checkout [CARGO_TARGET_DIR]
+    local env=(env -u CARGO_TARGET_DIR -u CARGO_BUILD_TARGET_DIR)
+    [[ -n "${4:-}" ]] && env+=("CARGO_TARGET_DIR=$4")
+    out="$("${env[@]}" bash -c "cd '$3' && source scripts/host-build-lock.sh wt; echo WT_RAN" 2>&1)"
+    rc=$?
+    if [[ $2 == run && ( $rc -ne 0 || "$out" != *WT_RAN* ) ]] \
+        || [[ $2 == refuse && ( $rc -eq 0 || "$out" == *WT_RAN* || "$out" != *"linked worktree"* ) ]]; then
+        echo "FAIL worktree $1: want $2, exit $rc:" >&2; echo "$out" >&2; fail=1
+    fi
+}
+probe "default target" refuse "$SCRATCH/wt"
+probe "target pointed inside" refuse "$SCRATCH/wt" "$SCRATCH/wt/build"
+probe "target outside" run "$SCRATCH/wt" "$SCRATCH/out"
+probe "main checkout" run "$SCRATCH/main"
 
 if [[ $fail -ne 0 ]]; then exit 1; fi
 echo "host-build-lock self-test OK"
