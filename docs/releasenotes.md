@@ -2,10 +2,47 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Release Notes
+
+## 0.24.0 — Named builds
+
+A figure quoted from fnec now names the binary that produced it. `fnec --version`
+prints the commit it was built from, `fnec 0.24.0 (<12-hex commit>)`, with `-dirty`
+when fnec's sources differed from that commit and `(unknown)` outside a git
+checkout. The text report ends with the same string on an `FNEC_BUILD` line, and
+the NEC-2D report's `SOLVED BY FNEC` note carries it. The release build computes it
+on the host and passes it into the container. This is what makes the release
+0.24.0: a script that reads `fnec --version` whole, or reads the report's last
+line, sees a new form. The report's positional sections are unchanged; the build
+line is a trailer after them.
+
+Measured on a release build of the release branch (main 19c3d50 plus the version
+bump) against the published 0.23.0 binary:
+
+| | 0.23.0 | 0.24.0 |
+|---|---|---|
+| `fnec --version` | `fnec 0.23.0` | `fnec 0.24.0 (<commit>)` |
+| text report, all 57 decks in `corpus/` | — | the same bytes, plus a blank line and `FNEC_BUILD 0.24.0 (<commit>)` on the 52 that solve; the 5 refusals unchanged |
+| a dipole, `--output-format nec2d` | `SOLVED BY FNEC 0.23.0 (NOT NEC-2)` | `SOLVED BY FNEC 0.24.0 (<commit>) (NOT NEC-2)`; nothing else moved |
+
+No solver output changed. The rest is the test suite and the release tooling:
+
+- **Junction gates measure against converged references** (FND-264, FND-265,
+  FND-267). The H's Hallén and MPIE are solved live and converge together; the
+  receive gates at junctions hold one antenna at two meshes to one converged nec2c
+  reference from checked-in decks. Where nec2c itself drifts (the H, the T node) the
+  gate holds a band and fnec's own convergence. nec2c's extended kernel breaks at a
+  wire corner below about 9 radii a segment (FND-267), and the series script flags
+  it. FND-191's "converge to answers 12 % apart" is withdrawn; the equal-potential
+  junction decision stands.
+- **The mint refuses while `[Unreleased]` has entries** (FND-268), so a tag can no
+  longer carry changes its notes do not list, as 0.19.0, 0.20.0 and 0.23.0 did.
+- **A build in a linked git worktree refuses to put `target/` inside it** (FND-269).
+
+Ledger: 265 findings at v0.23.0, 269 now, 7 open.
 
 ## 0.23.0 — Inside 4nec2
 

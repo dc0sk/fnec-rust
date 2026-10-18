@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-10-16
+last_updated: 2026-10-19
 ---
 
 # SBOM
@@ -15,6 +15,10 @@ The **complete** machine-readable SBOM is generated per release and attached to 
 release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the full
 transitive graph — 525 packages at v0.19.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
+
+**No dependency left or arrived between v0.23.0 and v0.24.0.** Set difference over
+`(name, versionInfo)` pairs: 526 packages before and after; the only entries that moved
+are the nine workspace members' own versions (0.23.0 → 0.24.0).
 
 **The wgpu 29 → 30 bump between v0.22.0 and v0.23.0** (525 packages before, 526 after;
 set difference over `(name, versionInfo)` pairs). `wgpu`, `wgpu-core`, `wgpu-hal`,
