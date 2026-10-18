@@ -428,3 +428,114 @@ fn nec2c_has_no_converged_value_at_these_junctions() {
         Series::Settling
     );
 }
+
+/// A receive series written by `scripts/nec2c-receive-series.py` (FND-265).
+fn receive_series(name: &str) -> Value {
+    let path = root().join("corpus/series").join(name);
+    serde_json::from_str(&std::fs::read_to_string(&path).expect("series"))
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// Im of the current at deck segment `seg` (1-based), at each multiplier given.
+fn receive_im(series: &Value, seg: usize, mults: &[&str]) -> Vec<f64> {
+    mults
+        .iter()
+        .map(|m| series[m]["I"][seg - 1][1].as_f64().expect("current"))
+        .collect()
+}
+
+/// The largest change over the whole current table between two multipliers, as a
+/// share of the finer one's peak.
+fn table_step(series: &Value, a: &str, b: &str) -> f64 {
+    let (ia, ib) = (
+        series[a]["I"].as_array().unwrap(),
+        series[b]["I"].as_array().unwrap(),
+    );
+    let c = |v: &Value| (v[0].as_f64().unwrap(), v[1].as_f64().unwrap());
+    let worst = ia
+        .iter()
+        .zip(ib)
+        .map(|(x, y)| {
+            let ((xr, xi), (yr, yi)) = (c(x), c(y));
+            ((xr - yr).powi(2) + (xi - yi).powi(2)).sqrt()
+        })
+        .fold(0.0, f64::max);
+    worst / series[b]["peak"].as_f64().unwrap()
+}
+
+/// FND-265: at the T's node nec2c's receive current drifts at a near-constant
+/// ratio — toward fnec, the H's class — so `graph_receive_nec2c.rs` gates those
+/// pins as a band and by fnec's own convergence, not against nec2c's last point.
+/// Read from the checked-in series, the node segment's Im at 1 / 3 / 9 / 27 ×.
+#[test]
+fn nec2c_drifts_at_the_t_node_on_receive() {
+    let m = ["1", "3", "9", "27"];
+    for deck in ["loaded-t-21.json", "t45-21.json"] {
+        let s = receive_series(deck);
+        assert_eq!(s["kernel"], "extended", "{deck}");
+        assert_eq!(
+            classify(&receive_im(&s, 21, &m)),
+            Series::LogDrift,
+            "{deck}"
+        );
+    }
+}
+
+/// FND-267: nec2c's extended kernel does not carry its regime to an inverted-L's
+/// corner. Below about 9 radii a corner segment the whole stem shifts at once: at
+/// 1 mm the 9 → 27 × step over the table is over four times the 3 → 9 step, and the
+/// series script flags 27× (5.3 radii); a 0.2 mm control stays smooth through 27×
+/// (26 radii) and breaks at 81× (8.8). `planewave_ground_contact.rs` therefore takes
+/// its reference at 9×, the last unflagged point. Not a ground effect: the doubled
+/// structure in free space shifts the same (Fable's control, FND-265's review).
+#[test]
+fn nec2c_breaks_at_a_corner_below_about_nine_radii() {
+    let l = receive_series("inverted-l-21.json");
+    assert_eq!(l["9"]["corner_below_10"], false);
+    assert_eq!(l["27"]["corner_below_10"], true);
+    let (s3, s9, s27) = (
+        table_step(&l, "1", "3"),
+        table_step(&l, "3", "9"),
+        table_step(&l, "9", "27"),
+    );
+    assert!(s9 < s3, "1 mm settles to 9x: {s3:.5} then {s9:.5}");
+    assert!(s27 > 4.0 * s9, "1 mm breaks at 27x: {s9:.5} then {s27:.5}");
+
+    let c = receive_series("inverted-l-21-r02.json");
+    assert_eq!(c["27"]["corner_below_10"], false);
+    assert_eq!(c["81"]["corner_below_10"], true);
+    let (c9, c27, c81) = (
+        table_step(&c, "3", "9"),
+        table_step(&c, "9", "27"),
+        table_step(&c, "27", "81"),
+    );
+    assert!(
+        c27 < c9,
+        "0.2 mm settles through 27x: {c9:.5} then {c27:.5}"
+    );
+    assert!(
+        c81 > 4.0 * c27,
+        "0.2 mm breaks at 81x: {c27:.5} then {c81:.5}"
+    );
+
+    // The T's 27x is flagged too (5.3 radii), and its 0.2 mm control keeps the
+    // series' shape: steps shrinking at every multiplier, unflagged.
+    let t = receive_series("t45-21-r02.json");
+    assert_eq!(t["27"]["corner_below_10"], false);
+    let (t3, t9, t27) = (
+        table_step(&t, "1", "3"),
+        table_step(&t, "3", "9"),
+        table_step(&t, "9", "27"),
+    );
+    assert!(t27 < t9 && t9 < t3, "T control: {t3:.5}, {t9:.5}, {t27:.5}");
+    let t1 = receive_series("t45-21.json");
+    let (u3, u9, u27) = (
+        table_step(&t1, "1", "3"),
+        table_step(&t1, "3", "9"),
+        table_step(&t1, "9", "27"),
+    );
+    assert!(
+        u27 < u9 && u9 < u3,
+        "T at 1 mm keeps shrinking to 27x: {u3:.5}, {u9:.5}, {u27:.5}"
+    );
+}

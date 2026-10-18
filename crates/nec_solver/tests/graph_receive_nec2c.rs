@@ -15,6 +15,10 @@
 //! whole current table agrees too (max |ΔI| / peak at 21 → 41 per wire: loop
 //! broadside 0.78 → 0.48 %, at 45° 0.64 → 0.42 %; T broadside 0.94 → 0.55 %, at
 //! 45° 0.82 → 0.56 %). Each deck is gated at two meshes and must converge.
+//!
+//! FND-265: the T and the loaded T are held at 21 and 63 per wire to one nec2c
+//! reference on a 27× mesh, read from a checked-in series (`corpus/series/`), with
+//! the junction node's pins gated apart (`assert_receive_converges`).
 
 use nec_solver::{
     assemble_z_matrix_with_ground, build_geometry, ground_model_from_deck,
@@ -105,44 +109,6 @@ fn a_square_loop_receives_like_nec2c() {
     assert_converges("loop, broadside", e21, e41, 0.01);
 }
 
-/// A T (4 m stem, 3 m bar halves) lit at θ = 45°: every arm sees the field, and
-/// the node splits the received current three ways. Kill criterion: under 1 % at
-/// 41, shrinking. Measured 0.82 → 0.56 %.
-#[test]
-fn a_t_receives_like_nec2c() {
-    let tee = |n: u32| {
-        format!(
-            "GW 1 {n} 0 0 0 0 0 4 .001\nGW 2 {n} 0 0 4 -3 0 4 .001\nGW 3 {n} 0 0 4 3 0 4 .001\n"
-        )
-    };
-    let wave = "EX 1 1 1 0 45 0 0\n";
-    let e21 = err(
-        &receive(&tee(21), wave),
-        5.530_196e-3,
-        &[
-            (1, 9.733_200e-5, -2.987_300e-4),
-            (11, 1.443_900e-3, -3.777_200e-3),
-            (21, 1.719_900e-3, -4.481_800e-3),
-            (22, 3.225_400e-3, -4.492_200e-3),
-            (43, -1.564_700e-3, 8.379_500e-5),
-            (63, -1.232_500e-4, 2.556_000e-5),
-        ],
-    );
-    let e41 = err(
-        &receive(&tee(41), wave),
-        5.554_170e-3,
-        &[
-            (1, 5.442_700e-5, -1.677_800e-4),
-            (21, 1.447_800e-3, -3.783_100e-3),
-            (41, 1.714_900e-3, -4.476_000e-3),
-            (42, 3.240_600e-3, -4.510_800e-3),
-            (83, -1.554_400e-3, 7.018_500e-5),
-            (123, -6.977_600e-5, 1.438_800e-5),
-        ],
-    );
-    assert_converges("T at 45°", e21, e41, 0.01);
-}
-
 /// The single-shot route a frontend takes, with the deck's loads (or `loads`
 /// when given — what the CLI's `--loads-config` adds) passed in full.
 fn routed(text: &str, loads: Option<Vec<Complex64>>) -> nec_solver::HallenRouted {
@@ -172,63 +138,148 @@ fn deck_text(geometry: &str, cards: &str) -> String {
     format!("CE\n{geometry}GE 0\n{cards}FR 0 1 0 0 14.2 0\nEN\n")
 }
 
-/// FND-197: a loaded junction deck lit by a plane wave. A 300 Ω load on the T's
-/// bar, against nec2c at two meshes (the load at the same fraction of the bar).
-/// It was refused as an `LD` card and — as a CLI `--loads-config` load — solved
-/// over the plain basis's stamps, 25 % off. Kill criterion: under 1 % at 41,
-/// shrinking. Measured 0.96 → 0.68 % over the whole table against nec2c on the
-/// same mesh; since FND-227 refined the free ends, fnec outruns nec2c there, so
-/// the table is nec2c on a 27× mesh (segment j → 27j − 13, the same point),
-/// captured 2026-10-10: 0.49 → 0.32 % without the node segment, which is held to
-/// the bound on its own (below).
-#[test]
-fn a_loaded_t_receives_like_nec2c() {
-    let wave = "EX 1 1 1 0 90 0 0\n";
-    let e = |n: u32, seg: u32, peak: f64, refs: &[(usize, f64, f64)]| {
-        let text = deck_text(&tee(n), &format!("LD 4 2 {seg} {seg} 300 0\n{wave}"));
-        err(&routed_deck_currents(&text), peak, refs)
+/// A checked-in series deck (`corpus/series/`), as text.
+fn series_deck(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/series")
+        .join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// FND-265: one antenna solved at 21 and 63 per wire, held to ONE nec2c
+/// reference at the same points (a 21-mesh pin k is the 63-mesh segment 3k − 1).
+///
+/// Away from the junction node the error, plus three of nec2c's last steps there
+/// (`step_rest`, what nec2c may still move), must stay under 1 % of the peak and
+/// shrink. The pins touching the node (`node`) are not a convergence gate: there
+/// fnec and nec2c settle apart, nec2c drifting toward fnec at a near-constant
+/// ratio (the H's class, FND-191 / FND-264), so fnec's error against nec2c's last
+/// point GROWS as fnec refines. Those pins hold a band (under 1 %, a tripwire on
+/// that known gap — a legitimate change to fnec's junction rows may trip it) and
+/// fnec's own change between the meshes, under 0.3 % (a wrong junction condition
+/// diverges there). The 1 % is of the peak: a whole-table level, not a per-point
+/// one — the end pins carry a few % of the peak.
+fn assert_receive_converges(
+    label: &str,
+    (c21, c63): (&[Complex64], &[Complex64]),
+    peak: f64,
+    pins: &[(usize, f64, f64)],
+    node: &[usize],
+    step_rest: f64,
+) {
+    let at63 = |k: usize| 3 * k - 1;
+    let err = |c: &[Complex64], map: &dyn Fn(usize) -> usize, on_node: bool| {
+        pins.iter()
+            .filter(|p| node.contains(&p.0) == on_node)
+            .map(|&(k, re, im)| (c[map(k) - 1] - Complex64::new(re, im)).norm() / peak)
+            .fold(0.0, f64::max)
     };
-    let e21 = e(
-        21,
-        5,
-        6.375_693e-3,
-        &[
-            (1, -4.4471e-05, -4.3836e-04),
-            (11, -6.2995e-04, -5.3267e-03),
-            (22, -1.1981e-03, -2.5080e-03),
-            (26, -1.2438e-03, -1.9993e-03),
-            (43, 2.4978e-04, -3.4735e-03),
-            (63, 9.4342e-06, -1.3432e-04),
-        ],
-    );
-    let e41 = e(
-        41,
-        10,
-        6.399_255e-3,
-        &[
-            (1, -2.4693e-05, -2.4883e-04),
-            (21, -6.1894e-04, -5.3444e-03),
-            (42, -1.1673e-03, -2.5669e-03),
-            (51, -1.2159e-03, -1.9830e-03),
-            (83, 2.4246e-04, -3.4944e-03),
-            (123, 5.1742e-06, -7.6236e-05),
-        ],
-    );
-    assert_converges("loaded T", e21, e41, 0.01);
-    // The stem's segment at the T node, apart: its error is the junction
-    // condition's (fnec closes a node with equal potential, NEC-2 with Wu–King's
-    // equal charge density, FND-191) and does not shrink — 0.497 % at 21, 0.503 %
-    // at 41 — so in the table it set a floor the rest of it is below.
-    let node21 = e(21, 5, 6.375_693e-3, &[(21, -9.3535e-04, -6.1324e-03)]);
-    let node41 = e(41, 10, 6.399_255e-3, &[(41, -9.1906e-04, -6.1337e-03)]);
+    let (r21, r63) = (err(c21, &|k| k, false), err(c63, &at63, false));
     println!(
-        "loaded T, node segment: {:.2} % / {:.2} %",
-        node21 * 100.0,
-        node41 * 100.0
+        "{label}: away from the node {:.3} % -> {:.3} % (+ 3 x {:.3} % nec2c's step)",
+        r21 * 100.0,
+        r63 * 100.0,
+        step_rest * 100.0
     );
     assert!(
-        node21 < 0.01 && node41 < 0.01,
-        "node segment {node21:.4} / {node41:.4}"
+        r63 + 3.0 * step_rest < 0.01,
+        "{label}: {:.3} % at 63 + 3 x nec2c's {:.3} % step reaches 1 %",
+        r63 * 100.0,
+        step_rest * 100.0
+    );
+    assert!(r63 < r21, "{label}: must shrink, {r21:.5} -> {r63:.5}");
+    if node.is_empty() {
+        return;
+    }
+    let (n21, n63) = (err(c21, &|k| k, true), err(c63, &at63, true));
+    let own = node
+        .iter()
+        .map(|&k| (c63[at63(k) - 1] - c21[k - 1]).norm() / peak)
+        .fold(0.0, f64::max);
+    println!(
+        "{label}: at the node {:.3} % / {:.3} %, fnec's own 21 -> 63 change {:.3} %",
+        n21 * 100.0,
+        n63 * 100.0,
+        own * 100.0
+    );
+    assert!(
+        n21 < 0.01 && n63 < 0.01,
+        "{label}: node pins {n21:.5} / {n63:.5}"
+    );
+    assert!(
+        own < 0.003,
+        "{label}: fnec's node moved {own:.5} between meshes"
+    );
+}
+
+/// A T (4 m stem, 3 m bar halves) lit at θ = 45°: every arm sees the field, and
+/// the node splits the received current three ways. nec2c's reference is
+/// `corpus/series/t45-21.json` at 27× (567 per wire, the 63 deck's 9×, identical
+/// to the digit), extended kernel. Its corner segments are 5.3 radii there, under
+/// the 10 the series script flags: the 0.2 mm control (`t45-21-r02`, 26 radii)
+/// has the same shape (steps 0.171, 0.115, 0.098 % against 0.252, 0.180, 0.135 %),
+/// where the inverted-L's 27× breaks (`planewave_ground_contact.rs`). Measured
+/// 0.415 → 0.237 % away from the node, 0.361 / 0.497 % at it, fnec's own node
+/// change 0.250 %. Was: 21 / 41 against nec2c on the same mesh (FND-265).
+#[test]
+fn a_t_receives_like_nec2c() {
+    // t45-21.json at 27x; nec2c's last step (9x -> 27x): rest 0.00088, node 0.00135.
+    const PEAK: f64 = 5.583037e-03;
+    const PINS: [(usize, f64, f64); 6] = [
+        (1, 1.02030e-04, -3.12190e-04),
+        (11, 1.45570e-03, -3.79640e-03),
+        (21, 1.73780e-03, -4.50770e-03),
+        (22, 3.23860e-03, -4.50970e-03),
+        (43, -1.55920e-03, 7.44000e-05),
+        (63, -1.28590e-04, 2.63740e-05),
+    ];
+    assert_receive_converges(
+        "T at 45°",
+        (
+            &routed_deck_currents(&series_deck("t45-21.nec")),
+            &routed_deck_currents(&series_deck("t45-63.nec")),
+        ),
+        PEAK,
+        &PINS,
+        &[21, 22, 43],
+        0.00088,
+    );
+}
+
+/// FND-197: a loaded junction deck lit by a plane wave. A 300 Ω load on the T's
+/// bar, broadside. It was refused as an `LD` card and — as a CLI `--loads-config`
+/// load — solved over the plain basis's stamps, 25 % off. At 21 and 63 per wire,
+/// the load on segment 5 and 14 (the same point, 0.214 of the bar), against
+/// nec2c's `corpus/series/loaded-t-21.json` at 27× (the 63 deck's 9×, identical),
+/// extended kernel; its 5.3-radii corners as the T's above. Measured 0.480 →
+/// 0.334 % away from the node, 0.503 / 0.706 % at it (nec2c's node at 1 / 3 / 9 /
+/// 27 ×: Im −0.95536, −0.95809, −0.96019, −0.96184 of the peak; fnec's, settling,
+/// −0.96682 … −0.97044), fnec's own node change 0.219 %. Was: 21 / 41 with the
+/// load at 5 and 10 — 0.214 and 0.232 of the bar, two antennas (FND-258's class) —
+/// against nec2c's thin kernel below its thin-wire limit (FND-265).
+#[test]
+fn a_loaded_t_receives_like_nec2c() {
+    // loaded-t-21.json at 27x; nec2c's last step (9x -> 27x): rest 0.00110, node 0.00165.
+    const PEAK: f64 = 6.375283e-03;
+    const PINS: [(usize, f64, f64); 7] = [
+        (1, -4.44350e-05, -4.38030e-04),
+        (11, -6.29860e-04, -5.32630e-03),
+        (21, -9.35250e-04, -6.13200e-03),
+        (22, -1.19800e-03, -2.50790e-03),
+        (26, -1.24360e-03, -1.99930e-03),
+        (43, 2.49770e-04, -3.47320e-03),
+        (63, 9.42300e-06, -1.34150e-04),
+    ];
+    assert_receive_converges(
+        "loaded T",
+        (
+            &routed_deck_currents(&series_deck("loaded-t-21.nec")),
+            &routed_deck_currents(&series_deck("loaded-t-63.nec")),
+        ),
+        PEAK,
+        &PINS,
+        &[21, 22, 43],
+        0.00110,
     );
 }
 

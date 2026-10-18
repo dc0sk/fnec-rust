@@ -17,6 +17,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Receive-current gates at junctions measure one antenna against one converged
+  nec2c reference** (FND-265). The T at 45°, the loaded T and the inverted-L on
+  `GN 1` are each solved at 21 and 63 per wire against nec2c meshed finer — the
+  same points, one reference — from checked-in decks and series in
+  `corpus/series/` (`scripts/nec2c-receive-series.py`). The loaded T's load now
+  sits at the same point on both meshes (it was two antennas), and its old
+  reference was nec2c's thin kernel below its thin-wire limit. At the T node the
+  two codes settle apart, nec2c drifting toward fnec; those pins hold a band and
+  fnec's own convergence. Found along the way: nec2c's extended kernel breaks at a
+  corner below about 9 radii a segment (FND-267); the series script flags it.
 - **The H's junction-condition evidence is re-derived from live code** (FND-264).
   Its gate held Hallén to an MPIE constant with no recorded producer and pinned a
   10–14 % gap to nec2c as if the codes converged apart. Now Hallén and the MPIE are

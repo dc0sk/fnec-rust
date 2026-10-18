@@ -1,0 +1,11 @@
+CM FND-265: the inverted-L at 63 per wire; its 3x is inverted-l-21's 9x.
+CM nec2c's receive series on it: scripts/nec2c-receive-series.py
+CM corpus/series/inverted-l-63.nec 1 3 — pinned in crates/nec_solver/tests/planewave_ground_contact.rs.
+CE
+GW 1 63 0 0 0 0 0 3 .001
+GW 2 63 0 0 3 4.5 0 3 .001
+GE 1
+GN 1
+EX 1 1 1 0 60 30 0
+FR 0 1 0 0 14.2 0
+EN

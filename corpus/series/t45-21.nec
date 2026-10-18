@@ -1,0 +1,11 @@
+CM FND-265: a T (4 m stem, 3 m bar halves) lit at theta 45, 21 per wire.
+CM nec2c's receive series on it: scripts/nec2c-receive-series.py
+CM corpus/series/t45-21.nec 1 3 9 27 — pinned in crates/nec_solver/tests/graph_receive_nec2c.rs.
+CE
+GW 1 21 0 0 0 0 0 4 .001
+GW 2 21 0 0 4 -3 0 4 .001
+GW 3 21 0 0 4 3 0 4 .001
+GE 0
+EX 1 1 1 0 45 0 0
+FR 0 1 0 0 14.2 0
+EN
