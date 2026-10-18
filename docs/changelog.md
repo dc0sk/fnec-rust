@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Changelog
@@ -27,40 +27,6 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   MPIE sits 3 % from Hallén was a stale-binary measurement and is withdrawn; so is
   FND-191's "converge to answers 12 % apart". pymininec, a third code, agrees with
   fnec within its measured validity regime. The equal-potential decision stands.
-- **The off-apex inverted-V gate measures one antenna at two meshes** (FND-258).
-  It fed segment 5 of 21 and 10 of 41 per arm — 0.214 and 0.232 of the arm, two
-  antennas whose nec2c values differ by 770 Ω in X — each against nec2c on its
-  own mesh. It now feeds 0.36 of the arm at 21 and 63 per arm, against nec2c's
-  converged 933.23 + j892.42 (81×): fnec 3.2 % then 1.6 %.
-- **Junction gates carry nec2c's own slow convergence** (FND-256). At a degree-3
-  junction nec2c settles slowly or not at all over the meshes its thin-wire limit
-  allows. The five stem-fed Y / T gates are held to nec2c's 27N on its extended
-  kernel, at three times nec2c's measured tail: 2.2 % for the Y decks, 3.5 % for
-  the T decks (were 2 % against nec2c's thin kernel below its thin-wire limit; fnec
-  refined heads for the same limit). The tee fed at its node and the T through a
-  bar, where nec2c drifts by a near-constant step, take three such steps out of
-  their tolerance. Two junctions were recorded open rather than re-pointed: the H
-  (FND-264, above) and the receive-current gates (FND-265).
-- **`scripts/nec2c-converged-series.py --ek` no longer aborts** when the 9× thin-kernel
-  cross-check is below the thin-wire limit (FND-263); it leaves that point out.
-- **Twelve gates measured against nec2c on the test's own mesh now measure against
-  nec2c's converged value** (FND-257), the deck meshed 27× finer, each series in
-  the test. nec2c's own refinement moved those references by a third of their gate
-  or more, up to 145 %. Four gates widen with their reason, each where fnec refined
-  heads for nec2c's limit and the gap is fnec's discretisation at the test's mesh:
-  the MPIE Yagi's X (1.5 → 2.5 Ω), the apex-fed V (1 → 3 %), the 0.05λ GN2
-  dipole's X (1.0 → 1.5 Ω) and the two fed dipoles (1.5 → 3.0 Ω). The MPIE loop's
-  gate tightens.
-- **A converged nec2c reference must have settled within its gate** (FND-255).
-  The corpus's converged references were held only to "each refinement moves less
-  than the last", which a series still drifting passes. Now the drift left past
-  the last point must be at most a third of the tolerance fnec is held to against
-  it, on R and X. Four references had not settled at 9× and are re-captured at
-  27× on nec2c's extended kernel by the new `scripts/nec2c-converged-series.py`;
-  each records its kernel. One gate widens with its reason recorded:
-  `dipole-nt-tl-equiv-freesp-51seg`'s external X, 2.0 → 3.0 Ω, for fnec's own
-  discretisation at the deck's 51 segments (fnec and nec2c refined head for the
-  same limit, −209.17 and −209.14 Ω).
 
 ## [0.23.0] — 2026-10-16 — Inside 4nec2
 
@@ -179,6 +145,44 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   releases; 0.20.0–0.22.0 are filled in.
 
 ### Fixed
+
+These five shipped in the tag (merged after the release PR, before the mint;
+moved here from `[Unreleased]` after it, as 0.20.0's were):
+
+- **The off-apex inverted-V gate measures one antenna at two meshes** (FND-258).
+  It fed segment 5 of 21 and 10 of 41 per arm — 0.214 and 0.232 of the arm, two
+  antennas whose nec2c values differ by 770 Ω in X — each against nec2c on its
+  own mesh. It now feeds 0.36 of the arm at 21 and 63 per arm, against nec2c's
+  converged 933.23 + j892.42 (81×): fnec 3.2 % then 1.6 %.
+- **Junction gates carry nec2c's own slow convergence** (FND-256). At a degree-3
+  junction nec2c settles slowly or not at all over the meshes its thin-wire limit
+  allows. The five stem-fed Y / T gates are held to nec2c's 27N on its extended
+  kernel, at three times nec2c's measured tail: 2.2 % for the Y decks, 3.5 % for
+  the T decks (were 2 % against nec2c's thin kernel below its thin-wire limit; fnec
+  refined heads for the same limit). The tee fed at its node and the T through a
+  bar, where nec2c drifts by a near-constant step, take three such steps out of
+  their tolerance. Two junctions were recorded open rather than re-pointed: the H
+  (FND-264) and the receive-current gates (FND-265).
+- **`scripts/nec2c-converged-series.py --ek` no longer aborts** when the 9× thin-kernel
+  cross-check is below the thin-wire limit (FND-263); it leaves that point out.
+- **Twelve gates measured against nec2c on the test's own mesh now measure against
+  nec2c's converged value** (FND-257), the deck meshed 27× finer, each series in
+  the test. nec2c's own refinement moved those references by a third of their gate
+  or more, up to 145 %. Four gates widen with their reason, each where fnec refined
+  heads for nec2c's limit and the gap is fnec's discretisation at the test's mesh:
+  the MPIE Yagi's X (1.5 → 2.5 Ω), the apex-fed V (1 → 3 %), the 0.05λ GN2
+  dipole's X (1.0 → 1.5 Ω) and the two fed dipoles (1.5 → 3.0 Ω). The MPIE loop's
+  gate tightens.
+- **A converged nec2c reference must have settled within its gate** (FND-255).
+  The corpus's converged references were held only to "each refinement moves less
+  than the last", which a series still drifting passes. Now the drift left past
+  the last point must be at most a third of the tolerance fnec is held to against
+  it, on R and X. Four references had not settled at 9× and are re-captured at
+  27× on nec2c's extended kernel by the new `scripts/nec2c-converged-series.py`;
+  each records its kernel. One gate widens with its reason recorded:
+  `dipole-nt-tl-equiv-freesp-51seg`'s external X, 2.0 → 3.0 Ω, for fnec's own
+  discretisation at the deck's 51 segments (fnec and nec2c refined head for the
+  same limit, −209.17 and −209.14 Ω).
 
 - **The average power gain is NEC-2's** (FND-262). Each pattern sample now
   carries the solid angle it stands for, and a null counts as zero gain. Before,
