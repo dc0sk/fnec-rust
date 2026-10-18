@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/cli-guide.md
 status: living
-last_updated: 2026-10-16
+last_updated: 2026-10-18
 ---
 
 # CLI Guide — fnec (v0.23.0)
@@ -324,6 +324,15 @@ Applies to `pulse`, `continuity`, and `sinusoidal` modes.
 
 ## Output format
 
+`fnec --version` prints the version and the commit the binary was built from —
+`fnec 0.23.0 (16a7d56c1d2e)` — with `-dirty` when fnec's sources (`crates/`,
+`apps/nec-cli/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`) differed from
+that commit, untracked files included, and `(unknown)` for a build outside a git
+checkout. The text report's last line, `FNEC_BUILD <version> (<commit>)` after
+a blank line (no earlier line moves), and the NEC-2D report's `SOLVED BY
+FNEC` note carry the same string, so a figure quoted from a report names the
+binary that produced it. Quote it with the figure.
+
 Report contract v1 is a stable, versioned text layout:
 
 ```
@@ -367,6 +376,8 @@ SWEEP_POINTS
 N_POINTS <n>
 FREQ_MHZ TAG SEG Z_RE Z_IM
 ...
+
+FNEC_BUILD <version> (<commit>)   (last in each point's report)
 ```
 
 Feedpoint table columns:

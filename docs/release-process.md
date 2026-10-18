@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/release-process.md
 status: living
-last_updated: 2026-09-28
+last_updated: 2026-10-18
 ---
 
 # Cutting a release
@@ -39,6 +39,9 @@ then:
 
 - smoke-solves the corpus reference dipole with the built CLI against its pin;
 - checks that the SBOM names the version;
+- checks that the CLI's `--version` names the tag's commit, which the script
+  computes on the host (`scripts/build-commit.sh`) and passes into the container,
+  since the container cannot read `.git`;
 - runs `scripts/check-asset-platform.py`, which refuses any asset requiring a
   newer glibc than the floor in `docs/project/release-asset-platform.toml`.
 

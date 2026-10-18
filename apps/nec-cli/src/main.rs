@@ -39,6 +39,16 @@ use std::process::ExitCode;
 use std::time::Instant;
 use warnings::{warn_near_field_over_finite_ground, warn_pulse_mode_experimental};
 
+/// The version and the commit this binary was built from (`build.rs`): `0.23.0
+/// (16a7d56c1d2e)`, `-dirty` when fnec's inputs differed from it, `(unknown)`
+/// outside a git checkout. What `--version` prints and the report header names.
+pub(crate) const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("FNEC_BUILD_COMMIT"),
+    ")"
+);
+
 /// Print every point a sweep computed, and report the ones that failed.
 ///
 /// Returns `true` if any point failed, so the caller can exit non-zero after the
@@ -165,7 +175,7 @@ fn main() -> ExitCode {
     }
 
     if args.len() < 2 {
-        eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+        eprintln!("fnec {}", VERSION);
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     }
@@ -175,11 +185,11 @@ fn main() -> ExitCode {
     // line, `fnec <version>`, a release smoke test read as a version report (FND-169).
     match args[1].as_str() {
         "--version" | "-V" => {
-            println!("fnec {}", env!("CARGO_PKG_VERSION"));
+            println!("fnec {}", VERSION);
             return ExitCode::SUCCESS;
         }
         "--help" | "-h" => {
-            println!("fnec {}", env!("CARGO_PKG_VERSION"));
+            println!("fnec {}", VERSION);
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
@@ -236,7 +246,7 @@ fn main() -> ExitCode {
     } = match parse_args(&args) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("fnec {}", VERSION);
             eprintln!("{USAGE}");
             eprintln!("error: {e}");
             return ExitCode::from(2);
@@ -266,7 +276,7 @@ fn main() -> ExitCode {
         match raw.parse::<f64>() {
             Ok(v) if v.is_finite() && v > 0.0 => v,
             _ => {
-                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("fnec {}", VERSION);
                 eprintln!("{USAGE}");
                 eprintln!(
                     "error: invalid FNEC_SIN_FALLBACK_REL_MAX='{raw}' (expected: positive number)"
@@ -1399,14 +1409,14 @@ fn run_taper_subcommand(args: &[String]) -> ExitCode {
             "--sections" => {
                 i += 1;
                 if i >= args.len() {
-                    eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+                    eprintln!("fnec {}\n{TAPER_USAGE}", VERSION);
                     eprintln!("error: missing value after --sections");
                     return ExitCode::from(2);
                 }
                 sections_arg = Some(args[i].clone());
             }
             other => {
-                eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+                eprintln!("fnec {}\n{TAPER_USAGE}", VERSION);
                 eprintln!("error: unknown taper option: {other}");
                 return ExitCode::from(2);
             }
@@ -1415,7 +1425,7 @@ fn run_taper_subcommand(args: &[String]) -> ExitCode {
     }
 
     let Some(spec) = sections_arg else {
-        eprintln!("fnec {}\n{TAPER_USAGE}", env!("CARGO_PKG_VERSION"));
+        eprintln!("fnec {}\n{TAPER_USAGE}", VERSION);
         eprintln!("error: --sections is required");
         return ExitCode::from(2);
     };
@@ -1475,7 +1485,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             "--resonance" => {
                 i += 1;
                 if i >= args.len() {
-                    eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                    eprintln!("fnec {}", VERSION);
                     eprintln!("{SWEEP_USAGE}");
                     eprintln!("error: missing value after --resonance");
                     return ExitCode::from(2);
@@ -1483,13 +1493,13 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
                 resonance_path = Some(std::path::PathBuf::from(&args[i]));
             }
             flag if flag.starts_with('-') => {
-                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("fnec {}", VERSION);
                 eprintln!("{SWEEP_USAGE}");
                 eprintln!("error: unknown sweep option: {flag}");
                 return ExitCode::from(2);
             }
             other => {
-                eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+                eprintln!("fnec {}", VERSION);
                 eprintln!("{SWEEP_USAGE}");
                 eprintln!("error: unexpected argument: {other}");
                 return ExitCode::from(2);
@@ -1501,7 +1511,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
     let path = match resonance_path {
         Some(p) => p,
         None => {
-            eprintln!("fnec {}", env!("CARGO_PKG_VERSION"));
+            eprintln!("fnec {}", VERSION);
             eprintln!("{SWEEP_USAGE}");
             eprintln!("error: --resonance <file> is required");
             return ExitCode::from(2);

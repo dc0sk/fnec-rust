@@ -149,6 +149,11 @@ pub struct ReportInput<'a> {
     /// printed as a `CAVEAT` header line. `None` for validated solvers, so their
     /// output is unchanged.
     pub caveat: Option<&'a str>,
+    /// The build that produced the result — `0.23.0 (16a7d56c1d2e)`, a commit
+    /// with `-dirty` or `(unknown)` — printed as an `FNEC_BUILD` line, so a
+    /// figure quoted from the report names its binary (FND-264). Printed last, as
+    /// its own section, so every earlier line keeps its position. `None` omits it.
+    pub build: Option<&'a str>,
     pub frequency_hz: f64,
     pub rows: &'a [FeedpointRow],
     /// Source-definition table captured from EX cards.
@@ -238,6 +243,7 @@ impl PointReport {
             solver_mode: &self.solver_mode,
             pulse_rhs: &self.pulse_rhs,
             caveat: self.caveat.as_deref(),
+            build: None,
             frequency_hz: self.frequency_hz,
             rows: &self.rows,
             source_table: &self.source_table,
@@ -344,6 +350,7 @@ pub trait ResultFilter {
 ///     solver_mode: "hallen",
 ///     pulse_rhs: "Nec2",
 ///     caveat: None,
+///     build: None,
 ///     frequency_hz: 14_200_000.0,
 ///     rows: &[row],
 ///     source_table: &[],
@@ -392,7 +399,7 @@ pub trait ReportSection {
 ///     z_in: Complex64::new(50.0, 0.0),
 /// };
 /// let input = ReportInput {
-///     solver_mode: "hallen", pulse_rhs: "Nec2", caveat: None,
+///     solver_mode: "hallen", pulse_rhs: "Nec2", caveat: None, build: None,
 ///     frequency_hz: 14e6,
 ///     rows: &[row],
 ///     source_table: &[], load_table: &[],
@@ -543,6 +550,12 @@ pub fn render_text_report(input: &ReportInput<'_>) -> String {
         out.push_str(&format!("AVERAGE_POWER_GAIN {apg:.4}\n"));
     }
 
+    // Last, after a blank line, so no line a positional parser reads moves.
+    if let Some(build) = input.build {
+        out.push('\n');
+        out.push_str(&format!("FNEC_BUILD {build}\n"));
+    }
+
     out
 }
 
@@ -629,6 +642,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -678,6 +692,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -771,6 +786,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &[],
@@ -818,6 +834,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows: &rows,
             source_table: &source_table,
@@ -856,6 +873,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows,
             source_table: &[],
@@ -970,6 +988,7 @@ mod tests {
             solver_mode: "hallen",
             pulse_rhs: "Nec2",
             caveat: None,
+            build: None,
             frequency_hz: 14_200_000.0,
             rows: &[],
             source_table: &[],
