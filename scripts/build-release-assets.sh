@@ -47,6 +47,8 @@ if [[ $dry_run -eq 0 ]]; then
     [[ "$tag" == "v$version" ]] || { echo "HEAD is not on tag v$version (got '${tag:-none}'); use --dry-run to try the build" >&2; exit 1; }
     [[ -z "$(git status --porcelain)" ]] || { echo "the tree has uncommitted changes; a release builds from the tag alone" >&2; exit 1; }
 fi
+# The container cannot read .git: name the commit here, as build.rs would (FND-264).
+commit="$(scripts/build-commit.sh)"
 
 # Never inside the worktree (`git add` would sweep it) and never on a tmpfs (a
 # workspace build fills it, and then every shell command fails bare).
@@ -92,6 +94,7 @@ run() {
         -v "$build/wheel":/wheel:Z \
         -e CARGO_HOME=/cargo-home -e CARGO_TARGET_DIR=/target \
         -e PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 \
+        -e FNEC_BUILD_COMMIT="$commit" \
         --entrypoint /bin/bash "$IMAGE" -c "$1"
 }
 
@@ -111,7 +114,7 @@ cp SBOM.spdx.json "$out/SBOM-v$version.spdx.json"
 if ! reported="$("$out/fnec-v$version-x86_64-linux" --version)"; then
     echo "the CLI's --version failed" >&2; exit 1
 fi
-[[ "$reported" == "fnec $version" ]] || { echo "the CLI reports '$reported', not 'fnec $version'" >&2; exit 1; }
+[[ "$reported" == "fnec $version ($commit)" ]] || { echo "the CLI reports '$reported', not 'fnec $version ($commit)'" >&2; exit 1; }
 
 # And it must run and reproduce the corpus pin for the reference dipole.
 python3 - "$out/fnec-v$version-x86_64-linux" <<'PY'

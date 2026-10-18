@@ -47,7 +47,11 @@ command -v podman >/dev/null || { echo "podman is needed" >&2; exit 1; }
 command -v objdump >/dev/null || { echo "objdump (binutils) is needed for the import check" >&2; exit 1; }
 mkdir -p "$out/target"
 
-podman run --rm -v "$repo":/src:ro -v "$out":/out -e CARGO_TARGET_DIR=/out/target "$IMAGE" bash -c "
+# The container cannot read .git: name the commit (and a dirty tree) here, as
+# build.rs would (FND-264).
+commit="$("$repo/scripts/build-commit.sh")"
+podman run --rm -v "$repo":/src:ro -v "$out":/out -e CARGO_TARGET_DIR=/out/target \
+    -e FNEC_BUILD_COMMIT="$commit" "$IMAGE" bash -c "
     set -euo pipefail
     apt-get update -qq && apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null
     rustup target add $TARGET >/dev/null
@@ -73,6 +77,7 @@ for n in "${NAMES[@]}"; do cp "$exe" "$out/$n.exe"; done
 {
     echo "fnec Windows kernel build"
     echo "commit $(git -C "$repo" rev-parse HEAD)"
+    echo "build $commit"
     echo "image $IMAGE"
     cat "$out/rustc-version" "$out/linker-version"
     (cd "$out" && sha256sum fnec.exe "${NAMES[@]/%/.exe}")

@@ -518,7 +518,7 @@ pub(crate) fn render(
     }
     let notes = vec![format!(
         "SOLVED BY FNEC {} (NOT NEC-2): HALLEN/MPIE FORMULATION, NEC-2D OUTPUT LAYOUT",
-        env!("CARGO_PKG_VERSION")
+        crate::VERSION
     )];
     Ok(nec_report::nec2d::render(&Run {
         structure: &structure,

@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **`fnec --version` names the commit it was built from** (FND-266): `fnec 0.23.0
+  (16a7d56c1d2e)`, `-dirty` when fnec's sources differed from that commit, or
+  `(unknown)` outside a git checkout. The text report ends with the same string on
+  an `FNEC_BUILD` line, and the NEC-2D report's `SOLVED BY FNEC` note carries it,
+  so a figure quoted from a report names the binary that produced it. Release and
+  Windows builds compute it on the host and pass it into the container.
+
 ### Fixed
 
 - **Receive-current gates at junctions measure one antenna against one converged

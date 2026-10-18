@@ -340,26 +340,90 @@ fn all_core_flags_combination_runs_successfully() {
     );
 }
 
+/// The commit `--version` must name: twelve hex digits of the checkout's HEAD,
+/// read by git here, independently of `build.rs`. `None` outside a checkout (a
+/// source tarball), where `unknown` is the right answer. Not `FNEC_BUILD_COMMIT`:
+/// cargo exports a build script's `rustc-env` values to the test process too, so
+/// reading it would compare the build with itself (a sabotaged build.rs answering
+/// `unknown` passed that way).
+fn expected_commit() -> Option<String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(workspace_root())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim()[..12].to_string())
+}
+
+/// `fnec 0.23.0 (16a7d56c1d2e)`, `(…-dirty)` or `(unknown)`: the version and the
+/// commit it was built from. Returns the parenthesised commit.
+fn assert_version_line(line: &str, what: &str) -> String {
+    let prefix = format!("fnec {} (", env!("CARGO_PKG_VERSION"));
+    let commit = line
+        .strip_prefix(&prefix)
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("{what}: not `{prefix}<commit>)`: {line:?}"));
+    match expected_commit() {
+        // Inside a checkout build.rs had no excuse: `unknown` is a failure, and the
+        // hash must be HEAD's. The dirty flag is not compared — a file edited after
+        // the build would flake. This binary is the per-package test artefact, not
+        // the uplifted `target/…/fnec`, so it cannot see FND-264's stale uplift.
+        Some(want) => {
+            let hash = commit.strip_suffix("-dirty").unwrap_or(commit);
+            assert_eq!(hash, want, "{what}: commit");
+        }
+        None => assert_eq!(commit, "unknown", "{what}: outside a checkout"),
+    }
+    commit.to_string()
+}
+
 /// FND-169: `--version` used to print the usage text, whose first line reads
 /// `fnec <version>`, and exit 2 with "unknown option". A release smoke test took
 /// that first line as a version report. The version goes to stdout, alone, with
-/// exit 0 — and a script can tell it from an error.
+/// exit 0 — and a script can tell it from an error. It names the commit the binary
+/// was built from, so a quoted figure can be traced to its build (FND-264).
 #[test]
 fn version_flag_prints_the_version_alone_and_exits_zero() {
     for flag in ["--version", "-V"] {
         let output = run_fnec(&[flag]);
         assert_eq!(output.status.code(), Some(0), "{flag}: exit status");
-        assert_eq!(
-            String::from_utf8_lossy(&output.stdout),
-            format!("fnec {}\n", env!("CARGO_PKG_VERSION")),
-            "{flag}: stdout"
-        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let line = stdout
+            .strip_suffix('\n')
+            .filter(|l| !l.contains('\n'))
+            .unwrap_or_else(|| panic!("{flag}: one line expected: {stdout:?}"));
+        assert_version_line(line, flag);
         assert!(
             output.stderr.is_empty(),
             "{flag}: stderr {:?}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+/// The text report names the same build in its last line, after a blank line, so
+/// no line a positional parser reads moves: the report is what a figure is quoted
+/// from.
+#[test]
+fn the_report_header_names_the_build() {
+    let output = run_fnec(&[fixture_deck("dipole-freesp-51seg.nec").to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let build = stdout
+        .strip_suffix('\n')
+        .and_then(|s| s.rsplit_once("\n\n"))
+        .and_then(|(_, last)| last.strip_prefix("FNEC_BUILD "))
+        .filter(|b| !b.contains('\n'))
+        .unwrap_or_else(|| panic!("the last section is not one FNEC_BUILD line:\n{stdout}"));
+    let version = String::from_utf8_lossy(&run_fnec(&["--version"]).stdout).into_owned();
+    assert_eq!(
+        format!("fnec {build}\n"),
+        version,
+        "report line against --version"
+    );
+    assert_version_line(&format!("fnec {build}"), "report header");
 }
 
 /// Asked-for help is not an error: usage on stdout, exit 0. (It was "unknown
@@ -371,7 +435,7 @@ fn help_flag_prints_usage_to_stdout_and_exits_zero() {
         assert_eq!(output.status.code(), Some(0), "{flag}: exit status");
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.starts_with(&format!("fnec {}\n", env!("CARGO_PKG_VERSION"))),
+            stdout.starts_with(&format!("fnec {} (", env!("CARGO_PKG_VERSION"))),
             "{flag}: stdout must open with the version:\n{stdout}"
         );
         assert!(

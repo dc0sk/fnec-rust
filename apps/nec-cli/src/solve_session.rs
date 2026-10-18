@@ -209,7 +209,10 @@ impl PointOutput {
     /// The point's text report.
     pub(super) fn text(&self) -> String {
         match self {
-            PointOutput::Tables(point) => render_text_report(&point.as_input()),
+            PointOutput::Tables(point) => render_text_report(&nec_report::ReportInput {
+                build: Some(crate::VERSION),
+                ..point.as_input()
+            }),
             PointOutput::Text(text) => text.clone(),
         }
     }
