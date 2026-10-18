@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: corpus/README.md
 status: living
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Golden Reference Corpus
@@ -366,6 +366,14 @@ produced its series and the test that pins it.
 - `h-top-hat-41-25.nec` — the H of FND-191 / FND-264; nec2c's diverging series in
   `apps/nec-cli/tests/converged_reference.rs`, its same-mesh gap in
   `crates/nec_solver/tests/graph_nec2c.rs`.
+- `t45-21`, `t45-63`, `loaded-t-21`, `loaded-t-63`, `inverted-l-21`,
+  `inverted-l-63` (`.nec`) — FND-265's receive decks at 21 and 63 per wire; the
+  21 decks' series (`.json`, `scripts/nec2c-receive-series.py`) hold the references
+  `graph_receive_nec2c.rs` and `planewave_ground_contact.rs` pin, and the 63 decks
+  solve the same antennas at the same points (their 9× / 3× equal the 21 decks'
+  27× / 9× to the digit).
+- `t45-21-r02`, `inverted-l-21-r02` — the same decks at radius 0.2 mm: the
+  controls that show nec2c's corner break (FND-267) and the T's absence of it.
 
 ## Corpus metadata
 

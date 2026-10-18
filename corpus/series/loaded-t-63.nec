@@ -1,0 +1,12 @@
+CM FND-265: the loaded T at 63 per wire, load on 14 = 3x5-1 (the same point).
+CM nec2c's receive series on it: scripts/nec2c-receive-series.py
+CM corpus/series/loaded-t-63.nec 1 3 9 — pinned in crates/nec_solver/tests/graph_receive_nec2c.rs.
+CE
+GW 1 63 0 0 0 0 0 4 .001
+GW 2 63 0 0 4 -3 0 4 .001
+GW 3 63 0 0 4 3 0 4 .001
+GE 0
+LD 4 2 14 14 300 0
+EX 1 1 1 0 90 0 0
+FR 0 1 0 0 14.2 0
+EN

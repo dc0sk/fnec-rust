@@ -173,36 +173,67 @@ fn a_monopole_on_perfect_ground_receives_like_nec2c() {
     assert_converges("monopole on GN 1, θ = 45°", e21, e41, 0.04);
 }
 
-/// An inverted-L touching ground (the bent-path route on the doubled structure).
-/// Kill criterion: under 1 % at 41, shrinking.
+/// fnec's receive currents on a checked-in series deck (`corpus/series/`), at the
+/// deck's segments, by the route `receive` takes.
+fn receive_series_deck(name: &str) -> Vec<Complex64> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/series")
+        .join(name);
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let d = nec_parser::parse(&text).expect("parses").deck;
+    let segs = build_geometry(&d).expect("geometry");
+    let g = ground_model_from_deck(&d);
+    assert_eq!(pre_solve_error(&d, &segs, &g), None);
+    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &g);
+    let loads = build_deck_stamps(&d, &segs, FREQ).diagonal;
+    let r = solve_hallen_routed(&d, &segs, &mut z, FREQ, &loads).expect("solves");
+    nec_solver::deck_values(&segs, &r.currents)
+}
+
+/// An inverted-L touching ground (the bent-path route on the doubled structure),
+/// at 21 and 63 per wire against one nec2c reference at the same points (a 21-mesh
+/// pin k is the 63-mesh segment 3k − 1): `corpus/series/inverted-l-21.json` at 9×,
+/// 189 per wire (the 63 deck's 3×, identical to the digit), extended kernel.
+///
+/// Not at 27× (FND-265, FND-267): there the corner segments are 5.3 radii, and
+/// nec2c's whole stem current shifts by 0.12 % of the peak (steps 0.114, 0.022,
+/// 0.125 %), with `EK` as without — the same in free space on the doubled
+/// structure. The 0.2 mm control (`inverted-l-21-r02`) stays smooth to 27× (26
+/// radii; 0.074, 0.012, 0.007 %) and jumps at 81× (8.8 radii). At 9× the corners
+/// are 15.9 radii. Gate: the error plus three of nec2c's last steps (0.022 %)
+/// under 1 % of the peak, and shrinking: measured 0.244 → 0.123 %. Was: 21 / 41
+/// against nec2c on the same mesh.
 #[test]
 fn an_inverted_l_touching_perfect_ground_receives_like_nec2c() {
-    let w = wave(60.0, 30.0);
-    let e21 = err(
-        &receive(&inverted_l(21), PEC, &w).unwrap(),
-        1.716_240e-2,
-        &[
-            (1, 1.0702e-03, 1.7129e-02),
-            (11, 8.4545e-04, 1.6692e-02),
-            (21, 2.4684e-04, 1.5545e-02),
-            (22, 1.5117e-04, 1.5362e-02),
-            (32, -4.3384e-04, 1.0070e-02),
-            (42, -4.7306e-05, 6.3420e-04),
-        ],
+    // inverted-l-21.json at 9x; nec2c's last step (3x -> 9x): 0.00022.
+    const PEAK: f64 = 1.716362e-02;
+    const STEP: f64 = 0.00022;
+    const PINS: [(usize, f64, f64); 6] = [
+        (1, 1.07320e-03, 1.71290e-02),
+        (11, 8.48140e-04, 1.66920e-02),
+        (21, 2.48750e-04, 1.55450e-02),
+        (22, 1.53000e-04, 1.53620e-02),
+        (32, -4.32890e-04, 1.00750e-02),
+        (42, -4.89810e-05, 6.57520e-04),
+    ];
+    let e = |c: &[Complex64], at: &dyn Fn(usize) -> usize| {
+        PINS.iter()
+            .map(|&(k, re, im)| (c[at(k) - 1] - Complex64::new(re, im)).norm() / PEAK)
+            .fold(0.0, f64::max)
+    };
+    let e21 = e(&receive_series_deck("inverted-l-21.nec"), &|k| k);
+    let e63 = e(&receive_series_deck("inverted-l-63.nec"), &|k| 3 * k - 1);
+    println!(
+        "inverted-L on GN 1: {:.3} % -> {:.3} %",
+        e21 * 100.0,
+        e63 * 100.0
     );
-    let e41 = err(
-        &receive(&inverted_l(41), PEC, &w).unwrap(),
-        1.716_554e-2,
-        &[
-            (1, 1.0726e-03, 1.7132e-02),
-            (21, 8.4730e-04, 1.6694e-02),
-            (41, 2.2936e-04, 1.5512e-02),
-            (42, 1.7984e-04, 1.5421e-02),
-            (62, -4.3312e-04, 1.0073e-02),
-            (82, -2.6501e-05, 3.5290e-04),
-        ],
+    assert!(
+        e63 + 3.0 * STEP < 0.01,
+        "inverted-L: {:.3} % at 63 + 3 x nec2c's step reaches 1 %",
+        e63 * 100.0
     );
-    assert_converges("inverted-L on GN 1", e21, e41, 0.01);
+    assert!(e63 < e21, "inverted-L: must shrink, {e21:.5} -> {e63:.5}");
 }
 
 /// The receive-sweep route (one plan, a deck per direction) gives exactly the
