@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-16
+last_updated: 2026-10-18
 ---
 
 # Release Notes
@@ -64,9 +64,17 @@ element's Leeson equivalent, a uniform wire, gives 75.11 + j16.52 Ω under nec2c
   (FND-193). Its accuracy gate declines a solve whose residual norms are missing
   (FND-253).
 
-Ledger: 240 findings at v0.22.0, 262 at 0.23.0, 11 open — the
-reference-convergence audit's FND-255 to FND-260 among them, recorded and not yet
-fixed.
+- **Gates against nec2c measure against its converged value** (FND-255 to FND-258,
+  FND-263; merged after the release PR and carried by the tag). A converged
+  reference must have settled within its gate; twelve gates that compared fnec with
+  nec2c on the test's own mesh now compare with nec2c meshed 27× finer; junction
+  gates carry nec2c's own slow convergence; the off-apex inverted-V gate measures
+  one antenna at two meshes. Tests and reference data only — no solver output
+  changed.
+
+Ledger: 240 findings at v0.22.0, 265 at the 0.23.0 tag, 9 open. The
+reference-convergence audit's FND-255 to FND-258 are fixed in the tag; FND-259,
+FND-260 and its follow-ups FND-264 and FND-265 are recorded and open.
 
 ## 0.22.0 — Close to the ground
 
