@@ -191,6 +191,10 @@ jobs:
       # release day twice; now caught on the PR that causes it.
       - name: Changelog headings are not duplicated
         run: python3 scripts/check-changelog-headings.py
+      # The mint's empty-[Unreleased] check runs only in release-tag.yml, so its
+      # known-fail cases run here, before a mint depends on it.
+      - name: Mint's empty-[Unreleased] check fails when it should
+        run: python3 scripts/test-check-changelog-unreleased-empty.py
       # `bindings/fnec_py` declares its version twice and maturin stamps the
       # *pyproject* one onto the wheel. They drifted and it shipped: v0.14.0
       # announced fnec_py 0.5.0 and published a wheel calling itself 0.4.0.

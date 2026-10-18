@@ -31,6 +31,29 @@
 _hbl_who="${1:-gate}"
 _hbl_path="${HEAVY_BUILD_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/heavy-build.lock}"
 
+# Refuse to build inside a linked worktree. Cargo's default target/ there is a
+# second full build (11–12 GB here) in a directory `git add` can sweep, and an
+# exported CARGO_TARGET_DIR in one shell does not cover the cargo a `git commit`
+# hook starts: twice on 2026-10-18 the pre-commit clippy built target/ inside a
+# worktree. Asked of cargo itself, since .cargo/config.toml can move the target
+# too. The main checkout's target/ is the ordinary one and is not checked.
+_hbl_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)" \
+      != "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]]; then
+    _hbl_top="$(realpath "$(git -C "$_hbl_repo" rev-parse --show-toplevel)")"
+    if ! _hbl_target="$(cd "$_hbl_top" && cargo metadata --no-deps --format-version 1 2>/dev/null |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"; then
+        echo "$_hbl_who: cannot ask cargo where $_hbl_top builds — refusing to build in a linked worktree blind" >&2
+        exit 1
+    fi
+    case "$(realpath -m "$_hbl_target")" in
+        "$_hbl_top" | "$_hbl_top"/*)
+            echo "$_hbl_who: $_hbl_top is a linked worktree and cargo would build in $_hbl_target, inside it." >&2
+            echo "$_hbl_who: export CARGO_TARGET_DIR=\$HOME/.cache/fnec-target-$(basename "$_hbl_top") (outside the worktree, off /tmp) and retry." >&2
+            exit 1 ;;
+    esac
+fi
+
 # Fail CLOSED once flock exists: a lock file that cannot be opened (its directory
 # missing, or the file owned by another user) made both `flock` calls fail with
 # EBADF, and the old code printed "waiting" and then "lock acquired" and ran

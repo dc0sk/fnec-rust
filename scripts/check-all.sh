@@ -169,6 +169,7 @@ run "check-release-tags self-test" python3 scripts/test-check-release-tags.py
 run "host-build-lock self-test" bash scripts/test-host-build-lock.sh
 run "corpus provenance self-test" python3 scripts/test-derive-corpus-provenance.py
 run "check-asset-platform self-test" python3 scripts/test-check-asset-platform.py
+run "unreleased-empty self-test" python3 scripts/test-check-changelog-unreleased-empty.py
 
 # Against the merge base, so it sees the doc-regression half — a doc comment can
 # only come adrift from an item *relative to* where that item was documented.

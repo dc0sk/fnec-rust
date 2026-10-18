@@ -26,6 +26,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The mint refuses while `[Unreleased]` has entries** (FND-268). The Mint release
+  tag workflow tags main's tip; it now runs `scripts/check-changelog-unreleased-empty.py`
+  against that commit, so a PR merged after the release PR blocks the mint until its
+  entry moves under the release heading, instead of shipping unlisted (0.19.0, 0.20.0,
+  0.23.0).
+- **A build in a linked worktree refuses to put `target/` inside it** (FND-269).
+  `scripts/host-build-lock.sh`, sourced by the repo hooks and `check-all.sh`, asks
+  cargo where it will build and refuses with the remedy (`export CARGO_TARGET_DIR=…`
+  outside the worktree) — a `git commit` hook had built 12 GB there.
 - **Receive-current gates at junctions measure one antenna against one converged
   nec2c reference** (FND-265). The T at 45°, the loaded T and the inverted-L on
   `GN 1` are each solved at 21 and 63 per wire against nec2c meshed finer — the

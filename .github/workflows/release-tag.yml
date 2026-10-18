@@ -141,6 +141,11 @@ jobs:
           grep -qE "^## ${VERSION//./\\.}( |$)" /tmp/mint/docs/releasenotes.md \
             || { echo "::error::no $VERSION section in docs/releasenotes.md"; exit 1; }
 
+          # This tags main's TIP, so anything merged after the release PR is in the
+          # tag, and its entry must have moved under [$VERSION] first (release-process
+          # step 1). Missed at 0.19.0, 0.20.0 and 0.23.0, each fixed after the tag.
+          ( cd /tmp/mint && python3 "$GITHUB_WORKSPACE/scripts/check-changelog-unreleased-empty.py" )
+
           # The defect that made this a button rather than a trigger. The script
           # comes from THIS checkout and runs against the target tree: an older
           # commit may not contain the checker at all — 2f51d63 does not — and
