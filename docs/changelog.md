@@ -15,6 +15,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Docs
+
+- **Phase 10 is marked complete** in the roadmap, and PAR-011's backlog entry
+  records what shipped in 0.23.0 and the two criteria still open (a run on Windows,
+  the throughput comparison against 4nec2's own kernel).
+
 ## [0.24.0] — 2026-10-19 — Named builds
 
 ### Added

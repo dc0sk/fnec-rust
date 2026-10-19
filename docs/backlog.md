@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/backlog.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-19
 ---
 
 # Backlog
@@ -247,7 +247,8 @@ last_updated: 2026-10-15
 	- Sequencing constraint: implementation starts only after full GPU solver support (matrix fill + solve path) is complete and benchmarked.
 	- 2026-05-30 resolution: sequencing constraint and criteria satisfied by completed roadmap gates `PH5-CHK-007` (full GPU solve path complete) and `PH6-CHK-005`/`PH6-CHK-006`/`PH6-CHK-007` (distributed execution design, SSH-backed worker deployment, deterministic work-content/result cache).
 
-- [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 10 / Issue: #24**
+- [ ] **PAR-011 / 4nec2 solver-binary drop-in compatibility mode / Owner: CLI+Runtime / Target: Phase 11 (remaining criteria) / Issue: #24**
+	- 2026-10-19 status: shipped in 0.23.0 (P2a `--output-format nec2d`, P2b kernel mode, P3 the Windows build; `docs/4nec2-drop-in.md`). In 4nec2 V5.9.3 under Wine 10.0, 4nec2 read fnec's report for every printable deck type tried. Still open against the resolution criteria below: a run on Windows itself (only Wine so far; the binary is unsigned and not a release asset), and the throughput comparison against 4nec2's own single-thread kernel. Left unticked until those are measured — the 2026-10-14 reopening is why.
 	- 2026-10-15 evidence captured: a real 4nec2 V5.9.3 under Wine on the project host. Its observations are recorded in the evidence memo: the process contract, file effects, the `.inp` preprocessing, the failure contract, and removal and insertion ablations of the output 4nec2 accepts. 4nec2 rejects nec2c's layout, so a drop-in must write the NEC-2D layout. 15 fixture pairs written by 4nec2 are in `apps/nec-cli/tests/fixtures/par011/`. Next, per the reviewed plan in `docs/par011-dropin-contract.md`: P2a `--output-format nec2d`, P2b kernel mode, P3 the Windows build.
 	- 2026-10-14 reopened: the `[x]` was premature. The filename-steered alias profile and its stream / side-effect contracts exist, but none of the resolution criteria's evidence does: `docs/par011-dropin-evidence-memo.md` still says the drop-in mode is not implemented, the capture template in `docs/par011-dropin-contract.md` is all TBD, and no throughput comparison against 4nec2's own kernel was run. Blocked on the maintainer installing Wine and 4nec2 on the validation host (dc0sk-pc1) so the process contract can be captured; then it is a Phase 10 work item.
 	Resolution criteria: filename-steered compatibility profile detects known 4nec2 kernel binary names, preserves expected invocation/report contracts for drop-in operation, and demonstrates multithreaded kernel replacement throughput gains against single-thread external baseline.
