@@ -96,7 +96,8 @@ EN
     let out = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
     assert!(out.status.success(), "mpie Y-junction failed: {:?}", out);
     let (r, _x) = feedpoint_z(&String::from_utf8_lossy(&out.stdout));
-    // Physical radiation resistance (nec2c ~71.5 Ω; feed slightly off-centre here),
+    // Physical radiation resistance (nec2c 67.215 Ω on this deck, 67.018 at 27×;
+    // feed slightly off-centre here),
     // decisively unlike the Hallén junction-fed garbage (R≈8).
     assert!((40.0..90.0).contains(&r), "Y-junction R={r} not physical");
 }

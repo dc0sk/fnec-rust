@@ -10,8 +10,10 @@
 //! Every other card is in [`OTHER_CARDS`]: one fnec ignores with a warning,
 //! because it cannot change the solved problem, or one it refuses, because it
 //! would — and a mnemonic in neither list is refused too (FND-236). It used to be
-//! skipped with a warning, and the deck solved as a different antenna: a `GS`
-//! scale card ignored gave 290.5 + j218.5 Ω where nec2c gives 84.8 + j45.8.
+//! skipped with a warning, and the deck solved as a different antenna: the
+//! feet-unit dipole of `gs_card_nec2c.rs` with its `GS 0 0 .3048` ignored is a
+//! wire 3.28× too long, 227.14 + j451.81 Ω in nec2c, where nec2c scaling it gives
+//! 79.042 + j45.909.
 
 pub mod template;
 

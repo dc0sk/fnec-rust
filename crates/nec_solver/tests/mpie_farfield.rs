@@ -11,7 +11,8 @@
 // the pattern with no new far-field code.
 //
 //   Gate C1 (nec2c/analytic): a free-space λ/2 dipole's pattern peaks broadside
-//     (θ=90°) with directivity 2.15 dBi (nec2c reports 2.15 dBi free-space gain),
+//     (θ=90°) with directivity 2.17 dBi (nec2c on this 1 mm, 5.278 m dipole, the
+//     same at 1×, 3× and 9×; 2.15 is the ideal thin half-wave dipole's),
 //     nulls along the wire axis, and follows the analytic cos(½π cosθ)/sinθ shape.
 //
 //   Gate C2 (symmetry/reciprocity): the pattern is symmetric about broadside
@@ -39,7 +40,7 @@ fn dipole_pattern(nseg: usize, points: &[FarFieldPoint]) -> Vec<f64> {
         .collect()
 }
 
-/// Gate C1: free-space λ/2 dipole peak directivity is 2.15 dBi, broadside, with
+/// Gate C1: free-space λ/2 dipole peak directivity is 2.17 dBi (nec2c), broadside, with
 /// nulls along the axis and the analytic pattern shape.
 #[test]
 fn half_wave_dipole_gain_and_shape_match_nec2c() {
@@ -53,11 +54,11 @@ fn half_wave_dipole_gain_and_shape_match_nec2c() {
         .collect();
     let gains = dipole_pattern(40, &points);
 
-    // Peak directivity 2.15 dBi at broadside (θ=90° is index 9).
+    // Peak directivity 2.17 dBi (nec2c) at broadside (θ=90° is index 9).
     let broadside = gains[9];
     assert!(
-        (broadside - 2.15).abs() < 0.1,
-        "peak gain {broadside:.3} dBi (expected 2.15)"
+        (broadside - 2.17).abs() < 0.1,
+        "peak gain {broadside:.3} dBi (nec2c 2.17)"
     );
     // Broadside is the maximum.
     for (i, &g) in gains.iter().enumerate() {

@@ -1615,7 +1615,7 @@ pub fn bent_conductor_warning(
     // as its doubled image problem (FND-082), where a one-segment run at the
     // ground becomes two and the bend IS modelled. Asked on the raw segments, a
     // 1-segment vertical base warned "about 26 % off" at 1.274 + j23.96 against
-    // nec2c's 1.295 + j26.62 (FND-179). The same resolution as `hallen_route`.
+    // nec2c's 1.279 + j26.35 (FND-179). The same resolution as `hallen_route`.
     let contact =
         crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck));
     let (solved, solved_ground): (&[Segment], GroundModel) = match &contact {

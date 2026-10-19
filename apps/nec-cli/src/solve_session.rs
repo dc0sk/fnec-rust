@@ -1603,8 +1603,9 @@ pub(super) fn solve_frequency_point(
     // The device's far-field kernel sums the real segments in free space: it has
     // no image and no reflected field. It ran on every `--exec gpu` deck, so over
     // GN 1 or GN 2 the pattern was the free-space one — a vertical dipole over
-    // PEC −8.62 / −2.56 / +0.67 dBi at θ 20/40/60 against the CPU's and nec2c's
-    // −3.12 / −0.26 / −15.04 — while the solve had correctly declined the ground
+    // PEC −8.62 / −2.56 / +0.67 dBi at θ 20/40/60 against the CPU's −3.13 /
+    // −0.26 / −15.04 (nec2c −3.13 / −0.27 / −15.04) — while the solve had
+    // correctly declined the ground
     // deck to the CPU (FND-205). The deck class keys the solve; it keys the
     // pattern too.
     let gpu_pattern =

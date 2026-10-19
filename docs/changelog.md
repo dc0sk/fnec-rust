@@ -27,6 +27,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
+  the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
+  far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No
+  tolerance moved.
 - **`--solver sinusoidal` solves a dipole written start-to-start** (FND-249): the
   `GX` spelling, a half and its mirror, and any chain with a wire written backwards.
   The wire is turned end for end inside the solve, and its currents are reported in
