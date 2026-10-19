@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Parallel wires closer than ten radius sums, or than their segment length,
+  carry a caveat** (FND-274). A wire laid 2 mm beside a 1 mm-radius dipole read
+  32 − j94 Ω on Hallén, 159 + j259 on the MPIE and 1271 + j2069 on nec2c, with no
+  warning. Under ten radius sums Hallén and the MPIE part by 4 to 21 %; with
+  segments longer than the spacing nec2c moves by more than 5 % under its own
+  refinement. The caveat names which applies, on every solver and frontend.
+
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
   far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No
