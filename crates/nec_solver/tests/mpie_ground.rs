@@ -11,11 +11,12 @@
 //
 // The Python oracle studies/sommerfeld-ground/efie_mpie_ground.py reproduces
 // nec2c GN2 to ~5% on R AND X; this port must match it. nec2c refs (14.2 MHz,
-// εr=13, σ=0.005, horizontal λ/2 dipole):
-//   free space : 78.85 + j44.70
-//   PEC  0.05λ :  6.16 + j38.18   (GN1 — image cancellation)
-//   GN2  0.05λ : 67.26 + j52.61   (converged, 27×: 67.855 + j53.589)
-//   GN2  0.025λ: 87.81 + j68.64   (converged, 27×: 88.774 + j69.557)
+// εr=13, σ=0.005, horizontal λ/2 dipole, centre-fed at 21 segments; the gates
+// use the 27× value, the dipole meshed 27 times finer):
+//   free space : 78.85 + j44.70   (27×: 79.474 + j45.517)
+//   PEC  0.05λ :  6.16 + j38.18   (GN1 — image cancellation; 27×: 6.203 + j39.349)
+//   GN2  0.05λ : 67.26 + j52.61   (27×: 67.855 + j53.589)
+//   GN2  0.025λ: 87.81 + j68.64   (27×: 88.774 + j69.557)
 // Oracle (N=40): free 74.36+j41.36, PEC 5.87+j34.11, GN2 64.00+j49.18 / 83.46+j66.26.
 //
 //   Gate D1: horizontal λ/2 dipole over GN2 at 0.05λ and 0.025λ — feed Z matches
@@ -29,8 +30,8 @@
 // reflected mutual impedance, so a near-horizontal wire reproduces the Phase-D
 // horizontal result, and a vertical dipole matches nec2c.
 //
-//   Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c
-//     89.75 + j38.52 to the MPIE's ~7% discretization offset.
+//   Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c's
+//     converged 90.173 + j38.991 to the MPIE's ~7% discretization offset.
 //   Gate E2 (consistency): a near-horizontal (2°) wire reproduces the Phase-D
 //     horizontal 64.00 + j49.18 — the E-field reaction agrees with the potential
 //     kernels (the fast dyadic resolves the low-d/large-ρ pole corner).
@@ -139,7 +140,13 @@ fn pec_image_cancellation() {
 }
 
 /// Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c
-/// (89.75 + j38.52) via the general reflected-dyadic reaction.
+/// via the general reflected-dyadic reaction. nec2c 90.173 + j38.991 is its
+/// converged value: the centre-fed dipole at 41 segments meshed 27× finer
+/// (`scripts/nec2c-converged-series.py`, captured 2026-10-19; 1 / 3 / 9 / 27 ×:
+/// 89.749 + j38.517, 89.987 + j38.752, 90.107 + j38.900, 90.173 + j38.991). It
+/// was the 41-segment 89.75 + j38.52 (FND-259); the MPIE solves 40 segments fed
+/// at the centre node, which no nec2c mesh reproduces, so the reference is the
+/// limit.
 #[test]
 fn vertical_dipole_gn2_matches_nec2c() {
     let lam = C0 / FREQ;
@@ -149,8 +156,8 @@ fn vertical_dipole_gn2_matches_nec2c() {
         .unwrap()
         .z_in;
     assert!(
-        (z.re - 89.75).abs() / 89.75 < 0.08 && (z.im - 38.52).abs() / 38.52 < 0.10,
-        "vertical GN2 Z={z} (nec2c 89.75+j38.52)"
+        (z.re - 90.173).abs() / 90.173 < 0.08 && (z.im - 38.991).abs() / 38.991 < 0.10,
+        "vertical GN2 Z={z} (nec2c 90.173+j38.991)"
     );
 }
 

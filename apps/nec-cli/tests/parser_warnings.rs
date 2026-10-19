@@ -28,9 +28,11 @@ fn run_deck(name: &str, deck: &str) -> (bool, String) {
 
 /// FND-236: a card that cannot change the antenna warns and the run solves; one
 /// that would — or one fnec does not know — refuses the deck by name. Both used
-/// to warn and solve: `GS 0 0 0.3048` ignored gave 290.5 + j218.5 Ω where nec2c,
-/// scaling the wire to metres, gives 84.8 + j45.8 (GS is modelled now,
-/// `gs_card_nec2c.rs`; `GF` stands in as the refused card).
+/// to warn and solve: a dipole in feet (`GW 1 21 0 0 -17.33 0 0 17.33 .00328`,
+/// `GS 0 0 .3048`, centre-fed at 14.2 MHz) with the GS ignored is a wire 3.28×
+/// too long — nec2c 227.14 + j451.81 Ω for it — where nec2c, scaling the wire to
+/// metres, gives 79.042 + j45.909 (GS is modelled now, `gs_card_nec2c.rs`, on this
+/// deck; `GF` stands in as the refused card).
 #[test]
 fn an_ignored_card_warns_and_a_card_that_changes_the_antenna_is_refused() {
     let tail = "EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";

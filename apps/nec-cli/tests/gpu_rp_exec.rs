@@ -153,7 +153,8 @@ fn exec_gpu_diag_line_shows_gpu_exec_mode() {
 /// FND-205: over ground the pattern must not take the device's far-field kernel,
 /// which is free-space only. It did, on every `--exec gpu` deck, so a vertical
 /// dipole over PEC printed −8.62 / −2.56 / +0.67 dBi at θ 20/40/60 where the CPU
-/// and nec2c give −3.12 / −0.26 / −15.04, exit 0. Over PEC and over a finite
+/// gives −3.13 / −0.26 / −15.04 (nec2c −3.13 / −0.27 / −15.04), exit 0. Over
+/// PEC and over a finite
 /// ground `--exec gpu` must now print the CPU's pattern to the digit, and say
 /// once that the pattern ran there. (Without an adapter the device arm fell back
 /// to the CPU anyway, so in CI the info line is what this pins; on a GPU host the

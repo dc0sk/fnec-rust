@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/card-support-matrix.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-19
 ---
 
 # NEC Card Support Matrix
@@ -132,8 +132,9 @@ The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 Every NEC card fnec does not parse is listed here, with what it does (FND-236).
 **Ignored** cards cannot change the solved problem: each is skipped with one
 warning saying why. **Refused** cards would — skipping one solves a different
-antenna (a `GS` scale card skipped gave 290.5 + j218.5 Ω where nec2c gives
-84.8 + j45.8, before `GS` was modelled) — so the deck is refused with an error naming the card. A mnemonic
+antenna (before `GS` was modelled, the feet-unit dipole of `gs_card_nec2c.rs`
+with its `GS 0 0 .3048` skipped was a wire 3.28× too long: 227.14 + j451.81 Ω in
+nec2c, where nec2c scaling it gives 79.042 + j45.909) — so the deck is refused with an error naming the card. A mnemonic
 in neither list is refused as unknown, as nec2c refuses it. A line starting with
 `'` is a comment. This table and `nec_parser::OTHER_CARDS` are checked against
 each other (`crates/nec_parser/tests/card_matrix.rs`).

@@ -81,7 +81,10 @@ fn a_slanted_dipole_over_ground_sees_its_image() {
 /// criterion: under 5 % at 81 per arm, and shrinking. And it must equal the same
 /// antenna with its image written out as wires in free space, driven −1 V: the
 /// image term IS the doubled problem. Against nec2c on a finer mesh (27× at 41,
-/// 9× at 81 per arm; the apex feed on the same point), captured 2026-10-10: once
+/// 9× at 81 per arm; the apex feed on the same point), captured 2026-10-10 on the
+/// thin kernel below its thin-wire limit (segment/radius 4.79 and 7.27); `EK 0` at
+/// the same meshes gives 53.397 + j9.5014 and 53.342 + j9.4766, 0.035 and 0.044 %
+/// apart (FND-260, checked 2026-10-19). Once
 /// FND-227 refined the free ends fnec outran nec2c on the deck's own mesh
 /// (3.35 → 3.47 %, not shrinking); against the finer mesh 2.04 → 1.25 %.
 #[test]

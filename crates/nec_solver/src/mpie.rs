@@ -1348,7 +1348,11 @@ mod tests {
     /// FND-157, and the oracle shared this file's defect: both integrated the
     /// reduced kernel's `~a`-wide self-term peak with a 6-point rule, and read 6%
     /// low. Two codes with the same quadrature agreeing proved nothing about the
-    /// quadrature. The reference now is nec2c's converged dipole (~79.6 + j46.6);
+    /// quadrature. The reference now is nec2c's converged dipole, this one
+    /// (half-length c/4f = 5.2780 m, 1 mm) centre-fed at 21 segments meshed 27×
+    /// finer: 79.474 + j45.517 (1 / 3 / 9 / 27 ×: 78.852 + j44.708, 79.210 +
+    /// j45.136, 79.385 + j45.373, 79.474 + j45.517; ~79.6 + j46.6 was the 5.282 m
+    /// corpus dipole's, FND-259);
     /// a node feed has no exact nec2c twin, so this is a band, and the exact pins
     /// are the CLI decks in `mpie_solver_cli.rs`, which do have one.
     #[test]
@@ -1357,12 +1361,12 @@ mod tests {
         let sol = solve_mpie_free_space(&wire, FREQ, 40 / 2 - 1).unwrap();
         assert!(
             (78.5..80.0).contains(&sol.z_in.re),
-            "R={} (nec2c converges to ~79.6; the old quadrature gave 74.36)",
+            "R={} (nec2c converges to 79.47; the old quadrature gave 74.36)",
             sol.z_in.re
         );
         assert!(
             (43.0..47.5).contains(&sol.z_in.im),
-            "X={} (nec2c converges to ~46.6)",
+            "X={} (nec2c converges to 45.52)",
             sol.z_in.im
         );
     }
