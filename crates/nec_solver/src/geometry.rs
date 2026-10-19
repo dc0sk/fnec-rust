@@ -445,6 +445,15 @@ pub enum GeometryError {
         gap: f64,
         band: f64,
     },
+    /// Segments `a` and `b` (`(tag, segment)`) lie along each other for `length`
+    /// metres, closer than their radii: one conductor drawn on top of another
+    /// (FND-250). `duplicate` when the overlap is the whole of the shorter one.
+    OverlappingSegments {
+        a: (u32, u32),
+        b: (u32, u32),
+        length: f64,
+        duplicate: bool,
+    },
     /// A closed loop, or a junction where three or more wires meet, with a straight
     /// run one segment long at tag `tag` segment `seg`, asked of the Hallén geometry
     /// (FND-251). Hallén solves loops and junctions on the section graph, which
@@ -539,6 +548,27 @@ impl std::fmt::Display for GeometryError {
                  apart",
                 a.1, a.0, b.1, b.0
             ),
+            GeometryError::OverlappingSegments {
+                a,
+                b,
+                length,
+                duplicate,
+            } => {
+                let remedy = if *duplicate {
+                    "remove the duplicate"
+                } else {
+                    "end the second wire where the first ends, or split the first at that point"
+                };
+                write!(
+                    f,
+                    "segments overlap: segment {} of tag {} and segment {} of tag {} lie along \
+                     each other for {length:.3e} m, closer than their radii — one conductor drawn \
+                     on top of another, which no solver separates (nec2c answered such a deck \
+                     650 + j1453 Ω where the antenna meant reads 203.8 + j383.2); {remedy}. A GR, \
+                     GX or GM that copies a wire onto itself or onto the axis is the usual cause",
+                    a.1, a.0, b.1, b.0
+                )
+            }
             GeometryError::NonTransitiveJunction { a, b, gap, band } => write!(
                 f,
                 "wire ends between segment {} of tag {} and segment {} of tag {} form a chain \
@@ -1519,7 +1549,78 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
     // In any environment, and after the ground snap: an end that joins a ground
     // contact is then already at z = 0 too, so the cluster keeps its contact.
     snap_junctions(&mut segments)?;
+    // After the snap, so ends that should meet do; before every topology check,
+    // which would otherwise read a duplicate as a junction (FND-250).
+    if let Some(e) = overlapping_segments(&segments) {
+        return Err(e);
+    }
     Ok(segments)
+}
+
+/// Two segments that lie along each other, closer than their radii, for part of
+/// their length: one conductor drawn on top of another (FND-250).
+///
+/// No solver separates them. A dipole with a second wire laid along its upper half
+/// and beyond reads, against the antenna it was meant to be (the dipole and a
+/// 0.86 m extension: nec2c 203.8 + j383.2 Ω), Hallén −3.35 − j234.0, the MPIE
+/// 176.8 + j334.8 with no caveat, and nec2c 650 + j1453 — and the same with the
+/// second wire's axis 0.6 mm off the first's inside a 1 mm radius. Exact duplicates
+/// were refused as a junction with a one-segment run, or as "no current flows at
+/// the feedpoint", naming the wrong cause.
+///
+/// Judged in the wires' own scale, not in metres (FND-243, FND-246): `b`'s ends are
+/// projected onto `a`'s axis, and where they overlap `a` by more than 1e-6 of the
+/// shorter segment, `b` is within `a.radius + b.radius` of that axis at both ends
+/// of the overlap. A crossing (one point near the axis, the rest far) is
+/// `validate::segment_intersection_error`'s; a T onto an interior and the adjacent
+/// segments of a wire meet at a point, overlap 0. Wires whose surfaces touch
+/// (axes two radii apart) are not refused: a thin-wire validity question.
+fn overlapping_segments(segs: &[Segment]) -> Option<GeometryError> {
+    let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    for (i, a) in segs.iter().enumerate() {
+        if a.length <= 0.0 {
+            continue;
+        }
+        for (j, b) in segs.iter().enumerate().skip(i + 1) {
+            let along = |p: [f64; 3]| {
+                dot(
+                    [p[0] - a.start[0], p[1] - a.start[1], p[2] - a.start[2]],
+                    a.direction,
+                )
+            };
+            let (t0, t1) = (along(b.start), along(b.end));
+            let (lo, hi) = (t0.min(t1).max(0.0), t0.max(t1).min(a.length));
+            if hi - lo <= 1e-6 * a.length.min(b.length) {
+                continue;
+            }
+            // `b`'s point at axis position `t`, and its distance from `a`'s axis.
+            let off_axis = |t: f64| {
+                let f = (t - t0) / (t1 - t0);
+                let p = [
+                    b.start[0] + f * (b.end[0] - b.start[0]) - a.start[0],
+                    b.start[1] + f * (b.end[1] - b.start[1]) - a.start[1],
+                    b.start[2] + f * (b.end[2] - b.start[2]) - a.start[2],
+                ];
+                let s = dot(p, a.direction);
+                let r = [
+                    p[0] - s * a.direction[0],
+                    p[1] - s * a.direction[1],
+                    p[2] - s * a.direction[2],
+                ];
+                dot(r, r).sqrt()
+            };
+            let reach = a.radius + b.radius;
+            if off_axis(lo) < reach && off_axis(hi) < reach {
+                return Some(GeometryError::OverlappingSegments {
+                    a: nec_name(segs, i),
+                    b: nec_name(segs, j),
+                    length: hi - lo,
+                    duplicate: hi - lo >= (1.0 - 1e-6) * a.length.min(b.length),
+                });
+            }
+        }
+    }
+    None
 }
 
 /// Join segment ends as nec2c's `conect` joins them, and move each joined group
@@ -3448,5 +3549,134 @@ mod tests {
             let segs = build_unnumbered(&deck).unwrap();
             assert_eq!(segs[1].start, segs[0].end, "{xa} / {xb}");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // FND-250: overlapping segments, refused at the builder every solver uses.
+
+    /// A dipole (11 × 0.48 m along z, 1 mm) and `second`, a card or two.
+    fn with_dipole(second: &str) -> NecDeck {
+        parsed(&format!(
+            "CE\nGW 1 11 0 0 -2.64 0 0 2.64 .001\n{second}\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+        ))
+    }
+
+    fn overlap_of(deck: &NecDeck) -> Option<(u32, u32, u32, u32, bool)> {
+        // Both builders: the Hallén geometry and the MPIE's deck geometry.
+        let (h, m) = (build_geometry(deck), build_deck_geometry(deck));
+        match (h, m) {
+            (
+                Err(GeometryError::OverlappingSegments {
+                    a, b, duplicate, ..
+                }),
+                Err(GeometryError::OverlappingSegments { .. }),
+            ) => Some((a.0, a.1, b.0, b.1, duplicate)),
+            (Err(GeometryError::OverlappingSegments { .. }), other)
+            | (other, Err(GeometryError::OverlappingSegments { .. })) => {
+                panic!("one builder refused the overlap, the other gave {other:?}")
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn segments_drawn_on_top_of_each_other_are_refused_by_name() {
+        let cases = [
+            (
+                "the same wire twice",
+                "GW 2 11 0 0 -2.64 0 0 2.64 .001",
+                (1, 1, 2, 1, true),
+            ),
+            (
+                "a wire along the upper half and beyond",
+                "GW 2 6 0 0 0 0 0 3.5 .001",
+                (1, 6, 2, 1, false),
+            ),
+            (
+                "the same, 100 um off the axis",
+                "GW 2 6 0.0001 0 0 0.0001 0 3.5 .001",
+                (1, 6, 2, 1, false),
+            ),
+            (
+                "the same, 0.6 mm off, inside the radius",
+                "GW 2 6 0.0006 0 0 0.0006 0 3.5 .001",
+                (1, 6, 2, 1, false),
+            ),
+            (
+                "a copy tilted inside the radius",
+                "GW 2 11 0 0 -2.64 0.00001 0 2.64 .001",
+                (1, 1, 2, 1, true),
+            ),
+            (
+                "a GM that moves nothing, same tag",
+                "GM 0 1 0 0 0 0 0 0",
+                (1, 1, 1, 12, true),
+            ),
+        ];
+        for (name, second, want) in cases {
+            assert_eq!(overlap_of(&with_dipole(second)), Some(want), "{name}");
+        }
+        // A GX reflecting a wire that crosses its plane onto itself, reversed.
+        let gx = parsed("CE\nGW 1 10 0 0 -2.64 0 0 2.64 .001\nGX 2 001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n");
+        assert!(
+            overlap_of(&gx).is_some_and(|o| o.4),
+            "the GX copy is a duplicate"
+        );
+        // A GR whose wire lies on the rotation axis: every copy on top of it.
+        let gr = parsed("CE\nGW 1 10 0 0 0.1 0 0 5.1 .001\nGW 2 5 0 0 0.1 2 0 0.1 .001\nGR 0 4\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
+        assert!(overlap_of(&gr).is_some(), "a GR copy on the axis");
+        let msg = build_geometry(&with_dipole("GW 2 6 0 0 0 0 0 3.5 .001"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("segment 6 of tag 1 and segment 1 of tag 2")
+                && msg.contains("end the second wire where the first ends"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn wires_that_only_meet_or_run_beside_each_other_are_not_overlaps() {
+        let cases = [
+            (
+                "a parallel wire 10 mm away",
+                "GW 2 11 0.01 0 -2.64 0.01 0 2.64 .001",
+            ),
+            // Surfaces touching or just clear: a thin-wire validity question, not
+            // this refusal. Pinned either side of the two radii, not on them.
+            (
+                "axes 2.001 mm apart",
+                "GW 2 11 0.002001 0 -2.64 0.002001 0 2.64 .001",
+            ),
+            ("a T onto the dipole's interior", "GW 2 5 0 0 0 2 0 0 .001"),
+            (
+                "a crossing at right angles",
+                "GW 2 5 -1 0 0.24 1 0 0.24 .001",
+            ),
+            (
+                "a wire carrying on from the top",
+                "GW 2 5 0 0 2.64 0 0 4 .001",
+            ),
+            // Near the axis at one end of the overlap only: it leaves the
+            // dipole's interior at 30°, unconnected, as in nec2c.
+            (
+                "a wire leaving the interior at 30°",
+                "GW 2 5 0 0 0 1 0 1.732 .001",
+            ),
+        ];
+        for (name, second) in cases {
+            assert_eq!(overlap_of(&with_dipole(second)), None, "{name}");
+        }
+        assert!(
+            overlap_of(&with_dipole(
+                "GW 2 11 0.001999 0 -2.64 0.001999 0 2.64 .001"
+            ))
+            .is_some(),
+            "axes 1.999 mm apart overlap"
+        );
+        // A second wire starting 0.1 mm back inside the first's end: within the
+        // junction band, so the snap joins them end to end first (FND-246).
+        let touch = parsed("CE\nGW 1 5 0 0 -2.64 0 0 0 .001\nGW 2 5 0 0 -0.0001 0 0 2.64 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n");
+        assert_eq!(overlap_of(&touch), None);
     }
 }
