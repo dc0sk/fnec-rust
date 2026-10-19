@@ -1384,7 +1384,8 @@ fn cells() -> Vec<Cell> {
     // pins that). Each gap must shrink with the mesh — one mesh pins nothing about
     // convergence — and stay under its cap; both are pinned to 1 %. Measured
     // 2026-10-06: MPIE 0.7-1.3 % at 21, 0.3-0.6 % at 41; the Hallén correction
-    // 5.6-9.9 % -> 3.0-5.3 %. This is why the DCIM port (BL-IMPR-015) was not
+    // 5.6-9.9 % -> 3.0-5.3 %. The inverted-V gates against converged nec2c
+    // (`CONVERGED_LOW_REFS`): Hallén 6.9 -> 6.5 %, MPIE 3.7 -> 2.0 % (FND-270). This is why the DCIM port (BL-IMPR-015) was not
     // built: it was 7 % from the exact kernel the MPIE already uses.
     for (stem, cap) in [("mpie", 0.03), ("hallen-sommerfeld", 0.12)] {
         let lows = low_ground_decks();
@@ -1401,7 +1402,7 @@ fn cells() -> Vec<Cell> {
                 .collect();
             let refs: Vec<Option<(f64, f64)>> = pair
                 .iter()
-                .map(|(id, _)| goldens.get(id).copied())
+                .map(|(id, _)| goldens.get(&low_golden_key(id)).copied())
                 .collect();
             let id = format!("R-lowground/{}/{stem}", name.trim_start_matches("low/"));
             let cid = id.clone();
@@ -1417,7 +1418,10 @@ fn cells() -> Vec<Cell> {
                     let mut gsolver = String::new();
                     for ((pid, text), golden) in pair.iter().zip(&refs) {
                         let Some(golden) = golden else {
-                            return Err(format!("no nec2c golden for {pid}: capture it"));
+                            return Err(format!(
+                                "no nec2c golden {} for {pid}: capture it",
+                                low_golden_key(pid)
+                            ));
                         };
                         let o = run(&format!("{cid}/{pid}"), text, args, &[]);
                         if !o.ok {
@@ -1878,6 +1882,28 @@ fn parity_sweep() {
 // ---------------------------------------------------------------------------------
 
 /// The near-ground regime the default ground model misses (below ~0.1 λ, where the
+/// The `low/*` decks whose R-lowground cells gate against nec2c's CONVERGED value, and
+/// the multiple of the deck's mesh it is taken at (rows `id@Sx` in `parity_nec2c.txt`).
+///
+/// The inverted-V is fed beside its apex. Hallén's Sommerfeld correction declines a
+/// bent wire, so Hallén's limit sits 5.5 % from nec2c's by design, and a same-mesh gap
+/// is that offset plus the difference of the two codes' discretisation errors. Once
+/// FND-270 halved Hallén's error there to nec2c's own, that difference changed sign
+/// between the meshes and the same-mesh gap stopped shrinking (5.64 → 5.72 %), while
+/// against converged nec2c it shrinks at both meshes (6.90 → 6.46 %; 8.85 → 7.46
+/// before the fix). The 41 deck stops at 9×: at 27× its segments are 6.8 radii, under
+/// the thin-wire limit (FND-267). The straight decks keep same-mesh references
+/// (FND-232): their limits nearly coincide with nec2c's.
+const CONVERGED_LOW_REFS: &[(&str, u32)] = &[("low/inverted-v/21", 27), ("low/inverted-v/41", 9)];
+
+/// The golden a `low/*` cell reads for deck `id`: its converged row where it has one.
+fn low_golden_key(id: &str) -> String {
+    match CONVERGED_LOW_REFS.iter().find(|(c, _)| *c == id) {
+        Some((_, s)) => format!("{id}@{s}x"),
+        None => id.to_string(),
+    }
+}
+
 /// surface wave matters): a horizontal λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2,
 /// and a low inverted-V, each at two meshes. `(id, deck, mesh)`, the id ending in the
 /// mesh so a cell can pair them.
@@ -1946,7 +1972,9 @@ fn capture_nec2c_goldens() {
     let mut out = format!(
         "# nec2c feedpoint impedance (first feed) for the parity sweep's placements.\n\
          # Captured by `capture_nec2c_goldens` with nec2c {version}, from the same deck text\n\
-         # the sweep runs (voltage drive, unloaded, FR {FREQ_MHZ} MHz). id R X\n"
+         # the sweep runs (voltage drive, unloaded, FR {FREQ_MHZ} MHz). id R X\n\
+         # An id@Sx row is nec2c at S times that deck's mesh (scripts/nec2c-converged-series.py,\n\
+         # thin kernel): the converged series of a cell that gates against it (CONVERGED_LOW_REFS).\n"
     );
     let dir = std::env::temp_dir().join("n2c");
     std::fs::create_dir_all(&dir).unwrap();
@@ -1986,6 +2014,93 @@ fn capture_nec2c_goldens() {
         let f: Vec<&str> = row.split_whitespace().collect();
         out.push_str(&format!("{id} {} {}\n", f[6], f[7]));
     }
+    // The converged series of the cells that gate against one (CONVERGED_LOW_REFS):
+    // its 1× point must be the same-mesh row just captured, and it must contract.
+    let lows = low_ground_decks();
+    for &(id, s) in CONVERGED_LOW_REFS {
+        let text = &lows.iter().find(|(d, _, _)| d == id).expect("a low deck").1;
+        let inp = dir.join("c.nec");
+        std::fs::write(&inp, text).unwrap();
+        let run = Command::new("python3")
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../scripts/nec2c-converged-series.py"),
+            )
+            .arg(&inp)
+            .args(["--to", &s.to_string()])
+            .output()
+            .expect("python3 runs");
+        assert!(
+            run.status.success(),
+            "{id}: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let series: serde_json::Value = serde_json::from_slice(&run.stdout).expect("JSON");
+        let at = |m: u32| -> (f64, f64) {
+            let z = &series[format!("{m}x")][0];
+            (z[0].as_f64().expect("R"), z[1].as_f64().expect("X"))
+        };
+        let same = out
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{id} ")))
+            .expect("same-mesh row");
+        let one = at(1);
+        let row: Vec<f64> = same
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        assert!(
+            (one.0 - row[0]).abs() < 1e-3 * row[0].abs()
+                && (one.1 - row[1]).abs() < 1e-3 * row[1].abs(),
+            "{id}: the series' 1x {one:?} is not the same-mesh capture {row:?}"
+        );
+        let mut m = 3;
+        while m <= s {
+            let z = at(m);
+            out.push_str(&format!("{id}@{m}x {:.4E} {:.4E}\n", z.0, z.1));
+            m *= 3;
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::write(nec2c_golden_path(), out).unwrap();
+}
+
+/// A converged `low/*` reference has its whole series stored, and the series has
+/// settled: its steps contract, and the drift left past the last point (the
+/// geometric tail of the last two steps) is under 0.4 % of |Z| — inside the margin
+/// the MPIE's inverted-V cell keeps to its cap (2.0 % against 3 %). CI has no
+/// nec2c, so this reads the stored rows (FND-232's practice, FND-255's test).
+#[test]
+fn converged_low_references_have_settled() {
+    let goldens = nec2c_goldens();
+    for &(id, s) in CONVERGED_LOW_REFS {
+        let mut series = vec![*goldens.get(id).unwrap_or_else(|| panic!("{id}: no 1x row"))];
+        let mut m = 3;
+        while m <= s {
+            let key = format!("{id}@{m}x");
+            series.push(*goldens.get(&key).unwrap_or_else(|| panic!("no row {key}")));
+            m *= 3;
+        }
+        assert_eq!(
+            low_golden_key(id),
+            format!("{id}@{s}x"),
+            "the cell reads the finest row"
+        );
+        let steps: Vec<f64> = series
+            .windows(2)
+            .map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1))
+            .collect();
+        assert!(
+            steps.windows(2).all(|w| w[1] < w[0]),
+            "{id}: steps {steps:?} do not contract"
+        );
+        let (prev, last) = (steps[steps.len() - 2], steps[steps.len() - 1]);
+        let z = series[series.len() - 1];
+        let tail = last * last / (prev - last) / z.0.hypot(z.1);
+        assert!(
+            tail < 0.004,
+            "{id}: {:.3} % drift left past {s}x",
+            100.0 * tail
+        );
+    }
 }
