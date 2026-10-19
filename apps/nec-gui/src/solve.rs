@@ -194,12 +194,11 @@ pub fn load_geometry_str(deck_text: &str) -> Result<crate::mesh::SceneGeometry, 
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
     // The view draws the mesh that is solved: Hallén's (free ends in thirds,
-    // FND-227) — except for a GA/GH deck, which Hallén refuses and only the MPIE
-    // solves, so its own segments are the solved mesh and what the view shows.
+    // FND-227) — except for a deck only Hallén refuses (a GA/GH arc, a loop or
+    // junction with a one-segment run), which only the MPIE solves, so its own
+    // segments are the solved mesh and what the view shows.
     let segs = match build_geometry(deck) {
-        Err(nec_solver::GeometryError::CurvedForHallen { .. }) => {
-            nec_solver::build_deck_geometry(deck)
-        }
+        Err(e) if e.is_hallen_only() => nec_solver::build_deck_geometry(deck),
         other => other,
     }
     .map_err(|e| e.to_string())?;
@@ -1096,12 +1095,13 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
 mod tests {
     use super::*;
 
-    // An inverted-V fed away from the apex — a genuine junction. Solves to a
-    // negative feedpoint resistance on the Hallén path, which is physically
-    // impossible for a passive antenna. Before FND-014 the GUI reported that
-    // number with no caveat at all. The one-segment arm sits between the junction
-    // and a bend: a free-end one-segment arm is refined into thirds (FND-227).
-    const BENT_NEGATIVE_R: &str = "CM Y junction with a one-segment arm — a degree-3 junction the section graph refuses (FND-162)\nCE\nGW 1 11 0 0 0 0 0 3 .001\nGW 2 1 0 0 3 -1 0 4 .001\nGW 4 5 -1 0 4 -1 0 5 .001\nGW 3 11 0 0 3 2 0 5 .001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+    // A U whose middle run is one segment long: the Hallén solve models neither of
+    // its bends (FND-162) and answers a negative feedpoint resistance, −2.12 −
+    // j444.9 Ω at 14.2 MHz and below zero across 13.8–14.6 (nec2c is positive),
+    // which is physically impossible for a passive antenna. Before FND-014 the GUI
+    // reported that number with no caveat at all. It was a Y with a one-segment arm
+    // until FND-251 refused that; it is `corpus/u-one-segment-negative-r-freesp.nec`.
+    const BENT_NEGATIVE_R: &str = "CM U whose middle run is one segment: Hallén leaves its bends unmodelled (FND-162)\nCE\nGW 1 10 0 0 3.52 0 0 0 .00704\nGW 2 1 0 0 0 0.704 0 0 .00704\nGW 3 10 0.704 0 0 0.704 0 3.52 .00704\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
     #[test]
@@ -1296,25 +1296,26 @@ mod tests {
 
     #[test]
     fn the_sweep_panel_does_not_repeat_what_the_deck_strip_already_shows() {
-        // A junction-fed deck is the normal case for a sweep that earns caveats at
-        // all, and the topology and junction caveats do not vary with frequency —
-        // so the strip above the tab already shows them. Emitting them again in the
-        // sweep panel printed the same sentence twice on one screen.
-        // A degree-3 T over GN 2 — a bend is merged into one conductor path and
-        // earns no topology caveat (PH9-CHK-002), so a bent fixture here would have
-        // an empty strip and prove nothing. Its stem is one segment long, because a T the section
-        // graph takes (FND-162) earns no topology caveat either. The stem sits between the
-        // junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
-        const LOW_TEE: &str = "CM T junction low over ground\nCE\nGW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGW 4 5 0 0 1.134 0.5 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
-        let job = SweepJob::prepare(LOW_TEE, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
-        let strip = deck_warnings(LOW_TEE, SolverKind::Hallen);
+        // The geometry caveats that do not vary with frequency — here the bent
+        // conductor's — the strip above the tab already shows. Emitting them again
+        // in the sweep panel printed the same sentence twice on one screen.
+        // Low over GN 2, with two arms slanted 45° meeting a one-segment top run, so
+        // a frequency-independent caveat (the bent conductor's: Hallén models none
+        // of its bends) sits beside the low-ground one. A bend with no one-segment
+        // run is modelled and earns no caveat (FND-162), so it would leave the strip
+        // without one and prove nothing. (A T with a one-segment stem served here,
+        // for its topology caveat, until FND-251 made Hallén refuse it.)
+        const LOW_BENT: &str = "CM slanted arms meeting a one-segment top run, low over ground\nCE\nGW 1 13 -1.5 0 0.634 0 0 2.134 0.001\nGW 2 1 0 0 2.134 0.3 0 2.134 0.001\nGW 3 13 0.3 0 2.134 1.8 0 0.634 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let job =
+            SweepJob::prepare(LOW_BENT, 13.8, 14.6, 0.2, SolverKind::Hallen).expect("prepare");
+        let strip = deck_warnings(LOW_BENT, SolverKind::Hallen);
         let panel = job.geometry_caveats();
         assert!(
             !strip.is_empty(),
             "fixture must earn strip caveats or this proves nothing"
         );
         assert!(
-            strip.iter().any(|w| w.contains("junction")),
+            strip.iter().any(|w| w.contains("bent conductor")),
             "strip must carry the frequency-independent caveats: {strip:?}"
         );
         for w in &panel {
@@ -1521,24 +1522,25 @@ mod tests {
             "the GUI must not quote a CLI flag it has no equivalent for: {:?}",
             low.warnings
         );
-        // A degree-3 junction must still be flagged, and must point at the MPIE
-        // in *this* frontend's terms — a GUI user has a picker, not a flag. The
-        // one-segment stem sits between the junction and a bend: a free-end
-        // one-segment arm is refined into thirds (FND-227).
-        let tee = solve_deck_str(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-            SolverKind::Hallen,
-        )
-        .expect("a T junction the section graph refuses solves, unreliably");
+        // A bent conductor Hallén leaves unmodelled must be flagged, and must point
+        // at the MPIE in *this* frontend's terms — a GUI user has a picker, not a
+        // flag. (A T with a one-segment stem served here, for its topology caveat,
+        // until FND-251 made Hallén refuse it;
+        // `a_junction_the_hallen_graph_refuses_is_refused_on_every_gui_path` pins
+        // the refusal.)
+        let bent = solve_deck_str(BENT_NEGATIVE_R, SolverKind::Hallen)
+            .expect("a bend the Hallén solve leaves unmodelled solves, unreliably");
         assert!(
-            tee.warnings.iter().any(|w| w.contains(GUI_MPIE_REMEDY)),
-            "missing the topology warning: {:?}",
-            tee.warnings
+            bent.warnings
+                .iter()
+                .any(|w| w.contains("bent conductor") && w.contains(GUI_MPIE_REMEDY)),
+            "missing the bent-conductor warning in GUI terms: {:?}",
+            bent.warnings
         );
         assert!(
-            !tee.warnings.iter().any(|w| w.contains("--solver")),
+            !bent.warnings.iter().any(|w| w.contains("--solver")),
             "the GUI must not quote a CLI flag at a user who has a picker: {:?}",
-            tee.warnings
+            bent.warnings
         );
     }
 
@@ -1579,26 +1581,53 @@ mod tests {
         assert!(deck_warnings("GE\nEN\n", SolverKind::Hallen).is_empty());
     }
 
-    /// The topology caveat is what a Sweep- or Pattern-only user most needs and
-    /// never saw: it says the numbers on screen are unreliable.
+    /// A Sweep- or Pattern-only user once never saw the caveat that said a T's
+    /// numbers were unreliable; the deck strip carried it to every tab. Hallén now
+    /// refuses a junction the section graph cannot take (FND-251), so there are no
+    /// numbers to qualify: every GUI path that solves must refuse it, and the strip
+    /// stays empty, since the refused action reports the failure itself.
     #[test]
-    fn deck_warnings_carries_the_unreliable_topology_caveat() {
+    fn a_junction_the_hallen_graph_refuses_is_refused_on_every_gui_path() {
         // The one-segment stem sits between the junction and a bend: a free-end
-        // one-segment arm is refined into thirds (FND-227).
+        // one-segment arm is refined into thirds (FND-227) and the graph takes it.
         let tee = "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-        let w = deck_warnings(tee, SolverKind::Hallen);
-        assert!(
-            w.iter().any(|m| m.contains(GUI_MPIE_REMEDY)),
-            "expected the topology caveat: {w:?}"
+        let refused = |what: &str, e: String| {
+            for want in [
+                "three or more wires meet",
+                "(tag 3 segment 1)",
+                "at least two segments",
+                "MPIE",
+            ] {
+                assert!(
+                    e.contains(want),
+                    "{what}: the refusal must say {want:?}: {e}"
+                );
+            }
+        };
+        refused(
+            "solve",
+            solve_deck_str(tee, SolverKind::Hallen).expect_err("the Solve tab must refuse it"),
         );
+        match SweepJob::prepare(tee, 13.8, 14.6, 0.2, SolverKind::Hallen) {
+            Err(e) => refused("sweep", e),
+            Ok(_) => panic!("the sweep path must refuse it too"),
+        }
+        match solve_for_currents(tee, SolverKind::Hallen) {
+            Err(e) => refused("currents", e),
+            Ok(_) => panic!("the currents path must refuse it too"),
+        }
+        assert!(deck_warnings(tee, SolverKind::Hallen).is_empty());
 
-        // ...and on the MPIE the same deck earns no topology caveat at all: the
-        // MPIE models the junction correctly, so repeating a Hallén limitation
-        // there would be false — and its remedy would name the running solver.
+        // The remedy it names is one the GUI takes: the MPIE solves the deck, and
+        // carries no Hallén caveat, which would name the running solver.
+        let mpie = solve_deck_str(tee, SolverKind::Mpie).expect("the MPIE solves the T");
+        assert!(mpie.z_re > 0.0, "{mpie:?}");
         let w_mpie = deck_warnings(tee, SolverKind::Mpie);
         assert!(
-            !w_mpie.iter().any(|m| m.contains("T/Y junction")),
-            "the MPIE solves T/Y junctions; it must not carry the Hallén caveat: {w_mpie:?}"
+            !w_mpie
+                .iter()
+                .any(|m| m.contains("junction") || m.contains(GUI_MPIE_REMEDY)),
+            "the MPIE solves T/Y junctions; it must not carry a Hallén caveat: {w_mpie:?}"
         );
     }
 }

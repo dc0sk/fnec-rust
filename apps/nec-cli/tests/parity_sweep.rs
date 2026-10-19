@@ -960,14 +960,16 @@ fn cells() -> Vec<Cell> {
     // R-remedy: a remedy a caveat names (`--solver mpie`, `--ground-solver
     // sommerfeld`, …) must be one the run can take — rerunning with it is not refused.
     // FND-209: the negative-resistance caveat sent a --loads-config run to an MPIE that
-    // refuses it. Decks chosen to draw caveats: a T with a one-segment arm, a low
-    // dipole over finite ground, a loaded loop, the same with a load from a file. The
-    // T's one-segment arm sits between the junction and a bend: a free-end one-segment
-    // arm is refined into thirds (FND-227).
+    // refuses it. Decks chosen to draw caveats: a hook (a wire turned through a
+    // one-segment run, whose bends Hallén leaves unmodelled), a low dipole over finite
+    // ground, a loaded loop, the same with a load from a file. The hook's one-segment
+    // run sits between two bends: a free-end one-segment arm is refined into thirds
+    // (FND-227). It was a T with a one-segment arm, for the topology caveat, until
+    // FND-251 made Hallén refuse that; `junction_feedpoint.rs` runs the refusal's remedy.
     let caveat_decks: Vec<CaveatDeck> = vec![
         (
-            "tee-one-segment-arm",
-            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            "hook-one-segment-run",
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 1 0 0 5 0.5 0 5 .001\nGW 3 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
             vec![],
             &["--solver mpie"],
         ),
@@ -1003,14 +1005,14 @@ fn cells() -> Vec<Cell> {
             // The negative-resistance caveat says to check the loads: no flag cures it.
             &[],
         ),
-        // A junction deck with a load from a file: the topology caveat names the MPIE,
+        // The hook with a load from a file: the bent-conductor caveat names the MPIE,
         // which takes --loads-config as it takes LD (it refused it until PH10-CHK-004,
-        // and the caveat was withheld then: FND-222). Its one-segment arm sits between
-        // the junction and a bend (FND-227), as above.
+        // and the topology caveat was withheld then: FND-222). It was the T above with
+        // the load, until FND-251.
         (
-            "tee-loads-config",
-            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
-            vec![("--loads-config", "[[laplace_load]]\ntag = 2\nseg_first = 5\nnumerator = [50.0]\ndenominator = [1.0]\n".into())],
+            "hook-loads-config",
+            "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 1 0 0 5 0.5 0 5 .001\nGW 3 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n".into(),
+            vec![("--loads-config", "[[laplace_load]]\ntag = 1\nseg_first = 15\nnumerator = [50.0]\ndenominator = [1.0]\n".into())],
             &["--solver mpie"],
         ),
         (
@@ -1146,13 +1148,13 @@ fn cells() -> Vec<Cell> {
             ));
         }
     }
-    // `sweep --resonance` takes a template; the decks that earn a remedy there. The T's
-    // one-segment arm sits between the junction and a bend: a free-end one-segment arm is
-    // refined into thirds (FND-227).
+    // `sweep --resonance` takes a template; the decks that earn a remedy there. The
+    // hook's one-segment run sits between two bends: a free-end one-segment arm is
+    // refined into thirds (FND-227). (A T with a one-segment arm until FND-251.)
     for (name, template) in [
         (
-            "tee-one-segment-arm",
-            "GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\nGW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\nGW 4 5 -0.5 0 $HALF_LEN -0.5 0.5 $HALF_LEN 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
+            "hook-one-segment-run",
+            "GW 1 51 0 0 -$HALF_LEN 0 0 $HALF_LEN 0.001\nGW 2 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\nGW 3 5 -0.5 0 $HALF_LEN -0.5 0.5 $HALF_LEN 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n",
         ),
         (
             "low-dipole-gn2",

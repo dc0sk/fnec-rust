@@ -288,7 +288,7 @@ def test_a_negative_resistance_deck_raises_a_warning():
     import warnings as pywarnings
 
     root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
-    with open(os.path.join(root, "corpus", "y-junction-negative-r-freesp.nec")) as f:
+    with open(os.path.join(root, "corpus", "u-one-segment-negative-r-freesp.nec")) as f:
         deck = f.read()
 
     with pywarnings.catch_warnings(record=True) as caught:
@@ -425,21 +425,19 @@ def test_a_sweep_reports_negative_resistance_once_not_per_point():
     text differs and dedup on message identity fails. A junctioned sweep raised one
     UserWarning per frequency; the GUI had aggregated and the bindings had not.
     """
-    # A Y junction with a one-segment arm, negative at every point: the section
-    # graph refuses a section too short for its two constants, so it keeps the
-    # per-wire fallback (FND-162). The run sits between the junction and a bend:
-    # a one-segment arm with a free end is refined into thirds (FND-227). The stem-fed Y with three 11-segment arms is
-    # solved correctly now, and before that this was a bent end-to-start chain
-    # (FND-167). The test once passed with NO negative point at all, because it
-    # allowed "<= 1" and checked the text only "if" there was one. It now
-    # requires exactly one.
+    # A U whose middle run is one segment long, negative at every point (Re Z
+    # -5.59 to -2.11 ohm from 50 to 100 MHz): the Hallen solve models neither bend
+    # (FND-162). It was a Y with a one-segment arm until FND-251 refused that; the
+    # stem-fed Y with three 11-segment arms is solved correctly now, and before
+    # that this was a bent end-to-start chain (FND-167). The test once passed with
+    # NO negative point at all, because it allowed "<= 1" and checked the text
+    # only "if" there was one. It now requires exactly one.
     junction = (
-        "CM Y junction with a one-segment arm\nCE\n"
-        "GW 1 11 0 0 0 0 0 3 .001\n"
-        "GW 2 1 0 0 3 -1 0 4 .001\n"
-        "GW 4 5 -1 0 4 -1 0 5 .001\n"
-        "GW 3 11 0 0 3 2 0 5 .001\n"
-        "GE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 11 0 0 14.0 0.05\nEN\n"
+        "CM U with a one-segment middle\nCE\n"
+        "GW 1 10 0 0 0.5 0 0 0 .001\n"
+        "GW 2 1 0 0 0 0.1 0 0 .001\n"
+        "GW 3 10 0.1 0 0 0.1 0 0.5 .001\n"
+        "GE 0\nEX 0 1 5 0 1 0\nFR 0 11 0 0 50 5\nEN\n"
     )
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

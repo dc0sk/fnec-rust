@@ -15,6 +15,16 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Changed
+
+- **Hallén refuses a loop or junction with a straight run one segment long**
+  (FND-251). Its section graph cannot take the run, and the per-wire fallback it
+  used to solve on read 2 to 18 times off nec2c, or reported a false "no current
+  flows at the feedpoint". The refusal names the run, the fix (give it two
+  segments) and `--solver mpie` where the MPIE takes the deck.
+  `corpus/u-one-segment-negative-r-freesp.nec` replaces the refused Y-junction
+  fixture.
+
 ### Fixed
 
 - **Wire ends join where nec2c joins them** (FND-246). Two segment ends within 10⁻³ of
@@ -23,6 +33,9 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   50 µm short of the bar, or a dipole drawn as two halves 50 µm apart, solved open
   with no warning. Ends that nec2c's rule joins from one side only, and chains of
   near-misses that never meet at one point, are refused; nec2c aborts or hangs on them.
+- **A bent conductor with a one-segment run always carries its caveat** (FND-251).
+  The caveat waited for a single bend of 10° or more, so a half circle of 9° bends,
+  48 % off nec2c, solved silently.
 
 ### Docs
 

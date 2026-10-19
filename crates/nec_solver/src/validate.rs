@@ -1573,14 +1573,12 @@ pub fn slanted_over_ground_warning(
     ))
 }
 
-/// A conductor path turns by at least this much before [`bent_conductor_warning`]
-/// speaks, in degrees.
-const BEND_CAVEAT_DEG: f64 = 10.0;
-
-/// The largest bend on any conductor path, in degrees, when it reaches
-/// [`BEND_CAVEAT_DEG`]: the angle between consecutive segments' traversal
-/// directions. `None` for straight geometry and for topologies the path
-/// decomposition refuses (those have their own warning).
+/// The largest bend on any conductor path, in degrees: the angle between
+/// consecutive segments' traversal directions. Information for the caveat, not
+/// its gate: no angle predicts what the fallback costs (FND-251). A half circle of
+/// 9° bends reads 48 % off nec2c and a zig-zag of the same 171° of turning 1.9 %;
+/// the 10° gate this replaced kept the half circle silent. `None` for topologies
+/// the path decomposition refuses (those have their own handling).
 pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
     let paths = crate::geometry::build_conductor_paths(segs)?;
     let mut worst = 0.0f64;
@@ -1591,7 +1589,7 @@ pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
             worst = worst.max(dot.clamp(-1.0, 1.0).acos().to_degrees());
         }
     }
-    (worst >= BEND_CAVEAT_DEG).then_some(worst)
+    Some(worst)
 }
 
 /// A bent conductor whose bend the Hallén solve cannot model (FND-162).
@@ -1602,9 +1600,11 @@ pub fn largest_bend_deg(segs: &[Segment]) -> Option<f64> {
 /// 1b). Against nec2c a driven 90° L is within 3 % at 41 segments per arm, and
 /// the plane-wave receive currents on the same L within 4 %. The one case left is
 /// a section only one segment long: its single row cannot fix two constants, so
-/// the whole deck falls back to one term per path and the bend goes unmodelled —
-/// measured about 26 % off in the currents on a U whose middle wire is one
-/// segment. The decision is [`crate::hallen_session::hallen_leaves_a_bend_unmodelled`],
+/// the whole deck falls back to one term per path and every bend goes unmodelled
+/// — measured about 26 % off in the currents on a U whose middle wire is one
+/// segment, and 48 % off nec2c's feedpoint on a half circle of twenty one-segment
+/// wires (9° bends, which a 10° gate on the largest bend kept silent until
+/// FND-251; no angle predicts the cost, so none gates it). The decision is [`crate::hallen_session::hallen_leaves_a_bend_unmodelled`],
 /// the same predicate the solver's layout uses, so the two cannot disagree.
 pub fn bent_conductor_warning(
     deck: &NecDeck,
@@ -1625,17 +1625,20 @@ pub fn bent_conductor_warning(
     if !crate::hallen_session::hallen_leaves_a_bend_unmodelled(solved, &solved_ground) {
         return None;
     }
-    let angle = largest_bend_deg(segs)?;
+    let bend = largest_bend_deg(solved)
+        .map(|a| format!(" (bends up to {a:.0}°)"))
+        .unwrap_or_default();
     let or_mpie = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(", or {mpie_remedy}, which models the bend (PH9-CHK-007)")
     } else {
         String::new()
     };
     Some(format!(
-        "geometry contains a bent conductor (a {angle:.0}° bend) with a straight run only \
-         one segment long; the Hallén solve cannot model a bend there, so the currents and \
-         feedpoint can be far off — measured about 26 % on the currents — give every \
-         straight run between bends at least two segments{or_mpie}"
+        "geometry contains a bent conductor{bend} with a straight run only one segment \
+         long; the Hallén solve then models none of its bends, so the currents and \
+         feedpoint can be far off — measured up to 48 % on the feedpoint, and a small \
+         resistance can change sign — give every straight run between bends at least two \
+         segments{or_mpie}"
     ))
 }
 
@@ -2118,14 +2121,20 @@ mod tests {
             feedpoint_at_junction_warnings(&deck, &segs).is_empty(),
             "an unrecognised EX type is not a feedpoint"
         );
-        // Positive control on the same geometry: a real feed there must still warn,
-        // or this proves only that the check stopped firing. The stem is one
-        // segment long, between the node and a bend, because a T the section graph
-        // takes models a junction feed and rightly stays silent (FND-162); a
-        // one-segment stem with a free end is refined into thirds (FND-227).
-        let (driven, driven_segs) = deck_and_segs(
-            "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-        );
+        // Positive control: a real feed on a junction must still warn, or this
+        // proves only that the check stopped firing. The stem is one segment long,
+        // between the node and a bend, because a T the section graph takes models a
+        // junction feed and rightly stays silent (FND-162); a one-segment stem with
+        // a free end is refined into thirds (FND-227). `build_geometry` refuses that
+        // deck now (FND-251), so no frontend reaches the check with it; the control
+        // takes the deck's own segments to keep the check's logic under test.
+        let driven_text = "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+        let driven = parse(driven_text).expect("deck parses").deck;
+        assert!(matches!(
+            crate::build_geometry(&driven),
+            Err(crate::GeometryError::OneSegmentRunTopology { .. })
+        ));
+        let driven_segs = crate::build_deck_geometry(&driven).expect("its own segments build");
         assert!(crate::hallen_session::graph_route(&driven, &driven_segs).is_none());
         assert!(
             !feedpoint_at_junction_warnings(&driven, &driven_segs).is_empty(),
@@ -2580,7 +2589,7 @@ mod tests {
             let w = warns(&format!("{u}{ex}{fr}"));
             assert!(
                 w.iter()
-                    .any(|m| m.contains("a 90° bend") && m.contains("one segment long")),
+                    .any(|m| m.contains("bends up to 90°") && m.contains("one segment long")),
                 "the fallback must warn ({ex:?}): {w:?}"
             );
         }
@@ -2594,6 +2603,39 @@ mod tests {
             "GW 1 21 0 0 -5 0 0 5 .001\nGE 0\nEX 1 1 1 0 60 30 0\n{fr}"
         ));
         assert!(!bent(&straight), "{straight:?}");
+    }
+
+    /// FND-251: no angle gates the bent-conductor caveat. A half circle of twenty
+    /// one-segment wires (9° bends, 171° in all) reads 108.8 + j334.3 Ω on Hallén
+    /// against nec2c's 204.2 + j224.6, 48 % off, and a 10° gate on the largest
+    /// bend kept it silent. No angle predicts the cost (a zig-zag of the same 171°
+    /// reads 1.9 % off), so the caveat speaks wherever the fallback drops a bend.
+    #[test]
+    fn a_half_circle_of_gentle_one_segment_bends_is_warned_about() {
+        let n = 20;
+        let mut deck = String::from("CE\n");
+        for k in 0..n {
+            let (a0, a1) = (
+                std::f64::consts::PI * k as f64 / n as f64,
+                std::f64::consts::PI * (k + 1) as f64 / n as f64,
+            );
+            deck += &format!(
+                "GW {} 1 {:.9} {:.9} 0 {:.9} {:.9} 0 .001\n",
+                k + 1,
+                0.5 * a0.cos(),
+                0.5 * a0.sin(),
+                0.5 * a1.cos(),
+                0.5 * a1.sin()
+            );
+        }
+        deck += "GE 0\nEX 0 5 1 0 1 0\nFR 0 1 0 0 100 0\nEN\n";
+        let (deck, segs) = deck_and_segs(&deck);
+        let w = bent_conductor_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
+            .expect("a half circle the fallback flattens must warn");
+        assert!(
+            w.contains("bends up to 9°") && w.contains("48 %") && w.contains("--solver mpie"),
+            "{w}"
+        );
     }
 
     #[test]
@@ -2654,7 +2696,7 @@ mod tests {
 
     #[test]
     fn a_junctionless_deck_with_a_network_is_not_sent_to_a_solver_that_rejects_it() {
-        // The mirror of `an_unsupported_topology_with_a_network_is_told_support_is_deferred_not_to_use_mpie`.
+        // The mirror of `a_refused_topology_the_mpie_cannot_take_is_not_told_to_use_it`.
         // The MPIE rejects `TL`, so recommending it as a cross-check here would send
         // the reader to a solver that refuses the deck — the exact failure
         // `mpie_compatible_deck` exists to prevent. An `LD` it now takes.
@@ -2756,66 +2798,120 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_degree_three_junction_warns_and_recommends_the_mpie() {
-        // The stem is one segment long and runs into a bend: its single row cannot
-        // fix a section's two constants, so the graph solve refuses the deck and it
-        // still warns. (Between two junctions: a one-segment run with a free end is
-        // refined into thirds, FND-227, and the graph takes it.)
-        let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-        );
-        assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
-        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
-            .expect("T junction must warn");
-        assert!(w.contains("three or more wires"), "{w}");
-        assert!(
-            w.contains("--solver mpie"),
-            "an MPIE-capable deck must be pointed at it: {w}"
-        );
-        // A straight dipole has no such topology.
-        let (d2, s2) = deck_and_segs(CLEAN_DIPOLE);
-        assert_eq!(
-            unsupported_topology_warning(&d2, &s2, Some("re-run with `--solver mpie`")),
-            None
-        );
+    /// The Hallén geometry's refusal of `src` (FND-251), and its message.
+    fn hallen_refusal(src: &str) -> (crate::GeometryError, String) {
+        let deck = parse(src).expect("deck parses").deck;
+        let e = crate::build_geometry(&deck).expect_err("the Hallén geometry must refuse it");
+        let msg = e.to_string();
+        (e, msg)
     }
 
-    /// The junction solve's own refusals name the place and the edit: a folded
-    /// dipole with one-segment end jumpers is a closed loop the graph refuses
-    /// for its one-segment run (FND-162 stage 5: carrying the current unchanged
-    /// across it stayed 10.5 % off nec2c at 81 segments, so it stays refused).
+    /// A T whose stem is one segment long and runs into a bend; `{drive}` is
+    /// spliced in before the `FR` card. (Between two junctions: a one-segment run
+    /// with a free end is refined into thirds, FND-227, and the graph takes it.)
+    fn one_segment_stem_tee(drive: &str) -> String {
+        format!(
+            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\n{drive}FR 0 1 0 0 14.2 0.0\nEN\n"
+        )
+    }
+
+    #[test]
+    fn a_degree_three_junction_the_graph_refuses_is_refused_naming_the_mpie() {
+        // The stem's single row cannot fix a section's two constants, so the graph
+        // solve refuses the deck, and the per-wire fallback has no reliable answer
+        // for a junction: the Hallén geometry refuses it (FND-251), naming the MPIE,
+        // which takes this deck.
+        let (e, msg) = hallen_refusal(&one_segment_stem_tee("EX 0 1 6 0 1.0 0.0\n"));
+        assert_eq!(
+            e,
+            crate::GeometryError::OneSegmentRunTopology {
+                junction: true,
+                tag: 3,
+                seg: 1,
+                mpie: true
+            }
+        );
+        assert!(e.is_hallen_only(), "the MPIE and the view take the deck");
+        for want in [
+            "three or more wires",
+            "(tag 3 segment 1)",
+            "at least two segments",
+            "--solver mpie",
+        ] {
+            assert!(msg.contains(want), "{want:?}: {msg}");
+        }
+        // Negative controls: a straight dipole, and a T the graph takes
+        // (`a_degree_three_junction_the_graph_solve_takes_does_not_warn`), build.
+        assert!(crate::build_geometry(&parse(CLEAN_DIPOLE).unwrap().deck).is_ok());
+    }
+
+    /// The refusal names the place and the edit: a folded dipole with one-segment
+    /// end jumpers is a closed loop the graph refuses for its one-segment run
+    /// (FND-162 stage 5: carrying the current unchanged across it stayed 10.5 % off
+    /// nec2c at 81 segments), so the Hallén geometry refuses it (FND-251).
     #[test]
     fn a_one_segment_run_is_named_with_its_fix() {
-        let (deck, segs) = deck_and_segs(
-            "GW 1 21 -5.25 0 0 5.25 0 0 .001\nGW 2 1 5.25 0 0 5.25 0 .1 .001\nGW 3 21 5.25 0 .1 -5.25 0 .1 .001\nGW 4 1 -5.25 0 .1 -5.25 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
+        let folded = |jumper_segs: u32| {
+            format!(
+                "GW 1 21 -5.25 0 0 5.25 0 0 .001\nGW 2 {jumper_segs} 5.25 0 0 5.25 0 .1 .001\nGW 3 21 5.25 0 .1 -5.25 0 .1 .001\nGW 4 {jumper_segs} -5.25 0 .1 -5.25 0 0 .001\nGE\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n"
+            )
+        };
+        let (e, msg) = hallen_refusal(&folded(1));
+        assert_eq!(
+            e,
+            crate::GeometryError::OneSegmentRunTopology {
+                junction: false,
+                tag: 2,
+                seg: 1,
+                mpie: true
+            }
         );
-        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
-            .expect("a refused loop must warn");
-        assert!(
-            w.contains("tag 2 segment 1 is one segment long") && w.contains("two segments"),
-            "{w}"
-        );
+        for want in [
+            "a closed loop",
+            "(tag 2 segment 1)",
+            "at least two segments",
+            "--solver mpie",
+        ] {
+            assert!(msg.contains(want), "{want:?}: {msg}");
+        }
+        // The fix it names is the fix: two-segment jumpers build, and the graph
+        // takes the loop.
+        let (deck, segs) = deck_and_segs(&folded(2));
+        assert!(crate::hallen_session::graph_route(&deck, &segs).is_some());
     }
 
     #[test]
-    fn an_unsupported_topology_with_a_network_is_told_support_is_deferred_not_to_use_mpie() {
-        // The MPIE rejects TL lines, so recommending it here would send the user
-        // to a solver that refuses the deck.
-        let (deck, segs) = deck_and_segs(
-            "GW 1 11 -5 0 0 0 0 0 0.001\nGW 2 11 0 0 0 5 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE\nTL 1 3 2 8 50.0 0.0 0 0 0 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n",
-        );
-        // Neither the load nor a network refuses the section graph any more
-        // (FND-162 stage 5); the one-segment stem between the node and a bend does.
-        assert!(crate::hallen_session::graph_route(&deck, &segs).is_none());
-        assert!(!mpie_compatible_deck(&deck));
-        let w = unsupported_topology_warning(&deck, &segs, Some("re-run with `--solver mpie`"))
-            .expect("still an unsupported topology");
-        assert!(
-            !w.contains("--solver mpie"),
-            "must not recommend a solver that rejects the deck: {w}"
-        );
-        assert!(w.contains("deferred"), "{w}");
+    fn a_refused_topology_the_mpie_cannot_take_is_not_told_to_use_it() {
+        // The MPIE rejects TL lines, plane waves and current sources, so naming it
+        // here would send the user to a solver that refuses the deck too. The
+        // refusal itself stands on every drive: the graph refuses the geometry.
+        for drive in [
+            "TL 1 3 2 8 50.0 0.0 0 0 0 0\nEX 0 1 6 0 1.0 0.0\n",
+            "EX 1 1 1 0 90 0 0\n",
+            "EX 4 1 6 0 1.0 0.0\n",
+        ] {
+            let text = one_segment_stem_tee(drive);
+            assert!(
+                !mpie_compatible_deck(&parse(&text).unwrap().deck),
+                "{drive:?}"
+            );
+            let (e, msg) = hallen_refusal(&text);
+            assert_eq!(
+                e,
+                crate::GeometryError::OneSegmentRunTopology {
+                    junction: true,
+                    tag: 3,
+                    seg: 1,
+                    mpie: false
+                },
+                "{drive:?}"
+            );
+            assert!(msg.contains("at least two segments"), "{drive:?}: {msg}");
+            assert!(
+                !msg.contains("--solver mpie") && !msg.contains("MPIE"),
+                "must not recommend a solver that rejects the deck ({drive:?}): {msg}"
+            );
+        }
     }
 
     /// A finite field can still become an infinite *frequency*: every frontend

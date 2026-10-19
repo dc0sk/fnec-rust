@@ -200,16 +200,17 @@ EN
     );
 }
 
-/// A degree-3 Y-junction on the DEFAULT (Hallén) solver keeps its guard warning
-/// (results are not silently changed), and the warning now points the user to
-/// `--solver mpie` as the fix.
+/// A degree-3 Y junction the section graph refuses is refused on the DEFAULT
+/// (Hallén) solver (FND-251) — results are not silently changed, and no longer
+/// solved under a warning, 2 to 18 times off nec2c — and the refusal points the
+/// user to `--solver mpie` as the fix, which solves it.
 #[test]
-fn guarded_topology_warning_recommends_mpie() {
+fn guarded_topology_is_refused_and_recommends_mpie() {
     let deck = write_deck(
         "yguard",
         "\
 CM Y-junction on the default solver, one arm a single segment: the section
-CM graph refuses it (FND-162), so the default solve is still unreliable
+CM graph refuses it (FND-162), so the default solve refuses it (FND-251)
 CM the one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227)
 CE
 GW 1 20 0.0 0.0 0.0 5.0 0.0 0.0 0.001
@@ -224,11 +225,16 @@ EN
     );
     let out = run_fnec(&[deck.to_str().unwrap()]); // no --solver flag
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // The status decides: the warning this replaced also named `--solver mpie`.
     assert!(
-        stderr.contains("--solver mpie"),
-        "guard warning should recommend --solver mpie:\n{stderr}"
+        !out.status.success(),
+        "the default solver must refuse the Y:\n{stderr}"
     );
-    // And using the MPIE explicitly clears the warning and solves it physically.
+    assert!(
+        stderr.contains("three or more wires meet") && stderr.contains("--solver mpie"),
+        "the refusal should name the junction and recommend --solver mpie:\n{stderr}"
+    );
+    // And using the MPIE explicitly solves it, without the Hallén caveat.
     let out2 = run_fnec(&["--solver", "mpie", deck.to_str().unwrap()]);
     assert!(out2.status.success());
     let stderr2 = String::from_utf8_lossy(&out2.stderr);

@@ -445,6 +445,19 @@ pub enum GeometryError {
         gap: f64,
         band: f64,
     },
+    /// A closed loop, or a junction where three or more wires meet, with a straight
+    /// run one segment long at tag `tag` segment `seg`, asked of the Hallén geometry
+    /// (FND-251). Hallén solves loops and junctions on the section graph, which
+    /// cannot take a one-segment run; the per-wire fallback it used to take gave no
+    /// current at all on a feed on that run, and answers 2 to 18 times off nec2c
+    /// elsewhere. `junction` names a junction (a loop otherwise); `mpie` whether the
+    /// MPIE takes the deck, so the remedy is named only where it applies.
+    OneSegmentRunTopology {
+        junction: bool,
+        tag: u32,
+        seg: u32,
+        mpie: bool,
+    },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -535,6 +548,33 @@ impl std::fmt::Display for GeometryError {
                  to one point",
                 a.1, a.0, b.1, b.0
             ),
+            GeometryError::OneSegmentRunTopology {
+                junction,
+                tag,
+                seg,
+                mpie,
+            } => {
+                let what = if *junction {
+                    "a junction where three or more wires meet"
+                } else {
+                    "a closed loop"
+                };
+                let or_mpie = if *mpie {
+                    ", or solve it with the MPIE (`--solver mpie` on a local run), which models \
+                     it (PH9-CHK-007)"
+                } else {
+                    ""
+                };
+                write!(
+                    f,
+                    "geometry contains {what} with a straight run one segment long (tag {tag} \
+                     segment {seg}); the Hallén solve models loops and junctions on its section \
+                     graph, which cannot take a one-segment run (its single row cannot fix the \
+                     run's two constants), and without it the answer is unreliable — measured 2 \
+                     to 18 times off nec2c, or no current at all on a feed on that run — so the \
+                     deck is refused. Give every straight run at least two segments{or_mpie}"
+                )
+            }
             GeometryError::TagOverflow { card, detail } => write!(
                 f,
                 "{card} card: {detail} leaves the u32 tag-number space (largest \
@@ -546,6 +586,20 @@ impl std::fmt::Display for GeometryError {
 }
 
 impl std::error::Error for GeometryError {}
+
+impl GeometryError {
+    /// Whether only the Hallén geometry refuses this, the deck's own segments being
+    /// well formed: a frontend drawing the deck, or solving it with the MPIE, can
+    /// take [`build_deck_geometry`] instead. The one list, so a new Hallén-only
+    /// refusal cannot be missed by one caller (the GUI viewport matched on
+    /// `CurvedForHallen` by hand).
+    pub fn is_hallen_only(&self) -> bool {
+        matches!(
+            self,
+            GeometryError::CurvedForHallen { .. } | GeometryError::OneSegmentRunTopology { .. }
+        )
+    }
+}
 
 /// Compute per-wire endpoint indices from a flat segment list.
 ///
@@ -1278,7 +1332,41 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
         GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
     );
     let free = free_end_segments(&segments, grounded);
-    Ok(number(refine(segments, &free)))
+    let segs = number(refine(segments, &free));
+    match one_segment_run_topology(deck, &segs) {
+        Some(e) => Err(e),
+        None => Ok(segs),
+    }
+}
+
+/// A loop or junction the Hallén solve has no reliable answer for (FND-251): one
+/// the conductor paths cannot carry, so it needs the section graph, which refuses
+/// it on a straight run one segment long — its only refusal. Judged on the
+/// segments the solve runs on: a deck touching PEC ground is solved as its
+/// doubled image problem (FND-082), where a one-segment run standing on the
+/// ground becomes two and the graph takes it (FND-179). Every drive's graph is
+/// built by the same builder, so no drive takes a deck this refuses.
+fn one_segment_run_topology(deck: &NecDeck, segs: &[Segment]) -> Option<GeometryError> {
+    let ground = ground_model_from_deck(deck);
+    let image = crate::ground_contact::pec_ground_contact(deck, segs, &ground);
+    let solved: &[Segment] = match &image {
+        Ok(Some(img)) => &img.segs,
+        Ok(None) => segs,
+        // A contact the image route refuses is refused there, with its own reason.
+        Err(_) => return None,
+    };
+    let kind = classify_unsupported_topology(solved)?;
+    let Err(crate::section_graph::GraphRefusal::OneSegmentRun { tag, seg }) =
+        crate::section_graph::section_graph(solved)
+    else {
+        return None;
+    };
+    Some(GeometryError::OneSegmentRunTopology {
+        junction: matches!(kind, UnsupportedTopology::HighDegreeJunction),
+        tag,
+        seg,
+        mpie: crate::validate::mpie_compatible_deck(deck),
+    })
 }
 
 /// The deck's own segments, without the free-end refinement [`build_geometry`]
@@ -2409,16 +2497,26 @@ mod tests {
     #[test]
     fn the_largest_corpus_deck_is_far_inside_the_cap() {
         let mut deck = NecDeck::new();
-        for tag in 1..=5 {
+        // Five parallel elements 0.2 m apart, as a Yagi's are: five coincident
+        // wires would meet at both ends, a degenerate deck no Yagi is (and one the
+        // Hallén geometry now refuses as a junction, FND-251).
+        for tag in 1..=5u32 {
+            let y = 0.2 * f64::from(tag - 1);
             deck.cards.push(Card::Gw(GwCard {
                 segments: 51,
+                start: [0.0, y, 0.0],
+                end: [1.0, y, 0.0],
                 ..one_segment_wire(tag)
             }));
         }
+        // The cap counts the deck's own segments; the solved mesh adds the free
+        // ends' thirds (FND-227), four a wire.
+        let own = build_deck_geometry(&deck).expect("its own segments").len();
+        assert_eq!(own, 255);
         let segs = build_geometry(&deck).expect("a 5-element yagi is an ordinary deck");
-        assert_eq!(segs.len(), 255);
+        assert_eq!(segs.len(), 255 + 5 * 4);
         assert!(
-            segs.len() * 39 < MAX_SEGMENTS,
+            own * 39 < MAX_SEGMENTS,
             "the cap must clear the largest real fixture by a wide margin, \
              or it is a limit on antennas rather than on allocations"
         );

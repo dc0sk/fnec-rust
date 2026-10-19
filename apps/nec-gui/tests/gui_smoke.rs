@@ -353,6 +353,27 @@ fn an_arc_deck_draws_its_own_segments() {
     assert_eq!(geo.wires.len(), 10, "the arc's ten segments");
 }
 
+/// A loop with one-segment runs, which the Hallén geometry refuses (FND-251) and
+/// the MPIE solves, still draws its own segments: the viewport takes every
+/// Hallén-only refusal, not just the arc's.
+#[test]
+fn a_loop_the_hallen_geometry_refuses_still_draws() {
+    let deck = "CE
+GW 1 1 0 0 0 1 0 0 .001
+GW 2 1 1 0 0 1 1 0 .001
+GW 3 1 1 1 0 0 1 0 .001
+\
+                GW 4 1 0 1 0 0 0 0 .001
+GE 0
+EX 0 1 1 0 1 0
+FR 0 1 0 0 100 0
+EN
+";
+    assert!(nec_solver::build_geometry(&nec_parser::parse(deck).unwrap().deck).is_err());
+    let geo = nec_gui::solve::load_geometry_str(deck).expect("a refused loop still draws");
+    assert_eq!(geo.wires.len(), 4, "the loop's four segments");
+}
+
 /// GUI-CHK-002: loading a deck's geometry builds a scene mesh, bumps the scene
 /// revision, and frames the camera on the geometry — all headlessly.
 #[test]
@@ -1745,12 +1766,12 @@ fn browse_messages_do_not_change_the_paths() {
 
 // ── GUI solver caveats (pre-release fix 1a) ──────────────────────────────────
 
-/// A degree-3 Y-junction deck still solves on the GUI's Hallén path, but the
-/// result carries a warning pointing at the MPIE — in the GUI's own terms, since
-/// the picker is right there — so the junction number is never presented as
-/// trustworthy.
+/// A degree-3 Y junction with a one-segment arm, which the section graph refuses,
+/// is refused on the GUI's Hallén path (FND-251) — it used to solve, 2 to 18 times
+/// off nec2c, under a caveat — naming the junction, the run and the edit; and the
+/// MPIE, which the refusal names and the picker offers, solves it.
 #[test]
-fn solve_warns_on_high_degree_junction() {
+fn solve_refuses_a_high_degree_junction_the_graph_refuses() {
     const Y: &str = "\
 CM Y-junction, one arm a single segment: the section graph refuses it (FND-162)
 CM the one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227)
@@ -1764,15 +1785,18 @@ FR 0 1 0 0 14.2 0
 EX 0 1 10 0 1.0 0.0
 EN
 ";
-    let r = solve_deck_str(Y, nec_gui::solve::SolverKind::Hallen)
-        .expect("Y-junction still solves (unreliably)");
-    assert!(
-        r.warnings
-            .iter()
-            .any(|w| w.contains(nec_gui::solve::GUI_MPIE_REMEDY)),
-        "expected an MPIE recommendation in GUI terms, got {:?}",
-        r.warnings
-    );
+    let e = solve_deck_str(Y, nec_gui::solve::SolverKind::Hallen)
+        .expect_err("a Y the section graph refuses must not solve on Hallén");
+    for want in [
+        "three or more wires meet",
+        "(tag 3 segment 1)",
+        "at least two segments",
+        "MPIE",
+    ] {
+        assert!(e.contains(want), "the refusal must say {want:?}: {e}");
+    }
+    let r = solve_deck_str(Y, nec_gui::solve::SolverKind::Mpie).expect("the MPIE solves the Y");
+    assert!(r.z_re > 0.0, "{:?}", r.z_re);
 }
 
 /// A plain free-space dipole is fully supported — no solver caveats.

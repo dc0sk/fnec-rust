@@ -264,7 +264,9 @@ and `warn_if_unsupported_topology` (`solve_session.rs`) emits a class-specific
 whole-geometry warning (`ClosedLoop` / `HighDegreeJunction`) so the limitation is
 always visible. Tests: `general_junction.rs` (classification units),
 `junction_feedpoint.rs::closed_loop_is_guarded` (a loop outside the section-graph
-scope, fed mid-wire, still warns; `closed_loop_now_solves` for one inside it).
+scope, fed mid-wire, still warns; `closed_loop_now_solves` for one inside it). Since
+FND-251 such a loop is refused, not warned about:
+`closed_loop_the_graph_refuses_is_refused`.
 
 **Closed-loop solve — prototyped, deferred.** A closed-loop Hallén solve was
 prototyped against a nec2c reference (1λ square loop, 111 − j146 Ω). Several discrete

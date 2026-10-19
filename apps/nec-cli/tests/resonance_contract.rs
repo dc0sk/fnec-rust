@@ -267,21 +267,23 @@ fn a_resonance_search_refuses_what_every_frontend_refuses() {
 /// tell the user to "re-run with `--solver mpie`" — a rerun with that flag is
 /// refused as an unknown sweep option (FND-218, the sibling of FND-217). The
 /// search runs Hallén only, so the remedy is to check the value it finds on the
-/// main command. A T with a one-segment arm earns the topology caveat.
-/// The one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
+/// main command. A hook — the dipole's top end turned through a one-segment run
+/// into a five-segment one — earns the bent-conductor caveat, which names the MPIE.
+/// (A T with a one-segment arm served, for its topology caveat, until FND-251
+/// made Hallén refuse it.)
 #[test]
 fn a_resonance_search_names_only_remedies_it_can_take() {
-    let t =
-        "GW 2 11 0 0 $HALF_LEN 2 0 $HALF_LEN 0.001\nGW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\n\
+    let hook = "GW 3 1 0 0 $HALF_LEN -0.5 0 $HALF_LEN 0.001\n\
              GW 4 5 -0.5 0 $HALF_LEN -0.5 0.5 $HALF_LEN 0.001\n";
-    let out = search("tee", t, "FR 0 1 0 0 14.2 0");
+    let out = search("hook", hook, "FR 0 1 0 0 14.2 0");
     let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "the search must run: {stderr}");
     // Once: the search prints its caveats itself, and its probes used to repeat
     // them, one copy per probe (12 in an 11-iteration search).
     assert_eq!(
-        stderr.matches("three or more wires meet").count(),
+        stderr.matches("bent conductor").count(),
         1,
-        "the fixture must earn the topology caveat, once: {stderr}"
+        "the fixture must earn the bent-conductor caveat, once: {stderr}"
     );
     assert!(
         !stderr.contains("re-run with `--solver mpie`"),
