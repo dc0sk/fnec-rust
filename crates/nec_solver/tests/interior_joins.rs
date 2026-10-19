@@ -78,7 +78,9 @@ fn feed(n: u32) -> String {
 /// convergence of a NEC-2 junction, which leaves no tail to price. The gate is
 /// against the 27× point with three last steps taken out of its 3 %. The 41-wire
 /// reference is nec2c's extended kernel: 27N is below the thin-wire limit there
-/// (it read 35.184 − j102.28 on the thin kernel).
+/// (it read 35.184 − j102.28 on the thin kernel). The 21-wire one is the thin
+/// kernel, at 8.8 radii a segment just inside the limit; `EK 0` reads −102.61,
+/// 0.018 % apart (FND-260).
 #[test]
 fn a_t_drawn_through_a_bar_joint_is_the_t() {
     for n in [21, 41] {

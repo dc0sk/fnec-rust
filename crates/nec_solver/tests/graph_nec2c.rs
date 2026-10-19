@@ -27,8 +27,8 @@
 //! (Fable), whose prototype these numbers reproduce: the Y at 11 segments per
 //! wire 20.74 − j1700, the loop at 21 per side 109.3 − j144.5.
 //!
-//! FND-256: those 27N references were nec2c's thin kernel below its thin-wire
-//! limit (segment/radius 3.6–7.7 at 27N); they are now its extended kernel (`EK 0`,
+//! FND-256, FND-260: those 27N references were nec2c's thin kernel below its
+//! thin-wire limit (segment/radius 2.55–7.05 at 27N); they are now its extended kernel (`EK 0`,
 //! up to 0.12 % apart). nec2c has not settled at 27N: its last tripling still moves
 //! 0.7–1.2 % (Y41 X −1639.4, −1612.6, −1599.4, −1591.6 at 1 / 3 / 9 / 27 ×), so a
 //! 2 % gate spent most of itself on nec2c's own drift. fnec, refined, heads for the

@@ -191,7 +191,10 @@ fn an_inverted_v_over_perfect_ground_receives_like_nec2c() {
 
 /// A T (4 m stem from 2 m up, 3 m bar halves): the section-graph route.
 /// Kill criterion: under 1 % at 41, shrinking. Against nec2c on a 27× mesh
-/// (segment j → 27j − 13, the same point), captured 2026-10-10: since FND-227
+/// (segment j → 27j − 13, the same point), captured 2026-10-10 on the thin
+/// kernel below its thin-wire limit (segment/radius 7.05 / 5.29 at 21, 3.61 / 2.71
+/// at 41); `EK 0` at the same mesh gives peaks 7.208479e-3 / 7.210135e-3 and every
+/// pin within 0.010 / 0.014 % of the peak (FND-260, checked 2026-10-19). Since FND-227
 /// refined the free ends fnec outruns nec2c on the deck's own mesh, and the
 /// error against that stopped shrinking (0.32 → 0.41 %); against 27N it is
 /// 0.49 → 0.32 %.
