@@ -398,8 +398,9 @@ pub enum GeometryError {
     /// every node, so every straight run is one segment long; Hallén's section
     /// graph refuses that, and the per-wire fallback read a half-circle arc 40 %
     /// off nec2c (39.1 + j115.9 against 63.9 + j90.8, with only a warning) and a
-    /// full circle as a false zero-current error. The MPIE models the bends.
-    CurvedForHallen { card: &'static str },
+    /// full circle as a false zero-current error. The MPIE models the bends;
+    /// `mpie` says whether it takes the rest of the deck.
+    CurvedForHallen { card: &'static str, mpie: bool },
     /// A `GX` reflection of a segment that lies in, or crosses, its plane of
     /// symmetry: the copy would coincide with or overlap the original. nec2c stops
     /// on it ("LIES IN PLANE OF SYMMETRY").
@@ -491,12 +492,11 @@ impl std::fmt::Display for GeometryError {
                 "GM card: no segment has tag {tag}, so there is nothing to move \
                  from there"
             ),
-            GeometryError::CurvedForHallen { card } => write!(
+            GeometryError::CurvedForHallen { card, .. } => write!(
                 f,
                 "geometry contains {card}, which is a bend at every segment; the Hallén solve \
                  cannot model a bend on a straight run one segment long (a half-circle arc \
-                 reads 40 % off nec2c), so the deck is refused — solve it with the MPIE \
-                 (`--solver mpie` on a local run), which models the bends (PH9-CHK-007)"
+                 reads 40 % off nec2c), so the deck is refused"
             ),
             GeometryError::InSymmetryPlane { tag, segment, axis } => write!(
                 f,
@@ -579,21 +579,12 @@ impl std::fmt::Display for GeometryError {
                 a.1, a.0, b.1, b.0
             ),
             GeometryError::OneSegmentRunTopology {
-                junction,
-                tag,
-                seg,
-                mpie,
+                junction, tag, seg, ..
             } => {
                 let what = if *junction {
                     "a junction where three or more wires meet"
                 } else {
                     "a closed loop"
-                };
-                let or_mpie = if *mpie {
-                    ", or solve it with the MPIE (`--solver mpie` on a local run), which models \
-                     it (PH9-CHK-007)"
-                } else {
-                    ""
                 };
                 write!(
                     f,
@@ -602,7 +593,7 @@ impl std::fmt::Display for GeometryError {
                      graph, which cannot take a one-segment run (its single row cannot fix the \
                      run's two constants), and without it the answer is unreliable — measured 2 \
                      to 18 times off nec2c, or no current at all on a feed on that run — so the \
-                     deck is refused. Give every straight run at least two segments{or_mpie}"
+                     deck is refused. Give every straight run at least two segments"
                 )
             }
             GeometryError::TagOverflow { card, detail } => write!(
@@ -628,6 +619,29 @@ impl GeometryError {
             self,
             GeometryError::CurvedForHallen { .. } | GeometryError::OneSegmentRunTopology { .. }
         )
+    }
+
+    /// Whether the MPIE solves a deck this refuses: a Hallén-only refusal of a
+    /// deck the MPIE takes ([`crate::validate::mpie_compatible_deck`]).
+    pub fn mpie_solves_it(&self) -> bool {
+        matches!(
+            self,
+            GeometryError::CurvedForHallen { mpie: true, .. }
+                | GeometryError::OneSegmentRunTopology { mpie: true, .. }
+        )
+    }
+
+    /// The refusal as a frontend shows it, with `remedy` — that frontend's own
+    /// way of reaching the MPIE — where the MPIE solves the deck. `Display` names
+    /// no remedy: it had the CLI's flag baked in, which the GUI, `sweep
+    /// --resonance` and the bindings cannot take (FND-271). The one place the
+    /// remedy is joined on, so no frontend states it twice.
+    pub fn with_mpie_remedy(&self, remedy: &str) -> String {
+        if self.mpie_solves_it() {
+            format!("{self}. The MPIE solves this deck: {remedy} (PH9-CHK-007)")
+        } else {
+            self.to_string()
+        }
     }
 }
 
@@ -1429,7 +1443,10 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
         Card::Gh(_) => Some("a helix (GH)"),
         _ => None,
     }) {
-        return Err(GeometryError::CurvedForHallen { card });
+        return Err(GeometryError::CurvedForHallen {
+            card,
+            mpie: crate::validate::mpie_compatible_deck(deck),
+        });
     }
     let segments = build_unnumbered(deck)?;
     let grounded = matches!(
@@ -3159,8 +3176,10 @@ mod tests {
         assert!(build("GW 1 3 0 0 0 0 0 7.5e-6 0\nGC 0 0 1 1e-6 1e-6\nGS 0 0 1000").is_ok());
     }
 
-    /// The Hallén geometry refuses GA/GH, naming the MPIE; the deck geometry
-    /// (the MPIE's, and the viewport's) builds them.
+    /// The Hallén geometry refuses GA/GH; the deck geometry (the MPIE's, and the
+    /// viewport's) builds them. The text names no remedy: each frontend joins its
+    /// own on, and only where the MPIE takes the deck — not this one, which has
+    /// no feed (FND-271).
     #[test]
     fn the_hallen_geometry_refuses_arcs_and_helices() {
         for card in [
@@ -3173,8 +3192,14 @@ mod tests {
                 matches!(e, GeometryError::CurvedForHallen { .. }),
                 "{card}: {e:?}"
             );
-            assert!(e.to_string().contains("--solver mpie"), "{e}");
+            assert!(!e.to_string().contains("--solver"), "{e}");
+            assert!(!e.mpie_solves_it(), "{card}: no feed, so no MPIE solve");
+            assert_eq!(e.with_mpie_remedy("REMEDY"), e.to_string());
             assert!(build_deck_geometry(&deck).is_ok(), "{card}");
+            let fed = parsed(&format!("{card}\nGE 0\nEX 0 1 1 0 1 0\nEN\n"));
+            let e = build_geometry(&fed).expect_err(card);
+            assert!(e.mpie_solves_it(), "{card}");
+            assert_eq!(e.with_mpie_remedy("REMEDY").matches("REMEDY").count(), 1);
         }
         assert!(build_geometry(&parsed("GW 1 3 0 0 0 0 0 1 .001\nGE 0\nEN\n")).is_ok());
     }

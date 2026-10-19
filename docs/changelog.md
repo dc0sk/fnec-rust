@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A Hallén-only geometry refusal names the MPIE the way each frontend reaches
+  it** (FND-271). A `GA`/`GH` deck or a loop with a one-segment run was refused
+  with "`--solver mpie` on a local run" on every frontend, a flag the GUI,
+  `--hosts`, `sweep --resonance` and the Python bindings do not take. Each now
+  names its own way, and only for a deck the MPIE takes: an arc driven by a
+  plane wave is no longer pointed at a solver that refuses it.
+
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
   far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No
