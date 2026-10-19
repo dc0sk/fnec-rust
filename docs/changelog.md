@@ -34,6 +34,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **Every nec2c reference captured below its thin-wire limit records its extended-kernel
   twin** (FND-260): the receive T over PEC, the transverse inverted-V, the 21-wire
   interior join and corpus `dipole-loaded` agree with `EK 0` within 0.044 %.
+- **A worker that stops reading its task can no longer block the controller**
+  (FND-244). A task line longer than the pipe buffer (64 KiB; a many-wire deck's can be)
+  waited forever on a worker that had stopped reading. The write now has the task's
+  deadline; a worker that does not take its task is evicted, and the task, never
+  delivered, is not blamed for it and moves on.
 - **`--solver sinusoidal` solves a dipole written start-to-start** (FND-249): the
   `GX` spelling, a half and its mirror, and any chain with a wire written backwards.
   The wire is turned end for end inside the solve, and its currents are reported in

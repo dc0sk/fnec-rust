@@ -135,8 +135,7 @@ impl LocalWorkerHandle {
         // Our own request failed to serialise: nothing has been sent, so the
         // worker is untouched and this is the task's problem.
         let json = serde_json::to_string(task).map_err(|e| DispatchError::Task(e.to_string()))?;
-        self.pipe.send(&json)?;
-        let line = self.pipe.recv(self.deadline)?;
+        let line = self.pipe.exchange(&json, self.deadline)?;
         // A COMPLETE line was read, so the stream is in sync whatever the line
         // says. The worker is healthy; this one result is unusable.
         let result: TaskResult = serde_json::from_str(line.trim())
