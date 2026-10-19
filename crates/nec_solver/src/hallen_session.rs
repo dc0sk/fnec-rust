@@ -252,6 +252,15 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
         segs,
         &crate::ground_model_from_deck(deck),
     ) {
+        // The image problem's receive solve takes the graph of the doubled
+        // segments in free space (`plan_hallen_planewave`). Asked through
+        // `graph_route`, which wants a voltage feed, it answered "no graph", so
+        // a correct image-graph receive solve was captioned unsupported (FND-272).
+        Ok(Some(img)) if deck_has_plane_wave(deck) => {
+            planewave_graph(&img.segs, &crate::GroundModel::FreeSpace).is_some()
+        }
+        // The image deck carries a current source as a gap pair, so the gap
+        // route is its route too.
         Ok(Some(img)) => graph_route(&img.deck, &img.segs).is_some(),
         // A plane wave is a gap on every segment of the graph system, loads
         // included as its columns (FND-197).
