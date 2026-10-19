@@ -365,13 +365,13 @@ fn a_deck_with_no_frequency_at_all_is_refused_in_both_output_formats() {
 /// A single frequency keeps the per-point sentence, which names the segment.
 #[test]
 fn a_sweep_reports_negative_resistance_once() {
-    // A T junction fed low on its stem whose second arm is one segment long — a
-    // degree-3 junction the section graph refuses (FND-162) — which answers with
-    // Re Z < 0 at 10, 12, 14 and 16 MHz and > 0 at 18 MHz. (It had two 10-segment
-    // arms until the section graph solved that, and was a bent end-to-start
-    // chain until FND-167 fixed it.) The one-segment arm sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
-    let bent = "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
-                GW 3 1 0 0 5 -1 0 5 0.001\nGW 4 5 -1 0 5 -1 0 6 0.001\nGE 0\nEX 0 1 3 0 1.0 0.0\n";
+    // A U whose middle run is one segment long: Hallén models neither bend
+    // (FND-162) and answers Re Z < 0 at 70, 90 and 110 MHz (−4.53, −3.03, −1.08 Ω)
+    // and > 0 at 130 and 150 (+1.23, +2.65). (It was a T with a one-segment arm
+    // until FND-251 refused that, a T with two 10-segment arms until the section
+    // graph solved it, and a bent end-to-start chain until FND-167 fixed it.)
+    let bent = "CE\nGW 1 10 0 0 0.5 0 0 0 .001\nGW 2 1 0 0 0 0.1 0 0 .001\n\
+                GW 3 10 0.1 0 0 0.1 0 0.5 .001\nGE 0\nEX 0 1 5 0 1 0\n";
     let run = |name: &str, fr: &str| {
         let deck = write_temp(name, &format!("{bent}{fr}EN\n"));
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -382,7 +382,7 @@ fn a_sweep_reports_negative_resistance_once() {
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 
-    let sweep = run("negr-sweep", "FR 0 5 0 0 10 2\n");
+    let sweep = run("negr-sweep", "FR 0 5 0 0 70 20\n");
     let lines: Vec<&str> = sweep.lines().filter(|l| l.contains("negative")).collect();
     assert_eq!(
         lines.len(),
@@ -390,13 +390,13 @@ fn a_sweep_reports_negative_resistance_once() {
         "one aggregate line, got:\n{}",
         lines.join("\n")
     );
-    assert!(lines[0].contains("4 of 5 sweep points"), "{}", lines[0]);
+    assert!(lines[0].contains("3 of 5 sweep points"), "{}", lines[0]);
 
-    let single = run("negr-single", "FR 0 1 0 0 10 0\n");
+    let single = run("negr-single", "FR 0 1 0 0 100 0\n");
     let lines: Vec<&str> = single.lines().filter(|l| l.contains("negative")).collect();
     assert_eq!(lines.len(), 1, "{}", lines.join("\n"));
     assert!(
-        lines[0].contains("segment 3"),
+        lines[0].contains("segment 5"),
         "per-point sentence: {}",
         lines[0]
     );

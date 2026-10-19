@@ -1870,13 +1870,22 @@ mod gpu_route_tests {
     /// one-segment run keeps this on the plain basis, where only the veto stands.
     /// The run turns into a bend at its far end: a one-segment arm with a free end
     /// is refined into thirds (FND-227) and the graph takes it.
+    ///
+    /// `build_geometry` refuses that T now (FND-251), so no frontend routes it:
+    /// the veto is the device's own defence, and the route is asked of the deck's
+    /// own segments, which is what a caller holding them would ask.
     #[test]
     fn a_t_junction_is_not_offered_to_the_device() {
-        let tee = route(
-            "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
+        let tee_text = "CE\nGW 1 20 0 0 0 0 0 5 0.001\nGW 2 10 0 0 5 2.5 0 5 0.001\n\
              GW 3 1 0 0 5 -0.5 0 5 0.001\nGW 4 5 -0.5 0 5 -0.5 0 6 0.001\nGE 0\n\
-             EX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n",
-        );
+             EX 0 1 10 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let tee_deck = nec_parser::parse(tee_text).expect("parses").deck;
+        assert!(matches!(
+            build_geometry(&tee_deck),
+            Err(crate::GeometryError::OneSegmentRunTopology { junction: true, .. })
+        ));
+        let tee_segs = crate::geometry::build_deck_geometry(&tee_deck).expect("geometry");
+        let tee = super::hallen_route(&tee_deck, &tee_segs);
         assert!(!tee.paths, "the T falls to the plain basis — the hole");
         assert!(tee.unsupported_topology);
         assert!(!tee.gpu_resident_supported());

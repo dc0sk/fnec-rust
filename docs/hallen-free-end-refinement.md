@@ -177,7 +177,8 @@ the gate is an MPIE pattern value pinned against today's.
 Every fixture whose point is a **one-segment arm with a free end** dissolves (refined
 to 3, the section graph then takes it): `corpus/y-junction-negative-r-freesp.nec`
 (its −5.441 Ω is the fixture for `worker_infinite_vswr.rs` and fnec_py's
-`test_smoke.py`), `sinusoidal_routing.rs` `T_ONE_SEGMENT_ARM`, `sweep_contract.rs`,
+`test_smoke.py`; since FND-251 refused it, `corpus/u-one-segment-negative-r-freesp.nec`
+serves both), `sinusoidal_routing.rs` `T_ONE_SEGMENT_ARM`, `sweep_contract.rs`,
 `junction_feedpoint.rs`, `ground_contact.rs`, nec-gui `solve.rs`. A one-segment run
 stays reachable only between two junctions; those fixtures are rewritten that way,
 each still showing what it was written to show.

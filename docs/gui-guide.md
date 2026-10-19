@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/gui-guide.md
 status: living
-last_updated: 2026-10-15
+last_updated: 2026-10-19
 ---
 
 # fnec-gui user guide
@@ -72,8 +72,9 @@ frequency, resistance, reactance, and |Z| are shown.
 > solver. Changing it clears solved results, because the numbers showing were
 > produced by the other one.
 >
-> On Hallén, a near-ground deck, or a junction or loop deck outside the
-> section-graph scope, shows a warning naming the MPIE.
+> On Hallén, a near-ground deck shows a warning naming the MPIE. A junction or
+> loop with a straight run one segment long is refused on Hallén, naming the run
+> and the MPIE (FND-251); the view still draws it, and the MPIE solves it.
 > On MPIE, that warning is absent — the MPIE models those cases correctly. So
 > is the Hallén caveat on a **radius taper** (a `GC` wire), or a radius step
 > beside a one-segment run, which the MPIE models and Hallén does not; a step

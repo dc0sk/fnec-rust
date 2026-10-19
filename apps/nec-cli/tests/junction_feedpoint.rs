@@ -8,25 +8,30 @@
 // and inverted-V apex feeds all give a physical impedance and emit no warning.
 //
 // FND-162 stages 2+3 solve **degree-3+** (T/Y) junctions and closed loops on a
-// section graph when the deck is delta-gap driven with no loads or networks. The
-// PH9-CHK-005 guardrail remains for what that solve refuses — here, a straight
-// run one segment long, whose one row cannot fix a section's two constants.
+// section graph. What that solve refuses — a straight run one segment long, whose
+// one row cannot fix a section's two constants — the Hallén solve refuses outright
+// (FND-251): the per-wire fallback it used to warn and solve on was 2 to 18 times
+// off nec2c.
 
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn run(deck: &str, name: &str) -> (String, String) {
+fn run(deck: &str, name: &str) -> (String, String, std::process::ExitStatus) {
+    run_on(deck, name, "hallen")
+}
+
+fn run_on(deck: &str, name: &str, solver: &str) -> (String, String, std::process::ExitStatus) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("fnec-{name}-{now}.nec"));
+    let path = std::env::temp_dir().join(format!("fnec-{name}-{solver}-{now}.nec"));
     fs::write(&path, deck).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .args(["--solver", "hallen", "--exec", "cpu"])
+        .args(["--solver", solver, "--exec", "cpu"])
         .arg(&path)
         .current_dir(&root)
         .output()
@@ -35,6 +40,7 @@ fn run(deck: &str, name: &str) -> (String, String) {
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status,
     )
 }
 
@@ -92,15 +98,17 @@ const BENT_DIPOLE_FED_AWAY: &str =
 const TEE_JUNCTION_FED: &str =
     "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 13 0 0 0 0 0 5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
-// The same T with a stem one segment long, which the section graph refuses.
-// The one-segment stem sits between the junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
+// The same T with a stem one segment long, which the section graph refuses, so the
+// Hallén solve refuses the deck (FND-251). The one-segment stem sits between the
+// junction and a bend: a free-end one-segment arm is refined into thirds (FND-227)
+// and the graph takes it.
 const TEE_ONE_SEGMENT_STEM_FED: &str =
     "GW 1 13 0 0 0 5.282 0 0 0.001\nGW 2 13 0 0 0 -5.282 0 0 0.001\nGW 3 1 0 0 0 0 0 0.5 0.001\nGW 4 5 0 0 0.5 0.5 0 0.5 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
 fn start_to_start_junction_fed_now_solves() {
     // The headline PH9-CHK-002 case: fed exactly at the degree-2 junction.
-    let (stdout, stderr) = run(SPLIT_DIPOLE_JUNCTION_FED, "junction-fed");
+    let (stdout, stderr, _status) = run(SPLIT_DIPOLE_JUNCTION_FED, "junction-fed");
     assert!(
         !stderr.contains("wire junction"),
         "a degree-2 junction feed must no longer warn; stderr:\n{stderr}"
@@ -119,7 +127,7 @@ fn start_to_start_junction_fed_now_solves() {
 #[test]
 fn bent_dipole_fed_away_now_solves() {
     // Feed off the bend on a degree-2 bent dipole: previously negative R, now physical.
-    let (stdout, stderr) = run(BENT_DIPOLE_FED_AWAY, "bent-fed-away");
+    let (stdout, stderr, _status) = run(BENT_DIPOLE_FED_AWAY, "bent-fed-away");
     assert!(
         !stderr.contains("negative resistance"),
         "bent degree-2 dipole now solves to positive R; stderr:\n{stderr}"
@@ -133,7 +141,7 @@ fn bent_dipole_fed_away_now_solves() {
 #[test]
 fn split_dipole_fed_away_does_not_warn() {
     // A junction exists in the geometry, but the feed is not on it.
-    let (_stdout, stderr) = run(SPLIT_DIPOLE_FED_AWAY, "fed-away");
+    let (_stdout, stderr, _status) = run(SPLIT_DIPOLE_FED_AWAY, "fed-away");
     assert!(
         !stderr.contains("is on a wire junction"),
         "feed away from the junction should not warn; stderr:\n{stderr}"
@@ -142,7 +150,7 @@ fn split_dipole_fed_away_does_not_warn() {
 
 #[test]
 fn single_wire_feedpoint_does_not_warn() {
-    let (_stdout, stderr) = run(SINGLE_WIRE_DIPOLE, "single-wire");
+    let (_stdout, stderr, _status) = run(SINGLE_WIRE_DIPOLE, "single-wire");
     assert!(
         !stderr.contains("is on a wire junction"),
         "single-wire dipole should not warn; stderr:\n{stderr}"
@@ -155,7 +163,7 @@ fn single_wire_feedpoint_does_not_warn() {
 
 #[test]
 fn degree3_tee_junction_fed_now_solves() {
-    let (stdout, stderr) = run(TEE_JUNCTION_FED, "tee-junction");
+    let (stdout, stderr, _status) = run(TEE_JUNCTION_FED, "tee-junction");
     for w in ["wire junction", "T/Y junction", "negative resistance"] {
         assert!(
             !stderr.contains(w),
@@ -171,18 +179,37 @@ fn degree3_tee_junction_fed_now_solves() {
 }
 
 #[test]
-fn degree3_tee_junction_the_graph_refuses_is_still_guarded() {
-    // The one-segment stem sends it back to the per-wire basis, where a junction
-    // feed is still an unreliable V/I and the guardrail must fire.
-    let (_stdout, stderr) = run(TEE_ONE_SEGMENT_STEM_FED, "tee-one-seg");
+fn degree3_tee_junction_the_graph_refuses_is_refused() {
+    // The one-segment stem would send it back to the per-wire basis, which has no
+    // reliable answer for a junction (FND-251), so the deck is refused, naming the
+    // junction, the run and the edit, and the MPIE, which takes this deck. The
+    // negative control is `degree3_tee_junction_fed_now_solves`: the same T with a
+    // 13-segment stem solves.
+    let (stdout, stderr, status) = run(TEE_ONE_SEGMENT_STEM_FED, "tee-one-seg");
     assert!(
-        stderr.contains("wire junction") && stderr.contains("PH9-CHK-002"),
-        "a refused T/Y junction feed must still warn; stderr:\n{stderr}"
+        !status.success(),
+        "a T the section graph refuses must not solve; stderr:\n{stderr}"
     );
-    // The whole-geometry topology guard also flags the T/Y class explicitly.
     assert!(
-        stderr.contains("T/Y junction"),
-        "the topology guard must name the T/Y junction class; stderr:\n{stderr}"
+        !stdout.contains("FEEDPOINTS"),
+        "a refused deck must print no result; stdout:\n{stdout}"
+    );
+    for want in [
+        "a junction where three or more wires meet",
+        "(tag 3 segment 1)",
+        "at least two segments",
+        "--solver mpie",
+    ] {
+        assert!(
+            stderr.contains(want),
+            "the refusal must say {want:?}; stderr:\n{stderr}"
+        );
+    }
+    // The remedy it names is one the run can take.
+    let (mpie_out, mpie_err, mpie_status) = run_on(TEE_ONE_SEGMENT_STEM_FED, "tee-one-seg", "mpie");
+    assert!(
+        mpie_status.success() && feedpoint_r(&mpie_out) > 0.0,
+        "the MPIE the refusal names must solve the deck; stderr:\n{mpie_err}"
     );
 }
 
@@ -196,13 +223,14 @@ fn degree3_tee_junction_the_graph_refuses_is_still_guarded() {
 const SQUARE_LOOP_FED_MIDWIRE: &str =
     "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 11 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
-// The same loop with one side one segment long, which the section graph refuses.
+// The same loop with one side one segment long, which the section graph refuses,
+// so the Hallén solve refuses the deck (FND-251).
 const SQUARE_LOOP_ONE_SEGMENT_SIDE: &str =
     "GW 1 11 -2.639 0 0 2.639 0 0 0.001\nGW 2 1 2.639 0 0 2.639 0 5.278 0.001\nGW 3 11 2.639 0 5.278 -2.639 0 5.278 0.001\nGW 4 11 -2.639 0 5.278 -2.639 0 0 0.001\nGE 0\nEX 0 1 6 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
 fn closed_loop_now_solves() {
-    let (stdout, stderr) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
+    let (stdout, stderr, _status) = run(SQUARE_LOOP_FED_MIDWIRE, "square-loop");
     assert!(
         !stderr.contains("closed loop") && !stderr.contains("negative resistance"),
         "a solved loop must not warn; stderr:\n{stderr}"
@@ -215,14 +243,37 @@ fn closed_loop_now_solves() {
 }
 
 #[test]
-fn closed_loop_is_guarded() {
-    // A loop the section graph refuses must still warn, even though the feed is
-    // mid-wire (so the feedpoint-at-junction guard alone would miss it).
-    let (_stdout, stderr) = run(SQUARE_LOOP_ONE_SEGMENT_SIDE, "square-loop-one-seg");
+fn closed_loop_the_graph_refuses_is_refused() {
+    // A loop the section graph refuses is refused, even though the feed is mid-wire
+    // and on no junction (FND-251). Its stderr alone cannot tell a refusal from the
+    // warning it replaced — both name the loop and `--solver mpie` — so the exit
+    // status and the missing report decide. Negative control: `closed_loop_now_solves`.
+    let (stdout, stderr, status) = run(SQUARE_LOOP_ONE_SEGMENT_SIDE, "square-loop-one-seg");
     assert!(
-        stderr.contains("closed loop") && stderr.contains("--solver mpie"),
-        "a closed loop must be flagged as unsupported and point to --solver mpie; \
-         stderr:\n{stderr}"
+        !status.success(),
+        "a loop the section graph refuses must not solve; stderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("FEEDPOINTS"),
+        "a refused deck must print no result; stdout:\n{stdout}"
+    );
+    for want in [
+        "a closed loop",
+        "(tag 2 segment 1)",
+        "at least two segments",
+        "--solver mpie",
+    ] {
+        assert!(
+            stderr.contains(want),
+            "the refusal must say {want:?}; stderr:\n{stderr}"
+        );
+    }
+    // The remedy it names is one the run can take.
+    let (mpie_out, mpie_err, mpie_status) =
+        run_on(SQUARE_LOOP_ONE_SEGMENT_SIDE, "square-loop-one-seg", "mpie");
+    assert!(
+        mpie_status.success() && feedpoint_r(&mpie_out) > 0.0,
+        "the MPIE the refusal names must solve the deck; stderr:\n{mpie_err}"
     );
 }
 
@@ -244,21 +295,22 @@ FR 0 1 0 0 100 0
 EN
 ";
 
-/// A Y junction whose second arm is one segment long: a degree-3 junction the
-/// section graph refuses (FND-162), which still solves to a negative resistance
-/// (Re Z = -5.13 Ω). The one-segment arm sits between the junction and a bend: a
-/// free-end one-segment arm is refined into thirds (FND-227). It was a stem-fed Y with three 11-segment arms until the
-/// section graph solved that, and an end-to-start inverted-V before FND-167.
+/// A U whose middle run is one segment long: two 90° bends, which are wire
+/// junctions to the negative-resistance cause (`has_wire_junction`), and which the
+/// Hallén solve leaves unmodelled, solving to a negative resistance (Re Z = −2.113 Ω;
+/// nec2c +2.36). It was a Y with a one-segment arm until FND-251 refused every loop
+/// or junction the section graph cannot take — no deck it takes was found with a
+/// negative resistance — and a stem-fed Y with three 11-segment arms before the
+/// section graph solved that.
 const JUNCTION_NEGATIVE_R: &str = "\
-CM Y junction with a one-segment arm
+CM U with a one-segment middle
 CE
-GW 1 11 0 0 0 0 0 3 .001
-GW 2 1 0 0 3 -1 0 4 .001
-GW 4 5 -1 0 4 -1 0 5 .001
-GW 3 11 0 0 3 2 0 5 .001
+GW 1 10 0 0 0.5 0 0 0 .001
+GW 2 1 0 0 0 0.1 0 0 .001
+GW 3 10 0.1 0 0 0.1 0 0.5 .001
 GE 0
-EX 0 1 1 0 1.0 0.0
-FR 0 1 0 0 14.2 0
+EX 0 1 5 0 1 0
+FR 0 1 0 0 100 0
 EN
 ";
 
@@ -311,4 +363,31 @@ fn negative_resistance_still_blames_junctions_where_there_is_one() {
         !stderr.contains("no wire junction"),
         "must not claim there is no junction when there is:\n{stderr}"
     );
+}
+
+/// The refusal judges the segments the solve runs on (FND-251): a T whose
+/// one-segment base stands on perfect ground is solved as its doubled image
+/// problem, where the base is two segments and the section graph takes it. It
+/// solves, and agrees with nec2c 1.3.1 (0.89985 − j165.33 Ω; fnec 0.9038 −
+/// j165.29, and 0.5 % at twice the mesh).
+#[test]
+fn a_tee_whose_one_segment_base_stands_on_perfect_ground_solves() {
+    let deck = "CE\nGW 1 1 0 0 0 0 0 0.5 .001\nGW 2 10 0 0 0.5 2.5 0 0.5 .001\n\
+                GW 3 10 0 0 0.5 -2.5 0 0.5 .001\nGE 1\nGN 1\nEX 0 1 1 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let (stdout, stderr, status) = run(deck, "grounded-tee-one-seg-base");
+    assert!(
+        status.success(),
+        "the image problem takes it; stderr:\n{stderr}"
+    );
+    let row: Vec<f64> = stdout
+        .lines()
+        .skip_while(|l| *l != "FEEDPOINTS")
+        .nth(2)
+        .expect("feedpoint row")
+        .split_whitespace()
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    let (nec2c_re, nec2c_im) = (0.89985, -165.33);
+    let rel = (row[6] - nec2c_re).hypot(row[7] - nec2c_im) / nec2c_re.hypot(nec2c_im);
+    assert!(rel < 0.01, "{row:?} against nec2c {nec2c_re} {nec2c_im}");
 }

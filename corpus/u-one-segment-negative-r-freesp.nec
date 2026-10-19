@@ -1,0 +1,18 @@
+CM U whose middle run is one segment long: two 3.52 m arms 0.704 m apart, fed
+CM on one arm. A one-segment section has one collocation row for its two
+CM constants, so the Hallen solve falls back to one term per conductor path and
+CM models neither bend (FND-162), and solves to a negative resistance (Re Z =
+CM -2.117 - j444.86 ohm at 14.2 MHz, where nec2c 1.3.1 gives +2.354 - j461.67)
+CM - a fixture for the negative-resistance caveat and the infinite-VSWR worker
+CM path, which need a deck the solver still gets wrong. It is the 100 MHz U of
+CM 0.5 m arms 0.1 m apart scaled by 7.04 (100/14.2 = 7.042), radius included,
+CM and solves close to it (-2.113 - j444.47 there). It replaced a Y with a one-segment arm when FND-251 made the
+CM Hallen solve refuse every loop or junction the section graph cannot take.
+CE
+GW 1 10 0 0 3.52 0 0 0 .00704
+GW 2 1 0 0 0 0.704 0 0 .00704
+GW 3 10 0.704 0 0 0.704 0 3.52 .00704
+GE 0
+EX 0 1 5 0 1 0
+FR 0 1 0 0 14.2 0
+EN

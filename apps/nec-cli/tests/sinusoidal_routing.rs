@@ -33,10 +33,14 @@ fn sinusoidal(deck: &std::path::Path) -> std::process::Output {
 }
 
 const T_JUNCTION: &str = "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 21 0 0 5 5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
-/// A T whose third arm is one segment long: the section graph declines it, so
-/// the Hallén route is the plain basis with an unsupported topology (warned
-/// there) — not a path route. The refusal must cover this half too.
-const T_ONE_SEGMENT_ARM: &str = "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+/// A T whose third arm is one segment long and then bends: the section graph
+/// declines it. Its Hallén route was the plain basis with an unsupported topology
+/// (warned there), not a path route, and the refusal had to cover that half too.
+/// The geometry now refuses it before any route is chosen (FND-251), so it is
+/// refused on every solver, by that refusal. (With a free tip the arm is refined
+/// into thirds, FND-227, and the graph takes it: the half this was written for
+/// needs the bend.)
+const T_ONE_SEGMENT_ARM: &str = "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 -5 0 5 0 0 5 .001\nGW 3 1 0 0 5 0.5 0 5 .001\nGW 4 5 0.5 0 5 0.5 0 5.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
 const SQUARE_LOOP: &str = "CE\nGW 1 11 0 0 0 5 0 0 .001\nGW 2 11 5 0 0 5 5 0 .001\nGW 3 11 5 5 0 0 5 0 .001\nGW 4 11 0 5 0 0 0 0 .001\nGE 0\nEX 0 1 6 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
 
 #[test]
@@ -52,7 +56,6 @@ fn bent_split_junction_and_loop_decks_are_refused_by_name() {
         ("split-V", split_v.as_path()),
         ("T junction", t.path()),
         ("square loop", ring.path()),
-        ("T with a one-segment arm", stub.path()),
     ] {
         let out = sinusoidal(path);
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -66,6 +69,16 @@ fn bent_split_junction_and_loop_decks_are_refused_by_name() {
             "{label}: refused without naming why:\n{stderr}"
         );
     }
+    let out = sinusoidal(stub.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && !String::from_utf8_lossy(&out.stdout).contains("FEEDPOINTS"),
+        "T with a one-segment arm: --solver sinusoidal answered it:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("three or more wires meet") && stderr.contains("(tag 3 segment 1)"),
+        "T with a one-segment arm: refused without naming why:\n{stderr}"
+    );
 }
 
 /// The class it does solve is untouched: a straight dipole and a collinear split

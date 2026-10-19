@@ -1860,14 +1860,6 @@ mod tests {
         }
     }
 
-    // A dipole 0.03 λ over GN 2 — low enough to trip the near-ground caveat — whose
-    // two wires meet at a T, so the feed also sits on a junction. It earns three
-    // separate pre-solve caveats, which is what makes it useful: a deck earning one
-    // cannot tell a complete set from a lucky one. The stem is one segment long,
-    // which keeps it off the section-graph solve (a one-segment run, measured and
-    // kept refused in FND-162 stage 5); a T the graph takes earns neither the
-    // topology nor the junction-feed caveat. The one-segment stem sits between the
-    // junction and a bend: a free-end one-segment arm is refined into thirds (FND-227).
     /// `--hosts` refuses `--ground-solver sommerfeld`, so its low-ground caveat must
     /// not name it (FND-217). Differential, on a deck the remedy applies to: the
     /// producer offered the remedy DOES name it here, so the fixture earns it, and
@@ -1910,7 +1902,12 @@ mod tests {
         );
     }
 
-    const LOW_TEE: &str = "GW 1 13 0 0 0.634 5.282 0 0.634 0.001\nGW 2 13 0 0 0.634 -5.282 0 0.634 0.001\nGW 3 1 0 0 0.634 0 0 1.134 0.001\nGW 4 5 0 0 1.134 0.5 0 1.134 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 1 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    /// Low over a finite ground, with two arms slanted 45° meeting a one-segment top run:
+    /// it earns the low-ground, bent-conductor and slanted-over-ground caveats — three
+    /// separate pre-solve caveats, which is what makes it useful: a deck earning one
+    /// cannot tell a complete set from a lucky one. (A T with a one-segment stem
+    /// served here until FND-251 made Hallén refuse it.)
+    const LOW_BENT: &str = "GW 1 13 -1.5 0 0.634 0 0 2.134 0.001\nGW 2 1 0 0 2.134 0.3 0 2.134 0.001\nGW 3 13 0.3 0 2.134 1.8 0 0.634 0.001\nGE 1\nGN 2 0 0 0 13 0.005\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
     #[test]
     fn the_distributed_caveats_come_from_the_shared_producer() {
@@ -1920,7 +1917,7 @@ mod tests {
         // `hallen_geometry_caveats` would have left both sides unchanged and the
         // test green while parity broke. Comparing against the producer makes the
         // fourth caveat arrive on both sides by construction.
-        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let (deck, segs) = deck_and_segs(LOW_BENT);
         let ground = nec_solver::ground_model_from_deck(&deck);
 
         let produced = nec_solver::validate::hallen_geometry_caveats(
@@ -1951,7 +1948,7 @@ mod tests {
         // (FND-018), and the topology caveat says "re-run with `--solver mpie`" —
         // nonsense to someone already running it. Parity with the local path means
         // gating the same way, not emitting unconditionally.
-        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let (deck, segs) = deck_and_segs(LOW_BENT);
         let ground = nec_solver::ground_model_from_deck(&deck);
         assert!(
             !distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Hallen)
@@ -2084,7 +2081,7 @@ mod tests {
         // Raising the frequency shrinks lambda, so a fixed height stops being
         // "low". A sweep straddling the 0.1 lambda threshold must not imply the
         // caveat applies to every point.
-        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let (deck, segs) = deck_and_segs(LOW_BENT);
         let ground = nec_solver::ground_model_from_deck(&deck);
         let freqs = [14.2e6, 30.0e6, 60.0e6];
         let tripping = freqs
@@ -2114,7 +2111,7 @@ mod tests {
         // entirely by anything that just looked at `freqs_hz[0]` — and an
         // ascending fixture cannot tell the two apart, which my first attempt at
         // this test did not.
-        let (deck, segs) = deck_and_segs(LOW_TEE);
+        let (deck, segs) = deck_and_segs(LOW_BENT);
         let ground = nec_solver::ground_model_from_deck(&deck);
 
         let descending = [60.0e6, 30.0e6, 14.2e6];

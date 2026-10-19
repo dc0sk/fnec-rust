@@ -20,8 +20,8 @@
 use base64::Engine;
 use nec_worker::{TaskResult, WorkerPool};
 
-/// Re(Z) = -5.127 Ω on this deck, so its VSWR is genuinely infinite.
-const NEGATIVE_R_DECK: &str = "corpus/y-junction-negative-r-freesp.nec";
+/// Re(Z) = -2.117 Ω on this deck at 14.2 MHz, so its VSWR is genuinely infinite.
+const NEGATIVE_R_DECK: &str = "corpus/u-one-segment-negative-r-freesp.nec";
 const HEALTHY_DECK: &str = "corpus/dipole-freesp-51seg.nec";
 
 fn task(id: &str, deck_path: &str) -> nec_worker::TaskMessage {
