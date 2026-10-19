@@ -166,6 +166,19 @@ pub fn build_hallen_rhs(
     segs: &[Segment],
     freq_hz: f64,
 ) -> Result<HallenRhs, ExcitationError> {
+    let sources = delta_gap_sources(deck, segs)?;
+    Ok(build_hallen_rhs_from_sources(segs, freq_hz, &sources))
+}
+
+/// The deck's delta-gap sources as `(index into segs, volts)`, in deck order — the
+/// half of [`build_hallen_rhs`] that reads the cards. Split out so a caller solving
+/// re-oriented segments can sign each source for its frame before the RHS is built
+/// (FND-249: [`crate::SegmentOrder::flips_source`]); cloning the deck with negated
+/// voltages instead would leak into the report, which prints the deck's `V`.
+pub fn delta_gap_sources(
+    deck: &NecDeck,
+    segs: &[Segment],
+) -> Result<Vec<(usize, Complex64)>, ExcitationError> {
     let mut first_ex: Option<&ExCard> = None;
     for card in &deck.cards {
         let Card::Ex(ex) = card else { continue };
@@ -197,16 +210,9 @@ pub fn build_hallen_rhs(
 
     // Only decides whether the deck has any delta gap at all; the sources
     // themselves are collected below.
-    let Some(_ex) = first_ex else {
-        return Ok(HallenRhs {
-            rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
-            cos_vec: vec![0.0; segs.len()],
-            sin_vec: vec![0.0; segs.len()],
-        });
-    };
-
-    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
-    let scale = 2.0 * std::f64::consts::PI / ETA0;
+    if first_ex.is_none() {
+        return Ok(Vec::new());
+    }
 
     // Every delta-gap card is a source, in deck order.
     //
@@ -241,6 +247,25 @@ pub fn build_hallen_rhs(
         )?;
         sources.push((idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)));
     }
+    Ok(sources)
+}
+
+/// [`build_hallen_rhs`] from sources already collected and signed: an empty list
+/// is a deck with no delta gap (every column zero).
+pub fn build_hallen_rhs_from_sources(
+    segs: &[Segment],
+    freq_hz: f64,
+    sources: &[(usize, Complex64)],
+) -> HallenRhs {
+    if sources.is_empty() {
+        return HallenRhs {
+            rhs: vec![Complex64::new(0.0, 0.0); segs.len()],
+            cos_vec: vec![0.0; segs.len()],
+            sin_vec: vec![0.0; segs.len()],
+        };
+    }
+    let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
+    let scale = 2.0 * std::f64::consts::PI / ETA0;
 
     // Collinear-connected `GW` wires form one logical conductor for the Hallén
     // homogeneous solution (PH9-CHK-002): the `cos(k·s)` coordinate and the source
@@ -283,7 +308,7 @@ pub fn build_hallen_rhs(
 
     // rhs: each voltage source drives its whole merged conductor; `s` is measured
     // from the source segment along its axis. (Superposes for multi-source decks.)
-    for &(fi, vsrc) in &sources {
+    for &(fi, vsrc) in sources {
         let (cf, cl) = components[comp_of_seg[fi]];
         let src_mid = segs[fi].midpoint;
         let src_dir = segs[fi].direction;
@@ -298,11 +323,11 @@ pub fn build_hallen_rhs(
         }
     }
 
-    Ok(HallenRhs {
+    HallenRhs {
         rhs,
         cos_vec,
         sin_vec,
-    })
+    }
 }
 
 /// Build Hallén RHS data over **conductor paths** — the general-junction delta-gap

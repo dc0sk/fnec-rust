@@ -259,11 +259,13 @@ divergence as `pulse`, and the same `--experimental-solver` gate.
 Sinusoidal-basis solve path for the Hallen thin-wire system, with guarded fallback
 when the residual-quality budget is exceeded.
 It solves **straight wires and collinear chains** (including parallel arrays of
-them), in any order of their `GW` cards: a chain is solved in walk order and
-reported in deck order (FND-233). A deck with a bend, a wire written backwards
-inside a chain, a junction or a loop needs the conductor-path or section-graph
-basis of `--solver hallen`, and `sinusoidal` refuses it by name (FND-203) — it once
-answered such decks off by a factor of two to three with exit 0.
+them), in any order of their `GW` cards and with any of them written backwards: a
+chain is solved in walk order, a wire written against it turned end for end, and
+reported in deck order, each segment's current in its own start→end sense (FND-233,
+FND-249) — so the `GX` dipole, a half and its mirror meeting start-to-start, is the
+one-wire dipole. A deck with a bend, a junction or a loop needs the conductor-path
+or section-graph basis of `--solver hallen`, and `sinusoidal` refuses it by name
+(FND-203) — it once answered such decks off by a factor of two to three with exit 0.
 If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
 `SOLVER_MODE sinusoidal->hallen(residual)`.
@@ -699,8 +701,10 @@ kernels through real wgpu compute shaders when a wgpu adapter is available,
 falling back to CPU otherwise. The far-field kernel is free-space only, so over
 a ground (`GN 1`, `GN 0/2`) the pattern runs on the CPU, which includes the
 image or the reflected field, and an `info:` line says so (FND-205). For Hallén decks in the supported class
-(free-space ground, no LD/TL/NT cards) it also runs the **GPU-resident dense
-solve** (PH7-CHK-003): the impedance matrix is filled and the system solved
+(free-space ground, no LD/TL/NT cards, and one straight wire or an end-to-start
+collinear chain written in card order — a start-to-start split such as the `GX`
+dipole, or a chain written out of order, takes the path basis on the CPU, FND-249)
+it also runs the **GPU-resident dense solve** (PH7-CHK-003): the impedance matrix is filled and the system solved
 entirely on the device, with only the solution vector returned. This path is
 f32 (LU + iterative refinement) and matches the f64 CPU solve to ~0.01 Ω on the
 reference dipole; the f64 CPU solve (`--exec cpu`) remains the accuracy
