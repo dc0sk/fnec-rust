@@ -639,3 +639,39 @@ fn the_cli_refuses_a_non_finite_field() {
         "a NaN feedpoint row reached the report: {combined}"
     );
 }
+
+/// FND-250: a wire laid along another, closer than their radii, is refused by
+/// name before any solve, on both solvers. It used to solve silently to garbage
+/// (Hallén −3.35 − j234.0 Ω, the MPIE 176.8 + j334.8, where the antenna meant —
+/// the dipole with a 0.86 m extension — reads 203.8 + j383.2 in nec2c).
+#[test]
+fn a_wire_laid_along_another_is_refused_by_name() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX_EPOCH")
+        .as_nanos();
+    let deck_path = std::env::temp_dir().join(format!("fnec-geometry-overlap-{now}.nec"));
+    let deck = "CE\nGW 1 11 0 0 -2.64 0 0 2.64 .001\nGW 2 6 0 0 0 0 0 3.5 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n";
+    fs::write(&deck_path, deck).expect("write overlap deck");
+    for solver in ["hallen", "mpie"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--solver", solver])
+            .arg(&deck_path)
+            .output()
+            .expect("run fnec");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "{solver}: must not solve:\n{stderr}"
+        );
+        assert!(
+            !String::from_utf8_lossy(&output.stdout).contains("FEEDPOINTS"),
+            "{solver}: a refused deck prints no result"
+        );
+        assert!(
+            stderr.contains("error: segments overlap: segment 6 of tag 1 and segment 1 of tag 2"),
+            "{solver}: {stderr}"
+        );
+    }
+    let _ = fs::remove_file(&deck_path);
+}

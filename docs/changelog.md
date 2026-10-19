@@ -32,6 +32,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   The wire is turned end for end inside the solve, and its currents are reported in
   its own sense, as nec2c and `--solver hallen` report them; it was refused as a
   junction.
+- **Segments drawn on top of each other are refused by name** (FND-250). Two segments
+  lying along each other, closer than their radii, solved silently to garbage on both
+  solvers (a wire laid along a dipole's upper half read −3.35 − j234 Ω on Hallén and
+  176.8 + j334.8 on the MPIE, where nec2c reads the antenna meant at 203.8 + j383.2),
+  or, as an exact duplicate, were refused as a junction or as "no current flows".
 - **Wire ends join where nec2c joins them** (FND-246). Two segment ends within 10⁻³ of
   the shorter segment's length (by the sum of the coordinate differences, as nec2c
   measures) are one junction; fnec joined only within 1 µm, so a T whose stem stopped

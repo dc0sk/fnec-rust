@@ -39,7 +39,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/exec_modes.rs` | 27 | `--exec` selection, drop-in alias resolution (a kernel name with a deck is plain fnec: the retired filename steering prints nothing, PAR-011), sandbox paths; a parallel CPU sweep is ordered and byte-identical to a single-thread run (the hybrid lane's re-run is `nec_accel::gpu_test`'s, tested there, FND-215) | DEC-003, CP-012 |
 | `apps/nec-cli/tests/experimental_solver_gate.rs` | 3 | pulse/continuity refused without `--experimental-solver`; with it every text report and JSON record carries the caveat; validated solvers unchanged (FND-080) | NFR-004 |
 | `apps/nec-cli/tests/gain_load_loss.rs` | 3 | FND-200: a lossy load costs gain in free space and over PEC — vs nec2c at two meshes with unloaded controls, a `--loads-config` twin equal to its `LD` card, and the RP A-digit average power gain equal to the efficiency. | FND-200 |
-| `apps/nec-cli/tests/geometry_diagnostics.rs` | 17 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
+| `apps/nec-cli/tests/geometry_diagnostics.rs` | 18 | Fail-fast on crossing wires / tiny source; valid junctions accepted | FR-009, PH2-CHK-006 |
 | `apps/nec-cli/tests/gpu_benchmark_gate.rs` | 1 | Gate G5: the GPU RP far-field kernel ≤1.5× the CPU far-field on the 2701-point grid, in-process with the device initialised once (best-of-N); skips only without a hardware adapter (FND-165) | PH5-CHK-005, PH7-CHK-002 |
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
@@ -158,7 +158,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=801 --> **801** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=802 --> **802** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -169,7 +169,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 272 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 274 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 50 | main, exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -179,11 +179,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=649 --> **649** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=651 --> **651** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1457 --> **1457** = 649 unit + 801 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1460 --> **1460** = 651 unit + 802 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
