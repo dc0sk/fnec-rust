@@ -15,6 +15,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wire ends join where nec2c joins them** (FND-246). Two segment ends within 10⁻³ of
+  the shorter segment's length (by the sum of the coordinate differences, as nec2c
+  measures) are one junction; fnec joined only within 1 µm, so a T whose stem stopped
+  50 µm short of the bar, or a dipole drawn as two halves 50 µm apart, solved open
+  with no warning. Ends that nec2c's rule joins from one side only, and chains of
+  near-misses that never meet at one point, are refused; nec2c aborts or hangs on them.
+
 ### Docs
 
 - **Phase 10 is marked complete** in the roadmap, and PAR-011's backlog entry

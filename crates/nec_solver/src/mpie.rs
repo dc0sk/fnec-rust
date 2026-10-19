@@ -935,11 +935,11 @@ pub fn solve_mpie_free_space(
 }
 
 /// Build an [`MpieGeometry`] from fnec [`Segment`]s, deduplicating shared
-/// endpoints (within `1e-6` m) into graph nodes. `geom.segments` is in the **same
+/// endpoints (within [`crate::hallen_session::JUNCTION_TOL_M`]) into graph nodes. `geom.segments` is in the **same
 /// order** as `segs`, so a current vector from [`segment_currents`] aligns 1:1
 /// with the input segments — the bridge from a parsed NEC deck to the MPIE.
 pub fn geometry_from_segments(segs: &[Segment]) -> MpieGeometry {
-    const TOL: f64 = 1e-6;
+    const TOL: f64 = crate::hallen_session::JUNCTION_TOL_M;
     let mut nodes: Vec<[f64; 3]> = Vec::new();
     let find_or_add = |p: [f64; 3], nodes: &mut Vec<[f64; 3]>| -> usize {
         for (i, q) in nodes.iter().enumerate() {

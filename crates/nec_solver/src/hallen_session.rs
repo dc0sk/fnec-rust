@@ -41,12 +41,17 @@ use crate::planewave::{build_planewave_hallen, build_planewave_hallen_paths};
 use nec_model::card::{Card, ExcitationKind};
 use nec_model::deck::NecDeck;
 
-/// Tolerance for deciding that two wire ends meet, in metres.
+/// Tolerance for deciding that two wire ends meet, in metres: float noise, not
+/// a physical band.
 ///
-/// One name for a number that decides which solver runs, and therefore decides
-/// the physics. It was a bare `1e-6` at twelve call sites with no provenance
-/// anywhere (FND-084). `detect_wire_junctions` now reads it itself and takes
-/// no tolerance, so no call site can pass another (FND-079).
+/// Which ends meet is decided once, when the geometry is built:
+/// [`crate::geometry::NEC_SMIN`]'s relative band, as nec2c joins them, moves every
+/// joined group onto one point (FND-246). After that a junction is exact, and this
+/// only absorbs rounding. It was a bare `1e-6` at twelve call sites with no
+/// provenance anywhere (FND-084), and it was the junction rule itself until
+/// FND-246, so ends 50 µm apart stayed apart where nec2c joins them.
+/// `detect_wire_junctions` reads it itself and takes no tolerance, so no call site
+/// can pass another (FND-079).
 pub const JUNCTION_TOL_M: f64 = 1e-6;
 
 /// How a deck's excitation is driven.

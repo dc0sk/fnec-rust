@@ -94,20 +94,24 @@ pub fn ge_flag(deck: &NecDeck) -> i32 {
         .unwrap_or(0)
 }
 
-/// nec2c's ground-contact tolerance (`SMIN`, nec2c.h): a segment end within this
-/// fraction of its segment's length of z = 0 is on the ground (FND-243). fnec
-/// used an absolute 1 nm, so a base 1 µm up was a free end hanging over the
-/// plane: a λ/4 monopole on `GN 1` read 29.26 − j5497 Ω where nec2c snaps the
-/// end to the ground and reads 39.88 + j23.11.
-pub const GROUND_CONTACT_FRACTION: f64 = 1.0e-3;
+/// nec2c's connection tolerance (`SMIN`, nec2c.h), as a fraction of a segment's
+/// length. One number decides both of nec2c's connections in `conect`: a segment
+/// end within it of z = 0 is on the ground (FND-243), and two segment ends within
+/// it of each other are joined (FND-246, [`snap_junctions`]). fnec used absolute
+/// tolerances for both — 1 nm for the ground, so a base 1 µm up was a free end
+/// hanging over the plane (a λ/4 monopole on `GN 1` read 29.26 − j5497 Ω where
+/// nec2c reads 39.88 + j23.11), and 1 µm for junctions, so two ends 50 µm apart
+/// stayed apart (a split dipole read 18.05 − j3487 Ω where nec2c joins it and
+/// reads 80.17 + j45.80).
+pub const NEC_SMIN: f64 = 1.0e-3;
 
 /// Whether a point at height `z` on a segment of length `len` is on the ground
 /// plane, by nec2c's rule: `|z| <= 1e-3 * len`. Below that band it is buried.
 pub fn on_ground_plane(z: f64, len: f64) -> bool {
-    z.abs() <= GROUND_CONTACT_FRACTION * len
+    z.abs() <= NEC_SMIN * len
 }
 
-/// Snap every segment end within [`GROUND_CONTACT_FRACTION`] of z = 0 onto it,
+/// Snap every segment end within [`NEC_SMIN`] of its length of z = 0 onto it,
 /// as nec2c does under `GE 1` over a ground: there such an end is joined to its
 /// image, and the solvers' contact handling keys on z = 0 exactly. Not applied
 /// under `GE 0` / `-1`, where a deck reaching the ground is refused instead
@@ -422,6 +426,25 @@ pub enum GeometryError {
         length: f64,
         radius: f64,
     },
+    /// Two segment ends `gap` apart (L1) that NEC joins from the longer segment's
+    /// side only: within [`NEC_SMIN`] of its length, not of the shorter one's
+    /// (FND-246). nec2c aborts or hangs on it. `a` and `b` are `(tag, segment)`.
+    OneSidedJunction {
+        a: (u32, u32),
+        b: (u32, u32),
+        gap: f64,
+        band_short: f64,
+        band_long: f64,
+    },
+    /// A chain of near-miss ends, each joined to the next by NEC's rule, whose
+    /// ends `a` and `b` are `gap` apart, past the join distance `band` (FND-246).
+    /// nec2c hangs on it.
+    NonTransitiveJunction {
+        a: (u32, u32),
+        b: (u32, u32),
+        gap: f64,
+        band: f64,
+    },
 }
 
 impl std::fmt::Display for GeometryError {
@@ -487,6 +510,31 @@ impl std::fmt::Display for GeometryError {
                      fewer segments"
                 )
             }
+            GeometryError::OneSidedJunction {
+                a,
+                b,
+                gap,
+                band_short,
+                band_long,
+            } => write!(
+                f,
+                "segment {} of tag {} and segment {} of tag {} end {gap:.3e} m apart (by NEC's \
+                 measure, the sum of the coordinate differences): within 1e-3 of the longer \
+                 segment's length ({band_long:.3e} m) but not of the shorter's \
+                 ({band_short:.3e} m), so NEC joins them from one side only, and nec2c aborts \
+                 or hangs on it. Move the ends onto one point, or more than {band_long:.3e} m \
+                 apart",
+                a.1, a.0, b.1, b.0
+            ),
+            GeometryError::NonTransitiveJunction { a, b, gap, band } => write!(
+                f,
+                "wire ends between segment {} of tag {} and segment {} of tag {} form a chain \
+                 of near-misses: each end is within NEC's join distance (1e-3 of a segment's \
+                 length) of the next, but these two are {gap:.3e} m apart, past {band:.3e} m, \
+                 so the ends do not meet at one point, and nec2c hangs on it. Bring the ends \
+                 to one point",
+                a.1, a.0, b.1, b.0
+            ),
             GeometryError::TagOverflow { card, detail } => write!(
                 f,
                 "{card} card: {detail} leaves the u32 tag-number space (largest \
@@ -947,7 +995,7 @@ pub fn build_conductor_paths(segs: &[Segment]) -> Option<Vec<ConductorPath>> {
         return Some(Vec::new());
     }
 
-    const TOL: f64 = 1e-6; // metres
+    const TOL: f64 = crate::hallen_session::JUNCTION_TOL_M;
 
     // Endpoint identity: 2 per wire. `end = 0` is the wire start (segs[first].start),
     // `end = 1` is the wire end (segs[last].end).
@@ -1164,7 +1212,7 @@ fn has_high_degree_node(segs: &[Segment]) -> bool {
     if w == 0 {
         return false;
     }
-    const TOL: f64 = 1e-6; // metres
+    const TOL: f64 = crate::hallen_session::JUNCTION_TOL_M;
     let ep_point = |wi: usize, end: usize| -> [f64; 3] {
         let (first, last) = wires[wi];
         if end == 0 {
@@ -1305,7 +1353,173 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
     if ge_flag(deck) == 1 && !matches!(ground_model_from_deck(deck), GroundModel::FreeSpace) {
         snap_ground_contacts(&mut segments);
     }
+    // In any environment, and after the ground snap: an end that joins a ground
+    // contact is then already at z = 0 too, so the cluster keeps its contact.
+    snap_junctions(&mut segments)?;
     Ok(segments)
+}
+
+/// Join segment ends as nec2c's `conect` joins them, and move each joined group
+/// onto one point (FND-246).
+///
+/// nec2c joins an end of segment `i` to the first end of another segment within
+/// [`NEC_SMIN`] × `i`'s length, by the sum of the coordinate differences (the L1
+/// distance), and then moves every end of a junction to the group's centroid.
+/// Its band is the searching segment's own, so between a long and a short segment
+/// it can reach from one side only; nec2c then aborts (`SBF - SEGMENT CONNECTION
+/// ERROR`) or hangs, depending on the shape. A chain of near-misses — A within
+/// the band of B, B of C, A not of C — hangs it. The outcomes for two ends `d`
+/// apart are therefore:
+/// - `d <= NEC_SMIN · min(len_i, len_j)`: joined;
+/// - within the longer segment's band only: refused ([`GeometryError::OneSidedJunction`]);
+/// - beyond both: free.
+///
+/// A joined group must be a clique — every pair of its ends joined by that rule —
+/// or it is refused ([`GeometryError::NonTransitiveJunction`]). Each group moves
+/// onto its earliest member (lowest segment, start before end), not nec2c's
+/// centroid: an exactly drawn joint, the usual case, then never moves, and the two
+/// differ by under the band (about 1e-5 of the impedance on a 50 µm gap).
+/// Afterwards every junction is exact to float noise, which is what every
+/// consumer's [`crate::hallen_session::JUNCTION_TOL_M`] comparison relies on.
+fn snap_junctions(segments: &mut [Segment]) -> Result<(), GeometryError> {
+    let n = segments.len();
+    // Point p is end (p % 2) of segment p / 2: 0 the start, 1 the end.
+    let point = |segs: &[Segment], p: usize| {
+        let s = &segs[p / 2];
+        if p % 2 == 0 {
+            s.start
+        } else {
+            s.end
+        }
+    };
+    let l1 =
+        |a: [f64; 3], b: [f64; 3]| (a[0] - b[0]).abs() + (a[1] - b[1]).abs() + (a[2] - b[2]).abs();
+    let max_len = segments.iter().map(|s| s.length).fold(0.0_f64, f64::max);
+    // No band exceeds the cell and the L1 distance bounds each coordinate's
+    // difference, so a partner is always in the point's cell or a neighbour.
+    let cell = NEC_SMIN * max_len;
+    // Zero-length segments are refused upstream; a NaN length is no geometry.
+    if cell.is_nan() || cell <= 0.0 {
+        return Ok(());
+    }
+    let key = |p: [f64; 3]| {
+        [
+            (p[0] / cell).floor() as i64,
+            (p[1] / cell).floor() as i64,
+            (p[2] / cell).floor() as i64,
+        ]
+    };
+    let mut grid: std::collections::HashMap<[i64; 3], Vec<usize>> =
+        std::collections::HashMap::new();
+    for p in 0..2 * n {
+        grid.entry(key(point(segments, p))).or_default().push(p);
+    }
+    let mut parent: Vec<usize> = (0..2 * n).collect();
+    fn root(parent: &mut [usize], mut p: usize) -> usize {
+        while parent[p] != p {
+            parent[p] = parent[parent[p]];
+            p = parent[p];
+        }
+        p
+    }
+    let band = |segs: &[Segment], i: usize, j: usize| {
+        let (a, b) = (segs[i].length, segs[j].length);
+        (NEC_SMIN * a.min(b), NEC_SMIN * a.max(b))
+    };
+    for p in 0..2 * n {
+        let pp = point(segments, p);
+        let k = key(pp);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let Some(cands) = grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) else {
+                        continue;
+                    };
+                    for &q in cands {
+                        let (i, j) = (p / 2, q / 2);
+                        if q <= p || i == j {
+                            continue;
+                        }
+                        let d = l1(pp, point(segments, q));
+                        let (short, long) = band(segments, i, j);
+                        if d <= short {
+                            let (rp, rq) = (root(&mut parent, p), root(&mut parent, q));
+                            parent[rp.max(rq)] = rp.min(rq);
+                        } else if d <= long {
+                            return Err(GeometryError::OneSidedJunction {
+                                a: nec_name(segments, i),
+                                b: nec_name(segments, j),
+                                gap: d,
+                                band_short: short,
+                                band_long: long,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for p in 0..2 * n {
+        let r = root(&mut parent, p);
+        groups.entry(r).or_default().push(p);
+    }
+    let mut moved = vec![false; n];
+    for members in groups.values().filter(|m| m.len() > 1) {
+        // A clique, or refused: report the widest pair the rule does not join.
+        let mut worst: Option<(usize, usize, f64, f64)> = None;
+        for (x, &p) in members.iter().enumerate() {
+            for &q in &members[x + 1..] {
+                let d = l1(point(segments, p), point(segments, q));
+                let short = if p / 2 == q / 2 {
+                    -1.0
+                } else {
+                    band(segments, p / 2, q / 2).0
+                };
+                if d > short && worst.map_or(true, |w| d > w.2) {
+                    worst = Some((p / 2, q / 2, d, short.max(0.0)));
+                }
+            }
+        }
+        if let Some((i, j, gap, short)) = worst {
+            return Err(GeometryError::NonTransitiveJunction {
+                a: nec_name(segments, i),
+                b: nec_name(segments, j),
+                gap,
+                band: short,
+            });
+        }
+        let anchor = point(segments, members[0]);
+        for &p in &members[1..] {
+            if point(segments, p) == anchor {
+                continue;
+            }
+            let s = &mut segments[p / 2];
+            if p % 2 == 0 {
+                s.start = anchor;
+            } else {
+                s.end = anchor;
+            }
+            moved[p / 2] = true;
+        }
+    }
+    for (s, m) in segments.iter_mut().zip(moved) {
+        if m {
+            s.rederive_from_ends();
+        }
+    }
+    Ok(())
+}
+
+/// `(tag, segment number)` for the `i`-th segment as NEC numbers it: the running
+/// occurrence of its tag, which is what [`number`] assigns later.
+fn nec_name(segs: &[Segment], i: usize) -> (u32, u32) {
+    let tag = segs[i].tag;
+    (
+        tag,
+        segs[..=i].iter().filter(|s| s.tag == tag).count() as u32,
+    )
 }
 
 /// Re-number `global_index` in final order, and `tag_index` as NEC counts it: the
@@ -2906,5 +3120,94 @@ mod tests {
         }
         let segs = build_deck_geometry(&deck).unwrap();
         assert!(SegmentOrder::chains(&segs).is_identity());
+    }
+
+    // -----------------------------------------------------------------------
+    // snap_junctions (FND-246). The answers against nec2c are in
+    // apps/nec-cli/tests/junction_band_nec2c.rs; these hold what an impedance at
+    // 1e-4 cannot see.
+
+    /// The T with its stem top 50 µm short of the bar's joint at y = 0.
+    const NEAR_MISS_TEE: &str = "CE\nGW 1 24 0 -3 4 0 3 4 .001\nGW 2 16 0 0 0 0 0 3.99995 .001\n\
+                                 GE 0\nEX 0 2 8 0 1 0\nFR 0 1 0 0 7.0 0\nEN\n";
+
+    /// A moved segment is re-derived from its new ends: a stale midpoint is 25 µm
+    /// off on a 0.25 m segment, about 1e-5 in the impedance, under any Z gate.
+    #[test]
+    fn a_snapped_segment_is_rederived_from_its_ends() {
+        let segs = build_deck_geometry(&parsed(NEAR_MISS_TEE)).unwrap();
+        let top = segs.iter().rfind(|s| s.tag == 2).unwrap();
+        assert_eq!(
+            top.end,
+            [0.0, 0.0, 4.0],
+            "the stem top moves onto the bar's joint"
+        );
+        for s in &segs {
+            let d = [
+                s.end[0] - s.start[0],
+                s.end[1] - s.start[1],
+                s.end[2] - s.start[2],
+            ];
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            assert!((s.length - len).abs() < 1e-15, "{s:?}");
+            for (k, dk) in d.iter().enumerate() {
+                assert!(
+                    (s.midpoint[k] - 0.5 * (s.start[k] + s.end[k])).abs() < 1e-15,
+                    "{s:?}"
+                );
+                assert!((s.direction[k] * len - dk).abs() < 1e-14, "{s:?}");
+            }
+        }
+    }
+
+    /// An exactly drawn deck comes out bitwise as its cards expand: the snap moves
+    /// nothing that already meets (a centroid or "latest member" anchor would).
+    #[test]
+    fn an_exactly_drawn_junction_is_not_moved() {
+        let deck = parsed(&NEAR_MISS_TEE.replace("3.99995", "4"));
+        let mut expanded = Vec::new();
+        for c in &deck.cards {
+            if let Card::Gw(gw) = c {
+                expand_wire(gw, &mut expanded).unwrap();
+            }
+        }
+        assert_eq!(build_unnumbered(&deck).unwrap(), expanded);
+    }
+
+    /// The group moves onto its earliest end: the bar (tag 1) stays where its
+    /// card put it, and the stem's end goes to it.
+    #[test]
+    fn the_earliest_end_anchors_the_group() {
+        let segs = build_deck_geometry(&parsed(NEAR_MISS_TEE)).unwrap();
+        let mut bar = Vec::new();
+        expand_wire(
+            &GwCard {
+                tag: 1,
+                segments: 24,
+                start: [0.0, -3.0, 4.0],
+                end: [0.0, 3.0, 4.0],
+                radius: 0.001,
+            },
+            &mut bar,
+        )
+        .unwrap();
+        for (a, b) in segs.iter().filter(|s| s.tag == 1).zip(&bar) {
+            assert_eq!((a.start, a.end), (b.start, b.end));
+        }
+    }
+
+    /// Two ends within the band on either side of a grid-cell boundary — at
+    /// x = 1 cell and across x = 0, where the floor changes sign — still join: the
+    /// search looks in the neighbouring cells. 1 m segments, so the cell is 1 mm.
+    #[test]
+    fn ends_straddling_a_grid_cell_boundary_join() {
+        for (xa, xb) in [(0.99e-3, 1.01e-3), (-10e-6, 10e-6)] {
+            let deck = parsed(&format!(
+                "CE\nGW 1 1 {xa} 0 -1 {xa} 0 0 .001\nGW 2 1 {xb} 0 0 {xb} 0 1 .001\nGE 0\n\
+                 EX 0 1 1 0 1 0\nFR 0 1 0 0 100 0\nEN\n"
+            ));
+            let segs = build_unnumbered(&deck).unwrap();
+            assert_eq!(segs[1].start, segs[0].end, "{xa} / {xb}");
+        }
     }
 }

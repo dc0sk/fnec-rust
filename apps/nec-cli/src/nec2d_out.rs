@@ -148,7 +148,7 @@ fn connections(segs: &[Segment], ground: bool) -> Vec<(i64, i64)> {
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let s = &segs[i];
-        let slen = s.length * 1e-3;
+        let slen = s.length * nec_solver::geometry::NEC_SMIN;
         let search = |p: [f64; 3], first_end_sign: i64| -> i64 {
             for k in 1..n {
                 let j = (i + k) % n;
