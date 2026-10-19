@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix.md
 status: living
-last_updated: 2026-10-13
+last_updated: 2026-10-19
 ---
 
 # Traceability matrix
@@ -61,14 +61,16 @@ Status legend: ✅ done · 🔨 in progress · 📋 planned.
 | PRT-002 loads/TL/network/source | Phase 2 + PH8-CHK-001..005 | ✅ |
 | PRT-003 sweep/gain/pattern/report | Phase 1–2 | ✅ |
 | PRT-004 GUI/workflow | Phase 3 | ✅ |
-| PRT-005/006 optimization/automation | Phase 3–4 | ✅ |
+| PRT-005 optimization/sweep | Phase 3–4 | ✅ |
+| PRT-006 AutoEZ-class automation | Phase 3–4; convergence-study + matching-network helpers missing (GAP-012, BL-IMPR-017) | 📋 (2 of 4) |
 | PRT-007 geometry/embeddability | Phase 2–4 | ✅ |
 | PRT-008 accuracy breadth | Phase 1–3 corpus | ✅ |
 | PRT-009 NEC-5 surfaces | wire-only decision (`nec5-frontier.md`) | ✅ (decided) |
 | PRT-010 NEC-5 validation matrix | PH2-CHK-007 | ✅ |
 | PRT-011 distributed execution | Phases 6–7 | ✅ |
 | CP-003 deck-portability cards | Phase 8 (EX 0–5, NT, lossy TL) | ✅ |
-| GAP-002..015, BLK-001..005 | see [register](requirements-register.md) | ✅ all resolved |
+| GAP-002..011, GAP-013..015, BLK-001..005 | see [register](requirements-register.md) | ✅ resolved (GAP-006 with a recorded deviation) |
+| GAP-012 AutoEZ-class automation | 2 of 4 classes; see [register](requirements-register.md) | 📋 open |
 
 ---
 
