@@ -177,3 +177,27 @@ fn current_source_two_wire_array_matches_voltage_source() {
         "two-wire current-source Z {z_i} != voltage-source Z {z_v} (rel {rel:.2e})"
     );
 }
+
+/// FND-270: the library's own path-basis current-source solve marks the source
+/// segment as the gap its bend rows must not extrapolate across. The dipole of two
+/// halves, fed beside their node: straight it is one section; bent by 2e-4 rad
+/// the node row read the port 1 % low, against 0.11 % with the gap marked.
+#[test]
+fn a_current_source_beside_a_vanishing_bend_is_the_straight_join() {
+    let z_in = |t: f64| {
+        let (x, zt) = (2.64 * t.sin(), 2.64 * t.cos());
+        let text = format!(
+            "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {zt:.12} .001\nGE 0\n\
+             EX 4 1 10 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+        );
+        let d = nec_parser::parse(&text).expect("parses").deck;
+        let segs = nec_solver::build_geometry(&d).expect("geometry");
+        let z = assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
+        solve_current_source_hallen(&d, &segs, &z, 28.4e6)
+            .expect("solve")
+            .port_voltage
+    };
+    let (straight, bent) = (z_in(0.0), z_in(2e-4));
+    let step = (bent.re - straight.re).abs() / straight.re;
+    assert!(step < 0.002, "{bent} vs straight {straight}: {step:.4}");
+}

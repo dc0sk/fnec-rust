@@ -454,15 +454,19 @@ pub(crate) fn group_paths(
 /// with `sin(k|s − s′|)`, a superposition of delta-gap right-hand sides, smooth
 /// at the node — so the bend rows hold for it as for a feed. Measured: a 90° L's
 /// receive currents went from 122 % off nec2c to 3.6 % at 41 segments per arm.
+///
+/// `gaps` are the segments that carry a gap — a feed, a current source's unit
+/// gap, a network port — where the current's slope jumps (FND-270).
 pub(crate) fn group_sections(
     segs: &[Segment],
     paths: &[ConductorPath],
     freq_hz: f64,
     ground: &crate::GroundModel,
+    gaps: &[usize],
 ) -> PathGrouping {
     let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
     let sources = corner_sources(segs, ground, freq_hz);
-    match section_layout(segs, paths, k, &sources) {
+    match section_layout(segs, paths, k, &sources, gaps) {
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
         None => {
             let (path_of, free_ends) = group_paths(segs, paths);
@@ -591,6 +595,7 @@ fn section_layout(
     paths: &[ConductorPath],
     k: f64,
     sources: &[CornerSource],
+    gaps: &[usize],
 ) -> Option<(Vec<usize>, crate::linear::BendLayout)> {
     let mut group_of = vec![0usize; segs.len()];
     let mut bends = Vec::new();
@@ -695,12 +700,41 @@ fn section_layout(
             let t_a = h(ea) / (h(ea) + h(ia));
             let t_b = h(eb) / (h(eb) + h(ib));
             // Path-frame current is sign·I; extrapolate each side to the node.
-            let continuity = vec![
+            let mut continuity = vec![
                 (p.segs[ea], (1.0 + t_a) * p.signs[ea]),
                 (p.segs[ia], -t_a * p.signs[ia]),
                 (p.segs[eb], -(1.0 + t_b) * p.signs[eb]),
                 (p.segs[ib], t_b * p.signs[ib]),
             ];
+            // A gap on a node-adjacent segment kinks the current at its midpoint,
+            // between that side's two extrapolation points, so the row above
+            // extrapolates across the kink: a 1 % step between a straight join
+            // and a 2e-4 rad bend, the feed beside the node (FND-270). Instead
+            // ask the gap segment's current to equal the other section's
+            // quadratic extrapolation to its midpoint, in path arc length, from
+            // three points on the smooth side; the current is C¹ across the node,
+            // as the potential row already assumes. Linear over 1.5 h carries the
+            // curvature error (~2 %) and is worse than the row above. With a gap
+            // on both sides, or fewer than three segments beyond, keep the row.
+            let gap = |i: usize| gaps.contains(&p.segs[i]);
+            let beyond = match (gap(ea), gap(eb)) {
+                (true, false) if starts[sec + 2] - starts[sec + 1] >= 3 => {
+                    Some((ea, [eb, ib, ib + 1]))
+                }
+                (false, true) if starts[sec + 1] - starts[sec] >= 3 => Some((eb, [ea, ia, ia - 1])),
+                _ => None,
+            };
+            if let Some((f, pts)) = beyond {
+                let x = pts.map(|j| p.s_mid[j] - p.s_mid[f]);
+                continuity = vec![(p.segs[f], p.signs[f])];
+                for (j, &pj) in pts.iter().enumerate() {
+                    let w: f64 = (0..3)
+                        .filter(|&l| l != j)
+                        .map(|l| (0.0 - x[l]) / (x[j] - x[l]))
+                        .product();
+                    continuity.push((p.segs[pj], -w * p.signs[pj]));
+                }
+            }
             let s0 = p.s_mid[ea] + h(ea) / 2.0;
             // Section `sec` referenced at its START node (not this one) carries
             // its corner integral into this potential row; the first section is
@@ -987,7 +1021,8 @@ fn plan_on(
     let paths = nontrivial_paths(segs, ground);
     let grouped = paths
         .as_ref()
-        .map(|ps| group_sections(segs, ps, freq_hz, ground));
+        // No gap: the forcing is the incident field along the whole path.
+        .map(|ps| group_sections(segs, ps, freq_hz, ground, &[]));
     // Off the graph, a loaded receive solves its own matrix with the loads
     // stamped in the form the route that runs derives (FND-122).
     let loaded_z = (graph.is_none() && loads.iter().any(|l| l.norm() > 0.0)).then(|| {
@@ -1474,13 +1509,18 @@ fn solve_hallen_routed_inner(
     }
     crate::stamps::stamp_hallen_load_columns(z_mat, segs, freq_hz, loads, paths.as_deref());
 
-    // Path grouping, built once and shared by every arm below.
-    let grouped = paths
-        .as_ref()
-        .map(|ps| group_sections(segs, ps, freq_hz, &ground));
-
     let (networks, _) =
         crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
+    // Path grouping, built once and shared by every arm below, the networks'
+    // unit-gap port solves included: so every feed and every port is a gap its
+    // node rows must not extrapolate across (FND-270).
+    let gaps: Vec<usize> = crate::excitation::feedpoints(deck)
+        .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
+        .chain(networks.ports())
+        .collect();
+    let grouped = paths
+        .as_ref()
+        .map(|ps| group_sections(segs, ps, freq_hz, &ground, &gaps));
     if !networks.is_empty() && route.drive != HallenDrive::DeltaGap {
         // Refused rather than approximated (FND-123). A plane wave is not a port
         // drive: its responses come from the receive solve, a separate

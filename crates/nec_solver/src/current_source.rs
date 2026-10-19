@@ -155,8 +155,9 @@ pub fn solve_current_source_hallen(
             let (shape, cos_vec, sin_vec, src_seg) =
                 build_current_source_shape_paths(deck, segs, freq_hz, cs.tag, cs.segment, &paths)
                     .map_err(CurrentSourceError::Excitation)?;
+            // The source's own segment is the gap the rows must respect (FND-270).
             let (path_of, free_ends, bends) =
-                crate::hallen_session::group_sections(segs, &paths, freq_hz, &ground);
+                crate::hallen_session::group_sections(segs, &paths, freq_hz, &ground, &[src_seg]);
             let sol = solve_hallen_paths(
                 z_mat, &shape, &cos_vec, &sin_vec, &path_of, &free_ends, &bends,
             )
