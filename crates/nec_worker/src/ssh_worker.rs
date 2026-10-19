@@ -152,16 +152,26 @@ impl SshWorkerHandle {
         let json =
             serde_json::to_string(task).map_err(|e| crate::DispatchError::Task(e.to_string()))?;
 
-        if self.pipe.send(&json).is_err() {
-            eprintln!(
-                "info: ssh worker '{}' write failed, reconnecting...",
-                self.hostname
-            );
-            self.reconnect()?;
-            self.pipe.send(&json)?;
+        // One deadline per attempt: a reconnect starts a fresh one.
+        let mut start = std::time::Instant::now();
+        match self.pipe.send(&json, self.deadline) {
+            Ok(()) => {}
+            // A broken connection is mended by a reconnect; a host that stopped
+            // reading already spent a deadline, and a resend would spend another
+            // (FND-244) — it returns, Unreachable, without one.
+            Err(e) if e.reconnects() => {
+                eprintln!(
+                    "info: ssh worker '{}' write failed, reconnecting...",
+                    self.hostname
+                );
+                self.reconnect()?;
+                start = std::time::Instant::now();
+                self.pipe.send(&json, self.deadline)?;
+            }
+            Err(e) => return Err(e.into()),
         }
 
-        let line = match self.pipe.recv(self.deadline) {
+        let line = match self.pipe.recv_by(start, self.deadline) {
             Ok(line) => line,
             Err(e) => {
                 // Reconnect only for a DROPPED connection. A timeout means the
@@ -178,8 +188,9 @@ impl SshWorkerHandle {
                     self.hostname
                 );
                 self.reconnect()?;
-                self.pipe.send(&json)?;
-                match self.pipe.recv(self.deadline) {
+                let start = std::time::Instant::now();
+                self.pipe.send(&json, self.deadline)?;
+                match self.pipe.recv_by(start, self.deadline) {
                     Ok(line) => line,
                     Err(e) => return Err(self.who_closed_it(e)),
                 }

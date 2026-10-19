@@ -146,3 +146,64 @@ fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
          dead ones: {out:?}"
     );
 }
+
+/// FND-244: a worker that stops READING is the never-delivered case too. The
+/// first two stubs this script spawns never read stdin, and the task line is
+/// padded past the pipe buffer, so its write cannot complete on them: the write
+/// times out, which is `Unreachable` — the task was never delivered, so it is not
+/// blamed and walks on to the third worker, which answers. Classified as a worker
+/// that died holding the task, it would spend both strikes on the two and fail
+/// with "has now killed 2 workers".
+#[cfg(unix)]
+#[test]
+fn a_task_whose_write_stalls_is_not_blamed_for_it() {
+    let stub = poison_stub();
+    let wedging = stub.with_file_name("wedging-worker.sh");
+    // The third answers with awk, which reads a 2 MiB line at once where the
+    // shell's `read` takes it a byte at a time; `-W interactive` because mawk
+    // otherwise waits to fill its input buffer before acting on a line (gawk
+    // ignores the flag).
+    let answer = stub.with_file_name("answer.awk");
+    std::fs::write(
+        &answer,
+        r#"/shutdown/ { exit }
+{ print "{\"status\":\"ok\",\"task_id\":\"t\",\"frequency_hz\":1.0,\"impedance\":{\"re_ohm\":50.0,\"im_ohm\":0.0},\"vswr_50\":1.0,\"feedpoint_current_mag\":1.0,\"feedpoint_current_phase_deg\":0.0,\"mesh\":\"free-end-thirds\"}"; fflush() }
+"#,
+    )
+    .expect("write awk responder");
+    {
+        let mut f = std::fs::File::create(&wedging).expect("create wedging stub");
+        writeln!(
+            f,
+            "#!/bin/sh\n\
+             mkdir \"$0.w1\" 2>/dev/null && exec sleep 300\n\
+             mkdir \"$0.w2\" 2>/dev/null && exec sleep 300\n\
+             exec awk -W interactive -f \"{}\"",
+            answer.display()
+        )
+        .expect("write wedging stub");
+        f.sync_all().expect("sync");
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(0o755))
+            .expect("chmod");
+    }
+    let mut pool = spawn_pool_retrying(3, wedging.to_str().expect("path"));
+    // Long enough that the live worker takes 2 MiB on a loaded host (0.5 s
+    // failed under the pre-push suite's parallel load); each worker that stopped
+    // reading costs one deadline.
+    pool.set_deadline(std::time::Duration::from_secs(5));
+    // Past the 64 KiB default pipe buffer and the 1 MiB most a child can raise
+    // it to, under the worker's own 4 MiB line limit.
+    let mut big = task("healthy-long");
+    big.deck_b64 = "Q".repeat(2 * 1024 * 1024);
+    let out = pool.dispatch(&big);
+    let remaining = pool.len();
+    pool.shutdown_all();
+    let _ = std::fs::remove_dir_all(stub.parent().expect("dir"));
+
+    assert!(
+        out.is_ok(),
+        "a task never delivered must not be blamed for the workers that stopped reading: {out:?}"
+    );
+    assert_eq!(remaining, 1, "the two that stopped reading are evicted");
+}

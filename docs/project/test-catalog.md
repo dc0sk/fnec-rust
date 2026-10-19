@@ -99,7 +99,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/worker_infinite_vswr.rs` | 2 | FND-117 — one unusable result must not destroy the worker pool. | FND-117 |
 | `apps/nec-cli/tests/worker_integration.rs` | 10 | Hosts config, capability cache, subprocess round-trip | PH6-CHK-006/007 |
 | `apps/nec-cli/tests/worker_mesh.rs` | 2 | FND-227 — a worker on another mesh is refused, not blended into a sweep: a stand-in for a pre-refinement fnec (no `mesh` in its result) fails its task with the reason and stays in the pool; this build's own worker answers. | FND-227 |
-| `apps/nec-cli/tests/worker_poison_budget.rs` | 2 | FND-102 — one task that kills workers must not kill the pool. | FND-102 |
+| `apps/nec-cli/tests/worker_poison_budget.rs` | 3 | FND-102 — one task that kills workers must not kill the pool; FND-244 — a task whose write stalls on workers that stopped reading is not blamed for them, and reaches a live one. | FND-102, FND-244 |
 | `apps/nec-cli/tests/worker_task_fault.rs` | 1 | FND-117 — a task fault must not evict the worker that reported it. | FND-117 |
 | `apps/nec-gui/tests/gui_smoke.rs` | 135 | Headless GUI state machine + solve pipeline; run-identity guards; editor save binding (FND-103) | PRT-004, PH3-CHK-009/010/011 |
 | `crates/nec_accel/tests/gpu_hallen_solve.rs` | 1 | Gate G7: GPU Z-fill + CPU Hallén solve end-to-end | PH5-CHK-007 |
@@ -158,7 +158,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=802 --> **802** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=803 --> **803** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -170,7 +170,7 @@ functions across the `tests/` binaries listed above.
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
 | `nec_solver` | 274 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
-| `nec_worker` | 94 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
+| `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 50 | main, exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 40 | lib (incl. the FND-236 card treatments, FND-237 comma fields and the PAR-011 program-card records), template |
@@ -179,11 +179,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=651 --> **651** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=655 --> **655** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1460 --> **1460** = 651 unit + 802 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1465 --> **1465** = 655 unit + 803 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
