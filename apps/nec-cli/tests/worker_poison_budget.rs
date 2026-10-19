@@ -148,12 +148,20 @@ fn a_healthy_task_still_gets_past_workers_that_were_never_reachable() {
 }
 
 /// FND-244: a worker that stops READING is the never-delivered case too. The
-/// first two stubs this script spawns never read stdin, and the task line is
-/// padded past the pipe buffer, so its write cannot complete on them: the write
-/// times out, which is `Unreachable` — the task was never delivered, so it is not
-/// blamed and walks on to the third worker, which answers. Classified as a worker
-/// that died holding the task, it would spend both strikes on the two and fail
-/// with "has now killed 2 workers".
+/// first two workers the task reaches stop reading after one byte, and the task
+/// line is padded past the pipe buffer, so its write cannot complete on them: the
+/// write times out, which is `Unreachable` — the task was never delivered, so it is
+/// not blamed and walks on to the third worker, which answers. Classified as a
+/// worker that died holding the task, it would spend both strikes on the two and
+/// fail with "has now killed 2 workers".
+///
+/// The roles are taken when the task ARRIVES, not at spawn (FND-275). Taken at
+/// spawn, by a `mkdir` race, they failed 11 runs in 20: the pool tries workers in
+/// spawn order but the processes start in any order, so the answering worker was
+/// often second; and uutils' `mkdir` (this host's) lets two racers both succeed,
+/// so 2 of 3 took one marker and none answered. The pool writes to one worker at
+/// a time, so the first byte reaches them in dispatch order, and the shell's own
+/// `set -C` exclusive create hands out the two wedge tickets.
 #[cfg(unix)]
 #[test]
 fn a_task_whose_write_stalls_is_not_blamed_for_it() {
@@ -176,8 +184,9 @@ fn a_task_whose_write_stalls_is_not_blamed_for_it() {
         writeln!(
             f,
             "#!/bin/sh\n\
-             mkdir \"$0.w1\" 2>/dev/null && exec sleep 300\n\
-             mkdir \"$0.w2\" 2>/dev/null && exec sleep 300\n\
+             dd bs=1 count=1 of=/dev/null 2>/dev/null\n\
+             (set -C; : > \"$0.t1\") 2>/dev/null && exec sleep 300\n\
+             (set -C; : > \"$0.t2\") 2>/dev/null && exec sleep 300\n\
              exec awk -W interactive -f \"{}\"",
             answer.display()
         )
