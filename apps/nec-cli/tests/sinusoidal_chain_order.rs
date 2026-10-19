@@ -160,37 +160,135 @@ fn the_chain_ordered_answer_agrees_with_hallen() {
 }
 
 /// The refusal still holds where the plain basis has nothing to solve, in any
-/// order: a T junction, and a chain with its middle wire written backwards (a
-/// reversed split, which only the conductor-path basis solves).
+/// order: a T junction.
 #[test]
-fn a_scrambled_junction_or_reversed_split_is_still_refused() {
+fn a_scrambled_junction_is_still_refused() {
     const REFUSAL: &str = "solves straight wires and collinear chains only";
     let tee = [
         "GW 1 11 0 0 0 0 0 2 0.001",
         "GW 2 7 -1.5 0 2 0 0 2 0.001",
         "GW 3 7 0 0 2 1.5 0 2 0.001",
     ];
+    let tail = "GE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    for order in ORDERS {
+        let (ok, _, err) = run("sinusoidal", &deck(&tee, &order, tail));
+        assert!(!ok && err.contains(REFUSAL), "tee {order:?}:\n{err}");
+        // The control: the same deck is solvable, so the refusal is about the
+        // basis, not a broken deck.
+        let (ok_h, _, err_h) = run("hallen", &deck(&tee, &order, tail));
+        assert!(ok_h, "tee {order:?} on hallen:\n{err_h}");
+    }
+}
+
+/// One CURRENTS row as (re, im).
+fn current(stdout: &str, tag: u32, seg: u32) -> (f64, f64) {
+    let rows = currents(stdout);
+    let (_, line) = rows
+        .iter()
+        .find(|(k, _)| *k == (tag, seg))
+        .unwrap_or_else(|| panic!("no current row for {tag}/{seg}:\n{stdout}"));
+    let f: Vec<f64> = line
+        .split_whitespace()
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    (f[2], f[3])
+}
+
+fn close(a: (f64, f64), b: (f64, f64), scale: f64) -> bool {
+    (a.0 - b.0).hypot(a.1 - b.1) <= 1e-9 * scale
+}
+
+/// FND-249: a chain with its middle wire written backwards — a start-to-start
+/// split — solves on the sinusoidal basis in any order. The arm flips the reversed
+/// wire into the walk's direction, so it is the same antenna as the forward chain,
+/// fed and loaded at the same points. The gap sits ON the reversed wire and drives
+/// current along that wire's own direction, the other way from the forward deck's:
+/// the feedpoint is equal, the reversed wire's currents — each reported in its own
+/// start→end sense, as nec2c prints it, and as the Hallén path solve reports this
+/// deck — equal the forward ones, and the other wires' are negated. A source not
+/// negated for the flip, or currents not negated back, flips Z's sign.
+#[test]
+fn a_reversed_split_solves_as_the_forward_chain() {
     let reversed = [
         SPLIT_DIPOLE[0],
         "GW 2 9 0 0 0.9 0 0 -0.7 0.001",
         SPLIT_DIPOLE[2],
     ];
-    let cases: [(&str, &[&str; 3], &str); 2] = [
-        ("tee", &tee, "GE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n"),
-        (
-            "reversed split",
-            &reversed,
-            "GE 0\nEX 0 2 4 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n",
-        ),
-    ];
-    for (name, wires, tail) in cases {
-        for order in ORDERS {
-            let (ok, _, err) = run("sinusoidal", &deck(wires, &order, tail));
-            assert!(!ok && err.contains(REFUSAL), "{name} {order:?}:\n{err}");
-            // The control: the same deck is solvable, so the refusal is about the
-            // basis, not a broken deck.
-            let (ok_h, _, err_h) = run("hallen", &deck(wires, &order, tail));
-            assert!(ok_h, "{name} {order:?} on hallen:\n{err_h}");
+    // Reversed segment k of tag 2 is forward segment 10 − k: the feed at 4 is at 6.
+    let rev_tail = LOADED_TAIL;
+    let fwd_tail = LOADED_TAIL.replace("EX 0 2 4", "EX 0 2 6");
+    let (ok_f, out_f, err_f) = run("sinusoidal", &deck(&SPLIT_DIPOLE, &[0, 1, 2], &fwd_tail));
+    assert!(ok_f, "forward:\n{err_f}");
+    let z_f = z_at(&out_f, 2, 6);
+    for order in ORDERS {
+        let (ok, out, err) = run("sinusoidal", &deck(&reversed, &order, rev_tail));
+        assert!(ok, "reversed {order:?}:\n{err}");
+        assert_eq!(diag_field(&err, "route"), "plain", "{order:?}");
+        let scale = z_f.0.hypot(z_f.1);
+        let z = z_at(&out, 2, 4);
+        assert!(close(z, z_f, scale), "{order:?}: {z:?} vs forward {z_f:?}");
+        let peak = current(&out_f, 2, 5).0.hypot(current(&out_f, 2, 5).1);
+        for k in 1..=9 {
+            let (r, f) = (current(&out, 2, k), current(&out_f, 2, 10 - k));
+            assert!(close(r, f, peak), "{order:?} tag 2 seg {k}: {r:?} vs {f:?}");
+        }
+        for (tag, n) in [(1, 7), (3, 5)] {
+            for k in 1..=n {
+                let (r, f) = (current(&out, tag, k), current(&out_f, tag, k));
+                assert!(
+                    close(r, (-f.0, -f.1), peak),
+                    "{order:?} tag {tag} seg {k}: {r:?} vs -{f:?}"
+                );
+            }
         }
     }
+}
+
+/// FND-249: the dipole `GX` writes — one half, and its mirror as a second wire
+/// meeting it start-to-start — is the one-wire dipole on the sinusoidal basis,
+/// current for current. Here the feed is on the half that keeps its frame (the
+/// first written), so only the reflected half's currents show whether they were
+/// negated back: the mirror (tag 3, `GX` adds 2) segment k is the one-wire dipole's
+/// segment 11 − k, negated.
+#[test]
+fn a_gx_dipole_is_the_one_wire_dipole() {
+    let gx =
+        "CE\nGW 1 10 0 0 0 0 0 2.64 .001\nGX 2 001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n";
+    let one = "CE\nGW 1 20 0 0 -2.64 0 0 2.64 .001\nGE 0\nEX 0 1 11 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n";
+    let (ok_g, out_g, err_g) = run("sinusoidal", gx);
+    let (ok_o, out_o, err_o) = run("sinusoidal", one);
+    assert!(ok_g && ok_o, "{err_g}\n{err_o}");
+    let (z_g, z_o) = (z_at(&out_g, 1, 1), z_at(&out_o, 1, 11));
+    assert!(close(z_g, z_o, z_o.0.hypot(z_o.1)), "{z_g:?} vs {z_o:?}");
+    let peak = current(&out_o, 1, 11).0.hypot(current(&out_o, 1, 11).1);
+    for k in 1..=10 {
+        let (a, b) = (current(&out_g, 1, k), current(&out_o, 1, 10 + k));
+        assert!(close(a, b, peak), "tag 1 seg {k}: {a:?} vs {b:?}");
+        let (a, b) = (current(&out_g, 3, k), current(&out_o, 1, 11 - k));
+        assert!(
+            close(a, (-b.0, -b.1), peak),
+            "tag 3 seg {k}: {a:?} vs -{b:?}"
+        );
+    }
+}
+
+/// FND-249, the arm's pulse fallback (a wire one segment long): the gap voltage
+/// enters it signed for the flip too, so a reversed one-segment middle wire fed on
+/// itself answers as the forward chain does. This pins the frame, not the answer:
+/// the fallback's answer is itself wrong (−75.96 + j1.41 Ω against nec2c's
+/// 78.81 + j40.99, FND-273), and this test is re-pointed when that is resolved.
+#[test]
+fn the_pulse_fallback_takes_the_flipped_source_signed() {
+    let wires = |mid: &str| {
+        format!(
+            "CE\nGW 1 4 0 0 -2.5 0 0 -0.3 0.001\n{mid}\nGW 3 4 0 0 0.3 0 0 2.5 0.001\n\
+             GE 0\nEX 0 2 1 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n"
+        )
+    };
+    let (ok_f, out_f, err_f) = run("sinusoidal", &wires("GW 2 1 0 0 -0.3 0 0 0.3 0.001"));
+    let (ok_r, out_r, err_r) = run("sinusoidal", &wires("GW 2 1 0 0 0.3 0 0 -0.3 0.001"));
+    assert!(ok_f && ok_r, "{err_f}\n{err_r}");
+    assert!(err_r.contains("falling back to pulse"), "{err_r}");
+    let (f, r) = (z_at(&out_f, 2, 1), z_at(&out_r, 2, 1));
+    assert!(close(r, f, f.0.hypot(f.1)), "{r:?} vs forward {f:?}");
 }

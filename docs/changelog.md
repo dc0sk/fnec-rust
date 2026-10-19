@@ -27,6 +27,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver sinusoidal` solves a dipole written start-to-start** (FND-249): the
+  `GX` spelling, a half and its mirror, and any chain with a wire written backwards.
+  The wire is turned end for end inside the solve, and its currents are reported in
+  its own sense, as nec2c and `--solver hallen` report them; it was refused as a
+  junction.
 - **Wire ends join where nec2c joins them** (FND-246). Two segment ends within 10⁻³ of
   the shorter segment's length (by the sum of the coordinate differences, as nec2c
   measures) are one junction; fnec joined only within 1 µm, so a T whose stem stopped

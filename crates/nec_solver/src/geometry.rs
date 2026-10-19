@@ -943,15 +943,24 @@ impl ConductorPath {
 /// WHOLE solve, from assembly on, runs on [`SegmentOrder::segments`].
 ///
 /// The order is read from [`build_conductor_paths`], so the rule for what joins
-/// is that walk's, not a third copy. A chain walked from its far end is reversed
-/// back to forward; a chain with a wire written backwards stays in deck order
-/// (it is a reversed split, which only the path basis solves). It is the identity
-/// whenever every chain is already contiguous and forward, so a deck that solved
-/// before is solved on the same indices.
+/// is that walk's, not a third copy. Each chain is put in walk order, walked so
+/// that its lowest deck segment runs forward, and every segment the walk crosses
+/// against its own direction is FLIPPED (FND-249): a dipole written as two halves
+/// meeting start-to-start — the natural `GX` spelling — becomes one forward chain
+/// the plain basis welds. A flip turns the segment end for end, which negates the
+/// sign of everything measured along it: a source voltage entering the solve goes
+/// in through [`SegmentOrder::flips_source`], and the currents come back through
+/// [`SegmentOrder::restore_currents`], so the report keeps each segment's own
+/// start→end sense, as nec2c prints it. Loads and radii carry no sign. It is the
+/// identity whenever every chain is already contiguous and forward, so a deck that
+/// solved before is solved on the same indices.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentOrder {
     /// `order[i]` is the deck index of solve index `i`; `None` is the identity.
     order: Option<Vec<usize>>,
+    /// `flip[i]`: solve segment `i` runs against its deck direction. Empty when
+    /// nothing is flipped.
+    flip: Vec<bool>,
 }
 
 impl SegmentOrder {
@@ -959,31 +968,92 @@ impl SegmentOrder {
     pub fn chains(segs: &[Segment]) -> Self {
         let Some(paths) = build_conductor_paths(segs) else {
             // A junction or loop: no plain-basis chain to restore.
-            return Self { order: None };
+            return Self::default();
         };
-        let mut chains: Vec<Vec<usize>> = paths
+        // Each chain as (deck index, flipped) in walk order, walked so that its
+        // lowest deck segment is crossed forward: deterministic, and on `GW` + `GX`
+        // it keeps the first-written (usually fed) wire in its own frame.
+        let mut chains: Vec<Vec<(usize, bool)>> = paths
             .into_iter()
             .map(|p| {
-                let mut c = p.segs;
-                if p.signs.iter().all(|&s| s < 0.0) {
+                let mut c: Vec<(usize, bool)> = p
+                    .segs
+                    .iter()
+                    .zip(&p.signs)
+                    .map(|(&i, &s)| (i, s < 0.0))
+                    .collect();
+                let lowest = c.iter().min_by_key(|e| e.0).map(|e| e.1);
+                if lowest == Some(true) {
                     c.reverse();
-                } else if p.signs.iter().any(|&s| s < 0.0) {
-                    c.sort_unstable();
+                    for e in &mut c {
+                        e.1 = !e.1;
+                    }
                 }
                 c
             })
             .collect();
-        chains.sort_by_key(|c| c.iter().copied().min());
-        let order: Vec<usize> = chains.into_iter().flatten().collect();
+        chains.sort_by_key(|c| c.iter().map(|e| e.0).min());
+        let (order, flip): (Vec<usize>, Vec<bool>) = chains.into_iter().flatten().unzip();
         let mut seen = vec![false; segs.len()];
         let is_permutation = order.len() == segs.len()
             && order
                 .iter()
                 .all(|&i| i < seen.len() && !std::mem::replace(&mut seen[i], true));
-        let identity = order.iter().enumerate().all(|(i, &o)| i == o);
-        Self {
-            order: (is_permutation && !identity).then_some(order),
+        if !is_permutation {
+            return Self::default();
         }
+        let identity = order.iter().enumerate().all(|(i, &o)| i == o);
+        let flip = if flip.iter().any(|&f| f) {
+            flip
+        } else {
+            Vec::new()
+        };
+        Self {
+            order: (!identity || !flip.is_empty()).then_some(order),
+            flip,
+        }
+    }
+
+    /// Whether solve segment `i` is flipped against its deck direction.
+    pub fn is_flipped(&self, i: usize) -> bool {
+        self.flip.get(i).copied().unwrap_or(false)
+    }
+
+    /// A source on solve segment `i`, as the flipped frame sees it: a gap voltage
+    /// drives current along the segment's own direction, so a flipped segment
+    /// takes it negated.
+    pub fn flips_source(&self, i: usize, v: num_complex::Complex64) -> num_complex::Complex64 {
+        if self.is_flipped(i) {
+            -v
+        } else {
+            v
+        }
+    }
+
+    /// A deck-ordered per-segment SIGNED quantity (a gap-voltage vector) in solve
+    /// order and frame.
+    pub fn apply_signed(
+        &self,
+        deck_ordered: &[num_complex::Complex64],
+    ) -> Vec<num_complex::Complex64> {
+        let mut out = self.apply(deck_ordered);
+        for (i, v) in out.iter_mut().enumerate() {
+            *v = self.flips_source(i, *v);
+        }
+        out
+    }
+
+    /// Solve-ordered currents back in deck order and each segment's own sense.
+    pub fn restore_currents(
+        &self,
+        solve_ordered: &[num_complex::Complex64],
+    ) -> Vec<num_complex::Complex64> {
+        let unflipped: Vec<num_complex::Complex64> = solve_ordered
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| self.flips_source(i, c))
+            .collect();
+        self.restore(&unflipped)
     }
 
     /// Whether solve order is deck order.
@@ -1013,11 +1083,16 @@ impl SegmentOrder {
         }
     }
 
-    /// The segments in solve order, each `global_index` its new position.
+    /// The segments in solve order, each `global_index` its new position and each
+    /// flipped one turned end for end (midpoint and length unchanged).
     pub fn segments(&self, segs: &[Segment]) -> Vec<Segment> {
         let mut out = self.apply(segs);
         for (i, s) in out.iter_mut().enumerate() {
             s.global_index = i;
+            if self.is_flipped(i) {
+                std::mem::swap(&mut s.start, &mut s.end);
+                s.direction = [-s.direction[0], -s.direction[1], -s.direction[2]];
+            }
         }
         out
     }
@@ -3218,6 +3293,72 @@ mod tests {
         }
         let segs = build_deck_geometry(&deck).unwrap();
         assert!(SegmentOrder::chains(&segs).is_identity());
+    }
+
+    /// FND-249: a chain with a wire written backwards (a start-to-start split) is
+    /// one forward conductor once that wire is flipped, and only it: the chain is
+    /// walked so its lowest deck segment runs forward. A flip negates what is
+    /// measured along the segment, and nothing else.
+    #[test]
+    fn segment_order_flips_a_reversed_wire_and_only_it() {
+        let mut deck = NecDeck::new();
+        for (tag, segments, z0, z1) in [(1, 4, -1.0, 0.0), (2, 3, 0.5, 0.0), (3, 5, 0.5, 1.5)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments,
+                start: [0.0, 0.0, z0],
+                end: [0.0, 0.0, z1],
+                radius: 0.001,
+            }));
+        }
+        let segs = build_deck_geometry(&deck).unwrap();
+        let so = SegmentOrder::chains(&segs);
+        let solved = so.segments(&segs);
+        assert_eq!(merge_collinear_wire_endpoints(&solved), vec![(0, 11)]);
+        assert!(solved.iter().all(|s| s.direction == [0.0, 0.0, 1.0]));
+        let flipped: Vec<u32> = (0..12)
+            .filter(|&i| so.is_flipped(i))
+            .map(|i| solved[i].tag)
+            .collect();
+        assert_eq!(flipped, vec![2, 2, 2], "exactly the reversed wire");
+        for (s, d) in solved.iter().zip(so.apply(&segs)) {
+            assert_eq!((s.midpoint, s.length), (d.midpoint, d.length));
+        }
+        // Signed quantities come back in their own sense; unsigned ones as they were.
+        let v: Vec<num_complex::Complex64> = (0..12)
+            .map(|i| num_complex::Complex64::new(i as f64 + 1.0, 0.5))
+            .collect();
+        assert_eq!(so.restore_currents(&so.apply_signed(&v)), v);
+        let in_solve = so.apply_signed(&v);
+        for (i, (s, d)) in in_solve.iter().zip(so.apply(&v)).enumerate() {
+            assert_eq!(*s, if so.is_flipped(i) { -d } else { d });
+        }
+
+        // The `GX` shape: a half and its mirror meeting start-to-start. The walk
+        // starts at the first wire's far end, so it crosses that wire backwards;
+        // the orientation rule turns the walk round, and the mirror is flipped.
+        let mut deck = NecDeck::new();
+        for (tag, z1) in [(1, 1.0), (2, -1.0)] {
+            deck.cards.push(Card::Gw(GwCard {
+                tag,
+                segments: 3,
+                start: [0.0, 0.0, 0.0],
+                end: [0.0, 0.0, z1],
+                radius: 0.001,
+            }));
+        }
+        let segs = build_deck_geometry(&deck).unwrap();
+        let so = SegmentOrder::chains(&segs);
+        let solved = so.segments(&segs);
+        let flipped: Vec<u32> = (0..6)
+            .filter(|&i| so.is_flipped(i))
+            .map(|i| solved[i].tag)
+            .collect();
+        assert_eq!(
+            flipped,
+            vec![2, 2, 2],
+            "the mirror, not the first-written half"
+        );
     }
 
     // -----------------------------------------------------------------------

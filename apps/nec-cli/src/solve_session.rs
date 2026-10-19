@@ -1441,15 +1441,24 @@ pub(super) fn solve_frequency_point(
                 eprintln!(
                     "warning: sinusoidal solver requires >=2 segments per wire; falling back to pulse"
                 );
-                let i = solve(&z_mat, &sin_order.apply(&v_vec_pulse)).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &sin_order.apply(&v_vec_pulse));
+                let v_solve = sin_order.apply_signed(&v_vec_pulse);
+                let i = solve(&z_mat, &v_solve).map_err(|e| e.to_string())?;
+                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_solve);
                 (i, a, r, "sinusoidal->pulse")
             } else {
                 // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
                 // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
                 // sinusoidal expansion functions and pulse testing (projection).
+                // Each source signed for the flipped frame (FND-249); the deck's own
+                // `V` still drives the feedpoint readout, against restored currents.
+                let sources: Vec<(usize, Complex64)> =
+                    nec_solver::delta_gap_sources(deck, &sin_segs)
+                        .map_err(|e| e.to_string())?
+                        .into_iter()
+                        .map(|(i, v)| (i, sin_order.flips_source(i, v)))
+                        .collect();
                 let hallen_rhs =
-                    build_hallen_rhs(deck, &sin_segs, freq_hz).map_err(|e| e.to_string())?;
+                    nec_solver::build_hallen_rhs_from_sources(&sin_segs, freq_hz, &sources);
                 // The Hallén arm's grouping, not the raw wires: it decides which
                 // conductors take the sin homogeneous term, and a collinear split
                 // must be one conductor on every `--solver` (FND-158).
@@ -1501,7 +1510,7 @@ pub(super) fn solve_frequency_point(
                     (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
                 }
             };
-            (sin_order.restore(&i), a, r, label)
+            (sin_order.restore_currents(&i), a, r, label)
         }
         SolverMode::Mpie => {
             // One mapping for every variant: the special-cased `NoVoltageSource`
