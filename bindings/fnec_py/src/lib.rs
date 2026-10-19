@@ -90,7 +90,8 @@ fn solve_structure(
     freq_hz: f64,
     solver: nec_solver::validate::SolverKind,
 ) -> Result<SolvedStructure, String> {
-    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.with_mpie_remedy(PY_MPIE_REMEDY))?;
+    let segs =
+        nec_solver::geometry_for(deck, solver).map_err(|e| e.with_mpie_remedy(PY_MPIE_REMEDY))?;
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
     }
@@ -412,8 +413,9 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     // One line for the whole sweep. The cause is a property of the geometry,
     // fixed across the run, so repeating it per point restated a `z_re` the
     // record already carries.
-    let segs = nec_solver::geometry_for(&result.deck, solver)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.with_mpie_remedy(PY_MPIE_REMEDY)))?;
+    let segs = nec_solver::geometry_for(&result.deck, solver).map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(e.with_mpie_remedy(PY_MPIE_REMEDY))
+    })?;
     if let Some(w) = nec_solver::validate::swept_negative_resistance_caveat(
         &z_res,
         &result.deck,
