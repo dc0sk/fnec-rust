@@ -696,7 +696,8 @@ fn main() -> ExitCode {
     };
     // ------------------------------------------------------------------
 
-    // Per-wire basis solve requires every wire to have >= 2 segments.
+    // The experimental continuity basis needs >= 2 segments on every deck wire;
+    // the sinusoidal arm judges its own merged conductors instead (FND-273).
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 

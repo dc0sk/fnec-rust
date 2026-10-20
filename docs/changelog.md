@@ -27,6 +27,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver sinusoidal` solves a chain with a one-segment wire on its own
+  basis** (FND-273). It judged "two segments per wire" on the deck's `GW` cards,
+  not on the merged conductor it solves, and fell back to the experimental pulse
+  basis: a 4 + 1 + 4 dipole read −75.96 + j1.41 Ω against nec2c's
+  78.81 + j40.99, with exit 0. The pulse fallback is gone from this solver.
+
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
   far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No

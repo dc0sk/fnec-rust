@@ -1437,15 +1437,7 @@ pub(super) fn solve_frequency_point(
             }
         }
         SolverMode::Sinusoidal => {
-            let (i, a, r, label) = if !per_wire_basis_feasible {
-                eprintln!(
-                    "warning: sinusoidal solver requires >=2 segments per wire; falling back to pulse"
-                );
-                let v_solve = sin_order.apply_signed(&v_vec_pulse);
-                let i = solve(&z_mat, &v_solve).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_solve);
-                (i, a, r, "sinusoidal->pulse")
-            } else {
+            let (i, a, r, label) = {
                 // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
                 // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
                 // sinusoidal expansion functions and pulse testing (projection).
@@ -1464,6 +1456,20 @@ pub(super) fn solve_frequency_point(
                 // must be one conductor on every `--solver` (FND-158).
                 let (sin_endpoints, junction_tuples) = nec_solver::merged_grouping(&sin_segs);
                 let wire_endpoints = &sin_endpoints[..];
+                // The basis needs two segments on every conductor it solves, and
+                // the conductors are this merged grouping, not the deck's wires: a
+                // one-segment wire inside a collinear chain is part of a longer
+                // conductor. Judged per wire, that deck fell back to the
+                // experimental pulse basis and answered -75.957 + j1.406 where
+                // nec2c reads 78.806 + j40.991 (FND-273). Refinement, FND-203's
+                // routing refusal and the ground checks leave no deck with a
+                // one-segment conductor here; if one ever arrives it is a bug,
+                // not the user's deck.
+                if wire_endpoints.iter().any(|&(first, last)| last <= first) {
+                    return Err("internal: a one-segment conductor reached the sinusoidal \
+                                basis (FND-273)"
+                        .to_string());
+                }
                 let sol = solve_hallen_sinusoidal_basis(
                     &z_mat,
                     &hallen_rhs.rhs,
