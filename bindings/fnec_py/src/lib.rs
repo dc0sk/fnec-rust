@@ -37,6 +37,9 @@ fn frequencies_from_deck(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     nec_solver::frequencies_hz(deck)
 }
 
+/// How a Python caller reaches the MPIE: the bindings' own solver argument.
+const PY_MPIE_REMEDY: &str = "pass solver=\"mpie\"";
+
 /// The solver context these bindings run under.
 ///
 /// Hallén-only for now — `fnec_py` exposes no solver choice, so a diagnostic that
@@ -50,7 +53,7 @@ fn py_solver_context(
         kind,
         // The bindings have a solver argument now, so the remedy names it rather
         // than pointing a Python caller at a different program (FND-055).
-        mpie_remedy: "pass solver=\"mpie\"",
+        mpie_remedy: PY_MPIE_REMEDY,
         // The bindings have no Sommerfeld option, so their caveats name none (FND-217).
         sommerfeld_remedy: None,
         // The bindings' loads are the deck's own; the negative-resistance sites
@@ -87,7 +90,8 @@ fn solve_structure(
     freq_hz: f64,
     solver: nec_solver::validate::SolverKind,
 ) -> Result<SolvedStructure, String> {
-    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
+    let segs =
+        nec_solver::geometry_for(deck, solver).map_err(|e| e.with_mpie_remedy(PY_MPIE_REMEDY))?;
     if segs.is_empty() {
         return Err("deck has no geometry (no GW cards)".to_string());
     }
@@ -409,8 +413,9 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     // One line for the whole sweep. The cause is a property of the geometry,
     // fixed across the run, so repeating it per point restated a `z_re` the
     // record already carries.
-    let segs = nec_solver::geometry_for(&result.deck, solver)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    let segs = nec_solver::geometry_for(&result.deck, solver).map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(e.with_mpie_remedy(PY_MPIE_REMEDY))
+    })?;
     if let Some(w) = nec_solver::validate::swept_negative_resistance_caveat(
         &z_res,
         &result.deck,

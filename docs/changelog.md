@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A Hallén-only geometry refusal names the MPIE the way each frontend reaches
+  it** (FND-271). A `GA`/`GH` deck or a loop with a one-segment run was refused
+  with "`--solver mpie` on a local run" on every frontend, a flag the GUI,
+  `--hosts`, `sweep --resonance` and the Python bindings do not take. Each now
+  names its own way, and only for a deck the MPIE takes: an arc driven by a
+  plane wave is no longer pointed at a solver that refuses it.
+
 - **`--solver sinusoidal` solves a chain with a one-segment wire on its own
   basis** (FND-273). It judged "two segments per wire" on the deck's `GW` cards,
   not on the merged conductor it solves, and fell back to the experimental pulse
