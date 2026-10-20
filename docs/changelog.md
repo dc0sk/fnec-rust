@@ -33,6 +33,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   basis: a 4 + 1 + 4 dipole read −75.96 + j1.41 Ω against nec2c's
   78.81 + j40.99, with exit 0. The pulse fallback is gone from this solver.
 
+- **A receiving junction standing on PEC ground is no longer captioned
+  "unreliable"** (FND-272). The route check asked the image problem for a
+  voltage feed, which a plane-wave deck has none of, so a T on the ground read
+  `route=unsupported` with the T/Y caveat although its solve is the section
+  graph and within 1.5 % of nec2c.
+
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
   far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No
