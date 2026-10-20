@@ -24,6 +24,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 |:----------|:--|:----------|:------|
 | `apps/nec-cli/tests/average_power_gain.rs` | 2 | FND-262: the average power gain is NEC-2's. On the 8 PAR-011 fixtures whose kernel printed an average, the kernel's own gains through `nec_solver::average_power_gain` give its printed average within 1e-3, and fnec's own average is within 0.5 % of it (the GN 2 deck is excepted). A single cut has no average, and isotropic 0 dBi averages to 1. Three sabotages caught: φ ends, θ ends, nulls. | FND-262 |
 | `apps/nec-cli/tests/bend_feed_adjacent.rs` | 8 | FND-270 — a feed, current source, network port or load step beside a node, on the conductor paths and the section graph; a uniform wire loss is not a gap; a plane-wave receive with a load beside the node | — |
+| `apps/nec-cli/tests/close_parallel_caveat.rs` | 1 | FND-274 — touching parallel wires carry the solver-neutral caveat on every solver | — |
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
@@ -34,6 +35,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/deck_validator.rs` | 5 | Deck validator **refuses** a missing `EX` (error-level, FND-145) on every advertised `--solver` mode and output format; silent on well-formed decks | FR-009, EP-4 |
 | `apps/nec-cli/tests/end_segment_source.rs` | 9 | FND-227 / FND-230 — a source, load or port on the segment at a free wire end: solved on every Hallén route and exec, within 2.5 % / 2 % of the wire meshed 3× finer, an end-segment load seen (ΔZ within 15 % of nec2c's), segment 0 still unnamed, a fat end judged by its deck length, the MPIE's refusal kept. | FND-227, FND-230 |
 | `apps/nec-cli/tests/gpu_rerun_policy.rs` | 1 | FND-215 — no workspace member's `tests/` calls the adapter probe itself (only `gpu_concurrent_init.rs`, whose subject it is): GPU tests skip and re-run through `nec_accel::gpu_test`; the scan reads the members from the root manifest and refuses an empty or mis-rooted file set | FND-215 |
+| `apps/nec-cli/tests/refusal_remedy.rs` | 6 | FND-271 — a Hallén-only refusal names the MPIE the way each frontend reaches it | — |
 | `apps/nec-cli/tests/sinusoidal_chain_order.rs` | 6 | FND-233 — `--solver sinusoidal` solves a collinear chain in any `GW` order: a loaded, unequally segmented split dipole gives the same Z and the same current on every deck segment in three orders, on the plain route, within 2 % of Hallén; a scrambled T is still refused; FND-249 — a reversed middle wire fed on itself equals the forward chain in every order, and the `GX` dipole equals the one-wire dipole current for current, each segment in its own sense. | FND-233, FND-249 |
 | `apps/nec-cli/tests/ex_cards.rs` | 11 | `EX` types 0/1/3 feedpoint parity; unsupported types rejected | CP-003, PH8-CHK-001/002 (baseline) |
 | `apps/nec-cli/tests/exec_auto.rs` | 12 | Without `--exec` the deck picks CPU or GPU: 599 segments is the CPU to the byte, 601 (one point) the GPU within 2 Ω where there is one, a sweep below 800 stays on the CPU and past it counts its device points, a bent or loaded large deck stays on the CPU; the small-deck GPU warning prints once per run | FND-185, FND-190 |
@@ -93,7 +95,8 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/taper_cli.rs` | 2 | `fnec taper` — the Leeson step-tapered-radius correction (BL-IMPR-014). | — |
 | `apps/nec-cli/tests/template_contract.rs` | 5 | TOML/JSON var substitution; undefined-token error | PH3-CHK-007 |
 | `apps/nec-cli/tests/tl_cards.rs` | 5 | NEC-2 `TL` card matches nec2c; retired fnec layout refused with the NEC-2 rewrite; integer-valued NEC-2 card not mistaken for the old layout; zero length = segment-centre distance; non-Hallén solver refused | PRT-002, PH2-CHK-003 |
-| `apps/nec-cli/tests/topology_fallback.rs` | 13 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
+| `apps/nec-cli/tests/topology_caveat_reach.rs` | 2 | FND-272 — the topology caveats are reached on the experimental bases, and not by a receiving junction on PEC ground | — |
+| `apps/nec-cli/tests/topology_fallback.rs` | 12 | Non-single-chain fallback across solver/pulse/exec/sinusoidal/loaded | DEC-010/011 |
 | `apps/nec-cli/tests/traceability.rs` | 1 | G2 — machine-enforced requirements traceability (review-260821). | — |
 | `apps/nec-cli/tests/worker_deadline.rs` | 2 | FND-101 — a worker that accepts a task and never answers must not wedge the run. | FND-101 |
 | `apps/nec-cli/tests/worker_gpu_exec.rs` | 1 | Distributed GPU dispatch through worker pool (mixed gpu/cpu) | PH7-CHK-004 |
@@ -159,7 +162,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=814 --> **814** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=822 --> **822** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -170,9 +173,9 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 274 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 277 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
-| `nec-gui` | 97 | app_state, model_doc, mesh, camera, solve |
+| `nec-gui` | 98 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 50 | main, exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 40 | lib (incl. the FND-236 card treatments, FND-237 comma fields and the PAR-011 program-card records), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
@@ -180,11 +183,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=655 --> **655** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=659 --> **659** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1476 --> **1476** = 655 unit + 814 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1488 --> **1488** = 659 unit + 822 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

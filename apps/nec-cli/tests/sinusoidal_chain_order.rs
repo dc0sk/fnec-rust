@@ -272,23 +272,42 @@ fn a_gx_dipole_is_the_one_wire_dipole() {
     }
 }
 
-/// FND-249, the arm's pulse fallback (a wire one segment long): the gap voltage
-/// enters it signed for the flip too, so a reversed one-segment middle wire fed on
-/// itself answers as the forward chain does. This pins the frame, not the answer:
-/// the fallback's answer is itself wrong (−75.96 + j1.41 Ω against nec2c's
-/// 78.81 + j40.99, FND-273), and this test is re-pointed when that is resolved.
+/// FND-273: a one-segment wire inside a collinear chain is part of one longer
+/// conductor, which is what the sinusoidal basis solves on. Judged per deck wire,
+/// it fell back to the experimental pulse basis and answered −75.96 + j1.41 Ω
+/// against nec2c's 78.81 + j40.99. Now it takes the sinusoidal route, whose own
+/// residual gate hands this coarse chain to Hallén: the answer is `--solver
+/// hallen`'s, either way round the middle wire (FND-249 signs its source).
 #[test]
-fn the_pulse_fallback_takes_the_flipped_source_signed() {
+fn a_one_segment_wire_in_a_chain_takes_the_sinusoidal_route() {
     let wires = |mid: &str| {
         format!(
             "CE\nGW 1 4 0 0 -2.5 0 0 -0.3 0.001\n{mid}\nGW 3 4 0 0 0.3 0 0 2.5 0.001\n\
              GE 0\nEX 0 2 1 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n"
         )
     };
-    let (ok_f, out_f, err_f) = run("sinusoidal", &wires("GW 2 1 0 0 -0.3 0 0 0.3 0.001"));
+    let forward = wires("GW 2 1 0 0 -0.3 0 0 0.3 0.001");
+    let (ok_f, out_f, err_f) = run("sinusoidal", &forward);
     let (ok_r, out_r, err_r) = run("sinusoidal", &wires("GW 2 1 0 0 0.3 0 0 -0.3 0.001"));
-    assert!(ok_f && ok_r, "{err_f}\n{err_r}");
-    assert!(err_r.contains("falling back to pulse"), "{err_r}");
-    let (f, r) = (z_at(&out_f, 2, 1), z_at(&out_r, 2, 1));
+    let (ok_h, out_h, err_h) = run("hallen", &forward);
+    assert!(ok_f && ok_r && ok_h, "{err_f}\n{err_r}\n{err_h}");
+    for err in [&err_f, &err_r] {
+        assert!(
+            !err.contains("falling back to pulse") && !err.contains("->pulse"),
+            "{err}"
+        );
+        assert!(err.contains("diag: mode=sinusoidal"), "{err}");
+    }
+    let (f, r, h) = (z_at(&out_f, 2, 1), z_at(&out_r, 2, 1), z_at(&out_h, 2, 1));
     assert!(close(r, f, f.0.hypot(f.1)), "{r:?} vs forward {f:?}");
+    // The same Hallén solve in another segment order: equal to print precision.
+    assert!(
+        (f.0 - h.0).hypot(f.1 - h.1) <= 1e-5,
+        "{f:?} vs hallen {h:?}"
+    );
+    // nec2c 1.3.1 on this deck: 78.806 + j40.991. Hallén on a 0.6 m middle segment
+    // reads 77.923 + j35.535, 6 % of |Z| away; the pulse fallback was 177 % away.
+    let nec2c = (78.806_f64, 40.991_f64);
+    let off = (f.0 - nec2c.0).hypot(f.1 - nec2c.1) / nec2c.0.hypot(nec2c.1);
+    assert!(off < 0.1, "{f:?} is {off:.3} of |Z| from nec2c {nec2c:?}");
 }

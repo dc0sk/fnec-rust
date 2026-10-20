@@ -163,6 +163,26 @@ EN
 CROSSING_WIRES_BAD_FEED = CROSSING_WIRES.replace("EX 0 1 6 0", "EX 0 1 999 0")
 
 
+ARC_HALF_CIRCLE = """\
+CE
+GA 1 10 0.5 0 180 .001
+GE 0
+EX 0 1 2 0 1 0
+FR 0 1 0 0 30 0
+EN
+"""
+
+
+def test_a_hallen_only_refusal_names_the_solver_argument():
+    """FND-271: the refusal names the bindings' own way to the MPIE, not a CLI flag."""
+    with pytest.raises(RuntimeError) as err:
+        fnec_py.solve_deck_str(ARC_HALF_CIRCLE)
+    text = str(err.value)
+    assert text.count('pass solver="mpie"') == 1, text
+    assert "--solver" not in text, text
+    fnec_py.solve_deck_str(ARC_HALF_CIRCLE, solver="mpie")
+
+
 def test_a_deck_with_two_faults_names_the_one_the_cli_names():
     """FND-180: the refusals run before the excitation is built, on every frontend.
 
