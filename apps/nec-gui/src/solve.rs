@@ -723,10 +723,12 @@ impl SweepJob {
         }
         let v_vec = build_excitation(&deck, &segs).map_err(|e| e.to_string())?;
         // ...and what the *chosen solver* cannot take. Without this an MPIE sweep
-        // of a loaded deck would queue every point and fail on the first one.
+        // would queue every point and fail on the first one: a TL deck, and — while
+        // this asked only the deck — an end-fed one (FND-276). The solve's own
+        // refusals, at the sweep's lowest frequency.
         if solver == SolverKind::Mpie {
-            if let Some(u) = nec_solver::mpie_unsupported(&deck) {
-                return Err(u.to_string());
+            if let Some(e) = nec_solver::mpie_refusal(&deck, &segs, &ground, start_mhz * 1e6) {
+                return Err(e.to_string());
             }
         }
         let mut freqs_mhz = Vec::new();
@@ -1504,6 +1506,20 @@ mod tests {
         // Negative control: the clean deck is accepted on both.
         assert!(SweepJob::prepare(GOOD_DIPOLE, 14.0, 14.4, 0.1, SolverKind::Hallen).is_ok());
         assert!(solve_for_currents(GOOD_DIPOLE, SolverKind::Hallen).is_ok());
+    }
+
+    /// An MPIE sweep of a deck the MPIE refuses by its geometry is refused when it
+    /// is planned, not on its first point: the plan asked the deck only, and an
+    /// end-fed dipole queued every point (FND-276). The centre-fed deck plans.
+    #[test]
+    fn an_mpie_sweep_the_mpie_refuses_is_refused_when_planned() {
+        let end_fed = GOOD_DIPOLE.replace("EX 0 1 11", "EX 0 1 1");
+        let e = match SweepJob::prepare(&end_fed, 14.0, 14.4, 0.1, SolverKind::Mpie) {
+            Err(e) => e,
+            Ok(_) => panic!("the plan must refuse the end feed"),
+        };
+        assert!(e.contains("a segment at a free wire end"), "{e}");
+        assert!(SweepJob::prepare(GOOD_DIPOLE, 14.0, 14.4, 0.1, SolverKind::Mpie).is_ok());
     }
 
     /// The GUI omitted the CLI's low-finite-ground warning, so a user got an

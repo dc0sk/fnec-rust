@@ -27,6 +27,14 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A remedy names the MPIE only for a deck the MPIE solves** (FND-276). The
+  check behind every "The MPIE solves this deck" and every caveat's
+  `--solver mpie` read the deck alone, so it recommended the MPIE for a feed at
+  a free wire end, a feed on a one-segment run between two junctions and a wire
+  standing on the ground, each of which the MPIE then refused. It now asks the
+  MPIE solve's own refusals, on the MPIE's own segments. A GUI sweep on the MPIE
+  is refused for such a deck when it is planned, not on its first point.
+
 - **A Hallén-only geometry refusal names the MPIE the way each frontend reaches
   it** (FND-271). A `GA`/`GH` deck or a loop with a one-segment run was refused
   with "`--solver mpie` on a local run" on every frontend, a flag the GUI,

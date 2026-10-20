@@ -11,9 +11,8 @@ use std::process::Command;
 mod common;
 
 /// A half-circle arc fed one segment in from its end: refused by the Hallén
-/// geometry (`CurvedForHallen`), solved by the MPIE. Not at the end: the MPIE
-/// refuses an end-segment feed (FND-228), which the remedy check does not see
-/// (FND-276).
+/// geometry (`CurvedForHallen`), solved by the MPIE. At the end the MPIE refuses
+/// the feed (FND-228), and the remedy is not offered (FND-276).
 const ARC: &str = "CE\nGA 1 10 0.5 0 180 .001\nGE 0\nEX 0 1 2 0 1 0\nFR 0 1 0 0 30 0\nEN\n";
 
 const CLI: &str = "re-run with `--solver mpie`";
@@ -98,4 +97,60 @@ fn a_resonance_search_is_told_to_solve_separately() {
     assert!(!out.status.success(), "{err}");
     assert_eq!(err.matches(RESONANCE).count(), 1, "{err}");
     assert!(!err.contains(CLI), "{err}");
+}
+
+/// The remedy asks the MPIE's own refusals, on the MPIE's own mesh (FND-276).
+/// Each of these was told "The MPIE solves this deck", and the MPIE then refused
+/// it: fed at the arc's end (FND-228), fed on a one-segment bar between two
+/// junctions (no interior node), and the arc standing on perfect ground.
+#[test]
+fn a_deck_the_mpie_refuses_by_its_geometry_names_no_remedy() {
+    let h_bar = "CE\nGW 1 10 0 0 0 0 0 1 .001\nGW 2 10 1 0 0 1 0 1 .001\n\
+                 GW 3 1 0 0 .5 1 0 .5 .001\nGE 0\nEX 0 3 1 0 1 0\nFR 0 1 0 0 30 0\nEN\n";
+    let grounded = ARC
+        .replace("GE 0", "GE 1\nGN 1")
+        .replace("EX 0 1 2", "EX 0 1 5");
+    for (name, deck, refusal) in [
+        (
+            "end",
+            ARC.replace("EX 0 1 2", "EX 0 1 1"),
+            "a segment at a free wire end",
+        ),
+        ("bar", h_bar.to_string(), "no interior (degree-2) node"),
+        ("ground", grounded, "above the ground plane"),
+    ] {
+        let (code, err) = stderr_of(&[], &deck, &format!("fnec-remedy-{name}.nec"));
+        assert_eq!(code, Some(1), "{name}: {err}");
+        assert!(!err.contains("MPIE solves this deck"), "{name}: {err}");
+        // And the MPIE does refuse it: the remedy was false.
+        let (code, err) = stderr_of(
+            &["--solver", "mpie"],
+            &deck,
+            &format!("fnec-remedy-{name}-m.nec"),
+        );
+        assert_eq!(code, Some(1), "{name}: {err}");
+        assert!(err.contains(refusal), "{name}: {err}");
+    }
+}
+
+/// The caveats ask the same predicate. A dipole 0.6 m over `GN 2` fed at its end
+/// solves on Hallén with the low-ground caveat, which named `--solver mpie`; the
+/// MPIE refuses the end feed, so only the Sommerfeld remedy remains. Fed at its
+/// centre (the control) both are named.
+#[test]
+fn a_caveat_names_the_mpie_only_where_the_mpie_takes_the_deck() {
+    let low = |seg: u32| {
+        format!(
+            "CE\nGW 1 21 0 -2.5 .6 0 2.5 .6 .001\nGE 0\nGN 2 0 0 0 13 .005\n\
+             EX 0 1 {seg} 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+        )
+    };
+    let (code, err) = stderr_of(&["--solver", "hallen"], &low(1), "fnec-remedy-low-end.nec");
+    assert_eq!(code, Some(0), "{err}");
+    assert!(err.contains("--ground-solver sommerfeld"), "{err}");
+    assert!(!err.contains(CLI), "{err}");
+    let (code, err) = stderr_of(&["--solver", "hallen"], &low(11), "fnec-remedy-low-mid.nec");
+    assert_eq!(code, Some(0), "{err}");
+    assert!(err.contains("--ground-solver sommerfeld"), "{err}");
+    assert!(err.contains(CLI), "{err}");
 }

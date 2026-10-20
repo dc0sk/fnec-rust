@@ -85,7 +85,10 @@ pub use mpie::{
     solve_mpie_free_space, solve_mpie_ground, straight_wire, MpieError, MpieGeometry, MpieSolution,
     MpieWire,
 };
-pub use mpie_session::{mpie_unsupported, solve_mpie_session, MpieSessionError, MpieUnsupported};
+pub use mpie_session::{
+    mpie_refusal, mpie_takes_deck, mpie_unsupported, solve_mpie_session, MpieSessionError,
+    MpieUnsupported,
+};
 pub use network::{
     build_networks, solve_with_networks, NetworkSolution, NetworkSolveError, Networks, TwoPort,
 };
