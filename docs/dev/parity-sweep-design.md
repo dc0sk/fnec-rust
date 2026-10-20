@@ -228,7 +228,11 @@ an integration test of `nec-cli`.
 `R-lowground` (8 cells): a horizontal λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2 and
 a low inverted-V, each at 21 and 41 segments, under `--solver mpie` and under Hallén
 with `--ground-solver sommerfeld`, against nec2c GN 2 on the same mesh (references in
-`parity_nec2c.txt` under `low/`). A cell fails unless the gap shrinks from the coarse
+`parity_nec2c.txt` under `low/`) — except the inverted-V, fed beside its apex, which
+gates against nec2c's converged value (27× and 9× its two meshes, `CONVERGED_LOW_REFS`):
+there a same-mesh gap is a fixed offset plus the difference of two discretisation
+errors, and its direction stopped meaning anything once FND-270 matched fnec's error to
+nec2c's. A cell fails unless the gap shrinks from the coarse
 mesh to the fine one and the fine gap is under its cap (MPIE 3 %, Hallén 12 %); both
 gaps and the run's `gsolver` are pinned. Built when BL-IMPR-015's DCIM port was
 rejected (`docs/sommerfeld-level2-scope.md` § Phase 3): the regime it was meant to

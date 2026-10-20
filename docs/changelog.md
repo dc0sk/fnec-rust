@@ -27,6 +27,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Hallén answers a feed beside a bend as it answers a feed beside a straight
+  join** (FND-270). The row that joins two straight sections extrapolated the
+  current across the slope jump a feed makes, so a dipole drawn as two halves
+  read 1 % lower in resistance at a bend of 2 × 10⁻⁴ rad than straight, and a
+  1 rad bend fed beside it 1.9 % below converged nec2c instead of the 1.3 % the
+  straight dipole sits at. Current sources, network ports and a step in the
+  lumped load beside a node are covered too, on the conductor paths and on the
+  section graph (junctions, loops, radius steps): a 1000 Ω coil beside a bend
+  read 15 % from nec2c, now within the straight wire's own 4 %. A junction of
+  three or more wires keeps the old row (FND-277).
+
 - **Parallel wires closer than ten radius sums, or than their segment length,
   carry a caveat** (FND-274). A wire laid 2 mm beside a 1 mm-radius dipole read
   32 − j94 Ω on Hallén, 159 + j259 on the MPIE and 1271 + j2069 on nec2c, with no

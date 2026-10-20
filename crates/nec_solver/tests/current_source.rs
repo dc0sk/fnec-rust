@@ -177,3 +177,57 @@ fn current_source_two_wire_array_matches_voltage_source() {
         "two-wire current-source Z {z_i} != voltage-source Z {z_v} (rel {rel:.2e})"
     );
 }
+
+/// FND-270: the library's own path-basis current-source solve marks the source
+/// segment as the gap its bend rows must not extrapolate across. The dipole of two
+/// halves, fed beside their node: straight it is one section; bent by 2e-4 rad
+/// the node row read the port 1 % low, against 0.11 % with the gap marked.
+#[test]
+fn a_current_source_beside_a_vanishing_bend_is_the_straight_join() {
+    let z_in = |t: f64| {
+        let (x, zt) = (2.64 * t.sin(), 2.64 * t.cos());
+        let text = format!(
+            "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {zt:.12} .001\nGE 0\n\
+             EX 4 1 10 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+        );
+        let d = nec_parser::parse(&text).expect("parses").deck;
+        let segs = nec_solver::build_geometry(&d).expect("geometry");
+        let z = assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
+        solve_current_source_hallen(&d, &segs, &z, 28.4e6)
+            .expect("solve")
+            .port_voltage
+    };
+    let (straight, bent) = (z_in(0.0), z_in(2e-4));
+    let step = (bent.re - straight.re).abs() / straight.re;
+    assert!(step < 0.002, "{bent} vs straight {straight}: {step:.4}");
+}
+
+/// FND-270: the library's path-basis current-source solve marks a load step too,
+/// as the routed solve does: a j1000 Ω load on the segment beyond a 2e-4 rad bend,
+/// the source far from it. Without the load marked the library port read 10 %
+/// from the routed solve's.
+#[test]
+fn a_current_source_with_a_load_beside_the_bend_matches_the_routed_solve() {
+    let text = format!(
+        "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {:.12} 0 {:.12} .001\nGE 0\n\
+         LD 4 2 1 1 0 1000\nEX 4 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
+        2.64 * 2e-4f64.sin(),
+        2.64 * 2e-4f64.cos()
+    );
+    let d = nec_parser::parse(&text).expect("parses").deck;
+    let segs = nec_solver::build_geometry(&d).expect("geometry");
+    let loads = nec_solver::build_loads(&d, &segs, 28.4e6).0;
+    let fresh = || assemble_z_matrix_with_ground(&segs, 28.4e6, &GroundModel::FreeSpace);
+    let routed = nec_solver::solve_hallen_routed(&d, &segs, &mut fresh(), 28.4e6, &loads)
+        .expect("routed")
+        .port_voltage
+        .expect("port voltage");
+    let paths = nec_solver::build_conductor_paths(&segs);
+    let mut z = fresh();
+    nec_solver::stamp_hallen_load_columns(&mut z, &segs, 28.4e6, &loads, paths.as_deref());
+    let lib = solve_current_source_hallen(&d, &segs, &z, 28.4e6)
+        .expect("solve")
+        .port_voltage;
+    let rel = (lib - routed).norm() / routed.norm();
+    assert!(rel < 1e-3, "library {lib} vs routed {routed}: {rel:.2e}");
+}
