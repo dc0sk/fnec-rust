@@ -27,7 +27,7 @@
 use num_complex::Complex64;
 
 use crate::geometry::{wire_endpoints_from_segs, Segment};
-use crate::hallen_session::{CornerSource, JUNCTION_TOL_M};
+use crate::hallen_session::{quadratic_weights, CornerSource, GapSide, NodeGaps, JUNCTION_TOL_M};
 use crate::linear::SolveError;
 use crate::matrix::ZMatrix;
 
@@ -373,6 +373,66 @@ fn extrapolated(sec: &Section, segs: &[Segment], at_end: bool) -> [(usize, f64);
     ]
 }
 
+/// The continuity row of a degree-2 node with a gap beside it (FND-270): the gap
+/// kinks the current at its segment's midpoint, between the two points
+/// [`extrapolated`] takes on that side, so the Kirchhoff row would extrapolate
+/// across the kink. Instead the gap segment's current equals the other
+/// section's quadratic extrapolation to its midpoint, in distance from the node
+/// — the rule the conductor-path rows apply ([`NodeGaps`]). `None` keeps the
+/// Kirchhoff row: a junction, or no gap the rule takes.
+fn gap_row(
+    graph: &SectionGraph,
+    node: &Node,
+    gaps: &NodeGaps,
+    cols: usize,
+) -> Option<Vec<Complex64>> {
+    let &[a, b] = &node.ends[..] else {
+        return None;
+    };
+    // Per end: the section's segments outward from the node (nearest first, up to
+    // three) as positions in it, and the inflow sign of its frame.
+    let outward = |(j, at_end): NodeEnd| -> (Vec<usize>, f64) {
+        let k = graph.sections[j].segs.len();
+        if at_end {
+            ((0..k).rev().take(3).collect(), 1.0)
+        } else {
+            ((0..k).take(3).collect(), -1.0)
+        }
+    };
+    let (pa, pb) = (outward(a), outward(b));
+    let global = |(j, _): NodeEnd, v: &[usize]| -> Vec<usize> {
+        v.iter().map(|&i| graph.sections[j].segs[i]).collect()
+    };
+    let ((gap_end, (gap_pos, gap_in)), (far_end, (far_pos, far_in))) =
+        match gaps.side(&global(a, &pa.0), &global(b, &pb.0))? {
+            GapSide::A => ((a, pa), (b, pb)),
+            GapSide::B => ((b, pb), (a, pa)),
+        };
+    // Distance from the node to a segment's midpoint.
+    let dist = |(j, at_end): NodeEnd, i: usize| {
+        let sec = &graph.sections[j];
+        if at_end {
+            sec.length - sec.s_mid[i]
+        } else {
+            sec.s_mid[i]
+        }
+    };
+    // The current along the path from the gap's side into the far one is
+    // `inflow·sign·I` on the gap's side and `−inflow·sign·I` beyond the node, with
+    // the gap's midpoint at −d.
+    let w = quadratic_weights(
+        -dist(gap_end, gap_pos[0]),
+        [0, 1, 2].map(|l| dist(far_end, far_pos[l])),
+    );
+    let mut row = vec![Complex64::new(0.0, 0.0); cols];
+    let (gs, fs) = (&graph.sections[gap_end.0], &graph.sections[far_end.0]);
+    row[gs.segs[gap_pos[0]]] += Complex64::new(gap_in * gs.signs[gap_pos[0]], 0.0);
+    for (l, &i) in far_pos.iter().enumerate() {
+        row[fs.segs[i]] += Complex64::new(w[l] * far_in * fs.signs[i], 0.0);
+    }
+    Some(row)
+}
+
 /// The delta-gap feed, in section coordinates.
 #[derive(Debug, Clone, Copy)]
 pub struct GraphFeed {
@@ -414,6 +474,7 @@ impl GraphSystem {
         graph: &SectionGraph,
         sources: &[CornerSource],
         k: f64,
+        gaps: &NodeGaps,
     ) -> Result<Self, SolveError> {
         let n = z.n;
         let ns = graph.sections.len();
@@ -541,14 +602,18 @@ impl GraphSystem {
                 phi_pairs.push(None);
                 continue;
             }
-            // Kirchhoff: current flowing into the node sums to zero.
-            let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
-            for &(j, at_end) in &node.ends {
-                let inflow = if at_end { 1.0 } else { -1.0 };
-                for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
-                    kcl[seg] += Complex64::new(inflow * c, 0.0);
+            // Kirchhoff: current flowing into the node sums to zero — or, at a
+            // degree-2 node beside a gap, the gap's current from the other side.
+            let kcl = gap_row(graph, node, gaps, cols).unwrap_or_else(|| {
+                let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
+                for &(j, at_end) in &node.ends {
+                    let inflow = if at_end { 1.0 } else { -1.0 };
+                    for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
+                        kcl[seg] += Complex64::new(inflow * c, 0.0);
+                    }
                 }
-            }
+                kcl
+            });
             extra.push(kcl);
             phi_pairs.push(None);
             // Equal potential against the first section at the node.

@@ -1593,47 +1593,139 @@ fn build_unnumbered(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
 /// segments of a wire meet at a point, overlap 0. Wires whose surfaces touch
 /// (axes two radii apart) are not refused: a thin-wire validity question.
 fn overlapping_segments(segs: &[Segment]) -> Option<GeometryError> {
-    let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
     for (i, a) in segs.iter().enumerate() {
-        if a.length <= 0.0 {
-            continue;
-        }
         for (j, b) in segs.iter().enumerate().skip(i + 1) {
-            let along = |p: [f64; 3]| {
-                dot(
-                    [p[0] - a.start[0], p[1] - a.start[1], p[2] - a.start[2]],
-                    a.direction,
-                )
-            };
-            let (t0, t1) = (along(b.start), along(b.end));
-            let (lo, hi) = (t0.min(t1).max(0.0), t0.max(t1).min(a.length));
-            if hi - lo <= 1e-6 * a.length.min(b.length) {
+            let Some(o) = overlap_along(a, b) else {
                 continue;
-            }
-            // `b`'s point at axis position `t`, and its distance from `a`'s axis.
-            let off_axis = |t: f64| {
-                let f = (t - t0) / (t1 - t0);
-                let p = [
-                    b.start[0] + f * (b.end[0] - b.start[0]) - a.start[0],
-                    b.start[1] + f * (b.end[1] - b.start[1]) - a.start[1],
-                    b.start[2] + f * (b.end[2] - b.start[2]) - a.start[2],
-                ];
-                let s = dot(p, a.direction);
-                let r = [
-                    p[0] - s * a.direction[0],
-                    p[1] - s * a.direction[1],
-                    p[2] - s * a.direction[2],
-                ];
-                dot(r, r).sqrt()
             };
             let reach = a.radius + b.radius;
-            if off_axis(lo) < reach && off_axis(hi) < reach {
+            if o.off_lo < reach && o.off_hi < reach {
                 return Some(GeometryError::OverlappingSegments {
                     a: nec_name(segs, i),
                     b: nec_name(segs, j),
-                    length: hi - lo,
-                    duplicate: hi - lo >= (1.0 - 1e-6) * a.length.min(b.length),
+                    length: o.length,
+                    duplicate: o.length >= (1.0 - 1e-6) * a.length.min(b.length),
                 });
+            }
+        }
+    }
+    None
+}
+
+/// Where segment `b` runs alongside segment `a`: the length of `a`'s axis that
+/// `b`'s ends project onto, and `b`'s distance from that axis at each end of it.
+struct Overlap {
+    length: f64,
+    off_lo: f64,
+    off_hi: f64,
+}
+
+/// `b` projected onto `a`'s axis, or `None` where the projection overlaps `a` by
+/// no more than 1e-6 of the shorter segment — `a`'s own neighbours along a wire,
+/// a T onto an interior, segments far apart along the axis. The one copy of the
+/// projection, for the refusal ([`overlapping_segments`]) and the caveat
+/// ([`close_parallel_segments`]).
+fn overlap_along(a: &Segment, b: &Segment) -> Option<Overlap> {
+    let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    if a.length <= 0.0 {
+        return None;
+    }
+    let along = |p: [f64; 3]| {
+        dot(
+            [p[0] - a.start[0], p[1] - a.start[1], p[2] - a.start[2]],
+            a.direction,
+        )
+    };
+    let (t0, t1) = (along(b.start), along(b.end));
+    let (lo, hi) = (t0.min(t1).max(0.0), t0.max(t1).min(a.length));
+    if hi - lo <= 1e-6 * a.length.min(b.length) {
+        return None;
+    }
+    // `b`'s point at axis position `t`, and its distance from `a`'s axis.
+    let off_axis = |t: f64| {
+        let f = (t - t0) / (t1 - t0);
+        let p = [
+            b.start[0] + f * (b.end[0] - b.start[0]) - a.start[0],
+            b.start[1] + f * (b.end[1] - b.start[1]) - a.start[1],
+            b.start[2] + f * (b.end[2] - b.start[2]) - a.start[2],
+        ];
+        let s = dot(p, a.direction);
+        let r = [
+            p[0] - s * a.direction[0],
+            p[1] - s * a.direction[1],
+            p[2] - s * a.direction[2],
+        ];
+        dot(r, r).sqrt()
+    };
+    Some(Overlap {
+        length: hi - lo,
+        off_lo: off_axis(lo),
+        off_hi: off_axis(hi),
+    })
+}
+
+/// Two parallel segments close enough that no code here answers them reliably,
+/// though not so close that [`overlapping_segments`] refuses them (FND-274).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CloseParallel {
+    /// The two wires' tags.
+    pub tags: (u32, u32),
+    /// Their axes' distance, metres.
+    pub spacing: f64,
+    /// The sum of their radii, metres.
+    pub radii: f64,
+    /// The longer of the two segments, metres.
+    pub segment: f64,
+}
+
+impl CloseParallel {
+    /// Inside the thin-wire kernel's reach: spacing under ten radius sums.
+    pub fn within_radii(&self) -> bool {
+        self.spacing < CLOSE_PARALLEL_RADII * self.radii
+    }
+    /// Segments longer than the spacing: nec2c's own answer is not converged.
+    pub fn within_segment(&self) -> bool {
+        self.spacing < self.segment
+    }
+}
+
+/// The spacing, in sums of the two radii, below which parallel wires get the
+/// FND-274 caveat. Measured on a dipole with a parallel wire along its upper half
+/// (28.4 MHz, 1 mm radii): Hallén and the MPIE agree within 2.5 % from 10 radius
+/// sums apart, part by 4 % at 7.5, 21 % at 5 and 19 % (reactance) at 2.5, while
+/// nec2c moves by more than either under refinement.
+pub const CLOSE_PARALLEL_RADII: f64 = 10.0;
+
+/// The first pair of segments of different wires that run parallel (within 1°)
+/// alongside each other closer than [`CLOSE_PARALLEL_RADII`] radius sums or than
+/// the longer segment's length (FND-274). Two clauses, both measured: under ten
+/// radius sums Hallén and the MPIE disagree by 4–21 %; with segments longer
+/// than the spacing nec2c disagrees with its own refinement by more than 5 %
+/// (17 % in reactance at a fifth of a segment), aligned or not. Pairs on one wire
+/// never qualify: a wire's segments do not run alongside each other.
+pub fn close_parallel_segments(segs: &[Segment]) -> Option<CloseParallel> {
+    let cos_1deg = 1.0_f64.to_radians().cos();
+    for (i, a) in segs.iter().enumerate() {
+        for b in segs.iter().skip(i + 1) {
+            if a.tag == b.tag {
+                continue;
+            }
+            let d = a.direction;
+            let e = b.direction;
+            if (d[0] * e[0] + d[1] * e[1] + d[2] * e[2]).abs() < cos_1deg {
+                continue;
+            }
+            let Some(o) = overlap_along(a, b) else {
+                continue;
+            };
+            let pair = CloseParallel {
+                tags: (a.tag, b.tag),
+                spacing: o.off_lo.min(o.off_hi),
+                radii: a.radius + b.radius,
+                segment: a.length.max(b.length),
+            };
+            if pair.within_radii() || pair.within_segment() {
+                return Some(pair);
             }
         }
     }

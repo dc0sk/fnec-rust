@@ -531,6 +531,11 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     warn_near_field_over_finite_ground(deck, &ground);
+    // Above the `--hosts` branch, so a distributed run carries them too; the GUI
+    // and the bindings get the same list through `validate::diagnose`.
+    for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
+        eprintln!("warning: {w}");
+    }
 
     // ------------------------------------------------------------------
     // Distributed solve via --hosts
@@ -703,7 +708,8 @@ fn main() -> ExitCode {
     };
     // ------------------------------------------------------------------
 
-    // Per-wire basis solve requires every wire to have >= 2 segments.
+    // The experimental continuity basis needs >= 2 segments on every deck wire;
+    // the sinusoidal arm judges its own merged conductors instead (FND-273).
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
@@ -1598,6 +1604,9 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
                     sommerfeld: None,
                 },
             ) {
+                eprintln!("warning: {w}");
+            }
+            for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
                 eprintln!("warning: {w}");
             }
         }

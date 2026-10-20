@@ -1,6 +1,8 @@
 # nec2c feedpoint impedance (first feed) for the parity sweep's placements.
 # Captured by `capture_nec2c_goldens` with nec2c 1.3.1-3build1, from the same deck text
 # the sweep runs (voltage drive, unloaded, FR 14.2 MHz). id R X
+# An id@Sx row is nec2c at S times that deck's mesh (scripts/nec2c-converged-series.py,
+# thin kernel): the converged series of a cell that gates against it (CONVERGED_LOW_REFS).
 dipole/free 7.8942E+01 4.5277E+01
 dipole/pec 8.0250E+01 3.6694E+01
 dipole/gn2 7.8328E+01 3.9279E+01
@@ -34,3 +36,8 @@ low/dipole-0.05/41 6.7563E+01 5.3542E+01
 low/dipole-0.1/41 5.9941E+01 5.9151E+01
 low/vertical/41 9.5164E+01 4.1974E+01
 low/inverted-v/41 3.4280E+01 -3.4883E+02
+low/inverted-v/21@3x 3.4038E+01 -3.4739E+02
+low/inverted-v/21@9x 3.3737E+01 -3.4542E+02
+low/inverted-v/21@27x 3.3597E+01 -3.4448E+02
+low/inverted-v/41@3x 3.3779E+01 -3.4528E+02
+low/inverted-v/41@9x 3.3586E+01 -3.4397E+02
