@@ -2866,8 +2866,8 @@ mod tests {
     fn a_degree_three_junction_the_graph_refuses_is_refused_naming_the_mpie() {
         // The stem's single row cannot fix a section's two constants, so the graph
         // solve refuses the deck, and the per-wire fallback has no reliable answer
-        // for a junction: the Hallén geometry refuses it (FND-251), naming the MPIE,
-        // which takes this deck.
+        // for a junction: the Hallén geometry refuses it (FND-251), and the MPIE,
+        // which takes this deck, is the remedy a frontend names.
         let (e, msg) = hallen_refusal(&one_segment_stem_tee("EX 0 1 6 0 1.0 0.0\n"));
         assert_eq!(
             e,
@@ -2883,10 +2883,12 @@ mod tests {
             "three or more wires",
             "(tag 3 segment 1)",
             "at least two segments",
-            "--solver mpie",
         ] {
             assert!(msg.contains(want), "{want:?}: {msg}");
         }
+        // The text names no flag; each frontend joins its own remedy on (FND-271).
+        assert!(!msg.contains("--solver"), "{msg}");
+        assert!(e.mpie_solves_it());
         // Negative controls: a straight dipole, and a T the graph takes
         // (`a_degree_three_junction_the_graph_solve_takes_does_not_warn`), build.
         assert!(crate::build_geometry(&parse(CLEAN_DIPOLE).unwrap().deck).is_ok());
@@ -2917,10 +2919,12 @@ mod tests {
             "a closed loop",
             "(tag 2 segment 1)",
             "at least two segments",
-            "--solver mpie",
         ] {
             assert!(msg.contains(want), "{want:?}: {msg}");
         }
+        // The text names no flag; each frontend joins its own remedy on (FND-271).
+        assert!(!msg.contains("--solver"), "{msg}");
+        assert!(e.mpie_solves_it());
         // The fix it names is the fix: two-segment jumpers build, and the graph
         // takes the loop.
         let (deck, segs) = deck_and_segs(&folded(2));
@@ -2954,9 +2958,10 @@ mod tests {
                 "{drive:?}"
             );
             assert!(msg.contains("at least two segments"), "{drive:?}: {msg}");
+            let shown = e.with_mpie_remedy("re-run with `--solver mpie`");
             assert!(
-                !msg.contains("--solver mpie") && !msg.contains("MPIE"),
-                "must not recommend a solver that rejects the deck ({drive:?}): {msg}"
+                !shown.contains("--solver mpie") && !shown.contains("MPIE"),
+                "must not recommend a solver that rejects the deck ({drive:?}): {shown}"
             );
         }
     }

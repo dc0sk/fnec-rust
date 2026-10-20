@@ -504,7 +504,14 @@ fn main() -> ExitCode {
     let segs = match solver_mode.geometry(deck) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: {e}");
+            // The remedy as this run reaches the MPIE: `--hosts` refuses the
+            // flag, so a distributed run is told to run locally (FND-271).
+            let remedy = if hosts_path.is_some() {
+                HOSTS_MPIE_REMEDY
+            } else {
+                crate::solve_session::CLI_MPIE_REMEDY
+            };
+            eprintln!("error: {}", e.with_mpie_remedy(remedy));
             return ExitCode::FAILURE;
         }
     };
@@ -701,7 +708,8 @@ fn main() -> ExitCode {
     };
     // ------------------------------------------------------------------
 
-    // Per-wire basis solve requires every wire to have >= 2 segments.
+    // The experimental continuity basis needs >= 2 segments on every deck wire;
+    // the sinusoidal arm judges its own merged conductors instead (FND-273).
     let wire_endpoints = wire_endpoints_from_segs(&segs);
     let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
 
@@ -1479,6 +1487,10 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
     /// subcommand, which takes none (FND-218).
     const RESONANCE_MPIE_REMEDY: &str = "this search runs the Hallén solver only — \
         check the value it finds by solving the deck at that value with `fnec --solver mpie`";
+    /// The same, for a deck the search's Hallén geometry refuses: there is no value
+    /// to check, so the MPIE is the user's own search (FND-271).
+    const RESONANCE_REFUSAL_MPIE_REMEDY: &str = "this search runs the Hallén solver \
+        only, so solve the deck at the values you want with `fnec --solver mpie`";
     const SWEEP_USAGE: &str = "Usage: fnec sweep --resonance <file.nec.toml>\n\
          The .nec.toml file must contain [search] and [deck] tables.";
 
@@ -1547,7 +1559,8 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
         let result = parse(&deck_str).map_err(|e| e.to_string())?;
         let deck = &result.deck;
 
-        let segs = build_geometry(deck).map_err(|e| e.to_string())?;
+        let segs =
+            build_geometry(deck).map_err(|e| e.with_mpie_remedy(RESONANCE_REFUSAL_MPIE_REMEDY))?;
         let ground = ground_model_from_deck(deck);
         // Every refusal the other frontends make, in the order the main CLI makes
         // them. This route called none of them, so an unsupported load solved

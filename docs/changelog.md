@@ -34,6 +34,25 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   segments longer than the spacing nec2c moves by more than 5 % under its own
   refinement. The caveat names which applies, on every solver and frontend.
 
+- **A Hallén-only geometry refusal names the MPIE the way each frontend reaches
+  it** (FND-271). A `GA`/`GH` deck or a loop with a one-segment run was refused
+  with "`--solver mpie` on a local run" on every frontend, a flag the GUI,
+  `--hosts`, `sweep --resonance` and the Python bindings do not take. Each now
+  names its own way, and only for a deck the MPIE takes: an arc driven by a
+  plane wave is no longer pointed at a solver that refuses it.
+
+- **`--solver sinusoidal` solves a chain with a one-segment wire on its own
+  basis** (FND-273). It judged "two segments per wire" on the deck's `GW` cards,
+  not on the merged conductor it solves, and fell back to the experimental pulse
+  basis: a 4 + 1 + 4 dipole read −75.96 + j1.41 Ω against nec2c's
+  78.81 + j40.99, with exit 0. The pulse fallback is gone from this solver.
+
+- **A receiving junction standing on PEC ground is no longer captioned
+  "unreliable"** (FND-272). The route check asked the image problem for a
+  voltage feed, which a plane-wave deck has none of, so a T on the ground read
+  `route=unsupported` with the T/Y caveat although its solve is the section
+  graph and within 1.5 % of nec2c.
+
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE
   far-field gate nec2c's 2.17 dBi, and five comments quote the deck they describe. No
@@ -71,6 +90,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **Phase 10 is marked complete** in the roadmap, and PAR-011's backlog entry
   records what shipped in 0.23.0 and the two criteria still open (a run on Windows,
   the throughput comparison against 4nec2's own kernel).
+- **The requirements gap list states each gap's evidence, and GAP-012 is open again.**
+  `docs/requirements.md` still listed ten of GAP-003..014 as open definition work
+  while the register marked them all resolved. Each line now says resolved or open
+  and names its evidence. GAP-012 (AutoEZ-class automation) was ticked in the roadmap, the
+  register, the traceability matrix and backlog PAR-005 with only two of its four
+  classes built: variable sweeps and resonance targeting exist, a convergence-study
+  helper and a matching-network helper do not. Those two are BL-IMPR-017. GAP-006
+  records that it closed without the wireframes and feedback notes its criterion
+  asks for, and GAP-013 that its matrix has no owner column.
 
 ## [0.24.0] — 2026-10-19 — Named builds
 

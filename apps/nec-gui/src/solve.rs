@@ -413,7 +413,8 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let deck = &parsed.deck;
 
     // --- geometry & excitation -------------------------------------------
-    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
+    let segs =
+        nec_solver::geometry_for(deck, solver).map_err(|e| e.with_mpie_remedy(GUI_MPIE_REMEDY))?;
     let ground = ground_model_from_deck(deck);
 
     // --- frequency -------------------------------------------------------
@@ -712,7 +713,8 @@ impl SweepJob {
 
         let parsed = parse(deck_text).map_err(|e| e.to_string())?;
         let deck = parsed.deck;
-        let segs = nec_solver::geometry_for(&deck, solver).map_err(|e| e.to_string())?;
+        let segs = nec_solver::geometry_for(&deck, solver)
+            .map_err(|e| e.with_mpie_remedy(GUI_MPIE_REMEDY))?;
         let ground = ground_model_from_deck(&deck);
         // Reject geometry the solver cannot honestly take, before queueing a whole
         // sweep of solves on it — and before the excitation, in the CLI's order.
@@ -1042,7 +1044,8 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
-    let segs = nec_solver::geometry_for(deck, solver).map_err(|e| e.to_string())?;
+    let segs =
+        nec_solver::geometry_for(deck, solver).map_err(|e| e.with_mpie_remedy(GUI_MPIE_REMEDY))?;
     let ground = ground_model_from_deck(deck);
     // The currents/pattern views share this path; they must refuse the same decks
     // the impedance view does rather than draw a plausible-looking wrong pattern.
@@ -1103,6 +1106,17 @@ mod tests {
     // until FND-251 refused that; it is `corpus/u-one-segment-negative-r-freesp.nec`.
     const BENT_NEGATIVE_R: &str = "CM U whose middle run is one segment: Hallén leaves its bends unmodelled (FND-162)\nCE\nGW 1 10 0 0 3.52 0 0 0 .00704\nGW 2 1 0 0 0 0.704 0 0 .00704\nGW 3 10 0.704 0 0 0.704 0 3.52 .00704\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// FND-271: a Hallén-only refusal tells the GUI user the GUI's way to the
+    /// MPIE, once, and not the CLI's flag.
+    #[test]
+    fn a_hallen_only_refusal_names_the_solver_picker() {
+        let arc = "CE\nGA 1 10 0.5 0 180 .001\nGE 0\nEX 0 1 2 0 1 0\nFR 0 1 0 0 30 0\nEN\n";
+        let err = solve_deck_str(arc, SolverKind::Hallen).expect_err("refused");
+        assert_eq!(err.matches(GUI_MPIE_REMEDY).count(), 1, "{err}");
+        assert!(!err.contains("--solver"), "{err}");
+        assert!(solve_deck_str(arc, SolverKind::Mpie).is_ok());
+    }
 
     #[test]
     fn a_negative_resistance_solve_carries_a_caveat() {
