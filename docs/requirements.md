@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/requirements.md
 status: living
-last_updated: 2026-09-26
+last_updated: 2026-10-19
 ---
 
 # Requirements
@@ -151,22 +151,29 @@ Tolerance concept #2 is that each output metric gets a deliberately different to
 - Decision date: 2026-04-22
 - Target parity level: near-100% (see table above).
 
-## Explicit gap list (open definition work)
+## Explicit gap list
+
+Each gap's resolution criterion is in the `docs/roadmap.md` "Gaps and blockers"
+table; the state is tracked in
+[project/requirements-register.md](project/requirements-register.md). Each line
+below gives the state and the evidence it rests on, checked against the tree on
+2026-10-19. One gap is open.
 
 - **GAP-001**: ~~Define numerical tolerance targets~~ — **resolved**, see tolerance matrix above.
-- **GAP-002 (critical)**: Define exactly which NEC-4 cards/features are in initial support and which are deferred. **Resolved** 2026-04-23: see `docs/nec4-support.md` for complete card support matrix and phase assignments.
-- **GAP-003 (high)**: Define MVP ground model set and upgrade path for advanced ground behavior.
-- **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability).
+- **GAP-002 (critical)**: Define exactly which NEC-4 cards/features are in initial support and which are deferred. **Resolved** 2026-04-23. Evidence: `docs/nec4-support.md` (where fnec stands on each NEC-4 feature); the per-card status moved to `docs/card-support-matrix.md` (FND-235), checked against the parser by `crates/nec_parser/tests/card_matrix.rs`.
+- **GAP-003 (high)**: Define MVP ground model set and upgrade path for advanced ground behavior. **Resolved.** Evidence: corpus decks `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred` and `dipole-gn2-near-ground-51seg` (gated by `apps/nec-cli/tests/corpus_validation.rs` against `corpus/reference-results.json`); the GN rows of `docs/card-support-matrix.md`; `docs/nec4-support.md`. The upgrade path has since been built: Sommerfeld ground is solved (`--ground-solver sommerfeld` for feedpoint Z, `--solver mpie` for currents and patterns, PH9-CHK-006/007). Only wires touching or crossing a finite ground stay refused. The deck name `dipole-gn2-deferred` predates that and does not mean Sommerfeld is deferred.
+- **GAP-004 (high)**: Specify the first plugin/scripting interface (command hooks, sandboxing, API stability). **Resolved** (BLK-004). Evidence: `docs/plugin-api-design.md` (safety model, EP-1..4); `DeckPostProcessor` and `DeckValidator` in `crates/nec_model/src/lib.rs`; `ResultFilter` and `ReportSection` in `crates/nec_report/src/lib.rs`.
 - **GAP-005 (high)**: ~~Define text report format contract for 4nec2-like output (sections, units, precision, ordering).~~ **resolved** 2026-04-23 via PAR-001 v1 contract and CI gate.
-- **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow.
+- **GAP-006 (medium)**: Define GUI information architecture for a modern task-oriented workflow. **Resolved, with a recorded deviation.** The criterion asks for an IA document, task-flow wireframes and at least one round of workflow-feedback notes. The IA document exists (`docs/gui-redesign-plan.md`: layout, panes, one target-layout mockup), the user guide exists (`docs/gui-guide.md`), and the GUI shipped (PRs #315–#339). There are **no task-flow wireframes and no workflow-feedback notes**; the gap was closed without them.
 - **GAP-007 (medium)**: Define GPU rollout criteria from postprocess to matrix fill and solve. Framework selection must follow DEC-008 (FOSS-first, AMD-preferred). **Resolved** 2026-05-03: see `docs/gpu-arch.md` (PH5-CHK-001) and `docs/multi-vendor-gpu.md` (PH6-CHK-004).
-- **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility.
-- **GAP-009 (high)**: Define measurable acceptance criteria for 4nec2/EZNEC-grade workflow parity, including result inspection, sweep interaction, and reporting completeness.
-- **GAP-010 (high)**: Define stable automation and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp-style integrations.
-- **GAP-011 (medium)**: Define classic batch-CLI parity requirements relative to open NEC2 tools such as yeti01/nec2 and xnec2c batch-oriented workflows.
-- **GAP-012 (high)**: Define measurable acceptance criteria for AutoEZ-class automation parity, including variable sweeps, resonance targeting, convergence studies, and matching-network workflows.
-- **GAP-013 (high)**: Define and maintain a NEC-5-validation-manual-informed case matrix that maps target classes to corpus tests and tolerance gates.
-- **GAP-014 (medium)**: Define measurable external optimizer-loop compatibility criteria relative to xnec2c-optimize workflows (objective input, deterministic run behavior, and machine-readable outputs).
+- **GAP-008 (medium)**: Define dependency/license policy thresholds and exception handling for GPLv2 compatibility. **Resolved** (BLK-005). Evidence: `deny.toml` (`cargo deny check licenses`) and `docs/dependency-policy.md` (allowlist, deny-list, exception process).
+- **GAP-009 (high)**: Define measurable acceptance criteria for 4nec2/EZNEC-grade workflow parity, including result inspection, sweep interaction, and reporting completeness. **Resolved** (PH3-CHK-012). Evidence: `docs/usability-benchmark-ph3.md` (a 5-point sweep from a blank project in 7 actions; a timed edit-run-inspect run against xnec2c). Both were measured on the tabbed Phase 3 GUI, before the workbench redesign, and have not been re-run on it.
+- **GAP-010 (high)**: Define stable automation and embedding strategy for non-Rust consumers so fnec-rust can compete with necpp-style integrations. **Resolved.** Evidence: `docs/automation-guide.md`, `docs/json-output-schema.md`, `docs/python-bindings.md`, `bindings/fnec_py`.
+- **GAP-011 (medium)**: Define classic batch-CLI parity requirements relative to open NEC2 tools such as yeti01/nec2 and xnec2c batch-oriented workflows. **Resolved.** Evidence: `docs/cli-guide.md` (stdout/stderr contract, exit codes 0/1/2, `--output-format text|json|nec2d`).
+- **GAP-012 (high)**: Define measurable acceptance criteria for AutoEZ-class automation parity, including variable sweeps, resonance targeting, convergence studies, and matching-network workflows. **Open: 2 of 4 classes delivered.** Variable sweeps (`--vars` and `--sweep-config`; `apps/nec-cli/tests/template_contract.rs`, `apps/nec-cli/tests/sweep_contract.rs`) and resonance targeting (`apps/nec-cli/src/resonance_search.rs`; `apps/nec-cli/tests/resonance_contract.rs`) exist. **Missing:** a convergence-study helper (segmentation refinement as a user workflow; the nec2c 1 / 3 / 9 × series in the corpus is reference capture, not a helper) and a matching-network workflow helper. Tracked as BL-IMPR-017 in `docs/backlog.md`.
+- **GAP-013 (high)**: Define and maintain a NEC-5-validation-manual-informed case matrix that maps target classes to corpus tests and tolerance gates. **Resolved** (PH2-CHK-007). Evidence: `docs/corpus-validation-strategy.md` § "NEC-5 validation coverage matrix (PAR-008)". The matrix has **no owner column**, though the roadmap criterion names one.
+- **GAP-014 (medium)**: Define measurable external optimizer-loop compatibility criteria relative to xnec2c-optimize workflows (objective input, deterministic run behavior, and machine-readable outputs). **Resolved.** Evidence: `json_output_is_stable_across_two_runs` in `apps/nec-cli/tests/json_output_contract.rs`, `docs/json-output-schema.md`, and the end-to-end loop `examples/optimize_swr.py`.
+- **GAP-015 (medium)**: Markdown project import/export. **Resolved** 2026-08-28; evidence in the roadmap's GAP-015 row (`fnec project convert`, `apps/nec-cli/tests/project_cmd.rs`).
 
 ## Acceptance criteria
 

@@ -148,11 +148,6 @@ fn continuity_non_single_chain_falls_back_to_pulse() {
 }
 
 #[test]
-fn sinusoidal_non_single_chain_falls_back_to_pulse() {
-    assert_non_single_chain_fallback("sinusoidal", "sinusoidal->pulse");
-}
-
-#[test]
 fn sinusoidal_solves_reference_dipole_without_fallback() {
     let output = run_solver_on_reference_dipole("sinusoidal");
 

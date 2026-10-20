@@ -266,6 +266,9 @@ FND-249) — so the `GX` dipole, a half and its mirror meeting start-to-start, i
 one-wire dipole. A deck with a bend, a junction or a loop needs the conductor-path
 or section-graph basis of `--solver hallen`, and `sinusoidal` refuses it by name
 (FND-203) — it once answered such decks off by a factor of two to three with exit 0.
+A wire one segment long inside a chain is part of the chain's conductor and solves
+with it; it once fell back to the pulse basis and answered with a negative
+resistance (FND-273).
 If the projected sinusoidal solve exceeds the residual budget on a single
 collinear chain, the CLI falls back to `hallen` and reports
 `SOLVER_MODE sinusoidal->hallen(residual)`.

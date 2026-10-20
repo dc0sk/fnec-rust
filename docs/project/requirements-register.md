@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/requirements-register.md
 status: living
-last_updated: 2026-10-01
+last_updated: 2026-10-19
 ---
 
 # Requirements register
@@ -83,7 +83,7 @@ canonical list.
 | PRT-003 | Sweep/gain/pattern/report weaker than 4nec2 | Phase 1–2 | Done |
 | PRT-004 | GUI/workflow maturity behind | Phase 3 | Done |
 | PRT-005 | No optimization/parameter-sweep workflow | Phase 3–4 | Done |
-| PRT-006 | No AutoEZ-class automation | Phase 3–4 | Done |
+| PRT-006 | No AutoEZ-class automation | Phase 3–4 | Partial: variable sweeps and resonance targeting done; convergence-study and matching-network helpers missing (GAP-012, BL-IMPR-017) |
 | PRT-007 | Weak geometry validation/embeddability | Phase 2–4 | Done |
 | PRT-008 | Accuracy program too narrow | Phase 1–3 | Done (broadened corpus) |
 | PRT-009 | No NEC-5 surfaces plan | Phase 4–5 | Decided: wire-only (`nec5-frontier.md`) |
@@ -102,19 +102,19 @@ Phase 8.
 
 | ID | Title | State |
 |:---|:------|:------|
-| GAP-002 | NEC-4 feature boundary | Resolved (`docs/nec4-support.md`) |
-| GAP-003 | MVP ground model set | Resolved (Phase 2) |
-| GAP-004 | Plugin/scripting interface | Resolved (BLK-004) |
+| GAP-002 | NEC-4 feature boundary | Resolved (`docs/nec4-support.md`; card status in `docs/card-support-matrix.md`) |
+| GAP-003 | MVP ground model set | Resolved (Phase 2): corpus `dipole-ground-51seg`, `dipole-gn0-fresnel-51seg`, `dipole-gn2-deferred`, `dipole-gn2-near-ground-51seg`; GN rows in `docs/card-support-matrix.md`. Sommerfeld since solved (PH9-CHK-006/007) |
+| GAP-004 | Plugin/scripting interface | Resolved (BLK-004): `docs/plugin-api-design.md`; `DeckPostProcessor`, `DeckValidator` (`nec_model`), `ResultFilter`, `ReportSection` (`nec_report`) |
 | GAP-005 | 4nec2-like text report | Resolved 2026-04-23 |
-| GAP-006 | GUI information architecture | Resolved (Phase 3) |
+| GAP-006 | GUI information architecture | Resolved with a deviation: IA in `docs/gui-redesign-plan.md`, `docs/gui-guide.md`, GUI shipped; **no task-flow wireframes and no workflow-feedback notes**, which the criterion asks for |
 | GAP-007 | GPU rollout criteria | Resolved 2026-05-03 (`docs/gpu-arch.md`) |
-| GAP-008 | Dependency/license policy | Resolved (BLK-005) |
-| GAP-009 | Workflow parity acceptance criteria | Resolved (PH3-CHK-012) |
-| GAP-010 | Automation/embedding strategy | Resolved (Phase 4) |
-| GAP-011 | Classic batch-CLI parity definition | Resolved (Phase 2) |
-| GAP-012 | AutoEZ-class automation acceptance | Resolved (Phase 3) |
-| GAP-013 | NEC-5-informed validation matrix | Resolved (PH2-CHK-007) |
-| GAP-014 | External optimizer-loop compatibility | Resolved (Phase 3) |
+| GAP-008 | Dependency/license policy | Resolved (BLK-005): `deny.toml`, `docs/dependency-policy.md` |
+| GAP-009 | Workflow parity acceptance criteria | Resolved (PH3-CHK-012): `docs/usability-benchmark-ph3.md`, measured on the pre-redesign GUI |
+| GAP-010 | Automation/embedding strategy | Resolved (Phase 4): `docs/automation-guide.md`, `docs/json-output-schema.md`, `docs/python-bindings.md`, `bindings/fnec_py` |
+| GAP-011 | Classic batch-CLI parity definition | Resolved (Phase 2): `docs/cli-guide.md` (stdout/stderr, exit codes, `--output-format`) |
+| GAP-012 | AutoEZ-class automation acceptance | **Open, 2 of 4**: variable sweeps (`--vars`, `template_contract.rs`) and resonance targeting (`resonance_search.rs`, `resonance_contract.rs`) done; convergence-study and matching-network helpers do not exist (BL-IMPR-017) |
+| GAP-013 | NEC-5-informed validation matrix | Resolved (PH2-CHK-007): `docs/corpus-validation-strategy.md` § NEC-5 validation coverage matrix (PAR-008); no owner column, though the criterion names one |
+| GAP-014 | External optimizer-loop compatibility | Resolved (Phase 3): `json_output_is_stable_across_two_runs`, `docs/json-output-schema.md`, `examples/optimize_swr.py` |
 | GAP-015 | Markdown project import/export | Resolved (`nec_project`) |
 | BLK-001 | Tolerance matrix defined | Resolved 2026-04-22 |
 | BLK-002 | NEC-4 feature boundary documented | Resolved |
