@@ -3288,10 +3288,18 @@ mod tests {
             assert!(!e.mpie_solves_it(), "{card}: no feed, so no MPIE solve");
             assert_eq!(e.with_mpie_remedy("REMEDY"), e.to_string());
             assert!(build_deck_geometry(&deck).is_ok(), "{card}");
-            let fed = parsed(&format!("{card}\nGE 0\nEX 0 1 1 0 1 0\nEN\n"));
-            let e = build_geometry(&fed).expect_err(card);
+            let fed = |seg: u32| {
+                parsed(&format!(
+                    "{card}\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 30 0\nEN\n"
+                ))
+            };
+            let e = build_geometry(&fed(2)).expect_err(card);
             assert!(e.mpie_solves_it(), "{card}");
             assert_eq!(e.with_mpie_remedy("REMEDY").matches("REMEDY").count(), 1);
+            // Fed at its end the MPIE refuses it too (FND-228): no remedy (FND-276).
+            let e = build_geometry(&fed(1)).expect_err(card);
+            assert!(!e.mpie_solves_it(), "{card}: an end feed");
+            assert_eq!(e.with_mpie_remedy("REMEDY"), e.to_string());
         }
         assert!(build_geometry(&parsed("GW 1 3 0 0 0 0 0 1 .001\nGE 0\nEN\n")).is_ok());
     }

@@ -459,19 +459,18 @@ impl SolverContext<'static> {
 // Deck capability
 // ---------------------------------------------------------------------------
 
-/// Whether a deck can be solved on the MPIE path: driven by at least one voltage
-/// source (`EX` type 0), with no transmission lines / networks and no plane-wave
-/// or current-source excitation (all unsupported by the MPIE). Loads it takes.
+/// Whether a deck can be solved on the MPIE path: every refusal the MPIE solve
+/// makes before its numerics, on the MPIE's own geometry
+/// ([`crate::mpie_session::mpie_takes_deck`]) — no transmission line, network,
+/// plane wave or current source, at least one delta gap (an unrecognised `EX`
+/// type is not one, FND-037), no feed at a free wire end (FND-228) or between
+/// two junctions, no wire on the ground.
 ///
-/// Used to decide whether a diagnostic may recommend the MPIE as a remedy.
+/// Used to decide whether a diagnostic may recommend the MPIE as a remedy. It
+/// was deck-only, and recommended the MPIE for decks the MPIE then refused
+/// (FND-276).
 pub fn mpie_compatible_deck(deck: &NecDeck) -> bool {
-    if crate::mpie_session::mpie_unsupported(deck).is_some() {
-        return false;
-    }
-    // A delta gap, not merely "not a plane wave": an unrecognised `EX` type is
-    // not a voltage source, and counting it as one recommended the MPIE for a
-    // deck it cannot drive (FND-037's cluster).
-    crate::excitation::first_delta_gap_feedpoint(deck).is_some()
+    crate::mpie_session::mpie_takes_deck(deck)
 }
 
 // ---------------------------------------------------------------------------

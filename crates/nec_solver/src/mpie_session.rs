@@ -160,6 +160,9 @@ pub fn mpie_unsupported(deck: &NecDeck) -> Option<MpieUnsupported> {
 /// without that input passes `&[]`), built here at `freq_hz` and stamped as the
 /// transpose of the segment-current readout. A load naming no segment, or a
 /// Laplace load that cannot be evaluated here, is refused rather than dropped.
+///
+/// Every refusal is [`mpie_plan`]'s, which the remedy check shares
+/// ([`mpie_takes_deck`]); only the numerics are here.
 pub fn solve_mpie_session(
     deck: &NecDeck,
     segs: &[Segment],
@@ -167,6 +170,70 @@ pub fn solve_mpie_session(
     freq_hz: f64,
     laplace: &[crate::loads::LaplaceLoad],
 ) -> Result<Vec<Complex64>, MpieSessionError> {
+    let MpiePlan { geom, feeds, loads } = mpie_plan(deck, segs, ground, freq_hz, laplace)?;
+    let basis_currents = solve_mpie_sources(&geom, freq_hz, ground, &feeds, &loads)
+        .map_err(MpieSessionError::Solve)?;
+    let currents = segment_currents(&geom, &basis_currents);
+    // The MPIE had no finiteness check anywhere: a diverged solve whose feed
+    // current happened to stay finite printed NaN rows for every other segment
+    // (FND-126).
+    crate::check_currents_finite(&currents).map_err(MpieSessionError::NonFiniteCurrents)?;
+    Ok(currents)
+}
+
+/// Whether the MPIE takes `deck` as written: [`mpie_plan`] on the MPIE's own
+/// geometry ([`crate::geometry::build_deck_geometry`] — not the Hallén mesh,
+/// whose free-end thirds make an end feed look interior), the deck's ground, its
+/// lowest frequency (the ground-contact tolerance, 1e-6 λ, is widest there) and
+/// no loads from outside the deck. False for a deck with no frequency, which
+/// nothing solves.
+///
+/// What a remedy naming the MPIE asks, so the advice cannot outrun the solve: a
+/// deck-only check recommended the MPIE for an end-fed arc, a feed between two
+/// junctions and a wire on the ground, each of which the MPIE then refused
+/// (FND-276). Refusals only the numerics raise (a singular matrix, non-finite
+/// currents) are not foreseen.
+pub fn mpie_takes_deck(deck: &NecDeck) -> bool {
+    let Ok(segs) = crate::geometry::build_deck_geometry(deck) else {
+        return false;
+    };
+    let ground = crate::ground_model_from_deck(deck);
+    crate::frequencies_hz(deck)
+        .into_iter()
+        .reduce(f64::min)
+        .is_some_and(|f| mpie_plan(deck, &segs, &ground, f, &[]).is_ok())
+}
+
+/// What [`solve_mpie_session`] would refuse `deck` for at `freq_hz`, before any
+/// numerics run: [`mpie_plan`]'s refusal. `segs` must be the MPIE's geometry
+/// ([`crate::geometry::geometry_for`] with the MPIE). For a frontend that refuses
+/// before queueing a sweep, so the queue does not fail on its first point.
+pub fn mpie_refusal(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+) -> Option<MpieSessionError> {
+    mpie_plan(deck, segs, ground, freq_hz, &[]).err()
+}
+
+/// Everything [`solve_mpie_session`] decides before its numerics: the wire graph,
+/// the feeds as (node, volts) with their reference signs, the loads.
+pub(crate) struct MpiePlan {
+    geom: crate::mpie::MpieGeometry,
+    feeds: Vec<(usize, Complex64)>,
+    loads: Vec<Complex64>,
+}
+
+/// Every refusal of the MPIE solve, in its order, and none of its numerics — the
+/// one copy the solve and the remedy check ([`mpie_takes_deck`]) read.
+pub(crate) fn mpie_plan(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &GroundModel,
+    freq_hz: f64,
+    laplace: &[crate::loads::LaplaceLoad],
+) -> Result<MpiePlan, MpieSessionError> {
     if let Some(u) = mpie_unsupported(deck) {
         return Err(MpieSessionError::Unsupported(u));
     }
@@ -270,15 +337,7 @@ pub fn solve_mpie_session(
     if feeds.is_empty() {
         return Err(MpieSessionError::NoVoltageSource);
     }
-
-    let basis_currents = solve_mpie_sources(&geom, freq_hz, ground, &feeds, &loads)
-        .map_err(MpieSessionError::Solve)?;
-    let currents = segment_currents(&geom, &basis_currents);
-    // The MPIE had no finiteness check anywhere: a diverged solve whose feed
-    // current happened to stay finite printed NaN rows for every other segment
-    // (FND-126).
-    crate::check_currents_finite(&currents).map_err(MpieSessionError::NonFiniteCurrents)?;
-    Ok(currents)
+    Ok(MpiePlan { geom, feeds, loads })
 }
 
 #[cfg(test)]
