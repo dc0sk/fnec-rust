@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Parallel wires closer than ten radius sums, or than their segment length,
+  carry a caveat** (FND-274). A wire laid 2 mm beside a 1 mm-radius dipole read
+  32 − j94 Ω on Hallén, 159 + j259 on the MPIE and 1271 + j2069 on nec2c, with no
+  warning. Under ten radius sums Hallén and the MPIE part by 4 to 21 %; with
+  segments longer than the spacing nec2c moves by more than 5 % under its own
+  refinement. The caveat names which applies, on every solver and frontend.
+
 - **A Hallén-only geometry refusal names the MPIE the way each frontend reaches
   it** (FND-271). A `GA`/`GH` deck or a loop with a one-segment run was refused
   with "`--solver mpie` on a local run" on every frontend, a flag the GUI,

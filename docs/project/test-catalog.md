@@ -23,6 +23,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | Test file | # | Validates | Gates |
 |:----------|:--|:----------|:------|
 | `apps/nec-cli/tests/average_power_gain.rs` | 2 | FND-262: the average power gain is NEC-2's. On the 8 PAR-011 fixtures whose kernel printed an average, the kernel's own gains through `nec_solver::average_power_gain` give its printed average within 1e-3, and fnec's own average is within 0.5 % of it (the GN 2 deck is excepted). A single cut has no average, and isotropic 0 dBi averages to 1. Three sabotages caught: φ ends, θ ends, nulls. | FND-262 |
+| `apps/nec-cli/tests/close_parallel_caveat.rs` | 1 | FND-274 — touching parallel wires carry the solver-neutral caveat on every solver | — |
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
@@ -160,7 +161,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=810 --> **810** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=811 --> **811** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -171,7 +172,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 274 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 277 | loads, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 98 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 50 | main, exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -181,11 +182,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=656 --> **656** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=659 --> **659** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1473 --> **1473** = 656 unit + 810 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1477 --> **1477** = 659 unit + 811 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

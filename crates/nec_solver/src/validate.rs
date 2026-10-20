@@ -43,6 +43,50 @@ pub fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
     (dx * dx + dy * dy + dz * dz).sqrt() <= eps
 }
 
+/// FND-274: parallel wires close enough that every code here answers them
+/// unreliably (see [`crate::geometry::close_parallel_segments`] for the two
+/// measured clauses). A caveat, not a refusal: the deck is legal and the answer
+/// is usable as a trend. The same text on every solver and frontend — the MPIE
+/// is self-consistent there but unverified, and 20 % in reactance off the one
+/// conductor that touching wires are, so it is not named as a remedy.
+pub fn close_parallel_wire_warning(segs: &[Segment]) -> Option<String> {
+    let p = crate::geometry::close_parallel_segments(segs)?;
+    let mut why = Vec::new();
+    if p.within_radii() {
+        why.push(format!(
+            "that is {:.1} times the sum of their radii, and under {} the thin-wire \
+             kernel every solver here uses is outside its validity (Hallén and the MPIE \
+             part by 4 to 21 % there); wires that touch are better modelled as one \
+             conductor",
+            p.spacing / p.radii,
+            crate::geometry::CLOSE_PARALLEL_RADII,
+        ));
+    }
+    if p.within_segment() {
+        why.push(format!(
+            "their segments ({:.3e} m) are longer than the spacing, where nec2c's own \
+             answer moves by more than 5 % under refinement; refine until the segments \
+             are shorter than the spacing, with their ends aligned",
+            p.segment
+        ));
+    }
+    Some(format!(
+        "wires tag {} and tag {} run parallel {:.3e} m apart: {}, so the reported \
+         impedance, currents and pattern are unreliable (FND-274)",
+        p.tags.0,
+        p.tags.1,
+        p.spacing,
+        why.join("; and ")
+    ))
+}
+
+/// The geometry caveats that hold whatever the solver: the one list the CLI
+/// prints and [`diagnose`] returns, so a frontend cannot miss one (FND-274; the
+/// superseded-`FR` warning, which needs no geometry, is read separately).
+pub fn solver_neutral_geometry_warnings(segs: &[Segment]) -> Vec<String> {
+    close_parallel_wire_warning(segs).into_iter().collect()
+}
+
 pub fn segment_intersection_error(segs: &[Segment]) -> Option<String> {
     const TOUCH_EPS: f64 = 1.0e-9;
     const CROSS_EPS: f64 = 1.0e-7;
@@ -1981,6 +2025,9 @@ pub fn diagnose(
     for w in superseded_frequency_warnings(deck) {
         out.push(ValidationDiagnostic::warning(w));
     }
+    for w in solver_neutral_geometry_warnings(segs) {
+        out.push(ValidationDiagnostic::warning(w));
+    }
 
     match ctx.kind {
         // The Hallén basis cannot model a loop closure, a Kirchhoff split at a
@@ -3219,6 +3266,80 @@ mod tests {
             let (deck, segs) = deck_and_segs(&format!("{text}{feed}"));
             assert_eq!(radius_step_warning(&deck, &segs, None), None, "{text}");
         }
+    }
+
+    /// FND-274: the dipole with a parallel wire along its upper half (FND-250's
+    /// deck), `d` metres off its axis, `n1` and `n2` segments.
+    fn alongside(d: f64, n1: u32, n2: u32) -> String {
+        format!(
+            "GW 1 {n1} 0 0 -2.64 0 0 2.64 .001\nGW 2 {n2} {d} 0 0 {d} 0 3.5 .001\nGE 0\n\
+             EX 0 1 {} 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
+            n1 / 2 + 1
+        )
+    }
+
+    #[test]
+    fn close_parallel_wires_carry_the_clause_that_holds() {
+        let warn = |d: f64, n1: u32, n2: u32| {
+            let (_, segs) = deck_and_segs(&alongside(d, n1, n2));
+            close_parallel_wire_warning(&segs)
+        };
+        // Touching, and 7.5 radius sums: both clauses (segments ~0.5 m).
+        for d in [0.002, 0.015] {
+            let w = warn(d, 11, 6).expect("caveat");
+            assert!(
+                w.contains("tag 1 and tag 2") && w.contains("FND-274"),
+                "{w}"
+            );
+            assert!(w.contains("thin-wire kernel"), "{d}: {w}");
+            assert!(w.contains("longer than the spacing"), "{d}: {w}");
+        }
+        // 50 radius sums, segments longer than the spacing: the mesh clause only.
+        let w = warn(0.1, 11, 6).expect("caveat");
+        assert!(!w.contains("thin-wire kernel"), "{w}");
+        assert!(w.contains("longer than the spacing"), "{w}");
+        // The same spacing with segments shorter than it: no caveat.
+        assert_eq!(warn(0.1, 61, 41), None);
+        // 10 radius sums is the boundary: none at 10.5 with fine segments.
+        assert_eq!(warn(0.021, 301, 201), None);
+        assert!(warn(0.019, 301, 201).is_some_and(|w| w.contains("thin-wire kernel")));
+    }
+
+    #[test]
+    fn wires_that_are_not_close_and_parallel_carry_no_caveat() {
+        for deck in [
+            // Two Yagi-like elements 2 m apart.
+            "GW 1 21 0 0 -2.64 0 0 2.64 .001\nGW 2 21 2 0 -2.5 2 0 2.5 .001\nGE 0\n\
+             EX 0 1 11 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
+            // A wire across the dipole's end, 2 cm off it: not parallel.
+            "GW 1 21 0 0 -2.64 0 0 2.64 .001\nGW 2 5 -0.5 0.02 2 0.5 0.02 2 .001\nGE 0\n\
+             EX 0 1 11 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
+            // A collinear chain split over GW cards: one conductor, end to end.
+            "GW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 0 0 2.64 .001\nGE 0\n\
+             EX 0 1 10 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n",
+            CLEAN_DIPOLE,
+        ] {
+            let (_, segs) = deck_and_segs(deck);
+            assert_eq!(close_parallel_wire_warning(&segs), None, "{deck}");
+        }
+    }
+
+    /// Solver-neutral: the MPIE's diagnosis carries it too.
+    #[test]
+    fn the_close_parallel_caveat_reaches_the_mpie() {
+        let parsed = parse(&alongside(0.002, 11, 6)).expect("parses");
+        let segs = crate::build_deck_geometry(&parsed.deck).expect("builds");
+        let ctx = SolverContext {
+            kind: SolverKind::Mpie,
+            mpie_remedy: "unused on the MPIE arm",
+            sommerfeld_remedy: None,
+            loads: RunLoads::NONE,
+        };
+        let diags = diagnose(&parsed.deck, &segs, &GroundModel::FreeSpace, 28.4e6, ctx);
+        assert!(
+            diags.iter().any(|d| d.message.contains("FND-274")),
+            "{diags:?}"
+        );
     }
 }
 
