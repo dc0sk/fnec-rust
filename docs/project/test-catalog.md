@@ -23,7 +23,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | Test file | # | Validates | Gates |
 |:----------|:--|:----------|:------|
 | `apps/nec-cli/tests/average_power_gain.rs` | 2 | FND-262: the average power gain is NEC-2's. On the 8 PAR-011 fixtures whose kernel printed an average, the kernel's own gains through `nec_solver::average_power_gain` give its printed average within 1e-3, and fnec's own average is within 0.5 % of it (the GN 2 deck is excepted). A single cut has no average, and isotropic 0 dBi averages to 1. Three sabotages caught: φ ends, θ ends, nulls. | FND-262 |
-| `apps/nec-cli/tests/bend_feed_adjacent.rs` | 3 | FND-270 — a feed, current source or network port beside a bend node | — |
+| `apps/nec-cli/tests/bend_feed_adjacent.rs` | 8 | FND-270 — a feed, current source, network port or load step beside a node, on the conductor paths and the section graph; a uniform wire loss is not a gap; a plane-wave receive with a load beside the node | — |
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
@@ -121,7 +121,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/bend_receive_nec2c.rs` | 5 | Plane-wave receive on bent conductors vs nec2c at two meshes each — a 90° L, the same L with one arm unlit (fed only through the bend), a two-bend U; error must shrink; planned == one-shot receive solve; the one-segment-run fallback predicate (FND-162) | FND-162 |
 | `crates/nec_solver/tests/collinear_merge.rs` | 7 | PH9-CHK-002 (collinear case): a straight conductor split across several GW cards must solve as one wire. | PH9-CHK-002 |
 | `crates/nec_solver/tests/conductor_path_corpus.rs` | 3 | FND-132 — the corpus must reach the conductor-path basis. | FND-121, FND-132, PH9-CHK-002 |
-| `crates/nec_solver/tests/current_source.rs` | 5 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
+| `crates/nec_solver/tests/current_source.rs` | 6 | PH8-CHK-001: validate the current-source (EX type 4) Hallén solve. | PH8-CHK-001 |
 | `crates/nec_solver/tests/current_source_junction.rs` | 3 | Current-source (EX type 4) degree-2 junction solve: split-dipole + inverted-V Z=V/i0 == voltage-source Z (~2–3e-4); i0 linearity | PH9-CHK-002 |
 | `crates/nec_solver/tests/end_condition_nec2c.rs` | 5 | Hallén free-end condition vs captured nec2c: dipole, reactance gap shrinks with N, coupled pair at 1 m, 5-element Yagi (FND-156) | NFR-004 |
 | `crates/nec_solver/tests/farfield_e_field_nec2c.rs` | 1 | PAR-011: the far field's complex components `R·E_θ`, `R·E_φ` (NEC-2's scaling and phase) against nec2c converged at 9× — free space, perfect ground, `GN 0`, and crossed dipoles in quadrature (elliptical) — each nec2c series asserted settled (r < 0.7, tail ≤ tol/3), fnec within 4.0 % at 1× and 1.75 % at 3×, shrinking. | PAR-011 |
@@ -159,7 +159,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=808 --> **808** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=814 --> **814** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -184,7 +184,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=655 --> **655** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1470 --> **1470** = 655 unit + 808 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1476 --> **1476** = 655 unit + 814 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

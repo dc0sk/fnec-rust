@@ -32,8 +32,11 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   current across the slope jump a feed makes, so a dipole drawn as two halves
   read 1 % lower in resistance at a bend of 2 × 10⁻⁴ rad than straight, and a
   1 rad bend fed beside it 1.9 % below converged nec2c instead of the 1.3 % the
-  straight dipole sits at. Current sources and network ports beside a bend are
-  covered too.
+  straight dipole sits at. Current sources, network ports and a step in the
+  lumped load beside a node are covered too, on the conductor paths and on the
+  section graph (junctions, loops, radius steps): a 1000 Ω coil beside a bend
+  read 15 % from nec2c, now within the straight wire's own 4 %. A junction of
+  three or more wires keeps the old row (FND-277).
 
 - **Seven quoted nec2c figures are the answer for their test's own deck** (FND-259):
   the vertical MPIE ground gate holds nec2c's converged 90.173 + j38.991, the MPIE

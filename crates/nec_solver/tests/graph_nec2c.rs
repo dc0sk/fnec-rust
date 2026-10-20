@@ -330,7 +330,16 @@ fn feed_t(n: u32) -> u32 {
 /// A 1 λ square loop with a 100 Ω + 2 µH load on the segment beside a corner.
 /// The load moves Z by about 85 Ω (unloaded 110 − j146), so this deck sees a
 /// load that is wrong or missing. Kill criterion: under 2 % at 41, shrinking.
-/// Measured 2.05 → 1.43 %.
+///
+/// Against nec2c converged, each deck its own (the load sits at its segment's
+/// midpoint, which differs between the meshes): 21 at 27× 191.01 − j143.87 (1, 3,
+/// 9 ×: 191.06 − j140.79, 191.79 − j143.25, 191.29 − j143.69), 41 at 9× 195.70 −
+/// j141.67 (194.48 − j138.97, 196.06 − j141.40; 27× is under the thin-wire
+/// limit). Measured 0.89 → 0.45 %; 2.86 → 1.51 % before FND-270 marked the load
+/// as a gap beside the corner. The same-mesh references read 2.05 → 1.43 % before
+/// and 0.40 → 0.85 % after: Hallén's error fell below nec2c's own difference
+/// between the meshes, as on the inverted-V (`CONVERGED_LOW_REFS`,
+/// parity_sweep.rs).
 #[test]
 fn a_loop_loaded_at_a_corner_converges_to_nec2c() {
     let deck = |n: u32| {
@@ -340,8 +349,8 @@ fn a_loop_loaded_at_a_corner_converges_to_nec2c() {
             n / 2 + 1
         )
     };
-    let e21 = rel(z_in(&deck(21), (1, 11)), Complex64::new(191.06, -140.79));
-    let e41 = rel(z_in(&deck(41), (1, 21)), Complex64::new(194.48, -138.97));
+    let e21 = rel(z_in(&deck(21), (1, 11)), Complex64::new(191.01, -143.87));
+    let e41 = rel(z_in(&deck(41), (1, 21)), Complex64::new(195.70, -141.67));
     assert_converges("loop loaded at a corner", e21, e41, 0.02);
 }
 

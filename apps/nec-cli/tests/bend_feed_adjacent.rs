@@ -8,7 +8,8 @@
 // A dipole drawn as two halves meeting at the feed's end read 80.057 + j43.088 Ω
 // straight (one section, no node row) and 79.221 + j43.577 at a bend of 2e-4
 // rad, a 1 % step no correct scheme makes. The row now takes the gap segment's
-// current from the other section's quadratic extrapolation.
+// current from the other section's quadratic extrapolation — on the conductor
+// paths and on the section graph alike, for a feed, a port or a load step.
 
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,14 +19,54 @@ mod common;
 /// Two halves of 10 × 0.264 m at 28.4 MHz, the upper tilted by `t` radians,
 /// driven by `ex` (0 a voltage gap, 4 a current source) on tag 1 segment `feed`.
 fn deck(t: f64, ex: u32, feed: u32) -> String {
+    deck_with(t, &format!("EX {ex} 1 {feed} 0 1 0\n"), ".001")
+}
+
+/// [`deck`] with its cards after `GE` given, and the upper half's radius `r2`: at
+/// .00101 the 1 % step sends the solve to the section graph (FND-252), whose
+/// node sits at the join even when straight.
+fn deck_with(t: f64, cards: &str, r2: &str) -> String {
     let (x, z) = (2.64 * t.sin(), 2.64 * t.cos());
     format!(
-        "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {z:.12} .001\nGE 0\n\
-         EX {ex} 1 {feed} 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n"
+        "CE\nGW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {z:.12} {r2}\nGE 0\n\
+         {cards}FR 0 1 0 0 28.4 0\nEN\n"
     )
 }
 
 fn z_in(text: &str) -> (f64, f64) {
+    let lines = run(text);
+    let at = lines
+        .iter()
+        .position(|l| l == "FEEDPOINTS")
+        .expect("FEEDPOINTS");
+    let c: Vec<f64> = lines[at + 2]
+        .split_whitespace()
+        .map(|v| v.parse().expect("number"))
+        .collect();
+    (c[6], c[7])
+}
+
+/// `|I|` of tag 1 segment 10, beside the node, from the CURRENTS table.
+fn current_beside_node(text: &str) -> f64 {
+    let lines = run(text);
+    let at = lines
+        .iter()
+        .position(|l| l == "CURRENTS")
+        .expect("CURRENTS");
+    lines[at..]
+        .iter()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>())
+        .find(|c| c.len() == 6 && c[0] == "1" && c[1] == "10")
+        .expect("tag 1 seg 10")[4]
+        .parse()
+        .expect("I_MAG")
+}
+
+fn rel((a, b): (f64, f64), (c, d): (f64, f64)) -> f64 {
+    (a - c).hypot(b - d) / c.hypot(d)
+}
+
+fn run(text: &str) -> Vec<String> {
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let name = format!(
         "fnec-270-{}-{}.nec",
@@ -38,22 +79,15 @@ fn z_in(text: &str) -> (f64, f64) {
         .arg(&deck)
         .output()
         .expect("run fnec");
-    let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let lines: Vec<&str> = stdout.lines().collect();
-    let at = lines
-        .iter()
-        .position(|l| *l == "FEEDPOINTS")
-        .expect("FEEDPOINTS");
-    let c: Vec<f64> = lines[at + 2]
-        .split_whitespace()
-        .map(|v| v.parse().expect("number"))
-        .collect();
-    (c[6], c[7])
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(String::from)
+        .collect()
 }
 
 #[test]
@@ -76,14 +110,16 @@ fn a_vanishing_bend_beside_the_feed_is_the_straight_join() {
     }
 }
 
-/// A real bend, fed beside it, against nec2c converged at 81 × the mesh
-/// (`scripts/nec2c-converged-series.py`): 64.565 + j34.83 Ω at 1 rad. Hallén sits
-/// 1.26 % low in R, the same as on the straight dipole (81.079 against 80.057);
-/// before the fix it was 1.94 % low (63.316).
+/// A real bend, fed beside it, against nec2c at 27 × the mesh, thin kernel
+/// (`scripts/nec2c-converged-series.py`; 64.519, 64.271, 64.412, 64.518 at 1, 3, 9
+/// and 27 ×): 64.518 + j34.82 Ω at 1 rad. Hallén sits 1.18 % low in R, with the
+/// straight dipole's 1.26 % (81.079 against 80.057); before the fix it was 1.86 %
+/// low (63.316). 81 × needs nec2c's extended kernel (3.26 radii per corner
+/// segment, FND-267's regime) and is not the reference.
 #[test]
 fn a_real_bend_fed_beside_it_sits_with_the_straight_offset() {
     let (r, _) = z_in(&deck(1.0, 0, 10));
-    let off = (r - 64.565) / 64.565;
+    let off = (r - 64.518) / 64.518;
     assert!(
         (-0.016..-0.009).contains(&off),
         "{r}: {off:.4} from converged nec2c"
@@ -100,4 +136,104 @@ fn a_network_port_beside_a_vanishing_bend_is_the_straight_join() {
     let (straight, bent) = (z_in(&with_port(0.0)), z_in(&with_port(2e-4)));
     let step = (bent.0 - straight.0).abs() / straight.0;
     assert!(step < 0.002, "{bent:?} vs straight {straight:?}, {step:.4}");
+}
+
+/// The section graph has the same node row (FND-270): a 1 % radius step on the
+/// upper half takes the straight dipole to the graph, whose node beside the feed
+/// read 79.226 + j43.63 Ω — the conductor paths' pre-fix figure — against the
+/// single-section 80.057 + j43.09. With the gap marked it reads 79.973 + j43.13,
+/// 0.11 %, for the voltage gap, the current source (the graph's unit-gap solve)
+/// and a network port.
+#[test]
+fn the_section_graph_beside_a_feed_is_the_conductor_path() {
+    for ex in [0, 4] {
+        let path = z_in(&deck(0.0, ex, 10));
+        let graph = z_in(&deck_with(0.0, &format!("EX {ex} 1 10 0 1 0\n"), ".00101"));
+        assert!(rel(graph, path) < 0.003, "EX {ex}: {graph:?} vs {path:?}");
+    }
+    let port = "NT 1 10 1 10 0.002 0.004 0 0 0.002 0.004\nEX 0 1 5 0 1 0\n";
+    let (path, graph) = (
+        z_in(&deck_with(0.0, port, ".001")),
+        z_in(&deck_with(0.0, port, ".00101")),
+    );
+    assert!(rel(graph, path) < 0.003, "port: {graph:?} vs {path:?}");
+    // The control: two segments from the node, the row was always right.
+    let path = z_in(&deck(0.0, 0, 8));
+    let graph = z_in(&deck_with(0.0, "EX 0 1 8 0 1 0\n", ".00101"));
+    assert!(rel(graph, path) < 3e-4, "{graph:?} vs {path:?}");
+}
+
+/// A lumped load kinks the current as a gap does: its column is the same
+/// `sin(k|s − s′|)`. A j1000 Ω load on the segment beyond the node, fed far from
+/// it, stepped |Z| 10.8 % at a 2e-4 rad bend and sat 14.8 % from nec2c at 1 rad;
+/// with the load marked it steps 0.72 %. On the graph (the radius step) the
+/// straight node agrees with the bent path to 0.002 %. Two segments from the
+/// node the load stepped 0.02 % before and after (the control).
+#[test]
+fn a_load_beside_a_vanishing_bend_is_the_straight_join() {
+    let load = |at: u32| format!("LD 4 2 {at} {at} 0 1000\nEX 0 1 5 0 1 0\n");
+    let (straight, bent) = (
+        z_in(&deck_with(0.0, &load(1), ".001")),
+        z_in(&deck_with(2e-4, &load(1), ".001")),
+    );
+    assert!(rel(bent, straight) < 0.01, "{bent:?} vs {straight:?}");
+    let graph = z_in(&deck_with(0.0, &load(1), ".00101"));
+    assert!(
+        rel(graph, bent) < 1e-4,
+        "graph {graph:?} vs bent path {bent:?}"
+    );
+    let (s3, b3) = (
+        z_in(&deck_with(0.0, &load(3), ".001")),
+        z_in(&deck_with(2e-4, &load(3), ".001")),
+    );
+    assert!(rel(b3, s3) < 5e-4, "{b3:?} vs {s3:?}");
+}
+
+/// At a real bend the loaded deck keeps the straight deck's offset from nec2c.
+/// nec2c, thin kernel, 1 / 3 / 9 / 27 × the mesh: straight −1129.5, −1043.7,
+/// −1009.6, −992.84 Ω; 1 rad −1136.8, −1045.9, −1011.2, −994.43 — not settled, and
+/// the straight deck's own offset (Hallén −1029.2, 3.7 % past 27 ×) is the lumped
+/// load's mesh error on a deck with no node, so the 1 rad offset is gated against
+/// it, not against zero. Before the fix the 1 rad deck read −1141.2: 14.8 %.
+#[test]
+fn a_load_beside_a_real_bend_keeps_the_straight_offset() {
+    let load = "LD 4 2 1 1 0 1000\nEX 0 1 5 0 1 0\n";
+    let straight = z_in(&deck_with(0.0, load, ".001"));
+    let bent = z_in(&deck_with(1.0, load, ".001"));
+    let (off_s, off_b) = (
+        rel(straight, (3.1132, -992.84)),
+        rel(bent, (7.0342, -994.43)),
+    );
+    assert!(
+        (off_b - off_s).abs() < 0.01,
+        "straight {off_s:.4}, 1 rad {off_b:.4}"
+    );
+}
+
+/// A uniform load is no kink: copper loss on every segment of both halves leaves
+/// the feed's rule in force. Counting every loaded segment as a gap would put one
+/// on both sides of every node, and the 1 % step came back.
+#[test]
+fn wire_loss_does_not_hide_the_feed_beside_a_bend() {
+    let lossy = "LD 5 1 0 0 5.8e7\nLD 5 2 0 0 5.8e7\nEX 0 1 10 0 1 0\n";
+    let (straight, bent) = (
+        z_in(&deck_with(0.0, lossy, ".001")),
+        z_in(&deck_with(2e-4, lossy, ".001")),
+    );
+    assert!(rel(bent, straight) < 0.002, "{bent:?} vs {straight:?}");
+}
+
+/// A plane wave has no feed, but a load step still kinks the receive current
+/// (FND-270): the receive plans of both bases mark it. The node solves agree —
+/// the bent conductor path and the straight graph (radius step) — at |I| =
+/// 2.6206e-3 A beside the node.
+#[test]
+fn a_receive_load_beside_a_node_is_marked_on_both_bases() {
+    let wave = "LD 4 2 1 1 0 1000\nEX 1 1 1 0 90 0 0 0 0\n";
+    let path = current_beside_node(&deck_with(2e-4, wave, ".001"));
+    let graph = current_beside_node(&deck_with(0.0, wave, ".00101"));
+    assert!(
+        (path - graph).abs() / graph < 1e-3,
+        "path {path:e} vs graph {graph:e}"
+    );
 }

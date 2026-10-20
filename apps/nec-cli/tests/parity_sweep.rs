@@ -1881,7 +1881,6 @@ fn parity_sweep() {
 // Stage 3: references
 // ---------------------------------------------------------------------------------
 
-/// The near-ground regime the default ground model misses (below ~0.1 λ, where the
 /// The `low/*` decks whose R-lowground cells gate against nec2c's CONVERGED value, and
 /// the multiple of the deck's mesh it is taken at (rows `id@Sx` in `parity_nec2c.txt`).
 ///
@@ -1904,6 +1903,7 @@ fn low_golden_key(id: &str) -> String {
     }
 }
 
+/// The near-ground regime the default ground model misses (below ~0.1 λ, where the
 /// surface wave matters): a horizontal λ/2 dipole at 0.025, 0.05 and 0.1 λ over GN 2,
 /// and a low inverted-V, each at two meshes. `(id, deck, mesh)`, the id ending in the
 /// mesh so a cell can pair them.

@@ -229,7 +229,9 @@ pub(crate) fn solve_graph_unit_gap(
     let sources = corner_sources(segs, &ground, freq_hz);
     // `z_mat` must be UNSTAMPED: the loads enter here, as columns of the graph
     // system, and nowhere else (FND-198).
-    let mut system = crate::section_graph::GraphSystem::build(z_mat, segs, graph, &sources, k)?;
+    let gaps = NodeGaps::new(segs, vec![src], loads);
+    let mut system =
+        crate::section_graph::GraphSystem::build(z_mat, segs, graph, &sources, k, &gaps)?;
     for (p, z_l) in loads.iter().enumerate() {
         if *z_l != Complex64::new(0.0, 0.0) {
             system.add_load(p, *z_l);
@@ -447,6 +449,98 @@ pub(crate) fn group_paths(
     (path_of, path_end_rows(segs, paths))
 }
 
+/// The segments whose current kinks at their midpoint, which a node row must not
+/// extrapolate across (FND-270): every feed, current source and network port,
+/// and a segment where the lumped load per metre steps. A uniform load (`LD 5`
+/// wire loss on every segment) bends the current smoothly and kinks nothing;
+/// counting it would turn the rule off on every lossy deck. The one rule, read
+/// by the conductor-path rows ([`section_layout`]) and the section graph's.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NodeGaps {
+    feeds: Vec<usize>,
+    /// Load per metre of each segment; empty on an unloaded deck.
+    load_per_m: Vec<Complex64>,
+}
+
+/// Which side of a degree-2 node carries the gap: the first segment list given
+/// to [`NodeGaps::side`], or the second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GapSide {
+    A,
+    B,
+}
+
+impl NodeGaps {
+    /// `feeds` as global segment indices; `loads` the per-segment diagonal
+    /// (empty, or all zeros, on an unloaded deck).
+    pub(crate) fn new(segs: &[Segment], feeds: Vec<usize>, loads: &[Complex64]) -> Self {
+        let loaded = loads.len() == segs.len() && loads.iter().any(|l| l.norm() > 0.0);
+        let load_per_m = if loaded {
+            loads.iter().zip(segs).map(|(l, s)| l / s.length).collect()
+        } else {
+            Vec::new()
+        };
+        NodeGaps { feeds, load_per_m }
+    }
+
+    fn load_step(&self, j: usize, nbrs: &[usize]) -> bool {
+        let Some(&z) = self.load_per_m.get(j) else {
+            return false;
+        };
+        z.norm() > 0.0
+            && nbrs.iter().any(|&n| {
+                let zn = self.load_per_m[n];
+                (z - zn).norm() > 1e-6 * z.norm().max(zn.norm())
+            })
+    }
+
+    /// Whether `side[i]` is a gap, its neighbours being the segments beside it
+    /// along the path, across the node for the nearest.
+    fn gap_at(&self, side: &[usize], other: &[usize], i: usize) -> bool {
+        let mut nbrs = vec![if i == 0 { other[0] } else { side[i - 1] }];
+        nbrs.extend(side.get(i + 1));
+        self.feeds.contains(&side[i]) || self.load_step(side[i], &nbrs)
+    }
+
+    /// The side of a degree-2 node whose node-adjacent segment is a gap, when the
+    /// other side can be extrapolated from. `a` and `b` are each side's segments
+    /// outward from the node, nearest first, up to three. `None` keeps the linear
+    /// row: no gap; gaps on both sides of one kind; fewer than three segments
+    /// beyond; or a gap on the middle point beyond, whose kink would sit inside
+    /// the quadratic's span (a gap on the farthest point bounds the span and does
+    /// not enter it). A feed on one side and a load step on the other: the feed's
+    /// side, extrapolating across the load's kink — neither side is clean.
+    pub(crate) fn side(&self, a: &[usize], b: &[usize]) -> Option<GapSide> {
+        let (ga, gb) = (self.gap_at(a, b, 0), self.gap_at(b, a, 0));
+        let side = match (ga, gb) {
+            (true, false) => GapSide::A,
+            (false, true) => GapSide::B,
+            (true, true) => match (self.feeds.contains(&a[0]), self.feeds.contains(&b[0])) {
+                (true, false) => GapSide::A,
+                (false, true) => GapSide::B,
+                _ => return None,
+            },
+            (false, false) => return None,
+        };
+        let (near, far) = match side {
+            GapSide::A => (a, b),
+            GapSide::B => (b, a),
+        };
+        (far.len() >= 3 && !self.gap_at(far, near, 1)).then_some(side)
+    }
+}
+
+/// The weights of the quadratic through `xs` evaluated at `x0`: the Lagrange
+/// basis, so `Σ w_j f(xs[j])` is the extrapolation a gap's node row asks for.
+pub(crate) fn quadratic_weights(x0: f64, xs: [f64; 3]) -> [f64; 3] {
+    std::array::from_fn(|j| {
+        (0..3)
+            .filter(|&l| l != j)
+            .map(|l| (x0 - xs[l]) / (xs[j] - xs[l]))
+            .product()
+    })
+}
+
 /// [`group_paths`] with each path split into straight sections, a bend row pair
 /// at every node between them and the corner term (FND-162) — for every drive.
 /// The plane-wave forcing was once kept on [`group_paths`] because the incident
@@ -455,14 +549,14 @@ pub(crate) fn group_paths(
 /// at the node — so the bend rows hold for it as for a feed. Measured: a 90° L's
 /// receive currents went from 122 % off nec2c to 3.6 % at 41 segments per arm.
 ///
-/// `gaps` are the segments that carry a gap — a feed, a current source's unit
-/// gap, a network port — where the current's slope jumps (FND-270).
+/// `gaps` are the segments where the current's slope jumps, which the node rows
+/// must not extrapolate across (FND-270, [`NodeGaps`]).
 pub(crate) fn group_sections(
     segs: &[Segment],
     paths: &[ConductorPath],
     freq_hz: f64,
     ground: &crate::GroundModel,
-    gaps: &[usize],
+    gaps: &NodeGaps,
 ) -> PathGrouping {
     let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
     let sources = corner_sources(segs, ground, freq_hz);
@@ -595,7 +689,7 @@ fn section_layout(
     paths: &[ConductorPath],
     k: f64,
     sources: &[CornerSource],
-    gaps: &[usize],
+    gaps: &NodeGaps,
 ) -> Option<(Vec<usize>, crate::linear::BendLayout)> {
     let mut group_of = vec![0usize; segs.len()];
     let mut bends = Vec::new();
@@ -715,24 +809,19 @@ fn section_layout(
             // three points on the smooth side; the current is C¹ across the node,
             // as the potential row already assumes. Linear over 1.5 h carries the
             // curvature error (~2 %) and is worse than the row above. With a gap
-            // on both sides, or fewer than three segments beyond, keep the row.
-            let gap = |i: usize| gaps.contains(&p.segs[i]);
-            let beyond = match (gap(ea), gap(eb)) {
-                (true, false) if starts[sec + 2] - starts[sec + 1] >= 3 => {
-                    Some((ea, [eb, ib, ib + 1]))
-                }
-                (false, true) if starts[sec + 1] - starts[sec] >= 3 => Some((eb, [ea, ia, ia - 1])),
-                _ => None,
-            };
-            if let Some((f, pts)) = beyond {
-                let x = pts.map(|j| p.s_mid[j] - p.s_mid[f]);
+            // on both sides, or too few clean segments beyond, keep the row.
+            let a: Vec<usize> = (starts[sec]..starts[sec + 1]).rev().take(3).collect();
+            let b: Vec<usize> = (starts[sec + 1]..starts[sec + 2]).take(3).collect();
+            let global = |v: &[usize]| v.iter().map(|&i| p.segs[i]).collect::<Vec<_>>();
+            if let Some(side) = gaps.side(&global(&a), &global(&b)) {
+                let (f, pts) = match side {
+                    GapSide::A => (a[0], &b),
+                    GapSide::B => (b[0], &a),
+                };
+                let w = quadratic_weights(p.s_mid[f], [0, 1, 2].map(|j| p.s_mid[pts[j]]));
                 continuity = vec![(p.segs[f], p.signs[f])];
                 for (j, &pj) in pts.iter().enumerate() {
-                    let w: f64 = (0..3)
-                        .filter(|&l| l != j)
-                        .map(|l| (0.0 - x[l]) / (x[j] - x[l]))
-                        .product();
-                    continuity.push((p.segs[pj], -w * p.signs[pj]));
+                    continuity.push((p.segs[pj], -w[j] * p.signs[pj]));
                 }
             }
             let s0 = p.s_mid[ea] + h(ea) / 2.0;
@@ -1021,8 +1110,17 @@ fn plan_on(
     let paths = nontrivial_paths(segs, ground);
     let grouped = paths
         .as_ref()
-        // No gap: the forcing is the incident field along the whole path.
-        .map(|ps| group_sections(segs, ps, freq_hz, ground, &[]));
+        // No feed: the forcing is the incident field along the whole path. A
+        // load step still kinks the current (FND-270).
+        .map(|ps| {
+            group_sections(
+                segs,
+                ps,
+                freq_hz,
+                ground,
+                &NodeGaps::new(segs, vec![], loads),
+            )
+        });
     // Off the graph, a loaded receive solves its own matrix with the loads
     // stamped in the form the route that runs derives (FND-122).
     let loaded_z = (graph.is_none() && loads.iter().any(|l| l.norm() > 0.0)).then(|| {
@@ -1117,6 +1215,7 @@ fn solve_planewave_on_plan(
                 graph,
                 &corner_sources(segs, matrix_ground, freq_hz),
                 k,
+                &NodeGaps::new(segs, vec![], loads),
             )
             .map_err(|e| e.to_string())?;
             for (p, z_l) in loads.iter().enumerate() {
@@ -1407,21 +1506,31 @@ fn solve_hallen_routed_inner(
     if let Some(graph) = graph_route(deck, segs) {
         let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
         let sources = corner_sources(segs, &ground, freq_hz);
-        let mut system = crate::section_graph::GraphSystem::build(z_mat, segs, &graph, &sources, k)
-            .map_err(HallenSessionError::Solve)?;
+        // TL/NT networks by superposition (FND-123): the response to a unit gap
+        // at each undriven port, from the same system — exact, because the
+        // least-squares solution is linear in the forcing for a fixed matrix. So
+        // the ports are gaps of the system's node rows, as the feeds are (FND-270).
+        let (networks, _) = crate::network::build_networks(deck, segs, freq_hz)
+            .map_err(HallenSessionError::Network)?;
+        let feeds = graph_feeds(deck, segs);
+        let gaps = NodeGaps::new(
+            segs,
+            feeds
+                .iter()
+                .map(|f| f.seg)
+                .chain(networks.ports())
+                .collect(),
+            loads,
+        );
+        let mut system =
+            crate::section_graph::GraphSystem::build(z_mat, segs, &graph, &sources, k, &gaps)
+                .map_err(HallenSessionError::Solve)?;
         for (p, z_l) in loads.iter().enumerate() {
             if *z_l != Complex64::new(0.0, 0.0) {
                 system.add_load(p, *z_l);
             }
         }
-        let currents = system
-            .solve(&graph_feeds(deck, segs))
-            .map_err(HallenSessionError::Solve)?;
-        // TL/NT networks by superposition (FND-123): the response to a unit gap
-        // at each undriven port, from the same system — exact, because the
-        // least-squares solution is linear in the forcing for a fixed matrix.
-        let (networks, _) = crate::network::build_networks(deck, segs, freq_hz)
-            .map_err(HallenSessionError::Network)?;
+        let currents = system.solve(&feeds).map_err(HallenSessionError::Solve)?;
         if networks.is_empty() {
             return Ok(HallenRouted {
                 currents,
@@ -1512,12 +1621,13 @@ fn solve_hallen_routed_inner(
     let (networks, _) =
         crate::network::build_networks(deck, segs, freq_hz).map_err(HallenSessionError::Network)?;
     // Path grouping, built once and shared by every arm below, the networks'
-    // unit-gap port solves included: so every feed and every port is a gap its
-    // node rows must not extrapolate across (FND-270).
-    let gaps: Vec<usize> = crate::excitation::feedpoints(deck)
+    // unit-gap port solves included: so every feed, port and load step is a gap
+    // its node rows must not extrapolate across (FND-270).
+    let feeds: Vec<usize> = crate::excitation::feedpoints(deck)
         .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
         .chain(networks.ports())
         .collect();
+    let gaps = NodeGaps::new(segs, feeds, loads);
     let grouped = paths
         .as_ref()
         .map(|ps| group_sections(segs, ps, freq_hz, &ground, &gaps));
