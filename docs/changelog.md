@@ -27,6 +27,12 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--solver sinusoidal` solves a chain with a one-segment wire on its own
+  basis** (FND-273). It judged "two segments per wire" on the deck's `GW` cards,
+  not on the merged conductor it solves, and fell back to the experimental pulse
+  basis: a 4 + 1 + 4 dipole read −75.96 + j1.41 Ω against nec2c's
+  78.81 + j40.99, with exit 0. The pulse fallback is gone from this solver.
+
 - **A receiving junction standing on PEC ground is no longer captioned
   "unreliable"** (FND-272). The route check asked the image problem for a
   voltage feed, which a plane-wave deck has none of, so a T on the ground read
