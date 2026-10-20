@@ -76,6 +76,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 - **Phase 10 is marked complete** in the roadmap, and PAR-011's backlog entry
   records what shipped in 0.23.0 and the two criteria still open (a run on Windows,
   the throughput comparison against 4nec2's own kernel).
+- **The requirements gap list states each gap's evidence, and GAP-012 is open again.**
+  `docs/requirements.md` still listed ten of GAP-003..014 as open definition work
+  while the register marked them all resolved. Each line now says resolved or open
+  and names its evidence. GAP-012 (AutoEZ-class automation) was ticked in the roadmap, the
+  register, the traceability matrix and backlog PAR-005 with only two of its four
+  classes built: variable sweeps and resonance targeting exist, a convergence-study
+  helper and a matching-network helper do not. Those two are BL-IMPR-017. GAP-006
+  records that it closed without the wireframes and feedback notes its criterion
+  asks for, and GAP-013 that its matrix has no owner column.
 
 ## [0.24.0] — 2026-10-19 — Named builds
 
