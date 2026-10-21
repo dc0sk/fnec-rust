@@ -1017,6 +1017,12 @@ pub fn hallen_geometry_caveats(
     remedies: Remedies<'_>,
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
+    out.extend(joined_gaps_at_a_bend_warning(
+        deck,
+        segs,
+        freq_hz,
+        remedies.mpie,
+    ));
     if let Some(w) = low_finite_ground_warning(segs, ground, freq_hz, surface_wave_modelled) {
         out.push(with_low_ground_remedies(w, deck, segs, remedies));
     }
@@ -1497,6 +1503,17 @@ pub fn hallen_geometry_caveats_swept(
     remedies: Remedies<'_>,
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
+    // The gaps are the deck's loads at a frequency; a load's step is the same at
+    // every swept point short of a load that vanishes at one, so the lowest
+    // usable point stands for the sweep, as it does for the ground caveat.
+    if let Some(f) = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| *f > 0.0)
+        .fold(None, |m: Option<f64>, f| Some(m.map_or(f, |m| m.min(f))))
+    {
+        out.extend(joined_gaps_at_a_bend_warning(deck, segs, f, remedies.mpie));
+    }
     if let Some(w) = low_ground_caveat_swept(
         deck,
         segs,
@@ -1682,6 +1699,43 @@ pub fn bent_conductor_warning(
          feedpoint can be far off — measured up to 48 % on the feedpoint, and a small \
          resistance can change sign — give every straight run between bends at least two \
          segments{or_mpie}"
+    ))
+}
+
+/// Gaps on both segments either side of a real bend (FND-278): a feed, a current
+/// source, a network port or a lumped-load step on each.
+///
+/// Between the two kinks the current is one arc through the node, so no current
+/// row at the node carries information, and Hallén's node row is A-continuity
+/// instead ([`crate::hallen_session::NodeRow::Joined`]). At a vanishing bend that
+/// is the straight solve exactly (a feed and a j1000 Ω load either side of a 2e-4
+/// rad bend read 175.34 + j2031.3 Ω, the straight deck's figure, where FND-270's
+/// row read 97.65 + j1052.2). At a real bend the tangential vector potential
+/// jumps at the corner by an amount the row does not carry, and nothing checks
+/// the answer: nec2c's series for a point load beside a delta gap drifts
+/// logarithmically with the mesh (130.99, 165.38, 186.31, 199.18, 208.34 Ω at
+/// 1, 3, 9, 27, 81×), so it has no converged reference here. The bend ratio
+/// `Z(θ)/Z(0)` is mesh-robust, and against it the row's error grows with the bend
+/// ([`crate::hallen_session::JOINED_GAPS_CAVEAT_RAD`]). The MPIE models the
+/// corner and its bend ratio agrees with nec2c's (0.804 against 0.795–0.808 in R
+/// at 1 rad).
+pub fn joined_gaps_at_a_bend_warning(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    mpie_remedy: Option<&str>,
+) -> Option<String> {
+    let bend = crate::hallen_session::joined_gaps_at_a_bend_deg(deck, segs, freq_hz)?;
+    let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
+        format!(" — {mpie_remedy}, which models the corner")
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "a source, port or lumped load sits on each of the two segments either side of a \
+         {bend:.1}° bend; the Hallén row joining the two sections there drops the jump of \
+         the tangential vector potential at the corner, and no reference converges for a \
+         point load beside a gap, so the feedpoint impedance is unverified (FND-278){remedy}"
     ))
 }
 
@@ -3265,6 +3319,104 @@ mod tests {
             let (deck, segs) = deck_and_segs(&format!("{text}{feed}"));
             assert_eq!(radius_step_warning(&deck, &segs, None), None, "{text}");
         }
+    }
+
+    /// FND-278: the FND-270 dipole, two halves of 10 segments, the upper tilted by
+    /// `t` radians, with `cards` after `GE`.
+    fn two_halves(t: f64, cards: &str) -> String {
+        let (x, z) = (2.64 * t.sin(), 2.64 * t.cos());
+        format!(
+            "GW 1 10 0 0 -2.64 0 0 0 .001\nGW 2 10 0 0 0 {x:.12} 0 {z:.12} .001\nGE 0\n\
+             {cards}FR 0 1 0 0 28.4 0\nEN\n"
+        )
+    }
+
+    /// FND-278: gaps either side of a real bend are a Hallén caveat through
+    /// `diagnose`, the producer the GUI and the bindings read, naming the MPIE;
+    /// not on the MPIE, not at a vanishing bend, not with the gap on one side
+    /// only, and a sweep carries it once. The remedy is dropped where the MPIE
+    /// refuses the deck (a feed at a free end, FND-276).
+    #[test]
+    fn gaps_either_side_of_a_real_bend_are_a_hallen_caveat_naming_the_mpie() {
+        let both = "LD 4 2 1 1 0 1000\nEX 0 1 10 0 1 0\n";
+        let caveats = |text: &str, kind| -> Vec<String> {
+            let (deck, segs) = deck_and_segs(text);
+            let ctx = SolverContext {
+                kind,
+                ..SolverContext::cli_hallen()
+            };
+            diagnose(&deck, &segs, &GroundModel::FreeSpace, 28.4e6, ctx)
+                .into_iter()
+                .filter(|d| d.message.contains("FND-278"))
+                .map(|d| d.message)
+                .collect()
+        };
+        let bent = caveats(&two_halves(1.0, both), SolverKind::Hallen);
+        assert_eq!(bent.len(), 1, "{bent:?}");
+        assert!(bent[0].contains("57.3° bend"), "{}", bent[0]);
+        assert!(
+            bent[0].ends_with("re-run with `--solver mpie`, which models the corner"),
+            "{}",
+            bent[0]
+        );
+        assert!(bent[0].contains("drops the jump"), "{}", bent[0]);
+        assert_eq!(
+            caveats(&two_halves(1.0, both), SolverKind::Mpie),
+            Vec::<String>::new()
+        );
+        for (why, text) in [
+            ("vanishing bend", two_halves(2e-4, both)),
+            ("straight", two_halves(0.0, both)),
+            (
+                "load alone",
+                two_halves(1.0, "LD 4 2 1 1 0 1000\nEX 0 1 5 0 1 0\n"),
+            ),
+            ("feed alone", two_halves(1.0, "EX 0 1 10 0 1 0\n")),
+            (
+                "uniform wire loss is no gap",
+                two_halves(1.0, "LD 5 1 0 0 5.8e7\nLD 5 2 0 0 5.8e7\nEX 0 1 10 0 1 0\n"),
+            ),
+        ] {
+            assert_eq!(
+                caveats(&text, SolverKind::Hallen),
+                Vec::<String>::new(),
+                "{why}"
+            );
+        }
+        // A port is a gap too: a shunt network on the load's far side, fed far.
+        let port = caveats(
+            &two_halves(
+                1.0,
+                "NT 1 10 1 10 0.002 0.004 0 0 0.002 0.004\nLD 4 2 1 1 0 1000\nEX 0 1 5 0 1 0\n",
+            ),
+            SolverKind::Hallen,
+        );
+        assert_eq!(port.len(), 1, "{port:?}");
+        // The swept producer carries it once, from the lowest frequency.
+        let (deck, segs) = deck_and_segs(&two_halves(1.0, both));
+        let swept = hallen_geometry_caveats_swept(
+            &deck,
+            &segs,
+            &GroundModel::FreeSpace,
+            &[30e6, 28.4e6, 29e6],
+            false,
+            SolverContext::cli_hallen().remedies(),
+        );
+        assert_eq!(
+            swept.iter().filter(|w| w.contains("FND-278")).count(),
+            1,
+            "{swept:?}"
+        );
+        // Fed at the free end the MPIE refuses the deck (FND-228): no remedy.
+        let end = caveats(
+            &two_halves(
+                1.0,
+                "LD 4 2 1 1 0 1000\nLD 4 1 10 10 50 0\nEX 0 1 1 0 1 0\n",
+            ),
+            SolverKind::Hallen,
+        );
+        assert_eq!(end.len(), 1, "{end:?}");
+        assert!(!end[0].contains("--solver mpie"), "{}", end[0]);
     }
 
     /// FND-274: the dipole with a parallel wire along its upper half (FND-250's

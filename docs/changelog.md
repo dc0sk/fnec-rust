@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/changelog.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-10-21
 ---
 
 # Changelog
@@ -26,6 +26,19 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   fixture.
 
 ### Fixed
+
+- **Hallén answers a feed and a load on the two segments either side of a bend
+  as it answers them on a straight wire** (FND-278). With a gap on both segments
+  beside a node — a source, a network port or a lumped-load step on each — the
+  current between the two kinks is one arc through the node, and the row that
+  joined the two sections read the j1000 Ω case 44 % low in resistance at a bend
+  of 2 × 10⁻⁴ rad (97.65 against the straight wire's 175.34 Ω). The row is now
+  continuity of the tangential vector potential, on the conductor paths and on
+  the section graph alike, and at a vanishing bend it is the straight solve
+  exactly. At a real bend it drops the jump of that potential at the corner, and
+  no reference converges there (nec2c's drifts with the mesh), so the result
+  carries a caveat naming the MPIE, which models the corner; a gap on one side
+  only keeps FND-270's rule.
 
 - **Hallén's corner term vanishes as a bend straightens** (FND-281). Its
   integral along the source segment ran on eight Gauss points, whose error near

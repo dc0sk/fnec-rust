@@ -415,9 +415,19 @@ pub type ConstraintRow = (usize, Option<usize>, f64, f64);
 /// section's corner term is referenced at one of its nodes, where it adds nothing
 /// to the potential row; a section referenced at its OTHER node carries the
 /// integral into this row as `phi_currents`.
+///
+/// - **Joined (FND-278):** with a gap on both node-adjacent segments no current
+///   row holds, and the first row is A-continuity instead,
+///   `C_a cos(ks₀) + D_a sin(ks₀) + Q_a(s₀) = C_b cos(ks₀) + D_b sin(ks₀) + Q_b(s₀)`,
+///   `Q` the corner part of `A_s` (zero at a section's reference node, else
+///   `a_currents`). The particular terms cancel as in the potential row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BendRow {
+    /// The first row is A-continuity; `continuity` is then empty.
+    pub joined: bool,
     pub continuity: Vec<(usize, f64)>,
+    /// Current terms of the joined row (see above); empty unless `joined`.
+    pub a_currents: Vec<(usize, Complex64)>,
     /// Extra current terms of the equal-potential row (see above).
     pub phi_currents: Vec<(usize, Complex64)>,
     /// Homogeneous groups (sections) before and after the node, in traversal order.
@@ -1292,6 +1302,16 @@ pub fn solve_hallen_paths(
         let d_col = |g: usize| {
             n + num_paths + sin_col[g].expect("a bend's sections carry a sin column (≥ 2 segments)")
         };
+        if bend.joined {
+            let row = &mut m[r];
+            for &(seg, v) in &bend.a_currents {
+                row[seg] += v;
+            }
+            row[n + bend.group_a] += Complex64::new(bend.cos0, 0.0);
+            row[d_col(bend.group_a)] += Complex64::new(bend.sin0, 0.0);
+            row[n + bend.group_b] += Complex64::new(-bend.cos0, 0.0);
+            row[d_col(bend.group_b)] += Complex64::new(-bend.sin0, 0.0);
+        }
         let phi = &mut m[r + 1];
         for &(seg, v) in &bend.phi_currents {
             phi[seg] += v;
