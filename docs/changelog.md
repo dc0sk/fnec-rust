@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **Hallén's corner term vanishes as a bend straightens** (FND-281). Its
+  integral along the source segment ran on eight Gauss points, whose error near
+  the source's end did not shrink with the bend angle, so a 2e-4 rad bend was not
+  the straight join. The part along the source is now taken in closed form.
+  Real bends move by under 0.01 Ω; a feed and a load either side of a near-straight
+  node moved by up to 9 %.
+
 - **`LD 2` and `LD 3` are per metre, as NEC-2 defines them** (FND-280). fnec
   read `LD 2` as a lumped series R + L, ignoring the segment length and C, and
   `LD 3` as a lumped series R + C. NEC-2 and nec2c read type 2 as a series RLC
