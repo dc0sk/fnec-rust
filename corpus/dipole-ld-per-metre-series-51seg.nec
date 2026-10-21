@@ -1,4 +1,4 @@
-CM Half-wave dipole with LD type 2 series RL load on the feed segment.
+CM Half-wave dipole with an LD type 2 load (series RLC per metre) on the feed segment.
 CE
 GW 1 51 0 0 -5.282 0 0 5.282 0.001
 GE

@@ -303,15 +303,20 @@ pub struct GnCard {
 ///
 /// Applies a lumped or distributed impedance load to one or more segments.
 ///
-/// NEC load types implemented in Phase 1:
+/// NEC load types:
 ///
 /// | I1 | Type                       | F1       | F2        | F3          |
 /// |----|----------------------------|----------|-----------|-------------|
 /// |  0 | Series RLC (lumped)        | R (Ω)    | L (H)     | C (F)       |
+/// |  1 | Parallel RLC (lumped)      | R (Ω)    | L (H)     | C (F)       |
+/// |  2 | Series RLC per metre       | R (Ω/m)  | L (H/m)   | C (F/m)     |
+/// |  3 | Parallel RLC per metre     | R (Ω/m)  | L (H/m)   | C (F/m)     |
 /// |  4 | Series impedance Z=R+jX   | R (Ω)    | X (Ω)     | —           |
 /// |  5 | Wire conductivity (dist.)  | σ (S/m)  | —         | —           |
 ///
-/// All other load types are stored verbatim and handled at solve time.
+/// Types 2 and 3 are applied as types 0 and 1 with each value times the
+/// segment length. All other load types are stored verbatim and refused at
+/// solve time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LdCard {
     /// Load type (0–5; see table above).
