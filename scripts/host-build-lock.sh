@@ -37,21 +37,44 @@ _hbl_path="${HEAVY_BUILD_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/heavy-build.lock}"
 # hook starts: twice on 2026-10-18 the pre-commit clippy built target/ inside a
 # worktree. Asked of cargo itself, since .cargo/config.toml can move the target
 # too. The main checkout's target/ is the ordinary one and is not checked.
+#
+# And refuse a target dir another checkout builds into (FND-279). Cargo hashes a
+# path package workspace-relative, so two worktrees of this repo are ONE compile
+# unit in a shared dir, and the tree whose files are older than the last build
+# is judged Fresh: its `cargo test` runs the other tree's code. On 2026-10-20 a
+# pre-push gate read the pre-fix FND-270 value that way, and passed three other
+# pushes that may have tested nothing of theirs. The first checkout to build in
+# a dir claims it in `.fnec-checkout`; any other checkout is refused.
 _hbl_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)" \
-      != "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]]; then
-    _hbl_top="$(realpath "$(git -C "$_hbl_repo" rev-parse --show-toplevel)")"
+if _hbl_top="$(git -C "$_hbl_repo" rev-parse --show-toplevel 2>/dev/null)"; then
+    _hbl_top="$(realpath "$_hbl_top")"
     if ! _hbl_target="$(cd "$_hbl_top" && cargo metadata --no-deps --format-version 1 2>/dev/null |
             python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"; then
-        echo "$_hbl_who: cannot ask cargo where $_hbl_top builds — refusing to build in a linked worktree blind" >&2
+        echo "$_hbl_who: cannot ask cargo where $_hbl_top builds — refusing to build blind" >&2
         exit 1
     fi
-    case "$(realpath -m "$_hbl_target")" in
-        "$_hbl_top" | "$_hbl_top"/*)
-            echo "$_hbl_who: $_hbl_top is a linked worktree and cargo would build in $_hbl_target, inside it." >&2
-            echo "$_hbl_who: export CARGO_TARGET_DIR=\$HOME/.cache/fnec-target-$(basename "$_hbl_top") (outside the worktree, off /tmp) and retry." >&2
-            exit 1 ;;
-    esac
+    _hbl_target="$(realpath -m "$_hbl_target")"
+    if [[ "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)" \
+          != "$(git -C "$_hbl_repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]]; then
+        case "$_hbl_target" in
+            "$_hbl_top" | "$_hbl_top"/*)
+                echo "$_hbl_who: $_hbl_top is a linked worktree and cargo would build in $_hbl_target, inside it." >&2
+                echo "$_hbl_who: export CARGO_TARGET_DIR=\$HOME/.cache/fnec-target-$(basename "$_hbl_top") (outside the worktree, off /tmp) and retry." >&2
+                exit 1 ;;
+        esac
+    fi
+    _hbl_owner_file="$_hbl_target/.fnec-checkout"
+    if [[ -f "$_hbl_owner_file" ]]; then
+        _hbl_owner="$(cat "$_hbl_owner_file")"
+        if [[ "$_hbl_owner" != "$_hbl_top" ]]; then
+            echo "$_hbl_who: $_hbl_target is the build dir of $_hbl_owner, another checkout; cargo would judge this one's older files Fresh and run that tree's code." >&2
+            echo "$_hbl_who: give $_hbl_top its own: export CARGO_TARGET_DIR=\$HOME/.cache/fnec-target-$(basename "$_hbl_top") (or delete $_hbl_target if $_hbl_owner is gone)." >&2
+            exit 1
+        fi
+    elif ! { mkdir -p "$_hbl_target" && printf '%s\n' "$_hbl_top" > "$_hbl_owner_file"; }; then
+        echo "$_hbl_who: cannot claim $_hbl_target for $_hbl_top — refusing to build in a dir another checkout could share" >&2
+        exit 1
+    fi
 fi
 
 # Fail CLOSED once flock exists: a lock file that cannot be opened (its directory
