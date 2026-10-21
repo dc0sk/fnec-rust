@@ -46,11 +46,11 @@ const DIPOLE: &str =
     "CE\nGW 1 51 0 0 -5.0 0 0 5.0 0.001\nGE\n{LD}EX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
-fn laplace_rl_load_matches_equivalent_ld2_load() {
-    // Deck A: a series R+L load via the built-in LD 2 card on segment 20.
+fn laplace_rl_load_matches_equivalent_ld0_load() {
+    // Deck A: a series R+L load via the built-in LD 0 card (lumped; LD 2 is per metre, FND-280) on segment 20.
     let deck_a = tmp(
         "a.nec",
-        &DIPOLE.replace("{LD}", "LD 2 1 20 20 150.0 2e-6 0.0\n"),
+        &DIPOLE.replace("{LD}", "LD 0 1 20 20 150.0 2e-6 0.0\n"),
     );
     let out_a = run(&[], &deck_a);
     assert!(out_a.status.success());
@@ -71,7 +71,7 @@ fn laplace_rl_load_matches_equivalent_ld2_load() {
     // The two loads are identical, so the feedpoint impedance must match.
     assert!(
         (ra - rb).abs() < 1e-3 && (xa - xb).abs() < 1e-3,
-        "Laplace load Z=({rb},{xb}) != LD2 load Z=({ra},{xa})"
+        "Laplace load Z=({rb},{xb}) != LD 0 load Z=({ra},{xa})"
     );
 
     // Sanity: the load actually moved the impedance (vs the bare dipole).
@@ -84,7 +84,7 @@ fn laplace_rl_load_matches_equivalent_ld2_load() {
 /// the two spellings give the same answer there too (FND-222, refused until the
 /// MPIE took loads; FND-209: an outcome may not depend on the spelling).
 #[test]
-fn laplace_load_matches_equivalent_ld2_load_on_the_mpie() {
+fn laplace_load_matches_equivalent_ld0_load_on_the_mpie() {
     let mpie = |extra: &[&str], deck: &common::TempDeck| {
         let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
             .args(["--solver", "mpie"])
@@ -101,7 +101,7 @@ fn laplace_load_matches_equivalent_ld2_load_on_the_mpie() {
     };
     let card = tmp(
         "mpie-a.nec",
-        &DIPOLE.replace("{LD}", "LD 2 1 20 20 150.0 2e-6 0.0\n"),
+        &DIPOLE.replace("{LD}", "LD 0 1 20 20 150.0 2e-6 0.0\n"),
     );
     let bare = tmp("mpie-b.nec", &DIPOLE.replace("{LD}", ""));
     let cfg = tmp(
@@ -112,7 +112,7 @@ fn laplace_load_matches_equivalent_ld2_load_on_the_mpie() {
     let (rb, xb) = mpie(&["--loads-config", cfg.to_str().unwrap()], &bare);
     assert!(
         (ra - rb).abs() < 1e-6 && (xa - xb).abs() < 1e-6,
-        "MPIE: Laplace load Z=({rb},{xb}) != LD2 load Z=({ra},{xa})"
+        "MPIE: Laplace load Z=({rb},{xb}) != LD 0 load Z=({ra},{xa})"
     );
     let (r0, _) = mpie(&[], &bare);
     assert!(

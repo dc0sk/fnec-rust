@@ -27,6 +27,17 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`LD 2` and `LD 3` are per metre, as NEC-2 defines them** (FND-280). fnec
+  read `LD 2` as a lumped series R + L, ignoring the segment length and C, and
+  `LD 3` as a lumped series R + C. NEC-2 and nec2c read type 2 as a series RLC
+  and type 3 as a parallel RLC, R in Ω/m, L in H/m and C in F/m, each times the
+  segment length. A deck using either now gives nec2c's answer: a 21.2 µH/m coil
+  on a 0.264 m segment read 4.4 − j4537 Ω on Hallén against nec2c's
+  131.0 + j1620. **A deck written for fnec's old reading changes answer**: to
+  keep a lumped load, write it as `LD 0` (series) or `LD 1` (parallel). The
+  corpus decks `dipole-ld-series-rl-51seg` and `dipole-ld-series-rc-51seg` are
+  now `dipole-ld-per-metre-series-51seg` and `dipole-ld-per-metre-parallel-51seg`.
+
 - **A build refuses a target dir another checkout of the repo builds in**
   (FND-279). Cargo treats two worktrees sharing one `CARGO_TARGET_DIR` as one
   compile unit and judges the tree with older files up to date, so its
