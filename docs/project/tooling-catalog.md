@@ -23,7 +23,7 @@ layer — they generate references, gate contracts, and benchmark performance.
 | `build-windows-kernel.sh` | Cross-compile fnec for x86_64 Windows in a digest-pinned container, refuse non-system DLL imports, write fnec.exe and 4nec2's six kernel names with BUILD-INFO (PAR-011) | Manual |
 | `par011-wine-e2e.sh` | Install that build into a Wine 4nec2 under all six names, run fixture decks through 4nec2's Generate, check the reports 4nec2 reads (fnec banner + RUN TIME, or the refusal), restore and verify the originals (PAR-011) | Manual |
 | `check-asset-platform.py` | Refuse a release asset needing a newer glibc than `docs/project/release-asset-platform.toml`, or a wheel without a manylinux tag; self-test `test-check-asset-platform.py` | Release contract |
-| `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); refuses in a linked worktree whose cargo target dir lies inside it; self-test `test-host-build-lock.sh` | Host safety |
+| `host-build-lock.sh` | Take the host-wide heavy-build lock; re-entrant within one process tree (FND-184); refuses in a linked worktree whose cargo target dir lies inside it; refuses a target dir another checkout claimed (FND-279); self-test `test-host-build-lock.sh` | Host safety |
 | `check-changelog-unreleased-empty.py` | Refuse a mint while `docs/changelog.md`'s `[Unreleased]` has any content at the commit being tagged (release-process step 1); self-test `test-check-changelog-unreleased-empty.py` | `release-tag.yml`; self-test in `check-all.sh`, CI |
 | `check-hooks-take-lock.py` | Every repo hook under `.githooks/` that runs cargo sources `host-build-lock.sh` first (FND-261) | `check-all.sh`, CI |
 
