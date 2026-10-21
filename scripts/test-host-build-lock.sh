@@ -13,6 +13,9 @@
 #   4. Worktree build dir: in a linked worktree, a target dir inside it refuses
 #      (cargo's default, or CARGO_TARGET_DIR pointing in); one outside passes,
 #      and so does the main checkout's own target/.
+#   5. Shared build dir (FND-279): a target dir one checkout built in refuses
+#      another checkout, the main checkout included; its own checkout passes
+#      again, and a third, fresh dir passes.
 set -uo pipefail
 
 HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/host-build-lock.sh"
@@ -67,13 +70,13 @@ git -C "$SCRATCH/main" init -q
 git -C "$SCRATCH/main" add Cargo.toml src scripts
 git -C "$SCRATCH/main" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -q -m probe
 git -C "$SCRATCH/main" worktree add -q "$SCRATCH/wt"
-probe() { # name want(run|refuse) checkout [CARGO_TARGET_DIR]
+probe() { # name want(run|refuse) checkout [CARGO_TARGET_DIR] [refusal text]
     local env=(env -u CARGO_TARGET_DIR -u CARGO_BUILD_TARGET_DIR)
     [[ -n "${4:-}" ]] && env+=("CARGO_TARGET_DIR=$4")
     out="$("${env[@]}" bash -c "cd '$3' && source scripts/host-build-lock.sh wt; echo WT_RAN" 2>&1)"
     rc=$?
     if [[ $2 == run && ( $rc -ne 0 || "$out" != *WT_RAN* ) ]] \
-        || [[ $2 == refuse && ( $rc -eq 0 || "$out" == *WT_RAN* || "$out" != *"linked worktree"* ) ]]; then
+        || [[ $2 == refuse && ( $rc -eq 0 || "$out" == *WT_RAN* || "$out" != *"${5:-linked worktree}"* ) ]]; then
         echo "FAIL worktree $1: want $2, exit $rc:" >&2; echo "$out" >&2; fail=1
     fi
 }
@@ -81,6 +84,13 @@ probe "default target" refuse "$SCRATCH/wt"
 probe "target pointed inside" refuse "$SCRATCH/wt" "$SCRATCH/wt/build"
 probe "target outside" run "$SCRATCH/wt" "$SCRATCH/out"
 probe "main checkout" run "$SCRATCH/main"
+
+# 5. One build dir per checkout: in both directions, and the owner still passes.
+probe "worktree claims a dir" run "$SCRATCH/wt" "$SCRATCH/shared"
+probe "main in the worktree's dir" refuse "$SCRATCH/main" "$SCRATCH/shared" "another checkout"
+probe "worktree in its own dir again" run "$SCRATCH/wt" "$SCRATCH/shared"
+probe "worktree in main's target/" refuse "$SCRATCH/wt" "$SCRATCH/main/target" "another checkout"
+probe "main in a fresh dir" run "$SCRATCH/main" "$SCRATCH/fresh"
 
 if [[ $fail -ne 0 ]]; then exit 1; fi
 echo "host-build-lock self-test OK"

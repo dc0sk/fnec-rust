@@ -27,6 +27,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **A build refuses a target dir another checkout of the repo builds in**
+  (FND-279). Cargo treats two worktrees sharing one `CARGO_TARGET_DIR` as one
+  compile unit and judges the tree with older files up to date, so its
+  `cargo test` ran the other tree's code: a pre-push gate read a pre-fix value.
+  `scripts/host-build-lock.sh` records the first checkout to build in a dir and
+  refuses any other, naming the remedy.
+
 - **A remedy names the MPIE only for a deck the MPIE solves** (FND-276). The
   check behind every "The MPIE solves this deck" and every caveat's
   `--solver mpie` read the deck alone, so it recommended the MPIE for a feed at
