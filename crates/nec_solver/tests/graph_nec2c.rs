@@ -46,16 +46,22 @@ use nec_solver::{
 use num_complex::Complex64;
 
 const FREQ: f64 = 14.2e6;
+const FREQ_MHZ: f64 = 14.2;
 
 fn solve(body: &str) -> (Vec<nec_solver::Segment>, Vec<Complex64>) {
-    let deck = nec_parser::parse(&format!("CE\n{body}FR 0 1 0 0 14.2 0\nEN\n"))
+    solve_at(body, FREQ_MHZ)
+}
+
+fn solve_at(body: &str, mhz: f64) -> (Vec<nec_solver::Segment>, Vec<Complex64>) {
+    let deck = nec_parser::parse(&format!("CE\n{body}FR 0 1 0 0 {mhz} 0\nEN\n"))
         .expect("parses")
         .deck;
+    let freq = mhz * 1e6;
     let segs = build_geometry(&deck).expect("geometry");
-    let mut z = assemble_z_matrix_with_ground(&segs, FREQ, &ground_model_from_deck(&deck));
+    let mut z = assemble_z_matrix_with_ground(&segs, freq, &ground_model_from_deck(&deck));
     // The deck's lumped loads, as every frontend passes them.
-    let loads = nec_solver::build_deck_stamps(&deck, &segs, FREQ).diagonal;
-    let routed = solve_hallen_routed(&deck, &segs, &mut z, FREQ, &loads).expect("solves");
+    let loads = nec_solver::build_deck_stamps(&deck, &segs, freq).diagonal;
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, freq, &loads).expect("solves");
     // The source currents: the wire current plus any TL/NT branch in parallel at
     // a driven segment, which is what a feedpoint impedance divides by (as every
     // frontend does). Equal to the wire currents on a deck without networks.
@@ -179,6 +185,72 @@ fn a_t_fed_at_its_node_converges_to_nec2c() {
     let e25 = rel(z_in(&deck(25), (1, 1)), Complex64::new(45.43, 13.91));
     let e49 = rel(z_in(&deck(49), (1, 1)), Complex64::new(45.49, 14.06));
     assert_converges("node-fed T", e25, e49, 0.05);
+}
+
+/// FND-277: a quarter-wave ground plane (four radials, a degree-5 node) fed on
+/// the base segment beside its junction sits no further from converged nec2c than
+/// the same antenna fed two segments up, beyond a mesh error that halves with the
+/// mesh. Resistance against nec2c 1.3.1 at 27x (thin kernel at 10 per wire; the
+/// extended kernel at 20, where 9x thin agrees to 0.004 %), captured 2026-10-21:
+/// fed beside 22.476 / 22.413, fed on seg 3 25.632 / 23.066 Ω (each mesh is its
+/// own geometry: the feed moves with h). Measured: beside -1.03 / -0.70 %, the
+/// control -0.76 / -0.55 %, the excess 0.27 -> 0.15 % (0.078 % at 40). nec2c's
+/// own same-mesh excess at 10 is 2.7 %, and the MPIE's is of the same order as
+/// fnec's, varying in sign.
+///
+/// What this cannot catch, and does not claim to: a different junction row. The
+/// junction analogue of FND-270's rule (the fed arm's end current from the clean
+/// arms' curvature) and every other formulation measured (pulse value, linear,
+/// quadratic) moved R by under 0.06 %, so the linear Kirchhoff row stays (Fable's
+/// review). Sabotaged, one arm mis-signed in the Kirchhoff row reads -18.6 %;
+/// the row dropped 2.18 % at 20, caught by the 1.5 % bound alone; the
+/// equal-potential rows' feed constant mis-signed fails the solve.
+#[test]
+fn a_ground_plane_fed_beside_its_junction_converges_to_nec2c() {
+    let deck = |n: u32, feed: u32| {
+        format!(
+            "GW 1 {n} 0 0 0 0 0 2.64 .001\nGW 2 {n} 0 0 0 2.64 0 0 .001\n\
+             GW 3 {n} 0 0 0 -2.64 0 0 .001\nGW 4 {n} 0 0 0 0 2.64 0 .001\n\
+             GW 5 {n} 0 0 0 0 -2.64 0 .001\nGE 0\nEX 0 1 {feed} 0 1 0\n"
+        )
+    };
+    let r_err = |n: u32, feed: u32, reference: f64| {
+        let (segs, currents) = solve_at(&deck(n, feed), 28.4);
+        let z = Complex64::new(1.0, 0.0) / current(&segs, &currents, 1, feed);
+        (z.re - reference) / reference
+    };
+    let (b10, c10) = (r_err(10, 1, 22.476), r_err(10, 3, 25.632));
+    let (b20, c20) = (r_err(20, 1, 22.413), r_err(20, 3, 23.066));
+    println!(
+        "ground plane R: beside {:.3} / {:.3} %, control {:.3} / {:.3} %",
+        b10 * 100.0,
+        b20 * 100.0,
+        c10 * 100.0,
+        c20 * 100.0
+    );
+    for (what, e) in [
+        ("beside, 10", b10),
+        ("beside, 20", b20),
+        ("control, 10", c10),
+        ("control, 20", c20),
+    ] {
+        assert!(e.abs() < 0.015, "{what}: R {:.3} % from nec2c", e * 100.0);
+    }
+    let (x10, x20) = ((b10 - c10).abs(), (b20 - c20).abs());
+    assert!(
+        x10 < 0.004,
+        "excess beside the junction at 10: {:.3} %",
+        x10 * 100.0
+    );
+    assert!(
+        x20 < 0.0025,
+        "excess beside the junction at 20: {:.3} %",
+        x20 * 100.0
+    );
+    assert!(
+        x20 < x10,
+        "the excess must shrink with the mesh: {x10:.5} -> {x20:.5}"
+    );
 }
 
 /// Before: 17 − j1163 at 11 per side. Kill criterion: under 1 % at 41,
