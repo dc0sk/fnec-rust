@@ -61,8 +61,8 @@ no longer silently treated as EX type 0.
 |------|---------|-------|
 | LD type 0 | Full | Series RLC: `Z = R + j(ωL − 1/(ωC))`. Every `LD` type is stamped on Hallén and, since PH10-CHK-004, on `--solver mpie` — there as the load times the segment's centre current, NEC's own model, projected on the triangle bases as the `EX` gap is |
 | LD type 1 | Full | Parallel RLC: `Z = 1 / (1/R + 1/(jωL) + jωC)` |
-| LD type 2 | Full | Series RL: `Z = R + jωL` |
-| LD type 3 | Full | Series RC: `Z = R − j/(ωC)` |
+| LD type 2 | Full | Series RLC per metre: type 0 with `R`, `L` and `C` each times the segment length Δ (Ω/m, H/m, F/m), as NEC-2 and nec2c define it. Until FND-280 fnec read it as a lumped series RL and ignored `C` |
+| LD type 3 | Full | Parallel RLC per metre: type 1 with `R`, `L` and `C` each times Δ. Until FND-280 fnec read it as a lumped series RC |
 | LD type 4 | Full | Series impedance (frequency-independent): `Z = R + jX` |
 | LD type 5 | Full | Wire conductivity: the exact internal impedance of a solid round wire, `Z = dl · γ/(2π a σ) · I0(γa)/I1(γa)` with `γ = (1+j)/δ`, `δ = √(2/(ωμ0σ))` (`loads.rs`, `wire_internal_impedance`). It reduces to the DC resistance `dl/(σπa²)` at low frequency and to the surface impedance `dl(1+j)/(2πaσδ)` once δ ≪ a, as NEC-2's `LD 5` does; the row used to give `dl/(2π·a·σ)`, which is neither |
 | LD other | Refused | Any other type, a type-5 load with σ ≤ 0, or an LD naming no segment is an error naming the card (FND-161). It used to be skipped with a warning, which solved the antenna without the load |

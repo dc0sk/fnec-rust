@@ -27,7 +27,9 @@
 use num_complex::Complex64;
 
 use crate::geometry::{wire_endpoints_from_segs, Segment};
-use crate::hallen_session::{quadratic_weights, CornerSource, GapSide, NodeGaps, JUNCTION_TOL_M};
+use crate::hallen_session::{
+    quadratic_weights, CornerSource, GapSide, NodeGaps, NodeRow, JUNCTION_TOL_M,
+};
 use crate::linear::SolveError;
 use crate::matrix::ZMatrix;
 
@@ -373,24 +375,15 @@ fn extrapolated(sec: &Section, segs: &[Segment], at_end: bool) -> [(usize, f64);
     ]
 }
 
-/// The continuity row of a degree-2 node with a gap beside it (FND-270): the gap
-/// kinks the current at its segment's midpoint, between the two points
-/// [`extrapolated`] takes on that side, so the Kirchhoff row would extrapolate
-/// across the kink. Instead the gap segment's current equals the other
-/// section's quadratic extrapolation to its midpoint, in distance from the node
-/// — the rule the conductor-path rows apply ([`NodeGaps`]). `None` keeps the
-/// Kirchhoff row: a junction, or no gap the rule takes.
-fn gap_row(
-    graph: &SectionGraph,
-    node: &Node,
-    gaps: &NodeGaps,
-    cols: usize,
-) -> Option<Vec<Complex64>> {
+/// A degree-2 node's two ends, each with its section's segments outward from the
+/// node (nearest first, up to three) as positions in the section and the inflow
+/// sign of its frame; `None` at a junction or a free end.
+type Side = (NodeEnd, (Vec<usize>, f64));
+
+fn degree2_sides(graph: &SectionGraph, node: &Node) -> Option<(Side, Side)> {
     let &[a, b] = &node.ends[..] else {
         return None;
     };
-    // Per end: the section's segments outward from the node (nearest first, up to
-    // three) as positions in it, and the inflow sign of its frame.
     let outward = |(j, at_end): NodeEnd| -> (Vec<usize>, f64) {
         let k = graph.sections[j].segs.len();
         if at_end {
@@ -399,15 +392,54 @@ fn gap_row(
             ((0..k).take(3).collect(), -1.0)
         }
     };
-    let (pa, pb) = (outward(a), outward(b));
+    Some(((a, outward(a)), (b, outward(b))))
+}
+
+/// The continuity row a degree-2 node takes ([`NodeGaps::row`]), with its sides;
+/// `None` at a junction or a free end.
+fn degree2_row(
+    graph: &SectionGraph,
+    node: &Node,
+    gaps: &NodeGaps,
+) -> Option<(NodeRow, Side, Side)> {
+    let (a, b) = degree2_sides(graph, node)?;
     let global = |(j, _): NodeEnd, v: &[usize]| -> Vec<usize> {
         v.iter().map(|&i| graph.sections[j].segs[i]).collect()
     };
-    let ((gap_end, (gap_pos, gap_in)), (far_end, (far_pos, far_in))) =
-        match gaps.side(&global(a, &pa.0), &global(b, &pb.0))? {
-            GapSide::A => ((a, pa), (b, pb)),
-            GapSide::B => ((b, pb), (a, pa)),
-        };
+    let row = gaps.row(&global(a.0, &a.1 .0), &global(b.0, &b.1 .0));
+    Some((row, a, b))
+}
+
+/// The two sections' tangents in the through direction — into the node, then out
+/// of it — where `node` takes the joined row ([`NodeRow::Joined`], FND-278); `None`
+/// elsewhere. What the caveat measures the bend from.
+pub(crate) fn joined_node(
+    graph: &SectionGraph,
+    node: &Node,
+    gaps: &NodeGaps,
+) -> Option<([f64; 3], [f64; 3])> {
+    let (row, (a, (_, in_a)), (b, (_, in_b))) = degree2_row(graph, node, gaps)?;
+    if row != NodeRow::Joined {
+        return None;
+    }
+    let scaled = |j: usize, f: f64| {
+        let t = graph.sections[j].tangent;
+        [t[0] * f, t[1] * f, t[2] * f]
+    };
+    Some((scaled(a.0, in_a), scaled(b.0, -in_b)))
+}
+
+/// The continuity row of a degree-2 node with a gap beside it (FND-270): the gap
+/// kinks the current at its segment's midpoint, between the two points
+/// [`extrapolated`] takes on that side, so the Kirchhoff row would extrapolate
+/// across the kink. Instead the gap segment's current equals the other
+/// section's quadratic extrapolation to its midpoint, in distance from the node
+/// — the rule the conductor-path rows apply ([`NodeGaps`]).
+fn gap_row(graph: &SectionGraph, side: GapSide, a: Side, b: Side, cols: usize) -> Vec<Complex64> {
+    let ((gap_end, (gap_pos, gap_in)), (far_end, (far_pos, far_in))) = match side {
+        GapSide::A => (a, b),
+        GapSide::B => (b, a),
+    };
     // Distance from the node to a segment's midpoint.
     let dist = |(j, at_end): NodeEnd, i: usize| {
         let sec = &graph.sections[j];
@@ -430,7 +462,19 @@ fn gap_row(
     for (l, &i) in far_pos.iter().enumerate() {
         row[fs.segs[i]] += Complex64::new(w[l] * far_in * fs.signs[i], 0.0);
     }
-    Some(row)
+    row
+}
+
+/// What a node row's right-hand side carries ([`GraphSystem::rhs`]).
+#[derive(Debug, Clone, Copy)]
+enum Forcing {
+    /// A free-end, Kirchhoff or gap row: nothing.
+    None,
+    /// An equal-potential row: the difference of the two ends' `P′(σ)/k`.
+    Phi(NodeEnd, NodeEnd),
+    /// A joined row (FND-278): minus the inflow-weighted sum of the two ends'
+    /// particular solutions `P(σ)`.
+    A(NodeEnd, NodeEnd),
 }
 
 /// The delta-gap feed, in section coordinates.
@@ -458,9 +502,8 @@ pub(crate) struct GraphSystem {
     /// Section and position along it of every segment.
     at: Vec<(usize, usize)>,
     m: Vec<Vec<Complex64>>,
-    /// For each row past the collocation rows, the two node ends whose
-    /// potentials it differences; `None` for a free-end or Kirchhoff row.
-    phi_pairs: Vec<Option<(NodeEnd, NodeEnd)>>,
+    /// For each row past the collocation rows, what its right-hand side carries.
+    forcing: Vec<Forcing>,
     n: usize,
     cols: usize,
     k: f64,
@@ -556,16 +599,17 @@ impl GraphSystem {
 
         // Node rows.
         let mut extra: Vec<Vec<Complex64>> = Vec::new();
-        let mut phi_pairs = Vec::new();
-        // Φ_j at the node, as (row coefficients, constant) in section j's frame.
-        let phi = |j: usize, at_end: bool| -> Vec<Complex64> {
-            let sec = &graph.sections[j];
-            let sigma = if at_end { sec.length } else { 0.0 };
-            let mut row = vec![Complex64::new(0.0, 0.0); cols];
-            row[c_col(j)] = Complex64::new(-(k * sigma).sin(), 0.0);
-            row[d_col(j)] = Complex64::new((k * sigma).cos(), 0.0);
-            // The corner integral of a section referenced at its OTHER node.
-            if at_end != ref_at_end[j] {
+        let mut forcing = Vec::new();
+        // The corner integral of section `j` at its node end `sigma`, with
+        // `kernel(sigma − s)`: the sin kernel for Φ, the cos kernel for `A_s`
+        // (corner.rs). Zero at the node the section is referenced at.
+        let corner_at =
+            |j: usize, at_end: bool, kernel: fn(f64) -> f64, row: &mut Vec<Complex64>| {
+                if at_end == ref_at_end[j] {
+                    return;
+                }
+                let sec = &graph.sections[j];
+                let sigma = if at_end { sec.length } else { 0.0 };
                 let (s0, p0, tan) = (ref_s(j), ref_pt(j), sec.tangent);
                 let at_s = |s: f64| {
                     [
@@ -584,10 +628,34 @@ impl GraphSystem {
                             .flatten()
                             .collect();
                     let v = crate::corner::graded_breaks(s0, sigma, src.seg.radius, &breaks, |s| {
-                        crate::corner::f_n(at_s(s), tan, &src.seg, k) * (k * (sigma - s)).sin()
+                        crate::corner::f_n(at_s(s), tan, &src.seg, k) * kernel(k * (sigma - s))
                     });
                     row[src.col] += v * src.weight;
                 }
+            };
+        // Φ_j at the node, as row coefficients in section j's frame.
+        let phi = |j: usize, at_end: bool| -> Vec<Complex64> {
+            let sec = &graph.sections[j];
+            let sigma = if at_end { sec.length } else { 0.0 };
+            let mut row = vec![Complex64::new(0.0, 0.0); cols];
+            row[c_col(j)] = Complex64::new(-(k * sigma).sin(), 0.0);
+            row[d_col(j)] = Complex64::new((k * sigma).cos(), 0.0);
+            corner_at(j, at_end, f64::sin, &mut row);
+            row
+        };
+        // `A_s` of section j at the node, less its particular term (the forcing,
+        // `rhs`), in section j's frame: `C cos kσ + D sin kσ + Q(σ)`, where the
+        // collocation rows put `Q(s) = −Σ ∫ f_n cos k(s − s″) · I` (corner.rs).
+        let a_s = |j: usize, at_end: bool| -> Vec<Complex64> {
+            let sec = &graph.sections[j];
+            let sigma = if at_end { sec.length } else { 0.0 };
+            let mut row = vec![Complex64::new(0.0, 0.0); cols];
+            row[c_col(j)] = Complex64::new((k * sigma).cos(), 0.0);
+            row[d_col(j)] = Complex64::new((k * sigma).sin(), 0.0);
+            let mut q = vec![Complex64::new(0.0, 0.0); cols];
+            corner_at(j, at_end, f64::cos, &mut q);
+            for (r, v) in row.iter_mut().zip(&q) {
+                *r -= v;
             }
             row
         };
@@ -599,29 +667,51 @@ impl GraphSystem {
                     row[seg] += Complex64::new(c, 0.0);
                 }
                 extra.push(row);
-                phi_pairs.push(None);
+                forcing.push(Forcing::None);
                 continue;
             }
             // Kirchhoff: current flowing into the node sums to zero — or, at a
-            // degree-2 node beside a gap, the gap's current from the other side.
-            let kcl = gap_row(graph, node, gaps, cols).unwrap_or_else(|| {
-                let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
-                for &(j, at_end) in &node.ends {
-                    let inflow = if at_end { 1.0 } else { -1.0 };
-                    for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
-                        kcl[seg] += Complex64::new(inflow * c, 0.0);
-                    }
+            // degree-2 node beside a gap, the gap's current from the other side
+            // (FND-270) — or, with gaps on both sides, A-continuity (FND-278):
+            // the frames meet head-on where both ends are section ends (or both
+            // starts), so each side enters with its inflow sign,
+            // `in_a·A_a(σ_a) + in_b·A_b(σ_b) = 0`.
+            let first = match degree2_row(graph, node, gaps) {
+                Some((NodeRow::Extrapolate(side), a, b)) => gap_row(graph, side, a, b, cols),
+                Some((NodeRow::Joined, (a, (_, in_a)), (b, (_, in_b)))) => {
+                    let (ra, rb) = (a_s(a.0, a.1), a_s(b.0, b.1));
+                    forcing.push(Forcing::A(a, b));
+                    extra.push(
+                        ra.iter()
+                            .zip(&rb)
+                            .map(|(x, y)| in_a * x + in_b * y)
+                            .collect(),
+                    );
+                    let row0 = phi(a.0, a.1);
+                    let rj = phi(b.0, b.1);
+                    extra.push(row0.iter().zip(&rj).map(|(x, y)| x - y).collect());
+                    forcing.push(Forcing::Phi(a, b));
+                    continue;
                 }
-                kcl
-            });
-            extra.push(kcl);
-            phi_pairs.push(None);
+                _ => {
+                    let mut kcl = vec![Complex64::new(0.0, 0.0); cols];
+                    for &(j, at_end) in &node.ends {
+                        let inflow = if at_end { 1.0 } else { -1.0 };
+                        for (seg, c) in extrapolated(&graph.sections[j], segs, at_end) {
+                            kcl[seg] += Complex64::new(inflow * c, 0.0);
+                        }
+                    }
+                    kcl
+                }
+            };
+            extra.push(first);
+            forcing.push(Forcing::None);
             // Equal potential against the first section at the node.
             let row0 = phi(node.ends[0].0, node.ends[0].1);
             for &(j, at_end) in &node.ends[1..] {
                 let rj = phi(j, at_end);
                 extra.push(row0.iter().zip(&rj).map(|(a, b)| a - b).collect());
-                phi_pairs.push(Some((node.ends[0], (j, at_end))));
+                forcing.push(Forcing::Phi(node.ends[0], (j, at_end)));
             }
         }
         m.extend(extra);
@@ -629,7 +719,7 @@ impl GraphSystem {
             graph: graph.clone(),
             at,
             m,
-            phi_pairs,
+            forcing,
             n,
             cols,
             k,
@@ -671,9 +761,33 @@ impl GraphSystem {
             }
             c
         };
-        for (row, pair) in self.phi_pairs.iter().enumerate() {
-            if let Some(((j0, e0), (jr, er))) = *pair {
-                y[n + row] = constant(jr, er) - constant(j0, e0);
+        // The particular solution itself at a node end, `P_j(σ)`: what the joined
+        // row's `A_s` carries besides its (C, D) and corner terms (FND-278).
+        let particular = |j: usize, at_end: bool| {
+            let sec = &self.graph.sections[j];
+            let sigma = if at_end { sec.length } else { 0.0 };
+            let mut p = Complex64::new(0.0, 0.0);
+            for f in gaps {
+                let (jf, fi) = self.at[f.seg];
+                if jf != j {
+                    continue;
+                }
+                let (sf, sgf) = (sec.s_mid[fi], sec.signs[fi]);
+                p += Complex64::new(0.0, -scale) * f.volts * sgf * (k * (sigma - sf).abs()).sin();
+            }
+            p
+        };
+        let inflow = |at_end: bool| if at_end { 1.0 } else { -1.0 };
+        for (row, f) in self.forcing.iter().enumerate() {
+            match *f {
+                Forcing::None => {}
+                Forcing::Phi((j0, e0), (jr, er)) => {
+                    y[n + row] = constant(jr, er) - constant(j0, e0);
+                }
+                Forcing::A((ja, ea), (jb, eb)) => {
+                    y[n + row] =
+                        -(inflow(ea) * particular(ja, ea) + inflow(eb) * particular(jb, eb));
+                }
             }
         }
         y

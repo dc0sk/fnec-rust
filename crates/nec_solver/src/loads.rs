@@ -9,8 +9,8 @@
 //! |----|---------------------------|----------------------------------------------------|
 //! |  0 | Series RLC (lumped)       | R + j(ωL − 1/(ωC))  (C=0 ⇒ no capacitor term)     |
 //! |  1 | Parallel RLC (lumped)     | 1 / (1/R + 1/(jωL) + jωC)                         |
-//! |  2 | Series RL (lumped)        | R + jωL                                            |
-//! |  3 | Series RC (lumped)        | R − j/(ωC)  (C=0 ⇒ no capacitor term)             |
+//! |  2 | Series RLC per metre      | type 0 with R·Δ, L·Δ, C·Δ  (Δ = segment length)  |
+//! |  3 | Parallel RLC per metre    | type 1 with R·Δ, L·Δ, C·Δ                         |
 //! |  4 | Series impedance Z=R+jX   | R + jX  (flat, frequency-independent)              |
 //! |  5 | Wire conductivity (dist.) | Exact round-wire skin-effect Zᵢ (DC↔surface Z)   |
 //!
@@ -148,54 +148,26 @@ pub fn build_loads(
                 continue;
             }
 
+            // Types 2 and 3 are types 0 and 1 per unit length: R (Ω/m), L (H/m)
+            // and C (F/m) each times the deck segment's length, as nec2c applies
+            // them (FND-280; measured to its print precision). A refined free end's
+            // centre takes the whole deck segment's.
+            let per_length = seg.deck_length();
             let z = match ld.load_type {
-                0 => {
-                    // Series RLC: Z = R + j(ωL − 1/(ωC))
-                    let r = ld.f1;
-                    let l = ld.f2;
-                    let c = ld.f3;
-                    let x_l = omega * l;
-                    let x_c = if c > 0.0 { 1.0 / (omega * c) } else { 0.0 };
-                    Complex64::new(r, x_l - x_c)
-                }
-                1 => {
-                    // Parallel RLC: Y = 1/R + 1/(jωL) + jωC  →  Z = 1/Y
-                    // Missing branches (zero L → infinite susceptance; zero R → infinite
-                    // conductance) are treated as degenerate loads contributing zero impedance.
-                    let r = ld.f1;
-                    let l = ld.f2;
-                    let c = ld.f3;
-                    let mut y = Complex64::new(0.0, 0.0);
-                    if r > 0.0 {
-                        y += Complex64::new(1.0 / r, 0.0);
-                    }
-                    if l > 0.0 {
-                        // 1/(jωL) = -j/(ωL)
-                        y += Complex64::new(0.0, -1.0 / (omega * l));
-                    }
-                    if c > 0.0 {
-                        y += Complex64::new(0.0, omega * c);
-                    }
-                    if y.norm() < 1e-30 {
-                        // All branches open — contribute nothing
-                        Complex64::new(0.0, 0.0)
-                    } else {
-                        Complex64::new(1.0, 0.0) / y
-                    }
-                }
-                2 => {
-                    // Series RL: Z = R + jωL
-                    Complex64::new(ld.f1, omega * ld.f2)
-                }
-                3 => {
-                    // Series RC: Z = R - j/(ωC)
-                    let x_c = if ld.f3 > 0.0 {
-                        1.0 / (omega * ld.f3)
-                    } else {
-                        0.0
-                    };
-                    Complex64::new(ld.f1, -x_c)
-                }
+                0 => series_rlc(ld.f1, ld.f2, ld.f3, omega),
+                1 => parallel_rlc(ld.f1, ld.f2, ld.f3, omega),
+                2 => series_rlc(
+                    ld.f1 * per_length,
+                    ld.f2 * per_length,
+                    ld.f3 * per_length,
+                    omega,
+                ),
+                3 => parallel_rlc(
+                    ld.f1 * per_length,
+                    ld.f2 * per_length,
+                    ld.f3 * per_length,
+                    omega,
+                ),
                 4 => {
                     // Series impedance: Z = R + jX (frequency-independent)
                     Complex64::new(ld.f1, ld.f2)
@@ -230,6 +202,33 @@ pub fn build_loads(
     (loads, warnings)
 }
 
+/// Series RLC: `R + j(ωL − 1/(ωC))`; C = 0 means no capacitor.
+fn series_rlc(r: f64, l: f64, c: f64, omega: f64) -> Complex64 {
+    let x_c = if c > 0.0 { 1.0 / (omega * c) } else { 0.0 };
+    Complex64::new(r, omega * l - x_c)
+}
+
+/// Parallel RLC: `1 / (1/R + 1/(jωL) + jωC)`. A zero R, L or C is a branch not
+/// there; with none there the load contributes nothing.
+fn parallel_rlc(r: f64, l: f64, c: f64, omega: f64) -> Complex64 {
+    let mut y = Complex64::new(0.0, 0.0);
+    if r > 0.0 {
+        y += Complex64::new(1.0 / r, 0.0);
+    }
+    if l > 0.0 {
+        // 1/(jωL) = -j/(ωL)
+        y += Complex64::new(0.0, -1.0 / (omega * l));
+    }
+    if c > 0.0 {
+        y += Complex64::new(0.0, omega * c);
+    }
+    if y.norm() < 1e-30 {
+        Complex64::new(0.0, 0.0)
+    } else {
+        Complex64::new(1.0, 0.0) / y
+    }
+}
+
 /// Returns true if this segment should receive the load described by `ld`.
 fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
     // Tag 0 = apply to all tags.
@@ -262,7 +261,7 @@ fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
 /// where `numerator = [a0, a1, a2, …]` are the coefficients of
 /// `a0 + a1·s + a2·s² + …` and `denominator` likewise.
 ///
-/// This generalises the lumped LD 0–4 loads — e.g. a series RLC (`R + jωL −
+/// This generalises the lumped LD 0, 1 and 4 loads — e.g. a series RLC (`R + jωL −
 /// j/(ωC)`) is `N = [1, R·C, L·C]`, `D = [0, C]` — and lets a user model
 /// arbitrary matching networks, traps with parasitic resistance, or measured /
 /// curve-fitted loads in one entry. It is a fnec-specific extension (there is no
@@ -566,8 +565,11 @@ mod tests {
         assert!(hi[0].re > 100.0 * r_dc, "HF Re should ≫ DC");
     }
 
+    /// LD 2 is series RLC per metre (FND-280): on a 0.1 m segment, R = 10 Ω/m,
+    /// L = 1 µH/m and C = 100 pF/m are 1 Ω, 0.1 µH and 10 pF in series. It was
+    /// read as a lumped series RL, length and C ignored.
     #[test]
-    fn type2_series_rl_produces_correct_impedance() {
+    fn type2_is_series_rlc_per_metre() {
         let segs = vec![seg(1, 1, 0.1, 0.001)];
         let freq = 14.2e6_f64;
         let omega = TWO_PI * freq;
@@ -578,32 +580,71 @@ mod tests {
             seg_last: 1,
             f1: 10.0,
             f2: 1e-6,
-            f3: 0.0,
+            f3: 1e-10,
         });
         let (loads, warns) = build_loads(&deck, &segs, freq);
         assert!(warns.is_empty());
-        assert!((loads[0].re - 10.0).abs() < 1e-6);
-        assert!((loads[0].im - omega * 1e-6).abs() < 1e-6);
+        let want = Complex64::new(1.0, omega * 1e-7 - 1.0 / (omega * 1e-11));
+        assert!(
+            (loads[0] - want).norm() < 1e-9 * want.norm(),
+            "{}",
+            loads[0]
+        );
     }
 
+    /// LD 3 is parallel RLC per metre: 1000 Ω/m, 10 µH/m and 10 pF/m on 0.1 m
+    /// are 100 Ω, 1 µH and 1 pF in parallel. It was read as a lumped series RC.
     #[test]
-    fn type3_series_rc_produces_correct_impedance() {
+    fn type3_is_parallel_rlc_per_metre() {
         let segs = vec![seg(1, 1, 0.1, 0.001)];
         let freq = 14.2e6_f64;
-        let c = 1e-12_f64;
+        let omega = TWO_PI * freq;
         let deck = deck_with_ld(LdCard {
             load_type: 3,
             tag: 1,
             seg_first: 1,
             seg_last: 1,
-            f1: 10.0,
-            f2: 0.0,
-            f3: c,
+            f1: 1000.0,
+            f2: 1e-5,
+            f3: 1e-11,
         });
         let (loads, warns) = build_loads(&deck, &segs, freq);
         assert!(warns.is_empty());
-        assert!((loads[0].re - 10.0).abs() < 1e-6);
-        assert!((loads[0].im + 1.0 / (TWO_PI * freq * c)).abs() < 1e-3);
+        let y = Complex64::new(1.0 / 100.0, omega * 1e-12 - 1.0 / (omega * 1e-6));
+        let want = Complex64::new(1.0, 0.0) / y;
+        assert!(
+            (loads[0] - want).norm() < 1e-9 * want.norm(),
+            "{}",
+            loads[0]
+        );
+    }
+
+    /// A refined free end's centre third takes the whole deck segment's length:
+    /// the load is the deck segment's, as on the unrefined segment.
+    #[test]
+    fn a_per_metre_load_on_a_refined_centre_takes_the_deck_segment() {
+        let mut centre = seg(1, 1, 0.1 / 3.0, 0.001);
+        centre.part = crate::geometry::SegmentPart::Centre;
+        let whole = seg(1, 1, 0.1, 0.001);
+        for load_type in [2, 3] {
+            let deck = deck_with_ld(LdCard {
+                load_type,
+                tag: 1,
+                seg_first: 1,
+                seg_last: 1,
+                f1: 1000.0,
+                f2: 1e-5,
+                f3: 1e-11,
+            });
+            let (a, _) = build_loads(&deck, std::slice::from_ref(&centre), 14.2e6);
+            let (b, _) = build_loads(&deck, std::slice::from_ref(&whole), 14.2e6);
+            assert!(
+                (a[0] - b[0]).norm() < 1e-12 * b[0].norm(),
+                "LD {load_type}: {} vs {}",
+                a[0],
+                b[0]
+            );
+        }
     }
 
     #[test]
@@ -802,47 +843,29 @@ mod tests {
                 "Im expected {expected_x}, got {}, tol={tol}", loads[0].im);
         }
 
-        /// LD type 2 (series RL): Z = R + jωL.
+        /// LD types 2 and 3 are types 0 and 1 with R, L and C each times the
+        /// segment length, for any values and any segment (FND-280).
         #[test]
-        fn proptest_ld_type2_re_and_im_formula(
-            r in 0.0_f64..1e9_f64,
+        fn proptest_ld_types_2_and_3_are_0_and_1_per_metre(
+            r in 0.0_f64..1e6_f64,
             l in 0.0_f64..1e-3_f64,
+            c in 0.0_f64..1e-6_f64,
+            len in 1e-3_f64..10.0_f64,
             freq in 1e4_f64..3e10_f64,
         ) {
-            let segs = vec![proptest_seg()];
-            let deck = deck_with_ld(LdCard {
-                load_type: 2,
-                tag: 1, seg_first: 1, seg_last: 1,
-                f1: r, f2: l, f3: 0.0,
-            });
-            let (loads, warns) = build_loads(&deck, &segs, freq);
-            prop_assert!(warns.is_empty());
-            let expected_im = TWO_PI * freq * l;
-            prop_assert!((loads[0].re - r).abs() < 1e-9,
-                "Re expected {r}, got {}", loads[0].re);
-            prop_assert!((loads[0].im - expected_im).abs() < expected_im.abs() * 1e-9 + 1e-9,
-                "Im expected {expected_im}, got {}", loads[0].im);
-        }
-
-        /// LD type 3 (series RC): Re(Z) = R, Im(Z) ≤ 0 for C > 0.
-        #[test]
-        fn proptest_ld_type3_re_equals_resistance_and_im_is_nonpositive(
-            r in 0.0_f64..1e9_f64,
-            c in 1e-15_f64..1e-6_f64,
-            freq in 1e4_f64..3e10_f64,
-        ) {
-            let segs = vec![proptest_seg()];
-            let deck = deck_with_ld(LdCard {
-                load_type: 3,
-                tag: 1, seg_first: 1, seg_last: 1,
-                f1: r, f2: 0.0, f3: c,
-            });
-            let (loads, warns) = build_loads(&deck, &segs, freq);
-            prop_assert!(warns.is_empty());
-            prop_assert!((loads[0].re - r).abs() < 1e-9,
-                "Re expected {r}, got {}", loads[0].re);
-            prop_assert!(loads[0].im <= 0.0,
-                "RC reactance should be non-positive, got {}", loads[0].im);
+            let segs = vec![seg(1, 1, len, 0.001)];
+            for (per_metre, lumped) in [(2, 0), (3, 1)] {
+                let card = |load_type, k: f64| deck_with_ld(LdCard {
+                    load_type,
+                    tag: 1, seg_first: 1, seg_last: 1,
+                    f1: r * k, f2: l * k, f3: c * k,
+                });
+                let (a, wa) = build_loads(&card(per_metre, 1.0), &segs, freq);
+                let (b, _) = build_loads(&card(lumped, len), &segs, freq);
+                prop_assert!(wa.is_empty());
+                prop_assert!((a[0] - b[0]).norm() <= 1e-9 * b[0].norm() + 1e-12,
+                    "LD {per_metre}: {} vs LD {lumped} scaled {}", a[0], b[0]);
+            }
         }
 
         /// LD type 5 (wire conductivity): a lossy conductor is passive and
