@@ -169,11 +169,12 @@ fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
 }
 
 #[test]
-fn ld_type2_series_rl_is_supported_and_changes_impedance() {
-    // Phase-2: LD type 2 (series RL) is parsed and applied.
-    // R=10 Ω, L=1 µH at 14.2 MHz: X_L = ωL = 2π·14.2e6·1e-6 = 89.2212 Ω.
-    // The load sits at the feed, so the port identity gives the whole answer:
-    // Z_IM shifts from the unloaded dipole's by +89.2212, and Z_RE by +10.
+fn ld_type2_is_series_rlc_per_metre() {
+    // LD 2 is series RLC per metre (FND-280): R = 10 Ω/m and L = 1 µH/m on the
+    // 10.564 / 51 m feed segment are 2.0714 Ω and 0.20714 µH, X_L = 18.481 Ω.
+    // The load sits at the feed, so the port identity gives the whole answer.
+    // nec2c 1.3.1 reads 81.420 + j64.704 against the unloaded 79.348 + j46.223:
+    // the same shift. fnec read it as a lumped 10 Ω + 1 µH (+10 + j89.22).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -192,22 +193,31 @@ fn ld_type2_series_rl_is_supported_and_changes_impedance() {
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
     let (_, loaded_x) = first_feedpoint_impedance(&loaded_out);
-    // Analytic, not pinned: ωL is a textbook quantity and the identity fixes the
-    // shift exactly. The old assertion was fnec's own 651.8 Ω from the broken
-    // stamp — a self-consistent checker that could not fail (FND-122).
-    let omega_l = 2.0 * std::f64::consts::PI * 14.2e6 * 1e-6;
-    let (_, base_x) = unloaded_dipole_z(&workspace_root);
+    // Analytic, not pinned: the identity fixes the shift exactly. The old
+    // assertion was fnec's own 651.8 Ω from the broken stamp — a self-consistent
+    // checker that could not fail (FND-122).
+    let length = 10.564 / 51.0;
+    let omega_l = 2.0 * std::f64::consts::PI * 14.2e6 * 1e-6 * length;
+    let (loaded_r, _) = first_feedpoint_impedance(&loaded_out);
+    let (base_r, base_x) = unloaded_dipole_z(&workspace_root);
     assert!(
         (loaded_x - base_x - omega_l).abs() < 0.2,
-        "LD2 series RL must shift Z_IM by +ωL = {omega_l:.4} from {base_x}, got {loaded_x}"
+        "LD 2 must shift Z_IM by +ωL'·Δ = {omega_l:.4} from {base_x}, got {loaded_x}"
+    );
+    assert!(
+        (loaded_r - base_r - 10.0 * length).abs() < 0.05,
+        "LD 2 must shift Z_RE by +R'·Δ = {:.4} from {base_r}, got {loaded_r}",
+        10.0 * length
     );
 }
 
 #[test]
-fn ld_type3_series_rc_is_supported_and_changes_impedance() {
-    // Phase-2: LD type 3 (series RC) is parsed and applied.
-    // R=10 Ω, C=1 pF at 14.2 MHz: X_C = 1/(ωC) ≈ 11.2 kΩ — highly capacitive load.
-    // Z_IM shifts to ~ -78413 Ω (strongly capacitive).
+fn ld_type3_is_parallel_rlc_per_metre() {
+    // LD 3 is parallel RLC per metre (FND-280): R = 10 Ω/m and C = 1 pF/m on
+    // the 10.564 / 51 m feed segment are 2.0714 Ω across 0.207 pF (54 kΩ), so the
+    // load is 2.0714 Ω to 0.0001 Ω. nec2c 1.3.1 reads 81.420 + j46.223 against
+    // the unloaded 79.348 + j46.223. fnec read it as a lumped series 10 Ω + 1 pF:
+    // −j11208 Ω.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -225,10 +235,11 @@ fn ld_type3_series_rc_is_supported_and_changes_impedance() {
         !loaded_err.contains("unknown card 'LD'"),
         "Phase-2: LD should be parsed, not produce unknown-card warning; got:\n{loaded_err}"
     );
-    let (_, loaded_x) = first_feedpoint_impedance(&loaded_out);
-    // Strongly capacitive: Z_IM << 0
+    let (loaded_r, loaded_x) = first_feedpoint_impedance(&loaded_out);
+    let (base_r, base_x) = unloaded_dipole_z(&workspace_root);
+    let r = 10.0 * 10.564 / 51.0;
     assert!(
-        loaded_x < -1000.0,
-        "Phase-2 LD3 (series RC, 1 pF) Z_IM should be strongly negative (got {loaded_x})"
+        (loaded_r - base_r - r).abs() < 0.05 && (loaded_x - base_x).abs() < 0.2,
+        "LD 3 must shift Z by +{r:.4} + j0 from {base_r} + j{base_x}, got {loaded_r} + j{loaded_x}"
     );
 }
