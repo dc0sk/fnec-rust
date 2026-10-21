@@ -106,6 +106,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Docs
 
+- **A feed beside a junction of three or more wires is measured, not changed**
+  (FND-277). A ground plane fed on the segment beside its radials sits 0.27 %
+  further from converged nec2c than fed two segments up, at 10 segments per
+  wire, and 0.15 % at 20: a mesh error that halves with the mesh, which the MPIE
+  shares. No junction row moved it by more than 0.06 %, so the row stays; a test
+  pins the convergence.
+
 - **Phase 10 is marked complete** in the roadmap, and PAR-011's backlog entry
   records what shipped in 0.23.0 and the two criteria still open (a run on Windows,
   the throughput comparison against 4nec2's own kernel).
