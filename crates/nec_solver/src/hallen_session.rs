@@ -472,11 +472,32 @@ pub(crate) struct NodeGaps {
 }
 
 /// Which side of a degree-2 node carries the gap: the first segment list given
-/// to [`NodeGaps::side`], or the second.
+/// to [`NodeGaps::row`], or the second.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GapSide {
     A,
     B,
+}
+
+/// The continuity row a degree-2 node takes ([`NodeGaps::row`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeRow {
+    /// No gap beside the node (or one the quadratic cannot reach): the current
+    /// extrapolated linearly to the node from each side is the same.
+    Linear,
+    /// A gap on one side only: that segment's current is the other side's
+    /// quadratic extrapolation to its midpoint (FND-270).
+    Extrapolate(GapSide),
+    /// A gap on both node-adjacent segments (FND-278): the current between the two
+    /// kinks is one arc through the node, so no current row carries information
+    /// — the linear row and FND-270's extrapolation each read half the answer.
+    /// The tangential vector potential is continuous instead: `A_a(s₀) = A_b(s₀)`
+    /// in the two sections' homogeneous and particular terms, which at a vanishing
+    /// bend is the straight solve exactly (one `(C, D)` through the node, the
+    /// equal-potential row giving the other half). At a real bend it drops the
+    /// jump of `A·t̂` at the corner, which the caveat says
+    /// ([`joined_gaps_at_a_bend_deg`]).
+    Joined,
 }
 
 impl NodeGaps {
@@ -511,32 +532,120 @@ impl NodeGaps {
         self.feeds.contains(&side[i]) || self.load_step(side[i], &nbrs)
     }
 
-    /// The side of a degree-2 node whose node-adjacent segment is a gap, when the
-    /// other side can be extrapolated from. `a` and `b` are each side's segments
-    /// outward from the node, nearest first, up to three. `None` keeps the linear
-    /// row: no gap; gaps on both sides of one kind; fewer than three segments
-    /// beyond; or a gap on the middle point beyond, whose kink would sit inside
+    /// The continuity row of a degree-2 node. `a` and `b` are each side's segments
+    /// outward from the node, nearest first, up to three. Gaps on both
+    /// node-adjacent segments, of any kinds — a feed, a current source, a network
+    /// port, a load step — take the [`NodeRow::Joined`] row (FND-278). One gap
+    /// takes its side's extrapolation when the other side can be extrapolated
+    /// from; otherwise, and with no gap, the linear row: fewer than three segments
+    /// beyond, or a gap on the middle point beyond, whose kink would sit inside
     /// the quadratic's span (a gap on the farthest point bounds the span and does
-    /// not enter it). A feed on one side and a load step on the other: the feed's
-    /// side, extrapolating across the load's kink — neither side is clean.
-    pub(crate) fn side(&self, a: &[usize], b: &[usize]) -> Option<GapSide> {
+    /// not enter it). "The feed's side wins over a load's" was the rule for two
+    /// gaps before: it extrapolated across the load's kink and read the FND-270
+    /// dipole's resistance 44 % low.
+    pub(crate) fn row(&self, a: &[usize], b: &[usize]) -> NodeRow {
         let (ga, gb) = (self.gap_at(a, b, 0), self.gap_at(b, a, 0));
         let side = match (ga, gb) {
+            (true, true) => return NodeRow::Joined,
             (true, false) => GapSide::A,
             (false, true) => GapSide::B,
-            (true, true) => match (self.feeds.contains(&a[0]), self.feeds.contains(&b[0])) {
-                (true, false) => GapSide::A,
-                (false, true) => GapSide::B,
-                _ => return None,
-            },
-            (false, false) => return None,
+            (false, false) => return NodeRow::Linear,
         };
         let (near, far) = match side {
             GapSide::A => (a, b),
             GapSide::B => (b, a),
         };
-        (far.len() >= 3 && !self.gap_at(far, near, 1)).then_some(side)
+        if far.len() >= 3 && !self.gap_at(far, near, 1) {
+            NodeRow::Extrapolate(side)
+        } else {
+            NodeRow::Linear
+        }
     }
+}
+
+/// The bend, in radians, from which a node with gaps on both sides earns a caveat
+/// ([`joined_gaps_at_a_bend_deg`]): the row there drops the jump of `A·t̂` at the
+/// corner, an error that grows as the square of the bend. Measured on the FND-278
+/// dipole (a feed and a j1000 Ω load either side of the node, 10 segments a half),
+/// the Hallén bend ratio `Z(θ)/Z(0)` against the MPIE's, which models the corner,
+/// in R: 0.01 % apart at 0.01 rad, 0.04 % at 0.02, 0.23 % at 0.05, 0.91 % at 0.1,
+/// 3.5 % at 0.2, 17 % at 0.5 and 41 % at 1 rad (nec2c's ratio sits within 1.4 % of
+/// the MPIE's at every mesh). Below 0.1 rad (5.7°) the row's error is under the
+/// mesh error the straight deck itself carries (1.3 % of converged nec2c on the
+/// unloaded dipole, FND-270); from there it is not.
+pub const JOINED_GAPS_CAVEAT_RAD: f64 = 0.1;
+
+/// The largest bend, in degrees, at a node whose continuity row is
+/// [`NodeRow::Joined`] on this deck — gaps on both node-adjacent segments — or
+/// `None` when no node takes that row or every such node is straight to the
+/// radian tolerance of [`JOINED_GAPS_CAVEAT_RAD`]. The one predicate the FND-278
+/// caveat keys on, built from the same gap list the solve builds (feeds, the
+/// current source, network ports, the deck's lumped loads at `freq_hz`) and the
+/// same nodes (the section graph's degree-2 nodes where the graph solves the
+/// deck, the conductor paths' bends otherwise). A deck on PEC ground is judged on
+/// its image problem, as the solve is (FND-082).
+pub fn joined_gaps_at_a_bend_deg(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> Option<f64> {
+    let ground = crate::ground_model_from_deck(deck);
+    if let Ok(Some(img)) = crate::ground_contact::pec_ground_contact(deck, segs, &ground) {
+        return joined_gaps_at_a_bend_deg(&img.deck, &img.segs, freq_hz);
+    }
+    let loads = crate::loads::build_loads(deck, segs, freq_hz).0;
+    let ports = crate::network::build_networks(deck, segs, freq_hz)
+        .map(|(nets, _)| nets.ports())
+        .unwrap_or_default();
+    let feeds: Vec<usize> = crate::excitation::feedpoints(deck)
+        .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
+        .chain(ports)
+        .collect();
+    let gaps = NodeGaps::new(segs, feeds, &loads);
+    let angle = |ta: [f64; 3], tb: [f64; 3]| {
+        (ta[0] * tb[0] + ta[1] * tb[1] + ta[2] * tb[2])
+            .clamp(-1.0, 1.0)
+            .acos()
+    };
+    let mut worst: Option<f64> = None;
+    let mut note = |bend: f64| {
+        if bend >= JOINED_GAPS_CAVEAT_RAD {
+            worst = Some(worst.map_or(bend, |w: f64| w.max(bend)));
+        }
+    };
+    if let Some(graph) = graph_geometry(deck, segs) {
+        for node in &graph.nodes {
+            if let Some((ta, tb)) = crate::section_graph::joined_node(&graph, node, &gaps) {
+                // Both tangents in the through direction, as the path's are.
+                note(angle(ta, tb));
+            }
+        }
+    } else if let Some(paths) = nontrivial_paths(segs, &ground) {
+        for p in &paths {
+            let starts = section_starts(segs, p);
+            if !sections_fit(&starts) {
+                continue;
+            }
+            let tangent = |i: usize| {
+                let d = segs[p.segs[i]].direction;
+                [d[0] * p.signs[i], d[1] * p.signs[i], d[2] * p.signs[i]]
+            };
+            for sec in 0..starts.len().saturating_sub(2) {
+                let a: Vec<usize> = (starts[sec]..starts[sec + 1])
+                    .rev()
+                    .take(3)
+                    .map(|i| p.segs[i])
+                    .collect();
+                let b: Vec<usize> = (starts[sec + 1]..starts[sec + 2])
+                    .take(3)
+                    .map(|i| p.segs[i])
+                    .collect();
+                if gaps.row(&a, &b) == NodeRow::Joined {
+                    note(angle(
+                        tangent(starts[sec + 1] - 1),
+                        tangent(starts[sec + 1]),
+                    ));
+                }
+            }
+        }
+    }
+    worst.map(f64::to_degrees)
 }
 
 /// The weights of the quadratic through `xs` evaluated at `x0`: the Lagrange
@@ -817,20 +926,32 @@ fn section_layout(
             // quadratic extrapolation to its midpoint, in path arc length, from
             // three points on the smooth side; the current is C¹ across the node,
             // as the potential row already assumes. Linear over 1.5 h carries the
-            // curvature error (~2 %) and is worse than the row above. With a gap
-            // on both sides, or too few clean segments beyond, keep the row.
+            // curvature error (~2 %) and is worse than the row above. With too
+            // few clean segments beyond, keep the row. With a gap on both sides
+            // no current row holds (FND-278): the row is A-continuity instead,
+            // `C_a cos ks₀ + D_a sin ks₀ + Q_a(s₀) = C_b cos ks₀ + D_b sin ks₀ +
+            // Q_b(s₀)` — the particular terms of feeds, ports and loads are one
+            // function along the path and cancel, as in the potential row.
             let a: Vec<usize> = (starts[sec]..starts[sec + 1]).rev().take(3).collect();
             let b: Vec<usize> = (starts[sec + 1]..starts[sec + 2]).take(3).collect();
             let global = |v: &[usize]| v.iter().map(|&i| p.segs[i]).collect::<Vec<_>>();
-            if let Some(side) = gaps.side(&global(&a), &global(&b)) {
-                let (f, pts) = match side {
-                    GapSide::A => (a[0], &b),
-                    GapSide::B => (b[0], &a),
-                };
-                let w = quadratic_weights(p.s_mid[f], [0, 1, 2].map(|j| p.s_mid[pts[j]]));
-                continuity = vec![(p.segs[f], p.signs[f])];
-                for (j, &pj) in pts.iter().enumerate() {
-                    continuity.push((p.segs[pj], -w[j] * p.signs[pj]));
+            let mut joined = false;
+            match gaps.row(&global(&a), &global(&b)) {
+                NodeRow::Linear => {}
+                NodeRow::Joined => {
+                    joined = true;
+                    continuity = Vec::new();
+                }
+                NodeRow::Extrapolate(side) => {
+                    let (f, pts) = match side {
+                        GapSide::A => (a[0], &b),
+                        GapSide::B => (b[0], &a),
+                    };
+                    let w = quadratic_weights(p.s_mid[f], [0, 1, 2].map(|j| p.s_mid[pts[j]]));
+                    continuity = vec![(p.segs[f], p.signs[f])];
+                    for (j, &pj) in pts.iter().enumerate() {
+                        continuity.push((p.segs[pj], -w[j] * p.signs[pj]));
+                    }
                 }
             }
             let s0 = p.s_mid[ea] + h(ea) / 2.0;
@@ -838,6 +959,10 @@ fn section_layout(
             // its corner integral into this potential row; the first section is
             // referenced here, so contributes nothing (FND-162 stage 1b).
             let mut phi_currents = Vec::new();
+            // The joined row's share of the same integral, with the cos kernel:
+            // `Q(s₀) = −∫ f_n cos k(s₀ − s″)` is section `sec`'s corner part of
+            // `A_s` at this node, zero where it is referenced (corner.rs).
+            let mut a_currents = Vec::new();
             if sec > 0 {
                 let (s_ref, pt, tan) = refs[sec];
                 let at = |s: f64| {
@@ -863,10 +988,19 @@ fn section_layout(
                         crate::corner::f_n(at(s), tan, &src.seg, k) * (k * (s0 - s)).sin()
                     });
                     phi_currents.push((src.col, v * src.weight));
+                    if joined {
+                        let q =
+                            crate::corner::graded_breaks(s_ref, s0, src.seg.radius, &breaks, |s| {
+                                crate::corner::f_n(at(s), tan, &src.seg, k) * (k * (s0 - s)).cos()
+                            });
+                        a_currents.push((src.col, -q * src.weight));
+                    }
                 }
             }
             bends.push(crate::linear::BendRow {
+                joined,
                 continuity,
+                a_currents,
                 phi_currents,
                 group_a: first_group + sec,
                 group_b: first_group + sec + 1,
