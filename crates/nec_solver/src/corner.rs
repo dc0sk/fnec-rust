@@ -26,7 +26,9 @@
 //! ```
 //!
 //! The first bracket is the pulse-edge charge term; for a parallel source the two
-//! terms cancel identically, so parallel pairs are skipped.
+//! terms cancel identically, so parallel pairs are skipped. The integral's part
+//! along the source is that bracket times cos²α, so it is taken in closed form
+//! and only the perpendicular part is integrated numerically ([`f_n`], FND-281).
 
 use num_complex::Complex64;
 
@@ -73,9 +75,23 @@ pub(crate) fn f_n(r: [f64; 3], tan: [f64; 3], src: &Segment, k: f64) -> Complex6
         let d = dist(r, p);
         (dot(d, d) + a * a).sqrt()
     };
-    let mut val = green(reff(src.start), k) - green(reff(src.end), k);
+    // The integral's part along the source, `cos α · (ŝ·d)`, is exact:
+    // `∫ G′(R)(ŝ·d)/R dl′ = G(R_start) − G(R_end)`, since `dR/dl′ = −(ŝ·d)/R`.
+    // Taken out, what is left is `(1 − cos²α)` times the edge term and the
+    // perpendicular part `t⊥ = tan − cos α · ŝ`, both of order sin α: the term
+    // vanishes with the bend. Integrated whole, by Gauss–Legendre, the parallel
+    // part's error near the source's end did not (143 against an exact 9e-6 two
+    // radii from a 2e-4 rad bend), so a vanishing bend was not the straight join
+    // (FND-281).
     let ca = dot(src.direction, tan);
+    let edge = green(reff(src.start), k) - green(reff(src.end), k);
+    let mut val = (1.0 - ca * ca) * edge;
     if ca.abs() > 1e-12 {
+        let t_perp = [
+            tan[0] - ca * src.direction[0],
+            tan[1] - ca * src.direction[1],
+            tan[2] - ca * src.direction[2],
+        ];
         let half = src.length / 2.0;
         let mut acc = Complex64::new(0.0, 0.0);
         for &(u, w) in &GL8 {
@@ -86,7 +102,7 @@ pub(crate) fn f_n(r: [f64; 3], tan: [f64; 3], src: &Segment, k: f64) -> Complex6
             ];
             let d = dist(r, rp);
             let re = (dot(d, d) + a * a).sqrt();
-            acc += w * green_prime(re, k) * (dot(tan, d) / re);
+            acc += w * green_prime(re, k) * (dot(t_perp, d) / re);
         }
         val -= ca * half * acc;
     }
@@ -179,4 +195,95 @@ pub(crate) fn source_breaks(
         (perp2 < near * near).then_some(s_ref + along)
     };
     [at(src.start), at(src.end)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const K: f64 = 2.0 * std::f64::consts::PI * 28.4e6 / 299_792_458.0;
+    const A: f64 = 0.001;
+    const H: f64 = 0.264;
+
+    /// A source segment on the z axis ending at the node at the origin.
+    fn source() -> Segment {
+        Segment {
+            tag: 1,
+            tag_index: 10,
+            global_index: 9,
+            start: [0.0, 0.0, -H],
+            end: [0.0, 0.0, 0.0],
+            midpoint: [0.0, 0.0, -H / 2.0],
+            direction: [0.0, 0.0, 1.0],
+            length: H,
+            radius: A,
+            part: crate::geometry::SegmentPart::Whole,
+        }
+    }
+
+    /// The tangent of a section leaving the node at `theta` from the source.
+    fn tangent(theta: f64) -> [f64; 3] {
+        [theta.sin(), 0.0, theta.cos()]
+    }
+
+    /// The defining formula, integrated finely and graded toward both ends.
+    fn f_n_reference(r: [f64; 3], tan: [f64; 3], src: &Segment) -> Complex64 {
+        let reff = |p: [f64; 3]| {
+            let d = dist(r, p);
+            (dot(d, d) + A * A).sqrt()
+        };
+        let edge = green(reff(src.start), K) - green(reff(src.end), K);
+        let half = src.length / 2.0;
+        let along = graded(-half, half, A, |u| {
+            let rp = [
+                src.midpoint[0] + u * src.direction[0],
+                src.midpoint[1] + u * src.direction[1],
+                src.midpoint[2] + u * src.direction[2],
+            ];
+            let d = dist(r, rp);
+            let re = (dot(d, d) + A * A).sqrt();
+            green_prime(re, K) * (dot(tan, d) / re)
+        });
+        edge - dot(src.direction, tan) * along
+    }
+
+    /// FND-281: at a vanishing bend the term vanishes, even two radii past the
+    /// node, where the source's end peaks on the scale of the radius. Integrated
+    /// whole by Gauss–Legendre it read 143 there at 2e-4 rad, and 143.1 at 0.02.
+    #[test]
+    fn the_corner_term_vanishes_with_the_bend() {
+        let src = source();
+        for theta in [2e-4, 2e-2] {
+            let tan = tangent(theta);
+            for dist_out in [2.0 * A, 10.0 * A, H / 2.0] {
+                let r = [dist_out * tan[0], 0.0, dist_out * tan[2]];
+                let got = f_n(r, tan, &src, K);
+                let exact = f_n_reference(r, tan, &src);
+                assert!(
+                    got.norm() < 1e-2 * theta * (1.0 / A),
+                    "θ = {theta}, {dist_out} m out: f_n = {got} (exact {exact})"
+                );
+            }
+        }
+    }
+
+    /// The parallel part is taken in closed form: a segment length or more from
+    /// the source, where 8 points resolve the integrand, the split equals the
+    /// formula.
+    #[test]
+    fn the_split_corner_term_is_the_formula() {
+        let src = source();
+        for theta in [0.3, 1.0, std::f64::consts::FRAC_PI_2, 2.5] {
+            let tan = tangent(theta);
+            for dist_out in [H, 2.0 * H] {
+                let r = [dist_out * tan[0], 0.0, dist_out * tan[2]];
+                let got = f_n(r, tan, &src, K);
+                let want = f_n_reference(r, tan, &src);
+                assert!(
+                    (got - want).norm() < 1e-5 * want.norm() + 1e-9,
+                    "θ = {theta}, {dist_out} m out: {got} against {want}"
+                );
+            }
+        }
+    }
 }
