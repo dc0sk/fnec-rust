@@ -1524,9 +1524,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (23.997576 + j651.798682) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22). Re-pinned 2026-10-21 (FND-280): LD 2 and LD 3 are per metre, as NEC-2 and nec2c define them; fnec had read them as a lumped series RL and RC.",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "3334471fe11c10acbfe33b0a134401ec93444fe76ac73e860c1ed9a9b8036198"
+      "last_produced_on": "2026-10-21",
+      "last_produced_in": "0.24.0",
+      "last_produced_fingerprint": "6da9e8a7c50d4af14b31756bdbdee0e90996f71946795d8f52ba336813eadb4e"
     },
     "dipole-ld-per-metre-parallel-51seg": {
       "deck_file": "dipole-ld-per-metre-parallel-51seg.nec",
@@ -1548,9 +1548,9 @@
         "X_absolute_ohm": 2.0
       },
       "status": "Re-derived on 2026-08-29 after FND-122: the previous value (15247.905051 + j-78413.559716) was fnec's own output from the broken stamp, which added the load impedance in ohms to the dimensionless Hallen matrix and over-applied it by a factor of 7.0. This pin is now checked against a value known independently of fnec. Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22). Re-pinned 2026-10-21 (FND-280): LD 2 and LD 3 are per metre, as NEC-2 and nec2c define them; fnec had read them as a lumped series RL and RC.",
-      "last_produced_on": "2026-10-10",
-      "last_produced_in": "0.21.6",
-      "last_produced_fingerprint": "b024c1ea917516ade8923590cb2b3062fca88084fdde676a656399117ea1f0ea"
+      "last_produced_on": "2026-10-21",
+      "last_produced_in": "0.24.0",
+      "last_produced_fingerprint": "24456d49f370b8ddd3571d391702ca4495db6c3f34df2110fa14b856418c8dcd"
     },
     "tl-two-dipoles-linked": {
       "deck_file": "tl-two-dipoles-linked.nec",
