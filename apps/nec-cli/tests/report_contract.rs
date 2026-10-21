@@ -217,7 +217,7 @@ fn report_contract_includes_sweep_points_table_for_multi_frequency_runs() {
 fn report_contract_includes_load_table_when_ld_cards_exist() {
     // Phase-2: LD is parsed and applied; the LOADS section appears in the report.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let deck_path = workspace_root.join("corpus/dipole-ld-series-rl-51seg.nec");
+    let deck_path = workspace_root.join("corpus/dipole-ld-per-metre-series-51seg.nec");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
         .arg("--solver")
