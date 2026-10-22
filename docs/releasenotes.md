@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-10-22
 ---
 
 # Release Notes

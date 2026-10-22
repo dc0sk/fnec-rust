@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/sbom.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-10-22
 ---
 
 # SBOM
