@@ -16,6 +16,10 @@ release as `SBOM-v<version>.spdx.json` (SPDX 2.3, `cargo sbom`). It covers the f
 transitive graph — 525 packages at v0.19.0 — where this table covers the ones a reader
 needs to reason about. Both are shipped; neither replaces the other.
 
+**No dependency left or arrived between v0.24.0 and v0.25.0.** Set difference over
+`(name, versionInfo)` pairs: 526 packages before and after; the only entries that moved
+are the nine workspace members' own versions (0.24.0 → 0.25.0).
+
 **No dependency left or arrived between v0.23.0 and v0.24.0.** Set difference over
 `(name, versionInfo)` pairs: 526 packages before and after; the only entries that moved
 are the nine workspace members' own versions (0.23.0 → 0.24.0).

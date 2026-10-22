@@ -15,6 +15,8 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-10-22 — Where wires meet
+
 ### Changed
 
 - **Hallén refuses a loop or junction with a straight run one segment long**
@@ -3875,7 +3877,8 @@ Hallén path is unchanged, so the validated corpus is untouched.
      v0.8.0 and v0.9.0 were released without tags, so there is no ref to compare
      against and inventing one would be worse than the gap (FND-043). -->
 
-[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/dc0sk/fnec-rust/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/dc0sk/fnec-rust/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/dc0sk/fnec-rust/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/dc0sk/fnec-rust/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/dc0sk/fnec-rust/compare/v0.21.7...v0.22.0
