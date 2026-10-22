@@ -2,10 +2,70 @@
 project: fnec-rust
 doc: docs/releasenotes.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-10-22
 ---
 
 # Release Notes
+
+## 0.25.0 — Where wires meet
+
+Most of this release is about the places where wires meet: ends a hair apart, segments
+drawn on top of each other, a feed beside a bend or a junction, a loop with a run one
+segment long. Decks there used to solve silently to a wrong answer. Each is now solved
+the way nec2c solves it, refused by name, or carries a caveat that names the cause.
+
+**One change moves answers on decks that solved before: `LD 2` and `LD 3`** (FND-280).
+NEC-2 defines both per metre of segment, type 2 as a series RLC and type 3 as a parallel
+RLC. fnec read type 2 as a lumped series R + L and type 3 as a lumped series R + C. A deck
+using either now gives nec2c's reading. **To keep a lumped load, write it as `LD 0`
+(series) or `LD 1` (parallel).** The two corpus decks are renamed
+`dipole-ld-per-metre-series-51seg` and `dipole-ld-per-metre-parallel-51seg`.
+
+Measured on a release build of the release branch (main 693d653 plus the version bump)
+against the published 0.24.0 binary, over all 57 decks in `corpus/`:
+
+| | 0.24.0 | 0.25.0 |
+|---|---|---|
+| 53 decks | — | the same bytes, apart from the `FNEC_BUILD` line |
+| `dipole-ld-per-metre-series-51seg` | 89.331 + j134.258 Ω | 81.403 + j63.518 Ω (FND-280) |
+| `dipole-ld-per-metre-parallel-51seg` | 89.331 − j11163.058 Ω | 81.403 + j45.037 Ω (FND-280) |
+| `split-v-conductor-path-freesp` | 274.8166 + j452.4096 Ω | 274.8186 + j452.4146 Ω, the corner term at a real bend (FND-281) |
+| `u-one-segment-negative-r-freesp` | — | the same numbers; its caveat is reworded (FND-251) |
+
+**Refused now, by name and with the fix** (these solved before, to a wrong answer):
+
+- **A loop or junction with a straight run one segment long, on Hallén** (FND-251): the
+  per-wire fallback read 2 to 18 times off nec2c. Give the run two segments, or use the
+  MPIE where it takes the deck.
+- **Segments drawn on top of each other** (FND-250).
+- **Ends that nec2c joins from one side only, and chains of near-misses that never meet at
+  one point** (FND-246); nec2c aborts or hangs on them.
+
+**Fixed:**
+
+- **Wire ends join where nec2c joins them** (FND-246): within 10⁻³ of the shorter
+  segment's length, not 1 µm.
+- **A feed beside a bend is solved as a feed beside a straight join** (FND-270), and **a
+  feed and a load either side of a node** as on a straight wire (FND-278). At a real bend
+  the second case carries a caveat naming the MPIE: no reference converges there.
+- **Hallén's corner term vanishes as a bend straightens** (FND-281).
+- **`--solver sinusoidal`** solves a dipole written start-to-start (FND-249) and a chain
+  with a one-segment wire on its own basis (FND-273); it read −75.96 + j1.41 Ω against
+  nec2c's 78.81 + j40.99 there, with exit 0.
+- **A remedy names the MPIE only for a deck the MPIE solves** (FND-276), and in the form
+  each frontend takes (FND-271).
+- **Caveats:** parallel wires closer than ten radius sums (FND-274); a bent conductor with
+  a one-segment run, at any bend angle (FND-251). A receiving junction on PEC ground is
+  no longer captioned unreliable (FND-272).
+- **A worker that stops reading its task no longer blocks the controller** (FND-244).
+
+Measured, not changed: a feed beside a junction of three or more wires (FND-277) sits
+0.27 % further from nec2c than fed away from it, a mesh error that halves with the mesh;
+a test pins its convergence.
+
+The Python bindings move to fnec_py 0.16.0: the solver changes above reach them too.
+
+Ledger: 269 findings at v0.24.0, 281 now, none open.
 
 ## 0.24.0 — Named builds
 
