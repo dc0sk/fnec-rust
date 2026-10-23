@@ -22,7 +22,7 @@
 //   Gate D1: horizontal λ/2 dipole over GN2 at 0.05λ and 0.025λ — feed Z matches
 //     the oracle (and hence nec2c to ~5-8%), and the ground pulls R well below the
 //     74 Ω free-space value (a real ground effect, not a small perturbation).
-//   Gate D2: PEC image cancellation (R → ~6 at 0.05λ).
+//   Gate D2: PEC image cancellation (R → 6.2 at 0.05λ, nec2c's converged GN1).
 //
 // Phase E extends the ground to ANY straight orientation: the reflected term for a
 // vertical/tilted wire is a Galerkin reaction of the general reflected-E-field
@@ -31,10 +31,11 @@
 // horizontal result, and a vertical dipole matches nec2c.
 //
 //   Gate E1 (vertical): a vertical λ/2 dipole (base 0.05λ) over GN2 matches nec2c's
-//     converged 90.173 + j38.991 to the MPIE's ~7% discretization offset.
+//     converged 90.173 + j38.991 to 1.0 Ω in R and 1.5 Ω in X (the MPIE mesh error).
 //   Gate E2 (consistency): a near-horizontal (2°) wire reproduces the Phase-D
-//     horizontal 64.00 + j49.18 — the E-field reaction agrees with the potential
-//     kernels (the fast dyadic resolves the low-d/large-ρ pole corner).
+//     horizontal 67.61 + j52.42 (64.00 + j49.18 before FND-157) — the E-field
+//     reaction agrees with the potential kernels (the fast dyadic resolves the
+//     low-d/large-ρ pole corner).
 //   Gate E3 (bent): an inverted-V (bent) over GN2 solves and captures the
 //     surface-wave ground shift (the per-segment-pair reflected reaction).
 //   Gate E4 (boundary): a buried wire (crossing z ≤ 0) is rejected.
@@ -126,16 +127,23 @@ fn horizontal_dipole_gn2_tracks_nec2c() {
 }
 
 /// Gate D2: PEC image cancellation — a horizontal dipole 0.05λ over a perfect
-/// conductor has its radiation resistance collapse toward the oracle's 5.87 Ω
-/// (nec2c GN1 6.16 Ω), the horizontal-over-ground signature.
+/// conductor has its radiation resistance collapse to nec2c GN1's converged
+/// 6.203 + j39.349 (the centre-fed dipole at 21 segments meshed 27× finer), the
+/// horizontal-over-ground signature. fnec 6.181 + j38.218 at the 40 segments
+/// solved here, and 6.194 + j38.703 / 6.199 + j38.954 at 80 / 160: R is settled
+/// within 0.03 Ω of nec2c's limit, X is the MPIE's mesh error (as in D1), so
+/// the band is 0.15 Ω in R and 1.5 Ω in X. It held the Python oracle's 5.87
+/// ± 1.5 until FND-289; the oracle shared FND-157's self-term defect, and the
+/// code with that defect (the near-pair static term not subtracted) reads
+/// 5.871 + j34.112 here, which the old band passed and this one fails.
 #[test]
 fn pec_image_cancellation() {
     let (g, f) = horizontal_dipole(0.05);
     let z = solve_mpie_ground(&g, FREQ, f, &GroundModel::PerfectConductor).unwrap();
     assert!(
-        z.z_in.re < 10.0 && (z.z_in.re - 5.87).abs() < 1.5,
-        "PEC 0.05λ R={} (oracle 5.87, nec2c GN1 6.16)",
-        z.z_in.re
+        (z.z_in.re - 6.203).abs() < 0.15 && (z.z_in.im - 39.349).abs() < 1.5,
+        "PEC 0.05λ Z={} (nec2c GN1 converged 6.203+j39.349)",
+        z.z_in
     );
 }
 
@@ -146,7 +154,11 @@ fn pec_image_cancellation() {
 /// 89.749 + j38.517, 89.987 + j38.752, 90.107 + j38.900, 90.173 + j38.991). It
 /// was the 41-segment 89.75 + j38.52 (FND-259); the MPIE solves 40 segments fed
 /// at the centre node, which no nec2c mesh reproduces, so the reference is the
-/// limit.
+/// limit. fnec 89.794 + j37.756 here, 89.985 + j38.247 / 90.070 + j38.496 at
+/// 80 / 160 segments, so X's 1.24 Ω is the MPIE's mesh error, heading for
+/// about 38.75. The band was 8 % in R and 10 % in X, sized for the ~6 %
+/// FND-157 defect, which then passed (84.347 + j35.782: 6.5 % and 8.2 %); since
+/// FND-289 it is 1.0 Ω in R and 1.5 Ω in X, as Gate D1's.
 #[test]
 fn vertical_dipole_gn2_matches_nec2c() {
     let lam = C0 / FREQ;
@@ -156,7 +168,7 @@ fn vertical_dipole_gn2_matches_nec2c() {
         .unwrap()
         .z_in;
     assert!(
-        (z.re - 90.173).abs() / 90.173 < 0.08 && (z.im - 38.991).abs() / 38.991 < 0.10,
+        (z.re - 90.173).abs() < 1.0 && (z.im - 38.991).abs() < 1.5,
         "vertical GN2 Z={z} (nec2c 90.173+j38.991)"
     );
 }
