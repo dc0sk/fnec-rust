@@ -162,7 +162,7 @@ const GN_FINITE_I34: &str = "NEC-2 never reads GN I3/I4";
 const GN_FINITE_F36: &str = "GN F3–F6 (a second medium or a cliff, NEC-2's GD parameters) \
                              only enter RP modes 2, 3, 5 and 6, which fnec refuses";
 const GN_IDEAL: &str = "I2–F6 are ignored, as nec2c ignores them";
-const EX_PRINT: &str = "FND-pending: a voltage source's I4 units digit asks nec2c for the input \
+const EX_PRINT: &str = "FND-309: a voltage source's I4 units digit asks nec2c for the input \
                         impedance normalized to F3 (its INPUT IMPEDANCE DATA table); fnec keeps \
                         the value and drops the request without the warning PT I1 = 1..3 and \
                         RP's N digit give";
