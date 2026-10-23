@@ -54,7 +54,7 @@ fn a_load_that_names_no_segment_is_refused() {
         (
             "reversed range",
             "tag = 1\nseg_first = 11\nseg_last = 5\n",
-            "seg_last is before seg_first",
+            "segment 11 is after segment 5; nec2c stops on this card (DATA FAULT)",
         ),
     ] {
         let out = run(&format!("[[laplace_load]]\n{entry}{LOAD}"));

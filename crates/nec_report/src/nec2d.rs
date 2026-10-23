@@ -105,6 +105,10 @@ pub struct LoadRow {
     pub tag: i64,
     pub from: i64,
     pub thru: i64,
+    /// The absolute numbers of the segments the card loads, resolved by the
+    /// solver's range rule (`nec_solver::deck_segment_in_range`): NEC-2's "loaded
+    /// twice" note is decided on them, not on the card's tag arithmetic (FND-282).
+    pub segments: Vec<u32>,
     /// Resistance, inductance, capacitance, impedance real and imaginary,
     /// conductivity.
     pub values: [f64; 6],
@@ -597,14 +601,10 @@ fn near_field(out: &mut String, report: &PointReport) {
 }
 
 fn loaded_twice(loads: &[LoadRow]) -> bool {
-    // A segment is loaded twice when two cards name it; a whole-tag card (from =
-    // thru = 0) covers every segment of its tag (all tags when the tag is 0).
+    // A segment is loaded twice when two cards resolve to it.
     for (a, la) in loads.iter().enumerate() {
         for lb in &loads[a + 1..] {
-            let same_tag = la.tag == 0 || lb.tag == 0 || la.tag == lb.tag;
-            let whole = |l: &LoadRow| l.from == 0 && l.thru == 0;
-            let overlap = whole(la) || whole(lb) || (la.from <= lb.thru && lb.from <= la.thru);
-            if same_tag && overlap {
+            if la.segments.iter().any(|s| lb.segments.contains(s)) {
                 return true;
             }
         }

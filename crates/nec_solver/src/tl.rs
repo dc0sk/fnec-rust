@@ -64,7 +64,7 @@ pub(crate) fn tl_two_port(
     let mut notes = Vec::new();
     let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
         let (idx, _, note) = find_segment_index(segs, tag, seg)
-            .ok_or_else(|| format!("{name}: end ({tag}, {seg}) is not in the geometry"))?;
+            .ok_or_else(|| crate::geometry::missing_reference(&name, tag, seg, segs))?;
         notes.extend(note);
         Ok(idx)
     };
@@ -128,7 +128,13 @@ pub(crate) fn find_segment_index(
     tag: u32,
     segment: u32,
 ) -> Option<(usize, u32, Option<String>)> {
+    // fnec's shorthand: segment 0 is the centre of the tag. Tag 0 has no centre —
+    // NEC-2 reads it as an absolute segment number (FND-282), and nec2c stops on
+    // segment 0 whatever the tag — so (0, 0) names nothing.
     if segment == 0 {
+        if tag == 0 {
+            return None;
+        }
         return find_center_segment_index(segs, tag);
     }
     let idx = crate::geometry::find_deck_segment(segs, tag, segment)?;
@@ -282,7 +288,7 @@ mod tests {
         let mut missing = tl(50.0, 0.1);
         missing.tag2 = 9;
         for (card, needle) in [
-            (missing, "not in the geometry"),
+            (missing, "no segment with tag 9, index 11"),
             (tl(0.0, 0.1), "nonzero"),
             (
                 TlCard {

@@ -15,6 +15,38 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
+  NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point
+  reference and as "every tag" for a range, so on two 21-segment dipoles
+  `EX 0 0 32` was refused where nec2c feeds wire 2's 11th segment, and
+  `LD 4 0 11 11 0 1000` loaded segment 11 of *both* wires (79.04 + j1041.2 Ω)
+  where nec2c loads one (22.282 + j1060.1). With a `GW 0` wire present, `EX 0 0 11`
+  fed that wire instead of the 11th segment built. Absolute numbers are NEC's
+  build order — across `GM`, `GR` and `GX` copies, skipping the thirds of a refined
+  free end, and carried onto the images of the perfect-ground image problem —
+  resolved in one place (`find_deck_segment` for a point, `deck_segment_in_range`
+  for a range), so every solver and frontend reads them alike, the `--loads-config`
+  Laplace loads and NEC-2D's "loaded twice" note included. A feedpoint row reports
+  the resolved segment's own tag and number. Two ranges NEC-2 cannot read are now
+  refused by name: `LD t 0 0 k` with `k ≠ 0` (nec2c reads past its arrays) and a
+  range written backwards (nec2c's DATA FAULT); `TL 0 0 …`/`NT 0 0 …` are refused,
+  since fnec's segment-0 "centre of the tag" shorthand needs a tag.
+  **Migration:** a deck that used tag 0 with a segment number meaning "this
+  segment on every wire" now loads one segment; write one card per tag
+  (`LD 4 1 11 11 …` + `LD 4 2 11 11 …`). `LD t 0 0 0` (every segment) is unchanged.
+- **`PT` selects the printed currents as NEC-2 reads it** (FND-299). `I3 = 0`
+  prints every segment whatever `I1` and `I2` say (`PT 1 2 0 0` printed tag 2
+  alone), and a range restricts the print with `I1 = 0` too (`PT 0 0 20 24` printed
+  everything; it now prints absolute segments 20–24, nec2c's five rows). `I1 = 1..3`
+  (NEC-2's receive-pattern print formats) print the same rows, with a warning.
+  **Migration:** to print one tag's currents, write `PT 0 t 1 n` with its range.
+- **A negative `LD` type is refused** (FND-292). NEC-2's `LD -1` clears the loads
+  of an earlier run in a multi-run deck; fnec accepted it and kept the loads
+  (178.86 + j38.83 Ω), and nec2c's own answer depends on the card's position
+  (1039.4 − j374.95 Ω after another `LD`). **Migration:** remove the card.
+
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
 ### Changed

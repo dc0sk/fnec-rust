@@ -100,6 +100,43 @@ fn a_base_load_shifts_the_monopole_by_exactly_itself() {
     );
 }
 
+/// A tag-0 reference names an absolute segment (FND-282) and crosses into the image
+/// problem: `EX 0 0 1` + `LD 4 0 5 5` on the monopole equals the tagged deck to
+/// round-off (nec2c 1.3.1: 130.81 + j8.644 for both, 21 segments, 29.9 MHz; here
+/// at the 26-segment 14.2 MHz fixture). `LD 4 0 0 0` stays one card: it covers the
+/// images already.
+#[test]
+fn a_tag_zero_reference_crosses_into_the_image_problem() {
+    let tagged = solve(
+        &format!("{MONOPOLE}LD 4 1 5 5 50 25 0\nEX 0 1 1 0 1.0 0.0\n{TAIL}"),
+        (1, 1),
+    )
+    .unwrap();
+    let absolute = solve(
+        &format!("{MONOPOLE}LD 4 0 5 5 50 25 0\nEX 0 0 1 0 1.0 0.0\n{TAIL}"),
+        (1, 1),
+    )
+    .unwrap();
+    assert!(
+        (tagged - absolute).norm() < 1e-9,
+        "tagged {tagged:.6} vs absolute {absolute:.6}"
+    );
+    let all_tagged = solve(
+        &format!("{MONOPOLE}LD 4 1 0 0 5 0 0\nEX 0 1 1 0 1.0 0.0\n{TAIL}"),
+        (1, 1),
+    )
+    .unwrap();
+    let all = solve(
+        &format!("{MONOPOLE}LD 4 0 0 0 5 0 0\nEX 0 1 1 0 1.0 0.0\n{TAIL}"),
+        (1, 1),
+    )
+    .unwrap();
+    assert!(
+        (all_tagged - all).norm() < 1e-9,
+        "LD 4 1 0 0 {all_tagged:.6} vs LD 4 0 0 0 {all:.6}"
+    );
+}
+
 /// Every contact fnec cannot represent is refused, naming the shape.
 #[test]
 fn unrepresentable_contacts_are_refused() {

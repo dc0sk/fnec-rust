@@ -42,6 +42,14 @@ pub enum ParseError {
         mnemonic: String,
         why: &'static str,
     },
+    /// A field of a parsed card that fnec reads differently from NEC-2 in a way
+    /// that cannot change the solved problem (a print format). A warning.
+    IgnoredField {
+        line: usize,
+        card: String,
+        field: usize,
+        why: String,
+    },
     /// A field could not be converted to the expected numeric type.
     BadField {
         line: usize,
@@ -106,6 +114,12 @@ impl std::fmt::Display for ParseError {
                 mnemonic,
                 why,
             } => write!(f, "line {line}: {mnemonic} ignored: {why}"),
+            ParseError::IgnoredField {
+                line,
+                card,
+                field,
+                why,
+            } => write!(f, "line {line}: {card} field {field} ignored: {why}"),
             ParseError::BadField {
                 line,
                 card,
@@ -1034,9 +1048,28 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
             }
             "PT" => {
                 // PT — print-control card. Raw fields are captured here; the
-                // solver applies the supported current-print-control subset to the
-                // CURRENTS table (apply_pt_current_filter, PH9-CHK-004).
+                // solver applies the current-print control to the CURRENTS table
+                // (apply_pt_current_filter, PH9-CHK-004, FND-299). I1 = 1..3 are
+                // nec2c's receive-pattern print formats: the same segments, another
+                // layout, which fnec does not have.
                 let fields = parse_fields(rest);
+                if let Some(mode) = fields
+                    .first()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .map(|v| v as i64)
+                    .filter(|m| (1..=3).contains(m))
+                {
+                    warnings.push(ParseError::IgnoredField {
+                        line: lineno,
+                        card: "PT".to_string(),
+                        field: 1,
+                        why: format!(
+                            "PT {mode} selects one of NEC-2's receive-pattern print formats for \
+                             the currents; fnec prints the selected segments in its CURRENTS \
+                             table as for PT 0"
+                        ),
+                    });
+                }
                 deck.cards.push(Card::Pt(PtCard {
                     raw_fields: fields
                         .into_iter()

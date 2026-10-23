@@ -157,7 +157,7 @@ fn nt_two_port(f: &[String], segs: &[Segment]) -> Result<(TwoPort, Vec<String>),
     let mut notes = Vec::new();
     let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
         let (idx, _, note) = find_segment_index(segs, tag, seg)
-            .ok_or_else(|| format!("{name}: port ({tag}, {seg}) is not in the geometry"))?;
+            .ok_or_else(|| crate::geometry::missing_reference(&name, tag, seg, segs))?;
         notes.extend(note);
         Ok(idx)
     };

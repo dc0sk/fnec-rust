@@ -291,6 +291,7 @@ fn image_segment(seg: &Segment) -> Segment {
     Segment {
         tag: seg.tag,
         tag_index: seg.tag_index,
+        abs_index: seg.abs_index,
         global_index: seg.global_index,
         start: [seg.start[0], seg.start[1], -seg.start[2]],
         end: [seg.end[0], seg.end[1], -seg.end[2]],
@@ -464,6 +465,7 @@ mod tests {
         Segment {
             tag,
             tag_index: idx,
+            abs_index: 0,
             global_index: global,
             start: mad3(midpoint, -half, direction),
             end: mad3(midpoint, half, direction),

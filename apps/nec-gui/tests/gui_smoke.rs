@@ -3504,3 +3504,48 @@ fn a_deck_with_two_faults_names_the_geometry_first() {
         "Currents tab: {currents}"
     );
 }
+
+/// FND-282 at the GUI's solve entry: tag 0 names an absolute segment number, as
+/// NEC-2 reads it. `EX 0 0 32` on two 21-segment dipoles is wire 2's 11th (nec2c
+/// 22.282 + j60.142 for both) and the result says so; `LD 4 0 11 11` loads one
+/// segment, the tagged card's, on Hallén and the MPIE alike.
+#[test]
+fn solve_deck_str_reads_tag_zero_as_an_absolute_segment() {
+    let two = |cards: &str| {
+        format!(
+            "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
+        )
+    };
+    for kind in [
+        nec_gui::solve::SolverKind::Hallen,
+        nec_gui::solve::SolverKind::Mpie,
+    ] {
+        let abs = solve_deck_str(&two("EX 0 0 32 0 1 0\n"), kind).expect("EX 0 0 32 solves");
+        let tagged = solve_deck_str(&two("EX 0 2 11 0 1 0\n"), kind).expect("EX 0 2 11 solves");
+        assert_eq!((abs.feed_tag, abs.feed_seg), (2, 11), "{kind:?}");
+        assert!(
+            (abs.z_re - tagged.z_re).abs() < 1e-9 && (abs.z_im - tagged.z_im).abs() < 1e-9,
+            "{kind:?}: EX 0 0 32 {} + j{} vs EX 0 2 11 {} + j{}",
+            abs.z_re,
+            abs.z_im,
+            tagged.z_re,
+            tagged.z_im
+        );
+        let ld = |tag: u32| {
+            solve_deck_str(
+                &two(&format!("EX 0 1 11 0 1 0\nLD 4 {tag} 11 11 0 1000\n")),
+                kind,
+            )
+            .expect("loaded deck solves")
+        };
+        let (a, b) = (ld(0), ld(1));
+        assert!(
+            (a.z_re - b.z_re).abs() < 1e-9 && (a.z_im - b.z_im).abs() < 1e-9,
+            "{kind:?}: LD 4 0 11 11 {} + j{} vs LD 4 1 11 11 {} + j{}",
+            a.z_re,
+            a.z_im,
+            b.z_re,
+            b.z_im
+        );
+    }
+}

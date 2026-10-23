@@ -1070,6 +1070,7 @@ pub fn segments_for_farfield(geom: &MpieGeometry) -> Result<Vec<Segment>, MpieEr
         .map(|(i, s)| Segment {
             tag: 1,
             tag_index: (i + 1) as u32,
+            abs_index: (i + 1) as u32,
             global_index: i,
             start: s.p0,
             end: s.p1,

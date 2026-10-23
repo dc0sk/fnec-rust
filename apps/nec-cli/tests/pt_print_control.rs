@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 //
 // PH9-CHK-004: PT (print-control) card runtime semantics — filter the segment
-// current output by mode / tag / segment range.
+// current output by mode / tag / segment range, as NEC-2 reads the card (FND-299).
 
 use std::fs;
 use std::path::PathBuf;
@@ -10,6 +10,10 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn run_stdout(deck: &str, name: &str) -> String {
+    run_both(deck, name).0
+}
+
+fn run_both(deck: &str, name: &str) -> (String, String) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -24,7 +28,10 @@ fn run_stdout(deck: &str, name: &str) -> String {
         .output()
         .unwrap();
     let _ = fs::remove_file(&path);
-    String::from_utf8_lossy(&out.stdout).into_owned()
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
 /// Distinct wire tags appearing in the CURRENTS section.
@@ -88,17 +95,22 @@ fn pt_negative_mode_suppresses_currents() {
     assert!(out.contains("FEEDPOINTS"), "feedpoint report must remain");
 }
 
+/// `PT 1 2 0 0` prints every segment: NEC-2 reads `I3 = 0` as "print all" whatever
+/// `I1` and `I2` say (nec2c sets its flag to −2 there and printed all 42 rows), and
+/// `I1 = 1` only selects a receive-pattern print format, which the parser warns
+/// about (FND-299). fnec used to print tag 2 alone.
 #[test]
-fn pt_positive_mode_restricts_to_tag() {
-    let out = run_stdout(&deck_with_pt("PT 1 2 0 0\n"), "pt-tag2");
-    assert!(
-        out.contains("CURRENTS"),
-        "tag filter keeps the CURRENTS section"
-    );
+fn pt_mode_one_with_no_range_prints_all_and_warns() {
+    let (out, err) = run_both(&deck_with_pt("PT 1 2 0 0\n"), "pt-tag2");
+    assert!(out.contains("CURRENTS"), "the CURRENTS section is kept");
     assert_eq!(
         current_tags(&out),
-        vec![2],
-        "PT mode 1 tag 2 should print only wire-2 currents"
+        vec![1, 2],
+        "PT 1 2 0 0 prints every segment, as nec2c does"
+    );
+    assert!(
+        err.contains("PT field 1 ignored") && err.contains("receive-pattern print format"),
+        "{err}"
     );
 }
 

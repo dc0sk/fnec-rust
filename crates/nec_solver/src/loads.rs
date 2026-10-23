@@ -22,7 +22,7 @@ use num_complex::Complex64;
 use nec_model::card::{Card, LdCard};
 use nec_model::deck::NecDeck;
 
-use crate::geometry::Segment;
+use crate::geometry::{deck_segment_in_range, Segment};
 
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
@@ -103,6 +103,21 @@ pub fn ld_card_problem(ld: &LdCard, segs: &[Segment]) -> Option<String> {
         "LD {} {} {} {}",
         ld.load_type, ld.tag, ld.seg_first, ld.seg_last
     );
+    if ld.load_type < 0 {
+        // NEC-2's `LD -1` clears the loads of an earlier run in a multi-run deck
+        // (nec2c honours it only as the first LD card after a non-LD card); fnec
+        // runs one job, where it changes nothing, and after another LD it is not a
+        // load type at all — nec2c loaded a dipole carrying `LD 4 1 11 11 100 0`
+        // then `LD -1 0 0 0` to 1039.4 − j374.95 Ω (FND-292). Accepting it as a
+        // no-op would depend on its position; refusing is one rule.
+        return Some(format!(
+            "{name}: LD {t} clears the loads of an earlier run in a multi-run NEC deck; fnec \
+             runs one, where as the first LD card it changes nothing and after another LD it \
+             is not a load type (nec2c loaded the dipole to 1039.4 − j374.95 Ω on such a \
+             deck). Remove the card",
+            t = ld.load_type
+        ));
+    }
     if ld.load_type > 5 {
         return Some(format!(
             "{name}: load type {} is not supported (fnec models LD types 0-5)",
@@ -115,8 +130,41 @@ pub fn ld_card_problem(ld: &LdCard, segs: &[Segment]) -> Option<String> {
             ld.f1
         ));
     }
-    if !segs.iter().any(|seg| segment_matches(ld, seg)) {
+    if let Some(problem) = range_problem(ld.tag, ld.seg_first, ld.seg_last, |a, b| {
+        format!("LD {} 0 {a} {b}", ld.load_type)
+    }) {
+        return Some(format!("{name}: {problem}"));
+    }
+    if !(0..segs.len()).any(|i| segment_matches(ld, segs, i)) {
         return Some(format!("{name}: names no segment in the geometry"));
+    }
+    None
+}
+
+/// A segment range `(tag, first, last)` NEC-2 cannot read, for `LD` and the
+/// Laplace loads alike (the same selection rule, [`deck_segment_in_range`]).
+/// `spell(first, last)` writes a tag-0 range in the caller's own syntax, for the
+/// rewrite the message offers.
+fn range_problem(
+    tag: u32,
+    first: u32,
+    last: u32,
+    spell: impl Fn(u32, u32) -> String,
+) -> Option<String> {
+    if tag == 0 && first == 0 && last != 0 {
+        return Some(format!(
+            "with tag 0, NEC-2 reads the segment fields as absolute segment numbers and \
+             segment 0 names none (nec2c reads past its arrays here and loads segments \
+             1–{last}); write {}, or {} for every segment",
+            spell(1, last),
+            spell(0, 0)
+        ));
+    }
+    if first != 0 && last != 0 && last < first {
+        return Some(format!(
+            "segment {first} is after segment {last}; nec2c stops on this card (DATA FAULT) \
+             — swap them"
+        ));
     }
     None
 }
@@ -144,7 +192,7 @@ pub fn build_loads(
         let Card::Ld(ld) = card else { continue };
 
         for (i, seg) in segs.iter().enumerate() {
-            if !segment_matches(ld, seg) {
+            if !segment_matches(ld, segs, i) {
                 continue;
             }
 
@@ -229,32 +277,27 @@ fn parallel_rlc(r: f64, l: f64, c: f64, omega: f64) -> Complex64 {
     }
 }
 
-/// Returns true if this segment should receive the load described by `ld`.
-fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
-    // Tag 0 = apply to all tags.
-    if ld.tag != 0 && seg.tag != ld.tag {
-        return false;
-    }
-    // A refined free end's thirds (FND-227). A lumped load belongs to the deck
-    // segment and lands on its centre, once; a flank never takes one, even under
-    // "all segments". Conductivity (type 5) is per metre, so its loss is on all
-    // three thirds — a flank takes it as the deck segment it is part of.
-    let index = match seg.part {
-        crate::geometry::SegmentPart::Flank { parent } if ld.load_type == 5 => parent,
+/// Whether `segs[i]` receives the load described by `ld`: NEC-2's selection,
+/// through the one range resolver ([`deck_segment_in_range`], FND-282).
+///
+/// A refined free end's thirds (FND-227): a lumped load belongs to the deck
+/// segment and lands on its centre, once; a flank never takes one, even under
+/// "all segments". Conductivity (type 5) is per metre, so its loss is on all
+/// three thirds — a flank takes it as the deck segment it is part of, judged by
+/// its parent centre beside it.
+fn segment_matches(ld: &LdCard, segs: &[Segment], i: usize) -> bool {
+    let seg = &segs[i];
+    let subject = match seg.part {
+        crate::geometry::SegmentPart::Flank { .. } if ld.load_type == 5 => {
+            match crate::geometry::flank_centre(segs, i) {
+                Some(p) => p,
+                None => return false,
+            }
+        }
         crate::geometry::SegmentPart::Flank { .. } => return false,
-        _ => seg.tag_index,
+        _ => seg,
     };
-    // seg_first 0 = all segments of the tag.
-    if ld.seg_first == 0 {
-        return true;
-    }
-    // seg_last 0 means same as seg_first (single segment).
-    let last = if ld.seg_last == 0 {
-        ld.seg_first
-    } else {
-        ld.seg_last
-    };
-    index >= ld.seg_first && index <= last
+    deck_segment_in_range(subject, ld.tag, ld.seg_first, ld.seg_last)
 }
 
 /// A Laplace-domain (rational) series load: `Z(s) = N(s) / D(s)` with `s = jω`,
@@ -269,9 +312,11 @@ fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
 /// stamped on the MoM diagonal exactly like the built-in loads.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LaplaceLoad {
-    /// Wire tag (0 = all tags).
+    /// Wire tag; 0 makes `seg_first`/`seg_last` absolute segment numbers, as on
+    /// NEC-2's `LD` card ([`deck_segment_in_range`], FND-282).
     pub tag: u32,
-    /// First segment within the tag (0 = all segments).
+    /// First segment within the tag (0 = all segments of the tag; with tag 0, all
+    /// segments).
     pub seg_first: u32,
     /// Last segment within the tag (0 = same as `seg_first`).
     pub seg_last: u32,
@@ -300,22 +345,9 @@ pub fn laplace_impedance(numerator: &[f64], denominator: &[f64], omega: f64) -> 
 }
 
 fn laplace_segment_matches(ll: &LaplaceLoad, seg: &Segment) -> bool {
-    if ll.tag != 0 && seg.tag != ll.tag {
-        return false;
-    }
-    // Lumped: the deck segment's centre takes it, a flank never (FND-227).
-    if !seg.is_deck_segment() {
-        return false;
-    }
-    if ll.seg_first == 0 {
-        return true;
-    }
-    let last = if ll.seg_last == 0 {
-        ll.seg_first
-    } else {
-        ll.seg_last
-    };
-    seg.tag_index >= ll.seg_first && seg.tag_index <= last
+    // Lumped: the deck segment's centre takes it, a flank never (FND-227); the
+    // tag/range rule is NEC's, shared with `LD` (FND-282).
+    deck_segment_in_range(seg, ll.tag, ll.seg_first, ll.seg_last)
 }
 
 /// Why a Laplace load cannot be applied to this geometry, if it cannot: a range
@@ -331,10 +363,10 @@ pub fn laplace_load_error(laplace: &[LaplaceLoad], segs: &[Segment]) -> Option<S
             "--loads-config laplace_load[{idx}] (tag {}, seg_first {}, seg_last {})",
             ll.tag, ll.seg_first, ll.seg_last
         );
-        if ll.seg_first != 0 && ll.seg_last != 0 && ll.seg_last < ll.seg_first {
-            return Some(format!(
-                "{what}: seg_last is before seg_first; a load range runs first to last"
-            ));
+        if let Some(problem) = range_problem(ll.tag, ll.seg_first, ll.seg_last, |a, b| {
+            format!("tag = 0, seg_first = {a}, seg_last = {b}")
+        }) {
+            return Some(format!("{what}: {problem}"));
         }
         if !segs.iter().any(|seg| laplace_segment_matches(ll, seg)) {
             return Some(format!("{what}: names no segment in the geometry"));
@@ -454,6 +486,7 @@ mod tests {
         Segment {
             tag,
             tag_index,
+            abs_index: tag_index,
             global_index: (tag_index - 1) as usize,
             start: [0.0, 0.0, -half],
             end: [0.0, 0.0, half],
@@ -661,6 +694,8 @@ mod tests {
         };
         for (card, needle) in [
             (ld(9, 1, 0.0), "not supported"),
+            (ld(-1, 1, 0.0), "clears the loads of an earlier run"),
+            (ld(-2, 0, 0.0), "clears the loads of an earlier run"),
             (ld(5, 1, 0.0), "σ > 0"),
             (ld(4, 7, 50.0), "names no segment"),
         ] {
@@ -669,6 +704,93 @@ mod tests {
         }
         assert_eq!(ld_card_problem(&ld(4, 1, 50.0), &segs), None);
         assert_eq!(ld_card_problem(&ld(5, 1, 5.8e7), &segs), None);
+    }
+
+    /// NEC-2's range rules (FND-282): a tag-0 card with `seg_first = 0` and a
+    /// `seg_last` names segment 0, which does not exist; a reversed range is
+    /// nec2c's DATA FAULT. Both are refused by name, for `LD` and the Laplace
+    /// loads alike; the valid forms around them pass.
+    #[test]
+    fn a_range_nec2_cannot_read_is_refused() {
+        let segs: Vec<Segment> = (1..=3).map(|i| seg(1, i, 0.1, 0.001)).collect();
+        let ld = |tag, first, last| LdCard {
+            load_type: 4,
+            tag,
+            seg_first: first,
+            seg_last: last,
+            f1: 50.0,
+            f2: 0.0,
+            f3: 0.0,
+        };
+        let p = ld_card_problem(&ld(0, 0, 2), &segs).expect("refused");
+        assert!(
+            p.contains("LD 4 0 0 2:") && p.contains("segment 0 names none"),
+            "{p}"
+        );
+        let p = ld_card_problem(&ld(0, 3, 1), &segs).expect("refused");
+        assert!(p.contains("DATA FAULT"), "{p}");
+        let p = ld_card_problem(&ld(1, 3, 1), &segs).expect("refused");
+        assert!(p.contains("segment 3 is after segment 1"), "{p}");
+        for ok in [
+            ld(0, 0, 0),
+            ld(0, 1, 2),
+            ld(0, 3, 0),
+            ld(1, 0, 2),
+            ld(1, 2, 3),
+        ] {
+            assert_eq!(ld_card_problem(&ok, &segs), None, "{ok:?}");
+        }
+        let ll = |tag, first, last| LaplaceLoad {
+            tag,
+            seg_first: first,
+            seg_last: last,
+            numerator: vec![50.0],
+            denominator: vec![1.0],
+        };
+        let p = laplace_load_error(&[ll(0, 0, 2)], &segs).expect("refused");
+        assert!(p.contains("segment 0 names none"), "{p}");
+        let p = laplace_load_error(&[ll(1, 3, 1)], &segs).expect("refused");
+        assert!(p.contains("DATA FAULT"), "{p}");
+        assert_eq!(laplace_load_error(&[ll(0, 2, 3)], &segs), None);
+    }
+
+    /// Tag 0 with a segment range names absolute segments, as nec2c's `load()`
+    /// reads it (FND-282): on two wires numbered 1-3 and 4-6, `LD 4 0 2 4` loads
+    /// segments 2, 3 of the first and 1 of the second, for `LD` and the Laplace
+    /// loads alike. fnec read it as "segments 2-4 of every tag".
+    #[test]
+    fn tag0_with_a_range_names_absolute_segments() {
+        let mut segs: Vec<Segment> = (1..=3).map(|i| seg(1, i, 0.1, 0.001)).collect();
+        segs.extend((1..=3).map(|i| seg(2, i, 0.1, 0.001)));
+        for (k, s) in segs.iter_mut().enumerate() {
+            s.abs_index = k as u32 + 1;
+            s.global_index = k;
+        }
+        let deck = deck_with_ld(LdCard {
+            load_type: 4,
+            tag: 0,
+            seg_first: 2,
+            seg_last: 4,
+            f1: 50.0,
+            f2: 0.0,
+            f3: 0.0,
+        });
+        let (loads, warns) = build_loads(&deck, &segs, 14.2e6);
+        assert!(warns.is_empty());
+        let loaded: Vec<f64> = loads.iter().map(|z| z.re).collect();
+        assert_eq!(loaded, [0.0, 50.0, 50.0, 50.0, 0.0, 0.0]);
+        let mut lv = vec![Complex64::new(0.0, 0.0); 6];
+        let ll = LaplaceLoad {
+            tag: 0,
+            seg_first: 5,
+            seg_last: 0,
+            numerator: vec![7.0],
+            denominator: vec![1.0],
+        };
+        let w = add_laplace_loads(&mut lv, std::slice::from_ref(&ll), &segs, 14.2e6);
+        assert!(w.is_empty());
+        let loaded: Vec<f64> = lv.iter().map(|z| z.re).collect();
+        assert_eq!(loaded, [0.0, 0.0, 0.0, 0.0, 7.0, 0.0]);
     }
 
     #[test]

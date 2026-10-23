@@ -58,8 +58,8 @@ resolved list, not over the deck.
 | Field | Type | Unit | Description |
 |:------|:-----|:-----|:------------|
 | `freq_mhz` | `number` | MHz | Solved frequency. |
-| `tag` | `integer` | — | Wire tag of the feedpoint segment (from EX card). |
-| `seg` | `integer` | — | Segment number of the feedpoint. |
+| `tag` | `integer` | — | Wire tag of the segment the `EX` card resolves to. With tag 0 on the card NEC-2 reads its segment as an absolute segment number (FND-282), so `EX 0 0 32` on two 21-segment wires reports `tag` 2. |
+| `seg` | `integer` | — | Segment number of the feedpoint within that tag (`EX 0 0 32` above reports 11). |
 | `z_re` | `number` | Ω | Real part of feedpoint impedance (resistance). |
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |

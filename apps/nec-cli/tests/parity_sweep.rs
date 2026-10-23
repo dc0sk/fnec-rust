@@ -894,13 +894,11 @@ fn cells() -> Vec<Cell> {
                     let args = ["--exec", "cpu"];
                     let a = run(&format!("{cid}/card"), &with_card, &args, &[]);
                     let b = run(&format!("{cid}/config"), &bare, &args, &[("--loads-config", &toml)]);
-                    // A backwards range matches no segment: the LD check words it that
-                    // way, the loads-file check names the order — one refusal class.
+                    // Both checks share one range rule since FND-282 and name a
+                    // backwards range as nec2c's DATA FAULT; the prefixes (the card,
+                    // the loads-file entry) differ — one refusal class.
                     pair_outcome_except(&a, &b, &["loads"], 1e-9, &["LOADS"], |r| {
-                        if r.contains("no segment")
-                            || r.contains("before")
-                            || r.contains("first to last")
-                        {
+                        if r.contains("no segment") || r.contains("is after segment") {
                             "the load cannot be applied".into()
                         } else {
                             verbatim(r)

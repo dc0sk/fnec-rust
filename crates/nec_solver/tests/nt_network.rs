@@ -80,7 +80,7 @@ fn an_unusable_nt_is_an_error_not_a_skip() {
         ),
         (
             &["1", "10", "7", "40", "0", "0", "0", "0", "0", "0"][..],
-            "not in the geometry",
+            "no segment with tag 7, index 40",
         ),
     ] {
         let mut deck = wire();

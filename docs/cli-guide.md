@@ -64,8 +64,8 @@ measured/curve-fitted loads.
 ```toml
 # A series R + L load (Z = 150 + jωL, L = 2 µH) on tag 1, segment 20.
 [[laplace_load]]
-tag = 1            # required; 0 = all tags
-seg_first = 20     # required; 0 = all segments of the tag
+tag = 1            # required; 0 = all segments when seg_first = 0, else absolute segment numbers
+seg_first = 20     # required; 0 = all segments of the tag (every segment with tag = 0)
 # seg_last = 20    # omit or 0 = single segment
 numerator   = [150.0, 2.0e-6]   # a0 + a1·s  ->  R + L·s
 denominator = [1.0]
@@ -411,7 +411,7 @@ Formatting and ordering rules:
 - `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `X` digit); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
 - `RECEIVE_PATTERN` appears only for an incident-plane-wave `EX` card with an incidence-angle sweep (NTHETA·NPHI > 1); `RESPONSE_DB` is the normalized receive response (0 dB at the sweep peak), which tracks the transmit gain pattern by reciprocity
 - `NEAR_FIELD` appears only when an `NE` card is present; it lists the complex `E = (Ex, Ey, Ez)` (V/m) on the card's rectangular grid. `NEAR_H_FIELD` is the magnetic companion for an `NH` card (`H = (Hx, Hy, Hz)`, A/m)
-- `CURRENTS` is controlled by a `PT` (print-control) card when present: `I1 ≤ −1` suppresses the section, `I1 = 0` prints all segments, `I1 ≥ 1` restricts output to tag `I2` and the optional segment range `I3..I4` (last `PT` card wins)
+- `CURRENTS` is controlled by a `PT` (print-control) card when present, as NEC-2 reads it (FND-299): `I1 ≤ −1` suppresses the section; `I3 = 0` prints every segment, whatever `I1` and `I2` say; otherwise the rows printed are segments `I3..I4` of tag `I2` (`I4 = 0` means `I3` alone), or absolute segment numbers `I3..I4` when `I2` is 0 (FND-282). `I1 = 1..3` are NEC-2's receive-pattern print formats: fnec prints the same rows in its own table and warns. The last `PT` card wins
 
 ## Diagnostics (stderr)
 
@@ -905,9 +905,9 @@ Quick reference:
 | FR | Full | Linear frequency sweep over all steps |
 | RP | Full | Radiation pattern; `XNDA` X-digit adds `NORMALIZED_PATTERN`, A-digit adds `AVERAGE_POWER_GAIN`. The N/D digits (labeling / dB-vs-ratio toggles) are deferred |
 | NE / NH | Partial | Near electric / magnetic field, rectangular (`I1=0`) and spherical (`I1=1`) grids; emits `NEAR_FIELD` / `NEAR_H_FIELD`. Over PEC ground the images are included; over a finite ground the reflected field is not, and a warning says so (FND-201) |
-| LD type 0–5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads. Arbitrary rational `Z(s)` loads come from `--loads-config` |
+| LD type 0–5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads. Tag 0 makes the segment fields absolute segment numbers, as NEC-2 reads them (FND-282); a negative type is refused (FND-292). Arbitrary rational `Z(s)` loads come from `--loads-config` |
 | TL | Partial | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`, solved as a two-port network across the port gaps (see below). fnec's retired `… NSEG TYPE Z0 LEN [VF]` layout is refused with the NEC-2 rewrite in the error |
-| PT | Partial | Print control applied at runtime: `I1 ≤ −1` suppresses current output, `I1 = 0` prints all, `I1 ≥ 1` restricts to tag `I2` / segments `I3..I4`. Last `PT` wins |
+| PT | Partial | Print control as NEC-2 reads it (FND-299): `I1 ≤ −1` suppresses current output; `I3 = 0` prints all whatever `I1`/`I2`; a range prints segments `I3..I4` of tag `I2`, or absolute segments `I3..I4` when `I2` is 0 (FND-282); `I1 = 1..3` print the same rows with a warning. Last `PT` wins |
 | NT | Partial | Two-port network (Y11 Y12 Y22) solved across the port gaps in parallel, as in NEC-2; `--solver hallen` with voltage sources only. Unusable cards are errors, not warnings |
 | CM / CE | Full | Comment cards; preserved in parse, ignored at runtime |
 | EN | Full | Terminates parse |

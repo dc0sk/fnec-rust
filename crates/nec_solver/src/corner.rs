@@ -210,6 +210,7 @@ mod tests {
         Segment {
             tag: 1,
             tag_index: 10,
+            abs_index: 0,
             global_index: 9,
             start: [0.0, 0.0, -H],
             end: [0.0, 0.0, 0.0],
