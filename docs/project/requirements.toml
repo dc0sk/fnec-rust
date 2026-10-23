@@ -95,8 +95,8 @@ id = "FR-010"
 title = "Automation helpers for resonance targeting and convergence studies"
 status = "implemented"
 criticality = "medium"
-verification = "review"
-rationale = "Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial."
+verification = "test"
+rationale = "Resonance search (`fnec sweep --resonance`, resonance_contract.rs) and the convergence study (`fnec converge`, converge_contract.rs), each with a contract test through the binary (GAP-012)."
 
 [[requirement]]
 id = "FR-011"
@@ -111,6 +111,13 @@ Origin: fnec's GM card used to carry a tag-RANGE filter (a first tag and a last 
 
 The CAPABILITY that occupied them may still be wanted: selecting an arbitrary tag range to transform is expressive, and NEC's ITS can only name a suffix in definition order. This requirement records the decision that if it comes back it gets its OWN syntax -- a distinct card, or a documented extension marker -- and never a standard field. Occupying a standard field is what caused FND-119, and the failure is silent in both directions.
 """
+
+[[requirement]]
+id = "FR-012"
+title = "Matching-network helper: the lossless L-network component values that present a target impedance at a feedpoint, typed or solved from a deck (fnec match)"
+status = "implemented"
+criticality = "medium"
+verification = "test"
 
 [[requirement]]
 id = "NFR-001"

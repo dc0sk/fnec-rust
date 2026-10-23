@@ -102,57 +102,20 @@ fn printed_ulp(v: f64) -> f64 {
     10f64.powf(v.abs().max(1e-30).log10().floor() - 4.0)
 }
 
-/// How far `values` (one axis of a series, ×3 between points) has still to move
-/// past its last point: the geometric tail of the last two steps, `d₂ r / (1 − r)`
-/// with `r = d₂ / d₁`. Infinite when the series is not contracting (`r ≥ 1`): it
-/// drifts, and no tail can be priced. The last step is widened by one printed unit
-/// (it is a difference of two rounded prints), the ratio is not: widened both
-/// ways, a series that has settled to within a print of its limit — the loaded
-/// dipole's R, 1129.3 / 1129.6 / 1129.7 — reads `r = 1` and an infinite tail,
-/// which is the rounding speaking, not the series.
+/// The settle rule of `nec_solver::convergence`, on a series read from nec2c's
+/// five-significant-digit prints: the last step is widened by one printed unit.
 fn remaining_drift(values: &[f64]) -> f64 {
     let n = values.len();
     assert!(n >= 3, "a tail needs three points");
-    let (a, b, c) = (values[n - 3], values[n - 2], values[n - 1]);
-    let ulp = printed_ulp(a).max(printed_ulp(b)).max(printed_ulp(c));
-    let (d1, d2) = ((b - a).abs(), (c - b).abs());
-    if d2 == 0.0 {
-        return ulp;
-    }
-    let r = d2 / d1;
-    if r >= 1.0 {
-        f64::INFINITY
-    } else {
-        (d2 + ulp) * r / (1.0 - r)
-    }
+    let ulp = values[n - 3..]
+        .iter()
+        .map(|v| printed_ulp(*v))
+        .fold(0.0, f64::max);
+    nec_solver::convergence::remaining_drift(values, ulp)
 }
 
-/// How a nec2c mesh series (×3 between points, four points or more) behaves:
-/// settling geometrically, with a tail [`remaining_drift`] can price; drifting by
-/// a near-constant step (the last two step ratios within 0.7–1.3), the slow
-/// convergence NEC-2 shows at a junction, for which no tail exists and a gate must
-/// carry the step itself; or diverging, the steps growing. FND-256.
-#[derive(Debug, PartialEq)]
-enum Series {
-    Settling,
-    LogDrift,
-    Diverging,
-}
-
-fn classify(values: &[f64]) -> Series {
-    let n = values.len();
-    assert!(n >= 4, "a class needs four points");
-    let d: Vec<f64> = values.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
-    let (q1, q2) = (d[n - 3] / d[n - 4], d[n - 2] / d[n - 3]);
-    let band = |q: f64| (0.7..=1.3).contains(&q);
-    if band(q1) && band(q2) {
-        Series::LogDrift
-    } else if q2 >= 1.0 {
-        Series::Diverging
-    } else {
-        Series::Settling
-    }
-}
+// How a nec2c mesh series behaves (FND-256): the shared rule.
+use nec_solver::convergence::{classify, Trend as Series};
 
 /// The tolerance the corpus gate (`corpus_validation.rs`) holds fnec to against
 /// this reference on `axis` ("R" or "X"): `max(absolute, percent × |reference|)`,

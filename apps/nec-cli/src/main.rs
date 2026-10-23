@@ -3,10 +3,12 @@
 
 mod bench;
 mod cli_args;
+mod converge_cmd;
 mod exec_calibration;
 mod exec_profile;
 mod kernel;
 mod laplace_config;
+mod match_cmd;
 mod nec2d_out;
 mod project_cmd;
 mod resonance_search;
@@ -24,15 +26,15 @@ use nec_model::card::Card;
 use nec_model::{run_validators, DeckValidator, DiagnosticLevel, ValidationDiagnostic};
 use nec_parser::parse;
 use nec_solver::{
-    build_excitation, build_geometry, ground_model_from_deck, rp_card_points,
-    wire_endpoints_from_segs, FarFieldPoint,
+    build_excitation, ground_model_from_deck, rp_card_points, wire_endpoints_from_segs,
+    FarFieldPoint,
 };
 use nec_worker::{
     encode_deck, HostsConfig, TaskMessage, TaskResult, WorkerPool, WorkerSolverConfig,
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
-    FrequencySolveResult, GroundSolver, PointOutput, PulseRhsMode, SolverMode, SweepPointSummary,
+    FrequencySolveResult, GroundSolver, PointOutput, SolverMode, SweepPointSummary,
     SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
@@ -202,6 +204,12 @@ fn main() -> ExitCode {
     }
     // ------------------------------------------------------------------------
 
+    // --- converge subcommand (GAP-012: the convergence-study helper) --------
+    if args.get(1).map(String::as_str) == Some("converge") {
+        return converge_cmd::run(&args);
+    }
+    // ------------------------------------------------------------------------
+
     // --- project subcommand -------------------------------------------------
     // GAP-015's "explicit CLI entry points", which were never written (FND-006),
     // and the reason `nec_project` was a dependency nothing imported (FND-016).
@@ -226,6 +234,12 @@ fn main() -> ExitCode {
     // --- taper subcommand (Leeson step-tapered-radius correction) -----------
     if args.get(1).map(String::as_str) == Some("taper") {
         return run_taper_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
+
+    // --- match subcommand (L-network matching, GAP-012 / BL-IMPR-017) --------
+    if args.get(1).map(String::as_str) == Some("match") {
+        return match_cmd::run(&args);
     }
     // ------------------------------------------------------------------------
 
@@ -1559,87 +1573,44 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
         let result = parse(&deck_str).map_err(|e| e.to_string())?;
         let deck = &result.deck;
 
-        let segs =
-            build_geometry(deck).map_err(|e| e.with_mpie_remedy(RESONANCE_REFUSAL_MPIE_REMEDY))?;
-        let ground = ground_model_from_deck(deck);
-        // Every refusal the other frontends make, in the order the main CLI makes
-        // them. This route called none of them, so an unsupported load solved
-        // without the load and a negative frequency converged (FND-173).
-        if let Some(err) = nec_solver::validate::pre_solve_error(deck, &segs, &ground) {
-            return Err(err);
-        }
-        let v_vec = build_excitation(deck, &segs).map_err(|e| e.to_string())?;
-        let wire_endpoints = wire_endpoints_from_segs(&segs);
-        let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
-
-        // Find the single FR frequency from the deck.
-        let freqs = frequencies_from_fr(deck);
-        let freq_hz = freqs.first().copied().ok_or_else(|| {
+        // The shared helper-route solve: every refusal the other frontends make,
+        // in the order the main CLI makes them (FND-173), Hallén only, with this
+        // subcommand's remedies.
+        let probe_cfg = solve_session::ProbeConfig {
+            solver_mode: SolverMode::Hallen,
+            ground_solver: GroundSolver::Rcm,
+            execution_mode: ExecutionMode::Cpu,
+            refusal_mpie_remedy: RESONANCE_REFUSAL_MPIE_REMEDY,
+            // `sweep --resonance` takes no option but `--resonance`: not
+            // `--ground-solver` (FND-217), and not `--solver` either, so "re-run
+            // with `--solver mpie`" sent the user to a refusal (FND-218). The
+            // search runs Hallén only; the MPIE is reached on the main command.
+            // Not for the low-ground caveat: the search runs Hallén, so the
+            // value it finds is what the ground error moves.
+            remedies: nec_solver::validate::Remedies {
+                mpie: Some(RESONANCE_MPIE_REMEDY),
+                mpie_low_ground: None,
+                sommerfeld: None,
+            },
             // Same sentence as every other frontend (FND-070). The remedy is
             // narrower here: a resonance search substitutes into a template
             // deck, so `--sweep-config` is not the answer.
-            nec_solver::validate::no_frequency_error(
-                &freqs,
-                "Add an `FR` card to the template deck.",
-            )
-            .unwrap_or_else(|| "resonance search: no frequency".to_string())
-        })?;
-
-        if !caveats_shown.replace(true) {
-            for w in nec_solver::validate::hallen_geometry_caveats(
-                deck,
-                &segs,
-                &ground,
-                freq_hz,
-                false,
-                // `sweep --resonance` takes no option but `--resonance`: not
-                // `--ground-solver` (FND-217), and not `--solver` either, so "re-run
-                // with `--solver mpie`" sent the user to a refusal (FND-218). The
-                // search runs Hallén only; the MPIE is reached on the main command.
-                // Not for the low-ground caveat: the search runs Hallén, so the
-                // value it finds is what the ground error moves.
-                nec_solver::validate::Remedies {
-                    mpie: Some(RESONANCE_MPIE_REMEDY),
-                    mpie_low_ground: None,
-                    sommerfeld: None,
-                },
-            ) {
-                eprintln!("warning: {w}");
-            }
-            for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
-                eprintln!("warning: {w}");
-            }
-        }
-
-        let solve_result = solve_frequency_point(
+            no_frequency_remedy: "Add an `FR` card to the template deck.",
+            stderr_prefix: "",
+        };
+        let points = solve_session::probe_feedpoints(
             deck,
-            &segs,
-            &wire_endpoints,
-            per_wire_basis_feasible,
-            &v_vec,
-            &ground,
-            &[],
-            SolverMode::Hallen,
-            PulseRhsMode::Nec2,
-            ExecutionMode::Cpu,
-            SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
-            freq_hz,
-            GroundSolver::Rcm,
-            &[], // Laplace loads apply to the normal solve path, not `sweep --resonance`.
-            // Printed once above, with this subcommand's remedies (FND-218).
-            solve_session::GeometryCaveats::ShownByCaller,
+            &probe_cfg,
+            solve_session::ProbeFrequencies::First,
+            !caveats_shown.replace(true),
         )?;
-
-        // A probe is not a sweep point: each one still says so itself, as
-        // before the sweep caveat was aggregated (FND-069).
-        for w in &solve_result.negative_r {
-            eprintln!("warning: {w}");
-        }
-        let summary = solve_result.sweep_summary.ok_or_else(|| {
-            "resonance search: solver did not produce a sweep summary".to_string()
-        })?;
-
-        Ok((summary.z_re, summary.z_im))
+        let row = points
+            .first()
+            .and_then(|p| p.feedpoints.first())
+            .ok_or_else(|| {
+                "resonance search: solver did not produce a sweep summary".to_string()
+            })?;
+        Ok((row.z_in.re, row.z_in.im))
     };
 
     match resonance_search::bisect(

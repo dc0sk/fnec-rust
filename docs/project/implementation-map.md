@@ -35,6 +35,8 @@ Serves **FR-001, DEC-010/011, PRT-001/002/008, NFR-004, PH8-CHK-001..006**.
 
 - `src/lib.rs` — facade re-exporting geometry/matrix/excitation/basis/linear/loads/tl/farfield.
 - `src/geometry.rs` — `GW` → `Segment` lists; `GroundModel` extraction; junction detection.
+- `src/refine.rs` — a deck meshed S times finer for `fnec converge`: every GW/GA/GH count × S, every EX/LD/NT/TL reference on the sub-segment modelling the same thing (`EndRule`: an end reference keeps its end or takes the centre), lumped ranges expanded, per-metre ranges stretched, RP/NE/NH/PT dropped.
+- `src/convergence.rs` — the settle rule of a mesh series (FND-255/256): `remaining_drift` (the geometric tail), `classify`/`trend`; one rule for the corpus gate and `fnec converge`.
 - `src/matrix.rs` — Hallén A-matrix (+ Pocklington/Z variants, ground); Gauss-Legendre quadrature + self-term singularity subtraction; `ZMatrix`.
 - `src/excitation.rs` — complex RHS from `EX` cards; `build_hallen_rhs` (delta-gap); pulse-RHS scaling; `ExcitationError`. **PH8-CHK-002 adds the plane-wave forcing RHS here.**
 - `src/basis.rs` — `ContinuityTransform`, `SinusoidalTransform` basis mappings.
@@ -90,6 +92,7 @@ Serves **FR-002, FR-007/008, NFR-005, PRT-003, all `--exec`/sweep/vars flags**.
 - `src/exec_profile.rs` — `Cpu/Hybrid/Gpu` selection; 4nec2 drop-in recognition; GPU probe.
 - `src/geometry_validation.rs` — intersection / buried-wire / risky-source checks.
 - `src/resonance_search.rs` — bisection resonance targeting (PH3-CHK-008).
+- `src/converge_cmd.rs` — `fnec converge`, the convergence-study helper (GAP-012): refines the deck per factor (`nec_solver::refine`), refuses up front what no mesh may solve, solves each mesh through `solve_session::probe_feedpoints` (caveats under a `mesh Nx:` prefix), and judges each row by `nec_solver::convergence`; text and `fnec-converge/1` JSON.
 - `src/sweep_config.rs` — `--sweep-config` TOML (linear/point list).
 - `src/vars_config.rs` — `--vars` JSON/TOML map loader.
 - `src/bench.rs` — benchmark record emission (human/CSV/JSON).
