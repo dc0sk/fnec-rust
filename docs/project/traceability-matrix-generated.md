@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix-generated.md
 status: living
-last_updated: 2026-10-19
+last_updated: 2026-10-23
 ---
 
 # Traceability matrix (generated — do not hand-edit)
@@ -24,7 +24,7 @@ the citations, then regenerate — never edit this file by hand.
 | FR-007 | Deterministic batch and sweep workflows for scripted studies | implemented | high | test | `apps/nec-cli/tests/sweep_contract.rs:144` |
 | FR-008 | Stable automation-oriented core APIs (structured output without text scraping) | implemented | high | test | `apps/nec-cli/tests/json_output_contract.rs:70` |
 | FR-009 | Geometry diagnostics that catch invalid/fragile models early with actionable messages | implemented | high | test | `apps/nec-cli/tests/geometry_diagnostics.rs:8` |
-| FR-010 | Automation helpers for resonance targeting and convergence studies | implemented | medium | review | review — Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial. |
+| FR-010 | Automation helpers for resonance targeting and convergence studies | implemented | medium | test | `apps/nec-cli/tests/converge_contract.rs:18`<br>`apps/nec-cli/tests/resonance_contract.rs:6` |
 | FR-011 | Tag-range selection for geometry transforms, in syntax NEC-2 does not define | planned | low | review | review — Planned, not built; the review is that the syntax is deliberately not accepted yet. Moves to verification = "test" when implemented.
 
 Origin: fnec's GM card used to carry a tag-RANGE filter (a first tag and a last tag) in the standard I2 and F7 fields, where NEC-2 defines NRPT (number of new structures) and ITS (the structure suffix to move). That made fnec misread every standard GM deck and made fnec-authored decks unreadable everywhere else, so FND-119 replaced those fields with the NEC-2 meanings.

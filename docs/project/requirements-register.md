@@ -83,7 +83,7 @@ canonical list.
 | PRT-003 | Sweep/gain/pattern/report weaker than 4nec2 | Phase 1–2 | Done |
 | PRT-004 | GUI/workflow maturity behind | Phase 3 | Done |
 | PRT-005 | No optimization/parameter-sweep workflow | Phase 3–4 | Done |
-| PRT-006 | No AutoEZ-class automation | Phase 3–4 | Partial: variable sweeps and resonance targeting done; convergence-study and matching-network helpers missing (GAP-012, BL-IMPR-017) |
+| PRT-006 | No AutoEZ-class automation | Phase 3–4 | Done: variable sweeps, resonance targeting; convergence-study helper: `fnec converge`; matching-network helper: `fnec match` (GAP-012, BL-IMPR-017) |
 | PRT-007 | Weak geometry validation/embeddability | Phase 2–4 | Done |
 | PRT-008 | Accuracy program too narrow | Phase 1–3 | Done (broadened corpus) |
 | PRT-009 | No NEC-5 surfaces plan | Phase 4–5 | Decided: wire-only (`nec5-frontier.md`) |
@@ -112,7 +112,7 @@ Phase 8.
 | GAP-009 | Workflow parity acceptance criteria | Resolved (PH3-CHK-012): `docs/usability-benchmark-ph3.md`, measured on the pre-redesign GUI |
 | GAP-010 | Automation/embedding strategy | Resolved (Phase 4): `docs/automation-guide.md`, `docs/json-output-schema.md`, `docs/python-bindings.md`, `bindings/fnec_py` |
 | GAP-011 | Classic batch-CLI parity definition | Resolved (Phase 2): `docs/cli-guide.md` (stdout/stderr, exit codes, `--output-format`) |
-| GAP-012 | AutoEZ-class automation acceptance | **Open, 2 of 4**: variable sweeps (`--vars`, `template_contract.rs`) and resonance targeting (`resonance_search.rs`, `resonance_contract.rs`) done; convergence-study and matching-network helpers do not exist (BL-IMPR-017) |
+| GAP-012 | AutoEZ-class automation acceptance | **Closed, 4 of 4**: variable sweeps (`--vars`, `template_contract.rs`), resonance targeting (`resonance_search.rs`, `resonance_contract.rs`), convergence-study helper: `fnec converge` (`converge_contract.rs`), matching-network helper: `fnec match` (BL-IMPR-017) |
 | GAP-013 | NEC-5-informed validation matrix | Resolved (PH2-CHK-007): `docs/corpus-validation-strategy.md` § NEC-5 validation coverage matrix (PAR-008); no owner column, though the criterion names one |
 | GAP-014 | External optimizer-loop compatibility | Resolved (Phase 3): `json_output_is_stable_across_two_runs`, `docs/json-output-schema.md`, `examples/optimize_swr.py` |
 | GAP-015 | Markdown project import/export | Resolved (`nec_project`) |
