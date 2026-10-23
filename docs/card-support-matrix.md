@@ -9,6 +9,8 @@ last_updated: 2026-10-19
 
 This document is the canonical reference for supported, partial, and deferred NEC card behavior in fnec-rust.  It covers every card that appears in the corpus or is relevant to 4nec2 / NEC2 compatibility.
 
+Every field of every card fnec parses is accounted for by one table, `nec_model::card::FIELD_DISPOSITION`, which two tests hold to the parser and the solver (the guard against a field accepted and never read, FND-280/283/285/298); the fields fnec ignores are listed in [Fields fnec reads and does not use](#fields-fnec-reads-and-does-not-use).
+
 Legend: **Full** — complete implementation; **Partial** — accepted and produces useful output, but some semantics are deferred (see Notes column); **Deferred** — parsed for portability but ignored at runtime with an explicit warning; **N/A** — not applicable or not in scope.
 
 ## Geometry cards
@@ -153,6 +155,40 @@ The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 | F1–F4 | θ₀, φ₀, Δθ, Δφ (degrees) | the grid |
 | F5 | RFLD, the range of the printed field | ignored with a warning when nonzero; the gains do not depend on it |
 | F6 | GNOR, a normalization gain | ignored with a warning when nonzero under a normalization; fnec normalizes to the pattern's peak |
+
+### Fields fnec reads and does not use
+
+Every field position of every card fnec parses has a disposition in one table, `nec_model::card::FIELD_DISPOSITION`: consumed (it reaches the solve), refused, or ignored. This is the human copy of its ignored entries — a field NEC-2 defines that fnec reads and does not use, in the case named — checked line by line against the table by `crates/nec_parser/tests/card_matrix.rs`; a field position NEC-2's card format leaves blank is not listed. A consumed field is held to reach the report by `apps/nec-cli/tests/card_field_reach.rs`. "With a warning" means the parse warns, quoting the reason.
+
+| Card | Case | Fields | fnec | Why |
+|------|------|--------|------|-----|
+| GN | I1 = 0, I2 = 0 | I3, I4 | ignored, with a warning | NEC-2 never reads GN I3/I4 |
+| GN | I1 = 0, I2 = 0 | F3, F4, F5, F6 | ignored, with a warning | GN F3–F6 (a second medium or a cliff, NEC-2's GD parameters) only enter RP modes 2, 3, 5 and 6, which fnec refuses |
+| GN | I1 = 2, I2 = 0 | I3, I4 | ignored, with a warning | NEC-2 never reads GN I3/I4 |
+| GN | I1 = 2, I2 = 0 | F3, F4, F5, F6 | ignored, with a warning | GN F3–F6 (a second medium or a cliff, NEC-2's GD parameters) only enter RP modes 2, 3, 5 and 6, which fnec refuses |
+| GN | I1 = 1 | I2, I3, I4, F1, F2, F3, F4, F5, F6 | ignored, with a warning | I2–F6 are ignored, as nec2c ignores them |
+| GN | I1 = 1, I2 ≠ 0 | I2, I3, I4, F1, F2, F3, F4, F5, F6 | ignored, with a warning | I2–F6 are ignored, as nec2c ignores them |
+| GN | I1 = -1 | I2, I3, I4, F1, F2, F3, F4, F5, F6 | ignored, with a warning | I2–F6 are ignored, as nec2c ignores them |
+| EX | I1 = 0 (voltage source) | I4 | ignored | I4's tens digit, NEC-2's admittance-matrix asymmetry print, which nec2c 1.3.1 ignores too |
+| EX | I1 = 0 (voltage source) | F3 | ignored | a voltage source's F3 is nec2c's impedance-normalization constant, read only for I4's print request |
+| EX | I1 = 0 (voltage source) | F4, F5, F6 | ignored | NEC-2 leaves F4–F6 blank for a voltage source |
+| EX | I1 = 1 (linear plane wave) | I4 | ignored | I4's tens digit, NEC-2's admittance-matrix asymmetry print, which nec2c 1.3.1 ignores too |
+| EX | I1 = 1 (linear plane wave) | I4 | ignored | I4's units digit is read for a voltage source only |
+| EX | I1 = 1 (linear plane wave) | F6 | ignored | the axial ratio; NEC-2 reads it for the elliptic types 2 and 3 only |
+| EX | I1 = 2 (elliptic plane wave) | I4 | ignored | I4's tens digit, NEC-2's admittance-matrix asymmetry print, which nec2c 1.3.1 ignores too |
+| EX | I1 = 2 (elliptic plane wave) | I4 | ignored | I4's units digit is read for a voltage source only |
+| RP | I1 = 0, XNDA's N = 0 | I4 | ignored | XNDA's X digit picks nec2c's column labels; fnec's table has one layout, and the NEC-2D output honours it |
+| RP | I1 = 0, XNDA's N = 0 | F5 | ignored, with a warning | asks nec2c to print the field at that range |
+| RP | I1 = 0, XNDA's N = 0 | F6 | ignored | GNOR is read only under XNDA's N digit, as nec2c reads it |
+| RP | I1 = 0, XNDA's N ≠ 0 | I4 | ignored, with a warning | asks nec2c to normalize one gain component |
+| RP | I1 = 0, XNDA's N ≠ 0 | F5 | ignored, with a warning | asks nec2c to print the field at that range |
+| RP | I1 = 0, XNDA's N ≠ 0 | F6 | ignored, with a warning | asks nec2c to normalize to that gain |
+| LD | I1 = 4 | F3 | ignored | NEC-2 reads no F3 for a series impedance |
+| LD | I1 = 5 | F2, F3 | ignored | NEC-2 reads only F1, the conductivity, for a wire conductivity |
+| LD | I1 = 4, I3 = 0 (the whole tag) | I4 | ignored | with I3 = 0 the whole tag is loaded and I4 is not read, as nec2c reads it |
+| LD | I1 = 4, I3 = 0 (the whole tag) | F3 | ignored | NEC-2 reads no F3 for a series impedance |
+| PT | I3 ≠ 0 | I1 | ignored, with a warning | selects one of NEC-2's receive-pattern print formats |
+| PT | I3 = 0 | I2, I4 | ignored | with I3 = 0 every segment is printed, whatever I2 and I4 say |
 
 ## Cards fnec does not model
 

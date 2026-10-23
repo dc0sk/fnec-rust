@@ -24,6 +24,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 |:----------|:--|:----------|:------|
 | `apps/nec-cli/tests/average_power_gain.rs` | 2 | FND-262: the average power gain is NEC-2's. On the 8 PAR-011 fixtures whose kernel printed an average, the kernel's own gains through `nec_solver::average_power_gain` give its printed average within 1e-3, and fnec's own average is within 0.5 % of it (the GN 2 deck is excepted). A single cut has no average, and isotropic 0 dBi averages to 1. Three sabotages caught: φ ends, θ ends, nulls. | FND-262 |
 | `apps/nec-cli/tests/bend_feed_adjacent.rs` | 8 | FND-270 — a feed, current source, network port or load step beside a node, on the conductor paths and the section graph; a uniform wire loss is not a gap; a plane-wave receive with a load beside the node | — |
+| `apps/nec-cli/tests/card_field_reach.rs` | 2 | The solver half of the field-disposition guard: for every value `nec_model::card::FIELD_DISPOSITION` calls consumed, `fnec` on the row's deck and on the deck with that one field changed gives a different solution (the report less the `SOURCES`/`LOADS` echo) or refuses it; a value the table says is kept and unread leaves the solution exactly as it was; `KnownGap` entries listed and tolerated. Standing self-test: RP I1 marked consumed with a runner that solves `RP 1` as `RP 0` (FND-285's defect) fails it. Does not catch a field read wrongly | FND-280, FND-283, FND-285, FND-298 |
 | `apps/nec-cli/tests/close_parallel_caveat.rs` | 1 | FND-274 — touching parallel wires carry the solver-neutral caveat on every solver | — |
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
@@ -121,7 +122,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_accel/tests/gpu_pivot.rs` | 2 | FND-254 — the GPU solve's pivot search on chosen matrices (column maxima off the diagonal, zeros in the diagonal lane's rows), through the production resident solve, against f64 partial-pivoting elimination: fewer rows than lanes, and more | FND-254 |
 | `crates/nec_accel/tests/gpu_resident_solve.rs` | 5 | Fully GPU-resident Hallén fill+solve parity, centred and asymmetric feeds (sin homogeneous column, FND-158); a hardware adapter makes `None` a failure (FND-163); a 301-segment dipole solves on the device; the solve shader uses no storage barrier (FND-185); no single-invocation entry point reads the LU factor (the triangular solves run one dispatch per column) | PH7-CHK-003 |
 | `crates/nec_accel/tests/gpu_zmatrix_parity.rs` | 1 | Gate G6: GPU Z-fill element-wise parity vs CPU | PH5-CHK-006 |
-| `crates/nec_parser/tests/card_matrix.rs` | 2 | `docs/card-support-matrix.md`, the one card table, lists exactly `nec_parser::OTHER_CARDS` with the same treatment (FND-236), and has a row for every card the parser reads (PH3-CHK-001, FND-235) | FND-235, FND-236, PH3-CHK-001 |
+| `crates/nec_parser/tests/card_matrix.rs` | 10 | `docs/card-support-matrix.md`, the one card table, lists exactly `nec_parser::OTHER_CARDS` with the same treatment (FND-236), and has a row for every card the parser reads (PH3-CHK-001, FND-235); the parse half of the field-disposition guard: `nec_model::card::FIELD_DISPOSITION` covers exactly the 19 typed cards, every one of the 12 positions of every row has a probe, and each probe does what the table says — a consumed value changes the typed cards, a refused one is refused naming the card, an ignored one leaves the cards (or, kept, keeps the value) with the warning the table names or none — and the matrix's field-disposition table lists every ignored field, line by line. Standing self-tests: a parser dropping GN I2, a missing matrix row, LD I2 marked ignored, an empty position and a probe equal to the baseline each fail it | FND-235, FND-236, PH3-CHK-001, FND-280, FND-283, FND-285, FND-298 |
 | `crates/nec_project/tests/project_roundtrip.rs` | 20 | `ProjectFile` TOML/Markdown round-trip + errors | FR-004, PH3-CHK-004/005, GAP-015 |
 | `crates/nec_solver/tests/asymmetric_current_nec2c.rs` | 6 | Asymmetric currents vs nec2c: off-centre feed (plain, sinusoidal, conductor path), vertical dipole over PEC, offset parasitic, current source = voltage drive (FND-158) | NFR-004 |
 | `crates/nec_solver/tests/bend_corner_nec2c.rs` | 3 | Hallén on bent conductors vs nec2c at two meshes each — a 90° L, a two-bend U (the interior-section branch), an off-apex inverted-V; the error must shrink with refinement (FND-162 stage 1b) | FND-162 |
@@ -167,7 +168,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=874 --> **874** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=884 --> **884** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -192,7 +193,7 @@ Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=703 --> **703** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1584 --> **1584** = 703 unit + 874 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1594 --> **1594** = 703 unit + 884 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

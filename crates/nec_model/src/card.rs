@@ -6,6 +6,12 @@
 //! Only the cards required for a minimal Phase-1 dipole simulation are
 //! defined here.  Each variant maps 1-to-1 to a NEC card mnemonic.
 
+mod field_disposition;
+pub use field_disposition::{
+    deck_with, field_name, perturbed_line, Disposition, FieldCase, Probe, FIELD_DISPOSITION,
+    GEOMETRY_CARDS,
+};
+
 /// Comment card (CM … CE).
 ///
 /// In a NEC deck every `CM` line contributes one line of free text; the
