@@ -79,6 +79,14 @@ fn square_loop(n: u32) -> String {
 /// A 1 λ square loop in the x–z plane, lit broadside (θ = 90°, φ = 90°).
 /// Kill criterion: under 1 % at 41, shrinking. Measured 0.55 → 0.34 % on these
 /// segments.
+///
+/// The references are nec2c on each deck's own mesh, and the band stands
+/// (FND-296 asked): nec2c's own series at the 21-deck's points
+/// (`scripts/nec2c-receive-series.py`, `EK 0`, 1 / 3 / 9 / 27 ×, captured
+/// 2026-10-23) moves 0.030, 0.006 and 0.004 % of the peak a tripling over the
+/// whole table, so nec2c's mesh error is a 1/30 of the band at 21 already. The
+/// 21 → 41 change in the pinned values is the pins' positions — segment 1 of 41
+/// is not segment 1 of 21 — not nec2c's drift.
 #[test]
 fn a_square_loop_receives_like_nec2c() {
     let wave = "EX 1 1 1 0 90 90 0\n";
@@ -285,6 +293,10 @@ fn a_loaded_t_receives_like_nec2c() {
 
 /// A 1 λ loop with a 100 + j50 Ω load mid-side, lit broadside. Kill criterion:
 /// under 1 % at 41, shrinking. Measured 0.87 → 0.51 % over the whole table.
+/// The band stands as the unloaded loop's does: nec2c's own series on the
+/// 21-deck (the load at the same point, `scripts/nec2c-receive-series.py`,
+/// `EK 0`, captured 2026-10-23) moves 0.154, 0.078 and 0.046 % of the peak a
+/// tripling, a tail of about 0.07 % (FND-296).
 #[test]
 fn a_loaded_loop_receives_like_nec2c() {
     let wave = "EX 1 1 1 0 90 90 0\n";

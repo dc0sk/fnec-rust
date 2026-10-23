@@ -102,19 +102,20 @@ mod wgpu_tests {
 
     /// Compile and dispatch a no-op compute shader.
     ///
-    /// Accepts `NoAdapterAvailable` for headless CI without a software rasterizer;
-    /// fails on any panic or unexpected variant (there are only two).
+    /// Accepts `NoAdapterAvailable` for headless CI without a software rasterizer
+    /// (and says it skipped); a device request that fails on a found adapter is
+    /// `DeviceFailed`, a failure — it used to be folded into the skip (FND-296).
     #[test]
     fn wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully() {
-        let result = pollster::block_on(run_noop_compute_pipeline());
-        assert!(
-            matches!(
-                result,
-                NoOpPipelineResult::Success | NoOpPipelineResult::NoAdapterAvailable
-            ),
-            "unexpected result: {:?}",
-            result
-        );
+        match pollster::block_on(run_noop_compute_pipeline()) {
+            NoOpPipelineResult::Success => {}
+            NoOpPipelineResult::NoAdapterAvailable => {
+                eprintln!("SKIPPED: no wgpu adapter (not even a fallback)");
+            }
+            NoOpPipelineResult::DeviceFailed(why) => {
+                panic!("an adapter was found and its device failed: {why}")
+            }
+        }
     }
 
     /// The shared context must be built **once**, however many kernels run.
@@ -233,8 +234,12 @@ mod wgpu_tests {
             let gpu = match gpu_result {
                 RpPipelineResult::Success(r) => r,
                 RpPipelineResult::NoAdapterAvailable => {
-                    // Acceptable on headless CI — skip gracefully.
+                    // Acceptable on headless CI — skip, and say so.
+                    eprintln!("SKIPPED: no wgpu adapter (not even a fallback)");
                     return;
+                }
+                RpPipelineResult::DeviceFailed(why) => {
+                    panic!("an adapter was found and the device or readback failed: {why}")
                 }
             };
 

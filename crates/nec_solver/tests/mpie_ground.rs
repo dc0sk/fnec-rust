@@ -226,7 +226,19 @@ fn inverted_v(tip_h_lam: f64, n: usize) -> (MpieGeometry, usize) {
 
 /// Gate E3 (bent over ground): an apex-fed inverted-V over GN2 solves via the
 /// per-segment-pair reflected reaction and captures the surface-wave ground shift.
-/// nec2c: free-space 43.48 + j12.40, GN2 52.81 + j39.16 (ΔZ = +9.3 + j26.8).
+///
+/// nec2c cannot feed a node: its reference feeds the segment beside the apex,
+/// and that is a different antenna at every mesh, the feed sliding into the bend
+/// as it refines (FND-229's shape). nec2c 1.3.1, `EK 0`, the apex segment fed at
+/// 21 / 63 / 189 per arm (captured 2026-10-23): GN2 52.828 + j39.177, 53.276 +
+/// j39.680, 53.872 + j40.247; free space 43.490 + j12.416, 43.799 + j12.740,
+/// 44.258 + j13.026; ΔX +26.761, +26.940, +27.221. The steps grow, so there is
+/// no converged value to gate a node feed against. The band is set between
+/// what nec2c's own feed-slide moves (R 2.0 %, ΔX 1.7 % from 21 to 189 per arm)
+/// plus the MPIE's distance at 20 per arm (51.585 + j37.481, ΔX +26.041: R
+/// 2.4 %, ΔX 2.7 % from the 21-arm values), and the FND-157 self-term defect,
+/// which reads 47.798 + j32.547, ΔX +24.548: 9.5 % and 8.3 %. It was 12 % and
+/// 15 %, which that defect passed (FND-296).
 #[test]
 fn inverted_v_over_ground_captures_surface_wave() {
     let (geom, apex) = inverted_v(0.05, 20);
@@ -234,17 +246,16 @@ fn inverted_v_over_ground_captures_surface_wave() {
     let z_free = solve_mpie_ground(&geom, FREQ, apex, &GroundModel::FreeSpace)
         .unwrap()
         .z_in;
-    // Physical impedance, within ~12% of nec2c on R.
     assert!(
-        (z_gnd.re - 52.81).abs() / 52.81 < 0.12,
-        "inverted-V GN2 R={} (nec2c 52.81)",
+        (z_gnd.re - 52.828).abs() / 52.828 < 0.06,
+        "inverted-V GN2 R={} (nec2c 52.828, the apex segment fed)",
         z_gnd.re
     );
-    // The ground raises the reactance by the surface-wave shift ΔX ≈ nec2c +26.8.
+    // The ground raises the reactance by the surface-wave shift ΔX ≈ nec2c +26.76.
     let dx = z_gnd.im - z_free.im;
     assert!(
-        (dx - 26.8).abs() / 26.8 < 0.15,
-        "ground ΔX={dx:.1} (nec2c +26.8)"
+        (dx - 26.761).abs() / 26.761 < 0.06,
+        "ground ΔX={dx:.2} (nec2c +26.761)"
     );
 }
 

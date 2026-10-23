@@ -80,6 +80,14 @@ fn yagi(n: u32) -> String {
 /// 69.78 + j28.56 at 21 and 63. Hallén approaches it too, more slowly (68.86 +
 /// j26.22, 69.76 + j27.81, 70.22 + j28.48), and neither solver warns: nothing
 /// joins the two radii.
+///
+/// The 1 Ω band stands (FND-296 asked): nec2c's extended-kernel series at 21 /
+/// 63 / 189 (`scripts/nec2c-converged-series.py --ek --to 9`, captured
+/// 2026-10-23: 69.672 + j28.365, 70.157 + j28.761, 70.396 + j29.000) leaves a
+/// tail of about 0.43 Ω past the reference, and 567 per element is below the
+/// extended kernel's own limit (1.9 radii a segment), so no finer reference
+/// exists. The band is a twelfth of the defect it guards (the reflector's radius
+/// for both wires, 12 Ω off), and the gate also demands fnec move toward nec2c.
 #[test]
 fn separate_wires_are_each_solved_with_their_own_radius() {
     let nec2c = (70.396, 29.000);

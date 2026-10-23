@@ -86,19 +86,36 @@ fn every_result_of_a_pulse_basis_carries_the_caveat() {
 }
 
 /// Negative control: validated solvers' output is unchanged — no header line, no
-/// JSON field.
+/// JSON field. Each run must first be shown to have printed its two results: an
+/// absent word passes on an empty stdout (FND-296).
 #[test]
 fn validated_solvers_carry_no_caveat() {
     for solver in ["hallen", "sinusoidal"] {
         let text = run(&["--solver", solver], solver);
+        let stdout = String::from_utf8_lossy(&text.stdout);
         assert!(
-            !String::from_utf8_lossy(&text.stdout).contains("CAVEAT"),
-            "{solver}"
+            text.status.success(),
+            "{solver}: {}",
+            String::from_utf8_lossy(&text.stderr)
         );
+        assert_eq!(
+            stdout.matches("FNEC FEEDPOINT REPORT").count(),
+            2,
+            "{solver}: two frequency points: {stdout}"
+        );
+        assert!(!stdout.contains("CAVEAT"), "{solver}: {stdout}");
         let json = run(&["--solver", solver, "--output-format", "json"], solver);
+        let stdout = String::from_utf8_lossy(&json.stdout);
         assert!(
-            !String::from_utf8_lossy(&json.stdout).contains("caveat"),
-            "{solver}"
+            json.status.success(),
+            "{solver}: {}",
+            String::from_utf8_lossy(&json.stderr)
         );
+        assert_eq!(
+            stdout.matches("\"freq_mhz\"").count(),
+            2,
+            "{solver}: two JSON records: {stdout}"
+        );
+        assert!(!stdout.contains("caveat"), "{solver}: {stdout}");
     }
 }
