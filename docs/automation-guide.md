@@ -157,8 +157,8 @@ EN
 ```
 
 Variables are substituted verbatim before parsing.  Referencing an undefined
-`$VAR` token causes a non-zero exit with a diagnostic on stderr — no silent
-partial substitution.
+`$VAR` token exits 1 with a diagnostic on stderr naming the line and the
+variable — no silent partial substitution.
 
 **TOML and JSON vars files are both accepted**:
 
@@ -561,11 +561,8 @@ position instead, which is what the corpus's converged nec2c references use.
 | Exit code | Meaning |
 |:---------:|:--------|
 | 0 | Success (or resonance search reached max iterations with a warning, or a convergence study that did not settle) |
-| 1 | Solver error, I/O error, bracketing failure, or a `fnec converge` refusal |
-
-| 0 | Success (or resonance search reached max iterations with a warning) |
-| 1 | Solver error, I/O error, bracketing failure, or a feedpoint no passive network matches (`fnec match`) |
-| 2 | Usage error (unknown flag, missing argument, undefined `$VAR`) |
+| 1 | Solver error, I/O error, a deck fnec refuses (an undefined `$VAR` included: it is a deck error, found while parsing), bracketing failure, a `fnec converge` refusal, or a feedpoint no passive network matches (`fnec match`) |
+| 2 | Usage error (unknown flag, missing argument), on every subcommand |
 
 ---
 

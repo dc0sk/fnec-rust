@@ -1073,12 +1073,12 @@ The LD card applies impedance loads to antenna segments. Supported types:
 |------|-------------|--------|
 | 0 | Series RLC (lumped) | F1 = R (Ω), F2 = L (H), F3 = C (F) |
 | 1 | Parallel RLC (lumped) | F1 = R (Ω), F2 = L (H), F3 = C (F) |
-| 2 | Series RL (lumped) | F1 = R (Ω), F2 = L (H) |
-| 3 | Series RC (lumped) | F1 = R (Ω), F3 = C (F) |
+| 2 | Series RLC per metre (distributed) | F1 = R (Ω/m), F2 = L (H/m), F3 = C (F/m), each times the segment length (FND-280) |
+| 3 | Parallel RLC per metre (distributed) | F1 = R (Ω/m), F2 = L (H/m), F3 = C (F/m), each times the segment length (FND-280) |
 | 4 | Series impedance Z = R + jX | F1 = R (Ω), F2 = X (Ω) |
 | 5 | Wire conductivity (distributed) | F1 = σ (S/m) |
 
-Example: `LD 4 1 26 26 50.0 -j100.0` applies a 50 − j100 Ω load to tag 1, segment 26.
+Example: `LD 4 1 26 26 50.0 -100.0` applies a 50 − j100 Ω load to tag 1, segment 26 (F2 is the reactance as a plain number; `-j100.0` is refused: `LD field 6: cannot parse '-j100.0'`).
 
 ### Transmission line (TL) and network (NT) card support
 

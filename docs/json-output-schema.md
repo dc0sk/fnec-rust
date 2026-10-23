@@ -111,8 +111,10 @@ which is what an empty array had been silently standing for.
 ## Stability guarantee
 
 The field set listed above is **stable** as of schema v1.  New fields may be
-added in future minor versions without changing the schema version number.
-Field removals or type changes will increment `schema_version`.
+added in future minor versions.  A field removal or a type change is a breaking
+change: it is announced in the changelog (`docs/changelog.md`, under *Changed* or
+*Removed*). The output itself names no schema version — this guide used to
+promise a `schema_version` field that fnec never emitted (FND-295).
 
 Callers must tolerate unknown fields (standard JSON forward-compatibility
 practice).
