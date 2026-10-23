@@ -48,7 +48,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gpu_resident_solve_cli.rs` | 3 | `--exec gpu` feedpoint Z within 2 Ω of CPU on corpus; a 2049-segment deck, past the old dispatch and `MAX_S` ceilings, solves on the device (FND-188/189) | PH7-CHK-003 |
 | `apps/nec-cli/tests/gpu_rp_exec.rs` | 4 | Gate G4: `--exec gpu` RP far-field matches CPU | PH5-CHK-004 |
 | `apps/nec-cli/tests/ground_diagnostics.rs` | 12 | `GN` handling: GE 1 + GN 1 over PEC, GN0/GN2 active; the finite-ground contact refusal names two models, each run at two meshes against nec2c's converged value (FND-240) | PRT-001, PH2-CHK-001/002 |
-| `apps/nec-cli/tests/ground_flags_nec2c.rs` | 5 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band | FND-241, FND-242, FND-243 |
+| `apps/nec-cli/tests/ground_flags_nec2c.rs` | 7 | FND-241/242/243 — `GE`/`GN` as nec2c reads them: the ground from the last `GN` alone (a raised wire's answer independent of `GE`), undefined values and `GE 1` without `GN` refused by name, a wire on the ground without `GE 1` refused with its remedy converging to nec2c at 21 and 63 segments, and nec2c's 10⁻³-of-a-segment contact band; FND-283 — a GN radial screen over a finite ground refused, the GN fields nec2c ignores (I2–F6 over GN 1/−1, I3/I4, a second medium) ignored with a warning and the answer unchanged | FND-241, FND-242, FND-243, FND-283 |
 | `apps/nec-cli/tests/ga_gh_card_nec2c.rs` | 5 | PH10-CHK-002 — `GA` and `GH` on the MPIE: a half circle, a full circle and a helix each equal their `GW` polygon and converge to nec2c (90 / 180 / 120 segments); a quarter arc + `GM` + `GR` is the full circle, `GS` scales an arc; the Hallén refusal and nec2c's hang/garbage inputs refused by name beside the decks that solve | PH10-CHK-002 |
 | `apps/nec-cli/tests/gc_card_nec2c.rs` | 4 | PH10-CHK-002 — the `GC` tapered wire as nec2c's `wire` builds it: a radius taper, a length taper and both each equal their written-out `GW` twin (Hallén and MPIE) and approach nec2c's 189-segment value step by step; `GS` scales a taper; a radius taper warns on Hallén (FND-252) and not on the MPIE; the pairing, non-positive ratio/radius, a one-segment taper and a taper under 2 radii refused by name beside the spellings that solve | PH10-CHK-002 |
 | `apps/nec-cli/tests/gr_card_nec2c.rs` | 4 | FND-247 — the `GR` card as NEC-2 reads it (`I2` occurrences in all, 360°/`I2` apart): four radials from one, tags up by `I1` per occurrence (asymmetric with a parasite so the tag order shows), the corpus deck equal to the explicit pair; what nec2c stops on and fnec's old reading refused by name, with the NEC-2 spelling | FND-247 |
@@ -73,7 +73,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/near_field_spherical.rs` | 2 | PH9-CHK-004: spherical NE/NH near-field grids (NEC-2 I1=1). | PH9-CHK-004 |
 | `apps/nec-cli/tests/negative_load_caveat.rs` | 1 | FND-209: a negative load is named as the cause of a negative feedpoint resistance whether it is an `LD` card or a `--loads-config` load, and the caveat does not send the user to an MPIE that refuses the run. | FND-209 |
 | `apps/nec-cli/tests/non_finite_currents.rs` | 4 | FND-126 / FND-127 — a solve that did not converge must not be reported as an answer, on any drive. | FND-126, FND-127 |
-| `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN). | PH9-CHK-004 |
+| `apps/nec-cli/tests/normalized_pattern.rs` | 3 | PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN); FND-298: the request is the N (hundreds) digit, and 4nec2's `1000` (X) does not normalize. | PH9-CHK-004, FND-298 |
 | `apps/nec-cli/tests/par011_card_echo.rs` | 1 | PAR-011: for each of the 15 fixtures 4nec2 wrote, the parser's program-card records equal the `DATA CARD` echo its own kernel printed, card for card (XQ and the XNDA and F5/F6 fields included); the echo's two `EN` rules (the end of the file read as `EN`; an `EN` echoed with the previous card's fields) and the failure prefix of `err_seg` are pinned; `sp_patch` is refused. | PAR-011 |
 | `apps/nec-cli/tests/par011_kernel.rs` | 6 | PAR-011 P2b: fnec as 4nec2's kernel, run in a 4nec2-like tree (`exe/`, `out/`) with `nec2d.tmp`'s two CRLF backslash paths on stdin, by `fnec nec2d-kernel` and under the kernel's own name with no arguments. The `.out` is the `--output-format nec2d` report in CRLF. A refused deck and a missing input are the kernel's failure (the reason, no `RUN TIME`, exit 0), and no output path exits 1; an output path with no input still gets a fresh failure file, so a stale `.out` is never read as the result. Five sabotages caught: backslashes kept, LF, a failure with `RUN TIME`, the name not dispatching, a refusal exiting 1. | PAR-011 |
 | `apps/nec-cli/tests/par011_nec2d_layout.rs` | 3 | PAR-011: `--output-format nec2d` against the 15 fixtures 4nec2 and its kernel wrote. For each of the 9 decks it prints: the same line count, every line's text with numbers blanked byte-identical, each number ending in the kernel's column with its format's shape (decimals, exponent width), and every integer (segment and tag numbers, connection data, card-echo fields) the kernel's. The other 6 are refused before solving with a non-zero exit and no output (the set is pinned). The numbers are fnec's own text report's (feedpoint Z, every current, every gain) to print precision. A tokenizer self-test covers fields that run together and overflow. Six sabotages caught: a FORMAT width, `RUN TIME` dropped, a conjugated current, flipped connection signs, tag-local feed numbering, swapped gains. | PAR-011 |
@@ -86,6 +86,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/report_contract.rs` | 7 | Report v1 headers/rows; RP/sweep/load tables; section ordering | FR-005, PH2-CHK-004 |
 | `apps/nec-cli/tests/resonance_contract.rs` | 5 | `--resonance` convergence, unbounded fail, missing-flag usage; refuses what every frontend refuses — unsupported load, negative frequency, crossing wires (FND-173) | FR-010, PH3-CHK-008 |
 | `apps/nec-cli/tests/rp_avg_power_gain.rs` | 2 | PH9-CHK-004: RP XNDA `A` digit — average power gain. | PH9-CHK-004 |
+| `apps/nec-cli/tests/rp_cards_nec2c.rs` | 6 | FND-284 / FND-285 / FND-298 — the `RP` card as nec2c reads it: a 7-field integer card is the 8-field grid and nec2c's θ 0/30/60/90 gains; the D digit reports directive gain as nec2c (feed-loaded and off-centre-loaded dipole, power gains as the control), per card; N normalizes and X does not; modes 1–6 refused; a real XNDA refused with its rewrite | FND-284, FND-285, FND-298 |
 | `apps/nec-cli/tests/scriptability_contract.rs` | 25 | Scripting/drop-in alias contract (streams under kernel names; with no arguments a kernel name is 4nec2's kernel and asks stdin for two files, PAR-011); temp-file & path handling | NFR-005, GAP-011, PH2-CHK-008 |
 | `apps/nec-cli/tests/sinusoidal_a2_regression.rs` | 2 | Sinusoidal solver tracks Hallén on dipole + sweep | DEC-011, PH6-CHK-003 |
 | `apps/nec-cli/tests/sinusoidal_routing.rs` | 2 | FND-203: `--solver sinusoidal` refuses bent, split, junction and loop decks by name (path route and graph-declined topology both), and still solves straight and collinear decks on its basis. | FND-203 |
@@ -167,7 +168,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=865 --> **865** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=873 --> **873** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -178,21 +179,21 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 303 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 304 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
-| `nec-gui` | 99 | app_state, model_doc, mesh, camera, solve |
+| `nec-gui` | 101 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 53 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
-| `nec_parser` | 40 | lib (incl. the FND-236 card treatments, FND-237 comma fields and the PAR-011 program-card records), template |
+| `nec_parser` | 51 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 28 | lib 25, fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=689 --> **689** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=703 --> **703** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1561 --> **1561** = 689 unit + 865 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1583 --> **1583** = 703 unit + 873 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

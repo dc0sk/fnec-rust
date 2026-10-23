@@ -666,24 +666,16 @@ impl PtSelection {
         }) else {
             return PtSelection::All;
         };
-        let field = |i: usize| -> i64 {
-            pt.raw_fields
-                .get(i)
-                .and_then(|s| s.trim().parse::<f64>().ok())
-                .map(|v| v as i64)
-                .unwrap_or(0)
-        };
-        let (mode, tag, seg_first, seg_last) = (field(0), field(1), field(2), field(3));
-        if mode <= -1 {
+        if pt.mode <= -1 {
             return PtSelection::Nothing;
         }
-        match (
-            u32::try_from(tag),
-            u32::try_from(seg_first),
-            u32::try_from(seg_last),
-        ) {
-            (Ok(tag), Ok(first), Ok(last)) if first != 0 => PtSelection::Range { tag, first, last },
-            _ => PtSelection::All,
+        if pt.seg_first == 0 {
+            return PtSelection::All;
+        }
+        PtSelection::Range {
+            tag: pt.tag,
+            first: pt.seg_first,
+            last: pt.seg_last,
         }
     }
 
@@ -1865,18 +1857,31 @@ pub(super) fn solve_frequency_point(
     if !pattern_table.is_empty() {
         // Through the shared producer, so the GUI's pattern view applies the same
         // correction rather than reporting directivity as gain (FND-053).
+        // An RP card whose XNDA D digit asks for directive gain keeps its rows'
+        // directivity, as nec2c prints "DIRECTIVE GAINS" for it (FND-298). The
+        // table holds every card's grid in deck order, as the average does below.
         if let Some(delta_db) = nec_solver::gain_correction_db(segs, &i_vec, freq_hz, ground, p_in)
         {
-            for row in &mut pattern_table {
-                for g in [
-                    &mut row.gain_total_dbi,
-                    &mut row.gain_theta_dbi,
-                    &mut row.gain_phi_dbi,
-                ] {
-                    if *g > -900.0 {
-                        *g += delta_db;
+            let mut offset = 0;
+            for rp in deck.cards.iter().filter_map(|c| match c {
+                Card::Rp(rp) => Some(rp),
+                _ => None,
+            }) {
+                let end = (offset + (rp.n_theta * rp.n_phi) as usize).min(pattern_table.len());
+                if !rp.directive_gain {
+                    for row in &mut pattern_table[offset..end] {
+                        for g in [
+                            &mut row.gain_total_dbi,
+                            &mut row.gain_theta_dbi,
+                            &mut row.gain_phi_dbi,
+                        ] {
+                            if *g > -900.0 {
+                                *g += delta_db;
+                            }
+                        }
                     }
                 }
+                offset = end;
             }
         }
     }

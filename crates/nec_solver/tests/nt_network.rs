@@ -25,9 +25,17 @@ fn wire() -> NecDeck {
     deck
 }
 
-fn nt(fields: &[&str]) -> Card {
+/// `NT tag1 seg1 tag2 seg2 Y11 Y12 Y22`.
+fn nt(ports: [u32; 4], y: [Complex64; 3]) -> Card {
+    let c = |z: Complex64| (z.re, z.im);
     Card::Nt(NtCard {
-        raw_fields: fields.iter().map(|s| (*s).to_string()).collect(),
+        tag1: ports[0],
+        segment1: ports[1],
+        tag2: ports[2],
+        segment2: ports[3],
+        y11: c(y[0]),
+        y12: c(y[1]),
+        y22: c(y[2]),
     })
 }
 
@@ -50,42 +58,26 @@ fn an_nt_with_a_lines_admittance_is_that_line() {
     let segs = build_geometry(&tl_deck).unwrap();
     let (tl_nets, _) = build_networks(&tl_deck, &segs, FREQ_HZ).unwrap();
     let t = &tl_nets.two_ports[0];
-    let f = |z: Complex64| [format!("{}", z.re), format!("{}", z.im)];
-    let (a, b, c) = (f(t.y11), f(t.y12), f(t.y22));
     let mut nt_deck = wire();
-    nt_deck.cards.push(nt(&[
-        "1", "10", "1", "40", &a[0], &a[1], &b[0], &b[1], &c[0], &c[1],
-    ]));
+    nt_deck
+        .cards
+        .push(nt([1, 10, 1, 40], [t.y11, t.y12, t.y22]));
     let (nt_nets, _) = build_networks(&nt_deck, &segs, FREQ_HZ).unwrap();
     assert_eq!(nt_nets, tl_nets);
 }
 
-/// Every unusable NT is an error naming the card — never a skip, which would
-/// solve a different antenna from the one the deck describes.
+/// An NT naming no segment is an error naming the card — never a skip, which
+/// would solve a different antenna from the one the deck describes. (A field
+/// that is no number is the parser's refusal: NT is read by position.)
 #[test]
 fn an_unusable_nt_is_an_error_not_a_skip() {
     let segs = build_geometry(&wire()).unwrap();
-    for (fields, needle) in [
-        (
-            &["1", "1", "26", "1", "1", "26", "50.0", "0.0"][..],
-            "needs 10",
-        ),
-        (
-            &["1", "x", "1", "40", "0", "0", "0", "0", "0", "0"][..],
-            "segment identifier",
-        ),
-        (
-            &["1", "10", "1", "40", "0", "q", "0", "0", "0", "0"][..],
-            "not a number",
-        ),
-        (
-            &["1", "10", "7", "40", "0", "0", "0", "0", "0", "0"][..],
-            "no segment with tag 7, index 40",
-        ),
-    ] {
-        let mut deck = wire();
-        deck.cards.push(nt(fields));
-        let err = build_networks(&deck, &segs, FREQ_HZ).unwrap_err();
-        assert!(err.contains(needle) && err.starts_with("NT "), "{err}");
-    }
+    let mut deck = wire();
+    deck.cards
+        .push(nt([1, 10, 7, 40], [Complex64::new(0.0, 0.0); 3]));
+    let err = build_networks(&deck, &segs, FREQ_HZ).unwrap_err();
+    assert!(
+        err.contains("no segment with tag 7, index 40") && err.starts_with("NT "),
+        "{err}"
+    );
 }

@@ -343,7 +343,8 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
         ("near-h", format!("{BASE}NH 1 1 1 1 10 30 45 0 0 0\nEN\n")),
         (
             "normalized",
-            format!("{BASE}RP 0 19 1 5000 0.0 0.0 5.0 0.0\nEN\n"),
+            // XNDA 0500: the N digit, as nec2c splits XNDA (FND-298).
+            format!("{BASE}RP 0 19 1 0500 0.0 0.0 5.0 0.0\nEN\n"),
         ),
     ];
     let mut inline_paths: Vec<PathBuf> = Vec::new();
