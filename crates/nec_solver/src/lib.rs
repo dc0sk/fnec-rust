@@ -13,6 +13,7 @@ pub mod geometry;
 pub mod ground_contact;
 pub mod hallen_session;
 pub mod linear;
+pub mod lnetwork;
 pub mod loads;
 pub mod matrix;
 pub mod mpie;

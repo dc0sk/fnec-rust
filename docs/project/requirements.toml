@@ -113,6 +113,13 @@ The CAPABILITY that occupied them may still be wanted: selecting an arbitrary ta
 """
 
 [[requirement]]
+id = "FR-012"
+title = "Matching-network helper: the lossless L-network component values that present a target impedance at a feedpoint, typed or solved from a deck (fnec match)"
+status = "implemented"
+criticality = "medium"
+verification = "test"
+
+[[requirement]]
 id = "NFR-001"
 title = "Primary runtime target Linux (Wayland), then macOS, then Windows"
 status = "implemented"
