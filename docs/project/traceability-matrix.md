@@ -49,6 +49,7 @@ Status legend: ✅ done · 🔨 in progress · 📋 planned.
 | FR-008 stable automation APIs | PH4-CHK-003/004/006 | ✅ |
 | FR-009 geometry diagnostics | PH2-CHK-006 | ✅ |
 | FR-010 resonance/matching helpers | PH3-CHK-008 | ✅ |
+| FR-012 matching-network helper (`fnec match`) | GAP-012 / BL-IMPR-017, `match_contract.rs` | ✅ |
 | NFR-002 multithreaded/deterministic CPU | rayon solve paths | ✅ |
 | NFR-003 optional GPU + CPU fallback | Phases 5–7 | ✅ |
 | NFR-004 per-metric tolerance | corpus + `reference-results.json` | ✅ |

@@ -134,3 +134,54 @@ print(f"Z = {z:.2f} Ω  SWR@50Ω ≈ {abs(swr):.2f}")
 
 See `docs/automation-guide.md` (PH4-CHK-006) for end-to-end optimizer
 examples.
+
+## `fnec match` output (`fnec-match/1`)
+
+`fnec match … --output-format json` prints one JSON **object**, not the array
+above: the matching-network helper's document, schema `fnec-match/1`
+(see [cli-guide.md](cli-guide.md#fnec-match--l-network-matching)).
+
+```json
+{
+  "schema": "fnec-match/1",
+  "blocks": [
+    {
+      "freq_mhz": 14.2,
+      "z_load":   {"re": 73.0, "im": 42.0},
+      "z_target": {"re": 50.0, "im": 0.0},
+      "solutions": [
+        {
+          "topology": "shunt-first",
+          "shunt":  {"kind": "C", "value": 1.7840004332098946e-10, "x": -62.825627030650026},
+          "series": {"kind": "L", "value": 5.442818731167494e-7,   "x": 48.56149892746508},
+          "q": 0.9712299785493016,
+          "z_in": {"re": 50.00000000000001, "im": 7.105427357601002e-15}
+        }
+      ],
+      "notes": []
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `schema` | `string` | `"fnec-match/1"`. |
+| `blocks[]` | `array` | One block per matched frequency point: one for `--z`, one per record of the deck's solve (its `FR` card or `--sweep-config`), in solve order. |
+| `blocks[].freq_mhz` | `number` | The frequency the component values are for. |
+| `blocks[].z_load` | `{re, im}` | The feedpoint impedance matched, Ω — typed, or the solve's `z_re`/`z_im` at full precision. |
+| `blocks[].z_target` | `{re, im}` | The target presented, Ω (`--target`, default 50 + j0). |
+| `blocks[].solutions[]` | `array` | Up to four networks; empty when the load already is the target. |
+| `solutions[].topology` | `string` | `"series-first"` (series element at the load, shunt across the source side) or `"shunt-first"`. |
+| `solutions[].shunt`, `.series` | `object` or `null` | `{"kind": "L"\|"C", "value": henry\|farad, "x": reactance Ω}` — `x` is the element's own reactance at `freq_mhz` (for the shunt element, `−1/B`). `null` is an absent element (a one-element match). |
+| `solutions[].q` | `number` | Loaded Q of the match. |
+| `solutions[].z_in` | `{re, im}` | The input impedance of this network terminated in `z_load`, recomputed from the component values. |
+| `blocks[].notes[]` | `string[]` | `"already matched"`; the several-`EX`-cards note. |
+
+A refusal (a feedpoint resistance ≤ 0, a deck the main command refuses) exits
+1 and is reported on stderr; a block whose point was refused is absent from the
+document, so a document with fewer blocks than points means a non-zero exit —
+check the status, as for the array above.
+
+The field set is **stable** as of `fnec-match/1`; fields may be added without
+changing the schema string.

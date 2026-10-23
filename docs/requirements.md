@@ -33,6 +33,7 @@ last_updated: 2026-10-19
 - **FR-008**: The system must expose stable automation-oriented core APIs so non-GUI consumers can embed solver workflows without shelling out to brittle text parsing.
 - **FR-009**: The system must provide geometry diagnostics that catch invalid, ambiguous, or numerically fragile models early with actionable messages.
 - **FR-010**: The system must eventually support automation helpers for resonance targeting, convergence studies, and matching-network-oriented workflows comparable in practical value to AutoEZ.
+- **FR-012**: The system must give the component values of a matching network (a lossless L-network at minimum) that presents a target impedance at a feedpoint impedance, typed or solved from a deck, with the input impedance of each network recomputed from its components.
 
 ## Non-functional requirements
 

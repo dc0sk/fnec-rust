@@ -18,6 +18,7 @@ Diagnostics are written to stderr.
 fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec taper --sections "<dia>,<len> ..."
+fnec match (--z <R>[+-]j<X> --freq <MHz> | <deck.nec> [solve options]) [--target <R>[+-]j<X>] [--output-format <text|json>]
 fnec project convert <in.toml|in.md> [out.md|out.toml]
 fnec worker --stdio
 ```
@@ -166,6 +167,74 @@ Z0 607.789
 Build the antenna's `GW` as a **uniform** wire of full length `EQUIV_FULL_LENGTH`
 and radius `EQUIV_RADIUS`. Scope: linear, essentially unloaded elements within
 ~±15 % of self-resonance (a no-op for uniform-diameter antennas).
+
+### `fnec match` — L-network matching
+
+The **matching-network helper** (GAP-012 / BL-IMPR-017). Given a feedpoint
+impedance and a target, it prints every lossless L-network — one series and one
+shunt element, ideal L or C, in both orders and for both roots, so up to four —
+that **presents the target at the feedpoint**: `Z_in = Z_target`. The target is
+50 Ω unless `--target` says otherwise, and may be complex; for a conjugate match
+to a source `Z_S`, give `--target` as `Z_S*` (the conjugate).
+
+The impedance comes from one of two places:
+
+```sh
+# Typed: R, R+jX or R-jX (no spaces), at a frequency in MHz.
+fnec match --z 73+j42 --freq 14.2
+fnec match --z 25 --freq 14.2 --target 50-j20
+
+# Solved from a deck: the main command solves it (every solve option is taken —
+# --solver, --vars, --sweep-config, --loads-config, …) and the first feedpoint's
+# impedance at each frequency point is matched, one block per point.
+fnec match corpus/monopole-pec-26seg.nec
+fnec match antenna.nec --solver mpie --vars dims.toml --target 75
+```
+
+The deck route **is** the main command: the deck is solved by `fnec` itself with
+the forwarded options and `--output-format json`, so every refusal, caveat and
+warning of a plain `fnec <deck.nec>` run appears on stderr unchanged, and a deck
+the main command refuses (an unsupported `LD` type, a missing `FR`) is refused
+here with the same sentence and exit code. A deck with several `EX` cards is
+matched at the first feedpoint the solve reports, as the JSON output does, and a
+`NOTE` line says so.
+
+**Output** (stdout, structured text; `--output-format json` for the
+[`fnec-match/1` document](json-output-schema.md#fnec-match-output-fnec-match1)):
+
+```
+MATCH_RESULT
+FREQ_MHZ 14.200000
+Z_LOAD 73.000000 42.000000
+Z_TARGET 50.000000 0.000000
+SOLUTIONS 2
+SOLUTION 1 TOPOLOGY shunt-first SHUNT C 1.7840004332e-10 X_SHUNT -62.825627 SERIES L 5.4428187312e-7 X_SERIES 48.561499 Q 0.971 Z_IN 50.000000 0.000000
+SOLUTION 2 TOPOLOGY shunt-first SHUNT L 2.7508511028e-6 X_SHUNT 245.434323 SERIES C 2.3080207225e-10 X_SERIES -48.561499 Q 0.971 Z_IN 50.000000 -0.000000
+```
+
+- `TOPOLOGY series-first`: the series element is at the load (the feedpoint) and
+  the shunt element across the source side; `shunt-first`: the shunt element is
+  across the load and the series element toward the source.
+- `SHUNT`/`SERIES`: the element kind (`L` in henry, `C` in farad) and its value,
+  then its reactance at `FREQ_MHZ` in Ω (`X_SHUNT` is the shunt element's own
+  reactance, `−1/B`). `SHUNT none` or `SERIES none` is a one-element match.
+- `Q`: the loaded Q of the match (`|X_t|/R_L` series-first, `|B_t|/G_L`
+  shunt-first) — a high Q is a narrow match.
+- `Z_IN`: the input impedance of that network terminated in `Z_LOAD`,
+  **recomputed from the component values**, not copied from the target.
+- `SOLUTIONS 0` with `NOTE already matched`: the load is the target within
+  1e-9 relative.
+
+The elements are ideal and lossless; a real inductor's loss and self-resonance
+are not modelled. No NEC cards are written in this version — the
+[automation guide](automation-guide.md#5-matching-networks) shows how to put a
+solution into the deck as `LD 0` + `NT` and check it with a plain solve.
+
+Exit code **0** with solutions or an already-matched load; **1** when no passive
+network exists (a feedpoint resistance ≤ 0 Ω, named in the error), or when the
+deck is refused or fails to solve (the main command's exit code); **2** for a
+usage error (`--z` without `--freq`, a malformed impedance, a target with
+non-positive resistance, a non-positive frequency, an unknown option).
 
 ### `fnec project convert <in.toml|in.md> [out.md|out.toml]`
 
