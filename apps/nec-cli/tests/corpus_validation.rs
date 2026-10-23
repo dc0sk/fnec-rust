@@ -1155,7 +1155,7 @@ fn par005_pattern_current_corpus_contracted() {
     // PAR-005 checklist: (case_name, min_pattern_samples, has_external_gain_gate)
     let rp_cases: &[(&str, usize, bool)] = &[
         ("dipole-freesp-rp-51seg", 3, true),
-        ("dipole-ground-rp-51seg", 3, false),
+        ("dipole-ground-rp-51seg", 3, true),
         ("dipole-xaxis-rp-grid-51seg", 3, true),
     ];
 

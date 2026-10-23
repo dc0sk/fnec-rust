@@ -29,7 +29,7 @@
 
 use num_complex::Complex64;
 
-use nec_model::card::Card;
+use nec_model::card::{Card, NtCard};
 use nec_model::deck::NecDeck;
 
 use crate::geometry::Segment;
@@ -113,7 +113,7 @@ pub fn build_networks(
                 notes.extend(n);
             }
             Card::Nt(nt) => {
-                let (tp, n) = nt_two_port(&nt.raw_fields, segs)?;
+                let (tp, n) = nt_two_port(nt, segs)?;
                 networks.two_ports.push(tp);
                 notes.extend(n);
             }
@@ -125,35 +125,21 @@ pub fn build_networks(
     Ok((networks, notes))
 }
 
-fn nt_two_port(f: &[String], segs: &[Segment]) -> Result<(TwoPort, Vec<String>), String> {
-    let name = format!("NT {}", f.join(" "));
-    if f.len() < 10 {
-        return Err(format!(
-            "{name}: has {} fields; NT needs 10 (tag1 seg1 tag2 seg2 Y11r Y11i Y12r Y12i \
-             Y22r Y22i)",
-            f.len()
-        ));
-    }
-    let int = |i: usize| {
-        f[i].parse::<f64>()
-            .ok()
-            .filter(|v| v.fract() == 0.0 && *v >= 0.0)
-            .map(|v| v as u32)
-            .ok_or_else(|| {
-                format!(
-                    "{name}: field {} ('{}') is not a segment identifier",
-                    i + 1,
-                    f[i]
-                )
-            })
-    };
-    let float = |i: usize| {
-        f[i].parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite())
-            .ok_or_else(|| format!("{name}: field {} ('{}') is not a number", i + 1, f[i]))
-    };
-    let (tag1, seg1, tag2, seg2) = (int(0)?, int(1)?, int(2)?, int(3)?);
+fn nt_two_port(nt: &NtCard, segs: &[Segment]) -> Result<(TwoPort, Vec<String>), String> {
+    let c = |(re, im): (f64, f64)| Complex64::new(re, im);
+    let name = format!(
+        "NT {} {} {} {} {} {} {} {} {} {}",
+        nt.tag1,
+        nt.segment1,
+        nt.tag2,
+        nt.segment2,
+        nt.y11.0,
+        nt.y11.1,
+        nt.y12.0,
+        nt.y12.1,
+        nt.y22.0,
+        nt.y22.1
+    );
     let mut notes = Vec::new();
     let mut end = |tag: u32, seg: u32| -> Result<usize, String> {
         let (idx, _, note) = find_segment_index(segs, tag, seg)
@@ -161,15 +147,15 @@ fn nt_two_port(f: &[String], segs: &[Segment]) -> Result<(TwoPort, Vec<String>),
         notes.extend(note);
         Ok(idx)
     };
-    let a = end(tag1, seg1)?;
-    let b = end(tag2, seg2)?;
+    let a = end(nt.tag1, nt.segment1)?;
+    let b = end(nt.tag2, nt.segment2)?;
     Ok((
         TwoPort {
             seg_a: a,
             seg_b: b,
-            y11: Complex64::new(float(4)?, float(5)?),
-            y12: Complex64::new(float(6)?, float(7)?),
-            y22: Complex64::new(float(8)?, float(9)?),
+            y11: c(nt.y11),
+            y12: c(nt.y12),
+            y22: c(nt.y22),
         },
         notes,
     ))

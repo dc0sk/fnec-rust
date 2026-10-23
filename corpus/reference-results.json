@@ -764,7 +764,7 @@
         "imag_ohm": 45.036813
       },
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
+        "source": "nec2c 1.3.1, run on the deck as committed (2026-10-23, FND-301). Until then the deck's RP was fnec's 7-field form with a real XNDA, which nec2c refuses, and these samples came from a hand-normalized copy; the deck now carries NEC-2's 8-field RP and the re-run printed the same samples",
         "pattern_samples": [
           {
             "theta_deg": 0.0,
@@ -892,7 +892,7 @@
         "ExternalGain_absolute_dB": 0.08,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
+      "status": "Regression reference locks RP execution path and radiation-pattern table contract; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.08 on 2026-04-29 (actual max |dGain|=0.068). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22). Re-measured 2026-10-23 (FND-301): the deck's RP was rewritten to the 8-field form `RP 0 … 0 θ0 φ0 Δθ Δφ` (XNDA 0), which nec2c reads as committed; nec2c 1.3.1 on it: 79.348 + j46.223 Ω and the external samples unchanged.",
       "last_produced_on": "2026-10-10",
       "last_produced_in": "0.21.6",
       "last_produced_fingerprint": "809195bc50da69565aa8104610a3328948a0dea0ef2b1f66c60abf6ef971d1d8"
@@ -909,6 +909,83 @@
       "feedpoint_impedance": {
         "real_ohm": 74.763337,
         "imag_ohm": 42.775033
+      },
+      "external_reference_candidate": {
+        "source": "nec2c 1.3.1, run on the deck as committed (2026-10-23, FND-301): 74.792 + j43.942 Ohm; gains as printed (0.01 dB)",
+        "pattern_samples": [
+          {
+            "theta_deg": 10.0,
+            "phi_deg": 0.0,
+            "gain_db": -9.09,
+            "gain_v_db": -9.09,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 20.0,
+            "phi_deg": 0.0,
+            "gain_db": -3.34,
+            "gain_v_db": -3.34,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 30.0,
+            "phi_deg": 0.0,
+            "gain_db": -0.67,
+            "gain_v_db": -0.67,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 40.0,
+            "phi_deg": 0.0,
+            "gain_db": -0.39,
+            "gain_v_db": -0.39,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 50.0,
+            "phi_deg": 0.0,
+            "gain_db": -4.23,
+            "gain_v_db": -4.23,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 60.0,
+            "phi_deg": 0.0,
+            "gain_db": -15.1,
+            "gain_v_db": -15.1,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 70.0,
+            "phi_deg": 0.0,
+            "gain_db": 2.04,
+            "gain_v_db": 2.04,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 80.0,
+            "phi_deg": 0.0,
+            "gain_db": 7.02,
+            "gain_v_db": 7.02,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          },
+          {
+            "theta_deg": 90.0,
+            "phi_deg": 0.0,
+            "gain_db": 8.43,
+            "gain_v_db": 8.43,
+            "gain_h_db": -999.99,
+            "axial_ratio": 0.0
+          }
+        ]
       },
       "pattern_samples": [
         {
@@ -990,9 +1067,11 @@
         "R_absolute_ohm": 0.05,
         "X_absolute_ohm": 0.05,
         "Gain_absolute_dB": 0.05,
-        "AxialRatio_absolute": 0.0001
+        "AxialRatio_absolute": 0.0001,
+        "ExternalGain_absolute_dB": 0.02,
+        "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix; nec2c far-field parity still gated by finite_ground_rp.rs) Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
+      "status": "Regression reference for PEC ground far-field (image method); captures null at theta≈60° from destructive interference and max gain at horizon. Locked 2026-04-29. (pattern_samples refreshed 2026-07-08 for the PH9-CHK-006 ground-image sign fix) Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-26 (FND-158): Hallén now carries both homogeneous solutions, cos(ks) and sin(ks), on every conductor with two free ends; the cos term alone could not represent a current that is asymmetric about the conductor's midpoint (off-centre feed, ground, asymmetric coupling). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22). Gated against nec2c 2026-10-23 (FND-301): the deck's RP was fnec's 7-field form with a real XNDA, which nec2c refuses, so no nec2c run stood behind it; rewritten to the 8-field form, nec2c 1.3.1 reads it as committed: 74.792 + j43.942 Ohm (fnec 74.763 + j42.775) and gains within 0.006 dB of fnec's at every sample (nec2c prints 0.01 dB), so ExternalGain_absolute_dB is 0.02.",
       "last_produced_on": "2026-10-10",
       "last_produced_in": "0.21.6",
       "last_produced_fingerprint": "416d2563a0b1e3afefaad7d4b9d7cd89414ffc5f449f2614b878e0a970a78f4d"
@@ -1011,7 +1090,7 @@
         "imag_ohm": 45.036813
       },
       "external_reference_candidate": {
-        "source": "nec2c 1.3.1 on Arch Linux (deck copy with RP integer field normalized)",
+        "source": "nec2c 1.3.1, run on the deck as committed (2026-10-23, FND-301). Until then the deck's RP was fnec's 7-field form with a real XNDA, which nec2c refuses, and these samples came from a hand-normalized copy; the deck now carries NEC-2's 8-field RP and the re-run printed the same samples",
         "pattern_samples": [
           {
             "theta_deg": 0.0,
@@ -1155,7 +1234,7 @@
         "ExternalGain_absolute_dB": 0.04,
         "ExternalAxialRatio_absolute": 0.0001
       },
-      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22).",
+      "status": "Regression reference locks multi-phi RP table support on a non-z-axis dipole; nec2c external pattern samples captured for parity tracking. ExternalGain gate tightened 0.1→0.04 on 2026-04-29 (actual max |dGain|=0.034). Re-pinned 2026-09-25 (FND-156): the Hallén free-end rows now extrapolate the current to the physical wire tip instead of zeroing it at the end segment's midpoint, which had shortened every wire by one segment; the dipole moves 74.24 + j13.90 -> 78.83 + j42.44 (nec2c 79.35 + j46.22). Re-pinned 2026-09-27 for FND-164 (unbiased regularisation, <= 0.24 %) and FND-162 stage 1b (bent conductor paths). Re-pinned 2026-10-10 (FND-227): every free wire end is refined into thirds; the reference dipole moves 78.83 + j42.43 -> 79.33 + j45.04 (nec2c 79.35 + j46.22). Re-measured 2026-10-23 (FND-301): the deck's RP was rewritten to the 8-field form `RP 0 … 0 θ0 φ0 Δθ Δφ` (XNDA 0), which nec2c reads as committed; nec2c 1.3.1 on it: 79.348 + j46.223 Ω and the external samples unchanged.",
       "last_produced_on": "2026-10-10",
       "last_produced_in": "0.21.6",
       "last_produced_fingerprint": "3124d49e0010688a7fe52291146c87b32c69c40a988c7a18ff7ed2774393a8d7"

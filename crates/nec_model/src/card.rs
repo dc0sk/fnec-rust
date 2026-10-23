@@ -264,10 +264,16 @@ pub struct RpCard {
     pub d_theta: f64,
     /// Phi increment (degrees).
     pub d_phi: f64,
-    /// Normalized-gain output requested by the `XNDA` field's `X` digit (non-zero
-    /// on the canonical 8-field card). When set, a `NORMALIZED_PATTERN` section
-    /// (gain relative to the pattern peak) is emitted. PH9-CHK-004.
+    /// Normalized-gain output requested by the `XNDA` field's `N` (hundreds)
+    /// digit, as nec2c splits XNDA (FND-298; it was read from the thousands digit,
+    /// which only picks nec2c's column labels, so every 4nec2 `RP … 1000 …` asked
+    /// for it). When set, a `NORMALIZED_PATTERN` section (total gain relative to
+    /// the pattern peak) is emitted. PH9-CHK-004.
     pub normalize: bool,
+    /// Directive gain requested by the `XNDA` field's `D` (tens) digit (FND-298):
+    /// this card's rows report the directivity, the power gain without the
+    /// radiation efficiency, as nec2c's "DIRECTIVE GAINS".
+    pub directive_gain: bool,
     /// Average-power-gain output requested by the `XNDA` field's `A` (units) digit.
     /// When set, an `AVERAGE_POWER_GAIN` line (the solid-angle-weighted mean gain
     /// over the pattern region, = radiation efficiency over the full sphere) is
@@ -288,14 +294,22 @@ pub struct GnCard {
     pub ground_type: i32,
     /// Relative dielectric constant (EPSE field), if specified on the card.
     ///
-    /// Present when the GN card includes medium parameters (typically GN type
-    /// 0 or 2). `None` for bare cards such as `GN 1` or `GN 0`.
+    /// `Some` when F1 or F2 is nonzero (fields are read by position, a missing
+    /// one zero); `None` for a card that gives no medium, such as `GN 1` or
+    /// `GN 0`, where fnec's finite ground takes its average-ground default.
     pub eps_r: Option<f64>,
-    /// Conductivity in S/m (SIG field), if specified on the card.
-    ///
-    /// Present alongside `eps_r` when the GN card specifies a finite-ground
-    /// medium. `None` for bare cards.
+    /// Conductivity in S/m (SIG field, F2), `Some` alongside `eps_r`.
     pub sigma: Option<f64>,
+    /// I2, NRADL: the number of radial wires of a ground screen, as read. The
+    /// parser refuses a screen over a finite ground (FND-283), so a solved deck
+    /// carries a nonzero count only over `GN 1`/`GN -1`, where nec2c ignores it.
+    pub radials: i32,
+    /// F3/F4 with `radials ≠ 0`: the screen's radius and wire radius (m), as read.
+    pub screen: Option<(f64, f64)>,
+    /// F3–F6 with `radials = 0`, when any is nonzero: the second medium or cliff
+    /// (ε, σ, distance, height), as read. Only nec2c's RP modes 2, 3, 5 and 6 read
+    /// it, which fnec refuses, so it never enters a solve.
+    pub medium2: Option<[f64; 4]>,
 }
 
 /// EN — End-of-data card.  Signals the end of a NEC deck.
@@ -598,24 +612,42 @@ pub struct TlCard {
 
 /// PT — Print-control card.
 ///
-/// Controls printing of the segment currents. The supported subset (`I1 ≤ −1`
-/// suppresses current output on the selected segments) is applied to the CURRENTS
-/// table (PH9-CHK-004); other PT options are preserved but not acted on.
+/// Controls printing of the segment currents, as NEC-2 reads `PT I1 I2 I3 I4`
+/// (PH9-CHK-004, FND-299): applied to the CURRENTS table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PtCard {
-    /// Raw PT fields captured after the mnemonic.
-    pub raw_fields: Vec<String>,
+    /// I1: −1 (or less) suppresses the currents; 0 prints them; 1–3 are nec2c's
+    /// receive-pattern print formats, printed by fnec as for 0.
+    pub mode: i32,
+    /// I2: the tag of the printed range; 0 makes I3..I4 absolute segment numbers.
+    pub tag: u32,
+    /// I3: the first printed segment; 0 prints every segment.
+    pub seg_first: u32,
+    /// I4: the last printed segment; 0 = `seg_first`.
+    pub seg_last: u32,
 }
 
 /// NT — Network definition card.
 ///
-/// Two-port network connections between segments are assembled into the MoM
-/// matrix as admittance stamps (`build_nt_stamps`, PH8-CHK-004); network forms
-/// outside the supported subset are preserved and warned at solve time.
+/// `NT I1 I2 I3 I4 F1..F6`, read by position: a two-port network between two
+/// segments, given by its short-circuit admittances, assembled into the MoM
+/// matrix as admittance stamps (`build_nt_stamps`, PH8-CHK-004).
 #[derive(Debug, Clone, PartialEq)]
 pub struct NtCard {
-    /// Raw NT fields captured after the mnemonic.
-    pub raw_fields: Vec<String>,
+    /// I1: the tag of port 1 (0: `segment1` is an absolute segment number).
+    pub tag1: u32,
+    /// I2: port 1's segment.
+    pub segment1: u32,
+    /// I3: the tag of port 2.
+    pub tag2: u32,
+    /// I4: port 2's segment.
+    pub segment2: u32,
+    /// F1/F2: Y11, (real, imag) siemens.
+    pub y11: (f64, f64),
+    /// F3/F4: Y12 = Y21.
+    pub y12: (f64, f64),
+    /// F5/F6: Y22.
+    pub y22: (f64, f64),
 }
 
 /// EN — End-of-data card.  Signals the end of a NEC deck.

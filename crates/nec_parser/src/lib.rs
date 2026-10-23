@@ -217,7 +217,11 @@ pub const OTHER_CARDS: &[(&str, OtherCard)] = &[
     ),
     (
         "GD",
-        OtherCard::Refused("additional ground parameters: a cliff or a second medium"),
+        OtherCard::Ignored(
+            "additional ground parameters (a second medium or a cliff), which only enter \
+             nec2c's RP modes 2, 3, 5 and 6, which fnec refuses; the pattern is computed over \
+             the first medium, as nec2c's RP 0 computes it",
+        ),
     ),
     ("SP", OtherCard::Refused("a surface patch")),
     ("SM", OtherCard::Refused("a set of surface patches")),
@@ -792,22 +796,9 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 }));
             }
             "GN" => {
-                let fields = parse_fields(rest);
-                require_fields(lineno, "GN", &fields, 1)?;
-                // GN I1 NRADL I3 I4 EPSE SIG
-                // We currently only consume I1 and optional EPSE/SIG.
-                let eps_r = if fields.len() > 4 {
-                    Some(parse_f64(lineno, "GN", 5, fields[4])?)
-                } else {
-                    None
-                };
-                let sigma = if fields.len() > 5 {
-                    Some(parse_f64(lineno, "GN", 6, fields[5])?)
-                } else {
-                    None
-                };
-
-                let ground_type = parse_i32(lineno, "GN", 1, fields[0])?;
+                // GN I1 NRADL I3 I4 EPSE SIG F3 F4 F5 F6, read by position (FND-283).
+                let p = read_positional(lineno, "GN", rest)?;
+                let ground_type = p.int(1);
                 // FND-241: NEC-2 defines -1..=2. nec2c solves another type
                 // inconsistently: the currents over a perfect ground, the pattern
                 // over a finite one. fnec solved free space with a warning.
@@ -816,7 +807,7 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         line: lineno,
                         card: "GN".to_string(),
                         field: 1,
-                        raw: fields[0].to_string(),
+                        raw: p.raw(1).to_string(),
                         reason: "not a NEC-2 ground type (-1 none, 0 finite by reflection \
                                  coefficient, 1 perfect, 2 finite by Sommerfeld); nec2c solves \
                                  it inconsistently (perfect-ground currents under a finite-ground \
@@ -824,63 +815,27 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                             .to_string(),
                     });
                 }
+                let gn = gn_card(&p, &mut warnings)?;
                 last_gn_type = Some(ground_type);
-                deck.cards.push(Card::Gn(GnCard {
-                    ground_type,
-                    eps_r,
-                    sigma,
-                }));
+                deck.cards.push(Card::Gn(gn));
             }
             "EX" => {
-                let fields = parse_fields(rest);
-                // Standard NEC EX card: I1 I2 I3 I4 F1 F2 F3
-                // I4 is required by the spec; F1/F2 default to 0.0 if absent.
-                // F3 carries the plane-wave polarization angle η (types 1/2/3);
-                // it is unused for source types and defaults to 0.0.
-                require_fields(lineno, "EX", &fields, 4)?;
-                let vr = if fields.len() > 4 {
-                    parse_f64(lineno, "EX", 5, fields[4])?
-                } else {
-                    0.0
-                };
-                let vi = if fields.len() > 5 {
-                    parse_f64(lineno, "EX", 6, fields[5])?
-                } else {
-                    0.0
-                };
-                let f3 = if fields.len() > 6 {
-                    parse_f64(lineno, "EX", 7, fields[6])?
-                } else {
-                    0.0
-                };
-                // F4/F5 (fields 7/8) are the plane-wave incidence-angle-sweep
-                // increments Δθ/Δφ; F6 (field 9) is the plane-wave axial ratio.
-                let f4 = if fields.len() > 7 {
-                    parse_f64(lineno, "EX", 8, fields[7])?
-                } else {
-                    0.0
-                };
-                let f5 = if fields.len() > 8 {
-                    parse_f64(lineno, "EX", 9, fields[8])?
-                } else {
-                    0.0
-                };
-                let f6 = if fields.len() > 9 {
-                    parse_f64(lineno, "EX", 10, fields[9])?
-                } else {
-                    0.0
-                };
+                // EX I1 I2 I3 I4 F1..F6 by position, missing fields zero (nec2c's
+                // readmn). F3 is the plane-wave polarization angle η, F4/F5 the
+                // incidence-angle-sweep increments Δθ/Δφ, F6 the axial ratio; all
+                // unused by the source types.
+                let p = read_positional(lineno, "EX", rest)?;
                 deck.cards.push(Card::Ex(ExCard {
-                    excitation_type: parse_u32(lineno, "EX", 1, fields[0])?,
-                    tag: parse_u32(lineno, "EX", 2, fields[1])?,
-                    segment: parse_u32(lineno, "EX", 3, fields[2])?,
-                    i4: parse_u32(lineno, "EX", 4, fields[3])?,
-                    voltage_real: vr,
-                    voltage_imag: vi,
-                    polarization_deg: f3,
-                    polarization_ratio: f6,
-                    theta_inc: f4,
-                    phi_inc: f5,
+                    excitation_type: p.count(1)?,
+                    tag: p.count(2)?,
+                    segment: p.count(3)?,
+                    i4: p.count(4)?,
+                    voltage_real: p.float(1),
+                    voltage_imag: p.float(2),
+                    polarization_deg: p.float(3),
+                    polarization_ratio: p.float(6),
+                    theta_inc: p.float(4),
+                    phi_inc: p.float(5),
                 }));
             }
             m @ ("NE" | "NH") => {
@@ -914,93 +869,49 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 });
             }
             "FR" => {
-                let fields = parse_fields(rest);
-                require_fields(lineno, "FR", &fields, 4)?;
-                // NEC2 canonical form has 4 integer fields then floats:
-                //   FR I1 I2 I3 I4 F1 F2
-                // Many decks (and our own test fixtures) omit the unused I3/I4
-                // and use the shorthand:  FR I1 I2 F1 F2
-                // Distinguish by testing whether field[2] parses as a float ≥ 1.
-                let (freq_idx, step_idx) = if fields.len() >= 6 {
-                    (4, 5) // canonical: skip I3/I4
-                } else {
-                    (2, 3) // shorthand: no I3/I4
-                };
+                // FR I1 I2 I3 I4 F1 F2 by position (FND-287): the frequency is F1,
+                // the fifth field, whatever the card's length. fnec used to read a
+                // card of fewer than six fields as `FR I1 I2 F1 F2`, so the canonical
+                // `FR 0 1 0 0 29.9` read its I3 as the frequency.
+                if let Some(e) = fr_shorthand(lineno, rest) {
+                    return Err(e);
+                }
+                let p = read_positional(lineno, "FR", rest)?;
                 deck.cards.push(Card::Fr(FrCard {
-                    step_type: parse_u32(lineno, "FR", 1, fields[0])?,
-                    steps: parse_u32(lineno, "FR", 2, fields[1])?,
-                    frequency_mhz: parse_f64(lineno, "FR", freq_idx + 1, fields[freq_idx])?,
-                    step_mhz: parse_f64(lineno, "FR", step_idx + 1, fields[step_idx])?,
+                    step_type: p.count(1)?,
+                    steps: p.count(2)?,
+                    frequency_mhz: p.float(1),
+                    step_mhz: p.float(2),
                 }));
             }
             "RP" => {
-                let fields = parse_fields(rest);
-                require_fields(lineno, "RP", &fields, 7)?;
-                // Canonical NEC RP card: RP mode N1 N2 XNDA θ0 φ0 Δθ Δφ (8 fields,
-                // XNDA = output/normalization options at I4). fnec historically
-                // also accepts a 7-field form without XNDA. Distinguish by count:
-                // with >= 8 fields the four angle floats start at index 4 (after
-                // XNDA); with 7 they start at index 3. The XNDA `X` digit (its
-                // thousands digit) requests normalized-gain output.
-                // With >= 8 fields the four angle floats start at index 4 (after
-                // XNDA); with 7 they start at index 3. The XNDA `X` (thousands)
-                // digit requests normalized-gain output; the `A` (units) digit
-                // requests the average power gain.
-                let a = if fields.len() >= 8 { 4 } else { 3 };
-                let (normalize, avg_power_gain) = if fields.len() >= 8 {
-                    let xnda = parse_u32(lineno, "RP", 4, fields[3])?;
-                    ((xnda / 1000) % 10 != 0, xnda % 10 != 0)
-                } else {
-                    (false, false)
-                };
-                deck.cards.push(Card::Rp(RpCard {
-                    mode: parse_u32(lineno, "RP", 1, fields[0])?,
-                    n_theta: parse_u32(lineno, "RP", 2, fields[1])?,
-                    n_phi: parse_u32(lineno, "RP", 3, fields[2])?,
-                    theta0: parse_f64(lineno, "RP", a + 1, fields[a])?,
-                    phi0: parse_f64(lineno, "RP", a + 2, fields[a + 1])?,
-                    d_theta: parse_f64(lineno, "RP", a + 3, fields[a + 2])?,
-                    d_phi: parse_f64(lineno, "RP", a + 4, fields[a + 3])?,
-                    normalize,
-                    avg_power_gain,
-                }));
+                // RP I1 NTH NPH XNDA θ0 φ0 Δθ Δφ RFLD GNOR by position (FND-284).
+                if let Some(e) = rp_float_xnda(lineno, rest) {
+                    return Err(e);
+                }
+                let p = read_positional(lineno, "RP", rest)?;
+                deck.cards.push(Card::Rp(rp_card(&p, &mut warnings)?));
             }
             "LD" => {
-                // LD I1 I2 I3 I4 F1 F2 F3
-                // I1=load_type, I2=tag, I3=seg_first, I4=seg_last
-                // F1–F3 default to 0.0 when absent.
-                let fields = parse_fields(rest);
-                require_fields(lineno, "LD", &fields, 4)?;
-                let f1 = if fields.len() > 4 {
-                    parse_f64(lineno, "LD", 5, fields[4])?
-                } else {
-                    0.0
-                };
-                let f2 = if fields.len() > 5 {
-                    parse_f64(lineno, "LD", 6, fields[5])?
-                } else {
-                    0.0
-                };
-                let f3 = if fields.len() > 6 {
-                    parse_f64(lineno, "LD", 7, fields[6])?
-                } else {
-                    0.0
-                };
+                // LD I1 I2 I3 I4 F1 F2 F3 by position: I1 = load type, I2 = tag,
+                // I3..I4 = the segment range, F1–F3 the values (F4–F6 unread, as
+                // in nec2c).
+                let p = read_positional(lineno, "LD", rest)?;
                 deck.cards.push(Card::Ld(LdCard {
-                    load_type: parse_i32(lineno, "LD", 1, fields[0])?,
-                    tag: parse_u32(lineno, "LD", 2, fields[1])?,
-                    seg_first: parse_u32(lineno, "LD", 3, fields[2])?,
-                    seg_last: parse_u32(lineno, "LD", 4, fields[3])?,
-                    f1,
-                    f2,
-                    f3,
+                    load_type: p.int(1),
+                    tag: p.count(2)?,
+                    seg_first: p.count(3)?,
+                    seg_last: p.count(4)?,
+                    f1: p.float(1),
+                    f2: p.float(2),
+                    f3: p.float(3),
                 }));
             }
             "TL" => {
                 // NEC-2: TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6, plus fnec's optional F7
-                // (velocity factor) and F8 (matched-line loss, dB). See TlCard.
+                // (velocity factor) and F8 (matched-line loss, dB) in fields 11
+                // and 12, past the ten NEC reads. See TlCard.
                 let fields = parse_fields(rest);
-                require_fields(lineno, "TL", &fields, 5)?;
                 if let Some(nec2) = legacy_tl_layout(&fields) {
                     return Err(ParseError::UnsupportedValue {
                         line: lineno,
@@ -1015,50 +926,44 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                         ),
                     });
                 }
-                let float_at = |i: usize, default: f64| -> Result<f64, ParseError> {
-                    match fields.get(i) {
-                        Some(raw) => parse_f64(lineno, "TL", i + 1, raw),
-                        None => Ok(default),
-                    }
-                };
+                let p = read_positional(lineno, "TL", rest)?;
                 deck.cards.push(Card::Tl(TlCard {
-                    tag1: parse_u32(lineno, "TL", 1, fields[0])?,
-                    segment1: parse_u32(lineno, "TL", 2, fields[1])?,
-                    tag2: parse_u32(lineno, "TL", 3, fields[2])?,
-                    segment2: parse_u32(lineno, "TL", 4, fields[3])?,
-                    z0: float_at(4, 0.0)?,
-                    length: float_at(5, 0.0)?,
-                    shunt1: (float_at(6, 0.0)?, float_at(7, 0.0)?),
-                    shunt2: (float_at(8, 0.0)?, float_at(9, 0.0)?),
-                    velocity_factor: float_at(10, 1.0)?,
-                    loss_db: float_at(11, 0.0)?,
+                    tag1: p.count(1)?,
+                    segment1: p.count(2)?,
+                    tag2: p.count(3)?,
+                    segment2: p.count(4)?,
+                    z0: p.float(1),
+                    length: p.float(2),
+                    shunt1: (p.float(3), p.float(4)),
+                    shunt2: (p.float(5), p.float(6)),
+                    velocity_factor: p.extension(11)?.unwrap_or(1.0),
+                    loss_db: p.extension(12)?.unwrap_or(0.0),
                 }));
             }
             "NT" => {
-                // NT — network definition card. Raw fields are captured here;
-                // the solver stamps the supported two-port forms into the MoM
-                // matrix (build_nt_stamps) and warns on the rest.
-                let fields = parse_fields(rest);
+                // NT I1 I2 I3 I4 F1..F6 by position: the two ports and the
+                // short-circuit admittances Y11, Y12, Y22. The solver stamps them
+                // into the MoM matrix (build_nt_stamps).
+                let p = read_positional(lineno, "NT", rest)?;
                 deck.cards.push(Card::Nt(NtCard {
-                    raw_fields: fields
-                        .into_iter()
-                        .map(std::string::ToString::to_string)
-                        .collect(),
+                    tag1: p.count(1)?,
+                    segment1: p.count(2)?,
+                    tag2: p.count(3)?,
+                    segment2: p.count(4)?,
+                    y11: (p.float(1), p.float(2)),
+                    y12: (p.float(3), p.float(4)),
+                    y22: (p.float(5), p.float(6)),
                 }));
             }
             "PT" => {
-                // PT — print-control card. Raw fields are captured here; the
-                // solver applies the current-print control to the CURRENTS table
-                // (apply_pt_current_filter, PH9-CHK-004, FND-299). I1 = 1..3 are
-                // nec2c's receive-pattern print formats: the same segments, another
-                // layout, which fnec does not have.
-                let fields = parse_fields(rest);
-                if let Some(mode) = fields
-                    .first()
-                    .and_then(|s| s.parse::<f64>().ok())
-                    .map(|v| v as i64)
-                    .filter(|m| (1..=3).contains(m))
-                {
+                // PT I1 I2 I3 I4 by position. The solver applies the current-print
+                // control to the CURRENTS table (apply_pt_current_filter,
+                // PH9-CHK-004, FND-299). I1 = 1..3 are nec2c's receive-pattern
+                // print formats: the same segments, another layout, which fnec
+                // does not have.
+                let p = read_positional(lineno, "PT", rest)?;
+                let mode = p.int(1);
+                if (1..=3).contains(&mode) {
                     warnings.push(ParseError::IgnoredField {
                         line: lineno,
                         card: "PT".to_string(),
@@ -1071,10 +976,10 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                     });
                 }
                 deck.cards.push(Card::Pt(PtCard {
-                    raw_fields: fields
-                        .into_iter()
-                        .map(std::string::ToString::to_string)
-                        .collect(),
+                    mode,
+                    tag: p.count(2)?,
+                    seg_first: p.count(3)?,
+                    seg_last: p.count(4)?,
                 }));
             }
             "EN" => {
@@ -1161,10 +1066,12 @@ fn parse_radius(line: usize, card: &str, field: usize, raw: &str) -> Result<f64,
     })
 }
 
-/// An integer field written as a whole number (`4` or `4.`), as nec2c needs:
-/// it stops on a fractional value where `parse_i32` would truncate it. Shared by
-/// every card that refuses one, so they cannot word or test it differently.
-fn parse_whole_i32(line: usize, card: &str, field: usize, raw: &str) -> Result<i32, ParseError> {
+/// An integer field written as a whole number (`4`, or `4.` and `1.0` as 4nec2
+/// writes them), as nec2c needs: it stops on a fractional value where fnec used
+/// to truncate it, so `FR 0 1 29.9 0` read I3 as 29 without a word (FND-300).
+/// Shared by every integer field of every card, so they cannot word or test it
+/// differently.
+fn parse_whole(line: usize, card: &str, field: usize, raw: &str) -> Result<f64, ParseError> {
     let v = parse_finite_f64_field(line, card, field, raw)?;
     if v.fract() != 0.0 {
         return Err(ParseError::UnsupportedValue {
@@ -1173,6 +1080,22 @@ fn parse_whole_i32(line: usize, card: &str, field: usize, raw: &str) -> Result<i
             field,
             raw: raw.to_string(),
             reason: "an integer field; nec2c stops on a fractional value here".to_string(),
+        });
+    }
+    Ok(v)
+}
+
+/// [`parse_whole`] as an `i32`, refusing a value outside its range rather than
+/// saturating to a plausible one.
+fn parse_whole_i32(line: usize, card: &str, field: usize, raw: &str) -> Result<i32, ParseError> {
+    let v = parse_whole(line, card, field, raw)?;
+    if v < f64::from(i32::MIN) || v > f64::from(i32::MAX) {
+        return Err(ParseError::UnsupportedValue {
+            line,
+            card: card.to_string(),
+            field,
+            raw: raw.to_string(),
+            reason: "an integer field, and this is outside its range".to_string(),
         });
     }
     Ok(v as i32)
@@ -1199,29 +1122,344 @@ fn is_program_card(mnemonic: &str) -> bool {
     )
 }
 
-/// A program card's fields as NEC reads them: I1–I4 as integers, F1–F6 as reals,
-/// each missing one as zero, anything after the tenth ignored. An integer written
-/// as a real (`4.`) is read as its integer part, as `parse_i32` reads it. A field
-/// that is no finite number leaves the fields unreadable (`None`), which only a
-/// card fnec ignores can carry: every card fnec parses has checked its fields.
+/// A program card as NEC reads it, for the record of every program card: its
+/// fields through the one positional reader, [`read_positional`]. A field NEC
+/// could not read — not a number, or a fraction in an integer field — leaves the
+/// fields unreadable (`None`), which only a card fnec ignores can carry: every
+/// card fnec parses refuses such a field.
 fn program_card(line: usize, mnemonic: &str, rest: &str) -> ProgramCard {
-    let raw = parse_fields(rest);
-    let number = |s: &str| s.parse::<f64>().ok().filter(|v| v.is_finite());
-    let mut ints = [0_i32; 4];
-    let mut floats = [0.0_f64; 6];
-    let mut readable = true;
-    for (i, field) in raw.iter().take(10).enumerate() {
-        match number(field) {
-            Some(v) if i < 4 => ints[i] = v as i32,
-            Some(v) => floats[i - 4] = v,
-            None => readable = false,
-        }
-    }
     ProgramCard {
         line,
         mnemonic: mnemonic.to_string(),
-        fields: readable.then_some((ints, floats)),
+        fields: read_positional(line, mnemonic, rest)
+            .ok()
+            .map(|p| (p.ints, p.floats)),
     }
+}
+
+/// A card's fields read by position, as nec2c's `readmn` reads them: I1–I4
+/// integers, then F1–F6 reals, a missing field zero, anything after the tenth
+/// unread. The ONE field reader: every typed program-card arm (FR, RP, GN, LD,
+/// EX, TL, NT, PT) takes its fields from it, and so does the record of every
+/// program card ([`program_card`]). A card is never read by counting its fields:
+/// that is how `RP 0 4 1 1000 0 0 30` read XNDA as θ₀ (FND-284) and
+/// `FR 0 1 0 0 29.9` read I3 as the frequency (FND-287).
+///
+/// An integer field holds a whole number (`4`, or `4.` and `1.0` as 4nec2 writes
+/// them); a fraction is refused, as nec2c refuses it, where it used to be
+/// truncated (FND-300).
+struct Positional<'a> {
+    line: usize,
+    card: &'a str,
+    raw: Vec<&'a str>,
+    ints: [i32; 4],
+    floats: [f64; 6],
+}
+
+fn read_positional<'a>(
+    line: usize,
+    card: &'a str,
+    rest: &'a str,
+) -> Result<Positional<'a>, ParseError> {
+    let raw = parse_fields(rest);
+    let mut ints = [0_i32; 4];
+    let mut floats = [0.0_f64; 6];
+    for (i, field) in raw.iter().take(10).enumerate() {
+        if i < 4 {
+            ints[i] = parse_whole_i32(line, card, i + 1, field)?;
+        } else {
+            floats[i - 4] = parse_f64(line, card, i + 1, field)?;
+        }
+    }
+    Ok(Positional {
+        line,
+        card,
+        raw,
+        ints,
+        floats,
+    })
+}
+
+impl Positional<'_> {
+    /// Integer field `In`, `n` in 1..=4.
+    fn int(&self, n: usize) -> i32 {
+        self.ints[n - 1]
+    }
+
+    /// Integer field `In` as a count or a segment reference, which may not be
+    /// negative. (It used to saturate to 0, so `EX 0 -1 3` fed tag 0.)
+    fn count(&self, n: usize) -> Result<u32, ParseError> {
+        u32::try_from(self.ints[n - 1]).map_err(|_| ParseError::UnsupportedValue {
+            line: self.line,
+            card: self.card.to_string(),
+            field: n,
+            raw: self.raw(n).to_string(),
+            reason: "a count or a segment reference, which cannot be negative".to_string(),
+        })
+    }
+
+    /// Real field `Fn`, `n` in 1..=6 (card field `n + 4`).
+    fn float(&self, n: usize) -> f64 {
+        self.floats[n - 1]
+    }
+
+    /// The text of card field `field` (1-based), `0` when the card stops short.
+    fn raw(&self, field: usize) -> &str {
+        self.raw.get(field - 1).copied().unwrap_or("0")
+    }
+
+    /// A field past the ten NEC reads (fnec's TL extensions), if written.
+    fn extension(&self, field: usize) -> Result<Option<f64>, ParseError> {
+        self.raw
+            .get(field - 1)
+            .map(|s| parse_f64(self.line, self.card, field, s))
+            .transpose()
+    }
+}
+
+/// Whether a field is written as a plain integer (digits, an optional sign).
+fn plain_integer(s: &str) -> bool {
+    let digits = s.strip_prefix(['-', '+']).unwrap_or(s);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// fnec's retired `FR I1 I2 F1 F2` shorthand, refused with its rewrite (FND-287,
+/// D4): a card of at most four fields whose third or fourth is written as a real.
+/// Read by position it is `FR I1 I2 I3 I4` — nec2c stops on the `.` — and fnec
+/// read it as the frequency for releases.
+fn fr_shorthand(line: usize, rest: &str) -> Option<ParseError> {
+    let f = parse_fields(rest);
+    if f.len() > 4 {
+        return None;
+    }
+    let field = (2..f.len()).find(|&i| !plain_integer(f[i]))?;
+    let get = |i: usize| f.get(i).copied().unwrap_or("0");
+    let card = f.join(" ");
+    Some(ParseError::UnsupportedValue {
+        line,
+        card: "FR".to_string(),
+        field: field + 1,
+        raw: f[field].to_string(),
+        reason: format!(
+            "`FR {card}` is fnec's old 4-field shorthand `FR I1 I2 F1 F2`; NEC-2's FR is \
+             `FR I1 I2 I3 I4 F1 F2`, and nec2c stops on '{}' in integer field {}. Write \
+             FR {} {} 0 0 {} {}",
+            f[field],
+            field + 1,
+            get(0),
+            get(1),
+            get(2),
+            get(3)
+        ),
+    })
+}
+
+/// RP's XNDA written as a real (D4, FND-284): fnec's retired 7-field form
+/// `RP I1 NTH NPH θ0 φ0 Δθ Δφ`, which nec2c refuses (a `.` in integer field 4) and
+/// fnec read without XNDA, refused with its rewrite.
+fn rp_float_xnda(line: usize, rest: &str) -> Option<ParseError> {
+    let f = parse_fields(rest);
+    let xnda = *f.get(3)?;
+    if plain_integer(xnda) {
+        return None;
+    }
+    let card = f.join(" ");
+    let rewrite = if f.len() == 7 {
+        format!(
+            "fnec before 0.26 read this 7-field form as RP without XNDA. Write RP {} 0 {}",
+            f[..3].join(" "),
+            f[3..].join(" ")
+        )
+    } else {
+        "write XNDA as an integer (e.g. 0, or 1000 as 4nec2 writes it)".to_string()
+    };
+    Some(ParseError::UnsupportedValue {
+        line,
+        card: "RP".to_string(),
+        field: 4,
+        raw: xnda.to_string(),
+        reason: format!(
+            "`RP {card}`: field 4 is XNDA, an integer; nec2c stops on '{xnda}' here, and \
+             {rewrite}"
+        ),
+    })
+}
+
+/// The `GN` card from its positional fields (FND-283), with the parts fnec does
+/// not model refused or warned as nec2c reads them.
+fn gn_card(p: &Positional, warnings: &mut Vec<ParseError>) -> Result<GnCard, ParseError> {
+    let (ground_type, nradl) = (p.int(1), p.int(2));
+    let finite = matches!(ground_type, 0 | 2);
+    let line = p.line;
+    let warn = |field: usize, why: String| ParseError::IgnoredField {
+        line,
+        card: "GN".to_string(),
+        field,
+        why,
+    };
+    if finite && nradl != 0 {
+        let reason = if ground_type == 2 {
+            format!(
+                "a radial-wire ground screen of {nradl} wires, which nec2c stops on over a \
+                 Sommerfeld ground (RADIAL WIRE G.S. APPROXIMATION MAY NOT BE USED WITH \
+                 SOMMERFELD GROUND OPTION) and fnec does not model; remove I2–F4, or model \
+                 the radials as wires above the ground with --solver mpie"
+            )
+        } else {
+            format!(
+                "a radial-wire ground screen of {nradl} wires (F3 = radius {} m, F4 = wire \
+                 radius {} m), which fnec does not model — nec2c's currents change with it \
+                 (a dipole 5 m up at 29.9 MHz: 75.13 + j30.98 → 71.56 + j24.85 Ω); model the \
+                 radials as wires above the ground with --solver mpie, or remove I2–F4",
+                p.raw(7),
+                p.raw(8)
+            )
+        };
+        return Err(ParseError::UnsupportedValue {
+            line,
+            card: "GN".to_string(),
+            field: 2,
+            raw: p.raw(2).to_string(),
+            reason,
+        });
+    }
+    let nonzero = |field: usize| {
+        if field <= 4 {
+            p.int(field) != 0
+        } else {
+            p.float(field - 4) != 0.0
+        }
+    };
+    if finite {
+        if let Some(field) = (3..=4).find(|&f| nonzero(f)) {
+            warnings.push(warn(field, "NEC-2 never reads GN I3/I4".to_string()));
+        }
+        if let Some(field) = (7..=10).find(|&f| nonzero(f)) {
+            warnings.push(warn(
+                field,
+                "GN F3–F6 (a second medium or a cliff, NEC-2's GD parameters) only enter RP \
+                 modes 2, 3, 5 and 6, which fnec refuses; the pattern is computed over the \
+                 first medium, as nec2c's RP 0 computes it"
+                    .to_string(),
+            ));
+        }
+    } else if let Some(field) = (2..=10).find(|&f| nonzero(f)) {
+        let over = if ground_type == 1 {
+            "over a perfect ground"
+        } else {
+            "in free space"
+        };
+        warnings.push(warn(
+            field,
+            format!("GN {ground_type}: I2–F6 are ignored, as nec2c ignores them {over}"),
+        ));
+    }
+    // F1/F2 both zero is a card that gives no medium: fnec's finite ground then
+    // takes its average-ground default (13, 0.005), as it always has.
+    let medium_given = p.float(1) != 0.0 || p.float(2) != 0.0;
+    let f36 = [p.float(3), p.float(4), p.float(5), p.float(6)];
+    Ok(GnCard {
+        ground_type,
+        radials: nradl,
+        eps_r: medium_given.then(|| p.float(1)),
+        sigma: medium_given.then(|| p.float(2)),
+        screen: (nradl != 0).then(|| (p.float(3), p.float(4))),
+        medium2: (nradl == 0 && f36.iter().any(|v| *v != 0.0)).then_some(f36),
+    })
+}
+
+/// The `RP` card from its positional fields: the mode, the grid, and XNDA's
+/// digits as nec2c splits them (FND-284, FND-285, FND-298).
+fn rp_card(p: &Positional, warnings: &mut Vec<ParseError>) -> Result<RpCard, ParseError> {
+    let line = p.line;
+    let mode = p.int(1);
+    if mode != 0 {
+        let reason = match mode {
+            1 => format!(
+                "RP 1: radiated fields near the ground at RHO = {} m (nec2c's gfld), a \
+                 quantity fnec does not compute; RP 0 gives the far-field pattern",
+                p.raw(9)
+            ),
+            2..=6 => format!(
+                "RP {mode}: a pattern over {}, which fnec does not model; RP 0 gives the \
+                 far-field pattern over the first medium",
+                match mode {
+                    2 => "a linear cliff (GN or GD's second-medium fields)",
+                    3 => "a circular cliff (GN or GD's second-medium fields)",
+                    4 => "a radial-wire ground screen",
+                    5 => "a radial-wire ground screen and a linear cliff",
+                    _ => "a radial-wire ground screen and a circular cliff",
+                }
+            ),
+            _ => "not a NEC-2 RP mode (0–6)".to_string(),
+        };
+        return Err(ParseError::UnsupportedValue {
+            line,
+            card: "RP".to_string(),
+            field: 1,
+            raw: p.raw(1).to_string(),
+            reason,
+        });
+    }
+    // XNDA = X·1000 + N·100 + D·10 + A, as nec2c splits it.
+    let xnda = p.count(4)?;
+    let (n, d, a) = ((xnda / 100) % 10, (xnda / 10) % 10, xnda % 10);
+    let mut warn = |field: usize, why: String| {
+        warnings.push(ParseError::IgnoredField {
+            line,
+            card: "RP".to_string(),
+            field,
+            why,
+        });
+    };
+    // X (thousands) picks nec2c's column labels, vertical/horizontal for 1, and
+    // nothing else: not warned. The NEC-2D output honours it (`nec2d_out`), fnec's own
+    // table has one layout, and every 4nec2 deck writes 1000, so a warning would
+    // ride on every such report and say nothing.
+    if !matches!(n, 0 | 5) {
+        warn(
+            4,
+            format!(
+                "XNDA's N digit ({n}) asks nec2c to normalize one gain component (1 major, \
+                 2 minor, 3 vertical, 4 horizontal, 5 total); fnec's NORMALIZED_PATTERN \
+                 normalizes the total gain"
+            ),
+        );
+    }
+    if p.float(5) != 0.0 {
+        warn(
+            9,
+            format!(
+                "RFLD ({} m) asks nec2c to print the field at that range; fnec prints the \
+                 field without the e^-jkR/R range factor, as nec2c does for RFLD = 0, and \
+                 the gains do not depend on it",
+                p.raw(9)
+            ),
+        );
+    }
+    if n != 0 && p.float(6) != 0.0 {
+        warn(
+            10,
+            format!(
+                "GNOR ({} dB) asks nec2c to normalize to that gain; fnec normalizes to the \
+                 pattern's peak",
+                p.raw(10)
+            ),
+        );
+    }
+    Ok(RpCard {
+        mode: 0,
+        // nec2c reads a zero count as one.
+        n_theta: p.count(2)?.max(1),
+        n_phi: p.count(3)?.max(1),
+        theta0: p.float(1),
+        phi0: p.float(2),
+        d_theta: p.float(3),
+        d_phi: p.float(4),
+        normalize: n != 0,
+        directive_gain: d != 0,
+        avg_power_gain: a != 0,
+    })
 }
 
 /// A field separator: whitespace or a comma, as NEC reads them — nec2c solves
@@ -1319,12 +1557,13 @@ fn parse_finite_f64_field(
 }
 
 fn parse_u32(lineno: usize, card: &str, field: usize, s: &str) -> Result<u32, ParseError> {
-    // Accept floats like "1.0" that 4nec2 sometimes emits for integer fields.
-    parse_finite_f64_field(lineno, card, field, s).map(|v| v as u32)
+    // Accept a whole number written as a real ("1.0"), as 4nec2 emits for integer
+    // fields; refuse a fraction (FND-300).
+    parse_whole(lineno, card, field, s).map(|v| v as u32)
 }
 
 fn parse_i32(lineno: usize, card: &str, field: usize, s: &str) -> Result<i32, ParseError> {
-    parse_finite_f64_field(lineno, card, field, s).map(|v| v as i32)
+    parse_whole(lineno, card, field, s).map(|v| v as i32)
 }
 
 /// Parse one numeric field, rejecting `NaN` and the infinities.
@@ -1482,8 +1721,8 @@ CM Half-wave dipole at 28 MHz
 CE
 GW 1 11 0.0 0.0 -2.677 0.0 0.0 2.677 0.001
 EX 0 1 6 0 1.0 0.0
-FR 0 1 28.0 0.0
-RP 0 37 1 0.0 0.0 5.0 0.0
+FR 0 1 0 0 28.0 0.0
+RP 0 37 1 0 0.0 0.0 5.0 0.0
 EN
 ";
 
@@ -1562,6 +1801,7 @@ EN
                 d_theta: 5.0,
                 d_phi: 0.0,
                 normalize: false,
+                directive_gain: false,
                 avg_power_gain: false,
             })
         );
@@ -1764,26 +2004,347 @@ EN
         );
     }
 
-    #[test]
-    fn rp_card_accepts_both_7_field_and_8_field_xnda_forms() {
-        // Canonical NEC RP has 8 fields (with XNDA at I4); fnec also accepts a
-        // 7-field form. Both must parse the SAME angle grid (XNDA only affects
-        // output options, here the normalize flag).
-        let seven = parse("RP 0 19 1 30.0 0.0 5.0 0.0\nEN\n").expect("parse 7-field");
-        let eight = parse("RP 0 19 1 1000 30.0 0.0 5.0 0.0\nEN\n").expect("parse 8-field");
-        let (Card::Rp(r7), Card::Rp(r8)) = (&seven.deck.cards[0], &eight.deck.cards[0]) else {
-            panic!("expected RP cards");
+    fn rp(line: &str) -> Result<(RpCard, Vec<ParseError>), ParseError> {
+        let r = parse(&format!("{line}\nEN\n"))?;
+        let Some(Card::Rp(rp)) = r.deck.cards.first().cloned() else {
+            panic!("expected an RP card");
         };
-        // Angles identical; the XNDA=1000 value must NOT leak into θ0.
-        assert_eq!(r8.theta0, 30.0, "8-field θ0 must be 30, not XNDA=1000");
+        Ok((rp, r.warnings))
+    }
+
+    /// FND-284: RP is read by position, whatever its length. Seven integer
+    /// fields are `RP I1 NTH NPH XNDA θ0 φ0 Δθ` with Δφ zero, as nec2c reads them
+    /// (θ 0/30/60/90); fnec read them as the old no-XNDA layout, θ0 = 1000.
+    #[test]
+    fn rp_reads_its_fields_by_position() {
+        let (seven, _) = rp("RP 0 4 1 1000 0 0 30").unwrap();
+        let (eight, _) = rp("RP 0 4 1 1000 0 0 30 0").unwrap();
+        assert_eq!(seven, eight);
         assert_eq!(
-            (r7.mode, r7.n_theta, r7.n_phi, r7.theta0, r7.phi0, r7.d_theta, r7.d_phi),
-            (r8.mode, r8.n_theta, r8.n_phi, r8.theta0, r8.phi0, r8.d_theta, r8.d_phi),
-            "7-field and 8-field RP must parse identical angles"
+            (seven.theta0, seven.phi0, seven.d_theta, seven.d_phi),
+            (0.0, 0.0, 30.0, 0.0)
         );
-        // XNDA=1000 → X digit 1 → normalized output requested.
-        assert!(r8.normalize, "XNDA X-digit 1 must request normalization");
-        assert!(!r7.normalize, "7-field RP has no XNDA, so no normalization");
+        // nec2c reads a zero count as one.
+        let (one, _) = rp("RP 0 0 0 0 10 20 5 5").unwrap();
+        assert_eq!((one.n_theta, one.n_phi), (1, 1));
+    }
+
+    /// D4: the retired 7-field form with a real XNDA is refused with its
+    /// rewrite, which reads back as the grid fnec used to solve.
+    #[test]
+    fn rp_with_a_real_xnda_is_refused_with_its_rewrite() {
+        let err = rp("RP 0 37 73 0.0 0.0 5.0 5.0").unwrap_err();
+        assert!(
+            matches!(&err, ParseError::UnsupportedValue { field: 4, .. }),
+            "{err:?}"
+        );
+        let msg = err.to_string();
+        let rewrite = "RP 0 37 73 0 0.0 0.0 5.0 5.0";
+        assert!(msg.contains(rewrite) && msg.contains("XNDA"), "{msg}");
+        let (r, _) = rp(rewrite).unwrap();
+        assert_eq!(
+            (r.n_theta, r.n_phi, r.theta0, r.phi0, r.d_theta, r.d_phi),
+            (37, 73, 0.0, 0.0, 5.0, 5.0)
+        );
+        // Control: an integer XNDA on an 8-field card is accepted.
+        assert!(rp("RP 0 37 73 1000 0.0 0.0 5.0 5.0").is_ok());
+    }
+
+    /// FND-298: XNDA's digits as nec2c splits them. X (thousands) only picks
+    /// column labels — every 4nec2 deck writes 1000 — and changes nothing else;
+    /// N (hundreds) normalizes, D (tens) asks for directive gain, A
+    /// (units) for the average gain.
+    #[test]
+    fn rp_xnda_digits_are_read_as_nec2c_splits_them() {
+        let flags = |r: &RpCard| (r.normalize, r.directive_gain, r.avg_power_gain);
+        let (x, w) = rp("RP 0 19 1 1000 0 0 10 0").unwrap();
+        assert_eq!(flags(&x), (false, false, false));
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(
+            flags(&rp("RP 0 19 1 0500 0 0 10 0").unwrap().0),
+            (true, false, false)
+        );
+        assert_eq!(
+            flags(&rp("RP 0 19 1 0010 0 0 10 0").unwrap().0),
+            (false, true, false)
+        );
+        assert_eq!(
+            flags(&rp("RP 0 19 1 0001 0 0 10 0").unwrap().0),
+            (false, false, true)
+        );
+        assert_eq!(
+            flags(&rp("RP 0 19 1 1511 0 0 10 0").unwrap().0),
+            (true, true, true)
+        );
+        // N = 5 (the total gain) is what fnec normalizes; another component warns.
+        let (_, w) = rp("RP 0 19 1 0500 0 0 10 0").unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        let (_, w) = rp("RP 0 19 1 0300 0 0 10 0").unwrap();
+        assert!(w.iter().any(|w| w.to_string().contains("N digit")), "{w:?}");
+        // RFLD, and GNOR with a normalization, are ignored with a reason.
+        let (_, w) = rp("RP 0 19 1 0500 0 0 10 0 1000 3").unwrap();
+        let fields: Vec<usize> = w
+            .iter()
+            .filter_map(|w| match w {
+                ParseError::IgnoredField { field, .. } => Some(*field),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fields, vec![9, 10], "{w:?}");
+    }
+
+    /// FND-285: only RP 0 is a far-field pattern. Mode 1 (fields near the
+    /// ground) and the cliff/screen modes 2–6 are refused by name; another value
+    /// is no NEC-2 mode.
+    #[test]
+    fn rp_modes_other_than_zero_are_refused() {
+        for (line, needle) in [
+            (
+                "RP 1 3 1 1000 0 0 5 0 1000",
+                "near the ground at RHO = 1000 m",
+            ),
+            ("RP 2 19 1 0 0 0 10 0", "linear cliff"),
+            ("RP 4 19 1 0 0 0 10 0", "radial-wire ground screen"),
+            ("RP 6 19 1 0 0 0 10 0", "circular cliff"),
+            ("RP 7 19 1 0 0 0 10 0", "not a NEC-2 RP mode"),
+            ("RP -1 19 1 0 0 0 10 0", "not a NEC-2 RP mode"),
+        ] {
+            let err = rp(line).unwrap_err();
+            assert!(
+                matches!(&err, ParseError::UnsupportedValue { field: 1, .. })
+                    && err.to_string().contains(needle),
+                "{line}: {err}"
+            );
+        }
+        assert!(rp("RP 0 19 1 0 0 0 10 0").is_ok());
+    }
+
+    fn fr(line: &str) -> Result<FrCard, ParseError> {
+        let r = parse(&format!("{line}\nEN\n"))?;
+        let Some(Card::Fr(fr)) = r.deck.cards.first().cloned() else {
+            panic!("expected an FR card");
+        };
+        Ok(fr)
+    }
+
+    /// FND-287: FR is read by position. The five-field canonical card reads
+    /// F1 = 29.9 (nec2c solves it, 79.004 + j41.448); fnec read field 3 as the
+    /// frequency and refused it as 0 MHz.
+    #[test]
+    fn fr_reads_its_fields_by_position() {
+        let five = fr("FR 0 1 0 0 29.9").unwrap();
+        assert_eq!(
+            (five.steps, five.frequency_mhz, five.step_mhz),
+            (1, 29.9, 0.0)
+        );
+        assert_eq!(fr("FR 0 1 0 0 29.9 0").unwrap(), five);
+        let sweep = fr("FR 0 5 0 0 10 2.5").unwrap();
+        assert_eq!(
+            (sweep.steps, sweep.frequency_mhz, sweep.step_mhz),
+            (5, 10.0, 2.5)
+        );
+        // All integers: I3 = 30, F1 = 0, as nec2c reads it.
+        assert_eq!(fr("FR 0 1 30 0").unwrap().frequency_mhz, 0.0);
+    }
+
+    /// D4: the retired `FR I1 I2 F1 F2` shorthand is refused with its rewrite.
+    #[test]
+    fn the_fr_shorthand_is_refused_with_its_rewrite() {
+        for (line, rewrite) in [
+            ("FR 0 1 29.9 0", "FR 0 1 0 0 29.9 0"),
+            ("FR 0 3 14.0 0.5", "FR 0 3 0 0 14.0 0.5"),
+            ("FR 0 1 14.2", "FR 0 1 0 0 14.2 0"),
+        ] {
+            let err = fr(line).unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("shorthand") && msg.contains(rewrite),
+                "{line}: {msg}"
+            );
+            assert_eq!(
+                fr(rewrite).unwrap().frequency_mhz,
+                line.split(' ').nth(3).unwrap().parse::<f64>().unwrap()
+            );
+        }
+    }
+
+    /// FND-300: an integer field refuses a fraction, as nec2c does, where it
+    /// used to be truncated; a whole number written as a real is accepted.
+    #[test]
+    fn an_integer_field_refuses_a_fraction() {
+        for deck in [
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 1 11.5 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+            "GW 1 21.5 0 0 -2.5 0 0 2.5 .001\nGE 0\nEN\n",
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nLD 4 1 0.5 0 50 0\nEN\n",
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nFR 0 1 0 0.5 30 0\nEN\n",
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nRP 0 1.5 1 0 0 0 0 0\nEN\n",
+        ] {
+            let err = parse(deck).err().expect("a fraction in an integer field");
+            assert!(
+                matches!(&err, ParseError::UnsupportedValue { .. })
+                    && err
+                        .to_string()
+                        .contains("nec2c stops on a fractional value"),
+                "{deck}: {err}"
+            );
+        }
+        let ok = parse(
+            "GW 1 21. 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 1. 11.0 0 1 0\nFR 0 1 0 0 30 0\nEN\n",
+        )
+        .expect("whole numbers written as reals");
+        let Some(Card::Ex(ex)) = ok.deck.cards.get(2) else {
+            panic!("EX");
+        };
+        assert_eq!((ex.tag, ex.segment), (1, 11));
+    }
+
+    /// A negative count or segment reference is refused, where it saturated to 0
+    /// (and tag 0 is an absolute segment number now, FND-282).
+    #[test]
+    fn a_negative_segment_reference_is_refused() {
+        let err = parse("GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nEX 0 -1 11 0 1 0\nEN\n")
+            .err()
+            .expect("refused");
+        assert!(
+            matches!(&err, ParseError::UnsupportedValue { field: 2, .. }),
+            "{err:?}"
+        );
+    }
+
+    fn gn(line: &str) -> Result<(GnCard, Vec<ParseError>), ParseError> {
+        let r = parse(&format!(
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\n{line}\nEN\n"
+        ))?;
+        let gn = r
+            .deck
+            .cards
+            .iter()
+            .find_map(|c| match c {
+                Card::Gn(g) => Some(g.clone()),
+                _ => None,
+            })
+            .expect("a GN card");
+        Ok((gn, r.warnings))
+    }
+
+    /// FND-283: a radial-wire screen over a finite ground changes nec2c's
+    /// currents, and fnec does not model one: refused, over GN 0 by what it is,
+    /// over GN 2 as nec2c refuses it.
+    #[test]
+    fn a_radial_screen_over_a_finite_ground_is_refused() {
+        let err = gn("GN 0 16 0 0 13 .005 20 .001").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            matches!(&err, ParseError::UnsupportedValue { field: 2, .. })
+                && msg.contains("16 wires")
+                && msg.contains("radius 20 m")
+                && msg.contains("71.56 + j24.85"),
+            "{msg}"
+        );
+        let err = gn("GN 2 16 0 0 13 .005 20 .001").unwrap_err();
+        assert!(err.to_string().contains("RADIAL WIRE G.S."), "{err}");
+    }
+
+    /// D3: what nec2c ignores, fnec ignores with a warning; the 4nec2/xnec2c
+    /// form `GN I1 0 0 0 F1 F2 [0 0 0 0]` is accepted silently.
+    #[test]
+    fn gn_fields_nec2c_ignores_are_warned_and_ignored() {
+        for (line, field, needle) in [
+            ("GN 1 16 0 0 0 0 20 .001", 2, "over a perfect ground"),
+            ("GN -1 0 0 0 13 .005", 5, "in free space"),
+            ("GN 2 0 1 0 13 .005", 3, "never reads GN I3/I4"),
+            ("GN 0 0 0 0 13 .005 20 .001 0 0", 7, "second medium"),
+        ] {
+            let (_, w) = gn(line).unwrap_or_else(|e| panic!("{line}: {e}"));
+            assert!(
+                matches!(w.as_slice(), [ParseError::IgnoredField { field: f, why, .. }]
+                    if *f == field && why.contains(needle)),
+                "{line}: {w:?}"
+            );
+        }
+        let (g, w) = gn("GN 1 16 0 0 0 0 20 .001").unwrap();
+        assert_eq!(
+            (g.ground_type, g.radials, g.screen),
+            (1, 16, Some((20.0, 0.001)))
+        );
+        let (g, w2) = gn("GN 0 0 0 0 13 .005 20 .001 0 0").unwrap();
+        assert_eq!(g.medium2, Some([20.0, 0.001, 0.0, 0.0]));
+        assert!(!w.is_empty() && !w2.is_empty());
+        for line in [
+            "GN 2 0 0 0 13 .005",
+            "GN 2 0 0 0 13 .005 0 0 0 0",
+            "GN 1",
+            "GN -1",
+        ] {
+            let (_, w) = gn(line).unwrap();
+            assert!(w.is_empty(), "{line}: {w:?}");
+        }
+    }
+
+    /// D3: GD (the second medium on its own card) is ignored with the reason,
+    /// as GN's F3–F6 are, where it was refused.
+    #[test]
+    fn a_gd_card_is_ignored_with_a_warning() {
+        let r = parse(
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nGN 2 0 0 0 13 .005\nGD 0 0 0 0 5 .001 20 0\nEN\n",
+        )
+        .expect("GD is ignored");
+        assert!(
+            matches!(r.warnings.as_slice(), [ParseError::IgnoredCard { mnemonic, .. }] if mnemonic == "GD"),
+            "{:?}",
+            r.warnings
+        );
+    }
+
+    /// TL, NT and PT are read by position too: a short card's missing fields are
+    /// zero, as nec2c reads them, and fnec's TL extensions sit past the tenth.
+    #[test]
+    fn tl_nt_and_pt_read_their_fields_by_position() {
+        let deck = parse(
+            "GW 1 21 0 0 -2.5 0 0 2.5 .001\nGW 2 21 1 0 -2.5 1 0 2.5 .001\nGE 0\n\
+             NT 1 11 2 11 0 -0.002\nPT 0 2 1\nTL 1 5 2 5 50.0 1 0 0 0 0 0.66 3\nEN\n",
+        )
+        .unwrap()
+        .deck;
+        let nt = deck.cards.iter().find_map(|c| match c {
+            Card::Nt(n) => Some(n.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            nt,
+            Some(NtCard {
+                tag1: 1,
+                segment1: 11,
+                tag2: 2,
+                segment2: 11,
+                y11: (0.0, -0.002),
+                y12: (0.0, 0.0),
+                y22: (0.0, 0.0),
+            })
+        );
+        let pt = deck.cards.iter().find_map(|c| match c {
+            Card::Pt(p) => Some(p.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            pt,
+            Some(PtCard {
+                mode: 0,
+                tag: 2,
+                seg_first: 1,
+                seg_last: 0
+            })
+        );
+        let tl = deck.cards.iter().find_map(|c| match c {
+            Card::Tl(t) => Some(t.clone()),
+            _ => None,
+        });
+        let tl = tl.unwrap();
+        assert_eq!(
+            (tl.z0, tl.length, tl.velocity_factor, tl.loss_db),
+            (50.0, 1.0, 0.66, 3.0)
+        );
+        assert!(parse("GW 1 5 0 0 0 0 0 1 .001\nGE 0\nNT 1 1 1 5 0 q\nEN\n").is_err());
     }
 
     #[test]
@@ -1835,8 +2396,11 @@ EN
             gn,
             Some(&GnCard {
                 ground_type: 2,
+                radials: 0,
                 eps_r: Some(13.0),
                 sigma: Some(0.005),
+                screen: None,
+                medium2: None,
             })
         );
     }
@@ -1939,7 +2503,8 @@ EN
                 },
             );
         assert!(pt.is_some());
-        assert_eq!(pt.unwrap().raw_fields.len(), 13);
+        let pt = pt.unwrap();
+        assert_eq!((pt.mode, pt.tag, pt.seg_first, pt.seg_last), (-1, 0, 0, 0));
     }
 
     #[test]
@@ -1998,7 +2563,7 @@ EN
     fn program_cards_keep_every_field_nec_reads() {
         let deck = parse(
             "CM a comment\nCE\nGW 1 5 0 0 -1 0 0 1 .001\nGE 0\nEK\n\
-             GN 2 4 1 0 13 .005 1.5 .002\nEX 0 1 3 0 1 0\nFR 0 1 0 0 14.2\n\
+             GN 2 0 1 0 13 .005 1.5 .002\nEX 0 1 3 0 1 0\nFR 0 1 0 0 14.2\n\
              RP 0 7 13 1003 0 0 30 30\nXQ 1\nEN\n",
         )
         .unwrap()
@@ -2016,7 +2581,7 @@ EN
             got,
             vec![
                 ("EK", 5, [0, 0, 0, 0], zero),
-                ("GN", 6, [2, 4, 1, 0], [13.0, 0.005, 1.5, 0.002, 0.0, 0.0]),
+                ("GN", 6, [2, 0, 1, 0], [13.0, 0.005, 1.5, 0.002, 0.0, 0.0]),
                 ("EX", 7, [0, 1, 3, 0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
                 ("FR", 8, [0, 1, 0, 0], [14.2, 0.0, 0.0, 0.0, 0.0, 0.0]),
                 ("RP", 9, [0, 7, 13, 1003], [0.0, 0.0, 30.0, 30.0, 0.0, 0.0]),

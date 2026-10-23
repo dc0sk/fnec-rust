@@ -66,7 +66,7 @@ fn section_rows(stdout: &str, section: &str, col: usize) -> Vec<(f64, f64)> {
 // junction the per-wire receive solver could not handle (it fails fast). It is the
 // identical antenna to the single-wire dipole, fed at the junction (wire 1 seg 1).
 const RX_JUNCTION: &str = "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 1 10 1 0 0.0 0.0 0.0 10.0 0.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-const TX_JUNCTION: &str = "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nRP 0 10 1 0.0 0.0 10.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+const TX_JUNCTION: &str = "GW 1 26 0 0 0 0 0 5.282 0.001\nGW 2 26 0 0 0 0 0 -5.282 0.001\nGE 0\nEX 0 1 1 0 1.0 0.0\nRP 0 10 1 0 0.0 0.0 10.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
 fn junctioned_receive_sweep_solves_and_has_dipole_shape() {

@@ -225,20 +225,8 @@ pub fn pec_ground_contact(
             }
             Card::Nt(nt) => {
                 let mut image = nt.clone();
-                let int = |f: Option<&String>| {
-                    f.and_then(|f| f.parse::<f64>().ok())
-                        .filter(|v| v.fract() == 0.0 && *v >= 0.0)
-                        .map(|v| v as u32)
-                };
-                for i in [0, 2] {
-                    if let (Some(tag), Some(seg)) =
-                        (int(nt.raw_fields.get(i)), int(nt.raw_fields.get(i + 1)))
-                    {
-                        let (t, s) = image_ref(tag, seg);
-                        image.raw_fields[i] = t.to_string();
-                        image.raw_fields[i + 1] = s.to_string();
-                    }
-                }
+                (image.tag1, image.segment1) = image_ref(nt.tag1, nt.segment1);
+                (image.tag2, image.segment2) = image_ref(nt.tag2, nt.segment2);
                 images.push(Card::Nt(image));
             }
             _ => {}

@@ -102,21 +102,30 @@ pub fn write_card(card: &Card) -> String {
         ]),
         Card::Ge(c) => join(&["GE".into(), i(c.ground_reflection_flag)]),
         Card::Gn(c) => {
-            // Bare form `GN <type>` when no medium is given; otherwise the full
-            // `GN <type> 0 0 0 <eps> <sig>` (the parser reads EPSE at field 5,
-            // SIG at field 6, so the three placeholder integers are required).
-            match (c.eps_r, c.sigma) {
-                (None, None) => join(&["GN".into(), i(c.ground_type)]),
-                (eps, sig) => join(&[
+            // NEC-2's positional `GN I1 NRADL I3 I4 EPSE SIG F3 F4 F5 F6`, trailing
+            // zero fields dropped (the parser reads a missing field as zero), so a
+            // bare `GN 1` stays bare.
+            let (f3, f4, f5, f6) = match (c.screen, c.medium2) {
+                (Some((r, a)), _) => (r, a, 0.0, 0.0),
+                (None, Some([a, b, c, d])) => (a, b, c, d),
+                (None, None) => (0.0, 0.0, 0.0, 0.0),
+            };
+            trim_floats(
+                vec![
                     "GN".into(),
                     i(c.ground_type),
+                    i(c.radials),
                     "0".into(),
                     "0".into(),
-                    "0".into(),
-                    f(eps.unwrap_or(0.0)),
-                    f(sig.unwrap_or(0.0)),
-                ]),
-            }
+                    f(c.eps_r.unwrap_or(0.0)),
+                    f(c.sigma.unwrap_or(0.0)),
+                    f(f3),
+                    f(f4),
+                    f(f5),
+                    f(f6),
+                ],
+                2,
+            )
         }
         Card::Ld(c) => trim_floats(
             vec![
@@ -149,8 +158,26 @@ pub fn write_card(card: &Card) -> String {
             f(c.velocity_factor),
             f(c.loss_db),
         ]),
-        Card::Pt(c) => join_raw("PT", &c.raw_fields),
-        Card::Nt(c) => join_raw("NT", &c.raw_fields),
+        Card::Pt(c) => join(&[
+            "PT".into(),
+            i(c.mode),
+            u(c.tag),
+            u(c.seg_first),
+            u(c.seg_last),
+        ]),
+        Card::Nt(c) => join(&[
+            "NT".into(),
+            u(c.tag1),
+            u(c.segment1),
+            u(c.tag2),
+            u(c.segment2),
+            f(c.y11.0),
+            f(c.y11.1),
+            f(c.y12.0),
+            f(c.y12.1),
+            f(c.y22.0),
+            f(c.y22.1),
+        ]),
         Card::Ex(c) => trim_floats(
             vec![
                 "EX".into(),
@@ -167,19 +194,24 @@ pub fn write_card(card: &Card) -> String {
             ],
             5, // keep mnemonic + 4 required integer fields
         ),
-        // Shorthand 4-field form `FR I1 I2 F1 F2`; the parser reads the frequency
-        // from field 3 when there are fewer than 6 fields, so this round-trips.
+        // NEC-2's canonical `FR I1 I2 I3 I4 F1 F2`: the frequency is F1, the
+        // fifth field. The old 4-field shorthand this wrote is refused (FND-287).
         Card::Fr(c) => join(&[
             "FR".into(),
             u(c.step_type),
             u(c.steps),
+            "0".into(),
+            "0".into(),
             f(c.frequency_mhz),
             f(c.step_mhz),
         ]),
         Card::Rp(c) => {
-            // Encode the normalize/avg-power flags back into the XNDA field the
-            // parser decodes: X (thousands) = normalize, A (units) = avg power.
-            let xnda = u32::from(c.normalize) * 1000 + u32::from(c.avg_power_gain);
+            // XNDA as nec2c splits it (FND-298): N (hundreds) = normalize, 5 for
+            // the total gain fnec normalizes; D (tens) = directive gain; A
+            // (units) = average power gain.
+            let xnda = u32::from(c.normalize) * 500
+                + u32::from(c.directive_gain) * 10
+                + u32::from(c.avg_power_gain);
             join(&[
                 "RP".into(),
                 u(c.mode),
@@ -253,12 +285,6 @@ fn join(fields: &[String]) -> String {
         .cloned()
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn join_raw(mnemonic: &str, raw_fields: &[String]) -> String {
-    let mut v = vec![mnemonic.to_string()];
-    v.extend(raw_fields.iter().cloned());
-    v.join(" ")
 }
 
 /// Join, then drop trailing fields that are the float literal `0` down to a
@@ -472,11 +498,13 @@ mod tests {
         assert_eq!(first.deck.cards, again.deck.cards);
     }
 
+    /// FND-287: the writer emits NEC-2's canonical six-field FR, which nec2c
+    /// reads; the 4-field shorthand it wrote is now refused by the parser.
     #[test]
-    fn fr_shorthand_round_trips_frequency() {
+    fn fr_canonical_form_round_trips_frequency() {
         let deck = parse("FR 0 1 0 0 14.2 0\nEN\n").unwrap().deck;
         let s = write_card(&deck.cards[0]);
-        assert_eq!(s, "FR 0 1 14.2 0");
+        assert_eq!(s, "FR 0 1 0 0 14.2 0");
         // and it reads back to the same frequency
         let re = parse(&format!("{s}\nEN\n")).unwrap().deck;
         assert_eq!(re.cards[0], deck.cards[0]);
@@ -509,5 +537,36 @@ mod tests {
         let s = write_card(&deck.cards[0]);
         let re = parse(&format!("{s}\nEN\n")).unwrap().deck;
         assert_eq!(re.cards[0], deck.cards[0]);
+    }
+
+    /// FND-298: the writer encodes XNDA as nec2c splits it — N (hundreds) for
+    /// normalize, D (tens) for directive gain, A (units) — where it wrote the
+    /// thousands digit, which nec2c reads as column labels.
+    #[test]
+    fn rp_writes_xnda_digits_as_nec2c_reads_them() {
+        let deck = parse("RP 0 37 1 0511 0 0 5 0\nEN\n").unwrap().deck;
+        let s = write_card(&deck.cards[0]);
+        assert_eq!(s, "RP 0 37 1 511 0 0 5 0");
+        let re = parse(&format!("{s}\nEN\n")).unwrap().deck;
+        assert_eq!(re.cards[0], deck.cards[0]);
+    }
+
+    /// GN, NT and PT are written in NEC-2's positional layout and read back as
+    /// the same card, the fields nec2c ignores included.
+    #[test]
+    fn gn_nt_and_pt_round_trip_by_position() {
+        let deck = "CE\nGW 1 21 0 0 -5 0 0 5 .001\nGW 2 21 1 0 -5 1 0 5 .001\nGE 0\n\
+                    GN 1 16 0 0 0 0 20 0.001\nNT 1 11 2 11 0 -0.002 0 0.004 0 -0.002\n\
+                    PT 0 2 1 3\nEX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+        let first = parse(deck).expect("parses");
+        let again = parse(&write_deck(&first.deck)).expect("written deck parses");
+        assert_eq!(first.deck.cards, again.deck.cards);
+        let medium = parse("GN 0 0 0 0 13 0.005 20 0.001 5 2\nEN\n")
+            .unwrap()
+            .deck;
+        assert_eq!(
+            write_card(&medium.cards[0]),
+            "GN 0 0 0 0 13 0.005 20 0.001 5 2"
+        );
     }
 }

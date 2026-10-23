@@ -233,6 +233,12 @@ pub struct GnRow {
     pub ground_type: i32,
     pub eps_r: String,
     pub sigma: String,
+    /// Carried through unedited, as the parser read them (FND-283): a nonzero
+    /// count only over a perfect ground or free space, where nec2c ignores it,
+    /// and a second medium only fnec's refused RP modes would read.
+    pub radials: i32,
+    pub screen: Option<(f64, f64)>,
+    pub medium2: Option<[f64; 4]>,
 }
 
 impl GnRow {
@@ -241,6 +247,9 @@ impl GnRow {
             ground_type: c.ground_type,
             eps_r: c.eps_r.map(fmt_f).unwrap_or_default(),
             sigma: c.sigma.map(fmt_f).unwrap_or_default(),
+            radials: c.radials,
+            screen: c.screen,
+            medium2: c.medium2,
         }
     }
 
@@ -248,8 +257,7 @@ impl GnRow {
     fn new_default() -> Self {
         Self {
             ground_type: 1,
-            eps_r: String::new(),
-            sigma: String::new(),
+            ..Self::default()
         }
     }
 
@@ -258,6 +266,9 @@ impl GnRow {
             ground_type: self.ground_type,
             eps_r: parse_opt_f(&self.eps_r, "GN eps_r")?,
             sigma: parse_opt_f(&self.sigma, "GN sigma")?,
+            radials: self.radials,
+            screen: self.screen,
+            medium2: self.medium2,
         })
     }
 }
@@ -758,7 +769,7 @@ CE
 GW 1 51 0 0 -5.232 0 0 5.232 0.001
 GE 0
 EX 0 1 26 0 1
-FR 0 1 14.2 0
+FR 0 1 0 0 14.2 0
 EN
 ";
 
@@ -936,7 +947,7 @@ GE 1
 GN 2 0 0 0 13 0.005
 LD 4 1 11 11 50 10 0
 EX 0 1 11 0 1
-FR 0 1 14.2 0
+FR 0 1 0 0 14.2 0
 EN
 ";
 

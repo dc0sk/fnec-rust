@@ -46,6 +46,52 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   of an earlier run in a multi-run deck; fnec accepted it and kept the loads
   (178.86 + j38.83 Ω), and nec2c's own answer depends on the card's position
   (1039.4 − j374.95 Ω after another `LD`). **Migration:** remove the card.
+- **`FR`, `RP`, `GN`, `LD`, `EX`, `TL`, `NT` and `PT` are read by position, as
+  NEC-2 reads every card** (FND-284, FND-287): I1–I4 integers then F1–F6 reals,
+  a missing field zero, through the parser's one field reader. fnec chose a
+  layout by counting fields, so the canonical five-field `FR 0 1 0 0 29.9` read
+  I3 as the frequency and was refused as 0 MHz (nec2c: 79.004 + j41.448 Ω), and
+  the seven-field `RP 0 4 1 1000 0 0 30` read XNDA as θ₀ and printed four rows at
+  θ = 1000 (nec2c: θ 0/30/60/90). A short `NT` reads its missing admittances as
+  zero instead of being refused for having fewer than ten fields.
+  **Migration:** fnec's own shorthands are refused with their rewrite in the
+  message, as nec2c refuses them: the 4-field `FR 0 1 29.9 0` (write
+  `FR 0 1 0 0 29.9 0`), and the 7-field `RP` with a real XNDA,
+  `RP 0 37 73 0.0 0.0 5.0 5.0` (write `RP 0 37 73 0 0.0 0.0 5.0 5.0`). An
+  all-integer `FR 0 1 30 0` now reads F1 = 0, and its "0 MHz" refusal says the
+  frequency is the fifth field. Decks the GUI saved before this release used the
+  4-field `FR`; it now writes `FR I1 I2 0 0 F1 F2`.
+- **`RP`'s XNDA digits are read as nec2c splits them** (FND-298): X (thousands)
+  column labels, N (hundreds) normalization, D (tens) directive gain, A (units)
+  average gain. fnec read the thousands digit as "normalize", so **every 4nec2
+  deck (`RP 0 … 1000 …`) printed a `NORMALIZED_PATTERN` it did not ask for — it no
+  longer does**; `0500` now normalizes. The D
+  digit is now honoured: that card's rows report directive gain (a 50 Ω-loaded
+  dipole −5.48/0.38/2.16 dB at θ 30/60/90, as nec2c, where fnec printed the power
+  gains −7.61/−1.75/0.03). `RFLD` (F5), and `GNOR` (F6) under a normalization,
+  are ignored with a warning. The GUI writes N for normalize.
+- **`RP` modes other than 0 are refused** (FND-285). `RP 1` asks for the fields
+  near the ground at RHO (nec2c's `gfld`) and modes 2–6 for patterns over a cliff
+  or a radial screen; fnec printed an `RP 0` gain pattern for each, exit 0.
+- **`GN`'s radial-wire screen is refused over a finite ground** (FND-283). `GN 0
+  16 0 0 13 .005 20 .001` moves nec2c's dipole 5 m up from 75.13 + j30.98 to
+  71.56 + j24.85 Ω; fnec read neither I2 nor F3/F4 and solved 74.89 + j28.36 for
+  both. Over `GN 2` nec2c stops on it, and fnec now says so. What nec2c ignores is
+  ignored with a warning and leaves the answer unchanged: I2–F6 over `GN 1` or
+  `GN -1`, I3/I4, and a second medium in F3–F6 (only `RP` modes 2/3/5/6 read it).
+  **`GD` is now ignored with that reason instead of refused** (D3).
+  **Migration:** model the radials as wires above the ground with
+  `--solver mpie`, or remove I2–F4.
+- **An integer field holding a fraction is refused, on every card** (FND-300).
+  `29.9` in an integer field was truncated to 29 without a word; nec2c stops on
+  it. Whole numbers written as reals (`4.`, `1.0`, as 4nec2 writes them) are still
+  accepted. A negative count or segment reference on `EX`, `LD`, `TL`, `NT`, `PT`,
+  `FR` or `RP` is refused too; it used to read as 0.
+- **The four corpus `RP` decks are readable by nec2c** (FND-301). They used the
+  7-field real-XNDA form nec2c refuses, so no nec2c run on the decks as committed
+  stood behind their pattern references; rewritten to the 8-field card, re-run on
+  nec2c 1.3.1 (same samples), and `dipole-ground-rp-51seg` is now gated against
+  nec2c too (16 corpus cases external, was 15).
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
