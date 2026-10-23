@@ -3,6 +3,7 @@
 
 mod bench;
 mod cli_args;
+mod converge_cmd;
 mod exec_calibration;
 mod exec_profile;
 mod kernel;
@@ -199,6 +200,12 @@ fn main() -> ExitCode {
     // --- sweep subcommand ---------------------------------------------------
     if args.get(1).map(String::as_str) == Some("sweep") {
         return run_sweep_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
+
+    // --- converge subcommand (GAP-012: the convergence-study helper) --------
+    if args.get(1).map(String::as_str) == Some("converge") {
+        return converge_cmd::run(&args);
     }
     // ------------------------------------------------------------------------
 
@@ -1582,6 +1589,7 @@ fn run_sweep_subcommand(args: &[String]) -> ExitCode {
             // narrower here: a resonance search substitutes into a template
             // deck, so `--sweep-config` is not the answer.
             no_frequency_remedy: "Add an `FR` card to the template deck.",
+            stderr_prefix: "",
         };
         let points = solve_session::probe_feedpoints(
             deck,

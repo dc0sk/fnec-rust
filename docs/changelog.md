@@ -15,6 +15,31 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **`fnec converge`, the convergence-study helper** (GAP-012, BL-IMPR-017).
+  It solves a deck as written and meshed 3× and 9× finer (`--factors`, odd and
+  geometric: `1,3,9` by default, `1,3,9,27` allowed) and reports, for every
+  frequency and source, the impedance per mesh, the steps, the geometric tail of
+  the last two and whether the series has settled within max(0.5 Ω, 1 % of |Z|)
+  on R and on X (`--tol-ohm`, `--tol-pct`) — the rule the corpus holds nec2c's
+  own series to, now one function in `nec_solver::convergence`. A settled row
+  carries its extrapolated limit; a drifting or diverging one is a result, exit
+  0 with a warning. On `corpus/dipole-freesp-51seg.nec` it reads 79.33 / 79.54 /
+  79.65 Ω, settled, extrapolated 79.748 + j46.750 Ω (nec2c at 27×: 79.710 +
+  j46.719). The refinement (`nec_solver::refine`) maps every `EX`, `LD`, `NT`
+  and `TL` reference to the sub-segment that models the same point — the rule
+  `scripts/nec2c-fine-mesh.py` uses, held to it on all 11 converged corpus
+  decks — except that a reference on a wire's first or last segment keeps its
+  end by default (`--ends keep`; `--ends centre` is the script's rule), and says
+  that such a gap moves toward the node as the mesh refines (FND-277/278).
+  Refused by name before any mesh is solved: a receiving antenna, a tag-0
+  segment reference (FND-282), a one-segment wire's reference under `keep`, a
+  factor that takes any segment under 2 radii or the structure past 10 000
+  segments (naming the largest usable factor), and whatever the main command
+  refuses, at any mesh. Text and JSON (`fnec-converge/1`) output; see
+  `docs/cli-guide.md` and the worked example in `docs/automation-guide.md`.
+
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
 ### Changed

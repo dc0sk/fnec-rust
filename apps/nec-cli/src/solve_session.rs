@@ -1051,13 +1051,15 @@ pub(crate) struct ProbeConfig<'a> {
     pub(crate) remedies: nec_solver::validate::Remedies<'a>,
     /// Appended to the refusal of a deck with no frequency.
     pub(crate) no_frequency_remedy: &'a str,
+    /// Put before every stderr line the probe prints: empty for a route with one
+    /// deck, `mesh 3x: ` for `fnec converge`, whose caveats are each mesh's own.
+    pub(crate) stderr_prefix: &'a str,
 }
 
 /// Which of the deck's `FR` frequencies a probe solves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeFrequencies {
     /// Every frequency, in `FR` order (`fnec converge`).
-    #[allow(dead_code)] // read once `fnec converge` lands
     All,
     /// The first only: a resonance search's template carries one.
     First,
@@ -1065,7 +1067,6 @@ pub(crate) enum ProbeFrequencies {
 
 /// One solved frequency of a probe: its feedpoint rows, every source in the
 /// report's order, and its `diag:` line (whose `route=` names the basis solved).
-#[allow(dead_code)] // `freq_hz` and `diag_line` are read once `fnec converge` lands
 pub(crate) struct ProbePoint {
     pub(crate) freq_hz: f64,
     pub(crate) feedpoints: Vec<nec_report::FeedpointRow>,
@@ -1130,10 +1131,10 @@ pub(crate) fn probe_feedpoints(
             ),
         };
         for w in shown {
-            eprintln!("warning: {w}");
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
         for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
-            eprintln!("warning: {w}");
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
     }
 
@@ -1159,7 +1160,7 @@ pub(crate) fn probe_feedpoints(
         // A probe is not a sweep point: each one still says so itself, as
         // before the sweep caveat was aggregated (FND-069).
         for w in &solved.negative_r {
-            eprintln!("warning: {w}");
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
         let feedpoints = match solved.report {
             PointOutput::Tables(point) => point.rows.clone(),

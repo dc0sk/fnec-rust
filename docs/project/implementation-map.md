@@ -92,6 +92,7 @@ Serves **FR-002, FR-007/008, NFR-005, PRT-003, all `--exec`/sweep/vars flags**.
 - `src/exec_profile.rs` — `Cpu/Hybrid/Gpu` selection; 4nec2 drop-in recognition; GPU probe.
 - `src/geometry_validation.rs` — intersection / buried-wire / risky-source checks.
 - `src/resonance_search.rs` — bisection resonance targeting (PH3-CHK-008).
+- `src/converge_cmd.rs` — `fnec converge`, the convergence-study helper (GAP-012): refines the deck per factor (`nec_solver::refine`), refuses up front what no mesh may solve, solves each mesh through `solve_session::probe_feedpoints` (caveats under a `mesh Nx:` prefix), and judges each row by `nec_solver::convergence`; text and `fnec-converge/1` JSON.
 - `src/sweep_config.rs` — `--sweep-config` TOML (linear/point list).
 - `src/vars_config.rs` — `--vars` JSON/TOML map loader.
 - `src/bench.rs` — benchmark record emission (human/CSV/JSON).

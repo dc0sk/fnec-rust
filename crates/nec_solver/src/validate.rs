@@ -126,7 +126,7 @@ pub fn segment_intersection_error(segs: &[Segment]) -> Option<String> {
 /// 125.33 + j56.663 Ω in nec2c and 123.13 + j37.435 in fnec, fed far from it).
 /// One bound for the source check and the GC
 /// check, so they cannot drift apart.
-pub(crate) const MIN_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
+pub const MIN_LENGTH_TO_RADIUS_RATIO: f64 = 2.0;
 
 pub fn source_risk_geometry_error(deck: &NecDeck, segs: &[Segment]) -> Option<String> {
     // Only a DRIVEN source sits on a segment and carries this risk (FND-035).

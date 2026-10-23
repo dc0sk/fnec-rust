@@ -76,6 +76,22 @@ fn centre(factor: u32, k: u32) -> u32 {
     factor * k - (factor - 1) / 2
 }
 
+/// Refuse a reference with tag 0 and a segment number — NEC-2's absolute segment
+/// number, which fnec does not read so yet (FND-282). The one place every card's
+/// tag-0 reference comes through (`EX`, `LD`, `NT`, `TL`), so that when
+/// `find_deck_segment` resolves the absolute number this becomes a mapping here
+/// and nowhere else. `shown` is the card as the user wrote its reference.
+fn refuse_absolute(tag: u32, seg: u32, shown: impl FnOnce() -> String) -> Result<(), String> {
+    if tag == 0 && seg != 0 {
+        return Err(format!(
+            "refine: `{}` names an absolute segment number (tag 0), which refinement does \
+             not map yet — give the wire a tag",
+            shown()
+        ));
+    }
+    Ok(())
+}
+
 /// The mapper: resolves a reference on the unrefined geometry, and knows the
 /// wire ends.
 struct Mapper<'a> {
@@ -87,12 +103,7 @@ struct Mapper<'a> {
 
 impl Mapper<'_> {
     fn map(&self, card: &'static str, tag: u32, k: u32) -> Result<MappedRef, String> {
-        if tag == 0 {
-            return Err(format!(
-                "refine: `{card}` on tag 0 segment {k} names an absolute segment number (tag 0), \
-                 which refinement does not map yet — give the wire a tag"
-            ));
-        }
+        refuse_absolute(tag, k, || format!("{card} 0 {k}"))?;
         let idx = find_deck_segment(self.segs, tag, k)
             .ok_or_else(|| format!("refine: `{card}` names no segment: tag {tag} segment {k}"))?;
         let (first, last) = self
@@ -106,8 +117,8 @@ impl Mapper<'_> {
         let mapped = match self.ends {
             EndRule::Keep if at_start && at_end => {
                 return Err(format!(
-                    "refine: tag {tag} has one segment, and its `{card}` reference touches both \
-                     ends — give the wire two segments or more, or pass `--ends centre`"
+                    "refine: tag {tag} has one segment; its `{card}` reference touches both \
+                     ends — give the wire two segments or use `--ends centre`"
                 ));
             }
             EndRule::Keep if at_start => s * (k - 1) + 1,
@@ -208,6 +219,9 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
             }
             Card::Ex(ex) => match ex.kind().feedpoint_role() {
                 FeedpointRole::DeltaGap | FeedpointRole::CurrentSource => {
+                    refuse_absolute(ex.tag, ex.segment, || {
+                        format!("EX {} 0 {}", ex.excitation_type, ex.segment)
+                    })?;
                     let m = mapper.map("EX", ex.tag, ex.segment)?;
                     let mut ex = ex.clone();
                     ex.segment = m.mapped;
@@ -216,9 +230,8 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
                 }
                 FeedpointRole::PlaneWave => {
                     return Err(format!(
-                        "refine: this deck is a receiving antenna (EX type {}): an incident \
-                         plane wave names no segment, and there is no feedpoint impedance to \
-                         converge",
+                        "refine: this deck is a receiving antenna (EX type {}); there is no \
+                         feedpoint impedance to converge",
                         ex.excitation_type
                     ));
                 }
@@ -226,13 +239,9 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
                 FeedpointRole::Unknown => cards.push(card.clone()),
             },
             Card::Ld(ld) => {
-                if ld.tag == 0 && ld.seg_first != 0 {
-                    return Err(format!(
-                        "refine: `LD {}` on tag 0 segment {} names an absolute segment number \
-                         (tag 0), which refinement does not map yet — give the wire a tag",
-                        ld.load_type, ld.seg_first
-                    ));
-                }
+                refuse_absolute(ld.tag, ld.seg_first, || {
+                    format!("LD {} 0 {} {}", ld.load_type, ld.seg_first, ld.seg_last)
+                })?;
                 if per_metre(ld.load_type) {
                     let mut ld = ld.clone();
                     if ld.seg_first != 0 {
@@ -288,6 +297,10 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
             }
             Card::Tl(tl) => {
                 let mut tl = tl.clone();
+                let shown =
+                    || format!("TL {} {} {} {}", tl.tag1, tl.segment1, tl.tag2, tl.segment2);
+                refuse_absolute(tl.tag1, tl.segment1, shown)?;
+                refuse_absolute(tl.tag2, tl.segment2, shown)?;
                 let a = map_port(&mapper, "TL", tl.tag1, tl.segment1)?;
                 let b = map_port(&mapper, "TL", tl.tag2, tl.segment2)?;
                 tl.segment1 = a.mapped;
@@ -306,6 +319,9 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
                     .collect();
                 // Too few or non-numeric fields are refused at the solve by name.
                 if let Some([t1, s1, t2, s2]) = ports.as_deref() {
+                    let shown = || format!("NT {t1} {s1} {t2} {s2}");
+                    refuse_absolute(*t1, *s1, shown)?;
+                    refuse_absolute(*t2, *s2, shown)?;
                     let a = map_port(&mapper, "NT", *t1, *s1)?;
                     let b = map_port(&mapper, "NT", *t2, *s2)?;
                     nt.raw_fields[1] = a.mapped.to_string();
@@ -384,12 +400,6 @@ fn map_port(
     tag: u32,
     seg: u32,
 ) -> Result<MappedRef, String> {
-    if tag == 0 {
-        return Err(format!(
-            "refine: `{card}` on tag 0 segment {seg} names an absolute segment number (tag 0), \
-             which refinement does not map yet — give the wire a tag"
-        ));
-    }
     let seg = if seg == 0 {
         crate::tl::find_segment_index(mapper.segs, tag, 0)
             .map(|(_, resolved, _)| resolved)
@@ -546,11 +556,23 @@ mod tests {
         // Per metre since FND-280: the range stretches like LD 5.
         let r = refine_deck(&with("LD 2 1 4 4 0 2.1e-5 0\n"), 3, EndRule::Keep).unwrap();
         assert_eq!(ld_ranges(&r.deck), [(1, 10, 12)]);
-        let err = refine_deck(&with("LD 4 0 5 5 50 0 0\n"), 3, EndRule::Keep).unwrap_err();
-        assert!(
-            err.contains("absolute segment number (tag 0)") && err.contains("give the wire a tag"),
-            "{err}"
-        );
+        // Tag 0 with a segment number, on every card that names one: one refusal.
+        for (card, shown) in [
+            ("LD 4 0 5 5 50 0 0\n", "`LD 4 0 5 5`"),
+            ("EX 0 0 5 0 1 0\n", "`EX 0 0 5`"),
+            ("TL 1 3 0 5 50 0.1\n", "`TL 1 3 0 5`"),
+            ("NT 0 5 1 3 0 -0.002 0 0.003 0 -0.002\n", "`NT 0 5 1 3`"),
+        ] {
+            let err = refine_deck(&with(card), 3, EndRule::Keep).unwrap_err();
+            assert_eq!(
+                err,
+                format!(
+                    "refine: {shown} names an absolute segment number (tag 0), which \
+                     refinement does not map yet — give the wire a tag"
+                ),
+                "{card}"
+            );
+        }
         let err = refine_deck(&with("LD 4 1 30 30 50 0 0\n"), 3, EndRule::Keep).unwrap_err();
         assert!(err.contains("names no segment"), "{err}");
     }
