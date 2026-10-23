@@ -26,6 +26,68 @@ fn run_deck(name: &str, deck: &str) -> (bool, String) {
     )
 }
 
+/// The feedpoint impedance a successful fnec run printed, or a panic naming the
+/// run: an assertion on what stderr lacks passes on a crash, so every such test
+/// first shows the deck solved (FND-296).
+fn solved_z(what: &str, output: &std::process::Output) -> (f64, f64) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{what}: fnec failed:\n{stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines().skip_while(|l| !l.starts_with("FEEDPOINTS"));
+    let row = lines
+        .nth(2)
+        .unwrap_or_else(|| panic!("{what}: no feedpoint row:\n{stdout}"));
+    let f: Vec<f64> = row
+        .split_whitespace()
+        .map(|v| v.parse().unwrap_or(f64::NAN))
+        .collect();
+    assert!(
+        f.len() == 8 && f[6].is_finite() && f[7].is_finite(),
+        "{what}: unreadable feedpoint row {row:?}"
+    );
+    (f[6], f[7])
+}
+
+/// `deck` without its NT cards, solved the same way as the NT tests run theirs.
+fn z_without_nt(deck: &str) -> (f64, f64) {
+    let bare: String = deck
+        .lines()
+        .filter(|l| !l.starts_with("NT "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let path = std::env::temp_dir().join(format!(
+        "fnec-no-nt-{}-{}.nec",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::write(&path, bare).expect("write deck");
+    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["--solver", "hallen", "--exec", "cpu"])
+        .arg(&path)
+        .output()
+        .expect("run fnec");
+    let _ = fs::remove_file(&path);
+    solved_z("the deck without its NT", &output)
+}
+
+/// The NT solved as a network changed the feedpoint: a network dropped on the
+/// floor, the FND-123 shape, leaves the bare dipole's Z. Each NT here puts a
+/// two-port between segments 20 and 32 (15 and 37), which moves the centre-fed
+/// dipole's Z by hundreds of ohms: 79.33 + j45.04 bare, 30.64 − j892.12 with
+/// the first NT, 17.11 − j1088.68 with both (measured 2026-10-23).
+fn assert_nt_changed_z(deck: &str, output: &std::process::Output) {
+    let with = solved_z("the NT deck", output);
+    let without = z_without_nt(deck);
+    let moved = (with.0 - without.0).hypot(with.1 - without.1);
+    assert!(
+        moved > 5.0,
+        "the NT moved Z by {moved:.3} Ω: {with:?} with it, {without:?} without"
+    );
+}
+
 /// FND-236: a card that cannot change the antenna warns and the run solves; one
 /// that would — or one fnec does not know — refuses the deck by name. Both used
 /// to warn and solve: a dipole in feet (`GW 1 21 0 0 -17.33 0 0 17.33 .00328`,
@@ -65,7 +127,10 @@ fn an_ignored_card_warns_and_a_card_that_changes_the_antenna_is_refused() {
 #[test]
 fn supported_tl_card_runs_without_deferred_warning() {
     // Phase-2: TL type=0 is parsed and applied.  No unknown-card, no deferred,
-    // no ignored warnings.  Deck runs successfully.
+    // no ignored warnings.  Deck runs successfully. Until FND-296 the deck was
+    // fnec's retired layout (`TL 1 26 2 26 1 0 50.0 0.1 1.0`), refused at parse
+    // time, and the test passed on the refusal: it checked only that stderr
+    // lacked two warnings nothing emits any more.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -73,7 +138,7 @@ fn supported_tl_card_runs_without_deferred_warning() {
         .as_nanos();
     let deck_path = std::env::temp_dir().join(format!("fnec-tl-card-{now}.nec"));
 
-    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 1 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+    let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 50.0 0.1\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
     fs::write(&deck_path, deck).expect("failed to write temporary deck with TL card");
 
     let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
@@ -87,6 +152,7 @@ fn supported_tl_card_runs_without_deferred_warning() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for TL warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    solved_z("supported_tl_card_runs_without_deferred_warning", &output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -129,6 +195,7 @@ fn lossy_tl_type_solves_without_unsupported_warning() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for unsupported TL warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    solved_z("lossy_tl_type_solves_without_unsupported_warning", &output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -170,6 +237,10 @@ fn tl_segment_zero_is_mapped_to_center_with_warning_and_runs() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for TL segment0 warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    solved_z(
+        "tl_segment_zero_is_mapped_to_center_with_warning_and_runs",
+        &output,
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -210,6 +281,10 @@ fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
         });
 
     let _ = fs::remove_file(&deck_path);
+    solved_z(
+        "tl_segment_zero_even_segment_count_warns_lower_center_selection",
+        &output,
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -223,40 +298,26 @@ fn tl_segment_zero_even_segment_count_warns_lower_center_selection() {
 }
 
 #[test]
-fn tl_nseg_zero_runs_without_ignored_warning() {
-    // Phase-2: TL is parsed.  NSEG=0 is a valid single-section shorthand;
-    // no "TL card ignored" and no unknown-card warning.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX_EPOCH")
-        .as_nanos();
-    let deck_path = std::env::temp_dir().join(format!("fnec-tl-nseg0-{now}.nec"));
-
+fn tl_retired_nseg_zero_layout_is_refused_with_its_rewrite() {
+    // NSEG = 0 was a single-section shorthand of fnec's retired TL layout
+    // (`… NSEG TYPE Z0 LEN [VF]`). That layout is refused at parse time with the
+    // NEC-2 rewrite in the error (FND-111); this test used to be
+    // `tl_nseg_zero_runs_without_ignored_warning`, which asserted only that
+    // stderr lacked "TL card ignored" and so passed on the refusal (FND-296).
     let deck = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGW 2 51 1.0 0 -5.282 1.0 0 5.282 0.001\nTL 1 26 2 26 0 0 50.0 0.1 1.0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
-    fs::write(&deck_path, deck).expect("failed to write temporary deck with TL NSEG=0");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .arg("--solver")
-        .arg("hallen")
-        .arg("--exec")
-        .arg("cpu")
-        .arg(&deck_path)
-        .current_dir(&workspace_root)
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run fnec for TL NSEG=0 warning test: {e}"));
-
-    let _ = fs::remove_file(&deck_path);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let (ok, stderr) = run_deck("tl-nseg0", deck);
+    assert!(!ok, "the retired TL layout must be refused:\n{stderr}");
     assert!(
-        !stderr.contains("TL card ignored"),
-        "Phase-2: TL NSEG=0 should not emit TL card ignored:\n{stderr}"
+        stderr.contains("line 3: TL field 5")
+            && stderr.contains("Rewrite it as: TL 1 26 2 26 50.0 0.1"),
+        "expected the refusal with its NEC-2 rewrite, got:\n{stderr}"
     );
-    assert!(
-        !stderr.contains("unknown card 'TL'"),
-        "Phase-2: TL should be parsed, not produce unknown-card warning; got:\n{stderr}"
+    // The rewrite it names solves.
+    let (ok, stderr) = run_deck(
+        "tl-nseg0-rewrite",
+        &deck.replace("0 0 50.0 0.1 1.0", "50.0 0.1"),
     );
+    assert!(ok, "the rewrite must solve:\n{stderr}");
 }
 
 #[test]
@@ -329,6 +390,7 @@ fn nt_card_is_solved_as_a_network() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for NT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -371,6 +433,7 @@ fn pt_then_nt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for PT+NT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -423,6 +486,7 @@ fn repeated_pt_then_nt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for repeated PT+NT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -474,6 +538,7 @@ fn nt_then_pt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for NT+PT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -526,6 +591,7 @@ fn repeated_nt_then_pt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for repeated NT+PT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -578,6 +644,7 @@ fn interleaved_pt_and_nt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for interleaved PT+NT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),
@@ -630,6 +697,7 @@ fn interleaved_nt_and_pt_cards_both_apply() {
         .unwrap_or_else(|e| panic!("Failed to run fnec for interleaved NT+PT warning test: {e}"));
 
     let _ = fs::remove_file(&deck_path);
+    assert_nt_changed_z(deck, &output);
 
     assert!(
         output.status.success(),

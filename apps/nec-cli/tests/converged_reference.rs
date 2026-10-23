@@ -502,3 +502,43 @@ fn nec2c_breaks_at_a_corner_below_about_nine_radii() {
         "T at 1 mm keeps shrinking to 27x: {u3:.5}, {u9:.5}, {u27:.5}"
     );
 }
+
+/// FND-289: `dipole-loaded` and `dipole-loaded-noncollinear-hallen` (one deck, the
+/// dipole whose tip meets the middle of a top-hat loop's bottom side) are not in
+/// `CONVERGED`, and cannot be: nec2c's own series on the deck does not settle
+/// within a third of the case's 8 Ω External X gate. nec2c 1.3.1 at 1 / 3 / 9 /
+/// 27 ×, `EK 0` (`scripts/nec2c-converged-series.py corpus/dipole-loaded.nec --ek
+/// --to 27`, captured 2026-10-23; no `9x_thin`, the loop is at 6.17 radii a
+/// segment there): R 13.463 / 13.243 / 13.153 / 13.13, X −896.03 / −886.97 /
+/// −882.45 / −879.06. X's last step is three quarters of the one before, a tail of
+/// about 10 Ω where 2.67 is allowed (4.5 Ω on the 1 / 3 / 9 × points the corpus
+/// reference is taken from). fnec drifts the same way and meets it: −886.74 /
+/// −883.22 / −880.96 / −878.83 at 1 / 3 / 9 / 27 × (measured 2026-10-23), 0.23 Ω
+/// from nec2c at 27× (a data point here, not gated: a 27× fnec solve is too slow
+/// for the suite). The corpus reference stays nec2c's 9× point; this test holds
+/// the reason it is not a converged one.
+#[test]
+fn nec2c_has_no_converged_value_on_the_top_hat_dipole() {
+    let r = [13.463, 13.243, 13.153, 13.13];
+    let x = [-896.03, -886.97, -882.45, -879.06];
+    let d = corpus();
+    for name in ["dipole-loaded", "dipole-loaded-noncollinear-hallen"] {
+        let case = &d["cases"][name];
+        assert_eq!(case["deck_file"], "dipole-loaded.nec", "{name}");
+        assert!(
+            case["external_reference_candidate"]
+                .get("convergence")
+                .is_none(),
+            "{name} carries a series: move it to CONVERGED and drop this test's claim"
+        );
+        let tol_x = external_tolerance(case, "X", x[3]).expect("External X gate");
+        let tol_r = external_tolerance(case, "R", r[3]).expect("External R gate");
+        let drift_x = remaining_drift(&x);
+        assert!(
+            drift_x > tol_x / 3.0,
+            "{name}: X tail {drift_x:.2} Ω is within a third of {tol_x} Ω: it settles"
+        );
+        assert!(remaining_drift(&r) <= tol_r / 3.0, "{name}: R {r:?}");
+    }
+    assert_eq!(classify(&x), Series::Settling, "slowly: {x:?}");
+}

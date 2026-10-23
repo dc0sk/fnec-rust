@@ -246,7 +246,12 @@ def main() -> int:
     for line in section.splitlines():
         cells = line.split("|")
         if len(cells) > 3 and cells[1].strip().startswith("`") and cells[1].strip().endswith(".rs`"):
-            rows[cells[1].strip().strip("`")] = cells[2].strip()
+            key = cells[1].strip().strip("`")
+            # A second row for one file used to overwrite the first, so a stale
+            # duplicate passed whenever the later row was right (FND-295).
+            if key in rows:
+                problems.append(f"integration-table row `{key}` appears twice")
+            rows[key] = cells[2].strip()
     for path, want in sorted(integration.items()):
         if path not in rows:
             problems.append(f"no integration-table row for `{path}` (measured {want})")

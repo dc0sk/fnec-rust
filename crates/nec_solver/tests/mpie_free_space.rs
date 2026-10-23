@@ -8,9 +8,9 @@
 // the validated Python oracle studies/sommerfeld-ground/efie_mpie_ground.py.
 //
 //   Gate A2 (nec2c): a straight λ/2 dipole converges (mesh-refinement plateau)
-//     to within a few percent of the analytic 79.35 Ω. The MPIE has its own
-//     systematic discretization offset (~6% low at N=40, per the Python oracle:
-//     N=20→73.39, N=40→74.36, N=80→75.52), converging UP toward 79.35. (This
+//     to nec2c's converged 79.474 Ω, from below: 78.72 / 79.19 / 79.35 at N = 20 /
+//     40 / 80 since FND-157. (The Python oracle's 73.39 / 74.36 / 75.52, a ~6 %
+//     offset, was that defect, which the oracle shared.) (This
 //     used to contrast it with "the Hallén solver's fixed ~32 Ω reactance bias",
 //     which was FND-156, a defect in Hallén's free-end rows, since fixed.)
 //
@@ -52,10 +52,14 @@ fn half_wave_dipole_converges_to_nec2c() {
 
     // Monotone increase toward the analytic value.
     assert!(r[0] < r[1] && r[1] < r[2], "R not monotone: {r:?}");
-    // Each within a few percent of 79.35, closing from below.
+    // Within 0.4 Ω of nec2c's converged 79.474 (this dipole, `mpie.rs`'s
+    // FND-259 reference), closing from below. Measured 78.716 / 79.186 / 79.349
+    // at 20 / 40 / 80, 79.423 at 160. The band was 7 % of 79.35, sized for the
+    // ~6 % FND-157 self-term defect, which then passed: with the near-pair static
+    // term not subtracted R(80) reads 75.520, 5 % low (FND-296).
     assert!(
-        (79.35 - r[2]).abs() / 79.35 < 0.07,
-        "R(80)={} not within 7% of 79.35",
+        (79.474 - r[2]).abs() < 0.4,
+        "R(80)={} not within 0.4 Ω of nec2c's converged 79.474",
         r[2]
     );
     // Refinement steps shrink (plateau, not divergence).

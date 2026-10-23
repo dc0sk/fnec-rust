@@ -1057,7 +1057,7 @@ Quick reference:
 | FR | Full | `FR I1 I2 I3 I4 F1 F2`, read by position: the frequency is `F1`, the fifth field (`FR 0 1 0 0 14.2 0`); every step solved. fnec's old 4-field shorthand `FR 0 1 14.2 0` is refused with that rewrite (FND-287) |
 | RP | Partial | `RP 0 NTH NPH XNDA θ0 φ0 Δθ Δφ`, read by position (FND-284): the far-field pattern. `XNDA` digits as nec2c splits them (FND-298): `N` (hundreds) adds `NORMALIZED_PATTERN`, `D` (tens) reports directive gain, `A` (units) adds `AVERAGE_POWER_GAIN`, `X` (thousands) picks column labels only. Modes 1–6 (fields near the ground, cliffs, radial screens) are refused (FND-285), and so is a real XNDA, fnec's retired 7-field form `RP 0 37 73 0.0 0.0 5.0 5.0` — write `RP 0 37 73 0 0.0 0.0 5.0 5.0` |
 | NE / NH | Partial | Near electric / magnetic field, rectangular (`I1=0`) and spherical (`I1=1`) grids; emits `NEAR_FIELD` / `NEAR_H_FIELD`. Over PEC ground the images are included; over a finite ground the reflected field is not, and a warning says so (FND-201) |
-| LD type 0–5 | Full | Lumped loads (series/parallel RLC, RL, RC, impedance) and distributed conductivity loads. Tag 0 makes the segment fields absolute segment numbers, as NEC-2 reads them (FND-282); a negative type is refused (FND-292). Arbitrary rational `Z(s)` loads come from `--loads-config` |
+| LD type 0–5 | Full | Lumped series and parallel RLC (types 0, 1), series and parallel RLC per metre of segment (2, 3, FND-280), a lumped impedance (4) and wire conductivity (5). Tag 0 makes the segment fields absolute segment numbers, as NEC-2 reads them (FND-282); a negative type is refused (FND-292). Arbitrary rational `Z(s)` loads come from `--loads-config` |
 | TL | Partial | NEC-2 layout `TL I1 I2 I3 I4 F1 F2 F3 F4 F5 F6 [F7] [F8]`, solved as a two-port network across the port gaps (see below). fnec's retired `… NSEG TYPE Z0 LEN [VF]` layout is refused with the NEC-2 rewrite in the error |
 | PT | Partial | Print control as NEC-2 reads it (FND-299): `I1 ≤ −1` suppresses current output; `I3 = 0` prints all whatever `I1`/`I2`; a range prints segments `I3..I4` of tag `I2`, or absolute segments `I3..I4` when `I2` is 0 (FND-282); `I1 = 1..3` print the same rows with a warning. Last `PT` wins |
 | NT | Partial | Two-port network (Y11 Y12 Y22) solved across the port gaps in parallel, as in NEC-2; `--solver hallen` with voltage sources only. Read by position like every card (a missing field is zero, as nec2c reads it). Unusable cards are errors, not warnings |
@@ -1075,12 +1075,12 @@ The LD card applies impedance loads to antenna segments. Supported types:
 |------|-------------|--------|
 | 0 | Series RLC (lumped) | F1 = R (Ω), F2 = L (H), F3 = C (F) |
 | 1 | Parallel RLC (lumped) | F1 = R (Ω), F2 = L (H), F3 = C (F) |
-| 2 | Series RL (lumped) | F1 = R (Ω), F2 = L (H) |
-| 3 | Series RC (lumped) | F1 = R (Ω), F3 = C (F) |
+| 2 | Series RLC per metre (distributed) | F1 = R (Ω/m), F2 = L (H/m), F3 = C (F/m), each times the segment length (FND-280) |
+| 3 | Parallel RLC per metre (distributed) | F1 = R (Ω/m), F2 = L (H/m), F3 = C (F/m), each times the segment length (FND-280) |
 | 4 | Series impedance Z = R + jX | F1 = R (Ω), F2 = X (Ω) |
 | 5 | Wire conductivity (distributed) | F1 = σ (S/m) |
 
-Example: `LD 4 1 26 26 50.0 -j100.0` applies a 50 − j100 Ω load to tag 1, segment 26.
+Example: `LD 4 1 26 26 50.0 -100.0` applies a 50 − j100 Ω load to tag 1, segment 26 (F2 is the reactance as a plain number; `-j100.0` is refused: `LD field 6: cannot parse '-j100.0'`).
 
 ### Transmission line (TL) and network (NT) card support
 

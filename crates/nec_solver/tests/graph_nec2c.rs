@@ -150,13 +150,23 @@ fn a_stem_fed_t_converges_to_nec2c() {
 
 /// A dipole fed off-centre on one arm with a 2 m stub hanging from its centre:
 /// the feed and the junction are on different sections, and the stub carries the
-/// current the junction rows must split. Kill criterion: under 4 % at 41,
-/// shrinking. Measured 9.26 → 5.11 → 2.94 %.
+/// current the junction rows must split. Kill criterion: under 1.5 % at 63,
+/// shrinking.
+///
+/// FND-296: one antenna at 21 and 63 per wire (the feed on segment 5 and 14, the
+/// same point) against ONE reference, nec2c's 21-deck at 27 × (`EK 0`,
+/// `scripts/nec2c-converged-series.py --ek --to 27`, captured 2026-10-23; 1 / 3 /
+/// 9 / 27 ×: 89.832 + j38.39, 90.072 + j38.696, 90.171 + j38.898, 90.179 +
+/// j39.049). Its X still moves 0.15 Ω a tripling, a tail of about 0.45 Ω
+/// (0.46 %), and the gate is three times that. fnec reads 2.23 → 1.00 %. It was
+/// 21 against nec2c's 21-mesh and 41 (feed 8, another point) against its own
+/// 41-mesh value, 4 % at 41: nec2c moved 2.8 % between those two antennas.
 ///
 /// A regression gate, not evidence for the graph: the per-wire fallback passes
-/// it too (4.29 → 2.87 % with the route switched off), because a feed mid-arm
-/// with the stub at the current maximum leaves the junction rows little to get
-/// wrong. The other decks here fail with the route off.
+/// it too (4.29 → 2.87 % against the old same-mesh pair with the route switched
+/// off), because a feed mid-arm with the stub at the current maximum leaves the
+/// junction rows little to get wrong. The other decks here fail with the route
+/// off.
 #[test]
 fn a_dipole_with_a_centre_stub_converges_to_nec2c() {
     let deck = |n: u32, seg: u32| {
@@ -165,9 +175,10 @@ fn a_dipole_with_a_centre_stub_converges_to_nec2c() {
              GW 3 {n} 0 0 0 0 0 -2 .001\nGE 0\nEX 0 2 {seg} 0 1 0\n"
         )
     };
-    let e21 = rel(z_in(&deck(21, 5), (2, 5)), Complex64::new(89.832, 38.39));
-    let e41 = rel(z_in(&deck(41, 8), (2, 8)), Complex64::new(87.144, 37.64));
-    assert_converges("T-dipole", e21, e41, 0.04);
+    let nec2c = Complex64::new(90.179, 39.049);
+    let e21 = rel(z_in(&deck(21, 5), (2, 5)), nec2c);
+    let e63 = rel(z_in(&deck(63, 14), (2, 14)), nec2c);
+    assert_converges("T-dipole", e21, e63, 0.015);
 }
 
 /// A T fed on the segment touching its node. The junction-feed caveat called
@@ -608,19 +619,30 @@ fn the_h_keeps_its_same_mesh_gap_to_nec2c() {
 }
 
 /// A folded monopole, both legs grounded: doubled, a closed loop. No degree-3
-/// node, so no junction-condition gap; against nec2c GN 1, 0.73 → 0.49 % at
-/// 21/5 → 41/9. Kill criterion: under 1 % at 41, shrinking.
+/// node, so no junction-condition gap. Kill criterion: under 1 % at 63,
+/// shrinking.
+///
+/// FND-296: one antenna at 21 and 63 per leg (the feed at the base, segment 1
+/// and its centre point's segment 2) against ONE reference, nec2c GN 1 on the
+/// 21-deck at 27 × (`EK 0`, `scripts/nec2c-converged-series.py --ek --to 27`,
+/// captured 2026-10-23; 1 / 3 / 9 / 27 ×: 172.38 + j103.84, 173.13 + j103.42,
+/// 173.5 + j103.21, 173.65 + j102.95). Its last step is 0.30 Ω (0.15 %), a
+/// seventh of the band; X's step grew there (0.21 → 0.26 Ω), so no tail is
+/// priced and the band stands at 1 %. fnec reads 0.91 → 0.42 %. It was 21/5
+/// and 41/9 each against nec2c on its own mesh, which moved 1.1 % between them —
+/// more than the band.
 #[test]
 fn a_folded_monopole_on_ground_converges_to_nec2c() {
-    let deck = |n: u32, m: u32| {
+    let deck = |n: u32, m: u32, feed: u32| {
         format!(
             "GW 1 {n} 0 0 0 0 0 5 .001\nGW 2 {m} 0 0 5 1 0 5 .001\nGW 3 {n} 1 0 5 1 0 0 .001\n\
-             GE 1\nGN 1\nEX 0 1 1 0 1 0\n"
+             GE 1\nGN 1\nEX 0 1 {feed} 0 1 0\n"
         )
     };
-    let e21 = rel(z_in(&deck(21, 5), (1, 1)), Complex64::new(172.38, 103.84));
-    let e41 = rel(z_in(&deck(41, 9), (1, 1)), Complex64::new(174.54, 102.49));
-    assert_converges("folded monopole on GN 1", e21, e41, 0.01);
+    let nec2c = Complex64::new(173.65, 102.95);
+    let e21 = rel(z_in(&deck(21, 5, 1), (1, 1)), nec2c);
+    let e63 = rel(z_in(&deck(63, 15, 2), (1, 2)), nec2c);
+    assert_converges("folded monopole on GN 1", e21, e63, 0.01);
 }
 
 /// The route flags and the topology caveat ask about the solve that runs — the

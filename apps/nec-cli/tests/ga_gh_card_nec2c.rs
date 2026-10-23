@@ -146,6 +146,17 @@ fn a_full_circle_closes_and_converges_to_nec2c() {
 /// A gentle two-turn helix (S 0.3, HL 0.6, radius 0.1, wire 0.5 mm): nec2c
 /// 12.024 − j117.25 at 40 segments, 12.027 − j110.81 at 120. (A tight coil is no
 /// gate: nec2c's own answer for one crosses a resonance as its mesh is refined.)
+///
+/// FND-296: the reference was the 120-segment point, which nec2c's own next
+/// tripling moves 1.2 Ω — past the 1 % (1.1 Ω) band. It is now nec2c at 1080
+/// segments, the feed held at the same point (segment 20 / 59 / 176 / 527),
+/// `EK 0` (3.5 radii a segment at 360, 1.2 at 1080 — under the thin-wire limit),
+/// captured 2026-10-23: 12.024 − j117.26, 12.026 − j110.82, 11.997 − j109.68,
+/// 11.957 − j109.46 at 40 / 120 / 360 / 1080; the last step 0.22 Ω, a tail of
+/// about 0.05. fnec's MPIE reads 12.096 − j117.67, 12.048 − j111.32, 12.005 −
+/// j110.05 at 40 / 120 / 360 (measured 2026-10-23): 1.7 % from that limit at 120,
+/// 0.53 % at 360, heading for about −j109.73. So the gate is held at 360, where
+/// the 1 % band is nearly twice fnec's distance.
 #[test]
 fn a_helix_is_its_polygon_and_converges_to_nec2c() {
     let helix = |n: u32| format!("GH 1 {n} 0.3 0.6 0.1 0.1 0.1 0.1 .0005");
@@ -167,8 +178,8 @@ fn a_helix_is_its_polygon_and_converges_to_nec2c() {
         mpie(&deck(&polygon(&points, 0.0005), 20)),
         "GH vs its GW polygon",
     );
-    let zs = [mpie(&deck(&helix(40), 20)), mpie(&deck(&helix(120), 59))];
-    converges(&zs, (12.027, -110.81), 0.01, "helix");
+    let zs = [mpie(&deck(&helix(40), 20)), mpie(&deck(&helix(360), 176))];
+    converges(&zs, (11.957, -109.46), 0.01, "helix");
 }
 
 /// The cards compose as nec2c composes them: a quarter arc turned into the xy

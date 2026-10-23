@@ -263,7 +263,9 @@ The wgpu tests run unconditionally in CI (`--features wgpu` is always set for th
 `nec_accel` crate).  On bare-metal CI runners without a GPU or software rasterizer:
 
 - `wgpu_noop_compute_pipeline_succeeds_or_skips_gracefully` returns
-  `NoOpPipelineResult::NoAdapterAvailable` and the test passes vacuously.
+  `NoOpPipelineResult::NoAdapterAvailable` and the test skips, printing
+  `SKIPPED: no wgpu adapter`. A found adapter whose device request (or the RP
+  kernel's readback) fails is `DeviceFailed`, which fails the test (FND-296).
 - All other wgpu tests degrade gracefully (they accept CPU fallback paths).
 
 No backend-specific CI flags are required for any of the four validated backends.

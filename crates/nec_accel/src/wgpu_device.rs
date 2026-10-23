@@ -600,13 +600,17 @@ pub async fn enumerate_compute_adapters() -> Vec<AdapterInfo> {
 }
 
 /// Result of `run_noop_compute_pipeline`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoOpPipelineResult {
     /// The no-op compute pipeline was compiled, dispatched, and submitted successfully.
     Success,
-    /// No suitable adapter (or device) could be acquired — expected on bare CI hosts
-    /// without a software rasterizer.  Not an error; callers should skip, not fail.
+    /// No adapter could be acquired — expected on bare CI hosts without a
+    /// software rasterizer.  Not an error; callers should skip, not fail.
     NoAdapterAvailable,
+    /// An adapter was found but the device request failed: a broken driver or
+    /// stack, which a caller must not read as "no adapter" (FND-296, FND-163's
+    /// shape).
+    DeviceFailed(String),
 }
 
 /// Minimal WGSL compute shader — one thread group, no I/O, no-op body.
@@ -647,7 +651,7 @@ pub async fn run_noop_compute_pipeline() -> NoOpPipelineResult {
             ..Default::default()
         })) {
             Ok(dq) => dq,
-            Err(_) => return NoOpPipelineResult::NoAdapterAvailable,
+            Err(e) => return NoOpPipelineResult::DeviceFailed(format!("request_device: {e}")),
         };
     drop(init);
 
@@ -712,7 +716,11 @@ pub struct RpGpuResult {
 #[derive(Debug, Clone)]
 pub enum RpPipelineResult {
     Success(RpGpuResult),
+    /// No adapter could be acquired: a legitimate skip.
     NoAdapterAvailable,
+    /// An adapter was found but the device request or the readback failed —
+    /// a failure, never a skip (FND-296).
+    DeviceFailed(String),
 }
 
 /// Segment layout expected by the WGSL shader (AoS, f32, 8 floats).
@@ -765,7 +773,8 @@ const RP_BATCH_WGSL: &str = include_str!("shaders/rp_farfield_batch.wgsl");
 /// * `phi_deg`   — azimuth angle in degrees
 ///
 /// Returns `RpPipelineResult::NoAdapterAvailable` when no wgpu adapter can be
-/// obtained (headless CI without software rasterizer).
+/// obtained (headless CI without software rasterizer), and `DeviceFailed` when
+/// one is found but its device or the readback fails.
 pub async fn run_rp_farfield_wgpu(
     segments: &[crate::kernel_reference::GpuSegment],
     currents: &[num_complex::Complex64],
@@ -796,7 +805,7 @@ pub async fn run_rp_farfield_wgpu(
             ..Default::default()
         })) {
             Ok(dq) => dq,
-            Err(_) => return RpPipelineResult::NoAdapterAvailable,
+            Err(e) => return RpPipelineResult::DeviceFailed(format!("request_device: {e}")),
         };
     drop(init);
 
@@ -978,11 +987,11 @@ pub async fn run_rp_farfield_wgpu(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    if await_map(&device, &rx).is_err() {
-        return RpPipelineResult::NoAdapterAvailable;
+    if let Err(e) = await_map(&device, &rx) {
+        return RpPipelineResult::DeviceFailed(format!("readback map: {e}"));
     }
     let Ok(raw) = slice.get_mapped_range() else {
-        return RpPipelineResult::NoAdapterAvailable;
+        return RpPipelineResult::DeviceFailed("readback: mapped range unavailable".into());
     };
     let vals: &[f32] = bytemuck::cast_slice(&raw[..8]);
     let u_theta = vals[0] as f64;

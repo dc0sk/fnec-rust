@@ -133,6 +133,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   stood behind their pattern references; rewritten to the 8-field card, re-run on
   nec2c 1.3.1 (same samples), and `dipole-ground-rp-51seg` is now gated against
   nec2c too (16 corpus cases external, was 15).
+- **The docs say what the code does** (FND-295). The cli-guide's `LD` table
+  read types 2 and 3 as lumped series RL / RC (they are series / parallel RLC per
+  metre, FND-280; so did the card matrix's field table), and its example
+  `LD 4 1 26 26 50.0 -j100.0` is refused — it reads `LD 4 1 26 26 50.0 -100.0`.
+  The automation guide's exit-code table, two tables run together, gave 2 for an
+  undefined `$VAR`, which exits 1 (a usage error is 2). The card matrix's `GN 1`
+  row said loaded plane-wave decks are refused (they solve, FND-197). The README
+  described `GE`/`GN` before FND-241/242 and quoted figures from before FND-227;
+  re-measured. `traceability-matrix.md` cited 13 functions that no longer exist
+  and `implementation-map.md` a deleted file, with 35 source files missing; the
+  test catalog listed `sommerfeld_ground_cli.rs` twice, which its count checker
+  passed because a later row overwrote the first — it now refuses a duplicate.
+  `gpu-arch.md` said CI runs the GPU tests on a software rasterizer: no CI job has
+  an adapter, so there they skip and GPU-vs-CPU gates compare the CPU with
+  itself; it now says so. `json-output-schema.md` promised a `schema_version`
+  field fnec never emitted.
+- **Validation gates that could not fail on the defect they guard** (FND-289,
+  FND-296). The MPIE's perfect-ground gate held a Python oracle's 5.87 Ω that
+  shared FND-157's defect, and five other gates (the vertical dipole over
+  `GN 2`, the inverted V over ground, the free-space dipole, a helix, a bend fed
+  beside it) held bands wide enough, or references unconverged enough, that the
+  defect or a 1 % solver error passed; each is now held to nec2c's converged value
+  or documented where nec2c has none. Several tests that asserted only what
+  stderr lacked passed on a refusal — two `TL` tests ran fnec's retired layout —
+  and now show the deck solved. A GPU test skips only on a genuinely absent
+  adapter: a failed device request or readback on a found one is a failure.
 
 ## [0.25.0] — 2026-10-22 — Where wires meet
 

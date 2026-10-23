@@ -68,7 +68,7 @@ validation target alongside the `x86_64` workstation.
 | Rust integration | Native (`wgpu` crate, `wgpu-hal`) | `opencl3` / `ocl` crates, C-FFI | `cust` / bindgen, NVIDIA-only |
 | Portability | Vulkan + Metal + DX12 + OpenCL in one API | OpenCL only | NVIDIA-only |
 | Shader language | WGSL (portable, typed, auditable) | OpenCL C / SPIR-V | CUDA C++ |
-| CI without GPU | Software rasterizer (`wgpu` in headless mode) | No standard soft path | No |
+| CI without GPU | A software adapter is possible (`lavapipe`), but fnec's CI installs none: see below | No standard soft path | No |
 | License compatibility | MIT/Apache 2.0 | Mixed | Proprietary |
 | Maintenance trajectory | Active, backed by gfx-rs / WebGPU standard | Stable but declining | Proprietary |
 
@@ -78,8 +78,15 @@ require a policy exception.
 
 **CI without GPU hardware**: wgpu can run compute shaders against a software
 rasterizer (e.g. `lavapipe` on Linux or wgpu's `dx12` software adapter on
-Windows).  This enables GPU-path unit and integration tests in CI without
-needing GPU runners, which is critical for the corpus tolerance gate.
+Windows), but **fnec's CI runners have no wgpu adapter at all**: no job installs
+a Vulkan driver, lavapipe included (`.github/workflows/ci.yml`, whose coverage
+job says so). So in CI the wgpu tests skip and say so (`SKIPPED: no wgpu
+adapter`), the GPU gates that compare a device solve with the CPU decline to the
+CPU and compare the CPU with itself, and the wgpu dispatch paths stay uncovered.
+The GPU paths are verified only where an adapter exists — the maintainer's GPU
+host, where `scripts/check-all.sh` runs every GPU gate and a device failure on a
+found adapter is a failure, not a skip (FND-163, FND-296). Installing lavapipe
+in CI would close that gap; it is not done (FND-295).
 
 ---
 
@@ -131,7 +138,7 @@ skipped.**
 | Gate | Description | Criterion |
 |:-----|:------------|:----------|
 | **G1** Architecture locked | This document merged and reviewed | `docs/gpu-arch.md` in `main` |
-| **G2** wgpu scaffold | `wgpu` added to `nec_accel/Cargo.toml`; device enumeration compiles and runs in CI (software adapter) | `cargo test -p nec_accel` passes with wgpu present |
+| **G2** wgpu scaffold | `wgpu` added to `nec_accel/Cargo.toml`; device enumeration compiles and runs in CI (no adapter there: enumeration returns none, and the no-op pipeline skips) | `cargo test -p nec_accel` passes with wgpu present |
 | **G3** RP WGSL kernel | First real WGSL compute shader for RP gain; numerical parity test passes | RP results match CPU stub within tolerance on `dipole-freesp-rp-51seg`; CI green |
 | **G4** CLI integration | `--exec gpu` routes RP computation through wgpu kernel when adapter available | Integration test: `FNEC_FORCE_WGPU=1 fnec --exec gpu dipole-freesp-rp-51seg.nec` produces RP output within tolerance |
 | **G5** CPU-vs-GPU benchmark | Benchmark both paths on RP-heavy deck; assert GPU ≥ 0.8× CPU on large RP grid (regression: GPU cannot be >20% slower than CPU) | Benchmark gate added to `scripts/pi-benchmark-compare.sh` |
@@ -157,8 +164,9 @@ real-hardware validation must be complete:
 
 Both targets are already in the benchmark matrix (`docs/benchmarks.md`).
 
-**Rationale**: a GPU kernel that passes in CI (software rasterizer) but fails
-on real hardware is a regression in disguise.  The Pi5 target is included
+**Rationale**: a GPU kernel that passes on a software rasterizer but fails on
+real hardware is a regression in disguise (and fnec's CI has no adapter at all,
+so CI is no GPU evidence).  The Pi5 target is included
 because VideoCore VII is a distinct GPU architecture (tile-based deferred
 rasterization) and may expose floating-point precision differences not visible
 on desktop discrete GPUs.
@@ -203,7 +211,9 @@ gate:
    and GPU paths.
 
 4. `cargo test` must pass in CI (no GPU hardware) without any `#[ignore]`
-   attributes on GPU-path tests — the software rasterizer covers this.
+   attributes on GPU-path tests: there a GPU test skips on a genuinely absent
+   adapter and says so. No software rasterizer is installed in CI, so this is
+   not GPU coverage; the GPU host's gate run is.
 
 5. `FNEC_ACCEL_STUB_GPU=1` remains as a regression escape hatch for the CPU-
    emulation path; it is distinct from the real wgpu path.

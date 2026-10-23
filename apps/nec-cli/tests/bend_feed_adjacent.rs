@@ -110,16 +110,22 @@ fn a_vanishing_bend_beside_the_feed_is_the_straight_join() {
     }
 }
 
-/// A real bend, fed beside it, against nec2c at 27 × the mesh, thin kernel
-/// (`scripts/nec2c-converged-series.py`; 64.519, 64.271, 64.412, 64.518 at 1, 3, 9
-/// and 27 ×): 64.518 + j34.82 Ω at 1 rad. Hallén sits 1.18 % low in R, with the
-/// straight dipole's 1.26 % (81.079 against 80.057); before the fix it was 1.86 %
-/// low (63.316). 81 × needs nec2c's extended kernel (3.26 radii per corner
-/// segment, FND-267's regime) and is not the reference.
+/// A real bend, fed beside it, against nec2c's converged value at 1 rad: 81 ×
+/// the mesh, extended kernel (`scripts/nec2c-converged-series.py --ek --to 81`,
+/// captured 2026-10-23; R 64.519, 64.271, 64.411, 64.513, 64.565 at 1 / 3 / 9 /
+/// 27 / 81 ×, the last step half the one before, a tail of 0.05 Ω): 64.565 +
+/// j34.833 Ω. It was the thin kernel's 27 × point, 64.518, whose last two steps
+/// (0.141, 0.106 Ω) left a 0.32 Ω (0.5 %) tail — wider than half this ±0.35 %
+/// band (FND-296). The 81 × corner segment is 3.26 radii, FND-267's regime, so
+/// it is taken with a thinner-wire control: at 0.2 mm the series keeps its shape
+/// (63.055, 63.118, 63.17, 63.197 at 3 / 9 / 27 / 81 ×, steps 0.063, 0.052,
+/// 0.027 against 0.140, 0.102, 0.052). Hallén sits about 1.25 % low in R, with
+/// the straight dipole's 1.26 % (81.079 against 80.057); before the fix it was
+/// 1.9 % low (63.316).
 #[test]
 fn a_real_bend_fed_beside_it_sits_with_the_straight_offset() {
     let (r, _) = z_in(&deck(1.0, 0, 10));
-    let off = (r - 64.518) / 64.518;
+    let off = (r - 64.565) / 64.565;
     assert!(
         (-0.016..-0.009).contains(&off),
         "{r}: {off:.4} from converged nec2c"
