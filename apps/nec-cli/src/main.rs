@@ -7,6 +7,7 @@ mod exec_calibration;
 mod exec_profile;
 mod kernel;
 mod laplace_config;
+mod match_cmd;
 mod nec2d_out;
 mod project_cmd;
 mod resonance_search;
@@ -226,6 +227,12 @@ fn main() -> ExitCode {
     // --- taper subcommand (Leeson step-tapered-radius correction) -----------
     if args.get(1).map(String::as_str) == Some("taper") {
         return run_taper_subcommand(&args);
+    }
+    // ------------------------------------------------------------------------
+
+    // --- match subcommand (L-network matching, GAP-012 / BL-IMPR-017) --------
+    if args.get(1).map(String::as_str) == Some("match") {
+        return match_cmd::run(&args);
     }
     // ------------------------------------------------------------------------
 

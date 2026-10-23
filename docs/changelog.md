@@ -15,6 +15,24 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ## [Unreleased]
 
+### Added
+
+- **`fnec match` — the L-network matching helper** (GAP-012 / BL-IMPR-017,
+  FR-012). Given a feedpoint impedance — typed as `--z <R>[+-]j<X>` at
+  `--freq <MHz>`, or solved from a deck by the main command with every solve
+  option — and a target (`--target`, default 50 Ω, complex allowed), it prints
+  every lossless L-network that presents the target at the feedpoint: both
+  topologies, both roots, up to four, each with its component values at the
+  frequency, its reactances, its loaded Q and its input impedance recomputed
+  from the components. A one-element match is reported once with no rounding
+  residue as a component; an already-matched load says so; a feedpoint
+  resistance that is not positive is refused by name. Text and
+  `--output-format json` (`fnec-match/1`). The math is
+  `nec_solver::lnetwork`; the deck route runs the main command itself, so a
+  deck is refused with the main command's sentence. No NEC cards are written:
+  the automation guide shows the `LD 0` + `NT` recipe, which the contract
+  test round-trips on the corpus monopole (50.000000 − j0.000016 Ω).
+
 ## [0.25.0] — 2026-10-22 — Where wires meet
 
 ### Changed

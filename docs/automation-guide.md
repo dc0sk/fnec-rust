@@ -17,8 +17,9 @@ pipelines.  It assumes familiarity with the basic CLI options documented in
 2. [Batch frequency sweeps](#2-batch-frequency-sweeps)
 3. [Variable template workflows](#3-variable-template-workflows)
 4. [Resonance targeting](#4-resonance-targeting)
-5. [Optimizer loops](#5-optimizer-loops)
-6. [End-to-end example: optimise wire length for minimum SWR](#6-end-to-end-example-optimise-wire-length-for-minimum-swr)
+5. [Matching networks](#5-matching-networks)
+6. [Optimizer loops](#6-optimizer-loops)
+7. [End-to-end example: optimise wire length for minimum SWR](#7-end-to-end-example-optimise-wire-length-for-minimum-swr)
 
 ---
 
@@ -220,7 +221,112 @@ frequency, rather than sweeping a range and interpolating manually.
 
 ---
 
-## 5. Optimizer loops
+## 5. Matching networks
+
+`fnec match` gives the component values of every lossless L-network that
+presents a target impedance (50 Ω by default) at a feedpoint — from an impedance
+you type, or from a deck it solves through the main command:
+
+```sh
+fnec match --z 73+j42 --freq 14.2            # typed impedance
+fnec match corpus/monopole-pec-26seg.nec     # solved from the deck, 50 Ω target
+fnec match antenna.nec --solver mpie --target 75
+```
+
+A worked example, on the corpus's quarter-wave monopole over perfect ground:
+
+```console
+$ fnec match corpus/monopole-pec-26seg.nec 2>/dev/null
+MATCH_RESULT
+FREQ_MHZ 14.200000
+Z_LOAD 39.531878 22.650540
+Z_TARGET 50.000000 0.000000
+SOLUTIONS 4
+SOLUTION 1 TOPOLOGY series-first SHUNT C 1.1535128670e-10 X_SHUNT -97.164886 SERIES C 4.8564822170e-9 X_SERIES -2.307863 Q 0.515 Z_IN 50.000000 0.000000
+SOLUTION 2 TOPOLOGY series-first SHUNT L 1.0890332288e-6 X_SHUNT 97.164886 SERIES C 2.6069448387e-10 X_SERIES -42.993217 Q 0.515 Z_IN 50.000000 -0.000000
+SOLUTION 3 TOPOLOGY shunt-first SHUNT C 1.7012155130e-10 X_SHUNT -65.882861 SERIES L 1.2555905265e-7 X_SERIES 11.202533 Q 0.224 Z_IN 50.000000 -0.000000
+SOLUTION 4 TOPOLOGY shunt-first SHUNT C 7.4475611118e-11 X_SHUNT -150.493489 SERIES C 1.0004964322e-9 X_SERIES -11.202533 Q 0.224 Z_IN 50.000000 0.000000
+```
+
+(The deck's warnings and `diag:` line go to stderr, as on a plain solve.) The
+`series-first` networks put the series element at the feedpoint and the shunt
+across the source side; `shunt-first` the other way round. `Z_IN` is each
+network's input impedance recomputed from its own component values. Pick by
+what you can build: solution 3 is a 170 pF shunt capacitor at the feedpoint and
+a 126 nH series inductor toward the line, at the lowest Q.
+
+### Checking a solution in the deck (`LD 0` + `NT`)
+
+`fnec match` writes no NEC cards. A `series-first` solution goes into the deck
+as two cards on the **feed segment** — the series element as a lumped series
+load (`LD 0`), and the shunt element as a one-port network across the feed gap
+(`NT` with both ports on the feed segment, whose single admittance is then
+`Y11`):
+
+```
+LD 0 <tag> <seg> <seg> 0 <L_series> <C_series>      (omit the one that is "none"; 0 = absent)
+NT <tag> <seg> <tag> <seg> 0 <B_shunt> 0 0 0 0
+```
+
+with `B_shunt = 2πf·C_shunt` for a shunt capacitor and `B_shunt = −1/(2πf·L_shunt)`
+for a shunt inductor, in siemens at the deck's frequency. For the monopole's
+solution 1 at 14.2 MHz (`ω = 2π·14.2e6 = 8.9221e7 rad/s`), `B = ω·1.1535129e-10
+= 1.029179e-2 S`:
+
+```
+GW 1 26 0 0 0 0 0 5.282 0.001
+GE 1
+GN 1
+LD 0 1 1 1 0 0 4.856482e-09
+NT 1 1 1 1 0 1.029179e-02 0 0 0 0
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 14.2 0
+EN
+```
+
+```console
+$ fnec --output-format json monopole-matched.nec 2>/dev/null
+[{"freq_mhz":14.2,"tag":1,"seg":1,"z_re":49.999999935618355,"z_im":-0.000016354833868653675,...}]
+```
+
+The main command then reports the target, 50.000000 − j0.000016 Ω (measured
+2026-10-23; the residue is the six printed digits of the card values). A
+`shunt-first` solution cannot be written this way: NEC's `NT` sits across the
+feed gap in parallel with the source, and `LD` sits in the feed segment, so
+only the series-at-the-feedpoint order is expressible on one segment — check a
+`shunt-first` network by its printed `Z_IN`.
+
+The contract test `apps/nec-cli/tests/match_contract.rs` (`m7b_…`) does exactly
+this round trip on every run: it writes solution 1 into the monopole deck and
+asserts the main command reports 50 Ω within 1e-3.
+
+### JSON and scripting
+
+`--output-format json` gives the [`fnec-match/1`](json-output-schema.md#fnec-match-output-fnec-match1)
+document, one block per frequency point, with every component value at full
+precision:
+
+```python
+import json, subprocess
+
+out = subprocess.run(
+    ["fnec", "match", "antenna.nec", "--target", "50", "--output-format", "json"],
+    capture_output=True, text=True, check=True,
+)
+doc = json.loads(out.stdout)
+for block in doc["blocks"]:
+    best = min(block["solutions"], key=lambda s: s["q"])
+    print(block["freq_mhz"], best["topology"], best["shunt"], best["series"])
+```
+
+Exit code **0** with solutions or an already-matched load (`SOLUTIONS 0`,
+`NOTE already matched`); **1** when the feedpoint resistance is not positive
+(no passive network exists; the error names the resistance) or the deck is
+refused; **2** for a usage error.
+
+---
+
+## 6. Optimizer loops
 
 For multi-parameter optimisation or custom objective functions, drive `fnec`
 directly from Python (or any language) by parsing the JSON output:
@@ -307,7 +413,7 @@ The Python binding interface is documented in
 
 ---
 
-## 6. End-to-end example: optimise wire length for minimum SWR
+## 7. End-to-end example: optimise wire length for minimum SWR
 
 The script [`examples/optimize_swr.py`](../examples/optimize_swr.py) is a
 self-contained, runnable example that drives `fnec` via subprocess to find the
@@ -382,7 +488,7 @@ Result:
 | Exit code | Meaning |
 |:---------:|:--------|
 | 0 | Success (or resonance search reached max iterations with a warning) |
-| 1 | Solver error, I/O error, or bracketing failure |
+| 1 | Solver error, I/O error, bracketing failure, or a feedpoint no passive network matches (`fnec match`) |
 | 2 | Usage error (unknown flag, missing argument, undefined `$VAR`) |
 
 ---
