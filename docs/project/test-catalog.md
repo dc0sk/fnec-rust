@@ -28,6 +28,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/converge_contract.rs` | 10 | GAP-012, BL-IMPR-017 — `fnec converge`, the convergence-study helper, through the binary: the worked example (dipole 51 → 153 → 459: 1× is the main command's answer and 3× the `scripts/nec2c-fine-mesh.py` deck's, to 1e-9 Ω; steps, tail and extrapolation recomputed; settled); an end reference keeps its end by default (monopole base feed 1 → 1, the hand-written 78-segment deck) and takes the centre under `--ends centre` (the script's deck); a feed beside a join diverges, exit 0, with the end note; two meshes are undecided; the refusals and their exit codes (receiving antenna, tag 0 with a segment, a one-segment wire under keep, bad factor lists, any segment under 2 radii at a factor, MAX_SEGMENTS, the main command's sentence at 1× and on a refined mesh, options it does not take); lumped ranges become points, per-metre ranges lengths, a port's 0 resolves before mapping; a GM copy maps inside the copy; on all 11 converged corpus decks `--ends centre` at 3× is the script's deck; the JSON shape, stable across runs; each mesh's caveats under its own `mesh Nx:` prefix | FR-010, GAP-012 |
 | `apps/nec-cli/tests/converged_reference.rs` | 8 | FND-232, FND-255, FND-256, FND-265, FND-267 — the corpus's nec2c references are nec2c on a 9× or 27× mesh: exactly the 11 expected cases carry a series, each settles within its case's gate (the drift left past its last point ≤ ⅓ of the External tolerance, on R and X), on one recorded kernel (an extended-kernel series agrees with the thin kernel at 9× within a tenth), with the reference its last point; the settle rule refuses the FND-252 5:1-step series and split-V's old 9× series; nec2c's series at the H (diverging), the tee and the T through a bar (log drift) are pinned as data, against a settling Y; fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh.; the receive series in `corpus/series/`: nec2c's T-node current drifts (log drift), and nec2c breaks at an inverted-L's corner below about 9 radii (the 1 mm 27× step over four times the 9× step; a 0.2 mm control breaks at 81×), while the T's 0.2 mm control keeps shrinking | FND-232 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
@@ -63,6 +64,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/ld_loads_per_basis.rs` | 2 | `LD` on sinusoidal/pulse/continuity: feed load shifts Z by exactly Z_L on every basis and pulse-RHS mode; off-feed sinusoidal load vs nec2c (FND-124) | PRT-002 |
 | `apps/nec-cli/tests/loaded_case_tracking.rs` | 2 | Loaded non-collinear topology solves; `--allow-noncollinear` no-op | DEC-010 |
 | `apps/nec-cli/tests/loads_config_validation.rs` | 3 | FND-204/207: a `--loads-config` load naming no segment, and a malformed loads file (unknown key or table, missing or non-integer index, no loads), are refused by name; explicit 0 = all and a single-segment load still apply. | FND-204, FND-207 |
+| `apps/nec-cli/tests/match_contract.rs` | 12 | `fnec match` — the L-network matching helper (GAP-012 / BL-IMPR-017): the component values that present a target at a feedpoint, typed (`--z`) or solved from a deck, as text and as `fnec-match/1` JSON; every solution's input impedance recomputed from the printed components; the deck route is the main command (its JSON impedance, its `LD 9` refusal, its negative-resistance deck), and a solution written into the monopole deck as `LD 0` + `NT` solves to the target | FR-012, GAP-012 |
 | `apps/nec-cli/tests/mpie_multi_source.rs` | 1 | FND-202: two fed dipoles on `--solver mpie` match nec2c on both ports, in phase and antiphase, at two meshes. | FND-202 |
 | `apps/nec-cli/tests/mpie_ground_image.rs` | 3 | FND-238 / FND-239 — `--solver mpie` near a ground is within 3 % / 1.2 % of nec2c's converged value at 1× / 3× and the finer is nearer: over a perfect ground (an L bent 0.05 m and 0.3 m up, a vertical dipole 0.05 m up) and over `GN 2` (an L 0.05 m up, four radials 0.1 m up, a vertical dipole 0.05 m up, none with a caveat); a σ = 10⁷ ground reads as `GN 1`, and sea water as the removed potential-form path (nec2c is no reference there) | FND-238, FND-239 |
 | `apps/nec-cli/tests/mpie_mixed_radii.rs` | 4 | PH10-CHK-003, FND-252 — the MPIE takes each segment's own radius: a Yagi's 10 mm reflector and 2 mm driven element converge to nec2c (its extended kernel at the finest mesh); a radius step's reactance matches the first-order closed form on both solvers; a stepped Yagi element converges within 2 Ω R / 4 Ω X of its Leeson equivalent under nec2c on both, Hallén within 1 Ω of the MPIE; Hallén warns on a step beside a one-segment run, naming it, and not on a step the section graph takes, separate wires or a uniform wire | PH10-CHK-003 |
@@ -166,7 +168,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=851 --> **851** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=873 --> **873** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -177,21 +179,21 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 287 | loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 304 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 101 | app_state, model_doc, mesh, camera, solve |
-| `apps/nec-cli` | 50 | main, exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
+| `apps/nec-cli` | 53 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
 | `nec_parser` | 51 | lib (incl. the FND-236 card treatments, FND-237 comma fields, the PAR-011 program-card records, and the positional reading of FR/RP/GN/TL/NT/PT with its refusals, FND-283/284/285/287/298/300), template |
 | `nec_accel` | 40 | kernel_reference 20, lib 4, `wgpu_device` RUST_LOG filter 3 (FND-190), GPU wait timeout 5 (FND-196), failure backoff 3 (FND-234), `gpu_test` re-run policy 4 (FND-215) |
 | `nec_report` | 28 | lib 25, fortran 3 (NEC-2 FORMAT lines lifted from the kernel fixtures, records, edge cases) |
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=683 --> **683** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=703 --> **703** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1541 --> **1541** = 683 unit + 851 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1583 --> **1583** = 703 unit + 873 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 

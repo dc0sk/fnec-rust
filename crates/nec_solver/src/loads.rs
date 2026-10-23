@@ -285,7 +285,10 @@ fn parallel_rlc(r: f64, l: f64, c: f64, omega: f64) -> Complex64 {
 /// "all segments". Conductivity (type 5) is per metre, so its loss is on all
 /// three thirds — a flank takes it as the deck segment it is part of, judged by
 /// its parent centre beside it.
-fn segment_matches(ld: &LdCard, segs: &[Segment], i: usize) -> bool {
+///
+/// `pub(crate)` for `refine`, which expands a lumped load over a range into one
+/// load per deck segment by this rule, so the two cannot read a range apart.
+pub(crate) fn segment_matches(ld: &LdCard, segs: &[Segment], i: usize) -> bool {
     let seg = &segs[i];
     let subject = match seg.part {
         crate::geometry::SegmentPart::Flank { .. } if ld.load_type == 5 => {
