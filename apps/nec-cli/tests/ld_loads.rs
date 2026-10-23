@@ -136,6 +136,61 @@ fn unsupported_ld_type_is_refused() {
     );
 }
 
+/// A negative load type is refused by name (FND-292): NEC-2's `LD -1` clears the
+/// loads of an earlier run in a multi-run deck, which fnec's single run has no
+/// use for; nec2c 1.3.1 solved a 21-segment dipole carrying `LD 4 1 11 11 100 0`
+/// then `LD -1 0 0 0` to 1039.4 − j374.95 Ω ("LOADED TWICE"), and the same card
+/// alone to the plain dipole's 79.004 + j41.448. Refused alone and after a load;
+/// every type 0–5 still solves (the control).
+#[test]
+fn a_negative_ld_type_is_refused() {
+    let dipole = "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nEX 0 1 11 0 1.0 0.0\n";
+    let tail = "FR 0 1 0 0 29.9 0.0\nEN\n";
+    let run = |ld: &str, name: &str| {
+        let path = std::env::temp_dir().join(format!(
+            "fnec-ld-negative-{name}-{}.nec",
+            std::process::id()
+        ));
+        fs::write(&path, format!("{dipole}{ld}{tail}")).expect("write deck");
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .args(["--exec", "cpu"])
+            .arg(&path)
+            .output()
+            .expect("run fnec");
+        let _ = fs::remove_file(&path);
+        out
+    };
+    for (ld, name) in [
+        ("LD -1 0 0 0\n", "alone"),
+        ("LD 4 1 11 11 100 0\nLD -1 0 0 0\n", "after"),
+        ("LD -3 1 11 11 100 0\n", "minus3"),
+    ] {
+        let out = run(ld, name);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{name}: solved\n{stderr}");
+        assert!(
+            stderr.contains("clears the loads of an earlier run")
+                && stderr.contains("Remove the card"),
+            "{name}: {stderr}"
+        );
+    }
+    for ld in [
+        "LD 0 1 11 11 10 1e-7 1e-10\n",
+        "LD 1 1 11 11 1000 1e-6 1e-12\n",
+        "LD 2 1 11 11 10 1e-7 0\n",
+        "LD 3 1 11 11 1000 1e-6 1e-12\n",
+        "LD 4 1 11 11 100 0\n",
+        "LD 5 1 0 0 5.8e7\n",
+    ] {
+        let out = run(ld, "control");
+        assert!(
+            out.status.success(),
+            "{ld}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 #[test]
 fn ld_type1_parallel_r_is_supported_and_changes_impedance() {
     // Phase-2: LD type 1 (parallel RLC) is parsed and applied.

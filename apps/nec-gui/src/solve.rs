@@ -593,10 +593,14 @@ fn feedpoint_impedance(
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
             .ok_or("a current-source solve without a current source")?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in =
-            nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
-                .map_err(|e| e.to_string())?;
-        return Ok((z_in, ex.tag as usize, ex.segment as usize));
+        // The resolved segment's own `(tag, index)`: a tag-0 card names an absolute
+        // segment number (FND-282).
+        let (tag, seg) = nec_solver::find_deck_segment(segs, ex.tag, ex.segment)
+            .map(|i| (segs[i].tag, segs[i].tag_index))
+            .unwrap_or((ex.tag, ex.segment));
+        let z_in = nec_solver::feedpoint_impedance(v_port, i0, tag as usize, seg as usize)
+            .map_err(|e| e.to_string())?;
+        return Ok((z_in, tag as usize, seg as usize));
     }
 
     // Through the shared seam (FND-031). This loop took the first `EX` of any

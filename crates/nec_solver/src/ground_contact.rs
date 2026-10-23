@@ -85,11 +85,19 @@ pub(crate) fn doubled_segments(
 
     let n = segs.len();
     let max_tag = segs.iter().map(|s| s.tag).max().unwrap_or(0);
+    // An image is numbered after every original, as a tag-0 reference names it
+    // (`image_reference`, FND-282); a flank stays 0.
+    let n_deck = deck_segment_count(segs);
     let mirror = |p: [f64; 3]| [p[0], p[1], -p[2]];
     let mut doubled = segs.to_vec();
     doubled.extend(segs.iter().enumerate().map(|(i, s)| Segment {
         tag: s.tag + max_tag,
         tag_index: s.tag_index,
+        abs_index: if s.abs_index == 0 {
+            0
+        } else {
+            s.abs_index + n_deck
+        },
         global_index: n + i,
         start: mirror(s.start),
         end: mirror(s.end),
@@ -115,6 +123,23 @@ pub(crate) fn doubled_segments(
     Ok(Some((doubled, n)))
 }
 
+/// The number of deck segments in `segs` (flanks are not the deck's, FND-227).
+fn deck_segment_count(segs: &[Segment]) -> u32 {
+    segs.iter().filter(|s| s.is_deck_segment()).count() as u32
+}
+
+/// The image of a deck reference `(tag, seg)` in the doubled structure: a tagged
+/// reference moves to the image's tag (`tag + max_tag`, see `doubled_segments`),
+/// an absolute one (tag 0, FND-282) to the image numbered after every original
+/// (`seg + n_deck`). Segment 0 (an `LD` range's "all" / "same as first") stays 0.
+fn image_reference(tag: u32, seg: u32, max_tag: u32, n_deck: u32) -> (u32, u32) {
+    if tag == 0 {
+        (0, if seg == 0 { 0 } else { seg + n_deck })
+    } else {
+        (tag + max_tag, seg)
+    }
+}
+
 /// Build the image problem for a PEC-ground deck with ground contact.
 ///
 /// `Ok(None)`: not PEC ground, or nothing touches it — solve as usual.
@@ -138,8 +163,11 @@ pub fn pec_ground_contact(
         return Ok(None);
     };
     // The image segments' tags are offset by this (see `doubled_segments`); the
-    // mirrored sources and loads below name them the same way.
+    // mirrored sources and loads below name them the same way, through
+    // `image_reference`, which also carries a tag-0 (absolute) reference across.
     let max_tag = segs.iter().map(|s| s.tag).max().unwrap_or(0);
+    let n_deck = deck_segment_count(segs);
+    let image_ref = |tag: u32, seg: u32| image_reference(tag, seg, max_tag, n_deck);
     // The doubled problem is free space: no GN card and no GE reflection flag.
     let mut image_deck = deck.clone();
     image_deck
@@ -166,16 +194,23 @@ pub fn pec_ground_contact(
                 if ex.kind().feedpoint_role() == nec_model::card::FeedpointRole::DeltaGap =>
             {
                 let mut image = ex.clone();
-                image.tag += max_tag;
+                (image.tag, image.segment) = image_ref(ex.tag, ex.segment);
                 image.voltage_real = -ex.voltage_real;
                 image.voltage_imag = -ex.voltage_imag;
                 images.push(Card::Ex(image));
             }
-            // A series load's image is the same load. Tag 0 already applies to
-            // every tag, the images' included, so it must not be duplicated.
-            Card::Ld(ld) if ld.tag != 0 => {
+            // A series load's image is the same load. `LD t 0 0 0` already applies
+            // to every segment, the images' included, so it must not be duplicated;
+            // a tag-0 range names absolute segments, whose images follow the
+            // originals (FND-282).
+            Card::Ld(ld) if !(ld.tag == 0 && ld.seg_first == 0) => {
                 let mut image = ld.clone();
-                image.tag += max_tag;
+                let (tag, first) = image_ref(ld.tag, ld.seg_first);
+                image.tag = tag;
+                image.seg_first = first;
+                if ld.seg_last != 0 {
+                    image.seg_last = image_ref(ld.tag, ld.seg_last).1;
+                }
                 images.push(Card::Ld(image));
             }
             // A network's image joins the mirrored ports with the same card: in
@@ -184,20 +219,24 @@ pub fn pec_ground_contact(
             // its printed digits (TL, crossed TL, shunts, NT; FND-170 review).
             Card::Tl(tl) => {
                 let mut image = tl.clone();
-                image.tag1 += max_tag;
-                image.tag2 += max_tag;
+                (image.tag1, image.segment1) = image_ref(tl.tag1, tl.segment1);
+                (image.tag2, image.segment2) = image_ref(tl.tag2, tl.segment2);
                 images.push(Card::Tl(image));
             }
             Card::Nt(nt) => {
                 let mut image = nt.clone();
+                let int = |f: Option<&String>| {
+                    f.and_then(|f| f.parse::<f64>().ok())
+                        .filter(|v| v.fract() == 0.0 && *v >= 0.0)
+                        .map(|v| v as u32)
+                };
                 for i in [0, 2] {
-                    if let Some(tag) = image
-                        .raw_fields
-                        .get(i)
-                        .and_then(|f| f.parse::<f64>().ok())
-                        .filter(|v| v.fract() == 0.0 && *v > 0.0)
+                    if let (Some(tag), Some(seg)) =
+                        (int(nt.raw_fields.get(i)), int(nt.raw_fields.get(i + 1)))
                     {
-                        image.raw_fields[i] = format!("{}", tag as u32 + max_tag);
+                        let (t, s) = image_ref(tag, seg);
+                        image.raw_fields[i] = t.to_string();
+                        image.raw_fields[i + 1] = s.to_string();
                     }
                 }
                 images.push(Card::Nt(image));
@@ -212,4 +251,51 @@ pub fn pec_ground_contact(
         segs: doubled,
         n_orig: n,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one image rule (FND-282): a tagged reference moves to the image's tag,
+    /// an absolute one past every original deck segment, and an `LD` range's 0
+    /// ("all" / "same as first") stays 0.
+    #[test]
+    fn a_reference_maps_onto_its_image_one_way() {
+        assert_eq!(image_reference(1, 5, 2, 42), (3, 5));
+        assert_eq!(image_reference(2, 0, 2, 42), (4, 0));
+        assert_eq!(image_reference(0, 5, 2, 42), (0, 47));
+        assert_eq!(image_reference(0, 0, 2, 42), (0, 0));
+    }
+
+    /// An image's absolute number is the original's plus the number of DECK
+    /// segments — the refined geometry's flanks are not counted, and a flank's
+    /// image is numbered 0 like the flank.
+    #[test]
+    fn images_are_numbered_after_every_deck_segment() {
+        let deck = nec_parser::parse(
+            "CE\nGW 1 21 0 0 0 0 0 2.5 0.001\nGE 1\nGN 1\nEX 0 1 1 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n",
+        )
+        .expect("parses")
+        .deck;
+        let segs = crate::geometry::build_geometry(&deck).expect("builds");
+        assert!(segs.len() > 21, "the free top end is refined");
+        let (doubled, n) = doubled_segments(&segs, &GroundModel::PerfectConductor)
+            .expect("representable")
+            .expect("touches ground");
+        for (orig, image) in doubled[..n].iter().zip(&doubled[n..]) {
+            let want = if orig.abs_index == 0 {
+                0
+            } else {
+                orig.abs_index + 21
+            };
+            assert_eq!(image.abs_index, want);
+        }
+        let abs: Vec<u32> = doubled[n..]
+            .iter()
+            .filter(|s| s.is_deck_segment())
+            .map(|s| s.abs_index)
+            .collect();
+        assert_eq!(abs, (22..=42).collect::<Vec<_>>());
+    }
 }

@@ -91,9 +91,9 @@ pub enum ExcitationError {
 impl std::fmt::Display for ExcitationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExcitationError::SegmentNotFound { tag, segment } => {
-                write!(f, "EX: no segment with tag {tag}, index {segment}")
-            }
+            ExcitationError::SegmentNotFound { tag, segment } => f.write_str(
+                &crate::geometry::missing_reference_text("EX", *tag, *segment, None),
+            ),
             ExcitationError::UnsupportedType {
                 ex_type,
                 tag,

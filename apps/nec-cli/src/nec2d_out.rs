@@ -367,7 +367,7 @@ fn echoes(deck: &NecDeck) -> (Vec<EchoCard>, Vec<EchoCard>, bool) {
 }
 
 /// NEC-2's loading table rows from the deck's `LD` cards.
-fn load_rows(deck: &NecDeck) -> Vec<LoadRow> {
+fn load_rows(deck: &NecDeck, segs: &[Segment]) -> Vec<LoadRow> {
     deck.cards
         .iter()
         .filter_map(|c| match c {
@@ -385,6 +385,13 @@ fn load_rows(deck: &NecDeck) -> Vec<LoadRow> {
                 tag: i64::from(ld.tag),
                 from: i64::from(ld.seg_first),
                 thru: i64::from(ld.seg_last),
+                segments: segs
+                    .iter()
+                    .filter(|s| {
+                        nec_solver::deck_segment_in_range(s, ld.tag, ld.seg_first, ld.seg_last)
+                    })
+                    .map(|s| s.abs_index)
+                    .collect(),
                 values,
                 kind,
             }
@@ -462,7 +469,7 @@ pub(crate) fn render(
 ) -> Result<String, String> {
     let (structure, segs) = structure(text, deck)?;
     let (before, after, en_from_end_of_file) = echoes(deck);
-    let loads = load_rows(deck);
+    let loads = load_rows(deck, &segs);
     let mut blocks = Vec::new();
     for (report, elapsed) in points {
         let lambda = 299_792_458.0 / report.frequency_hz;

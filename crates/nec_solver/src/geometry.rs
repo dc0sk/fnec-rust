@@ -144,6 +144,7 @@ fn segment_between(
     let mut s = Segment {
         tag,
         tag_index: i + 1,
+        abs_index: 0,
         global_index: at,
         start,
         end,
@@ -257,6 +258,15 @@ pub struct Segment {
     /// copy reached the original instead (FND-135). Numbered here, once, so the
     /// twenty sites that resolve `(tag, segment)` agree with nec2c unchanged.
     pub tag_index: u32,
+    /// NEC's absolute segment number: the 1-based position of this segment among
+    /// the deck's segments in build order, as nec2c's SEGMENTATION DATA numbers
+    /// them and as a reference with tag 0 names them (`isegno(0, m)` returns `m`;
+    /// FND-282). fnec builds GW, GM, GR, GX, GA and GH in nec2c's order, so the
+    /// count is the same (pinned in `gm_nec2c.rs`, `tag_zero_nec2c.rs` and the
+    /// GA/GH segmentation test). A refined free end's flank (FND-227) is not a
+    /// deck segment and is numbered 0; its centre carries the deck segment's
+    /// number.
+    pub abs_index: u32,
     /// 0-based index in the global segment list.
     pub global_index: usize,
     /// Segment start point in metres.
@@ -334,7 +344,14 @@ impl Segment {
 }
 
 /// The index of the segment a deck card names as `(tag, segment)`, in NEC's
-/// numbering ([`Segment::tag_index`]); `None` when it names none.
+/// numbering; `None` when it names none.
+///
+/// NEC-2 reads the pair as nec2c's `isegno` does: a tag names the `segment`-th
+/// segment carrying it ([`Segment::tag_index`]); **tag 0 names absolute segment
+/// number `segment`** ([`Segment::abs_index`]), whatever tag that segment carries
+/// (FND-282 — fnec read tag 0 as "the wire tagged 0", so `EX 0 0 32` on two
+/// 21-segment dipoles was refused where nec2c feeds segment 32, and with a wire
+/// tagged 0 present it fed that wire instead).
 ///
 /// The one place a deck reference becomes a segment. Nineteen sites — feeds,
 /// current sources, ports, the gain correction, validation and every front end —
@@ -344,12 +361,93 @@ impl Segment {
 /// (`apps/nec-cli/tests/deck_reference_resolver.rs`) refuses a new inline copy.
 /// Segment 0 names nothing: NEC numbers segments from 1, and the sites that read
 /// 0 as "all" or "the middle" (`LD`, `TL`/`NT` ports) do so before calling this.
+/// A range of segments (`LD`, `PT`) is resolved by [`deck_segment_in_range`].
 pub fn find_deck_segment(segs: &[Segment], tag: u32, segment: u32) -> Option<usize> {
     if segment == 0 {
         return None;
     }
+    if tag == 0 {
+        return segs.iter().position(|s| s.abs_index == segment);
+    }
     segs.iter()
         .position(|s| s.tag == tag && s.tag_index == segment)
+}
+
+/// Whether `seg` is one of the segments a deck card names as `(tag, first, last)`
+/// — NEC-2's `LD` and `PT` selection, as nec2c's `load()` and its current print
+/// read it (FND-282, FND-299):
+///
+/// - `tag ≠ 0`: the segments carrying `tag`; `first == 0` selects every one of
+///   them (`last` is then not read, as in nec2c), otherwise those numbered
+///   `first..=last` within the tag, `last == 0` meaning `first` alone;
+/// - `tag == 0`, `first == last == 0`: every segment;
+/// - `tag == 0`, `first ≠ 0`: the segments whose **absolute** number
+///   ([`Segment::abs_index`]) is in `first..=last` (`last == 0` → `first`), of
+///   any tag.
+///
+/// `tag == 0`, `first == 0`, `last ≠ 0` reads as `0 0 0` here (`first == 0` is
+/// "all"); NEC-2 has no segment 0 (nec2c reads past its arrays there), and
+/// [`crate::loads::ld_card_problem`] refuses that card by name before any solve. A flank of a refined free end
+/// (FND-227) is never selected — it is not a deck segment; the one load that
+/// belongs on it (a type-5 conductivity, per metre) is given to it by its parent
+/// in `loads.rs`.
+///
+/// The one range resolver: `loads::segment_matches`, the Laplace loads, the `PT`
+/// current filter and the NEC-2D "loaded twice" note each had their own copy of
+/// the tag-0 rule, and all four read it as "every tag".
+pub fn deck_segment_in_range(seg: &Segment, tag: u32, first: u32, last: u32) -> bool {
+    if !seg.is_deck_segment() {
+        return false;
+    }
+    let last = if last == 0 { first } else { last };
+    if tag == 0 {
+        return first == 0 || (first..=last).contains(&seg.abs_index);
+    }
+    seg.tag == tag && (first == 0 || (first..=last).contains(&seg.tag_index))
+}
+
+/// The message for a reference `(tag, segment)` that names no segment, for every
+/// card that resolves one (`EX`, `TL`, `NT`): with tag 0 it says what tag 0 means,
+/// because the deck's author most likely expected the wire tagged 0 (FND-282).
+pub fn missing_reference(card: &str, tag: u32, segment: u32, segs: &[Segment]) -> String {
+    missing_reference_text(
+        card,
+        tag,
+        segment,
+        Some(segs.iter().filter(|s| s.is_deck_segment()).count()),
+    )
+}
+
+/// [`missing_reference`] without the geometry at hand (an error type that carries
+/// only the reference).
+pub fn missing_reference_text(
+    card: &str,
+    tag: u32,
+    segment: u32,
+    deck_segments: Option<usize>,
+) -> String {
+    let count = deck_segments
+        .map(|n| format!("; the deck has {n}"))
+        .unwrap_or_default();
+    if tag == 0 && segment == 0 {
+        // Only a network port has fnec's segment-0 shorthand to be confused with.
+        let shorthand = if card.starts_with("TL") || card.starts_with("NT") {
+            "; only a tagged port may use fnec's segment-0 shorthand for the tag's centre"
+        } else {
+            ""
+        };
+        format!(
+            "{card}: tag 0 with segment 0 names no segment — tag 0 is an absolute segment \
+             number in NEC-2, and segment 0 names none{shorthand}"
+        )
+    } else if tag == 0 {
+        format!(
+            "{card}: no segment numbered {segment} (tag 0 names an absolute segment number, \
+             as NEC-2 reads it{count})"
+        )
+    } else {
+        format!("{card}: no segment with tag {tag}, index {segment}")
+    }
 }
 
 /// The largest segment count [`build_geometry`] will produce.
@@ -1895,12 +1993,32 @@ fn nec_name(segs: &[Segment], i: usize) -> (u32, u32) {
     )
 }
 
-/// Re-number `global_index` in final order, and `tag_index` as NEC counts it: the
-/// running occurrence of each tag (see `Segment::tag_index`, FND-135). A flank
-/// does not count — the deck does not know it — and is numbered 0, its parent the
-/// centre beside it.
+/// The centre a flank at `segs[i]` is a third of (FND-227): the next segment when
+/// it is a centre (the start flank), else the one before — the rule [`number`]
+/// numbers a flank's parent by, so a caller that judges a flank as its deck
+/// segment (a type-5 load, per metre) reads the centre's `tag_index` and
+/// `abs_index`. `None` when `segs[i]` is not a flank.
+pub(crate) fn flank_centre(segs: &[Segment], i: usize) -> Option<&Segment> {
+    if !matches!(segs.get(i)?.part, SegmentPart::Flank { .. }) {
+        return None;
+    }
+    let next = segs.get(i + 1).filter(|s| s.part == SegmentPart::Centre);
+    next.or_else(|| {
+        i.checked_sub(1)
+            .and_then(|j| segs.get(j))
+            .filter(|s| s.part == SegmentPart::Centre)
+    })
+}
+
+/// Re-number `global_index` in final order, `tag_index` as NEC counts it — the
+/// running occurrence of each tag (see `Segment::tag_index`, FND-135) — and
+/// `abs_index` as NEC's absolute segment number, the running count of deck
+/// segments (FND-282). Both numberings in one loop, so they cannot drift apart. A
+/// flank does not count — the deck does not know it — and is numbered 0 in both,
+/// its parent the centre beside it.
 fn number(mut segments: Vec<Segment>) -> Vec<Segment> {
     let mut seen: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    let mut absolute = 0u32;
     for i in 0..segments.len() {
         segments[i].global_index = i;
         let tag = segments[i].tag;
@@ -1913,11 +2031,14 @@ fn number(mut segments: Vec<Segment>) -> Vec<Segment> {
                     .is_some_and(|s| s.part == SegmentPart::Centre);
                 let parent = if before_centre { *n + 1 } else { *n };
                 segments[i].tag_index = 0;
+                segments[i].abs_index = 0;
                 segments[i].part = SegmentPart::Flank { parent };
             }
             _ => {
                 *n += 1;
+                absolute += 1;
                 segments[i].tag_index = *n;
+                segments[i].abs_index = absolute;
             }
         }
     }
@@ -2151,6 +2272,7 @@ fn expand_wire(gw: &GwCard, out: &mut Vec<Segment>) -> Result<(), GeometryError>
         out.push(Segment {
             tag: gw.tag,
             tag_index: i + 1,
+            abs_index: 0,
             global_index: out.len(),
             start,
             end,
@@ -3412,6 +3534,15 @@ mod tests {
         assert_eq!(find_deck_segment(&segs, 1, 1), Some(1));
         assert_eq!(find_deck_segment(&segs, 1, 21), Some(23));
         assert_eq!(find_deck_segment(&segs, 1, 0), None);
+        // The absolute numbering skips the flanks too (FND-282).
+        let absolute: Vec<u32> = segs.iter().map(|s| s.abs_index).collect();
+        assert_eq!(
+            absolute,
+            [vec![0, 1, 0], (2..=20).collect(), vec![0, 21, 0]].concat()
+        );
+        assert_eq!(find_deck_segment(&segs, 0, 1), Some(1));
+        assert_eq!(find_deck_segment(&segs, 0, 21), Some(23));
+        assert_eq!(find_deck_segment(&segs, 0, 0), None);
         // Values at the deck's segments come back in the deck's order.
         let idx: Vec<usize> = (0..segs.len()).collect();
         assert_eq!(
@@ -3803,5 +3934,74 @@ mod tests {
         // junction band, so the snap joins them end to end first (FND-246).
         let touch = parsed("CE\nGW 1 5 0 0 -2.64 0 0 0 .001\nGW 2 5 0 0 -0.0001 0 0 2.64 .001\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 28.4 0\nEN\n");
         assert_eq!(overlap_of(&touch), None);
+    }
+
+    /// Tag 0 names an absolute segment number, as nec2c's `isegno` reads it
+    /// (FND-282): on `GW 1 21` + `GW 2 21`, `(0, 32)` is tag 2's 11th; with a wire
+    /// tagged 0 present it is still the 11th segment built, not the tag-0 wire's.
+    /// The range resolver reads `LD`/`PT` selections the same way.
+    #[test]
+    fn tag_zero_names_an_absolute_segment() {
+        let two =
+            parsed("CE\nGW 1 21 0 0 -2.5 0 0 2.5 .001\nGW 2 21 1 0 -2.5 1 0 2.5 .001\nGE 0\nEN\n");
+        let segs = build_deck_geometry(&two).unwrap();
+        assert_eq!(
+            find_deck_segment(&segs, 0, 32),
+            find_deck_segment(&segs, 2, 11)
+        );
+        assert_eq!(find_deck_segment(&segs, 0, 43), None);
+        let zero =
+            parsed("CE\nGW 1 21 0 0 -2.5 0 0 2.5 .001\nGW 0 21 1 0 -2.5 1 0 2.5 .001\nGE 0\nEN\n");
+        let segs0 = build_deck_geometry(&zero).unwrap();
+        assert_eq!(find_deck_segment(&segs0, 0, 11), Some(10));
+        assert_eq!(segs0[10].tag, 1, "absolute 11 is on the first wire");
+        assert_eq!(find_deck_segment(&segs0, 0, 32), Some(31));
+        assert_eq!(segs0[31].tag, 0);
+        // Ranges: a tag's own numbering, or absolute with tag 0; `0 0 0` is all.
+        let sel = |tag, first, last| -> Vec<u32> {
+            segs.iter()
+                .filter(|s| deck_segment_in_range(s, tag, first, last))
+                .map(|s| s.abs_index)
+                .collect()
+        };
+        assert_eq!(sel(2, 1, 3), [22, 23, 24]);
+        assert_eq!(sel(2, 11, 0), [32]);
+        assert_eq!(sel(2, 0, 5), (22..=42).collect::<Vec<_>>(), "last unread");
+        assert_eq!(sel(0, 20, 24), [20, 21, 22, 23, 24]);
+        assert_eq!(sel(0, 32, 0), [32]);
+        assert_eq!(sel(0, 0, 0), (1..=42).collect::<Vec<_>>());
+        // `0 0 k` reads as "all" here; `ld_card_problem` refuses the card.
+        assert_eq!(sel(0, 0, 5), (1..=42).collect::<Vec<_>>());
+        // A refined deck: flanks are never selected, the centre stands for the
+        // deck segment, and the absolute range crosses the wires.
+        let refined = build_geometry(&two).unwrap();
+        let abs: Vec<u32> = refined
+            .iter()
+            .filter(|s| deck_segment_in_range(s, 0, 21, 22))
+            .map(|s| s.abs_index)
+            .collect();
+        assert_eq!(abs, [21, 22]);
+        assert!(refined
+            .iter()
+            .filter(|s| !s.is_deck_segment())
+            .all(|f| !deck_segment_in_range(f, 0, 0, 0)));
+    }
+
+    /// The missing-reference message says what tag 0 means (FND-282).
+    #[test]
+    fn a_missing_tag_zero_reference_is_explained() {
+        let segs =
+            build_deck_geometry(&parsed("CE\nGW 1 21 0 0 -2.5 0 0 2.5 .001\nGE 0\nEN\n")).unwrap();
+        let m = missing_reference("EX", 0, 32, &segs);
+        assert!(
+            m.contains("no segment numbered 32") && m.contains("the deck has 21"),
+            "{m}"
+        );
+        let m = missing_reference("TL 0 0 2 11", 0, 0, &segs);
+        assert!(m.contains("segment 0 names none"), "{m}");
+        assert_eq!(
+            missing_reference("EX", 3, 4, &segs),
+            "EX: no segment with tag 3, index 4"
+        );
     }
 }

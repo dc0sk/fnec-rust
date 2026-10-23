@@ -321,9 +321,13 @@ pub struct GnCard {
 pub struct LdCard {
     /// Load type (0–5; see table above).
     pub load_type: i32,
-    /// Wire tag number.  0 = apply to all tags.
+    /// Wire tag number. 0 makes `seg_first`/`seg_last` absolute segment numbers
+    /// (NEC-2's reading, nec2c's `load()`; FND-282): `LD t 0 0 0` loads every
+    /// segment, `LD t 0 a b` segments `a..=b` whatever their tags.
     pub tag: u32,
-    /// First segment number within the tag.  0 = all segments.
+    /// First segment number within the tag. 0 = all segments of the tag (with tag
+    /// 0: all segments; `LD t 0 0 b` with `b ≠ 0` is refused — NEC-2 has no
+    /// segment 0).
     pub seg_first: u32,
     /// Last segment number within the tag.  0 = same as `seg_first`.
     pub seg_last: u32,

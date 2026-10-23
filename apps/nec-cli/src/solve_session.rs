@@ -453,7 +453,7 @@ pub(super) fn collect_pulse_current_source_constraints(
         }
 
         let seg_index = nec_solver::find_deck_segment(segs, ex.tag, ex.segment)
-            .ok_or_else(|| format!("EX: no segment with tag {}, index {}", ex.tag, ex.segment))?;
+            .ok_or_else(|| nec_solver::missing_reference("EX", ex.tag, ex.segment, segs))?;
 
         out.push(PulseCurrentSourceConstraint {
             seg_index,
@@ -640,51 +640,62 @@ fn build_near_h_field_rows(
         .collect()
 }
 
-/// PH9-CHK-004: apply the `PT` (print-control) card to the segment current table.
+/// The `PT` card's current-print control, as NEC-2 reads it (PH9-CHK-004, FND-299):
+/// `I1 ≤ −1` suppresses the CURRENTS table; `I1 ≥ 0` with `I3 = 0` prints every
+/// segment (nec2c sets its flag to "print all" there, whatever I1 and I2 say);
+/// `I1 ≥ 0` with a range prints the segments `(I2, I3..I4)` selects — a tag's
+/// segments, or absolute segment numbers when `I2` is 0 — through the one range
+/// resolver (`deck_segment_in_range`, FND-282). `I1 = 1..3` select nec2c's
+/// receive-pattern print formats; fnec prints the same rows in its own table and
+/// the parser warns. The last `PT` card wins, as in nec2c.
 ///
-/// Supported subset (NEC-2 `PT I1 I2 I3 I4`): `I1 ≤ −1` suppresses the current
-/// output entirely (fnec prints no charge densities, so all negative modes map to
-/// "no currents"); `I1 = 0` prints all currents (the default); `I1 ≥ 1` restricts
-/// the output to tag `I2` and, when given, the segment range `I3..=I4`. The last
-/// `PT` card in the deck wins. Fields that are absent or unparsable default to 0.
-fn apply_pt_current_filter(
-    current_table: Vec<CurrentRow>,
-    deck: &nec_model::deck::NecDeck,
-) -> Vec<CurrentRow> {
-    let Some(pt) = deck.cards.iter().rev().find_map(|c| match c {
-        Card::Pt(p) => Some(p),
-        _ => None,
-    }) else {
-        return current_table;
-    };
-    let field = |i: usize| -> i64 {
-        pt.raw_fields
-            .get(i)
-            .and_then(|s| s.trim().parse::<f64>().ok())
-            .map(|v| v as i64)
-            .unwrap_or(0)
-    };
-    let mode = field(0);
-    let tag = field(1);
-    let seg_first = field(2);
-    let seg_last = field(3);
+/// The selection is made on the geometry's segments, before the rows are built:
+/// a row carries only `(tag, tag_index)`, which cannot answer an absolute range.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PtSelection {
+    All,
+    Nothing,
+    Range { tag: u32, first: u32, last: u32 },
+}
 
-    if mode <= -1 {
-        return Vec::new(); // suppress current output
+impl PtSelection {
+    fn of(deck: &nec_model::deck::NecDeck) -> Self {
+        let Some(pt) = deck.cards.iter().rev().find_map(|c| match c {
+            Card::Pt(p) => Some(p),
+            _ => None,
+        }) else {
+            return PtSelection::All;
+        };
+        let field = |i: usize| -> i64 {
+            pt.raw_fields
+                .get(i)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .map(|v| v as i64)
+                .unwrap_or(0)
+        };
+        let (mode, tag, seg_first, seg_last) = (field(0), field(1), field(2), field(3));
+        if mode <= -1 {
+            return PtSelection::Nothing;
+        }
+        match (
+            u32::try_from(tag),
+            u32::try_from(seg_first),
+            u32::try_from(seg_last),
+        ) {
+            (Ok(tag), Ok(first), Ok(last)) if first != 0 => PtSelection::Range { tag, first, last },
+            _ => PtSelection::All,
+        }
     }
-    if mode == 0 {
-        return current_table; // print all
+
+    fn prints(self, seg: &Segment) -> bool {
+        match self {
+            PtSelection::All => true,
+            PtSelection::Nothing => false,
+            PtSelection::Range { tag, first, last } => {
+                nec_solver::deck_segment_in_range(seg, tag, first, last)
+            }
+        }
     }
-    // mode >= 1: restrict to tag (and optional segment range).
-    current_table
-        .into_iter()
-        .filter(|r| {
-            let tag_ok = tag == 0 || r.tag as i64 == tag;
-            let seg_ok = seg_first == 0
-                || (r.seg as i64 >= seg_first && (seg_last == 0 || r.seg as i64 <= seg_last));
-            tag_ok && seg_ok
-        })
-        .collect()
 }
 
 /// PH9-CHK-005: a passive antenna cannot have a negative input resistance, so a
@@ -1729,18 +1740,18 @@ pub(super) fn solve_frequency_point(
 
     // One row per deck segment: a refined end's flanks are not the deck's, and its
     // centre's current is the current at the deck segment's midpoint (FND-227).
+    // PH9-CHK-004 / FND-299: the PT card selects the printed segments.
+    let printed = PtSelection::of(deck);
     let current_table: Vec<CurrentRow> = segs
         .iter()
         .enumerate()
-        .filter(|(_, seg)| seg.is_deck_segment())
+        .filter(|(_, seg)| seg.is_deck_segment() && printed.prints(seg))
         .map(|(idx, seg)| CurrentRow {
             tag: seg.tag as usize,
             seg: seg.tag_index as usize,
             current: i_vec[idx],
         })
         .collect();
-    // PH9-CHK-004: apply PT (print-control) filtering to the segment current output.
-    let current_table = apply_pt_current_filter(current_table, deck);
 
     let source_table = build_source_rows(deck);
     let load_table = build_load_rows(deck);

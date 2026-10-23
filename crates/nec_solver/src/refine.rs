@@ -267,9 +267,9 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
                     // A lumped load sits on each segment of its range, once. The
                     // range expands to one card per deck segment, each on the
                     // sub-segment that models it — never S loads per segment.
-                    let targets: Vec<&Segment> = segs
-                        .iter()
-                        .filter(|seg| crate::loads::segment_matches(ld, seg))
+                    let targets: Vec<&Segment> = (0..segs.len())
+                        .filter(|&i| crate::loads::segment_matches(ld, &segs, i))
+                        .map(|i| &segs[i])
                         .collect();
                     if targets.is_empty() {
                         return Err(format!(

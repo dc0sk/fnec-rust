@@ -95,7 +95,7 @@ fn every_deck_reference_goes_through_find_deck_segment() {
                 .position(|l| l.contains("pub fn find_deck_segment("))
                 .expect("find_deck_segment is in geometry.rs")
                 + 1;
-            lines.retain(|&l| !(at..at + 8).contains(&l));
+            lines.retain(|&l| !(at..at + 12).contains(&l));
         }
         found.extend(lines.into_iter().map(|l| format!("{}:{l}", f.display())));
     }

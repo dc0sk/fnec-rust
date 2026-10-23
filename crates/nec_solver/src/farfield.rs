@@ -101,6 +101,7 @@ fn pec_image_farfield(seg: &Segment) -> Segment {
     Segment {
         tag: seg.tag,
         tag_index: seg.tag_index,
+        abs_index: seg.abs_index,
         global_index: seg.global_index,
         start: [seg.start[0], seg.start[1], -seg.start[2]],
         end: [seg.end[0], seg.end[1], -seg.end[2]],
@@ -1065,6 +1066,7 @@ mod tests {
         Segment {
             tag: 1,
             tag_index: 1,
+            abs_index: 0,
             global_index: 0,
             start: [0.0, 0.0, 0.0],
             end: [1.0, 0.0, 0.0],
@@ -1191,6 +1193,7 @@ mod tests {
         let seg = Segment {
             tag: 1,
             tag_index: 1,
+            abs_index: 0,
             global_index: 0,
             start: [0.0, 0.0, -half],
             end: [0.0, 0.0, half],
@@ -1281,6 +1284,7 @@ mod tests {
         let seg = Segment {
             tag: 1,
             tag_index: 1,
+            abs_index: 0,
             global_index: 0,
             start: [0.0, 0.0, 1.0],
             end: [0.0, 0.0, 3.0],
@@ -1304,6 +1308,7 @@ mod tests {
         let seg = Segment {
             tag: 1,
             tag_index: 1,
+            abs_index: 0,
             global_index: 0,
             start: [-1.0, 0.0, 2.0],
             end: [1.0, 0.0, 2.0],

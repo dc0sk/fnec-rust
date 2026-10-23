@@ -188,21 +188,25 @@ fn solve_at_freq(
             .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
             .ok_or("a current-source solve without a current source")?;
         let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        let z_in =
-            nec_solver::feedpoint_impedance(v_port, i0, ex.tag as usize, ex.segment as usize)
-                .map_err(|e| e.to_string())?;
+        // The resolved segment's own `(tag, index)`: a tag-0 card names an absolute
+        // segment number, which is not where the row says it is (FND-282).
+        let (tag, seg) = nec_solver::find_deck_segment(&segs, ex.tag, ex.segment)
+            .map(|i| (segs[i].tag, segs[i].tag_index))
+            .unwrap_or((ex.tag, ex.segment));
+        let z_in = nec_solver::feedpoint_impedance(v_port, i0, tag as usize, seg as usize)
+            .map_err(|e| e.to_string())?;
         let mut rec = std::collections::HashMap::new();
         rec.insert("freq_mhz".to_string(), freq_hz / 1e6);
-        rec.insert("tag".to_string(), f64::from(ex.tag));
-        rec.insert("seg".to_string(), f64::from(ex.segment));
+        rec.insert("tag".to_string(), f64::from(tag));
+        rec.insert("seg".to_string(), f64::from(seg));
         rec.insert("z_re".to_string(), z_in.re);
         rec.insert("z_im".to_string(), z_in.im);
         rec.insert("z_abs".to_string(), z_in.norm());
         rec.insert("z_arg_deg".to_string(), z_in.im.atan2(z_in.re).to_degrees());
         if let Some(w) = nec_solver::validate::negative_resistance_warning(
             z_in.re,
-            ex.tag as usize,
-            ex.segment as usize,
+            tag as usize,
+            seg as usize,
             deck,
             &segs,
             py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
@@ -579,5 +583,34 @@ mod tests {
             z_re.is_finite() && z_re > 0.0,
             "expected a real positive resistance, got {rec:?}"
         );
+    }
+    /// FND-282 at the bindings' entry point: tag 0 names an absolute segment
+    /// number. `EX 0 0 32` on two 21-segment dipoles is wire 2's 11th and the
+    /// record says so; `LD 4 0 11 11` loads the one segment `LD 4 1 11 11` does.
+    #[test]
+    fn tag_zero_names_an_absolute_segment() {
+        let two = |cards: &str| {
+            format!(
+                "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
+            )
+        };
+        for kind in [
+            nec_solver::validate::SolverKind::Hallen,
+            nec_solver::validate::SolverKind::Mpie,
+        ] {
+            let solve = |src: &str| {
+                let parsed = parse(src).expect("deck parses");
+                solve_at_freq(&parsed.deck, 29.9e6, kind).expect("solves").0
+            };
+            let abs = solve(&two("EX 0 0 32 0 1 0\n"));
+            let tagged = solve(&two("EX 0 2 11 0 1 0\n"));
+            assert_eq!((abs["tag"], abs["seg"]), (2.0, 11.0), "{kind:?}");
+            assert!((abs["z_re"] - tagged["z_re"]).abs() < 1e-9, "{kind:?}");
+            assert!((abs["z_im"] - tagged["z_im"]).abs() < 1e-9, "{kind:?}");
+            let a = solve(&two("EX 0 1 11 0 1 0\nLD 4 0 11 11 0 1000\n"));
+            let b = solve(&two("EX 0 1 11 0 1 0\nLD 4 1 11 11 0 1000\n"));
+            assert!((a["z_re"] - b["z_re"]).abs() < 1e-9, "{kind:?}");
+            assert!((a["z_im"] - b["z_im"]).abs() < 1e-9, "{kind:?}");
+        }
     }
 }

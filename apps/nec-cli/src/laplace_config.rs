@@ -16,7 +16,10 @@
 //! denominator = [1.0]
 //! ```
 //!
-//! `tag`/`seg_first`/`seg_last` follow the LD-card convention (0 = all).
+//! `tag`/`seg_first`/`seg_last` follow the LD-card convention as NEC-2 reads it
+//! (FND-282): `seg_first = 0` is every segment of the tag, `seg_last = 0` is
+//! `seg_first` alone, and `tag = 0` makes the two segment numbers absolute
+//! (`tag = 0, seg_first = 0` is every segment).
 
 use nec_solver::LaplaceLoad;
 use std::path::Path;
