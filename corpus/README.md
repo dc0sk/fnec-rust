@@ -15,11 +15,11 @@ Of the 50 cases in `corpus/reference-results.json`:
 
 | Tier | Cases | What the gate proves |
 |:-----|------:|:---------------------|
-| Self-pinned regression only | 36 | the answer has not changed since it was pinned |
-| Additionally gated against an external engine | 15 | the answer also agrees with an independent solver, within a stated absolute tolerance |
+| Self-pinned regression only | 35 | the answer has not changed since it was pinned |
+| Additionally gated against an external engine | 16 | the answer also agrees with an independent solver, within a stated absolute tolerance |
 | **Total** | **51** | |
 
-Of the 36 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
+Of the 35 self-pinned rows, three are pinned to a value derived independently of fnec rather than to fnec's own output: the `LD` rows re-derived against analytic values after FND-122. The rest record what the code produced. (`dipole-freesp-51seg` used to be counted here as pinned against a Python MoM script. That script shared the Hallén free-end defect of FND-156, so the agreement proved only that the two had the same bug; the row now carries a nec2c gate instead.)
 
 These three counts are **derived from `reference-results.json` and checked**, not maintained by hand — a stale count here is the same failure as the stale claim this section replaced.
 
@@ -27,7 +27,7 @@ The external engines actually used are **nec2c 1.3.1** and **NEC2DXS500 via Wine
 
 Until FND-156 the external X tolerances were 35–47 Ω, to absorb a "systematic" ~32 Ω reactance offset from nec2c that was in fact a defect: the Hallén free-end rows zeroed the current half a segment inside every wire tip, shortening each wire by one segment. With that fixed, the external rows agree with nec2c to within 3.6 Ω in R and 4.9 Ω in X, and the gates were tightened to about twice the remaining difference. One row keeps a wide, relative gate: `split-v-conductor-path-freesp`, an off-centre feed near antiresonance, sits about 11 % / 13 % from nec2c at convergence (FND-158). The tight gates are still the self-pinned regression.
 
-**What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 36 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
+**What this corpus therefore does and does not establish.** It establishes that fnec's results are stable and that a subset agrees with an independent implementation. It does **not** establish that every deck here has been checked against an external engine — 35 of them have not, and a self-pinned row is only as good as the code that produced it. Both criticals in the 2026-08-28 audit (FND-121, FND-122) shipped past this corpus for exactly that reason: fixtures had been chosen where the two candidate answers coincide.
 
 `external_reference_candidate` is the key the validator reads. A case that declares an `External*` tolerance gate must carry one, and `every_external_gate_is_backed_by_a_readable_external_reference` fails the build otherwise — a gate stored under any other key is never evaluated, which is how one row advertised a nec2c parity check that had never run (FND-138).
 
@@ -137,7 +137,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Wire: same canonical 51-segment half-wave dipole as case 1
 - Feed: Center segment (tag=1, seg=26), 1.0 V excitation
 - Ground: None
-- RP: `RP 0 19 1 0.0 0.0 10.0 0.0` (theta sweep 0..180° in 10° steps at phi=0°)
+- RP: `RP 0 19 1 0 0.0 0.0 10.0 0.0` (theta sweep 0..180° in 10° steps at phi=0°; XNDA 0)
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
@@ -169,7 +169,7 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - Wire: same canonical 51-segment half-wave dipole length as case 1, but rotated onto the x-axis
 - Feed: Center segment (tag=1, seg=26), 1.0 V excitation
 - Ground: None
-- RP: `RP 0 5 4 0.0 0.0 45.0 90.0` (theta points `0°, 45°, 90°, 135°, 180°`; phi points `0°, 90°, 180°, 270°`)
+- RP: `RP 0 5 4 0 0.0 0.0 45.0 90.0` (theta points `0°, 45°, 90°, 135°, 180°`; phi points `0°, 90°, 180°, 270°`; XNDA 0)
 
 **Expected results** (current regression gate):
 - Same feedpoint impedance as `dipole-freesp-51seg`
@@ -187,6 +187,17 @@ Optional external-candidate gates can be enabled per case in `tolerance_gates`:
 - External RP candidate gates: optional `ExternalGain_absolute_dB` / `ExternalAxialRatio_absolute` keys can additionally CI-gate `external_reference_candidate.pattern_samples` when present
 
 **Why this case**: It proves the RP regression path across multiple phi cuts on a non-z-axis geometry, which is a stronger check than the azimuth-invariant baseline dipole.
+
+### 1e. The `RP` decks and nec2c (FND-301)
+
+Until 2026-10-23 the four `RP` decks here — `dipole-freesp-rp-51seg`, `dipole-xaxis-rp-grid-51seg`, `dipole-ground-rp-51seg` and `dipole-freesp-rp-large-grid` — used fnec's 7-field form with a real XNDA (`RP 0 37 73 0.0 0.0 5.0 5.0`). nec2c refuses that card (a `.` in integer field 4), so no nec2c run on the decks as committed stood behind them: the two external rows' samples came from a hand-normalized copy, and `dipole-ground-rp-51seg` had none. fnec now refuses the form too (FND-284, D4), and each deck carries NEC-2's 8-field card with XNDA 0. nec2c 1.3.1 on the decks as committed, 2026-10-23:
+
+| Deck | nec2c Z_in (Ω) | nec2c gains (dB, printed to 0.01) | Gate |
+|:-----|:---------------|:----------------------------------|:-----|
+| `dipole-freesp-rp-51seg` | 79.348 + j46.223 | θ 30/60/90: −5.49 / 0.38 / 2.17 (the earlier copy's samples, unchanged) | external, `ExternalGain_absolute_dB` 0.08 |
+| `dipole-xaxis-rp-grid-51seg` | 79.348 + j46.223 | θ 0/45/90 at φ 0: 2.17 / −1.92 / null; 2.17 at φ 90 (unchanged) | external, 0.08 |
+| `dipole-ground-rp-51seg` | 74.792 + j43.942 | θ 10…90: −9.09 −3.34 −0.67 −0.39 −4.23 −15.10 2.04 7.02 8.43 | **external since FND-301**, 0.02 (fnec within 0.006 dB at every sample) |
+| `dipole-freesp-rp-large-grid` | 79.348 + j46.223 | 2701 points; θ 30/45/60/90: −5.49 / −1.92 / 0.38 / 2.17 at every φ | none: the `gpu_benchmark_gate.rs` timing fixture, not a corpus case |
 
 ### 2. `dipole-ground-51seg.nec` — Half-wave dipole, over ground
 

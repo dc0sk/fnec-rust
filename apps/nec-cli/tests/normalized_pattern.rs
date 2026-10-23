@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 //
 // PH9-CHK-004: RP XNDA-driven normalized gain output (NORMALIZED_PATTERN).
+// FND-298: the request is XNDA's N (hundreds) digit, as nec2c splits XNDA; the
+// thousands digit X only picks nec2c's column labels.
 
 use std::fs;
 use std::path::PathBuf;
@@ -51,10 +53,10 @@ fn norm_gains(stdout: &str) -> Vec<f64> {
 const DIPOLE: &str = "GW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\n{RP}\nFR 0 1 0 0 14.2 0.0\nEN\n";
 
 #[test]
-fn xnda_x_digit_emits_normalized_pattern_with_zero_db_peak() {
-    // XNDA = 5000 → X digit 5 → normalized-gain output requested.
+fn xnda_n_digit_emits_normalized_pattern_with_zero_db_peak() {
+    // XNDA = 0500 → N digit 5 (the total gain) → normalized-gain output.
     let out = run(
-        &DIPOLE.replace("{RP}", "RP 0 19 1 5000 0.0 0.0 5.0 0.0"),
+        &DIPOLE.replace("{RP}", "RP 0 19 1 0500 0.0 0.0 5.0 0.0"),
         "rpnorm",
     );
     assert!(
@@ -75,10 +77,12 @@ fn xnda_x_digit_emits_normalized_pattern_with_zero_db_peak() {
 }
 
 #[test]
-fn no_xnda_normalization_means_no_normalized_pattern() {
-    // 7-field RP (no XNDA) — absolute pattern only.
+fn the_x_digit_4nec2_writes_does_not_normalize() {
+    // XNDA = 1000, as every 4nec2 deck writes it: X = 1 picks nec2c's column
+    // labels and nothing else, so the pattern is the absolute one only. fnec
+    // before 0.26 read X as "normalize" (FND-298).
     let out = run(
-        &DIPOLE.replace("{RP}", "RP 0 19 1 0.0 0.0 5.0 0.0"),
+        &DIPOLE.replace("{RP}", "RP 0 19 1 1000 0.0 0.0 5.0 0.0"),
         "rpplain",
     );
     assert!(
@@ -87,7 +91,7 @@ fn no_xnda_normalization_means_no_normalized_pattern() {
     );
     assert!(
         !out.contains("NORMALIZED_PATTERN"),
-        "no XNDA X-digit → no NORMALIZED_PATTERN section"
+        "XNDA 1000 (N = 0) → no NORMALIZED_PATTERN section"
     );
 }
 

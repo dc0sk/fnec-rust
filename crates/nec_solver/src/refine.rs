@@ -311,24 +311,16 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
             }
             Card::Nt(nt) => {
                 let mut nt = nt.clone();
-                let ports: Option<Vec<u32>> = nt
-                    .raw_fields
-                    .iter()
-                    .take(4)
-                    .map(|f| f.parse::<u32>().ok())
-                    .collect();
-                // Too few or non-numeric fields are refused at the solve by name.
-                if let Some([t1, s1, t2, s2]) = ports.as_deref() {
-                    let shown = || format!("NT {t1} {s1} {t2} {s2}");
-                    refuse_absolute(*t1, *s1, shown)?;
-                    refuse_absolute(*t2, *s2, shown)?;
-                    let a = map_port(&mapper, "NT", *t1, *s1)?;
-                    let b = map_port(&mapper, "NT", *t2, *s2)?;
-                    nt.raw_fields[1] = a.mapped.to_string();
-                    nt.raw_fields[3] = b.mapped.to_string();
-                    refs.push(a);
-                    refs.push(b);
-                }
+                let shown =
+                    || format!("NT {} {} {} {}", nt.tag1, nt.segment1, nt.tag2, nt.segment2);
+                refuse_absolute(nt.tag1, nt.segment1, shown)?;
+                refuse_absolute(nt.tag2, nt.segment2, shown)?;
+                let a = map_port(&mapper, "NT", nt.tag1, nt.segment1)?;
+                let b = map_port(&mapper, "NT", nt.tag2, nt.segment2)?;
+                nt.segment1 = a.mapped;
+                nt.segment2 = b.mapped;
+                refs.push(a);
+                refs.push(b);
                 cards.push(Card::Nt(nt));
             }
             Card::Pt(_) => dropped.push("PT"),
@@ -601,12 +593,11 @@ mod tests {
             .cards
             .iter()
             .find_map(|c| match c {
-                Card::Nt(nt) => Some(nt.raw_fields.clone()),
+                Card::Nt(nt) => Some((nt.tag1, nt.segment1, nt.tag2, nt.segment2)),
                 _ => None,
             })
             .unwrap();
-        assert_eq!(&nt[..4], ["1", "60", "2", "32"]);
-        assert_eq!(nt.len(), 10);
+        assert_eq!(nt, (1, 60, 2, 32));
         let ports: Vec<(u32, u32, u32)> = r
             .refs
             .iter()

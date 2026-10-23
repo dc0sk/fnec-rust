@@ -1187,8 +1187,38 @@ pub fn frequency_error(deck: &NecDeck) -> Option<String> {
             "a zero frequency drives the current to zero, so the reported \
              impedance becomes the source voltage rather than an impedance"
         };
-        Some(format!("FR: {what}; {why}. Frequencies must be > 0"))
+        Some(format!(
+            "FR: {what}; {why}. Frequencies must be > 0{}",
+            if f == 0.0 {
+                fr_field_hint(deck)
+            } else {
+                String::new()
+            }
+        ))
     }
+}
+
+/// FND-287: a zero frequency on a card whose I3 or I4 is not zero is almost
+/// always fnec's retired `FR I1 I2 F1 F2` shorthand written with integers, which
+/// NEC-2 reads by position: the frequency is F1, the fifth field. Read from the
+/// deck's record of its program cards, the positional fields as NEC reads them.
+fn fr_field_hint(deck: &NecDeck) -> String {
+    let Some(([i1, i2, i3, i4], _)) = deck
+        .program_cards
+        .iter()
+        .rev()
+        .find(|c| c.mnemonic == "FR")
+        .and_then(|c| c.fields)
+    else {
+        return String::new();
+    };
+    if i3 == 0 && i4 == 0 {
+        return String::new();
+    }
+    format!(
+        " (the frequency is F1, the fifth field: FR {i1} {i2} {i3} {i4} reads I3 = {i3}, \
+         I4 = {i4}, F1 = 0, which nec2c solves to NaN; did you mean FR {i1} {i2} 0 0 {i3} {i4}?)"
+    )
 }
 
 /// Caveats about `FR` cards that do not govern the solve.
@@ -3017,6 +3047,27 @@ mod tests {
                 "must not recommend a solver that rejects the deck ({drive:?}): {shown}"
             );
         }
+    }
+
+    /// FND-287: FR is read by position, so the all-integer `FR 0 1 30 0` is
+    /// I3 = 30 and F1 = 0. The "0 MHz" refusal says where the frequency goes;
+    /// a plain zero frequency does not get the hint.
+    #[test]
+    fn a_zero_frequency_names_the_fifth_field_when_i3_is_set() {
+        let deck = |fr: &str| {
+            parse(&format!(
+                "GW 1 21 0 0 -5.2782 0 0 5.2782 0.001\nGE 0\n{fr}\nEX 0 1 11 0 1.0 0.0\nEN\n"
+            ))
+            .expect("deck parses")
+            .deck
+        };
+        let e = frequency_error(&deck("FR 0 1 30 0")).expect("0 MHz is refused");
+        assert!(
+            e.contains("the fifth field") && e.contains("did you mean FR 0 1 0 0 30 0?"),
+            "{e}"
+        );
+        let e = frequency_error(&deck("FR 0 1 0 0 0 0")).expect("0 MHz is refused");
+        assert!(!e.contains("fifth field"), "{e}");
     }
 
     /// A finite field can still become an infinite *frequency*: every frontend

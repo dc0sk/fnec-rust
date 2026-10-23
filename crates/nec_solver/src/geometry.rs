@@ -2650,6 +2650,9 @@ mod tests {
             ground_type: 1,
             eps_r: None,
             sigma: None,
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(ground_model_from_deck(&deck), GroundModel::PerfectConductor);
     }
@@ -2661,6 +2664,9 @@ mod tests {
             ground_type: 0,
             eps_r: None,
             sigma: None,
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(
             ground_model_from_deck(&deck),
@@ -2678,6 +2684,9 @@ mod tests {
             ground_type: 0,
             eps_r: Some(5.0),
             sigma: Some(0.001),
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(
             ground_model_from_deck(&deck),
@@ -2695,6 +2704,9 @@ mod tests {
             ground_type: 2,
             eps_r: None,
             sigma: None,
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(
             ground_model_from_deck(&deck),
@@ -2714,6 +2726,9 @@ mod tests {
             ground_type: -1,
             eps_r: None,
             sigma: None,
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(ground_model_from_deck(&deck), GroundModel::FreeSpace);
     }
@@ -2725,6 +2740,9 @@ mod tests {
             ground_type: 2,
             eps_r: Some(13.0),
             sigma: Some(0.005),
+            radials: 0,
+            screen: None,
+            medium2: None,
         }));
         assert_eq!(
             ground_model_from_deck(&deck),

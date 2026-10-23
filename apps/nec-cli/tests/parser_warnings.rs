@@ -1081,7 +1081,9 @@ fn a_malformed_nt_card_is_refused_not_skipped() {
         "a malformed NT must be refused:\n{stderr}"
     );
     assert!(
-        stderr.contains("NT 1 1 26 1 1 26 50.0 0.0") && stderr.contains("needs 10"),
+        // Read by position as nec2c reads it (FND-284): port 2 is tag 26,
+        // segment 1, which the deck does not have.
+        stderr.contains("NT 1 1 26 1 1 26 50 0") && stderr.contains("no segment with tag 26"),
         "{stderr}"
     );
 }

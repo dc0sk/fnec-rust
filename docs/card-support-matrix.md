@@ -31,11 +31,25 @@ Legend: **Full** — complete implementation; **Partial** — accepted and produ
 | GN type 2 | Partial | Aliases the GN0 scalar finite-ground path by default; the true Sommerfeld surface wave is available via `--ground-solver sommerfeld` for a single straight wire (collinear segments), horizontal / vertical / tilted, with one feed and no TL/NT network (feedpoint Z only, nec2c GN2, PH9-CHK-006; bent or side-by-side parallel geometry, several feeds and networks are declined with a warning and keeps the scalar-Γ result), or via `--solver mpie` for the full near-ground **currents/patterns** on **any wire above ground**, straight or bent, however close to it — the exact image over `GN 1` (FND-238), and over a finite ground that image scaled by `(εc − 1)/(εc + 1)` plus a tabulated Sommerfeld remainder (FND-239), checked against nec2c's converged value down to 0.05 m (and 2 mm for a vertical). Only a wire that reaches the `z=0` plane is rejected on the MPIE path |
 | GN other | Refused | A type outside NEC-2's `-1..=2` is refused by name: nec2c solves it inconsistently (perfect-ground currents under a finite-ground pattern). Until FND-241 fnec solved it in free space with a warning. With several `GN` cards the last one is the ground, as in nec2c |
 
+### GN field mapping
+
+`GN I1 I2 I3 I4 F1 F2 F3 F4 F5 F6`, read by position like every card fnec parses (a missing field is zero; FND-283). The 4nec2/xnec2c form `GN I1 0 0 0 F1 F2 [0 0 0 0]` is accepted silently. Pinned in `crates/nec_parser/src/lib.rs` and `apps/nec-cli/tests/ground_flags_nec2c.rs` (nec2c 1.3.1).
+
+| Field | NEC-2 meaning | fnec |
+|-------|---------------|------|
+| I1 | ground type | as above |
+| I2 | NRADL, radial wires of a ground screen | over `GN 0`: **refused** — nec2c's currents change with the screen (a dipole 5 m up at 29.9 MHz over 13/0.005: 75.13 + j30.98 → 71.56 + j24.85 Ω with 16 radials of 20 m) and fnec does not model one; over `GN 2`: **refused**, as nec2c stops on it (RADIAL WIRE G.S. APPROXIMATION MAY NOT BE USED WITH SOMMERFELD GROUND OPTION); over `GN 1`/`GN -1`: ignored with a warning, as nec2c ignores it |
+| I3, I4 | not read by NEC-2 | ignored with a warning when nonzero |
+| F1, F2 | ε_r, σ (S/m) | the ground's medium; both zero (or omitted) takes fnec's average ground 13 / 0.005 |
+| F3, F4 | with I2 ≠ 0: screen radius, wire radius | refused with I2 (above) |
+| F3–F6 | with I2 = 0: a second medium or cliff (ε, σ, distance, height) | ignored with a warning: only nec2c's `RP` modes 2, 3, 5 and 6 read it, which fnec refuses; nec2c's `RP 0` pattern and currents are those of the first medium alone (measured) |
+| all of I2–F6 | over `GN 1` / `GN -1` | ignored with a warning, as nec2c ignores them |
+
 ## Program-control cards
 
 | Card | Support | Notes |
 |------|---------|-------|
-| FR | Full | Linear frequency sweep; all FR steps solved and reported |
+| FR | Full | `FR I1 I2 I3 I4 F1 F2`, read by position (FND-287): I1 step type (0 linear, 1 multiplicative), I2 the number of frequencies (0 reads as 1), F1 the frequency in MHz, F2 the step; I3/I4 are not read. Every step is solved and reported. fnec's old 4-field shorthand `FR I1 I2 F1 F2` (read before 0.26 by counting fields) is refused with its rewrite when a field 3 or 4 is written as a real, as nec2c stops on it; an all-integer `FR 0 1 30 0` reads I3 = 30 and F1 = 0, and its "0 MHz" refusal names the fifth field. An integer field holding a fraction is refused on every card (FND-300) |
 | EN | Full | Terminates parse |
 
 ## Excitation cards
@@ -125,7 +139,20 @@ The GPU-resident path declines any deck with TL/NT; such decks solve on the CPU.
 
 | Card | Support | Notes |
 |------|---------|-------|
-| RP | Full | Far-field radiation pattern; all RP grid points computed and included in the `RADIATION_PATTERN` report section. `XNDA` X-digit → `NORMALIZED_PATTERN` section; `XNDA` A-digit → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%; a loaded free-space dipole 0.454 vs 0.458) (PH9-CHK-004). Gains are directivity × radiation efficiency over every ground, so lossy loads cost gain in free space and over PEC as in nec2c (FND-200). The `N`/`D` digits (gain-component labeling / dB-vs-ratio output-format toggles) are deferred — fnec always emits vertical/horizontal/total gain in dBi |
+| RP | Partial | Far-field radiation pattern (`RP 0`); all RP grid points computed and included in the `RADIATION_PATTERN` report section. Gains are directivity × radiation efficiency over every ground, so lossy loads cost gain in free space and over PEC as in nec2c (FND-200). Read by position (FND-284), field table below; the other modes are refused (FND-285) |
+
+### RP field mapping
+
+`RP I1 I2 I3 I4 F1 F2 F3 F4 F5 F6`, read by position, a missing field zero: `RP 0 4 1 1000 0 0 30` is θ 0/30/60/90 at φ = 0, as nec2c reads it (fnec before 0.26 read seven fields as a card without XNDA, θ₀ = 1000). Pinned in `apps/nec-cli/tests/rp_cards_nec2c.rs` (nec2c 1.3.1).
+
+| Field | NEC-2 meaning | fnec |
+|-------|---------------|------|
+| I1 | mode | `0` the far-field pattern. `1` (fields near the ground at RHO = F5, nec2c's `gfld`) is **refused**, as are `2`–`6` (patterns over a linear or circular cliff or a radial-wire screen) and any other value |
+| I2, I3 | N_θ, N_φ | the grid; 0 reads as 1, as in nec2c |
+| I4 | XNDA | an integer: a real here (`RP 0 37 73 0.0 0.0 5.0 5.0`, fnec's retired 7-field form, which nec2c refuses) is **refused** with its rewrite. Digits as nec2c splits them (FND-298): **X** (thousands) picks nec2c's column labels (1: vertical/horizontal) — the NEC-2D output (`--output-format nec2d`) honours it, fnec's own table has one layout; every 4nec2 deck writes `1000`, which fnec before 0.26 read as "normalize"; **N** (hundreds) ≠ 0 → `NORMALIZED_PATTERN` of the total gain (a component 1–4 warns that fnec normalizes the total); **D** (tens) ≠ 0 → this card's rows report **directive gain** (power gain without the radiation efficiency, nec2c's "DIRECTIVE GAINS"; a 50 Ω-loaded dipole −5.48/0.38/2.16 dB at θ 30/60/90 against power gains −7.61/−1.75/0.03, as nec2c); **A** (units) ≠ 0 → `AVERAGE_POWER_GAIN` line (solid-angle-weighted mean gain = radiation efficiency over the full sphere, matches nec2c to <1%; a loaded free-space dipole 0.454 vs 0.458; PH9-CHK-004) |
+| F1–F4 | θ₀, φ₀, Δθ, Δφ (degrees) | the grid |
+| F5 | RFLD, the range of the printed field | ignored with a warning when nonzero; the gains do not depend on it |
+| F6 | GNOR, a normalization gain | ignored with a warning when nonzero under a normalization; fnec normalizes to the pattern's peak |
 
 ## Cards fnec does not model
 
@@ -149,7 +176,7 @@ each other (`crates/nec_parser/tests/card_matrix.rs`).
 | PL | Ignored | xnec2c's plot-file output; no plot file is written |
 | WG | Ignored | Writes a Numerical Green's Function file; none is written |
 | GF | Refused | A structure read from a Numerical Green's Function file |
-| GD | Refused | Additional ground parameters: a cliff or a second medium |
+| GD | Ignored | Additional ground parameters (a second medium or a cliff), which only enter nec2c's `RP` modes 2, 3, 5 and 6, which fnec refuses; the pattern is computed over the first medium, as nec2c's `RP 0` computes it (D3; it was refused until 0.26) |
 | SP | Refused | A surface patch |
 | SM | Refused | A set of surface patches |
 | SC | Refused | A surface-patch continuation |

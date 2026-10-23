@@ -195,3 +195,55 @@ fn an_end_within_nec2c_contact_band_is_on_the_ground() {
     assert!(dist(off, on) > 100.0, "a base 0.2 mm up snapped: {off:?}");
     solves(&monopole(2e-4, 21, "GE 0\nGN 1"));
 }
+
+/// A horizontal 5 m dipole 5 m up, 21 segments, centre-fed, 29.9 MHz.
+fn horizontal(gn: &str) -> String {
+    format!(
+        "CE\nGW 1 21 -2.5 0 5 2.5 0 5 .001\nGE 0\n{gn}\nEX 0 1 11 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n"
+    )
+}
+
+/// FND-283: GN's radial-wire screen (I2 = NRADL, F3/F4) changes nec2c's
+/// currents — 75.133 + j30.984 → 71.558 + j24.854 Ω with 16 radials of 20 m
+/// over 13/0.005 — and fnec read neither, solving 74.891 + j28.357 for both.
+/// Refused over GN 0; over GN 2 nec2c itself stops (exit 255, "RADIAL WIRE G.S.
+/// APPROXIMATION MAY NOT BE USED WITH SOMMERFELD GROUND OPTION").
+#[test]
+fn a_radial_screen_over_a_finite_ground_is_refused() {
+    let e = refused(&horizontal("GN 0 16 0 0 13 .005 20 .001"));
+    assert!(
+        e.contains("16 wires") && e.contains("--solver mpie") && e.contains("field 2"),
+        "{e}"
+    );
+    let e = refused(&horizontal("GN 2 16 0 0 13 .005 20 .001"));
+    assert!(e.contains("RADIAL WIRE G.S."), "{e}");
+    // Control: the same ground without the screen solves.
+    solves(&horizontal("GN 0 0 0 0 13 .005"));
+}
+
+/// What nec2c ignores, fnec ignores, with a warning, and the answer does not
+/// move: nec2c gives 73.487 + j22.724 for GN 1 with and without
+/// `16 0 0 0 0 20 .001`, 79.004 + j41.448 (free space) for GN −1 with them,
+/// 75.133 + j30.984 for GN 0 with I3/I4 set or a second medium in F3–F6.
+#[test]
+fn gn_fields_nec2c_ignores_leave_the_answer_unchanged() {
+    for (plain, with, needle) in [
+        ("GN 1", "GN 1 16 0 0 0 0 20 .001", "over a perfect ground"),
+        ("GN -1", "GN -1 16 0 0 13 .005", "in free space"),
+        (
+            "GN 0 0 0 0 13 .005",
+            "GN 0 0 3 4 13 .005",
+            "never reads GN I3/I4",
+        ),
+        (
+            "GN 0 0 0 0 13 .005",
+            "GN 0 0 0 0 13 .005 20 .001 5 2",
+            "second medium",
+        ),
+    ] {
+        let want = solves(&horizontal(plain));
+        let (got, stderr) = fnec(&horizontal(with)).unwrap_or_else(|e| panic!("{with}: {e}"));
+        assert_eq!(got, want, "{with} vs {plain}");
+        assert!(stderr.contains(needle), "{with}: {stderr}");
+    }
+}

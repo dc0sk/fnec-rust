@@ -201,15 +201,13 @@ mod tests {
         // question about values cannot.
         let mut deck = dipole();
         deck.cards.push(Card::Nt(NtCard {
-            raw_fields: [
-                "1", "6", "1", "16", // tag1 seg1 tag2 seg2
-                "0.0", "-0.002", // Y11
-                "0.0", "0.004", // Y12
-                "0.0", "-0.002", // Y22
-            ]
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect(),
+            tag1: 1,
+            segment1: 6,
+            tag2: 1,
+            segment2: 16,
+            y11: (0.0, -0.002),
+            y12: (0.0, 0.004),
+            y22: (0.0, -0.002),
         }));
         let stamps = stamps_for(&deck);
         assert!(stamps.has_networks, "an NT card is a network");
