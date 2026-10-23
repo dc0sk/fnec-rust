@@ -35,6 +35,7 @@ Serves **FR-001, DEC-010/011, PRT-001/002/008, NFR-004, PH8-CHK-001..006**.
 
 - `src/lib.rs` — facade re-exporting geometry/matrix/excitation/basis/linear/loads/tl/farfield.
 - `src/geometry.rs` — `GW` → `Segment` lists; `GroundModel` extraction; junction detection.
+- `src/refine.rs` — a deck meshed S times finer for `fnec converge`: every GW/GA/GH count × S, every EX/LD/NT/TL reference on the sub-segment modelling the same thing (`EndRule`: an end reference keeps its end or takes the centre), lumped ranges expanded, per-metre ranges stretched, RP/NE/NH/PT dropped.
 - `src/convergence.rs` — the settle rule of a mesh series (FND-255/256): `remaining_drift` (the geometric tail), `classify`/`trend`; one rule for the corpus gate and `fnec converge`.
 - `src/matrix.rs` — Hallén A-matrix (+ Pocklington/Z variants, ground); Gauss-Legendre quadrature + self-term singularity subtraction; `ZMatrix`.
 - `src/excitation.rs` — complex RHS from `EX` cards; `build_hallen_rhs` (delta-gap); pulse-RHS scaling; `ExcitationError`. **PH8-CHK-002 adds the plane-wave forcing RHS here.**

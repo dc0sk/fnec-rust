@@ -230,7 +230,10 @@ fn parallel_rlc(r: f64, l: f64, c: f64, omega: f64) -> Complex64 {
 }
 
 /// Returns true if this segment should receive the load described by `ld`.
-fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
+///
+/// `pub(crate)` for `refine`, which expands a lumped load over a range into one
+/// load per deck segment by this rule, so the two cannot read a range apart.
+pub(crate) fn segment_matches(ld: &LdCard, seg: &Segment) -> bool {
     // Tag 0 = apply to all tags.
     if ld.tag != 0 && seg.tag != ld.tag {
         return false;
