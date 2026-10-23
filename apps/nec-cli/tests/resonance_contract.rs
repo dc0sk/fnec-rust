@@ -3,6 +3,8 @@
 //
 // Contract tests for the `fnec sweep --resonance` subcommand (PH3-CHK-008).
 //
+// VERIFIES: FR-010 (resonance targeting; the convergence study is converge_contract.rs)
+//
 // Test 1 — worked example converges:
 //   Uses examples/resonance-search.nec.toml to search for the resonant
 //   half-length of a 14.2 MHz dipole.  Accepts CONVERGED true and a final

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod basis;
+pub mod convergence;
 mod corner;
 pub mod current_source;
 pub mod excitation;
@@ -19,6 +20,7 @@ pub mod mpie;
 pub mod mpie_session;
 pub mod network;
 pub mod planewave;
+pub mod refine;
 pub mod section_graph;
 pub mod sommerfeld;
 pub mod stamps;

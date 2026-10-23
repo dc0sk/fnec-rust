@@ -95,8 +95,8 @@ id = "FR-010"
 title = "Automation helpers for resonance targeting and convergence studies"
 status = "implemented"
 criticality = "medium"
-verification = "review"
-rationale = "Resonance search exists (resonance_contract); the broader AutoEZ-class helpers are partial."
+verification = "test"
+rationale = "Resonance search (`fnec sweep --resonance`, resonance_contract.rs) and the convergence study (`fnec converge`, converge_contract.rs), each with a contract test through the binary (GAP-012)."
 
 [[requirement]]
 id = "FR-011"

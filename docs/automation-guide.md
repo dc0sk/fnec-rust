@@ -17,6 +17,10 @@ pipelines.  It assumes familiarity with the basic CLI options documented in
 2. [Batch frequency sweeps](#2-batch-frequency-sweeps)
 3. [Variable template workflows](#3-variable-template-workflows)
 4. [Resonance targeting](#4-resonance-targeting)
+5. [Optimizer loops](#5-optimizer-loops)
+6. [End-to-end example: optimise wire length for minimum SWR](#6-end-to-end-example-optimise-wire-length-for-minimum-swr)
+7. [Worked example: is the mesh fine enough?](#7-worked-example-is-the-mesh-fine-enough)
+
 5. [Matching networks](#5-matching-networks)
 6. [Optimizer loops](#6-optimizer-loops)
 7. [End-to-end example: optimise wire length for minimum SWR](#7-end-to-end-example-optimise-wire-length-for-minimum-swr)
@@ -483,10 +487,82 @@ Result:
 
 ---
 
+## 7. Worked example: is the mesh fine enough?
+
+A feedpoint impedance is only as good as the mesh it was solved on. `fnec
+converge` answers "has it converged?" by solving the deck at 1×, 3× and 9× its
+segmentation and pricing how far the series still has to move
+([`cli-guide.md`](cli-guide.md#fnec-converge-options-decknec) has the rules).
+
+```sh
+fnec converge corpus/dipole-freesp-51seg.nec
+```
+
+```
+CONVERGENCE_STUDY
+SOLVER hallen
+FACTORS 1,3,9
+ENDS keep
+TOL_OHM 0.500000 TOL_PCT 1.000000
+ROW 1 FREQ_MHZ 14.200000 TAG 1 SEG 26
+REF EX 1 26 -> 1x 26, 3x 77, 9x 230
+MESH 1 SEGMENTS 51 Z_RE 79.331456 Z_IM 45.036813 ROUTE plain
+MESH 3 SEGMENTS 153 Z_RE 79.543131 Z_IM 45.934783 ROUTE plain
+MESH 9 SEGMENTS 459 Z_RE 79.647332 Z_IM 46.362007 ROUTE plain
+STEPS_R 0.211675 0.104201
+STEPS_X 0.897970 0.427224
+TAIL_R 0.101028 TAIL_X 0.387726
+CLASS settling
+Z_EXTRAPOLATED 79.748360 46.749733
+SETTLED true
+ALL_SETTLED true
+```
+
+Reading it: the feed on segment 26 of 51 is the centre sub-segment 77 of 153
+and 230 of 459. R moved 0.212 Ω and then 0.104 Ω (each step about half the one
+before, ratio 0.49), so the geometric tail it has still to move is
+0.104 · 0.49 / (1 − 0.49) ≈ 0.101 Ω; X's tail is 0.388 Ω. The tolerance is
+max(0.5 Ω, 1 % of |Z| ≈ 0.92 Ω) = 0.92 Ω, and both tails are inside it:
+**settled**. The extrapolated limit 79.748 + j46.750 Ω sits 0.04 Ω from nec2c's
+own value at 27× with the extended kernel (79.710 + j46.719 Ω).
+
+In a script, read the JSON and act on the verdict:
+
+```python
+import json, subprocess
+
+out = subprocess.run(
+    ["fnec", "converge", "--output-format", "json", "dipole.nec"],
+    capture_output=True, text=True,
+)
+if out.returncode != 0:            # 1: refused or a mesh failed; 2: usage
+    raise SystemExit(out.stderr)
+study = json.loads(out.stdout)
+for row in study["rows"]:
+    if row["settled"] is True:
+        z = row["extrapolated"]
+        print(f'{row["freq_mhz"]} MHz: converged, Z ≈ {z["z_re"]:.3f} {z["z_im"]:+.3f}j')
+    else:                          # False, or "undecided" with two meshes
+        print(f'{row["freq_mhz"]} MHz: not settled ({row["class"]}); refine the deck')
+```
+
+A series that does not settle is a result, not an error: the exit status is 0
+and stderr says which rows did not. The usual cause is a feed or load on a
+wire's first or last segment beside a junction. Under the default
+`--ends keep` that gap stays at the node, so it moves toward the node as the
+mesh refines and the series may have no limit (FND-277/278): a dipole fed beside
+its join reads `CLASS diverging`. `--ends centre` studies the gap at a fixed
+position instead, which is what the corpus's converged nec2c references use.
+
+---
+
 ## Appendix: exit-code summary
 
 | Exit code | Meaning |
 |:---------:|:--------|
+| 0 | Success (or resonance search reached max iterations with a warning, or a convergence study that did not settle) |
+| 1 | Solver error, I/O error, bracketing failure, or a `fnec converge` refusal |
+
 | 0 | Success (or resonance search reached max iterations with a warning) |
 | 1 | Solver error, I/O error, bracketing failure, or a feedpoint no passive network matches (`fnec match`) |
 | 2 | Usage error (unknown flag, missing argument, undefined `$VAR`) |

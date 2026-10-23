@@ -135,6 +135,40 @@ print(f"Z = {z:.2f} Ω  SWR@50Ω ≈ {abs(swr):.2f}")
 See `docs/automation-guide.md` (PH4-CHK-006) for end-to-end optimizer
 examples.
 
+## `fnec converge` output
+
+`fnec converge --output-format json <deck.nec>` (the convergence-study helper,
+GAP-012; see [`cli-guide.md`](cli-guide.md#fnec-converge-options-decknec))
+prints **one JSON object**, not an array, tagged `"schema": "fnec-converge/1"`.
+Numbers are full-precision doubles; an infinite tail (a series whose steps do
+not contract) is `null`.
+
+```json
+{
+  "schema": "fnec-converge/1",
+  "solver": "hallen",
+  "factors": [1, 3, 9],
+  "ends": "keep",
+  "tol": {"ohm": 0.5, "pct": 1.0},
+  "rows": [
+    {
+      "freq_mhz": 14.2, "tag": 1, "seg": 26,
+      "refs": [{"card": "EX", "tag": 1, "seg": 26, "touches_end": false, "mapped": [26, 77, 230]}],
+      "meshes": [
+        {"factor": 1, "segments": 51,  "z_re": 79.33145613209469, "z_im": 45.0368125202649,  "route": "plain"},
+        {"factor": 3, "segments": 153, "z_re": 79.54313114171482, "z_im": 45.93478250751455, "route": "plain"},
+        {"factor": 9, "segments": 459, "z_re": 79.64733213740355, "z_im": 46.36200675862539, "route": "plain"}
+      ],
+      "steps": {"r": [0.2116750096201372, 0.10420099568872843], "x": [0.8979699872496454, 0.42722425111084306]},
+      "tail": {"r": 0.10102765408438183, "x": 0.387726423683216},
+      "class": "settling",
+      "extrapolated": {"z_re": 79.74835979148793, "z_im": 46.74973318230861},
+      "settled": true,
+      "notes": []
+    }
+  ],
+  "all_settled": true
+
 ## `fnec match` output (`fnec-match/1`)
 
 `fnec match … --output-format json` prints one JSON **object**, not the array
@@ -166,6 +200,26 @@ above: the matching-network helper's document, schema `fnec-match/1`
 
 | Field | Type | Description |
 |:------|:-----|:------------|
+| `schema` | `string` | `"fnec-converge/1"`. |
+| `solver`, `ends` | `string` | The `--solver` and `--ends` in force. |
+| `factors` | `integer[]` | The mesh factors, coarsest first. |
+| `tol` | `object` | `ohm` and `pct`: settled when the tail ≤ max(ohm, pct % × \|Z\| at the finest mesh) on each axis. |
+| `rows[]` | `object[]` | One per (frequency, source) feedpoint row of the deck, in the main report's order. |
+| `rows[].freq_mhz`, `tag`, `seg` | `number`, `integer` | The row's frequency and the deck's own feedpoint segment. |
+| `rows[].refs[]` | `object[]` | Every segment reference the refinement mapped (`EX`, `LD`, `NT`, `TL`): the deck's `tag`/`seg`, whether it is a wire's first or last segment (`touches_end`), and its segment at each factor (`mapped`, in `factors` order). |
+| `rows[].meshes[]` | `object[]` | Per factor: the structure's segment count, the impedance, and the `route=` the solve took (its `diag:` line). |
+| `rows[].steps` | `object` | `r`, `x`: the absolute step between consecutive meshes. |
+| `rows[].tail` | `object \| null` | `r`, `x`: the geometric tail of the last two steps (`null` per axis when they do not contract). `null` with two meshes. |
+| `rows[].class` | `string \| null` | `"settling"`, `"diverging"` or `"log-drift"` (four meshes or more); `null` with two. |
+| `rows[].extrapolated` | `object \| null` | The finest mesh plus the tail, only when `settled` is `true`. |
+| `rows[].settled` | `true \| false \| "undecided"` | `"undecided"` with two meshes: a step, no verdict. |
+| `rows[].notes` | `string[]` | Dropped cards, a re-interpolated taper, a mesh under nec2c's thin-kernel limit, a reference touching a wire end. |
+| `all_settled` | `true \| false \| "undecided"` | `false` if any row is not settled; else `"undecided"` if any row is; else `true`. |
+
+Exit status as in text mode: 0 when the study completed (settled or not), 1 on
+a refusal or solver error, 2 on a usage error. A refusal before any mesh is
+solved writes nothing to stdout.
+
 | `schema` | `string` | `"fnec-match/1"`. |
 | `blocks[]` | `array` | One block per matched frequency point: one for `--z`, one per record of the deck's solve (its `FR` card or `--sweep-config`), in solve order. |
 | `blocks[].freq_mhz` | `number` | The frequency the component values are for. |

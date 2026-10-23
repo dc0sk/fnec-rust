@@ -1038,6 +1038,145 @@ pub(super) fn frequencies_from_fr(deck: &nec_model::deck::NecDeck) -> Vec<f64> {
     nec_solver::frequencies_hz(deck)
 }
 
+/// What a probe solves with, and the words its refusals and caveats use: each
+/// frontend reaches the MPIE in its own way (FND-218, FND-271), and the
+/// no-frequency refusal names a remedy the route can take (FND-070).
+pub(crate) struct ProbeConfig<'a> {
+    pub(crate) solver_mode: SolverMode,
+    pub(crate) ground_solver: GroundSolver,
+    pub(crate) execution_mode: ExecutionMode,
+    /// Joined on a refusal of the geometry the MPIE would solve.
+    pub(crate) refusal_mpie_remedy: &'a str,
+    /// The geometry caveats' remedies, when the probe prints them.
+    pub(crate) remedies: nec_solver::validate::Remedies<'a>,
+    /// Appended to the refusal of a deck with no frequency.
+    pub(crate) no_frequency_remedy: &'a str,
+    /// Put before every stderr line the probe prints: empty for a route with one
+    /// deck, `mesh 3x: ` for `fnec converge`, whose caveats are each mesh's own.
+    pub(crate) stderr_prefix: &'a str,
+}
+
+/// Which of the deck's `FR` frequencies a probe solves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeFrequencies {
+    /// Every frequency, in `FR` order (`fnec converge`).
+    All,
+    /// The first only: a resonance search's template carries one.
+    First,
+}
+
+/// One solved frequency of a probe: its feedpoint rows, every source in the
+/// report's order, and its `diag:` line (whose `route=` names the basis solved).
+pub(crate) struct ProbePoint {
+    pub(crate) freq_hz: f64,
+    pub(crate) feedpoints: Vec<nec_report::FeedpointRow>,
+    pub(crate) diag_line: String,
+}
+
+/// Solve a parsed deck for its feedpoints, as a helper route does: the geometry,
+/// every refusal the main command makes (`pre_solve_error`, FND-173), the
+/// excitation, the geometry caveats when `print_caveats` (once per deck, in the
+/// caller's words — not once per probe, FND-218), then one
+/// [`solve_frequency_point`] per frequency, each point's negative-resistance
+/// sentences printed as its own. `sweep --resonance` and `fnec converge` run on
+/// this; a route with its own copy of the sequence is how FND-173 happened.
+pub(crate) fn probe_feedpoints(
+    deck: &nec_model::deck::NecDeck,
+    cfg: &ProbeConfig<'_>,
+    which: ProbeFrequencies,
+    print_caveats: bool,
+) -> Result<Vec<ProbePoint>, String> {
+    let segs = cfg
+        .solver_mode
+        .geometry(deck)
+        .map_err(|e| e.with_mpie_remedy(cfg.refusal_mpie_remedy))?;
+    let ground = nec_solver::ground_model_from_deck(deck);
+    if let Some(err) = nec_solver::validate::pre_solve_error(deck, &segs, &ground) {
+        return Err(err);
+    }
+    let v_vec = nec_solver::build_excitation(deck, &segs).map_err(|e| e.to_string())?;
+    let wire_endpoints = nec_solver::wire_endpoints_from_segs(&segs);
+    let per_wire_basis_feasible = wire_endpoints.iter().all(|&(first, last)| last > first);
+
+    let mut freqs = frequencies_from_fr(deck);
+    if freqs.is_empty() {
+        return Err(
+            nec_solver::validate::no_frequency_error(&freqs, cfg.no_frequency_remedy)
+                .unwrap_or_else(|| "probe: no frequency".to_string()),
+        );
+    }
+    if which == ProbeFrequencies::First {
+        freqs.truncate(1);
+    }
+
+    // The Hallén caveats describe the Hallén geometry; the MPIE solves what they
+    // warn of, as `solve_frequency_point` itself skips them there.
+    if print_caveats && !matches!(cfg.solver_mode, SolverMode::Mpie) {
+        let shown = match which {
+            ProbeFrequencies::First => nec_solver::validate::hallen_geometry_caveats(
+                deck,
+                &segs,
+                &ground,
+                freqs[0],
+                false,
+                cfg.remedies,
+            ),
+            ProbeFrequencies::All => nec_solver::validate::hallen_geometry_caveats_swept(
+                deck,
+                &segs,
+                &ground,
+                &freqs,
+                false,
+                cfg.remedies,
+            ),
+        };
+        for w in shown {
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
+        }
+        for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
+        }
+    }
+
+    let mut points = Vec::with_capacity(freqs.len());
+    for freq_hz in freqs {
+        let solved = solve_frequency_point(
+            deck,
+            &segs,
+            &wire_endpoints,
+            per_wire_basis_feasible,
+            &v_vec,
+            &ground,
+            &[],
+            cfg.solver_mode,
+            PulseRhsMode::Nec2,
+            cfg.execution_mode,
+            SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
+            freq_hz,
+            cfg.ground_solver,
+            &[], // Laplace loads apply to the main command's solve path only.
+            GeometryCaveats::ShownByCaller,
+        )?;
+        // A probe is not a sweep point: each one still says so itself, as
+        // before the sweep caveat was aggregated (FND-069).
+        for w in &solved.negative_r {
+            eprintln!("{}warning: {w}", cfg.stderr_prefix);
+        }
+        let feedpoints = match solved.report {
+            PointOutput::Tables(point) => point.rows.clone(),
+            PointOutput::Text(_) => {
+                return Err("probe: a local solve carries no tables".to_string());
+            }
+        };
+        points.push(ProbePoint {
+            freq_hz,
+            feedpoints,
+            diag_line: solved.diag_line,
+        });
+    }
+    Ok(points)
+}
+
 /// Attempt the GPU-resident Hallén fill+solve (PH7-CHK-003) for the supported
 /// deck class. Returns `None` (caller uses the CPU `solve_hallen`) unless:
 /// `--exec gpu`, free-space/deferred ground, no LD/TL host matrix stamps, and at

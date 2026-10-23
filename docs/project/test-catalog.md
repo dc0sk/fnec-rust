@@ -28,6 +28,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/core_flags_contract.rs` | 20 | `--solver`/`--pulse-rhs`/`--exec` flag contract + usage errors; `--version`/`--help` answer on stdout with exit 0 (FND-169); `--version` and the report's last `FNEC_BUILD` line name the build's commit, HEAD's in a checkout (FND-266) | NFR-005, PH2-CHK-008, FND-169 |
 | `apps/nec-cli/tests/corpus_deck_sanity.rs` | 1 | Every corpus `.nec` deck has a `GE` card | Corpus hygiene |
 | `apps/nec-cli/tests/corpus_validation.rs` | 9 | Golden corpus matches references; checklist coverage (PAR002/003/005, loaded, pattern); the card-index check moved to `card_matrix.rs` (FND-235) | NFR-004, COMP-002/008, PH2-CHK-005/007 |
+| `apps/nec-cli/tests/converge_contract.rs` | 10 | GAP-012, BL-IMPR-017 — `fnec converge`, the convergence-study helper, through the binary: the worked example (dipole 51 → 153 → 459: 1× is the main command's answer and 3× the `scripts/nec2c-fine-mesh.py` deck's, to 1e-9 Ω; steps, tail and extrapolation recomputed; settled); an end reference keeps its end by default (monopole base feed 1 → 1, the hand-written 78-segment deck) and takes the centre under `--ends centre` (the script's deck); a feed beside a join diverges, exit 0, with the end note; two meshes are undecided; the refusals and their exit codes (receiving antenna, tag 0 with a segment, a one-segment wire under keep, bad factor lists, any segment under 2 radii at a factor, MAX_SEGMENTS, the main command's sentence at 1× and on a refined mesh, options it does not take); lumped ranges become points, per-metre ranges lengths, a port's 0 resolves before mapping; a GM copy maps inside the copy; on all 11 converged corpus decks `--ends centre` at 3× is the script's deck; the JSON shape, stable across runs; each mesh's caveats under its own `mesh Nx:` prefix | FR-010, GAP-012 |
 | `apps/nec-cli/tests/converged_reference.rs` | 8 | FND-232, FND-255, FND-256, FND-265, FND-267 — the corpus's nec2c references are nec2c on a 9× or 27× mesh: exactly the 11 expected cases carry a series, each settles within its case's gate (the drift left past its last point ≤ ⅓ of the External tolerance, on R and X), on one recorded kernel (an extended-kernel series agrees with the thin kernel at 9× within a tenth), with the reference its last point; the settle rule refuses the FND-252 5:1-step series and split-V's old 9× series; nec2c's series at the H (diverging), the tee and the T through a bar (log drift) are pinned as data, against a settling Y; fnec refined 3× moves toward it at every feedpoint and frequency, and `scripts/nec2c-fine-mesh.py` maps segment 26 → 77 of 153 and refuses an unmapped card or a sub-limit mesh.; the receive series in `corpus/series/`: nec2c's T-node current drifts (log drift), and nec2c breaks at an inverted-L's corner below about 9 radii (the 1 mm 27× step over four times the 9× step; a 0.2 mm control breaks at 81×), while the T's 0.2 mm control keeps shrinking | FND-232 |
 | `apps/nec-cli/tests/current_source_ground_anchor.rs` | 2 | FND-118 — the current drive, anchored on a solver that is neither drive. | FND-118, FND-156, FND-157 |
 | `apps/nec-cli/tests/current_source_junction.rs` | 2 | CLI junctioned current source: split-dipole EX-4 feedpoint Z=V/i0 matches voltage-source Z (~2e-4) | PH9-CHK-002 |
@@ -165,7 +166,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=842 --> **842** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=852 --> **852** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -176,7 +177,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 289 | lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 297 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 99 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 53 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -186,11 +187,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=675 --> **675** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=683 --> **683** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1524 --> **1524** = 675 unit + 842 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1542 --> **1542** = 683 unit + 852 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
