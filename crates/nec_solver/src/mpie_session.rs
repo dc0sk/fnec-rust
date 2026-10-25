@@ -269,6 +269,10 @@ pub(crate) fn mpie_plan(
     if let Some(e) = crate::mpie::ground_contact_error(&geom, freq_hz, ground) {
         return Err(MpieSessionError::Solve(e));
     }
+    // "At a free end" is the Hallén caveat's predicate (FND-294), on the deck
+    // geometry the MPIE solves. Ungrounded: the plane is not part of the MPIE's
+    // wire graph, and a wire touching it was refused just above.
+    let at_end = crate::geometry::at_free_end(segs, false);
     let mut feeds: Vec<(usize, Complex64)> = Vec::new();
     for (ex, role) in crate::excitation::feedpoints(deck) {
         if role != nec_model::card::FeedpointRole::DeltaGap {
@@ -289,16 +293,10 @@ pub(crate) fn mpie_plan(
         // dipole 6.5 / 3.4 / 1.7 % from nec2c at 21 / 41 / 81 segments, now 1.1 /
         // 0.5 / 0.3 %), and mirrored ports came out unequal (FND-224).
         let [a, b] = geom.segments[driven_idx];
-        let degree = |n: usize| {
-            geom.segments
-                .iter()
-                .filter(|s| s[0] == n || s[1] == n)
-                .count()
-        };
         // A free end carries no basis, so a source there has nothing to drive but
         // the next node — the current read on the end segment is half of it, and
         // the answer stays 20–37 % from nec2c however fine the mesh (FND-228).
-        if degree(a) == 1 || degree(b) == 1 {
+        if at_end[driven_idx] {
             return Err(MpieSessionError::EndSegmentFeed {
                 tag: ex.tag,
                 segment: ex.segment,

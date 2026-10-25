@@ -756,6 +756,39 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
+/// FND-294: one warning per feedpoint on a segment at a free wire end.
+///
+/// A gap at a free end is singular in the thin-wire model: fed on segment 1 of a
+/// 5 m, 1 mm wire at 29.9 MHz, the impedance moves with the mesh in fnec and in
+/// nec2c alike — Hallén 1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at 11 / 33 /
+/// 99 segments, nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519 — while a feed
+/// 0.68 m from the end converges in both (fnec 490.9 + j66.8 → 507.0 + j79.6,
+/// nec2c 494.0 + j107.5 → 508.1 + j87.8). A caveat, not a refusal: nec2c answers
+/// these decks and end-fed antennas are common (decision D10).
+///
+/// Feeds only — a delta gap or a current source, through
+/// [`crate::excitation::feedpoints`]; a `TL`/`NT` port at a free end is not
+/// measured. Judged by [`crate::geometry::at_free_end`], the predicate the MPIE's
+/// refusal uses, on whichever geometry `segs` is, and with the ground the Hallén
+/// refinement used, so a base-fed monopole over a ground is not caveated.
+pub fn free_end_feed_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+    let at_end = crate::geometry::at_free_end(segs, crate::geometry::ground_joins_wire_ends(deck));
+    crate::excitation::feedpoints(deck)
+        .filter(|(ex, _)| {
+            crate::find_deck_segment(segs, ex.tag, ex.segment).is_some_and(|i| at_end[i])
+        })
+        .map(|(ex, _)| {
+            format!(
+                "feedpoint tag {} segment {} is on a segment at a free wire end; a feed there \
+                 is singular in the thin-wire model, so the impedance keeps changing as the \
+                 mesh is refined (nec2c's does too) and is not a property of the antenna \
+                 (FND-294) — feed a segment in from the end, or model the feed's real geometry",
+                ex.tag, ex.segment
+            )
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Post-solve result check
 // ---------------------------------------------------------------------------
@@ -1597,6 +1630,7 @@ fn frequency_independent_caveats(
         out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
+    out.extend(free_end_feed_warnings(deck, segs));
     out
 }
 
