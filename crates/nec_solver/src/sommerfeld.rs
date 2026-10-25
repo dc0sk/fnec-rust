@@ -36,10 +36,7 @@
 
 use num_complex::Complex64;
 
-const C0: f64 = 299_792_458.0; // m/s
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
-const EPS0: f64 = 8.854_187_817e-12; // F/m
-const ETA0: f64 = MU0 * C0; // free-space wave impedance
+use crate::constants::{C0, EPS0, ETA0};
 
 /// Complex relative permittivity of the ground: `εc = εr − j σ/(ω ε0)`.
 ///
@@ -1132,6 +1129,7 @@ pub fn bessel_j2(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::MU0;
 
     /// Where the correction applies, one deck per condition (FND-217): the solve
     /// gates on this and the low-ground caveat names the remedy on it.

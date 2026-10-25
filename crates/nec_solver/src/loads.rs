@@ -22,10 +22,10 @@ use num_complex::Complex64;
 use nec_model::card::{Card, LdCard};
 use nec_model::deck::NecDeck;
 
+use crate::constants::MU0;
 use crate::geometry::{deck_segment_in_range, Segment};
 
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
 
 /// Ratio `I0(z)/I1(z)` of modified Bessel functions for complex `z`, used by the
 /// round-wire internal-impedance formula. Power series for `|z| ≤ 15`, and the

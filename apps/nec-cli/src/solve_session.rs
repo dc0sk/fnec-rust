@@ -1,7 +1,7 @@
 use super::exec_profile::ExecutionMode;
 use nec_model::card::Card;
 
-pub(super) const C0: f64 = 299_792_458.0;
+use nec_solver::constants::C0;
 pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT: f64 = 1e-2;
 
@@ -1795,7 +1795,7 @@ pub(super) fn solve_frequency_point(
         // computes radiation intensity components, not normalised gain. Free
         // space only (above), so the power integral is the full sphere.
         let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, false);
-        let k = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
 
         let gpu_segments: Vec<_> = segs
             .iter()

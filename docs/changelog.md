@@ -74,6 +74,20 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   A text or JSON run whose impedance carries the correction now prints one `info:`
   line per run: V, I, the currents and the pattern are the reflection-coefficient
   solve's, so I ≠ V/Z.
+- **One definition of the speed of light, μ0, ε0 and η0** (FND-297 b). Fourteen
+  modules in four crates defined their own, and eight more sites wrote the value
+  inline. They now read `nec_model::constants` (re-exported as
+  `nec_solver::constants`). The `C0`, `MU0` and `ETA0` copies were bit-identical,
+  so nothing that uses them moves. The two `EPS0` values were not: the Sommerfeld
+  ground used 8.854 187 817e-12 and the MPIE 8.854 187 812 8e-12, which does not
+  match its own μ0 = 4π·10⁻⁷. Both now use 1/(μ0 c²) = 8.854 187 817 62e-12. One
+  value cannot keep both, so this moves ε0 by 7·10⁻¹¹ (Sommerfeld) and 5·10⁻¹⁰
+  (MPIE) relative. Measured: the Sommerfeld-corrected impedance of
+  `corpus/dipole-gn2-near-ground-51seg.nec` does not change at printed precision;
+  MPIE reactances move by 1 in the sixth decimal (43.924969 → 43.924970 Ω over that
+  ground, 45.954885 → 45.954886 Ω on `dipole-freesp-51seg`). A new gate,
+  `scripts/check-physical-constants.py`, run by `scripts/check-all.sh` and CI with a
+  self-test, refuses these literals anywhere else in the Rust sources.
 - **The NEC-2D report prints a negative-σ ground as the ground the solve uses**
   (FND-303). `nec2d_out::environment` had its own copy of the permittivity rule
   and missed NEC-2's negative-σ form. For `GN 0 0 0 0 13 -5` at 14.2 MHz it printed

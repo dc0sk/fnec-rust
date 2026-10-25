@@ -225,7 +225,7 @@ pub(crate) fn solve_graph_unit_gap(
     loads: &[Complex64],
 ) -> Result<Vec<Complex64>, crate::linear::SolveError> {
     let ground = crate::ground_model_from_deck(deck);
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, &ground, freq_hz);
     // `z_mat` must be UNSTAMPED: the loads enter here, as columns of the graph
     // system, and nowhere else (FND-198).
@@ -676,7 +676,7 @@ pub(crate) fn group_sections(
     ground: &crate::GroundModel,
     gaps: &NodeGaps,
 ) -> PathGrouping {
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, ground, freq_hz);
     match section_layout(segs, paths, k, &sources, gaps) {
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
@@ -1350,7 +1350,7 @@ fn solve_planewave_on_plan(
         // stamps, and a system built from it applied them in the wrong form,
         // silently — 25 % off nec2c on a loaded T (FND-197).
         let built = system.get_or_init(|| {
-            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
             let z = crate::assemble_z_matrix_with_ground(segs, freq_hz, matrix_ground);
             let mut system = crate::section_graph::GraphSystem::build(
                 &z,
@@ -1647,7 +1647,7 @@ fn solve_hallen_routed_inner(
     // them into `z_mat` (FND-162 stage 5). `loads` is the per-segment diagonal:
     // all zeros, not empty, on an unloaded deck.
     if let Some(graph) = graph_route(deck, segs) {
-        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
         let sources = corner_sources(segs, &ground, freq_hz);
         // TL/NT networks by superposition (FND-123): the response to a unit gap
         // at each undriven port, from the same system — exact, because the

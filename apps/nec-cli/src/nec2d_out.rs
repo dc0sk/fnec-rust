@@ -525,7 +525,7 @@ pub(crate) fn render(
     let loads = load_rows(deck, &segs);
     let mut blocks = Vec::new();
     for (report, elapsed) in points {
-        let lambda = 299_792_458.0 / report.frequency_hz;
+        let lambda = nec_solver::constants::C0 / report.frequency_hz;
         let feeds = report
             .rows
             .iter()
