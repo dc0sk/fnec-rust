@@ -448,6 +448,7 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let SolvedCurrents {
         source_currents,
         port_voltage,
+        residual_rel,
         ..
     } = solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
@@ -471,6 +472,10 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
             &[freq_hz],
         )),
     ) {
+        warnings.push(w);
+    }
+    // The one residual predicate every frontend renders (FND-302).
+    if let Some(w) = residual_rel.and_then(nec_solver::validate::residual_caveat) {
         warnings.push(w);
     }
 
@@ -539,6 +544,7 @@ fn solve_currents(
             source_currents: currents.clone(),
             currents,
             port_voltage: None,
+            residual_rel: None,
         });
     }
 
@@ -558,7 +564,18 @@ fn solve_currents(
         source_currents: routed.source_currents(),
         currents: routed.currents,
         port_voltage: routed.port_voltage,
+        residual_rel: routed.residual.map(|(_, rel)| rel),
     })
+}
+
+/// The worse of two Hallén residuals for a run's one FND-302 line; a `NaN`
+/// is the worst there is.
+pub(crate) fn worst_residual(acc: Option<f64>, next: Option<f64>) -> Option<f64> {
+    match (acc, next) {
+        (Some(a), Some(r)) if a.is_nan() || (!r.is_nan() && r <= a) => Some(a),
+        (_, Some(r)) => Some(r),
+        (a, None) => a,
+    }
 }
 
 /// What a solve hands back to this frontend.
@@ -570,6 +587,9 @@ struct SolvedCurrents {
     /// power come from these, never from `currents`.
     source_currents: Vec<Complex64>,
     port_voltage: Option<Complex64>,
+    /// The relative residual of the Hallén solve, `None` where the route computes
+    /// none (FND-302/306).
+    residual_rel: Option<f64>,
 }
 
 /// Compute feedpoint impedance Z = V/I for the first EX card, with the tag and
@@ -759,6 +779,24 @@ impl SweepJob {
 
     /// Solve the feedpoint impedance at one frequency (MHz).
     pub fn solve_at(&self, freq_mhz: f64) -> Result<SweepPoint, String> {
+        self.solve_at_with_residual(freq_mhz).map(|(p, _)| p)
+    }
+
+    /// The run's caveats once its points are in: the negative-resistance
+    /// aggregate and, at the run's worst residual, the FND-302 line.
+    pub fn run_caveats(&self, points: &[SweepPoint], worst_rel: Option<f64>) -> Vec<String> {
+        self.negative_resistance_caveat(points)
+            .into_iter()
+            .chain(worst_rel.and_then(nec_solver::validate::residual_caveat))
+            .collect()
+    }
+
+    /// [`Self::solve_at`] with the point's Hallén relative residual, `None` where
+    /// the route computes none.
+    pub fn solve_at_with_residual(
+        &self,
+        freq_mhz: f64,
+    ) -> Result<(SweepPoint, Option<f64>), String> {
         let freq_hz = freq_mhz * 1_000_000.0;
 
         // Per point, so the discarded fill cost the whole sweep, not one solve.
@@ -767,6 +805,7 @@ impl SweepJob {
         let SolvedCurrents {
             source_currents,
             port_voltage,
+            residual_rel,
             ..
         } = solve_currents(
             &self.deck,
@@ -785,11 +824,14 @@ impl SweepJob {
             freq_hz,
             port_voltage,
         )?;
-        Ok(SweepPoint {
-            freq_mhz,
-            z_re: z.re,
-            z_im: z.im,
-        })
+        Ok((
+            SweepPoint {
+                freq_mhz,
+                z_re: z.re,
+                z_im: z.im,
+            },
+            residual_rel,
+        ))
     }
 
     /// The deck's geometry and ground caveats, evaluated for the frequency range
@@ -1087,6 +1129,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         currents,
         source_currents,
         port_voltage,
+        ..
     } = solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     Ok(SolvedDeck {

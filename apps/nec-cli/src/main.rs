@@ -1055,6 +1055,18 @@ fn warn_negative_resistance_for_run<T>(
     let run_loads = nec_solver::validate::RunLoads {
         negative: ok.iter().any(|r| r.run_loads.negative),
     };
+    // FND-302: one line for the run, at its worst point — the residual is a
+    // property of the solve, and a sweep should not repeat it per point.
+    let mut worst: Option<f64> = None;
+    for r in ok.iter().filter_map(|r| r.hallen_rel_res) {
+        // A NaN residual is the worst there is, and stays so.
+        if worst.map_or(true, |w| !w.is_nan() && (r.is_nan() || r > w)) {
+            worst = Some(r);
+        }
+    }
+    if let Some(w) = worst.and_then(nec_solver::validate::residual_caveat) {
+        eprintln!("warning: {w}");
+    }
     for w in solve_session::run_negative_resistance_warnings(
         per_point,
         &min_feed_re,
@@ -1270,10 +1282,12 @@ fn run_distributed_solve(
                     // the same whether the work ran on a GPU or a CPU.
                     exec: format!("ssh-{exec_used}"),
                     freq_mhz,
-                    abs_res: 0.0,
-                    rel_res: 0.0,
-                    diag_spread: 0.0,
-                    sin_rel_res: 0.0,
+                    // The worker sends no residual and no diagonal spread:
+                    // `null`, not a perfect 0 (FND-306, D8).
+                    abs_res: None,
+                    rel_res: None,
+                    diag_spread: None,
+                    sin_rel_res: None,
                 };
                 // FND-014, controller-side on purpose. Putting this in the worker
                 // would reproduce the gap under version skew: a worker is a
@@ -1300,6 +1314,9 @@ fn run_distributed_solve(
                     caveat: None,
                 });
                 Ok(FrequencySolveResult {
+                    // The worker judges its own residual and sends the caveat
+                    // among its warnings, which the controller prints.
+                    hallen_rel_res: None,
                     report: PointOutput::Text(report),
                     diag_line,
                     bench,

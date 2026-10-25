@@ -569,7 +569,7 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0 sin_fallback_rel_max=1.000000e-02 route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none fill_exec=cpu solve_exec=cpu rp_exec=none nf_exec=none
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=n/a sin_fallback_rel_max=1.000000e-02 route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none fill_exec=cpu solve_exec=cpu rp_exec=none nf_exec=none
 ```
 
 | Field | Description |
@@ -578,10 +578,10 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `pulse_rhs` | Active `--pulse-rhs` setting |
 | `exec` | Effective execution mode (`cpu`, `hybrid`, `gpu(cpu-fallback)`) |
 | `freq_mhz` | Frequency point solved for this report block |
-| `abs_res` | Absolute L2 residual ‖Ax − b‖ |
-| `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
+| `abs_res` | Absolute L2 residual ‖Ax − b‖ of the system the route solved; `n/a` when the route computes none (FND-306) |
+| `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖. On the Hallén family it is ‖(Z + corner)·I − h − rhs‖ / ‖rhs‖: on a bent conductor path the corner term the solve adds is included (before FND-302 it was not, and a valid bent deck read up to 0.96). `n/a` — never `0` — for the routes that compute no residual: the section graph, a PEC-contact image problem, a plane wave, a current source (`EX 4`) and `--solver mpie`. Above 1e-5 a Hallén solve prints a `warning:` naming FND-302 (a caveat, not a refusal; a sweep prints it once, at its worst point) |
 | `diag_spread` | Conditioning proxy: max/min diagonal magnitude ratio of solved matrix |
-| `sin_rel_res` | Sinusoidal pre-fallback relative residual (0 for non-sinusoidal paths) |
+| `sin_rel_res` | Sinusoidal pre-fallback relative residual; `n/a` when the sinusoidal basis did not run. It was `0` there, which read as a perfect sinusoidal solve that never happened — the FND-306 class, so it follows the same rule (D8) |
 | `sin_fallback_rel_max` | Active sinusoidal residual fallback threshold after CLI/env/default precedence |
 | `route` | The solve route the run took: `plain`, `paths` (conductor paths or the section graph), `unsupported` (a topology the graph declines), `mpie`, `pulse` |
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
@@ -598,10 +598,10 @@ When `--bench-format csv` is enabled, one header plus one machine-readable line 
 
 ```
 bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res
-bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,hallen,Nec2,cpu,14.200000,2.931358e-8,3.479257e-7,1.000000e0,0.000000e0
+bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,hallen,Nec2,cpu,14.200000,2.931358e-8,3.479257e-7,1.000000e0,n/a
 ```
 
-When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix.
+When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix. A residual field the route did not compute (`abs_res`, `rel_res`, `sin_rel_res`; and `diag_spread` on a `--hosts` record, which the worker does not send) is `n/a` in the CSV and `null` in the JSON — never `0`, which read as a perfect solve (FND-306).
 
 ### GPU diagnostics (environment)
 

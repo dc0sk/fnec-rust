@@ -613,6 +613,14 @@ fn solve_inner(
             nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
                 .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         current_source_port = routed.port_voltage;
+        // The one residual predicate, so a worker's answer carries the caveat
+        // the local CLI prints for the same solve (FND-302).
+        if let Some(w) = routed
+            .residual
+            .and_then(|(_, rel)| nec_solver::validate::residual_caveat(rel))
+        {
+            warnings.push(w);
+        }
         // Only the feedpoint is read from these, so they are the SOURCE currents:
         // a feed that is also a TL/NT port includes the network branch (FND-123).
         (routed.source_currents(), "cpu")

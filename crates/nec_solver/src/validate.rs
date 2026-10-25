@@ -845,6 +845,53 @@ pub fn is_negative_resistance_message(message: &str) -> bool {
     message.contains(NEGATIVE_RESISTANCE_PHRASE)
 }
 
+/// The relative Hallén residual above which a solve is caveated (FND-302).
+///
+/// A tuned constant from a sampled sweep, so its provenance is here. Measured
+/// 2026-10-25 with the corner term in the residual, `--exec cpu`, on every
+/// `corpus/*.nec` deck as written and, where `scripts/nec2c-fine-mesh.py` maps
+/// it, meshed 3×, plus 9× of `yagi-5elm-51seg`, `tl-two-dipoles-linked`,
+/// `tl-two-dipoles-linked-seg0-even52`, `split-v-conductor-path-freesp`,
+/// `dipole-freesp-51seg` and `u-one-segment-negative-r-freesp` (with `EK`): 72
+/// solves with a residual, max 3.55e-8 up to 3× (`tl-two-dipoles-linked-seg0-even52`
+/// 3×), max 6.82e-8 at 9× (the same deck; the yagi 6.38e-8). 1e-5 is ~150× above
+/// that. Before the corner term the bent decks read 0.68 (the U, 3× and 9×) and
+/// 0.96 (the split-V), so no threshold could have told a valid bent deck from a
+/// failed solve.
+///
+/// Measured too, and excluded from the predicate's callers for that reason: a
+/// GPU-resident f32 solve reads 1.43e-5 on the yagi at 3× (the device gates its
+/// own at 1e-4), and the sinusoidal basis 6.6e-4 on the corpus dipole (a
+/// projection residual, gated by `--sin-fallback-rel-max`).
+///
+/// A caveat, not a refusal: no deck is known whose residual (of the system the
+/// route solves) is large, so a refusal would be untested in the positive
+/// direction and its first firing a surprise.
+pub const HALLEN_REL_RESIDUAL_CAVEAT: f64 = 1e-5;
+
+/// The caveat for a Hallén solve whose relative residual `rel` is above
+/// [`HALLEN_REL_RESIDUAL_CAVEAT`], or `None`.
+///
+/// One predicate for every frontend: the CLI prints it, the worker appends it to
+/// the warnings that cross the wire, the GUI and `fnec_py` add it to theirs. Fed
+/// from [`crate::HallenRouted::residual`] (and the CLI's sinusoidal-to-Hallén
+/// fallback): an f64 Hallén solve. Not from a device (f32) solve, which the
+/// device gates at its own bound, nor from the sinusoidal basis, whose
+/// projection residual (~6.6e-4 on the corpus dipole) `--sin-fallback-rel-max`
+/// judges. `NaN` is caveated too: a residual that is not a number does not show
+/// the equations are satisfied.
+pub fn residual_caveat(rel: f64) -> Option<String> {
+    if rel <= HALLEN_REL_RESIDUAL_CAVEAT {
+        return None;
+    }
+    Some(format!(
+        "the Hallén solve does not satisfy its own equations (relative residual {rel:.1e}, \
+         above {HALLEN_REL_RESIDUAL_CAVEAT:.0e}): the matrix is near-singular or the \
+         constraints conflict, so the feedpoint impedance and currents are not a solution \
+         of this deck (FND-302)"
+    ))
+}
+
 /// One line for a whole sweep's negative-resistance points, or `None`.
 ///
 /// The per-point sentence embeds `Re Z = {z_re:.3}`, so every point's text
@@ -3578,5 +3625,25 @@ mod run_loads_tests {
                 "{cause}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod residual_caveat_tests {
+    use super::*;
+
+    /// The boundary pair from the D9 review, and NaN: a residual that is not a
+    /// number does not show the equations hold.
+    #[test]
+    fn the_caveat_fires_above_the_threshold_and_not_below() {
+        let above = residual_caveat(1.1e-5).expect("1.1e-5 is above 1e-5");
+        assert!(
+            above.contains("FND-302") && above.contains("1.1e-5"),
+            "{above}"
+        );
+        assert_eq!(residual_caveat(9e-6), None);
+        assert_eq!(residual_caveat(HALLEN_REL_RESIDUAL_CAVEAT), None);
+        assert_eq!(residual_caveat(0.0), None);
+        assert!(residual_caveat(f64::NAN).is_some());
     }
 }

@@ -56,9 +56,12 @@ pub async fn run_sweep_stream(
     // Accumulated here because the job holds the geometry and the UI thread does
     // not, so the aggregate has to be computed on this side.
     let mut seen = Vec::new();
+    // The worst Hallén residual of the run, for the one FND-302 line.
+    let mut worst_rel: Option<f64> = None;
     for &f in job.freqs_mhz() {
-        match job.solve_at(f) {
-            Ok(pt) => {
+        match job.solve_at_with_residual(f) {
+            Ok((pt, rel)) => {
+                worst_rel = crate::solve::worst_residual(worst_rel, rel);
                 seen.push(pt.clone());
                 let _ = output.send(Message::SweepPointComputed(run, pt)).await;
             }
@@ -73,7 +76,7 @@ pub async fn run_sweep_stream(
                 let _ = output
                     .send(Message::SweepCaveats(
                         run,
-                        job.negative_resistance_caveat(&seen).into_iter().collect(),
+                        job.run_caveats(&seen, worst_rel),
                     ))
                     .await;
                 let _ = output.send(Message::SweepComplete(run, Err(e))).await;
@@ -85,7 +88,7 @@ pub async fn run_sweep_stream(
     let _ = output
         .send(Message::SweepCaveats(
             run,
-            job.negative_resistance_caveat(&seen).into_iter().collect(),
+            job.run_caveats(&seen, worst_rel),
         ))
         .await;
     let _ = output.send(Message::SweepStreamDone(run)).await;
