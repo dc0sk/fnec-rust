@@ -96,7 +96,7 @@ R-remedy/hosts/hook-loads-config Refused(error: Laplace loads (--loads-config) a
 R-remedy/hosts/hook-one-segment-run Holds[fnec --solver mpie]
 R-remedy/hosts/low-dipole-gn2 Holds[fnec --solver mpie]
 R-remedy/hosts/low-inverted-v-gn2 Holds[fnec --solver mpie]
-R-remedy/hosts/low-two-fed-gn2 Holds[]
+R-remedy/hosts/low-two-fed-gn2 Refused(error: this deck has 2 feedpoints, and --hosts reports one: the distributed worker returns a single feedpoint impedance per frequency, so the other 1 would be dropped. Run without --hosts to get every feedpoint.)
 R-remedy/hosts/negative-load-card Holds[]
 R-remedy/hosts/negative-load-config Refused(error: Laplace loads (--loads-config) are not supported with --hosts; the worker protocol carries no field for them. Run without --hosts.)
 R-remedy/low-dipole-gn2 Holds[--solver mpie, --ground-solver sommerfeld]
