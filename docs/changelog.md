@@ -58,6 +58,29 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **`--output-format nec2d` refuses `--ground-solver sommerfeld` over a finite
+  ground** (FND-286). The correction adds the surface wave to the feedpoint
+  impedance only, and the NEC-2D feed row takes Z from V and I. On a dipole
+  0.528 m over `GN 0 … 13 0.005` the report printed the uncorrected 30.70 + j34.15 Ω,
+  where the text report prints the corrected 86.90 + j67.68 Ω (nec2c GN 2:
+  87.80 + j68.63). The currents, power and pattern were also uncorrected, so
+  carrying the corrected Z would not make the block consistent. The run is now
+  refused before it solves, and the message names `--output-format text`/`json`
+  and `--solver mpie` as remedies. `--solver mpie` with nec2d prints 87.41 +
+  j68.00 Ω, and that block is consistent (Z = V/I). The 4nec2 kernel route never
+  passes the flag. The test for "the correction is requested" is now one function
+  (`sommerfeld_requested`), used by both the feedpoint rows and the refusal. Every
+  NEC-2D refusal, of options and of cards, is in `nec2d_out::check_admissible`.
+  A text or JSON run whose impedance carries the correction now prints one `info:`
+  line per run: V, I, the currents and the pattern are the reflection-coefficient
+  solve's, so I ≠ V/Z.
+- **The NEC-2D report prints a negative-σ ground as the ground the solve uses**
+  (FND-303). `nec2d_out::environment` had its own copy of the permittivity rule
+  and missed NEC-2's negative-σ form. For `GN 0 0 0 0 13 -5` at 14.2 MHz it printed
+  CONDUCTIVITY −5.000E+00 and 13 + j6329, where nec2c prints 3.950E-03 and 13 − j5.
+  This reached 4nec2 through the kernel route. The line now takes its values from
+  `nec_solver::sommerfeld::complex_permittivity` and a new sibling,
+  `conductivity_s_per_m`, so the negative-σ rule lives in one module.
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
   NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point
   reference and as "every tag" for a range, so on two 21-segment dipoles

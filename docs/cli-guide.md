@@ -39,7 +39,7 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
-| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie` |
+| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie`. A run where the correction applies says so on an `info:` line, and `--output-format nec2d` refuses the flag over a finite ground (FND-286) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--experimental-solver` | flag | off | Required to run `--solver pulse` or `continuity`, which are unvalidated (FND-080). Without it those modes are refused; with it every result carries a `CAVEAT` line (text) or `caveat` field (JSON) |
 | `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (`cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and, on free-space Hallén decks of ≥ 128 segments, the Z-matrix fill. It additionally takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments — a lower threshold than the fill's, and one this table previously did not distinguish — which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
@@ -587,7 +587,7 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
 | `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
 | `ground` | `free`, `pec`, `finite` |
-| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise |
+| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise. With `sommerfeld-applied` only the feedpoint impedance carries the surface-wave correction. The row's V and I, the current table and the pattern come from the reflection-coefficient solve, so I ≠ V/Z, and an `info:` line says so once per run (FND-286) |
 | `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
 | `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
 
@@ -833,6 +833,10 @@ This writes fnec's answer in the report layout NEC-2's Fortran kernel prints, wi
 - an `RP` asking for major/minor axes, a normalised table, directive gain or a suppressed print.
 
 It is also refused with `--sweep-config`, `--loads-config`, `--hosts` and `--exec gpu`. The device pattern keeps no field components.
+
+It is refused with `--ground-solver sommerfeld` over a finite ground (FND-286). That correction adds the surface wave to the feedpoint impedance only. NEC-2 derives the feed row's impedance from V and I, and the report's currents, power and pattern come from the uncorrected solve, so no block printed from that run would be consistent. For the corrected impedance use `--output-format text` or `json`. For a NEC-2D report that includes the surface wave use `--solver mpie`, which models it in the whole solve. Over free space or a perfect ground the flag requests nothing, and the report prints.
+
+The `ENVIRONMENT` block prints the ground the solve uses. For a negative `GN` conductivity, which NEC-2 reads as the imaginary part of the permittivity, it prints the conductivity that value stands for and εr − j·|σ|, as nec2c does: 3.950E-03 and 13 − j5 for `GN 0 0 0 0 13 -5` at 14.2 MHz (FND-303).
 
 ### Benchmark instrumentation
 
