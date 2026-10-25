@@ -62,7 +62,7 @@ pub use geometry::{
 // they are `pub(crate)`, because nothing outside this crate consumes them and a
 // public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, gpu_resident_class,
+    deck_has_current_source, deck_has_plane_wave, gpu_resident_class, gpu_resident_decline,
     hallen_leaves_a_bend_unmodelled, hallen_route, merged_grouping, path_end_rows,
     plan_hallen_planewave, solve_hallen_planewave_planned, solve_hallen_planewave_routed,
     solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted, HallenSessionError, PlaneWavePlan,

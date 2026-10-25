@@ -1180,49 +1180,70 @@ pub(crate) fn probe_feedpoints(
     Ok(points)
 }
 
-/// Attempt the GPU-resident Hallén fill+solve (PH7-CHK-003) for the supported
-/// deck class. Returns `None` (caller uses the CPU `solve_hallen`) unless:
-/// `--exec gpu`, free-space/deferred ground, no LD/TL host matrix stamps, and at
-/// least `nec_accel::MIN_GPU_RESIDENT_SEGS` segments. Also returns `None` when no wgpu
-/// adapter is available.
-#[allow(clippy::too_many_arguments)]
-fn maybe_gpu_resident_hallen(
+/// What the GPU-resident solve needs at one frequency point, built once the
+/// point is known to be one the device takes.
+struct GpuResidentPlan {
+    hallen_rhs: nec_solver::HallenRhs,
+    merged_endpoints: Vec<(usize, usize)>,
+    junctions: Vec<(usize, usize, f64)>,
+}
+
+/// Whether the GPU-resident Hallén fill+solve (PH7-CHK-003) takes this point,
+/// decided once and before the matrix is filled, so the fill and the solve
+/// cannot disagree about it (FND-293): `--exec gpu`, the Hallén basis,
+/// [`nec_solver::gpu_resident_decline`] (class, stamps, Laplace loads), at least
+/// `nec_accel::MIN_GPU_RESIDENT_SEGS` segments, and an excitation outside the
+/// homogeneous span (FND-227). Every condition but the adapter: a device that is
+/// missing or fails declines at run time, and says so on stderr.
+fn gpu_resident_plan(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
-    hallen_rhs: &nec_solver::HallenRhs,
-    wire_endpoints: &[(usize, usize)],
-    junctions: &[(usize, usize, f64)],
+    ground: &GroundModel,
+    laplace_loads: &[nec_solver::LaplaceLoad],
+    solver_mode: SolverMode,
     execution_mode: ExecutionMode,
     freq_hz: f64,
-) -> Option<nec_solver::HallenSolution> {
-    // The deck class (route and ground) is the caller's, through
-    // `nec_solver::gpu_resident_class`.
-    if execution_mode != ExecutionMode::Gpu || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS {
-        return None;
+) -> Result<Option<GpuResidentPlan>, String> {
+    if execution_mode != ExecutionMode::Gpu
+        || !matches!(solver_mode, SolverMode::Hallen)
+        || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS
+        || nec_solver::gpu_resident_decline(deck, segs, ground, &[freq_hz], laplace_loads).is_some()
+    {
+        return Ok(None);
     }
-    // The device re-fills and solves from raw segment inputs, so anything stamped
-    // into the host matrix is discarded. Decline any deck that stamps something.
-    //
-    // Asked of the values, not of which card types are present. The type-list this
-    // replaces omitted `Card::Nt`, so an NT deck took this path and came back with
-    // the un-stamped answer (FND-023: 74.234 + j13.898 where the CPU gives
-    // 70.633 + j14.009). Laplace loads were not covered at all — this function has
-    // no access to them, so the caller must decline separately.
-    if !nec_solver::build_deck_stamps(deck, segs, freq_hz).is_identity() {
-        return None;
-    }
+    let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+    let (merged_endpoints, junctions) = nec_solver::merged_grouping(segs);
     // An excitation the homogeneous constants absorb whole (FND-227): the CPU
     // solve refuses it and says why.
     if nec_solver::merged_excitation_in_homogeneous_span(
         &hallen_rhs.rhs,
         &hallen_rhs.cos_vec,
         &hallen_rhs.sin_vec,
-        wire_endpoints,
-        junctions,
+        &merged_endpoints,
+        &junctions,
     ) {
-        return None;
+        return Ok(None);
     }
+    Ok(Some(GpuResidentPlan {
+        hallen_rhs,
+        merged_endpoints,
+        junctions,
+    }))
+}
 
+/// Run the GPU-resident Hallén fill+solve on a point [`gpu_resident_plan`]
+/// accepted. Returns `None` (the caller uses the routed CPU solve) when no wgpu
+/// adapter is available or the device declines; each decline has said why.
+fn maybe_gpu_resident_hallen(
+    segs: &[Segment],
+    plan: &GpuResidentPlan,
+    freq_hz: f64,
+) -> Option<nec_solver::HallenSolution> {
+    let GpuResidentPlan {
+        hallen_rhs,
+        merged_endpoints: wire_endpoints,
+        junctions,
+    } = plan;
     let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
         .iter()
         .map(|s| nec_accel::ZSegmentInput {
@@ -1320,16 +1341,38 @@ pub(super) fn solve_frequency_point(
     };
     let sin_segs = sin_order.segments(segs);
 
+    // Whether the device solves this point, decided before the fill: the device
+    // fills the matrix (in f32) only for a point it then solves itself (FND-293).
+    let resident_plan = gpu_resident_plan(
+        deck,
+        segs,
+        ground,
+        laplace_loads,
+        solver_mode,
+        execution_mode,
+        freq_hz,
+    )?;
+    // Whether the matrix the solve used was filled on the device, for the record.
+    let mut filled_on_device = false;
     let mut z_mat = match solver_mode {
         SolverMode::Hallen => {
-            // For free-space (or deferred) ground with --exec gpu, attempt GPU Z-matrix fill.
-            // Ground-image-augmented models fall back to CPU; GPU fills free-space part only.
-            // A minimum segment count guards against wgpu device-init overhead dominating for
-            // small problems where CPU assembly is < 1 ms.
+            // The device fills the Z-matrix in f32 only for a point the resident
+            // solve takes (free space, nothing stamped). It used to fill every
+            // `--exec gpu` free-space deck of 128 segments or more, and when the
+            // resident solve then declined — a load, a bend — the CPU solved the
+            // f32 matrix: 106.383566 + j36.388674 against the f64 106.383595 +
+            // j36.388745 on a 201-segment deck with `LD 4`, recorded as
+            // `solve_exec=cpu`, and different from the worker, which always fills
+            // in f64 (FND-293). A declined point is now filled on the CPU in f64.
+            //
+            // A minimum segment count guards against wgpu device-init overhead
+            // dominating for small problems where CPU assembly is < 1 ms. It is
+            // above `nec_accel::MIN_GPU_RESIDENT_SEGS`, so a resident solve of
+            // fewer segments reads `fill_exec=cpu solve_exec=gpu`: the device
+            // re-fills from raw segment inputs for its own solve, and this host
+            // matrix serves the residual check only.
             const MIN_GPU_ZMATRIX_SEGS: usize = 128;
-            let try_gpu = execution_mode == ExecutionMode::Gpu
-                && segs.len() >= MIN_GPU_ZMATRIX_SEGS
-                && matches!(ground, GroundModel::FreeSpace);
+            let try_gpu = resident_plan.is_some() && segs.len() >= MIN_GPU_ZMATRIX_SEGS;
             if try_gpu {
                 let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
                     .iter()
@@ -1349,6 +1392,7 @@ pub(super) fn solve_frequency_point(
                             .collect();
                         let mut z = ZMatrix::from_flat(n, flat);
                         z.set_segments(segs);
+                        filled_on_device = true;
                         z
                     }
                     Err(why) => {
@@ -1495,28 +1539,18 @@ pub(super) fn solve_frequency_point(
             //
             // The GPU-resident fill+solve implements exactly one class — the
             // plain delta-gap route in free space — so it asks the shared
-            // predicate rather than assuming, and declines anything else.
-            let gpu_sol = if nec_solver::gpu_resident_class(deck, segs, ground).is_ok()
-                && laplace_loads.is_empty()
-            {
-                let hallen_rhs =
-                    build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-                let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
-                maybe_gpu_resident_hallen(
-                    deck,
-                    segs,
-                    &hallen_rhs,
-                    &merged_endpoints,
-                    &junction_tuples,
-                    execution_mode,
-                    freq_hz,
-                )
-                .map(|sol| (sol, hallen_rhs, merged_endpoints, junction_tuples))
-            } else {
-                None
-            };
+            // predicate rather than assuming, and declines anything else —
+            // decided once, in `resident_plan`, before the fill.
+            let gpu_sol = resident_plan
+                .as_ref()
+                .and_then(|plan| Some((maybe_gpu_resident_hallen(segs, plan, freq_hz)?, plan)));
 
-            if let Some((sol, hallen_rhs, merged_endpoints, junction_tuples)) = gpu_sol {
+            if let Some((sol, plan)) = gpu_sol {
+                let GpuResidentPlan {
+                    hallen_rhs,
+                    merged_endpoints,
+                    junctions: junction_tuples,
+                } = plan;
                 ran_on_gpu = true;
                 // This arm exists because it bypasses `solve_hallen_routed`, so
                 // the guard there does not reach it (FND-126).
@@ -1525,9 +1559,12 @@ pub(super) fn solve_frequency_point(
                     &hallen_rhs.cos_vec,
                     &hallen_rhs.sin_vec,
                     &sol.c_hom_per_wire,
-                    &merged_endpoints,
-                    &junction_tuples,
+                    merged_endpoints,
+                    junction_tuples,
                 );
+                // Against `z_mat`, which at 128 segments or more is the device's
+                // own f32 fill: the check confirms the solve of that system, not
+                // of the f64 problem (FND-307, open).
                 let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
                 (sol.currents, a, r, "hallen")
             } else {
@@ -1979,6 +2016,7 @@ pub(super) fn solve_frequency_point(
             sommerfeld_outcome,
             deck_loaded,
             config_loaded: !laplace_loads.is_empty(),
+            filled_on_device,
             solved_on_device: ran_on_gpu,
             pattern_rows,
             pattern_on_device: rp_on_device,
@@ -2025,6 +2063,8 @@ pub(super) struct DecisionInputs<'a> {
     pub(super) sommerfeld_outcome: SommerfeldOutcome,
     pub(super) deck_loaded: bool,
     pub(super) config_loaded: bool,
+    /// Whether the device filled the Z-matrix the solve used (in f32).
+    pub(super) filled_on_device: bool,
     pub(super) solved_on_device: bool,
     pub(super) pattern_rows: usize,
     pub(super) pattern_on_device: bool,
@@ -2087,6 +2127,7 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         (false, true) => "config",
         (true, true) => "deck+config",
     };
+    let fill = if d.filled_on_device { "gpu" } else { "cpu" };
     let solve = if d.solved_on_device { "gpu" } else { "cpu" };
     let rp = match (d.pattern_rows, d.pattern_on_device) {
         (0, _) => "none",
@@ -2104,7 +2145,7 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         && nec_solver::ground_contact::touches_ground(d.segs);
     format!(
         "route={route} contact={} drive={drive} ground={ground} gsolver={gsolver} \
-         loads={loads} solve_exec={solve} rp_exec={rp} nf_exec={nf}",
+         loads={loads} fill_exec={fill} solve_exec={solve} rp_exec={rp} nf_exec={nf}",
         if contact { "yes" } else { "no" }
     )
 }
