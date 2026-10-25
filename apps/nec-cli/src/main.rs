@@ -34,7 +34,7 @@ use nec_worker::{
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
-    FrequencySolveResult, GroundSolver, PointOutput, SolverMode, SweepPointSummary,
+    FrequencySolveResult, GroundSolver, PointOutput, SolverMode, SweepFeedpoint, SweepPointSummary,
     SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
@@ -50,6 +50,16 @@ pub(crate) const VERSION: &str = concat!(
     env!("FNEC_BUILD_COMMIT"),
     ")"
 );
+
+/// One feedpoint's JSON fields — `tag` through `z_arg_deg`, no braces — the one
+/// writer for both a record's top level and each element of its `feedpoints`.
+fn feedpoint_json_fields(tag: usize, seg: usize, z_re: f64, z_im: f64) -> String {
+    let z_abs = (z_re * z_re + z_im * z_im).sqrt();
+    let z_arg_deg = z_im.atan2(z_re).to_degrees();
+    format!(
+        "\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}"
+    )
+}
 
 /// Print every point a sweep computed, and report the ones that failed.
 ///
@@ -112,8 +122,6 @@ fn emit_sweep_points(
         }
         if let Some(summary) = solved_point.sweep_summary {
             if output_format == OutputFormat::Json {
-                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
-                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
                 // The unvalidated-solver caveat travels in the record itself, so a
                 // consumer that never reads stderr still sees it (FND-080). Absent
                 // for every validated solver: their records are unchanged.
@@ -121,15 +129,28 @@ fn emit_sweep_points(
                     .caveat
                     .map(|c| format!(",\"caveat\":\"{c}\""))
                     .unwrap_or_default();
+                // Every feedpoint, always present, in the text report's order
+                // (FND-291). The top-level fields stay the first feedpoint's, so a
+                // consumer that reads `records[i]["z_re"]` is unchanged, and the
+                // array keeps one record per frequency. Both are written by
+                // `feedpoint_json_fields`, so the first element and the top level
+                // cannot disagree on a digit.
+                let feedpoints = summary
+                    .feedpoints
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{{{}}}",
+                            feedpoint_json_fields(f.tag, f.seg, f.z_re, f.z_im)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
                 json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}{caveat}}}",
+                    "{{\"freq_mhz\":{freq_mhz},{fields}{caveat},\"feedpoints\":[{feedpoints}]}}",
                     freq_mhz = summary.freq_mhz,
-                    tag = summary.tag,
-                    seg = summary.seg,
-                    z_re = summary.z_re,
-                    z_im = summary.z_im,
-                    z_abs = z_abs,
-                    z_arg_deg = z_arg_deg,
+                    fields =
+                        feedpoint_json_fields(summary.tag, summary.seg, summary.z_re, summary.z_im),
                 ));
             }
             sweep_rows.push(summary);
@@ -608,6 +629,21 @@ fn main() -> ExitCode {
                 "error: an incident plane wave is not supported with --hosts; the \
                  distributed worker returns feedpoint impedances only and a receiving \
                  antenna has none. Run without --hosts to get its induced currents."
+            );
+            return ExitCode::FAILURE;
+        }
+        // The worker returns ONE feedpoint impedance per frequency — its wire
+        // protocol has room for no more — so a deck with several was answered for
+        // the first and the rest dropped with no word, in text and in JSON, while
+        // the local run prints every row (FND-304). Refused until the protocol
+        // carries the others; the count is the local report's (`feedpoints`).
+        if let Some(n) = nec_solver::more_than_one_feedpoint(deck) {
+            eprintln!(
+                "error: this deck has {n} feedpoints, and --hosts reports one: the \
+                 distributed worker returns a single feedpoint impedance per frequency, \
+                 so the other {} would be dropped. Run without --hosts to get every \
+                 feedpoint.",
+                n - 1
             );
             return ExitCode::FAILURE;
         }
@@ -1106,9 +1142,7 @@ fn distributed_negative_resistance_warnings(
     // The same call the worker makes to decide which segment it reported, so the
     // caveat cannot name a different one. This was a hand-maintained mirror of the
     // worker's filter until the FND-031 seam landed; now it is the same function.
-    let (tag, seg) = nec_solver::first_delta_gap_feedpoint(deck)
-        .map(|ex| (ex.tag as usize, ex.segment as usize))
-        .unwrap_or((0, 0));
+    let (tag, seg) = distributed_feedpoint(deck, segs).unwrap_or((0, 0));
     nec_solver::validate::negative_resistance_warning(
         z_re,
         tag,
@@ -1121,6 +1155,56 @@ fn distributed_negative_resistance_warnings(
     )
     .into_iter()
     .collect()
+}
+
+/// The feedpoint the distributed worker's one impedance belongs to, as the local
+/// report names it: the resolved segment's own `(tag, segment)`.
+///
+/// The controller's records said `tag 0 seg 0` for every distributed point
+/// (FND-304), which names no segment at all. A deck reaching the worker has one
+/// feedpoint — `--hosts` refuses more (`more_than_one_feedpoint`), and a mixed or
+/// plane-wave deck earlier — so it is [`nec_solver::feedpoints`]'s first, the
+/// one the worker prices. Resolved through `find_deck_segment` as the local rows
+/// are, so a tag-0 card's absolute segment number reports its wire (FND-282).
+/// `None` for a deck with no feedpoint, which the worker refuses.
+fn distributed_feedpoint(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> Option<(usize, usize)> {
+    let (ex, _) = nec_solver::feedpoints(deck).next()?;
+    let i = nec_solver::find_deck_segment(segs, ex.tag, ex.segment)?;
+    Some((segs[i].tag as usize, segs[i].tag_index as usize))
+}
+
+/// A distributed point's summary — the record `--output-format json` writes:
+/// the worker's one impedance at [`distributed_feedpoint`]'s segment, top level
+/// and the one-element `feedpoints` alike (FND-291, FND-304).
+fn distributed_sweep_summary(
+    freq_mhz: f64,
+    z_re: f64,
+    z_im: f64,
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> SweepPointSummary {
+    let (tag, seg) = distributed_feedpoint(deck, segs).unwrap_or((0, 0));
+    SweepPointSummary {
+        freq_mhz,
+        tag,
+        seg,
+        z_re,
+        z_im,
+        // The worker refuses the pulse bases, so its points never carry the
+        // unvalidated-solver caveat.
+        caveat: None,
+        // The one feedpoint the worker priced; a deck with more is refused
+        // before any host is dialled (FND-304).
+        feedpoints: vec![SweepFeedpoint {
+            tag,
+            seg,
+            z_re,
+            z_im,
+        }],
+    }
 }
 
 /// Distributed solve via `--hosts`.
@@ -1293,16 +1377,13 @@ fn run_distributed_solve(
                     solver_mode,
                     &[freq_mhz * 1e6],
                 );
-                let sweep_summary = Some(SweepPointSummary {
+                let sweep_summary = Some(distributed_sweep_summary(
                     freq_mhz,
-                    tag: 0,
-                    seg: 0,
-                    z_re: impedance.re_ohm,
-                    z_im: impedance.im_ohm,
-                    // The worker refuses the pulse bases, so its points never
-                    // carry the unvalidated-solver caveat.
-                    caveat: None,
-                });
+                    impedance.re_ohm,
+                    impedance.im_ohm,
+                    deck,
+                    segs,
+                ));
                 Ok(FrequencySolveResult {
                     report: PointOutput::Text(report),
                     diag_line,
@@ -1648,10 +1729,10 @@ mod tests {
         negative_resistance_warnings, run_negative_resistance_warnings, SolverMode,
     };
     use super::{
-        auto_select_execution_mode, detect_compatibility_profile,
+        auto_select_execution_mode, detect_compatibility_profile, distributed_feedpoint,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, worker_exec_preference, worker_warning_lines, CompatibilityProfile,
-        ExecutionMode,
+        distributed_sweep_summary, exec_fallback_warning, worker_exec_preference,
+        worker_warning_lines, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use nec_solver::validate::RunLoads;
@@ -1667,6 +1748,37 @@ mod tests {
     }
 
     const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    /// FND-304: the distributed record names the segment its one impedance is at,
+    /// as the local report's row does — it said tag 0 seg 0 for every point. A
+    /// tag-0 card names an absolute segment number (FND-282), so `EX 0 0 32` on
+    /// two 21-segment wires is wire 2's 11th; a current source is a feedpoint
+    /// too; a plane wave has none.
+    #[test]
+    fn the_distributed_record_names_the_feedpoint_segment() {
+        let two = |cards: &str| {
+            deck_and_segs(&format!(
+                "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
+            ))
+        };
+        let (deck, segs) = two("EX 0 0 32 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((2, 11)));
+        let (deck, segs) = two("EX 0 1 7 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((1, 7)));
+        let (deck, segs) = two("EX 4 2 5 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((2, 5)));
+        let (deck, segs) = two("EX 1 1 1 0 0 0 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), None);
+
+        // The record the JSON writer gets: that segment, at the top level and in
+        // the one-element `feedpoints`, with the worker's impedance.
+        let (deck, segs) = two("EX 0 0 32 0 1 0\n");
+        let s = distributed_sweep_summary(29.9, 70.5, -3.25, &deck, &segs);
+        assert_eq!((s.tag, s.seg, s.z_re, s.z_im), (2, 11, 70.5, -3.25));
+        assert_eq!(s.feedpoints.len(), 1);
+        let f = &s.feedpoints[0];
+        assert_eq!((f.tag, f.seg, f.z_re, f.z_im), (2, 11, 70.5, -3.25));
+    }
 
     fn row(z_re: f64) -> FeedpointRow {
         FeedpointRow {

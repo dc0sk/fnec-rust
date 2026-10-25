@@ -475,6 +475,59 @@ fn m7a_deck_z_load_is_the_main_commands_impedance() {
     assert_recomputed(&b, 1e-6);
 }
 
+/// FND-291 / D4: a two-source deck is matched at its first feedpoint — the
+/// record's top-level impedance — and the note says how many the solve reported,
+/// counted from the record's own `feedpoints` (it re-parsed the deck to count
+/// `EX` cards, a second answer to "how many"). A one-source deck has no note.
+#[test]
+fn m7e_a_two_source_deck_is_matched_at_its_first_feedpoint_and_says_so() {
+    let two = common::TempDeck::new(
+        "fnec-match-m7e-two-sources.nec",
+        "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 2.5 0 -2.5 2.5 0 2.5 0.001\nGE 0\n\
+         EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nFR 0 1 0 0 29.9 0\nEN\n",
+    );
+    let main = run(&["--output-format", "json", two.to_str().unwrap()]);
+    assert!(main.status.success(), "{}", stderr(&main));
+    let records: Vec<serde_json::Value> = serde_json::from_str(&stdout(&main)).unwrap();
+    let z_first = Complex64::new(
+        records[0]["z_re"].as_f64().unwrap(),
+        records[0]["z_im"].as_f64().unwrap(),
+    );
+
+    let out = run(&["match", two.to_str().unwrap(), "--output-format", "json"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let v: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let block = &v["blocks"][0];
+    let z_load = Complex64::new(
+        block["z_load"]["re"].as_f64().unwrap(),
+        block["z_load"]["im"].as_f64().unwrap(),
+    );
+    assert!((z_load - z_first).norm() <= 1e-9, "{z_load} vs {z_first}");
+    let notes: Vec<&str> = block["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap())
+        .collect();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("2 feedpoints") && n.contains("tag 1, segment 11")),
+        "{notes:?}"
+    );
+
+    // The control: one source, no note.
+    let one = run(&[
+        "match",
+        corpus("dipole-freesp-51seg.nec").to_str().unwrap(),
+        "--output-format",
+        "json",
+    ]);
+    assert!(one.status.success(), "{}", stderr(&one));
+    let v: serde_json::Value = serde_json::from_str(&stdout(&one)).unwrap();
+    assert_eq!(v["blocks"][0]["notes"], serde_json::json!([]), "{v}");
+}
+
 /// The first series-first solution, written into the deck as `LD 0` (the series
 /// element) and `NT` (the shunt element as a one-port admittance on the feed
 /// segment), makes the main command report the target.

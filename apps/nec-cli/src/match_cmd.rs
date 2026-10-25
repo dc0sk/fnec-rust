@@ -243,6 +243,11 @@ struct FeedpointRecord {
     seg: i64,
     z_re: f64,
     z_im: f64,
+    /// Every feedpoint of the point (FND-291); only its length is read, for the
+    /// several-feedpoints note. Required, not defaulted: the child is this very
+    /// binary, so a record without it is a bug, and a default would hide it by
+    /// dropping the note.
+    feedpoints: Vec<serde::de::IgnoredAny>,
 }
 
 /// The deck's feedpoint impedance at each frequency point, by the main command:
@@ -258,8 +263,9 @@ struct FeedpointRecord {
 /// `solve_session::probe_feedpoints`; this function is its stand-in, and the
 /// one place to swap when it lands.
 ///
-/// Returns `(freq_mhz, z, notes)` per record. With several `EX` cards the main
-/// command's JSON reports the first feedpoint only, and a note says so.
+/// Returns `(freq_mhz, z, notes)` per record. With several feedpoints this
+/// matches the first — the record's top-level fields — and a note says so (the
+/// record's `feedpoints` carries the others; matching each is not done here).
 fn solve_deck_feedpoints(
     forwarded: &[String],
 ) -> Result<Vec<(f64, Complex64, Vec<String>)>, DeckFailure> {
@@ -298,54 +304,25 @@ fn solve_deck_feedpoints(
                 .to_string(),
         ));
     }
-    let sources = excitation_count(forwarded);
     Ok(records
         .into_iter()
         .map(|r| {
             let mut notes = Vec::new();
+            // The count is the record's own `feedpoints`, the rows the solve
+            // reported. This re-parsed the forwarded deck to count `EX` cards — a
+            // second answer to "how many feedpoints", which a plane-wave card
+            // would have inflated had such a deck not been refused first.
+            let sources = r.feedpoints.len();
             if sources > 1 {
                 notes.push(format!(
-                    "the deck has {sources} EX cards; matched the first feedpoint the solve \
-                     reports (tag {}, segment {}), as the JSON output does",
+                    "the deck has {sources} feedpoints; matched the first one the solve \
+                     reports (tag {}, segment {}), the record's top-level fields",
                     r.tag, r.seg
                 ));
             }
             (r.freq_mhz, Complex64::new(r.z_re, r.z_im), notes)
         })
         .collect())
-}
-
-/// How many `EX` cards the deck has, for the several-sources note; 0 when the
-/// deck cannot be read here (the solve already reported whatever is wrong).
-fn excitation_count(forwarded: &[String]) -> usize {
-    let Ok(parsed) = cli_args::parse_args(
-        &std::iter::once("fnec".to_string())
-            .chain(forwarded.iter().cloned())
-            .collect::<Vec<_>>(),
-    ) else {
-        return 0;
-    };
-    let Ok(mut text) = std::fs::read_to_string(&parsed.path) else {
-        return 0;
-    };
-    if let Some(vars_path) = parsed.vars_path {
-        let Ok(vars) = crate::vars_config::load_vars(&vars_path) else {
-            return 0;
-        };
-        let Ok(substituted) = nec_parser::template::substitute(&text, &vars) else {
-            return 0;
-        };
-        text = substituted;
-    }
-    nec_parser::parse(&text)
-        .map(|r| {
-            r.deck
-                .cards
-                .iter()
-                .filter(|c| matches!(c, nec_model::card::Card::Ex(_)))
-                .count()
-        })
-        .unwrap_or(0)
 }
 
 fn element_text(role: &str, e: Option<Element>) -> String {

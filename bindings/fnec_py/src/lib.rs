@@ -11,7 +11,9 @@
 //!   receive deck, which has no feedpoint impedance (FND-108).
 //!
 //! The two impedance functions return dicts with keys:
-//!   `freq_mhz`, `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`
+//!   `freq_mhz`, `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` (the first
+//!   feedpoint), and `feedpoints`: one dict of those keys but `freq_mhz` per
+//!   feedpoint, in deck order (FND-308).
 //!
 //! Errors are raised as `RuntimeError` with a descriptive message. Geometry the
 //! solver cannot honestly take — wires crossing mid-span, a source on a degenerate
@@ -163,16 +165,83 @@ fn solve_structure(
     })
 }
 
-/// Solve a NEC deck string at one frequency, for its feedpoint impedance.
+/// One priced feedpoint: the resolved segment's own `(tag, index)` and its
+/// impedance.
+#[derive(Debug, Clone, Copy)]
+struct FeedRow {
+    tag: u32,
+    seg: u32,
+    z: Complex64,
+}
+
+/// One frequency point's impedance record: every feedpoint, in deck order — the
+/// CLI's FEEDPOINTS rows. Never empty: a deck with none is refused.
+#[derive(Debug)]
+struct ImpedanceRecord {
+    freq_mhz: f64,
+    feeds: Vec<FeedRow>,
+}
+
+impl ImpedanceRecord {
+    /// The first feedpoint: what the dict's top-level keys describe.
+    fn first(&self) -> FeedRow {
+        self.feeds[0]
+    }
+
+    /// The lowest feedpoint resistance, as the CLI's swept caveat reads it.
+    fn min_z_re(&self) -> f64 {
+        self.feeds
+            .iter()
+            .map(|f| f.z.re)
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// The Python dict: the first feedpoint's keys at the top level, as before,
+    /// and `feedpoints`, one dict of the same keys per feedpoint (FND-308). The
+    /// top level and `feedpoints[0]` are written by one function, so they cannot
+    /// differ.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let fill = |d: &Bound<'py, PyDict>, f: FeedRow| -> PyResult<()> {
+            // Floats, as the top-level keys have always been.
+            d.set_item("tag", f64::from(f.tag))?;
+            d.set_item("seg", f64::from(f.seg))?;
+            d.set_item("z_re", f.z.re)?;
+            d.set_item("z_im", f.z.im)?;
+            d.set_item("z_abs", f.z.norm())?;
+            d.set_item("z_arg_deg", f.z.im.atan2(f.z.re).to_degrees())?;
+            Ok(())
+        };
+        let d = PyDict::new(py);
+        d.set_item("freq_mhz", self.freq_mhz)?;
+        fill(&d, self.first())?;
+        let list = pyo3::types::PyList::empty(py);
+        for &f in &self.feeds {
+            let e = PyDict::new(py);
+            fill(&e, f)?;
+            list.append(e)?;
+        }
+        d.set_item("feedpoints", list)?;
+        Ok(d)
+    }
+}
+
+/// Solve a NEC deck string at one frequency, for its feedpoint impedances.
 ///
 /// Returns the impedance record and the non-fatal caveats the caller should raise
 /// as Python warnings. `Err` means the deck was rejected (see [`solve_structure`])
 /// or has no feedpoint to price.
+///
+/// Every feedpoint is priced, as the CLI's FEEDPOINTS rows are (FND-308): this
+/// returned the first alone — the current source, else the first delta gap — so a
+/// two-source deck lost its second row with no marker. The shared validation
+/// refuses two current sources and a current source beside a delta gap, so the
+/// rows are one current source or any number of delta gaps, and the first row is
+/// the one this used to return.
 fn solve_at_freq(
     deck: &nec_model::deck::NecDeck,
     freq_hz: f64,
     solver: nec_solver::validate::SolverKind,
-) -> Result<(std::collections::HashMap<String, f64>, Vec<String>), String> {
+) -> Result<(ImpedanceRecord, Vec<String>), String> {
     let SolvedStructure {
         segs,
         v_vec,
@@ -181,52 +250,18 @@ fn solve_at_freq(
         mut warnings,
         ..
     } = solve_structure(deck, freq_hz, solver)?;
-    let i_vec = &currents;
-
-    if let Some(v_port) = port_voltage {
-        let (ex, _) = nec_solver::feedpoints(deck)
-            .find(|(_, role)| *role == nec_model::card::FeedpointRole::CurrentSource)
-            .ok_or("a current-source solve without a current source")?;
-        let i0 = Complex64::new(ex.voltage_real, ex.voltage_imag);
-        // The resolved segment's own `(tag, index)`: a tag-0 card names an absolute
-        // segment number, which is not where the row says it is (FND-282).
-        let (tag, seg) = nec_solver::find_deck_segment(&segs, ex.tag, ex.segment)
-            .map(|i| (segs[i].tag, segs[i].tag_index))
-            .unwrap_or((ex.tag, ex.segment));
-        let z_in = nec_solver::feedpoint_impedance(v_port, i0, tag as usize, seg as usize)
-            .map_err(|e| e.to_string())?;
-        let mut rec = std::collections::HashMap::new();
-        rec.insert("freq_mhz".to_string(), freq_hz / 1e6);
-        rec.insert("tag".to_string(), f64::from(tag));
-        rec.insert("seg".to_string(), f64::from(seg));
-        rec.insert("z_re".to_string(), z_in.re);
-        rec.insert("z_im".to_string(), z_in.im);
-        rec.insert("z_abs".to_string(), z_in.norm());
-        rec.insert("z_arg_deg".to_string(), z_in.im.atan2(z_in.re).to_degrees());
-        if let Some(w) = nec_solver::validate::negative_resistance_warning(
-            z_in.re,
-            tag as usize,
-            seg as usize,
+    let loads = || {
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
-                deck,
-                &segs,
-                &[freq_hz],
-            )),
-        ) {
-            warnings.push(w);
-        }
-        return Ok((rec, warnings));
-    }
+            &[freq_hz],
+        ))
+    };
 
-    // Find the first EX card and compute feedpoint impedance.
-    // Through the shared seam (FND-031). This loop took the first `EX` of any
-    // type, so a plane wave's NTHETA/NPHI could be reported as a feedpoint.
-    if let Some(ex) = nec_solver::first_delta_gap_feedpoint(deck) {
-        let Some((idx, seg)) =
-            nec_solver::find_deck_segment(&segs, ex.tag, ex.segment).map(|i| (i, &segs[i]))
-        else {
+    // Through the shared seam (FND-031): plane waves are not feedpoints.
+    let mut feeds = Vec::new();
+    for (ex, role) in nec_solver::feedpoints(deck) {
+        let Some(idx) = nec_solver::find_deck_segment(&segs, ex.tag, ex.segment) else {
             // Unreachable today: `build_hallen_rhs` rejects an EX naming an absent
             // segment before this runs. Kept defensive, but saying what would
             // actually be true — the deck HAS an EX; its segment is missing.
@@ -235,52 +270,54 @@ fn solve_at_freq(
                 ex.tag, ex.segment
             ));
         };
-        let current: Complex64 = i_vec[idx];
-        let v_source: Complex64 = v_vec[idx] * seg.length;
-        let z_in: Complex64 = nec_solver::feedpoint_impedance(
-            v_source,
-            current,
-            ex.tag as usize,
-            ex.segment as usize,
-        )
-        .map_err(|e| e.to_string())?;
+        let seg = &segs[idx];
+        // A current source is priced from its solved port voltage and its own
+        // current, `Z = V_port / i0` (FND-045); a delta gap from the applied field
+        // over the source current (FND-123).
+        let (v, current) = match role {
+            nec_model::card::FeedpointRole::CurrentSource => (
+                port_voltage.ok_or("a current source without a solved port voltage")?,
+                Complex64::new(ex.voltage_real, ex.voltage_imag),
+            ),
+            _ => (v_vec[idx] * seg.length, currents[idx]),
+        };
+        // The resolved segment's own `(tag, index)`: a tag-0 card names an absolute
+        // segment number, which is not where the row says it is (FND-282).
+        let z =
+            nec_solver::feedpoint_impedance(v, current, seg.tag as usize, seg.tag_index as usize)
+                .map_err(|e| e.to_string())?;
         // FND-014: a negative Re(Z) is physically impossible for a passive antenna.
-        // The CLI has warned about this since PH9-CHK-005; here it was silent, so a
-        // junctioned deck returned an unreliable impedance as if it were sound.
-        // Appended after the feedpoint is resolved because the message names the
-        // tag and segment.
+        // The CLI warns per feedpoint row; so do these bindings now.
         if let Some(w) = nec_solver::validate::negative_resistance_warning(
-            z_in.re,
+            z.re,
             seg.tag as usize,
             seg.tag_index as usize,
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
-                deck,
-                &segs,
-                &[freq_hz],
-            )),
+            loads(),
         ) {
             warnings.push(w);
         }
-        let z_abs = z_in.norm();
-        let z_arg_deg = z_in.im.atan2(z_in.re).to_degrees();
-        let freq_mhz = freq_hz / 1e6;
-        let mut rec = std::collections::HashMap::new();
-        rec.insert("freq_mhz".to_string(), freq_mhz);
-        rec.insert("tag".to_string(), seg.tag as f64);
-        rec.insert("seg".to_string(), seg.tag_index as f64);
-        rec.insert("z_re".to_string(), z_in.re);
-        rec.insert("z_im".to_string(), z_in.im);
-        rec.insert("z_abs".to_string(), z_abs);
-        rec.insert("z_arg_deg".to_string(), z_arg_deg);
-        return Ok((rec, warnings));
+        feeds.push(FeedRow {
+            tag: seg.tag,
+            seg: seg.tag_index,
+            z,
+        });
     }
-    // A plane-wave receive deck: solvable, but with no feedpoint to price. The
-    // refusal names the entry point that answers it (FND-108).
-    Err(nec_solver::validate::unpriceable_feedpoint_error(
-        deck,
-        "call fnec_py.solve_currents_deck_str for its induced currents",
+    if feeds.is_empty() {
+        // A plane-wave receive deck: solvable, but with no feedpoint to price. The
+        // refusal names the entry point that answers it (FND-108).
+        return Err(nec_solver::validate::unpriceable_feedpoint_error(
+            deck,
+            "call fnec_py.solve_currents_deck_str for its induced currents",
+        ));
+    }
+    Ok((
+        ImpedanceRecord {
+            freq_mhz: freq_hz / 1e6,
+            feeds,
+        },
+        warnings,
     ))
 }
 
@@ -338,7 +375,9 @@ fn first_frequency_hz(deck: &nec_model::deck::NecDeck) -> PyResult<f64> {
 /// Solve a NEC deck string at the first frequency defined by its FR card.
 ///
 /// Returns a dict with keys: ``freq_mhz``, ``tag``, ``seg``,
-/// ``z_re``, ``z_im``, ``z_abs``, ``z_arg_deg``.
+/// ``z_re``, ``z_im``, ``z_abs``, ``z_arg_deg`` (the first feedpoint), and
+/// ``feedpoints``: a list with one dict of the same keys, less ``freq_mhz``, per
+/// feedpoint, in deck order.
 ///
 /// Raises ``RuntimeError`` on parse or solver errors.
 #[pyfunction]
@@ -356,17 +395,15 @@ fn solve_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     warnings.sort();
     emit_warnings(py, &warnings, &mut seen)?;
 
-    let d = PyDict::new(py);
-    for (k, v) in &rec {
-        d.set_item(k, v)?;
-    }
-    Ok(d.into())
+    Ok(rec.to_dict(py)?.into_any().unbind())
 }
 
 /// Solve a NEC deck string at all frequency points defined by its FR card(s).
 ///
 /// Returns a list of dicts, one per frequency point, each with keys:
-/// ``freq_mhz``, ``tag``, ``seg``, ``z_re``, ``z_im``, ``z_abs``, ``z_arg_deg``.
+/// ``freq_mhz``, ``tag``, ``seg``, ``z_re``, ``z_im``, ``z_abs``, ``z_arg_deg``
+/// (the first feedpoint) and ``feedpoints`` (every feedpoint), as
+/// ``solve_deck_str`` returns.
 ///
 /// Raises ``RuntimeError`` on parse or solver errors.
 #[pyfunction]
@@ -396,9 +433,9 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
     for freq_hz in freqs {
         let (rec, mut warnings) = solve_at_freq(&result.deck, freq_hz, solver)
             .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
-        if let Some(z) = rec.get("z_re") {
-            z_res.push(*z);
-        }
+        // The lowest feedpoint resistance of the point, as the CLI's swept caveat
+        // reads it (`min_feed_re`).
+        z_res.push(rec.min_z_re());
         // The per-point negative-resistance sentence embeds `Re Z = {z_re:.3}`,
         // so every point's text differs and `seen` cannot dedup it: a 500-point
         // junctioned sweep raised 500 distinct `UserWarning`s (FND-032). Held
@@ -407,11 +444,7 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
         warnings.retain(|w| !nec_solver::validate::is_negative_resistance_message(w));
         warnings.sort();
         emit_warnings(py, &warnings, &mut seen)?;
-        let d = PyDict::new(py);
-        for (k, v) in &rec {
-            d.set_item(k, v)?;
-        }
-        records.push(d.into_pyobject(py)?.into_any().unbind());
+        records.push(rec.to_dict(py)?.into_any().unbind());
     }
 
     // One line for the whole sweep. The cause is a property of the geometry,
@@ -578,7 +611,7 @@ mod tests {
         .expect("a single current source is the supported case");
         // A current source at the centre of a 21-segment half-wave element:
         // finite, non-zero, and priced from the solved port voltage.
-        let z_re = rec.get("z_re").copied().expect("z_re in the record");
+        let z_re = rec.first().z.re;
         assert!(
             z_re.is_finite() && z_re > 0.0,
             "expected a real positive resistance, got {rec:?}"
@@ -604,13 +637,44 @@ mod tests {
             };
             let abs = solve(&two("EX 0 0 32 0 1 0\n"));
             let tagged = solve(&two("EX 0 2 11 0 1 0\n"));
-            assert_eq!((abs["tag"], abs["seg"]), (2.0, 11.0), "{kind:?}");
-            assert!((abs["z_re"] - tagged["z_re"]).abs() < 1e-9, "{kind:?}");
-            assert!((abs["z_im"] - tagged["z_im"]).abs() < 1e-9, "{kind:?}");
-            let a = solve(&two("EX 0 1 11 0 1 0\nLD 4 0 11 11 0 1000\n"));
-            let b = solve(&two("EX 0 1 11 0 1 0\nLD 4 1 11 11 0 1000\n"));
-            assert!((a["z_re"] - b["z_re"]).abs() < 1e-9, "{kind:?}");
-            assert!((a["z_im"] - b["z_im"]).abs() < 1e-9, "{kind:?}");
+            let (abs, tagged) = (abs.first(), tagged.first());
+            assert_eq!((abs.tag, abs.seg), (2, 11), "{kind:?}");
+            assert!((abs.z - tagged.z).norm() < 1e-9, "{kind:?}");
+            let a = solve(&two("EX 0 1 11 0 1 0\nLD 4 0 11 11 0 1000\n")).first();
+            let b = solve(&two("EX 0 1 11 0 1 0\nLD 4 1 11 11 0 1000\n")).first();
+            assert!((a.z - b.z).norm() < 1e-9, "{kind:?}");
         }
+    }
+
+    /// FND-308: every feedpoint, not the first alone. Two dipoles driven 1 V and
+    /// j1 V, so the rows differ; nec2c 1.3.1 gives 81.320 + j210.13 and
+    /// 61.129 + j37.061, and this 21-segment mesh puts fnec 2.6 % and 2.7 % from
+    /// them (both codes converge on the pair as the mesh refines — see the CLI's
+    /// `json_carries_every_feedpoint_of_a_two_source_deck`). The first row is the
+    /// one the dict's top level reports.
+    #[test]
+    fn every_feedpoint_of_a_two_source_deck_is_returned() {
+        let deck_src = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 2.5 0 -2.5 2.5 0 2.5 0.001\nGE 0\nEX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nFR 0 1 0 0 29.9 0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let (rec, _) = solve_at_freq(
+            &parsed.deck,
+            29.9e6,
+            nec_solver::validate::SolverKind::Hallen,
+        )
+        .expect("solves");
+        assert_eq!(rec.feeds.len(), 2, "{rec:?}");
+        for (f, (tag, want)) in rec.feeds.iter().zip([
+            (1, Complex64::new(81.320, 210.13)),
+            (2, Complex64::new(61.129, 37.061)),
+        ]) {
+            assert_eq!((f.tag, f.seg), (tag, 11), "{rec:?}");
+            let rel = (f.z - want).norm() / want.norm();
+            assert!(rel < 0.035, "tag {tag}: {} vs nec2c {want} ({rel:.4})", f.z);
+        }
+        // The control: one source, one row.
+        let one = parse(&deck_src.replace("EX 0 2 11 0 0 1\n", "")).expect("parses");
+        let (rec, _) = solve_at_freq(&one.deck, 29.9e6, nec_solver::validate::SolverKind::Hallen)
+            .expect("solves");
+        assert_eq!(rec.feeds.len(), 1, "{rec:?}");
     }
 }

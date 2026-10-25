@@ -254,6 +254,19 @@ pub(super) struct SweepPointSummary {
     /// The unvalidated-solver caveat, when the point came from one (FND-080);
     /// the JSON record carries it so it travels with the numbers.
     pub(super) caveat: Option<&'static str>,
+    /// Every feedpoint of the point, in the text report's FEEDPOINTS order; the
+    /// fields above are its first element. The JSON record carries the whole list
+    /// (FND-291): it used to carry the first alone, so a two-source deck lost its
+    /// second row with no marker.
+    pub(super) feedpoints: Vec<SweepFeedpoint>,
+}
+
+/// One feedpoint of a [`SweepPointSummary`].
+pub(super) struct SweepFeedpoint {
+    pub(super) tag: usize,
+    pub(super) seg: usize,
+    pub(super) z_re: f64,
+    pub(super) z_im: f64,
 }
 
 pub(super) fn l2_norm(v: &[Complex64]) -> f64 {
@@ -1938,6 +1951,15 @@ pub(super) fn solve_frequency_point(
         z_im: row.z_in.im,
         caveat: matches!(solver_mode, SolverMode::Pulse | SolverMode::Continuity)
             .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
+        feedpoints: rows
+            .iter()
+            .map(|r| SweepFeedpoint {
+                tag: r.tag,
+                seg: r.seg,
+                z_re: r.z_in.re,
+                z_im: r.z_in.im,
+            })
+            .collect(),
     });
     let report = PointOutput::Tables(Box::new(PointReport {
         solver_mode: diag_label.to_string(),

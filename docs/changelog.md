@@ -56,7 +56,31 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the automation guide shows the `LD 0` + `NT` recipe, which the contract
   test round-trips on the corpus monopole (50.000000 − j0.000016 Ω).
 
+- **Every feedpoint in the JSON report and in `fnec_py`** (FND-291, FND-308).
+  Each `--output-format json` record gains `feedpoints`: one object per
+  feedpoint (`tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`), in the text
+  report's `FEEDPOINTS` order, always present. The record carried the first
+  feedpoint alone with no marker, so a two-source deck (1 V and j1 V on two
+  dipoles: 76.48 + j206.98 and 60.68 + j35.15 Ω) lost its second row. The array
+  still has one record per frequency and the top-level fields are still the
+  first feedpoint, so existing consumers are unchanged; a receive deck still
+  prints `[]`. `fnec_py`'s `solve_deck_str` / `sweep_deck_str` dicts gain the
+  same `feedpoints` list (its sweep negative-resistance caveat now reads the
+  lowest feedpoint resistance, as the CLI's does, and each feedpoint gets its own
+  negative-resistance warning). `fnec match` still matches the first feedpoint;
+  its note now counts the record's feedpoints instead of re-parsing the deck for
+  `EX` cards, and reads "the deck has N feedpoints".
+
 ### Fixed
+
+- **`--hosts` refuses a deck with more than one feedpoint, and its records name
+  the feedpoint** (FND-304). The distributed worker returns one feedpoint
+  impedance per frequency, so a two-source deck was answered for the first and
+  the second dropped with no word, in text and JSON; it is now refused before
+  any host is contacted (`nec_solver::more_than_one_feedpoint`). Its JSON records
+  said `tag 0 seg 0` for every point; they name the feedpoint's own segment now,
+  resolved as the local report's rows are (a tag-0 `EX` reports its wire), and
+  so does its negative-resistance caveat.
 
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
   NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point

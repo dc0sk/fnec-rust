@@ -57,6 +57,19 @@ pub fn first_delta_gap_feedpoint(deck: &NecDeck) -> Option<&ExCard> {
         .map(|(ex, _)| ex)
 }
 
+/// How many feedpoints the deck has, when that is more than one.
+///
+/// The refusal predicate for a route that reports a single feedpoint impedance
+/// per frequency — today the distributed worker, whose wire protocol carries one
+/// (FND-304). Such a route given a two-source deck used to price the first and
+/// say nothing, in text and in JSON, while the local run printed both rows. The
+/// count is [`feedpoints`]'s — the rows the local report and its JSON
+/// `feedpoints` array carry — so "how many" has one answer. `None` for zero or one.
+pub fn more_than_one_feedpoint(deck: &NecDeck) -> Option<usize> {
+    let n = feedpoints(deck).count();
+    (n > 1).then_some(n)
+}
+
 /// A current source's Hallén shape: `(source_shape, cos_vec, sin_vec,
 /// src_global_index)`, the homogeneous columns built with the same coordinate as
 /// the delta-gap RHS (FND-158).
@@ -695,6 +708,36 @@ mod tests {
 
     fn deck_of(src: &str) -> NecDeck {
         nec_parser::parse(src).expect("parse").deck
+    }
+
+    /// FND-304's refusal predicate counts what [`feedpoints`] yields: two delta
+    /// gaps are two, one is none of its business, and a plane wave beside one
+    /// delta gap is not a second feedpoint (it has no impedance to drop).
+    #[test]
+    fn more_than_one_feedpoint_counts_the_feedpoint_rows() {
+        let two_wires = |cards: &str| {
+            deck_of(&format!(
+                "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
+            ))
+        };
+        assert_eq!(
+            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\n")),
+            Some(2)
+        );
+        assert_eq!(
+            super::more_than_one_feedpoint(&two_wires(
+                "EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nEX 0 2 5 0 1 0\n"
+            )),
+            Some(3)
+        );
+        assert_eq!(
+            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\n")),
+            None
+        );
+        assert_eq!(
+            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\nEX 1 1 1 0 0 0 0\n")),
+            None
+        );
     }
 
     // -----------------------------------------------------------------------
