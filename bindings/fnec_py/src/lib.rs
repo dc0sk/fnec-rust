@@ -149,9 +149,10 @@ fn solve_structure(
         let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
         // The one residual predicate the CLI and the worker render (FND-302).
+        let threshold = nec_solver::validate::residual_caveat_threshold()?;
         if let Some(w) = routed
             .residual
-            .and_then(|(_, rel)| nec_solver::validate::residual_caveat(rel))
+            .and_then(|(_, rel)| nec_solver::validate::residual_caveat_at(rel, threshold))
         {
             warnings.push(w);
         }

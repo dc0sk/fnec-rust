@@ -634,3 +634,23 @@ def test_a_driven_deck_gives_the_same_currents_both_ways():
     zi = 1.0 / complex(feed["re"], feed["im"])
     assert zi.real == pytest.approx(z["z_re"], rel=1e-9)
     assert zi.imag == pytest.approx(z["z_im"], rel=1e-9)
+
+
+def test_the_residual_caveat_fires_when_the_threshold_is_crossed(monkeypatch):
+    """FND-302 positive control through the bindings' real solve.
+
+    No corpus deck reaches the 1e-5 default, so the threshold comes from
+    FNEC_HALLEN_REL_RESIDUAL_CAVEAT, which every frontend reads. At 1e-30 the
+    dipole's residual is above it and the caveat is raised once; unset, it is not.
+    """
+    monkeypatch.setenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT", "1e-30")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    fired = [str(w.message) for w in caught if "FND-302" in str(w.message)]
+    assert len(fired) == 1, [str(w.message) for w in caught]
+    monkeypatch.delenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    assert not [w for w in caught if "FND-302" in str(w.message)]

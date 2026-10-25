@@ -409,6 +409,20 @@ pub fn deck_warnings(deck_text: &str, solver: SolverKind) -> Vec<String> {
 }
 
 pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult, String> {
+    solve_deck_str_at(
+        deck_text,
+        solver,
+        nec_solver::validate::residual_caveat_threshold()?,
+    )
+}
+
+/// [`solve_deck_str`] with the FND-302 caveat's threshold given — the seam its
+/// tests use to make the caveat fire through the real solve.
+pub(crate) fn solve_deck_str_at(
+    deck_text: &str,
+    solver: SolverKind,
+    caveat_threshold: f64,
+) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
@@ -475,7 +489,9 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
         warnings.push(w);
     }
     // The one residual predicate every frontend renders (FND-302).
-    if let Some(w) = residual_rel.and_then(nec_solver::validate::residual_caveat) {
+    if let Some(w) =
+        residual_rel.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, caveat_threshold))
+    {
         warnings.push(w);
     }
 
@@ -566,16 +582,6 @@ fn solve_currents(
         port_voltage: routed.port_voltage,
         residual_rel: routed.residual.map(|(_, rel)| rel),
     })
-}
-
-/// The worse of two Hallén residuals for a run's one FND-302 line; a `NaN`
-/// is the worst there is.
-pub(crate) fn worst_residual(acc: Option<f64>, next: Option<f64>) -> Option<f64> {
-    match (acc, next) {
-        (Some(a), Some(r)) if a.is_nan() || (!r.is_nan() && r <= a) => Some(a),
-        (_, Some(r)) => Some(r),
-        (a, None) => a,
-    }
 }
 
 /// What a solve hands back to this frontend.
@@ -688,6 +694,8 @@ pub struct SweepJob {
     ground: GroundModel,
     freqs_mhz: Vec<f64>,
     solver: SolverKind,
+    /// The FND-302 caveat's threshold for [`SweepJob::run_caveats`].
+    caveat_threshold: f64,
 }
 
 impl SweepJob {
@@ -769,7 +777,17 @@ impl SweepJob {
             ground,
             freqs_mhz,
             solver,
+            caveat_threshold: nec_solver::validate::residual_caveat_threshold()?,
         })
+    }
+
+    /// This job with the FND-302 caveat judged at `threshold` instead of the
+    /// environment's or the default — the seam the sweep tests use to make the
+    /// caveat fire through the real stream.
+    #[cfg(test)]
+    pub(crate) fn with_caveat_threshold(mut self, threshold: f64) -> Self {
+        self.caveat_threshold = threshold;
+        self
     }
 
     /// The frequencies (MHz) this job will solve, in ascending order.
@@ -787,7 +805,9 @@ impl SweepJob {
     pub fn run_caveats(&self, points: &[SweepPoint], worst_rel: Option<f64>) -> Vec<String> {
         self.negative_resistance_caveat(points)
             .into_iter()
-            .chain(worst_rel.and_then(nec_solver::validate::residual_caveat))
+            .chain(worst_rel.and_then(|rel| {
+                nec_solver::validate::residual_caveat_at(rel, self.caveat_threshold)
+            }))
             .collect()
     }
 
@@ -1155,6 +1175,31 @@ mod tests {
     // until FND-251 refused that; it is `corpus/u-one-segment-negative-r-freesp.nec`.
     const BENT_NEGATIVE_R: &str = "CM U whose middle run is one segment: Hallén leaves its bends unmodelled (FND-162)\nCE\nGW 1 10 0 0 3.52 0 0 0 .00704\nGW 2 1 0 0 0 0.704 0 0 .00704\nGW 3 10 0.704 0 0 0.704 0 3.52 .00704\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// FND-302 positive control through the GUI's single solve: the caveat is
+    /// pushed into the result's warnings when the residual crosses the
+    /// threshold, and absent at the default. Deleting the `warnings.push` turns
+    /// this red.
+    #[test]
+    fn the_single_solve_carries_the_residual_caveat_when_the_threshold_is_crossed() {
+        let fired = solve_deck_str_at(CLEAN_DIPOLE, SolverKind::Hallen, 1e-30).expect("solves");
+        assert_eq!(
+            fired
+                .warnings
+                .iter()
+                .filter(|w| w.contains("FND-302"))
+                .count(),
+            1,
+            "{:?}",
+            fired.warnings
+        );
+        let quiet = solve_deck_str(CLEAN_DIPOLE, SolverKind::Hallen).expect("solves");
+        assert!(
+            quiet.warnings.iter().all(|w| !w.contains("FND-302")),
+            "{:?}",
+            quiet.warnings
+        );
+    }
 
     /// FND-271: a Hallén-only refusal tells the GUI user the GUI's way to the
     /// MPIE, once, and not the CLI's flag.

@@ -290,3 +290,182 @@ fn bench_records_say_not_computed_rather_than_zero() {
         "diag_spread is computed: {row}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The caveat's positive side, through the production entry points (C3). No
+// corpus deck reaches the 1e-5 default, so the threshold is overridden —
+// `--hallen-residual-caveat` / `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`, on the
+// pattern of `--sin-fallback-rel-max` — and at 1e-30 every judged residual is
+// above it. Each wiring site has a test here that goes red without it.
+// ---------------------------------------------------------------------------
+
+const ENV: &str = "FNEC_HALLEN_REL_RESIDUAL_CAVEAT";
+
+fn run_raw(args: &[&str], env: Option<&str>) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
+    cmd.args(args).env_remove(ENV);
+    if let Some(v) = env {
+        cmd.env(ENV, v);
+    }
+    cmd.output().expect("fnec runs")
+}
+
+fn caveats(out: &Output) -> usize {
+    stderr(out)
+        .lines()
+        .filter(|l| l.contains("warning:") && l.contains(FND302))
+        .count()
+}
+
+fn corpus(name: &str) -> String {
+    root().join("corpus").join(name).display().to_string()
+}
+
+/// Once per run, single point and sweep: the five-point sweep prints one line
+/// at its worst point, not five.
+#[test]
+fn the_caveat_fires_once_per_run_when_the_threshold_is_crossed() {
+    for deck in ["dipole-freesp-51seg.nec", "frequency-sweep-dipole.nec"] {
+        let d = corpus(deck);
+        let out = run_raw(
+            &["--exec", "cpu", "--hallen-residual-caveat", "1e-30", &d],
+            None,
+        );
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(caveats(&out), 1, "{deck}:\n{}", stderr(&out));
+        let quiet = run_raw(&["--exec", "cpu", &d], None);
+        assert_eq!(
+            caveats(&quiet),
+            0,
+            "{deck} at the default:\n{}",
+            stderr(&quiet)
+        );
+    }
+}
+
+/// The environment variable, and the flag over it — the precedence and the
+/// refusals of `--sin-fallback-rel-max` / `FNEC_SIN_FALLBACK_REL_MAX`.
+#[test]
+fn the_threshold_override_follows_the_sin_fallback_precedent() {
+    let d = corpus("dipole-freesp-51seg.nec");
+    assert_eq!(caveats(&run_raw(&["--exec", "cpu", &d], Some("1e-30"))), 1);
+    let flag_wins = run_raw(
+        &["--exec", "cpu", "--hallen-residual-caveat", "1", &d],
+        Some("1e-30"),
+    );
+    assert_eq!(caveats(&flag_wins), 0, "{}", stderr(&flag_wins));
+    let bad_env = run_raw(&[&d], Some("x"));
+    assert_eq!(bad_env.status.code(), Some(2), "{}", stderr(&bad_env));
+    assert!(stderr(&bad_env).contains("invalid FNEC_HALLEN_REL_RESIDUAL_CAVEAT='x'"));
+    let bad_flag = run_raw(&["--hallen-residual-caveat", "0", &d], None);
+    assert_eq!(bad_flag.status.code(), Some(2), "{}", stderr(&bad_flag));
+    assert!(stderr(&bad_flag).contains("invalid --hallen-residual-caveat value '0'"));
+}
+
+/// The probe (`fnec converge` runs one per mesh): once per probe, through the
+/// environment, since a probe takes the main command's flags only in part.
+#[test]
+fn the_caveat_fires_once_per_probe() {
+    let d = corpus("dipole-freesp-51seg.nec");
+    let out = run_raw(
+        &["converge", "--factors", "1,3", "--exec", "cpu", &d],
+        Some("1e-30"),
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(caveats(&out), 2, "one per mesh:\n{}", stderr(&out));
+    let quiet = run_raw(&["converge", "--factors", "1,3", "--exec", "cpu", &d], None);
+    assert_eq!(caveats(&quiet), 0, "{}", stderr(&quiet));
+}
+
+/// The sinusoidal basis's fallback to Hallén is an f64 Hallén solve and is
+/// judged; the sinusoidal projection itself is not, even at 1e-30.
+#[test]
+fn the_sinusoidal_fallback_is_judged_and_the_projection_is_not() {
+    let d = corpus("dipole-sinusoidal-51seg.nec");
+    let fallback = run_raw(
+        &[
+            "--solver",
+            "sinusoidal",
+            "--exec",
+            "cpu",
+            "--sin-fallback-rel-max",
+            "1e-30",
+            "--hallen-residual-caveat",
+            "1e-30",
+            &d,
+        ],
+        None,
+    );
+    common::assert_diag_mode(&stderr(&fallback), "sinusoidal->hallen(residual)");
+    assert_eq!(caveats(&fallback), 1, "{}", stderr(&fallback));
+    let projection = run_raw(
+        &[
+            "--solver",
+            "sinusoidal",
+            "--exec",
+            "cpu",
+            "--hallen-residual-caveat",
+            "1e-30",
+            &d,
+        ],
+        None,
+    );
+    common::assert_diag_mode(&stderr(&projection), "sinusoidal");
+    assert_eq!(caveats(&projection), 0, "{}", stderr(&projection));
+}
+
+/// The pulse basis's residual is printed, not judged.
+#[test]
+fn the_pulse_residual_is_not_judged() {
+    let d = corpus("dipole-freesp-51seg.nec");
+    let out = run_raw(
+        &[
+            "--solver",
+            "pulse",
+            "--experimental-solver",
+            "--hallen-residual-caveat",
+            "1e-30",
+            &d,
+        ],
+        None,
+    );
+    assert!(
+        diag_residual(&stderr(&out), "rel_res").is_some(),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(caveats(&out), 0, "{}", stderr(&out));
+}
+
+/// The device exclusion's positive side: a `solve_exec=gpu` point is not
+/// judged, even at 1e-30. Without an adapter (CI) the point falls back to the
+/// f64 CPU solve, which is judged — so the same run checks the other direction.
+#[test]
+fn a_device_point_is_not_judged_and_its_cpu_fallback_is() {
+    let mut text = String::from("CE\nGW 1 201 0 0 -5.282 0 0 5.282 0.001\nGE 0\n");
+    text.push_str("EX 0 1 101 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n");
+    let deck = TempDeck::new("fnec-fnd302-gpu-override.nec", &text);
+    let path = deck.path().display().to_string();
+    let attempt = nec_accel::gpu_test::gpu_attempt("FND-302 device exclusion", || {
+        let out = run_raw(
+            &["--exec", "gpu", "--hallen-residual-caveat", "1e-30", &path],
+            None,
+        );
+        if common::diag_field(&stderr(&out), "solve_exec") == Some("gpu") {
+            Ok(out)
+        } else {
+            Err(stderr(&out))
+        }
+    });
+    match attempt {
+        Ok(out) => assert_eq!(caveats(&out), 0, "{}", stderr(&out)),
+        Err(err) => {
+            eprintln!("no GPU-resident solve on this host; the device half is dormant");
+            assert_eq!(
+                err.lines().filter(|l| l.contains(FND302)).count(),
+                1,
+                "the CPU fallback is judged:\n{err}"
+            );
+        }
+    }
+}

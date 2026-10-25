@@ -859,37 +859,107 @@ pub fn is_negative_resistance_message(message: &str) -> bool {
 /// 0.96 (the split-V), so no threshold could have told a valid bent deck from a
 /// failed solve.
 ///
-/// Measured too, and excluded from the predicate's callers for that reason: a
+/// Measured too, and not judged by it for that reason ([`ResidualKind`]): a
 /// GPU-resident f32 solve reads 1.43e-5 on the yagi at 3× (the device gates its
 /// own at 1e-4), and the sinusoidal basis 6.6e-4 on the corpus dipole (a
 /// projection residual, gated by `--sin-fallback-rel-max`).
+///
+/// Overridden by `--hallen-residual-caveat` (CLI) and
+/// [`HALLEN_REL_RESIDUAL_CAVEAT_ENV`] (every frontend), so the caveat's wiring
+/// can be shown to fire; see [`residual_caveat_threshold`].
 ///
 /// A caveat, not a refusal: no deck is known whose residual (of the system the
 /// route solves) is large, so a refusal would be untested in the positive
 /// direction and its first firing a surprise.
 pub const HALLEN_REL_RESIDUAL_CAVEAT: f64 = 1e-5;
 
-/// The caveat for a Hallén solve whose relative residual `rel` is above
-/// [`HALLEN_REL_RESIDUAL_CAVEAT`], or `None`.
+/// What a printed residual is the residual of, and so whether the FND-302 caveat
+/// judges it. One predicate, so no frontend decides the exclusion by a label
+/// compare or by omission (the worker's device arm names it at compile time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResidualKind {
+    /// An f64 Hallén solve of the system the route solved (corner term
+    /// included): plain, conductor paths, networks, and the sinusoidal basis's
+    /// fallback to Hallén. Judged at [`HALLEN_REL_RESIDUAL_CAVEAT`].
+    HallenF64,
+    /// The GPU-resident f32 solve of the device's own matrix (FND-307). The
+    /// device judges it at its own bound (1e-4, `GPU_SOLVE_MAX_REL_RESIDUAL`) and
+    /// declines to the f64 CPU solve above it, which is then judged. Correct f32
+    /// solves sit between 1e-5 and 1e-4 (the corpus yagi at 3×: 1.43e-5).
+    DeviceF32,
+    /// The sinusoidal basis: a Galerkin projection tested at collocation rows it
+    /// does not satisfy (~6.6e-4 on the corpus dipole), judged by
+    /// `--sin-fallback-rel-max`.
+    SinusoidalProjection,
+    /// The pulse and continuity bases' `‖Z·I − V‖ / ‖V‖`: printed, not judged.
+    Pulse,
+}
+
+impl ResidualKind {
+    /// Whether [`residual_caveat_at`] judges a residual of this kind.
+    pub const fn judged_by_hallen_caveat(self) -> bool {
+        matches!(self, Self::HallenF64)
+    }
+}
+
+/// The environment override of [`HALLEN_REL_RESIDUAL_CAVEAT`], on the pattern of
+/// `FNEC_SIN_FALLBACK_REL_MAX`.
+pub const HALLEN_REL_RESIDUAL_CAVEAT_ENV: &str = "FNEC_HALLEN_REL_RESIDUAL_CAVEAT";
+
+/// The caveat threshold every frontend uses: [`HALLEN_REL_RESIDUAL_CAVEAT_ENV`]
+/// when set (a positive number, else `Err`), else [`HALLEN_REL_RESIDUAL_CAVEAT`].
+/// The CLI's `--hallen-residual-caveat` takes precedence over both. The override
+/// exists so the caveat's wiring can be shown to fire through every production
+/// entry point; no corpus deck reaches the default.
+pub fn residual_caveat_threshold() -> Result<f64, String> {
+    match std::env::var(HALLEN_REL_RESIDUAL_CAVEAT_ENV) {
+        Ok(raw) => parse_residual_caveat_threshold(&raw).ok_or_else(|| {
+            format!("invalid {HALLEN_REL_RESIDUAL_CAVEAT_ENV}='{raw}' (expected: positive number)")
+        }),
+        Err(_) => Ok(HALLEN_REL_RESIDUAL_CAVEAT),
+    }
+}
+
+/// A caveat threshold from text: a finite positive number, else `None`.
+pub fn parse_residual_caveat_threshold(raw: &str) -> Option<f64> {
+    raw.parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// The caveat for an f64 Hallén solve ([`ResidualKind::HallenF64`]) whose
+/// relative residual `rel` is above `threshold`, or `None`.
 ///
 /// One predicate for every frontend: the CLI prints it, the worker appends it to
 /// the warnings that cross the wire, the GUI and `fnec_py` add it to theirs. Fed
-/// from [`crate::HallenRouted::residual`] (and the CLI's sinusoidal-to-Hallén
-/// fallback): an f64 Hallén solve. Not from a device (f32) solve, which the
-/// device gates at its own bound, nor from the sinusoidal basis, whose
-/// projection residual (~6.6e-4 on the corpus dipole) `--sin-fallback-rel-max`
-/// judges. `NaN` is caveated too: a residual that is not a number does not show
-/// the equations are satisfied.
-pub fn residual_caveat(rel: f64) -> Option<String> {
-    if rel <= HALLEN_REL_RESIDUAL_CAVEAT {
+/// from [`crate::HallenRouted::residual`] and, in the CLI, from every residual
+/// whose [`ResidualKind::judged_by_hallen_caveat`] holds. `NaN` is caveated too:
+/// a residual that is not a number does not show the equations are satisfied.
+pub fn residual_caveat_at(rel: f64, threshold: f64) -> Option<String> {
+    if rel <= threshold {
         return None;
     }
     Some(format!(
         "the Hallén solve does not satisfy its own equations (relative residual {rel:.1e}, \
-         above {HALLEN_REL_RESIDUAL_CAVEAT:.0e}): the matrix is near-singular or the \
-         constraints conflict, so the feedpoint impedance and currents are not a solution \
-         of this deck (FND-302)"
+         above {threshold:.0e}): the matrix is near-singular or the constraints conflict, \
+         so the feedpoint impedance and currents are not a solution of this deck (FND-302)"
     ))
+}
+
+/// [`residual_caveat_at`] at the default [`HALLEN_REL_RESIDUAL_CAVEAT`].
+pub fn residual_caveat(rel: f64) -> Option<String> {
+    residual_caveat_at(rel, HALLEN_REL_RESIDUAL_CAVEAT)
+}
+
+/// The worse of a run's residual so far and the next point's, for a run's one
+/// FND-302 line. `NaN` is the worst there is: it is kept once seen, and taken
+/// when it arrives. `None` (a point with no judged residual) changes nothing.
+pub fn worst_residual(acc: Option<f64>, next: Option<f64>) -> Option<f64> {
+    match (acc, next) {
+        (Some(a), Some(r)) if a.is_nan() || (!r.is_nan() && r <= a) => Some(a),
+        (_, Some(r)) => Some(r),
+        (a, None) => a,
+    }
 }
 
 /// One line for a whole sweep's negative-resistance points, or `None`.
@@ -3645,5 +3715,40 @@ mod residual_caveat_tests {
         assert_eq!(residual_caveat(HALLEN_REL_RESIDUAL_CAVEAT), None);
         assert_eq!(residual_caveat(0.0), None);
         assert!(residual_caveat(f64::NAN).is_some());
+    }
+
+    /// C1: every arm of the one exclusion. `|_| false` and `|_| true` both fail.
+    #[test]
+    fn only_an_f64_hallen_residual_is_judged() {
+        assert!(ResidualKind::HallenF64.judged_by_hallen_caveat());
+        assert!(!ResidualKind::DeviceF32.judged_by_hallen_caveat());
+        assert!(!ResidualKind::SinusoidalProjection.judged_by_hallen_caveat());
+        assert!(!ResidualKind::Pulse.judged_by_hallen_caveat());
+    }
+
+    #[test]
+    fn the_threshold_is_what_the_caveat_compares_against() {
+        assert!(residual_caveat_at(2e-30, 1e-30).is_some());
+        assert_eq!(residual_caveat_at(1e-4, 1.0), None);
+        let w = residual_caveat_at(3e-3, 1e-3).expect("fires");
+        assert!(w.contains("3.0e-3") && w.contains("1e-3"), "{w}");
+        assert_eq!(parse_residual_caveat_threshold("1e-30"), Some(1e-30));
+        for bad in ["0", "-1", "nan", "inf", "x", ""] {
+            assert_eq!(parse_residual_caveat_threshold(bad), None, "{bad}");
+        }
+    }
+
+    /// C4: the one NaN-is-worst reduction the CLI and the GUI share.
+    #[test]
+    fn the_worst_residual_keeps_the_largest_and_any_nan() {
+        assert_eq!(worst_residual(None, None), None);
+        assert_eq!(worst_residual(None, Some(1e-9)), Some(1e-9));
+        assert_eq!(worst_residual(Some(1e-9), None), Some(1e-9));
+        assert_eq!(worst_residual(Some(1e-9), Some(1e-6)), Some(1e-6));
+        assert_eq!(worst_residual(Some(1e-6), Some(1e-9)), Some(1e-6));
+        assert!(worst_residual(Some(1e-6), Some(f64::NAN)).unwrap().is_nan());
+        assert!(worst_residual(Some(f64::NAN), Some(1.0)).unwrap().is_nan());
+        assert!(worst_residual(Some(f64::NAN), None).unwrap().is_nan());
+        assert!(worst_residual(None, Some(f64::NAN)).unwrap().is_nan());
     }
 }

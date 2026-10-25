@@ -255,6 +255,7 @@ fn main() -> ExitCode {
         vars_path,
         loads_config_path,
         sin_fallback_rel_max_cli,
+        hallen_residual_caveat_cli,
         hosts_path,
         path,
     } = match parse_args(&args) {
@@ -300,6 +301,19 @@ fn main() -> ExitCode {
         }
     } else {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
+    };
+    // The FND-302 caveat's threshold: the flag, else the environment, else 1e-5,
+    // with the same precedence and refusal as `--sin-fallback-rel-max`.
+    let hallen_residual_caveat = match hallen_residual_caveat_cli
+        .map_or_else(nec_solver::validate::residual_caveat_threshold, Ok)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", VERSION);
+            eprintln!("{USAGE}");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
     };
 
     let input = match std::fs::read_to_string(&path) {
@@ -836,6 +850,7 @@ fn main() -> ExitCode {
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_residual_for_run(&solved, hallen_residual_caveat);
     warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
     let any_failed = emit_sweep_points(
         solved,
@@ -1034,6 +1049,26 @@ fn worker_warning_lines(
         .collect()
 }
 
+/// Print the run's FND-302 caveat once, at its worst judged residual: the
+/// residual is a property of the solve, and a sweep should not repeat it per
+/// point. Local runs only — a `--hosts` point carries no residual, and the
+/// worker sends its own caveat among its warnings.
+fn warn_residual_for_run<T>(
+    solved: &[(usize, Result<FrequencySolveResult, String>, T)],
+    threshold: f64,
+) {
+    let worst = solved
+        .iter()
+        .filter_map(|(_, r, _)| r.as_ref().ok())
+        .fold(None, |acc, r| {
+            nec_solver::validate::worst_residual(acc, r.hallen_rel_res)
+        });
+    if let Some(w) = worst.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("warning: {w}");
+    }
+}
+
 /// Print the run's negative-resistance caveat once — per point for a single
 /// frequency, one aggregate line for a sweep (FND-069). One function for the
 /// local and the distributed sweep, called just before their shared
@@ -1055,18 +1090,6 @@ fn warn_negative_resistance_for_run<T>(
     let run_loads = nec_solver::validate::RunLoads {
         negative: ok.iter().any(|r| r.run_loads.negative),
     };
-    // FND-302: one line for the run, at its worst point — the residual is a
-    // property of the solve, and a sweep should not repeat it per point.
-    let mut worst: Option<f64> = None;
-    for r in ok.iter().filter_map(|r| r.hallen_rel_res) {
-        // A NaN residual is the worst there is, and stays so.
-        if worst.map_or(true, |w| !w.is_nan() && (r.is_nan() || r > w)) {
-            worst = Some(r);
-        }
-    }
-    if let Some(w) = worst.and_then(nec_solver::validate::residual_caveat) {
-        eprintln!("warning: {w}");
-    }
     for w in solve_session::run_negative_resistance_warnings(
         per_point,
         &min_feed_re,

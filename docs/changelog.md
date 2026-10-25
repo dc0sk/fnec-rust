@@ -56,6 +56,13 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the automation guide shows the `LD 0` + `NT` recipe, which the contract
   test round-trips on the corpus monopole (50.000000 − j0.000016 Ω).
 
+- **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
+  set the FND-302 caveat's threshold (default 1e-5), on the pattern of
+  `--sin-fallback-rel-max`: the flag over the variable, an invalid value
+  refused with exit 2. The variable reaches every frontend — `fnec converge`,
+  `sweep --resonance`, `fnec worker`, the GUI and `fnec_py` — so the caveat can
+  be shown to fire through each of them; no corpus deck reaches the default.
+
 ### Changed
 
 - **A residual the route did not compute reads `n/a`, not `0`** (FND-306, D8).
@@ -86,7 +93,10 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   3.55e-8 up to 3×, 6.82e-8 at 9×). Not judged by it: a GPU-resident f32 solve
   (the device gates its own at 1e-4; the corpus yagi at 3× reads 1.4e-5 there
   and 3.2e-8 on the CPU) and the sinusoidal basis, whose projection residual
-  (~6.6e-4) `--sin-fallback-rel-max` judges.
+  (~6.6e-4) `--sin-fallback-rel-max` judges. Which residual is judged is one typed
+  predicate, `validate::ResidualKind::judged_by_hallen_caveat` (`HallenF64` only),
+  set where each residual is computed; the worker's device arm asserts it at
+  compile time.
 - **`--exec gpu` fills the matrix in f32 only for a point the device solves, and
   the `diag:` record says where the fill ran** (FND-293). The device filled the
   Z-matrix of every free-space `--exec gpu` deck of 128 segments or more; when the
