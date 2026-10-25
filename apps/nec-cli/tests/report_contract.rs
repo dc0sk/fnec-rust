@@ -335,7 +335,8 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
     // is no NE/NH deck, and every corpus RP card has XNDA = 0 — so the corpus
     // list alone covers 7 of the 10 sections `nec_report` can emit, and the floor
     // below would have encoded that blindness as if it were completeness. These
-    // three are built inline instead.
+    // three are built inline instead, and INPUT_IMPEDANCE (FND-309, EX I4's units
+    // digit over a sweep) with them: no corpus deck asks for it either.
     const BASE: &str =
         "CM contract\nCE\nGW 1 21 0 0 -5.28 0 0 5.28 0.001\nGE 0\nFR 0 1 0 0 14.2 0\nEX 0 1 11 0 1.0 0.0\n";
     let inline = [
@@ -345,6 +346,12 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
             "normalized",
             // XNDA 0500: the N digit, as nec2c splits XNDA (FND-298).
             format!("{BASE}RP 0 19 1 0500 0.0 0.0 5.0 0.0\nEN\n"),
+        ),
+        (
+            "input-impedance",
+            "CM contract\nCE\nGW 1 11 0 0 -2.5 0 0 2.5 0.001\nGE 0\nEX 0 1 6 1 1 0 50\n\
+             FR 0 2 0 0 29.9 1\nEN\n"
+                .to_string(),
         ),
     ];
     let mut inline_paths: Vec<PathBuf> = Vec::new();
@@ -387,7 +394,7 @@ fn the_cli_guide_documents_every_report_section_the_binary_emits() {
         let _ = std::fs::remove_file(p);
     }
     assert!(
-        emitted.len() >= 10,
+        emitted.len() >= 11 && emitted.iter().any(|e| e == "INPUT_IMPEDANCE"),
         "expected every report section across these decks, found {emitted:?} — \
          the extraction is wrong, not the guide"
     );

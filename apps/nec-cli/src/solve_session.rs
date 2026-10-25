@@ -265,6 +265,9 @@ pub(super) struct SweepPointSummary {
 pub(super) struct SweepFeedpoint {
     pub(super) tag: usize,
     pub(super) seg: usize,
+    /// The segment's absolute number — nec2c's SOURCE SEGMENT No, which
+    /// `INPUT_IMPEDANCE` prints beside the tag and segment (FND-309).
+    pub(super) abs_seg: usize,
     pub(super) z_re: f64,
     pub(super) z_im: f64,
 }
@@ -1006,6 +1009,19 @@ pub(super) fn build_feedpoint_rows(
     }
 
     Ok((rows, sommerfeld_outcome))
+}
+
+/// Each feedpoint row's absolute segment number, in [`build_feedpoint_rows`]'s
+/// order: [`nec_solver::feedpoints`] resolved through `find_deck_segment`, the
+/// same walk the rows take, so the two zip one to one.
+pub(super) fn feedpoint_abs_segments(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[Segment],
+) -> Vec<usize> {
+    nec_solver::feedpoints(deck)
+        .filter_map(|(ex, _)| nec_solver::find_deck_segment(segs, ex.tag, ex.segment))
+        .map(|i| segs[i].abs_index as usize)
+        .collect()
 }
 
 pub(super) fn build_source_rows(deck: &nec_model::deck::NecDeck) -> Vec<SourceRow> {
@@ -1953,9 +1969,11 @@ pub(super) fn solve_frequency_point(
             .then_some(crate::cli_args::UNVALIDATED_SOLVER_CAVEAT),
         feedpoints: rows
             .iter()
-            .map(|r| SweepFeedpoint {
+            .zip(feedpoint_abs_segments(deck, segs))
+            .map(|(r, abs_seg)| SweepFeedpoint {
                 tag: r.tag,
                 seg: r.seg,
+                abs_seg,
                 z_re: r.z_in.re,
                 z_im: r.z_in.im,
             })

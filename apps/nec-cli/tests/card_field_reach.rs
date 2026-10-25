@@ -79,7 +79,6 @@ fn fnec(deck: &str, args: &[&str]) -> Run {
 #[derive(Default, Debug)]
 struct Findings {
     failures: Vec<String>,
-    gaps: Vec<String>,
 }
 
 /// Runs a row's deck with the probed card written as given.
@@ -99,10 +98,7 @@ fn check_row(row: &FieldCase, run: Runner) -> Findings {
     for (i, probes) in row.fields.iter().enumerate() {
         let pos = i + 1;
         for Probe { value, disposition } in probes.iter().copied() {
-            let consumed = matches!(
-                disposition,
-                Disposition::Consumed | Disposition::KnownGap(_)
-            );
+            let consumed = matches!(disposition, Disposition::Consumed);
             let kept = matches!(disposition, Disposition::Kept { .. });
             if !consumed && !kept {
                 continue;
@@ -121,10 +117,6 @@ fn check_row(row: &FieldCase, run: Runner) -> Findings {
                 Disposition::Consumed if !reaches => out.failures.push(format!(
                     "{here}: the solution is unchanged — the field never reaches the solve\n    {line}"
                 )),
-                Disposition::KnownGap(_) if reaches => out.failures.push(format!(
-                    "{here}: now reaches the report; mark it Consumed\n    {line}"
-                )),
-                Disposition::KnownGap(_) => out.gaps.push(format!("{here}\n    {line}")),
                 Disposition::Kept { .. } if reaches => out.failures.push(format!(
                     "{here}: the table says no solve reads it, but it changes the outcome: \
                      {}\n    {line}",
@@ -152,7 +144,6 @@ fn check_reach(rows: &[FieldCase], run: Runner) -> Findings {
                 let f = check_row(row, run);
                 let mut all = all.lock().unwrap();
                 all.failures.extend(f.failures);
-                all.gaps.extend(f.gaps);
             });
         }
     });
@@ -166,9 +157,6 @@ fn production(row: &FieldCase, line: &str) -> Run {
 #[test]
 fn every_consumed_field_reaches_the_report_and_every_kept_one_does_not() {
     let f = check_reach(FIELD_DISPOSITION, &production);
-    for g in &f.gaps {
-        eprintln!("KNOWN GAP (tolerated, listed until decided): {g}");
-    }
     assert!(
         f.failures.is_empty(),
         "{} failure(s):\n{}",

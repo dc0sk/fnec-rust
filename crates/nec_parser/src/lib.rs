@@ -823,13 +823,48 @@ pub fn parse(input: &str) -> Result<ParseResult, ParseError> {
                 // EX I1 I2 I3 I4 F1..F6 by position, missing fields zero (nec2c's
                 // readmn). F3 is the plane-wave polarization angle η, F4/F5 the
                 // incidence-angle-sweep increments Δθ/Δφ, F6 the axial ratio; all
-                // unused by the source types.
+                // unused by the source types — except that a voltage source's
+                // F3 is the normalization of I4's input-impedance print (FND-309).
                 let p = read_positional(lineno, "EX", rest)?;
+                let i4 = p.count(4)?;
+                if matches!(p.int(1), 0 | 5) {
+                    // The manual defines I4's units digit as 0 (no print) or 1
+                    // (print), and F3 = 0 as "normalize to the largest |Z|". nec2c
+                    // does something definite with the rest, but by accident of
+                    // `iped != 2`, so it is refused rather than guessed (FND-241).
+                    if i4 % 10 >= 2 {
+                        return Err(ParseError::UnsupportedValue {
+                            line: lineno,
+                            card: "EX".to_string(),
+                            field: 4,
+                            raw: p.raw(4).to_string(),
+                            reason: "NEC-2 defines I4's units digit as 0 (no input-impedance \
+                                     print) or 1 (print it); nec2c reads 2 as a fixed factor \
+                                     even when F3 = 0 (dividing by zero) and 3-9 as \
+                                     normalizing to the largest |Z| whatever F3 says, so the \
+                                     deck is refused: write 1, with F3 the factor or 0 for the \
+                                     largest |Z|"
+                                .to_string(),
+                        });
+                    }
+                    if i4 % 10 == 1 && p.float(3) < 0.0 {
+                        return Err(ParseError::UnsupportedValue {
+                            line: lineno,
+                            card: "EX".to_string(),
+                            field: 7,
+                            raw: p.raw(7).to_string(),
+                            reason: "NEC-2 defines no negative normalization impedance; nec2c \
+                                     ignores a negative F3 and normalizes to the sweep's \
+                                     largest |Z|, so the deck is refused: write 0 for that"
+                                .to_string(),
+                        });
+                    }
+                }
                 deck.cards.push(Card::Ex(ExCard {
                     excitation_type: p.count(1)?,
                     tag: p.count(2)?,
                     segment: p.count(3)?,
-                    i4: p.count(4)?,
+                    i4,
                     voltage_real: p.float(1),
                     voltage_imag: p.float(2),
                     polarization_deg: p.float(3),
@@ -1983,7 +2018,9 @@ EN
 
     #[test]
     fn ex_i4_field_is_preserved() {
-        let input = "EX 5 2 7 3 1.5 -0.25\nEN\n";
+        // I4 10: the tens digit, kept as written (a units digit of 2-9 is
+        // refused, FND-309).
+        let input = "EX 5 2 7 10 1.5 -0.25\nEN\n";
         let result = parse(input).expect("parse must succeed");
         assert!(result.warnings.is_empty());
         assert_eq!(result.deck.cards.len(), 2);
@@ -1993,7 +2030,7 @@ EN
                 excitation_type: 5,
                 tag: 2,
                 segment: 7,
-                i4: 3,
+                i4: 10,
                 voltage_real: 1.5,
                 voltage_imag: -0.25,
                 polarization_deg: 0.0,

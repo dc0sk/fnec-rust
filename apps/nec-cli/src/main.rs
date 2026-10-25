@@ -63,8 +63,8 @@ fn feedpoint_json_fields(tag: usize, seg: usize, z_re: f64, z_im: f64) -> String
 
 /// Print every point a sweep computed, and report the ones that failed.
 ///
-/// Returns `true` if any point failed, so the caller can exit non-zero after the
-/// output rather than instead of it.
+/// Returns the indices of the points that failed, so the caller can exit non-zero
+/// after the output rather than instead of it, and name them.
 ///
 /// **The policy changed here (FND-101/FND-102 follow-up).** This loop used to
 /// `return ExitCode::FAILURE` on the first `Err`, so a sweep that lost one point
@@ -89,8 +89,8 @@ fn emit_sweep_points(
     bench_target: &str,
     bench_deck: &str,
     bench_solver: &str,
-) -> bool {
-    let mut any_failed = false;
+) -> Vec<usize> {
+    let mut failed = Vec::new();
     for (fidx, result, elapsed_ms) in solved {
         let solved_point = match result {
             Ok(v) => v,
@@ -98,7 +98,7 @@ fn emit_sweep_points(
                 // Report and carry on. Returning here is what discarded the rest
                 // of the sweep.
                 eprintln!("error: {e}");
-                any_failed = true;
+                failed.push(fidx);
                 continue;
             }
         };
@@ -116,7 +116,7 @@ fn emit_sweep_points(
                 }
                 PointOutput::Text(_) => {
                     eprintln!("error: --output-format nec2d: a remote point carries no tables");
-                    any_failed = true;
+                    failed.push(fidx);
                 }
             }
         }
@@ -180,7 +180,74 @@ fn emit_sweep_points(
             }
         }
     }
-    any_failed
+    failed
+}
+
+/// The sweep's closing text sections — `SWEEP_POINTS` and, when the deck's EX
+/// I4 asks for it, `INPUT_IMPEDANCE` (FND-309) — through the one renderer both
+/// routes share, with the warnings it raises sent to stderr.
+fn print_sweep_sections(
+    deck: &nec_model::deck::NecDeck,
+    sweep_rows: &[SweepPointSummary],
+    failed: &[usize],
+    freqs_hz: &[f64],
+) {
+    let points: Vec<nec_report::SweepPoint> = sweep_rows
+        .iter()
+        .map(|r| nec_report::SweepPoint {
+            freq_mhz: r.freq_mhz,
+            feeds: r
+                .feedpoints
+                .iter()
+                .map(|f| nec_report::SweepFeed {
+                    tag: f.tag,
+                    seg: f.seg,
+                    abs_seg: f.abs_seg,
+                    z: num_complex::Complex64::new(f.z_re, f.z_im),
+                })
+                .collect(),
+        })
+        .collect();
+    let failed_mhz: Vec<f64> = failed
+        .iter()
+        .filter_map(|&i| freqs_hz.get(i))
+        .map(|f| f / 1e6)
+        .collect();
+    let sections =
+        nec_report::render_sweep_sections(&points, input_impedance_request(deck), &failed_mhz);
+    for w in &sections.warnings {
+        eprintln!("warning: {w}");
+    }
+    print!("{}", sections.text);
+}
+
+/// The deck's input-impedance print (`nec_solver::input_impedance_print`) in the
+/// renderer's terms.
+fn input_impedance_request(
+    deck: &nec_model::deck::NecDeck,
+) -> Option<nec_report::InputImpedanceRequest> {
+    let p = nec_solver::input_impedance_print(deck)?;
+    Some(nec_report::InputImpedanceRequest {
+        feed_index: p.feed_index,
+        norm: match p.norm {
+            nec_solver::ImpedanceNorm::Fixed(f) => nec_report::InputImpedanceNorm::Fixed(f),
+            nec_solver::ImpedanceNorm::Max => nec_report::InputImpedanceNorm::Max,
+        },
+    })
+}
+
+/// The `--output-format json` warning for a deck whose EX I4 asks for the
+/// input-impedance table over a sweep, which JSON has no form for yet.
+fn input_impedance_json_warning(
+    deck: &nec_model::deck::NecDeck,
+    n_points: usize,
+) -> Option<String> {
+    (n_points > 1 && nec_solver::input_impedance_print(deck).is_some()).then(|| {
+        "EX I4's input-impedance print (the text report's INPUT_IMPEDANCE section) has no \
+         JSON form yet and is not written; every point's feedpoint impedance is in the \
+         records. Use --output-format text for the normalized table."
+            .to_string()
+    })
 }
 
 fn main() -> ExitCode {
@@ -471,6 +538,13 @@ fn main() -> ExitCode {
     } else {
         frequencies_from_fr(deck)
     };
+    // FND-309: the input-impedance table is a text section; JSON has no form for
+    // it yet. Both routes, before anything is solved.
+    if output_format == OutputFormat::Json {
+        if let Some(w) = input_impedance_json_warning(deck, freqs_hz.len()) {
+            eprintln!("warning: {w}");
+        }
+    }
     // After every configuration file is read (FND-150): a bad `--hosts` or
     // `--sweep-config` path is reported even on an undriven deck, as the comment
     // at the `--hosts` read promises (FND-181). Still ahead of the first deck
@@ -877,7 +951,7 @@ fn main() -> ExitCode {
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
     warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
-    let any_failed = emit_sweep_points(
+    let failed = emit_sweep_points(
         solved,
         output_format,
         &mut sweep_rows,
@@ -890,17 +964,10 @@ fn main() -> ExitCode {
         &bench_solver,
     );
 
-    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
-        println!();
-        println!("SWEEP_POINTS");
-        println!("N_POINTS {}", sweep_rows.len());
-        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
-        for row in sweep_rows {
-            println!(
-                "{:.6} {} {} {:.6} {:.6}",
-                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
-            );
-        }
+    let any_failed = !failed.is_empty();
+
+    if output_format == OutputFormat::Text {
+        print_sweep_sections(deck, &sweep_rows, &failed, &freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -1187,6 +1254,10 @@ fn distributed_sweep_summary(
     segs: &[nec_solver::Segment],
 ) -> SweepPointSummary {
     let (tag, seg) = distributed_feedpoint(deck, segs).unwrap_or((0, 0));
+    let abs_seg = solve_session::feedpoint_abs_segments(deck, segs)
+        .first()
+        .copied()
+        .unwrap_or(0);
     SweepPointSummary {
         freq_mhz,
         tag,
@@ -1201,6 +1272,7 @@ fn distributed_sweep_summary(
         feedpoints: vec![SweepFeedpoint {
             tag,
             seg,
+            abs_seg,
             z_re,
             z_im,
         }],
@@ -1451,7 +1523,7 @@ fn run_distributed_solve(
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
     warn_negative_resistance_for_run(&solved, deck, segs, solver_mode);
-    let any_failed = emit_sweep_points(
+    let failed = emit_sweep_points(
         solved,
         output_format,
         &mut sweep_rows,
@@ -1464,17 +1536,10 @@ fn run_distributed_solve(
         &bench_solver,
     );
 
-    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
-        println!();
-        println!("SWEEP_POINTS");
-        println!("N_POINTS {}", sweep_rows.len());
-        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
-        for row in sweep_rows {
-            println!(
-                "{:.6} {} {} {:.6} {:.6}",
-                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
-            );
-        }
+    let any_failed = !failed.is_empty();
+
+    if output_format == OutputFormat::Text {
+        print_sweep_sections(deck, &sweep_rows, &failed, freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -1778,6 +1843,8 @@ mod tests {
         assert_eq!(s.feedpoints.len(), 1);
         let f = &s.feedpoints[0];
         assert_eq!((f.tag, f.seg, f.z_re, f.z_im), (2, 11, 70.5, -3.25));
+        // And its absolute number, which INPUT_IMPEDANCE prints (FND-309).
+        assert_eq!(f.abs_seg, 32);
     }
 
     fn row(z_re: f64) -> FeedpointRow {

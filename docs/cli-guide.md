@@ -163,7 +163,9 @@ becomes `S·k − (S−1)/2`, the sub-segment whose midpoint is the original's
 each at its point; a per-metre `LD 2/3/5` range covers the same length of wire.
 A `TL`/`NT` port `0` is resolved to the tag's centre on the deck's own mesh
 first. `GM` copies carry the map. `PT`, `RP`, `NE`, `NH` are dropped (they do
-not change the feedpoint), and the output says so.
+not change the feedpoint), and the output says so; so is `EX` I4's
+input-impedance print (FND-309), in a note of its own — the study reports every
+mesh's impedance itself.
 
 **Verdict, per row and axis.** With three meshes or more: the last two steps
 `d1`, `d2`, their ratio `r = d2/d1`, and the tail `d2·r/(1−r)` (infinite for
@@ -533,6 +535,13 @@ N_POINTS <n>
 FREQ_MHZ TAG SEG Z_RE Z_IM
 ...
 
+INPUT_IMPEDANCE          (EX I4 units digit 1, two or more solved points)
+SOURCE_TAG <tag> SOURCE_SEG <seg> SOURCE_SEGMENT <absolute segment>
+NORMALIZATION_OHMS <factor> NORMALIZED_TO <F3|MAX>
+N_POINTS <n>
+FREQ_MHZ Z_RE Z_IM Z_ABS Z_PHASE_DEG ZN_RE ZN_IM ZN_ABS
+...
+
 FNEC_BUILD <version> (<commit>)   (last in each point's report)
 ```
 
@@ -557,6 +566,7 @@ Formatting and ordering rules:
 - `SOURCES` appears when one or more `EX` cards are present, with source definitions in deck/card order
 - `LOADS` appears when one or more `LD` cards are present, with load definitions in deck/card order
 - `SWEEP_POINTS` is emitted once, after the last per-frequency report block, on every multi-frequency text run — one row per solved point, so a sweep can be read without parsing each block. It is pinned by `apps/nec-cli/tests/report_contract.rs`; this guide simply never mentioned it (FND-086).
+- `INPUT_IMPEDANCE` is NEC-2's INPUT IMPEDANCE DATA table (FND-309), emitted once after `SWEEP_POINTS` when the last voltage-source `EX` card (type 0 or 5) has I4's units digit 1 and the run solved two or more frequencies — nec2c prints no table for one, and the rule is on the solved points, so `--sweep-config` decides it as it decides the sweep. Each point's impedance (`Z_ABS`, and `Z_PHASE_DEG` in degrees) and the same impedance divided by `NORMALIZATION_OHMS` (`ZN_*`, in E notation; the phase is not normalized): that card's F3 when F3 > 0 (`NORMALIZED_TO F3`), otherwise the largest `|Z|` of the sweep (`NORMALIZED_TO MAX`). The source is nec2c's: the last `EX 5`, or else the last `EX 0` — not necessarily the card carrying the digit, and not necessarily `SWEEP_POINTS`'s row, which is always the first feedpoint (on a deck fed `EX 0 1 …` then `EX 0 2 …`, `SWEEP_POINTS` lists tag 1 and `INPUT_IMPEDANCE` tag 2). `SOURCE_SEGMENT` is the absolute segment number nec2c's header prints. A deck with several `FR` cards solves the last (see the superseded-FR warning), so fnec prints one table where nec2c prints one per `FR`. Omitted, with a warning naming the failed frequency, when a point fails. A units digit of 2–9, or units 1 with a negative F3, is refused: NEC-2 does not define them. `--output-format json` warns that the table has no JSON form yet; `--output-format nec2d` refuses the deck; the GUI and `fnec_py` do not carry it
 - `RADIATION_PATTERN` appears only when at least one `RP` card is present in the deck
 - `RADIATION_PATTERN` gains (`GAIN_DB`, `GAIN_V_DB`, `GAIN_H_DB`) are **gain** in dBi, not directivity: the directivity scaled by the radiation efficiency η = P_radiated / P_input, so the power lost in lossy loads (`LD` or `--loads-config`), lossy networks and a lossy ground all count, over every ground (FND-200)
 - `NORMALIZED_PATTERN` appears when an `RP` card's `XNDA` field requests normalization (non-zero `N`, hundreds, digit, as nec2c splits XNDA; the `X` digit that every 4nec2 deck sets with `1000` picks only nec2c's column labels — fnec before 0.26 read it as normalize, FND-298); `GAIN_NORM_DB` is the total gain relative to the pattern peak (0 dB)
@@ -1051,7 +1061,7 @@ Quick reference:
 | GN type 1 | Full | Perfect-conductor (PEC) image method; ground-mounted wires (monopoles) solved by explicit images on `--solver hallen` (FND-082) — with voltage or current sources, loads, `TL`/`NT` networks and plane waves |
 | GN type 2 | Partial | Aliases the GN 0 path by default; the true Sommerfeld surface wave comes from `--ground-solver sommerfeld` (feedpoint Z of a straight wire) or `--solver mpie` (currents and patterns, any geometry above ground) |
 | GN fields | — | Read by position, `GN I1 I2 I3 I4 F1 F2 F3 F4 F5 F6` (FND-283). A radial-wire screen (`I2` ≠ 0) over `GN 0` or `GN 2` is refused — nec2c's currents change with it and fnec does not model one; over `GN 1`/`GN -1` it is ignored with a warning, as nec2c ignores it. `I3`/`I4` (never read by NEC-2) and a second medium in `F3`–`F6` (read only by `RP` modes 2/3/5/6) are ignored with a warning |
-| EX type 0 | Full | Applied-field voltage-gap source, on every solver path |
+| EX type 0 | Full | Applied-field voltage-gap source, on every solver path. I4's units digit 1 prints the input impedance over a sweep, normalized to F3 (`INPUT_IMPEDANCE`, FND-309); 2–9 are refused |
 | EX type 1 | Partial | Incident plane wave, linear polarization — solves on `--solver hallen` (receiving antenna → induced currents, no feedpoint), including degree-2 junctioned geometry, and degree-3+ junctions and closed loops on the section graph (FND-162 stage 5; loads included, FND-197); in free space and over perfect or finite ground, with the ground-reflected wave (FND-170; `--ground-solver sommerfeld` does not apply to a receive solve, and says so), including wires touching perfect ground — from below the ground plane refused. `--solver pulse` fails fast |
 | EX type 2 | Partial | Incident plane wave, right-hand elliptic; solves on `--solver hallen` via the complex polarization vector |
 | EX type 3 | Partial | Incident plane wave, left-hand elliptic (type 2 with opposite handedness). The legacy `--ex3-i4-mode` flag is an obsolete no-op |
