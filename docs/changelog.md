@@ -81,7 +81,7 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   cap, so whether the end was included depended on rounding drift (the CLI gave
   `0.1 … 0.101 by 1e-7` 10 000 points, dropping the 10 001st). Both now call
   `nec_solver::linear_range_mhz`: `start + i·step`, the `FR` card's derivation,
-  for `count = floor((end − start)/step + 1e-9 + 4ε·max(|start|, |end|)/step) + 1`,
+  for `count = floor((end − start)/step + 4ε·max(|start|, |end|)/step) + 1`,
   capped at 100 000. **The GUI allows a one-point sweep** (Start = End), as the CLI
   always did (D5); its tab and its job now refuse exactly what the CLI refuses.
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as

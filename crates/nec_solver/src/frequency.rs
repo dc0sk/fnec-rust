@@ -87,20 +87,32 @@ pub enum RangeError {
 /// **The endpoint rule**, stated because three expanders each had their own:
 ///
 /// ```text
-/// count = floor((end − start)/step + 1e-9 + 4ε·max(|start|, |end|)/step) + 1
+/// count = floor((end − start)/step + 4ε·max(|start|, |end|)/step) + 1
 /// ```
 ///
 /// with ε = `f64::EPSILON`. `end` is included when it lies on the grid to within
-/// the arithmetic's own error, and a point beyond it never is. The first two
-/// terms are the batch A/B review's rule (`floor(span/step + 1e-9) + 1`), which
-/// is the `end + step·1e-9` tolerance both old expanders carried. The third is
-/// the rounding of `start` and `end` themselves, relative to the step: without
-/// it `1000 … 1000.001 by 1e-7` gives 10 000 points rather than 10 001, because
-/// 1000.001 is stored 1.1e-13 short and `span/step` comes out 9999.99999976 — a
-/// deficit of 2.4e-7 steps that the 1e-9 cannot absorb. The bound is generous
-/// (each of the two roundings, the subtraction and the division costs at most
-/// ½ε·max/step) and still negligible at ordinary steps: 2.5e-13 steps for
-/// 14.0 … 14.35 by 0.05.
+/// the arithmetic's own rounding, and — for a step at least a few ulp of the
+/// frequency — a point beyond it never is. (Below that, `step ≲ 8ε·max`, the grid
+/// is not representable at all: `start + i·step` collides and over-counts, as an
+/// `FR` card does too; FND-316.)
+///
+/// The tolerance term is that rounding, in steps. Five roundings feed
+/// `span/step` — `start`, `end` and `step` as stored, the subtraction and the
+/// division — each at most ½ε·max/step since 0 < start ≤ end, so ≤ 2.5ε·max/step
+/// in all; 4ε covers that bound with margin and is about 4 ulp of the largest
+/// frequency in MHz, far below any typed decimal's distance from a grid point.
+/// The multiplier rests on that bound, not on a test: no typed-input range can
+/// tell 4ε from 2ε or 3ε (the final addition rounds to nearest and never below
+/// an integer count). Without the term `1000 … 1000.001 by 1e-7` gives 10 000
+/// points rather than 10 001, because 1000.001 is stored 1.1e-13 short and
+/// `span/step` comes out 9999.99999976.
+///
+/// There is no fixed `1e-9` step slack, though both old expanders carried one
+/// (`end + step·1e-9`) and the batch A/B review first proposed it
+/// (`floor(span/step + 1e-9) + 1`): that slack absorbs a deficit of 1e-9·step MHz,
+/// which fails at small steps where the endpoint's own rounding is larger, and its
+/// only other effect is to count an end the user typed short of the grid —
+/// `1 … 1.99999999995 by 0.1` would be 11 points ending at 2.0.
 ///
 /// Refused before anything is counted: an unusable `start`, a step that is not
 /// finite and > 0, a non-finite `end`, `end < start`, and a count over
@@ -121,7 +133,7 @@ pub fn linear_range_len(start: f64, end: f64, step: f64) -> Result<usize, RangeE
     // Computed, never discovered by pushing: `f += step` is a no-op for a large
     // start and a tiny step, so a loop that counts as it goes may not terminate
     // (FND-109).
-    let tolerance = 1e-9 + 4.0 * f64::EPSILON * start.abs().max(end.abs()) / step;
+    let tolerance = 4.0 * f64::EPSILON * start.abs().max(end.abs()) / step;
     let count = ((end - start) / step + tolerance).floor() + 1.0;
     if !count.is_finite() || count > MAX_FR_POINTS as f64 {
         return Err(RangeError::TooManyPoints { requested: count });
@@ -458,17 +470,21 @@ mod linear_range_tests {
     use super::*;
 
     /// The ranges floating point is hostile to, with the count a user who typed
-    /// them means. `29.9 … 30.0` stores `span/step` as 1.0000000000000142 and
-    /// `0.1 … 0.3` as 1.9999999999999998 (the 1e-9 term), and `1000 … 1000.001 by
-    /// 1e-7` as 9999.99999976 (the endpoint-rounding term): each would lose or
-    /// gain a point under a plain `floor(span/step) + 1`.
-    const HOSTILE: [(f64, f64, f64, usize); 6] = [
+    /// them means. `0.1 … 0.3` stores `span/step` as 1.9999999999999998 and
+    /// `1000 … 1000.001 by 1e-7` as 9999.99999976, so a plain
+    /// `floor(span/step) + 1` loses their last point; the rounding term restores
+    /// it. `0.079 … 0.25458 by 1e-5` (a deficit of 1.29ε·max/step, the largest
+    /// Fable's scan found) and `1.421 … 65.451 by 0.005` pin the term on cases
+    /// that are not exact-ulp coincidences.
+    const HOSTILE: [(f64, f64, f64, usize); 8] = [
         (29.9, 30.0, 0.1, 2),
         (1.0, 2.0, 0.1, 11),
         (0.1, 0.3, 0.1, 3),
         (14.0, 14.35, 0.05, 8),
         (1000.0, 1000.001, 1e-7, 10_001),
         (0.1, 0.101, 1e-7, 10_001),
+        (0.079, 0.25458, 1e-5, 17_559),
+        (1.421, 65.451, 0.005, 12_807),
     ];
 
     #[test]
@@ -484,7 +500,7 @@ mod linear_range_tests {
             // The last point is `end` to within rounding, never a step past it.
             let last = *list.last().unwrap();
             assert!(
-                (last - end).abs() <= 1e-9 * step + 8.0 * f64::EPSILON * end,
+                (last - end).abs() <= 8.0 * f64::EPSILON * end,
                 "{start} … {end} by {step}: last point {last}"
             );
         }
@@ -509,6 +525,17 @@ mod linear_range_tests {
                 "{start} … {end} by {step}"
             );
         }
+    }
+
+    /// An end short of the grid by more than the arithmetic's rounding is not
+    /// reached: the old expanders' `step·1e-9` slack would have counted 2.0 here;
+    /// rounding (≤ 4ε·2 ≈ 1.8e-15 MHz) cannot. Fails if a fixed 1e-9 term is
+    /// restored.
+    #[test]
+    fn an_end_short_of_the_grid_by_more_than_rounding_is_not_reached() {
+        assert_eq!(linear_range_len(1.0, 1.99999999995, 0.1), Ok(10));
+        assert_eq!(linear_range_len(1.0, 1.99999, 0.1), Ok(10));
+        assert_eq!(linear_range_len(14.0, 14.349999, 0.05), Ok(7));
     }
 
     /// D5: `start == end` is one point, as `--sweep-config` always allowed. The
