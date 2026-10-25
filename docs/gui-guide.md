@@ -103,6 +103,13 @@ frequency, resistance, reactance, and |Z| are shown.
 Enter a **Start / End / Step** (MHz) and click **Run Sweep**. Results **stream
 in live** — the chart and table fill as each frequency solves.
 
+The range replaces the deck's `FR` card, and expands as `fnec --sweep-config`
+expands one (`start + i·step` up to the end, which is included when it lies on
+the grid; Start = End is a single point; at most 100 000 points). The deck is
+checked at the swept frequencies before the first one solves — a deck whose own
+`FR` is unusable still sweeps, and a transmission line that cannot be built at one
+swept frequency is refused up front, naming that frequency.
+
 - **Chart** — SWR or |Z| against frequency, with a red **frequency cursor**.
 - **SWR / |Z|** picker — choose the plotted quantity.
 - **Frequency slider** — scrub the cursor across the swept range; the readout

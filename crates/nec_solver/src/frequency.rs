@@ -60,6 +60,90 @@ pub fn is_usable_frequency_mhz(f: f64) -> bool {
     f.is_finite() && f > 0.0 && (f * 1e6).is_finite()
 }
 
+/// Why a `start..end by step` range (MHz) cannot be expanded.
+///
+/// A value, not a sentence: each frontend names its own fields (`--sweep-config`'s
+/// `frequency.start_mhz`, the GUI's "start"), so the wording is theirs and the rule
+/// is [`linear_range_mhz`]'s.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RangeError {
+    /// `start` is not a usable frequency ([`is_usable_frequency_mhz`]): NaN,
+    /// infinite, zero, negative, or infinite once converted to hertz.
+    StartNotUsable(f64),
+    /// `step` is not finite and > 0.
+    StepNotPositive(f64),
+    /// `end` is not finite.
+    EndNotFinite(f64),
+    /// `end < start`. `end == start` is one point, not an error.
+    EndBeforeStart { start: f64, end: f64 },
+    /// The range asks for more than [`MAX_FR_POINTS`] points (`requested` may be
+    /// infinite when `span/step` overflows).
+    TooManyPoints { requested: f64 },
+}
+
+/// How many points `start..end by step` (MHz) expands to — the count
+/// [`linear_range_mhz`] produces, without allocating it.
+///
+/// **The endpoint rule**, stated because three expanders each had their own:
+///
+/// ```text
+/// count = floor((end − start)/step + 1e-9 + 4ε·max(|start|, |end|)/step) + 1
+/// ```
+///
+/// with ε = `f64::EPSILON`. `end` is included when it lies on the grid to within
+/// the arithmetic's own error, and a point beyond it never is. The first two
+/// terms are the batch A/B review's rule (`floor(span/step + 1e-9) + 1`), which
+/// is the `end + step·1e-9` tolerance both old expanders carried. The third is
+/// the rounding of `start` and `end` themselves, relative to the step: without
+/// it `1000 … 1000.001 by 1e-7` gives 10 000 points rather than 10 001, because
+/// 1000.001 is stored 1.1e-13 short and `span/step` comes out 9999.99999976 — a
+/// deficit of 2.4e-7 steps that the 1e-9 cannot absorb. The bound is generous
+/// (each of the two roundings, the subtraction and the division costs at most
+/// ½ε·max/step) and still negligible at ordinary steps: 2.5e-13 steps for
+/// 14.0 … 14.35 by 0.05.
+///
+/// Refused before anything is counted: an unusable `start`, a step that is not
+/// finite and > 0, a non-finite `end`, `end < start`, and a count over
+/// [`MAX_FR_POINTS`].
+pub fn linear_range_len(start: f64, end: f64, step: f64) -> Result<usize, RangeError> {
+    if !is_usable_frequency_mhz(start) {
+        return Err(RangeError::StartNotUsable(start));
+    }
+    if !step.is_finite() || step <= 0.0 {
+        return Err(RangeError::StepNotPositive(step));
+    }
+    if !end.is_finite() {
+        return Err(RangeError::EndNotFinite(end));
+    }
+    if end < start {
+        return Err(RangeError::EndBeforeStart { start, end });
+    }
+    // Computed, never discovered by pushing: `f += step` is a no-op for a large
+    // start and a tiny step, so a loop that counts as it goes may not terminate
+    // (FND-109).
+    let tolerance = 1e-9 + 4.0 * f64::EPSILON * start.abs().max(end.abs()) / step;
+    let count = ((end - start) / step + tolerance).floor() + 1.0;
+    if !count.is_finite() || count > MAX_FR_POINTS as f64 {
+        return Err(RangeError::TooManyPoints { requested: count });
+    }
+    Ok(count as usize)
+}
+
+/// The frequencies (MHz) of `start..end by step`: `start + i·step` for
+/// `i < linear_range_len(start, end, step)`.
+///
+/// **The one linear expander.** `--sweep-config`'s range mode and the GUI's sweep
+/// tab each had their own, accumulating `f += step` — whose rounding drift grows
+/// with every point, so whether the endpoint was included depended on which way
+/// the drift went — with different count formulas, different caps and (GUI only) a
+/// refusal of a one-point range. This is the derivation an `FR` card uses
+/// ([`FrSweep::frequency_mhz`]), so a range and the card it stands in for
+/// expand to the same values bit for bit.
+pub fn linear_range_mhz(start: f64, end: f64, step: f64) -> Result<Vec<f64>, RangeError> {
+    let n = linear_range_len(start, end, step)?;
+    Ok((0..n).map(|i| start + step * (i as f64)).collect())
+}
+
 /// One `FR` card's sweep, as a value.
 ///
 /// Everything that needs to know a deck's frequencies goes through this, so a
@@ -366,5 +450,131 @@ mod usable_frequency_tests {
             "1e306 Hz is large but finite"
         );
         assert!(is_usable_frequency_mhz(14.2));
+    }
+}
+
+#[cfg(test)]
+mod linear_range_tests {
+    use super::*;
+
+    /// The ranges floating point is hostile to, with the count a user who typed
+    /// them means. `29.9 … 30.0` stores `span/step` as 1.0000000000000142 and
+    /// `0.1 … 0.3` as 1.9999999999999998 (the 1e-9 term), and `1000 … 1000.001 by
+    /// 1e-7` as 9999.99999976 (the endpoint-rounding term): each would lose or
+    /// gain a point under a plain `floor(span/step) + 1`.
+    const HOSTILE: [(f64, f64, f64, usize); 6] = [
+        (29.9, 30.0, 0.1, 2),
+        (1.0, 2.0, 0.1, 11),
+        (0.1, 0.3, 0.1, 3),
+        (14.0, 14.35, 0.05, 8),
+        (1000.0, 1000.001, 1e-7, 10_001),
+        (0.1, 0.101, 1e-7, 10_001),
+    ];
+
+    #[test]
+    fn floating_point_hostile_ranges_count_what_was_typed() {
+        for (start, end, step, want) in HOSTILE {
+            assert_eq!(
+                linear_range_len(start, end, step),
+                Ok(want),
+                "{start} … {end} by {step}"
+            );
+            let list = linear_range_mhz(start, end, step).expect("expands");
+            assert_eq!(list.len(), want, "{start} … {end} by {step}");
+            // The last point is `end` to within rounding, never a step past it.
+            let last = *list.last().unwrap();
+            assert!(
+                (last - end).abs() <= 1e-9 * step + 8.0 * f64::EPSILON * end,
+                "{start} … {end} by {step}: last point {last}"
+            );
+        }
+    }
+
+    /// The expansion is `start + i·step`, the derivation an `FR` card uses — so a
+    /// range and the card it stands in for agree bit for bit. Accumulating
+    /// `f += step` (what both old expanders did) drifts away from that within a
+    /// few hundred points at a large start and a small step.
+    #[test]
+    fn the_range_expands_as_an_fr_card_does() {
+        for (start, end, step, n) in HOSTILE {
+            let card = FrSweep {
+                start_mhz: start,
+                step_mhz: step,
+                multiplicative: false,
+                steps: n as u32,
+            };
+            assert_eq!(
+                linear_range_mhz(start, end, step).expect("expands"),
+                card.frequencies_mhz(),
+                "{start} … {end} by {step}"
+            );
+        }
+    }
+
+    /// D5: `start == end` is one point, as `--sweep-config` always allowed. The
+    /// GUI refused it.
+    #[test]
+    fn a_one_point_range_is_one_point() {
+        assert_eq!(linear_range_mhz(14.2, 14.2, 0.1), Ok(vec![14.2]));
+        // A step wider than the span is one point too.
+        assert_eq!(linear_range_mhz(14.2, 14.25, 0.1), Ok(vec![14.2]));
+    }
+
+    #[test]
+    fn every_refusal_is_its_own_variant() {
+        for bad in [f64::NAN, f64::INFINITY, 0.0, -5.0, 1e303] {
+            assert!(
+                matches!(
+                    linear_range_len(bad, 30.0, 0.1),
+                    Err(RangeError::StartNotUsable(_))
+                ),
+                "start {bad}"
+            );
+        }
+        for bad in [f64::NAN, f64::INFINITY, 0.0, -0.1] {
+            assert!(
+                matches!(
+                    linear_range_len(14.0, 30.0, bad),
+                    Err(RangeError::StepNotPositive(_))
+                ),
+                "step {bad}"
+            );
+        }
+        for bad in [f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    linear_range_len(14.0, bad, 0.1),
+                    Err(RangeError::EndNotFinite(_))
+                ),
+                "end {bad}"
+            );
+        }
+        assert_eq!(
+            linear_range_len(14.4, 14.0, 0.1),
+            Err(RangeError::EndBeforeStart {
+                start: 14.4,
+                end: 14.0
+            })
+        );
+    }
+
+    /// The cap is the `FR` card's: at it is fine, one past it is refused, and a
+    /// step so small that `span/step` overflows is refused rather than cast.
+    #[test]
+    fn the_count_is_capped_at_max_fr_points() {
+        let at = (MAX_FR_POINTS - 1) as f64;
+        assert_eq!(linear_range_len(1.0, 1.0 + at, 1.0), Ok(MAX_FR_POINTS));
+        assert!(matches!(
+            linear_range_len(1.0, 1.0 + at + 1.0, 1.0),
+            Err(RangeError::TooManyPoints { .. })
+        ));
+        assert!(matches!(
+            linear_range_len(1.0, 30_000.0, 1e-7),
+            Err(RangeError::TooManyPoints { .. })
+        ));
+        assert!(matches!(
+            linear_range_len(1.0, 1e300, f64::MIN_POSITIVE),
+            Err(RangeError::TooManyPoints { .. })
+        ));
     }
 }

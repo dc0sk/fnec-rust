@@ -47,8 +47,8 @@ pub use feedpoint::{
     NonFiniteCurrents, MIN_FEEDPOINT_CURRENT,
 };
 pub use frequency::{
-    fr_sweeps, frequencies_hz, governing_fr_sweep, is_usable_frequency_mhz, superseded_fr_warnings,
-    FrSweep, MAX_FR_POINTS,
+    fr_sweeps, frequencies_hz, governing_fr_sweep, is_usable_frequency_mhz, linear_range_len,
+    linear_range_mhz, superseded_fr_warnings, FrSweep, RangeError, MAX_FR_POINTS,
 };
 pub use geometry::{
     build_conductor_paths, build_deck_geometry, build_geometry, classify_unsupported_topology,

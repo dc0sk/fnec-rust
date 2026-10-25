@@ -763,6 +763,16 @@ step_mhz  = 0.5
 
 Overrides the deck's `FR` card. See [`examples/sweep-spec.toml`](../examples/sweep-spec.toml) for the full format.
 
+A range expands to `start_mhz + i·step_mhz` — as an `FR` card does — for
+`i = 0 … count − 1`, with
+`count = floor((end − start)/step + 1e-9 + 4ε·max(|start|, |end|)/step) + 1`
+(ε = 2.2e-16): the end is included when it is on the grid to within rounding,
+so `29.9 … 30.0 by 0.1` is two points and `1000 … 1000.001 by 1e-7` is 10 001.
+`start_mhz = end_mhz` is one point. More than 100 000 points is refused. The GUI's
+sweep tab expands its range by the same rule. The checks that read frequencies —
+usable values, and a `TL`/`NT` that cannot be built at one of them — read this
+list, not the deck's `FR`; such a refusal ends `(at 30 MHz, from --sweep-config)`.
+
 ### Variable template substitution
 
 ```bash

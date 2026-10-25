@@ -185,6 +185,15 @@ result messages to stdout.  Send a shutdown command to exit cleanly:
 }
 ```
 
+The worker solves the deck at `frequency_hz`, which replaces the deck's `FR`
+card: the deck is validated at that frequency, not at its `FR` (a deck whose own
+`FR` is unusable is solved; a `TL` or `NT` that cannot be built at `frequency_hz`
+is refused as `unsupported_config`, its message ending `(at … MHz, from
+frequency_hz)`). An unusable `frequency_hz` (NaN, infinite, ≤ 0) is refused as
+`unsupported_config` with `frequency_hz: … MHz is not a usable frequency` — after
+the deck is parsed and its geometry built, so a task whose deck is also broken
+reports the deck.
+
 ### Example result message (success)
 
 ```json
