@@ -943,6 +943,8 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(
         deck,
         segs,
+        // The controller refuses `--loads-config`, so the run's loads are the deck's.
+        &[],
         ground,
         freqs_hz,
         false,
@@ -1116,7 +1118,7 @@ fn distributed_negative_resistance_warnings(
         deck,
         segs,
         nec_solver::validate::SolverContext::cli_hallen().with_loads(
-            nec_solver::validate::RunLoads::of_deck(deck, segs, freqs_hz),
+            nec_solver::validate::RunLoads::of_run(deck, segs, &[], freqs_hz),
         ),
     )
     .into_iter()
@@ -1313,9 +1315,10 @@ fn run_distributed_solve(
                     ran_on_gpu: exec_used == "gpu",
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
-                    run_loads: nec_solver::validate::RunLoads::of_deck(
+                    run_loads: nec_solver::validate::RunLoads::of_run(
                         deck,
                         segs,
+                        &[],
                         &[freq_mhz * 1e6],
                     ),
                 })
@@ -1865,6 +1868,7 @@ mod tests {
         let offered = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -1915,6 +1919,7 @@ mod tests {
         let produced = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,

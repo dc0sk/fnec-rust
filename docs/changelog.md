@@ -58,6 +58,23 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The joined-gaps caveat sees `--loads-config` loads** (FND-288). FND-278's
+  caveat — a source, port or lumped load on each of the two segments either side
+  of a real bend — built its gap list from the deck's `LD` cards, while the solve
+  took the run's diagonal with the Laplace loads composed in. A feed beside a bend
+  with a j1000 Ω load as `LD 4` warned; the same load as a `[[laplace_load]]`
+  solved with the same joined row (172.98 + j2026.80 Ω against 172.99 + j2026.95)
+  and said nothing. "Which loads does this run have" is now one function,
+  `nec_solver::run_load_diagonal` (the deck's `LD` loads plus the Laplace loads),
+  and the CLI solve, the MPIE plan, the caveat and the negative-load fact behind
+  FND-209's caveat (`RunLoads::of_run`, formerly `of_deck`, which read the deck's
+  cards alone for the GUI, the bindings, the probes and `--hosts`) all go through
+  it; over PEC ground the caveat judges the image problem with the loads the solve
+  stamps there (`image_loads`), which a Laplace load cannot reach through the image
+  deck's cards. `hallen_geometry_caveats`, `hallen_geometry_caveats_swept` and
+  `joined_gaps_at_a_bend_warning` take the run's Laplace loads (`&[]` for a
+  frontend with none). No number changes: only the CLI's main command takes
+  `--loads-config`.
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
   NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point
   reference and as "every tag" for a range, so on two 21-segment dipoles

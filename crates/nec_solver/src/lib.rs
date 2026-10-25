@@ -78,7 +78,7 @@ pub use linear::{
 };
 pub use loads::{
     add_laplace_loads, build_loads, laplace_impedance, laplace_load_error, ld_card_problem,
-    LaplaceLoad, LoadWarning,
+    run_load_diagonal, LaplaceLoad, LoadWarning,
 };
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,

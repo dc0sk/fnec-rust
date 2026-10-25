@@ -56,7 +56,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `apps/nec-cli/tests/gs_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GS` card as nec2c reads it: a deck in feet equals the metres deck, a wire after the card is not scaled, two cards compound and `I1`/`I2` are ignored, `GM` copies before it are scaled; each against its hand-scaled equivalent, with refining approaching nec2c's converged value; a factor that is not positive and a geometry card after `GE` refused (FND-245) | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/gx_card_nec2c.rs` | 5 | PH10-CHK-002 — the `GX` card as nec2c reads it: half a dipole reflected in z is the dipole, two planes copy and tag as nec2c does, tag 0 stays 0, `GX` composes with `GS` and later wires, each against its written-out equivalent; a segment in or across its plane, bad fields, `GX` after `GE` and a buried z-copy refused | PH10-CHK-002, FND-245 |
 | `apps/nec-cli/tests/hallen_fr_cpu_reference.rs` | 6 | Hallén FR CPU reference kernel (wgpu RP parity baseline) | PH5-CHK-003, PH7-CHK-001 |
-| `apps/nec-cli/tests/joined_gaps_node.rs` | 4 | FND-278 — a feed and a lumped load on the two segments either side of a node: the joined (A-continuity) row is the straight solve at a vanishing bend on the conductor paths and the section graph (the graph's radius step linear, zero intercept); the fine-mesh 9× bend ratio stays on nec2c EK; the node-adjacent bend-ratio error halves from 1× to 3×; a real bend carries the caveat naming the MPIE, the straight, vanishing-bend, one-gap and unloaded decks none | — |
+| `apps/nec-cli/tests/joined_gaps_node.rs` | 6 | FND-278 — a feed and a lumped load on the two segments either side of a node: the joined (A-continuity) row is the straight solve at a vanishing bend on the conductor paths and the section graph (the graph's radius step linear, zero intercept); the fine-mesh 9× bend ratio stays on nec2c EK; the node-adjacent bend-ratio error halves from 1× to 3×; a real bend carries the caveat naming the MPIE, the straight, vanishing-bend, one-gap and unloaded decks none. FND-288: the load given as a `--loads-config` Laplace load carries the same caveat, in free space and over PEC ground (the image route), its solve identical to the `LD` deck's; the load moved off the node, a zero-valued one and no config carry none | FND-288 |
 | `apps/nec-cli/tests/json_output_contract.rs` | 5 | JSON output valid/stable, required fields, sweep records | FR-008, PH4-CHK-003 |
 | `apps/nec-cli/tests/junction_band_nec2c.rs` | 4 | FND-246 — wire ends join where nec2c joins them: within 10⁻³ of the shorter segment's length by the L1 distance (a T's stem 50 µm short of the bar, a dipole in two halves axial / sideways, L1 against straight-line distance), each against nec2c 1.3.1 and fnec's own exact deck, both solvers; ends nec2c joins from one side only, and a chain of near-misses, refused | FND-246 |
 | `apps/nec-cli/tests/junction_feedpoint.rs` | 11 | Junction-fed feedpoint behavior across the PH9-CHK-002 / PH9-CHK-005 boundary: a T or loop the section graph takes solves without the guard; one it refuses (a one-segment run) is refused on Hallén, naming the run and the MPIE, which then solves it (FND-251). | PH9-CHK-002, PH9-CHK-005 |
@@ -168,7 +168,7 @@ counts (measured, not estimated). Aggregate pass/fail is recorded separately in
 | `crates/nec_solver/tests/interior_joins.rs` | 4 | FND-192: a T drawn with its stem on a bar joint is the T (equal to the T drawn as halves, against nec2c), an X crossing at a shared joint is four arms, the merged wire list sees the junction, a plane wave on it is received exactly as on the T drawn as halves | FND-192 |
 | `crates/nec_worker/tests/gpu_exec.rs` | 2 | Worker-level GPU execution vs CPU parity | PH7-CHK-004 |
 
-Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=884 --> **884** test
+Integration subtotal: <!-- COUNT:INTEGRATION-SUBTOTAL=886 --> **886** test
 functions across the `tests/` binaries listed above.
 
 ## Unit tests (in `src/`)
@@ -179,7 +179,7 @@ functions across the `tests/` binaries listed above.
 
 | Crate | # `#[test]` | Concentration |
 |:------|:------------|:--------------|
-| `nec_solver` | 304 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
+| `nec_solver` | 306 | convergence (the settle rule), refine (the finer mesh's map), lnetwork (L-network matching, with a proptest that every network presents its target), loads, corner term, geometry, excitation, linear, matrix, farfield, basis, tl, planewave, sommerfeld permittivity, finite-ground remainder (split, table, graded panels) |
 | `nec_worker` | 98 | worker, solve, capability, protocol, hosts, pool, controller, ssh_worker |
 | `nec-gui` | 101 | app_state, model_doc, mesh, camera, solve |
 | `apps/nec-cli` | 53 | main, match_cmd (impedance spellings, text and JSON blocks), exec_profile, kernel (the PAR-011 kernel path, CRLF and warnings, its failure), sweep_config, warnings, solve_session (CPU points concurrently, GPU points in turn, hybrid's GPU lane and CPU pool at once — every point once — and the lane stops after a fallback) |; the sweep's memory budget (FND-187: one slot never overlaps two points, two slots do, hybrid keeps a CPU worker; the budget arithmetic)
@@ -189,11 +189,11 @@ functions across the `tests/` binaries listed above.
 | `nec_project` | 21 | lib 21 |
 | `nec_model` | 7 | lib 7 |
 
-Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=703 --> **703** `#[test]` functions.
+Unit subtotal: <!-- COUNT:UNIT-SUBTOTAL=705 --> **705** `#[test]` functions.
 
 ## Totals
 
-- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1594 --> **1594** = 703 unit + 884 integration + **7 doctests**.
+- **Test functions**: <!-- COUNT:WORKSPACE-TOTAL=1598 --> **1598** = 705 unit + 886 integration + **7 doctests**.
 - **`cargo test --workspace` aggregate**: **1098 passing, 0 failed, 2 ignored**,
   measured 2026-09-07 — the authoritative pass count in [test-results.md](test-results.md).
 
