@@ -1959,6 +1959,32 @@ mod tests {
         );
     }
 
+    /// FND-294: `--hosts` carries the free-end feed caveat, which the controller
+    /// computes from the deck before any worker is asked; an interior feed does
+    /// not earn it.
+    #[test]
+    fn the_distributed_caveats_name_a_feed_at_a_free_wire_end() {
+        let deck = |seg: u32| {
+            format!("GW 1 11 0 0 0 0 0 5 0.001\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n")
+        };
+        let caveats = |seg: u32| {
+            let (deck, segs) = deck_and_segs(&deck(seg));
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[29.9e6], SolverMode::Hallen)
+        };
+        let end = caveats(1);
+        assert!(
+            end.iter()
+                .any(|w| w.contains("tag 1 segment 1 is on a segment at a free wire end")),
+            "{end:?}"
+        );
+        let interior = caveats(2);
+        assert!(
+            !interior.iter().any(|w| w.contains("free wire end")),
+            "{interior:?}"
+        );
+    }
+
     /// FND-011: `--exec gpu` must reach the workers, or GPU-capable remote nodes
     /// never use their GPU. It does — PH7-CHK-004 wired it — but the derivation
     /// sat inside `run_distributed_solve`, which no test can call, so the finding

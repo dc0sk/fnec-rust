@@ -1547,11 +1547,7 @@ pub fn build_geometry(deck: &NecDeck) -> Result<Vec<Segment>, GeometryError> {
         });
     }
     let segments = build_unnumbered(deck)?;
-    let grounded = matches!(
-        ground_model_from_deck(deck),
-        GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
-    );
-    let free = free_end_segments(&segments, grounded);
+    let free = free_end_segments(&segments, ground_joins_wire_ends(deck));
     let segs = number(refine(segments, &free));
     match one_segment_run_topology(deck, &segs) {
         Some(e) => Err(e),
@@ -2111,6 +2107,35 @@ pub fn free_end_segments(segs: &[Segment], grounded: bool) -> Vec<bool> {
                 .iter()
                 .any(|p| !shared(i, p) && !on_ground(p))
         })
+        .collect()
+}
+
+/// Whether the deck's ground joins a wire end on the ground plane to its image,
+/// so that end is not free: PEC and finite ground alike (`GN 1`, `GN 0`, `GN 2`),
+/// as NEC connects a wire to any ground it touches. The `grounded` that
+/// [`build_geometry`] refines by, and so the one a caveat about its free ends
+/// must judge by.
+pub fn ground_joins_wire_ends(deck: &NecDeck) -> bool {
+    matches!(
+        ground_model_from_deck(deck),
+        GroundModel::PerfectConductor | GroundModel::SimpleFiniteGround { .. }
+    )
+}
+
+/// For each segment, whether it lies at a free wire end — on either geometry.
+///
+/// On the Hallén geometry ([`build_geometry`]) a deck segment at a free end has
+/// been split into thirds and the deck's reference resolves to the centre third,
+/// whose own ends are shared with its flanks, so it is the [`SegmentPart::Centre`]
+/// arm that answers. On the deck's own geometry ([`build_deck_geometry`]: the
+/// MPIE, the pulse and continuity bases) every part is `Whole` and
+/// [`free_end_segments`] answers. One definition of "a feed at a free end" for
+/// the Hallén caveat and the MPIE refusal (FND-294).
+pub fn at_free_end(segs: &[Segment], grounded: bool) -> Vec<bool> {
+    free_end_segments(segs, grounded)
+        .into_iter()
+        .zip(segs)
+        .map(|(free, s)| free || s.part == SegmentPart::Centre)
         .collect()
 }
 
@@ -3483,6 +3508,42 @@ mod tests {
             free_end_segments(&mono, false),
             [true, false, false, false, true]
         );
+    }
+
+    /// FND-294: `at_free_end` answers "is this deck segment at a free end" alike on
+    /// the refined Hallén geometry (its centre third) and on the deck's own; a
+    /// base on PEC or finite ground is joined (`ground_joins_wire_ends`).
+    #[test]
+    fn at_free_end_is_one_answer_on_both_geometries() {
+        let wire =
+            parsed("CE\nGW 1 5 0 0 0 0 0 2.5 .001\nGE 0\nEX 0 1 1 0 1 0\nFR 0 1 0 0 30 0\nEN\n");
+        assert!(!ground_joins_wire_ends(&wire));
+        for segs in [
+            build_geometry(&wire).unwrap(),
+            build_deck_geometry(&wire).unwrap(),
+        ] {
+            let at = at_free_end(&segs, false);
+            let deck: Vec<bool> = (1..=5)
+                .map(|n| at[crate::find_deck_segment(&segs, 1, n).unwrap()])
+                .collect();
+            assert_eq!(
+                deck,
+                [true, false, false, false, true],
+                "{} segments",
+                segs.len()
+            );
+        }
+        for gn in ["GN 1", "GN 0 0 0 0 13 .005", "GN 2 0 0 0 13 .005"] {
+            let mono = parsed(&format!(
+                "CE\nGW 1 5 0 0 0 0 0 2.5 .001\nGE 1\n{gn}\nEX 0 1 1 0 1 0\nFR 0 1 0 0 30 0\nEN\n"
+            ));
+            assert!(ground_joins_wire_ends(&mono), "{gn}");
+            let segs = build_geometry(&mono).unwrap();
+            let at = at_free_end(&segs, ground_joins_wire_ends(&mono));
+            let base = crate::find_deck_segment(&segs, 1, 1).unwrap();
+            let tip = crate::find_deck_segment(&segs, 1, 5).unwrap();
+            assert!(!at[base] && at[tip], "{gn}");
+        }
     }
 
     /// A touch in the middle of a segment is no junction, as in NEC: that end
