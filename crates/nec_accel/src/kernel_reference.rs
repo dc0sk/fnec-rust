@@ -18,7 +18,7 @@ use num_complex::Complex64;
 use std::f64::consts::PI;
 use std::time::Instant;
 
-const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
+use nec_model::constants::C0;
 const DB_FACTOR: f64 = 10.0_f64;
 const MIN_NORM_PATTERN: f64 = 1e-20;
 
@@ -106,7 +106,7 @@ impl HallenFrReferenceKernel {
         freq_hz: f64,
         normalisation: f64,
     ) -> Self {
-        let wavenumber = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+        let wavenumber = 2.0 * PI * freq_hz / C0;
         HallenFrReferenceKernel {
             gpu_segments: segments,
             currents,

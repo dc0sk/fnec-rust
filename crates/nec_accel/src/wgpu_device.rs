@@ -1401,7 +1401,7 @@ pub async fn fill_zmatrix_wgpu(
     }
 
     let n = segments.len();
-    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+    let k = (2.0 * std::f64::consts::PI * freq_hz / nec_model::constants::C0) as f32;
 
     // ---- adapter + device (shared, built once per process) -----------------
     let ctx = match shared_gpu_context().await {
@@ -1639,7 +1639,7 @@ pub async fn microbench_zmatrix_dispatch(
         return None;
     }
     let n = segments.len();
-    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+    let k = (2.0 * std::f64::consts::PI * freq_hz / nec_model::constants::C0) as f32;
 
     // ---- timed device acquisition -----------------------------------------
     let t_dev = Instant::now();
@@ -2150,7 +2150,7 @@ async fn solve_resident(
         meta.extend_from_slice(c);
     }
 
-    let k = (2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0) as f32;
+    let k = (2.0 * std::f64::consts::PI * freq_hz / nec_model::constants::C0) as f32;
 
     // ---- adapter + device (shared, built once per process) -----------------
     let ctx = match shared_gpu_context().await {

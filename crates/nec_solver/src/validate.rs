@@ -33,8 +33,7 @@ use crate::geometry::{
 use crate::{GroundModel, Segment};
 use num_complex::Complex64;
 
-/// Speed of light in vacuum (m/s), for the wavelength-relative height check.
-const C0: f64 = 299_792_458.0;
+use crate::constants::C0;
 
 pub fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
     let dx = a[0] - b[0];
