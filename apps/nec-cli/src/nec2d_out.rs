@@ -15,6 +15,8 @@
 //! the solve, by [`check_admissible`], so a partial block never reaches a reader
 //! that takes it as the kernel's.
 
+use crate::exec_profile::ExecutionMode;
+use crate::solve_session::{sommerfeld_requested, GroundSolver, SolverMode};
 use nec_model::card::Card;
 use nec_model::deck::{NecDeck, ProgramCard};
 use nec_report::nec2d::{
@@ -23,12 +25,60 @@ use nec_report::nec2d::{
 };
 use nec_report::PointReport;
 use nec_solver::geometry::Segment;
-use num_complex::Complex64;
+
+/// The run's options that decide whether the NEC-2D layout can print it.
+pub(crate) struct RunOptions {
+    pub(crate) sweep_config: bool,
+    pub(crate) loads_config: bool,
+    pub(crate) hosts: bool,
+    pub(crate) execution_mode: ExecutionMode,
+    pub(crate) solver_mode: SolverMode,
+    pub(crate) ground_solver: GroundSolver,
+}
 
 /// What NEC-2's card machine would execute that fnec's one solve per deck does
 /// not, or what its output would print that fnec does not compute: refused
-/// before solving.
-pub(crate) fn check_admissible(deck: &NecDeck) -> Result<(), String> {
+/// before solving. Every refusal of a NEC-2D run is here, the options' and the
+/// cards'.
+pub(crate) fn check_admissible(deck: &NecDeck, options: &RunOptions) -> Result<(), String> {
+    // The inputs the layout cannot echo: frequencies or loads from outside the
+    // deck, a remote solve, and the device pattern path, which keeps gains only.
+    let outside = if options.sweep_config {
+        Some("--sweep-config")
+    } else if options.loads_config {
+        Some("--loads-config")
+    } else if options.hosts {
+        Some("--hosts")
+    } else if options.execution_mode == ExecutionMode::Gpu {
+        Some("--exec gpu")
+    } else {
+        None
+    };
+    if let Some(flag) = outside {
+        return Err(format!(
+            "--output-format nec2d cannot be combined with {flag}: the NEC-2D output \
+             echoes the deck's own cards and needs the CPU pattern (PAR-011)"
+        ));
+    }
+    // The surface-wave correction is a one-port ΔZ added to the feedpoint
+    // impedance alone; the currents, the power and the pattern are the
+    // reflection-coefficient solve's, and NEC-2's feed row derives Z from V and I.
+    // No block printed from that run can be self-consistent, so it is refused on
+    // the request — the same test the feedpoint rows apply the correction on, and
+    // geometry-independent: a deck whose request would be declined loses nothing,
+    // its result is the plain run (FND-286).
+    let ground = nec_solver::ground_model_from_deck(deck);
+    if sommerfeld_requested(options.solver_mode, options.ground_solver, &ground).is_some() {
+        return Err(
+            "--output-format nec2d cannot be combined with --ground-solver sommerfeld \
+             over a finite ground: the correction adds the surface wave to the feedpoint \
+             impedance alone, and the NEC-2D report's currents, power and pattern — and the \
+             impedance NEC-2 derives from V and I — would describe the uncorrected solve \
+             (FND-286). Use --output-format text or json for the corrected impedance, or \
+             --solver mpie, which puts the surface wave into the whole solve"
+                .to_string(),
+        );
+    }
     let refuse = |what: String| {
         Err(format!(
             "--output-format nec2d: {what}, which the NEC-2D output cannot print yet (PAR-011)"
@@ -411,11 +461,14 @@ fn environment(deck: &NecDeck, freq_hz: f64) -> Environment {
         Some(g) => {
             let eps_r = g.eps_r.unwrap_or(0.0);
             let sigma = g.sigma.unwrap_or(0.0);
-            let omega_eps0 = 2.0 * std::f64::consts::PI * freq_hz * 8.854_187_812_8e-12;
+            // What the solve uses, from the solver's one copy of the rule: this was a
+            // second copy that missed the negative-σ form (FND-194) and printed
+            // −5 S/m and 13 + j6329 for `GN 0 0 0 0 13 -5`, where nec2c prints
+            // 3.950E-03 and 13 − j5 (FND-303).
             Environment::FiniteGround {
                 eps_r,
-                sigma,
-                complex: Complex64::new(eps_r, -sigma / omega_eps0),
+                sigma: nec_solver::sommerfeld::conductivity_s_per_m(freq_hz, sigma),
+                complex: nec_solver::sommerfeld::complex_permittivity(freq_hz, eps_r, sigma),
                 sommerfeld: g.ground_type == 2,
             }
         }

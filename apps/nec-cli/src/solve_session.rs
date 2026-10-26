@@ -231,6 +231,9 @@ pub(super) struct FrequencySolveResult {
     pub(super) min_feed_re: Option<f64>,
     /// Whether the device solved this point (a GPU sweep reports the count).
     pub(super) ran_on_gpu: bool,
+    /// Whether the surface-wave correction reached this point's impedance, so the
+    /// run can say once that V and I are not the corrected solve's (FND-286).
+    pub(super) surface_wave_applied: bool,
     /// What this point's resolved loads were, for the sweep's aggregate caveat
     /// (FND-209): the deck alone cannot say.
     pub(super) run_loads: nec_solver::validate::RunLoads,
@@ -858,6 +861,26 @@ fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
     }
 }
 
+/// Whether this run asks for the surface-wave correction (PH9-CHK-006), and over
+/// which ground: `--ground-solver sommerfeld`, a finite ground, and not the MPIE —
+/// which assembles the reflected kernels into its own Z-matrix, so the delta would
+/// count the surface wave twice. The one copy: the feedpoint rows apply the
+/// correction on it and the NEC-2D report refuses on it (FND-286), so the two
+/// cannot disagree about what was requested.
+pub(super) fn sommerfeld_requested(
+    solver_mode: SolverMode,
+    ground_solver: GroundSolver,
+    ground: &GroundModel,
+) -> Option<(f64, f64)> {
+    match (solver_mode, ground_solver, ground) {
+        (SolverMode::Mpie, _, _) => None,
+        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
+            Some((*eps_r, *sigma))
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
@@ -879,13 +902,7 @@ pub(super) fn build_feedpoint_rows(
     // to the Sommerfeld impedance; the MPIE path already assembles the exact
     // reflected (Sommerfeld) kernels into its Z-matrix, so applying the delta there
     // would double-count the surface wave — skip it for `--solver mpie`.
-    let sommerfeld_ground = match (solver_mode, ground_solver, ground) {
-        (SolverMode::Mpie, _, _) => None,
-        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
-            Some((*eps_r, *sigma))
-        }
-        _ => None,
-    };
+    let sommerfeld_ground = sommerfeld_requested(solver_mode, ground_solver, ground);
     // The correction is a one-port quantity: ⟨J, ΔG J⟩ / I_feed² over the whole
     // structure's currents. With several feeds that charges every port with the
     // whole structure's reaction — a symmetric pair got 2(ΔZ11 ± ΔZ12), 76.29 −
@@ -2015,6 +2032,7 @@ pub(super) fn solve_frequency_point(
         run_loads,
         min_feed_re,
         ran_on_gpu,
+        surface_wave_applied: sommerfeld_outcome == SommerfeldOutcome::Applied,
     })
 }
 

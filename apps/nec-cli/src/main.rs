@@ -346,29 +346,18 @@ fn main() -> ExitCode {
     let run_start = std::time::Instant::now();
     // PAR-011: the NEC-2D layout prints only what fnec computes, and one solve per
     // deck; what it cannot print is refused here, before anything is solved, so no
-    // partial block is ever written. The inputs the layout cannot echo are refused
-    // with it: frequencies or loads from outside the deck, a remote solve, and the
-    // device pattern path, which keeps gains only.
+    // partial block is ever written — the deck's cards and the run's options alike,
+    // in one place (`nec2d_out::check_admissible`).
     if output_format == OutputFormat::Nec2d {
-        let outside = if sweep_config_path.is_some() {
-            Some("--sweep-config")
-        } else if loads_config_path.is_some() {
-            Some("--loads-config")
-        } else if hosts_path.is_some() {
-            Some("--hosts")
-        } else if execution_mode == ExecutionMode::Gpu {
-            Some("--exec gpu")
-        } else {
-            None
+        let options = nec2d_out::RunOptions {
+            sweep_config: sweep_config_path.is_some(),
+            loads_config: loads_config_path.is_some(),
+            hosts: hosts_path.is_some(),
+            execution_mode,
+            solver_mode,
+            ground_solver,
         };
-        if let Some(flag) = outside {
-            eprintln!(
-                "error: --output-format nec2d cannot be combined with {flag}: the NEC-2D output \
-                 echoes the deck's own cards and needs the CPU pattern (PAR-011)"
-            );
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = nec2d_out::check_admissible(deck) {
+        if let Err(e) = nec2d_out::check_admissible(deck, &options) {
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
@@ -823,6 +812,16 @@ fn main() -> ExitCode {
         );
     }
 
+    // D1 of FND-286: the corrected impedance is a one-port ΔZ on the solve's V/I,
+    // so the row's I is not V/Z and the currents and pattern are the rcm solve's.
+    // Said once per run, not per point.
+    if solved
+        .iter()
+        .any(|(_, r, _)| r.as_ref().is_ok_and(|p| p.surface_wave_applied))
+    {
+        eprintln!("{SURFACE_WAVE_APPLIED_INFO}");
+    }
+
     if enable_benchmarking && bench_format == BenchFormat::Csv {
         emit_bench_csv_header();
     }
@@ -899,6 +898,12 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     }
 }
+
+/// What a run whose impedance carries the surface-wave correction is told about
+/// the rest of its report (FND-286, decision D1).
+const SURFACE_WAVE_APPLIED_INFO: &str =
+    "info: --ground-solver sommerfeld: Z includes the surface-wave correction; V, I, the \
+     currents and the pattern are the reflection-coefficient solve's (PH9-CHK-006, FND-286)";
 
 /// How a `--hosts` user reaches the MPIE: not by adding `--solver mpie`, which
 /// `--hosts` refuses, but by running without it (FND-221).
@@ -1313,6 +1318,8 @@ fn run_distributed_solve(
                     negative_r,
                     min_feed_re: Some(impedance.re_ohm),
                     ran_on_gpu: exec_used == "gpu",
+                    // The controller refuses --ground-solver sommerfeld.
+                    surface_wave_applied: false,
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
                     run_loads: nec_solver::validate::RunLoads::of_run(
