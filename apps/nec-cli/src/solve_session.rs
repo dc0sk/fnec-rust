@@ -1133,9 +1133,11 @@ pub(crate) fn probe_feedpoints(
     // warn of, as `solve_frequency_point` itself skips them there.
     if print_caveats && !matches!(cfg.solver_mode, SolverMode::Mpie) {
         let shown = match which {
+            // A probe solves without Laplace loads (below), so its caveats see none.
             ProbeFrequencies::First => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 freqs[0],
                 false,
@@ -1144,6 +1146,7 @@ pub(crate) fn probe_feedpoints(
             ProbeFrequencies::All => nec_solver::validate::hallen_geometry_caveats_swept(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 &freqs,
                 false,
@@ -1399,8 +1402,11 @@ pub(super) fn solve_frequency_point(
     // For the decision record: whether the DECK's own cards load the structure,
     // read from the stamps before any Laplace load is composed in.
     let deck_loaded = stamps.diagonal.iter().any(|z| z.norm() > 0.0);
-    let laplace_warnings =
-        nec_solver::add_laplace_loads(&mut stamps.diagonal, laplace_loads, segs, freq_hz);
+    // The run's diagonal through the one function that answers "which loads"
+    // (FND-288), so the caveats and the MPIE see what this solve stamps.
+    let (diagonal, laplace_warnings) =
+        nec_solver::run_load_diagonal(deck, segs, freq_hz, laplace_loads);
+    stamps.diagonal = diagonal;
     for warning in &stamps.warnings {
         eprintln!("warning: {warning}");
     }
@@ -1720,9 +1726,12 @@ pub(super) fn solve_frequency_point(
         // actually applied DID model the surface wave, which changes what the
         // low-ground caveat may claim.
         let shown = match geometry_caveats {
+            // The run's loads, `--loads-config` included: the caveat about a load
+            // beside a bend must see the load the solve stamps (FND-288).
             GeometryCaveats::PerPoint => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 segs,
+                laplace_loads,
                 ground,
                 freq_hz,
                 matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),

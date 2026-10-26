@@ -404,15 +404,22 @@ impl RunLoads {
         }
     }
 
-    /// For a frontend whose loads are the deck's own (the GUI, the bindings):
-    /// the deck's load diagonal at each of `freqs_hz`.
-    pub fn of_deck(deck: &NecDeck, segs: &[Segment], freqs_hz: &[f64]) -> Self {
+    /// For a frontend that has not built the diagonal itself (the GUI, the
+    /// bindings, the CLI probes, `--hosts`): the run's load diagonal — the deck's
+    /// `LD` cards and `laplace` together, [`crate::loads::run_load_diagonal`] — at
+    /// each of `freqs_hz`. It read the deck's cards alone, a fourth copy of "which
+    /// loads this run has" beside the solve's, the MPIE's and the FND-278
+    /// caveat's (FND-288); every such caller passes `&[]` today, as none of them
+    /// takes `--loads-config`.
+    pub fn of_run(
+        deck: &NecDeck,
+        segs: &[Segment],
+        laplace: &[crate::loads::LaplaceLoad],
+        freqs_hz: &[f64],
+    ) -> Self {
         Self {
             negative: freqs_hz.iter().any(|&f| {
-                crate::build_deck_stamps(deck, segs, f)
-                    .diagonal
-                    .iter()
-                    .any(|z| z.re < 0.0)
+                Self::of(&crate::loads::run_load_diagonal(deck, segs, f, laplace).0).negative
             }),
         }
     }
@@ -749,6 +756,39 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
+/// FND-294: one warning per feedpoint on a segment at a free wire end.
+///
+/// A gap at a free end is singular in the thin-wire model: fed on segment 1 of a
+/// 5 m, 1 mm wire at 29.9 MHz, the impedance moves with the mesh in fnec and in
+/// nec2c alike — Hallén 1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at 11 / 33 /
+/// 99 segments, nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519 — while a feed
+/// 0.68 m from the end converges in both (fnec 490.9 + j66.8 → 507.0 + j79.6,
+/// nec2c 494.0 + j107.5 → 508.1 + j87.8). A caveat, not a refusal: nec2c answers
+/// these decks and end-fed antennas are common (decision D10).
+///
+/// Feeds only — a delta gap or a current source, through
+/// [`crate::excitation::feedpoints`]; a `TL`/`NT` port at a free end is not
+/// measured. Judged by [`crate::geometry::at_free_end`], the predicate the MPIE's
+/// refusal uses, on whichever geometry `segs` is, and with the ground the Hallén
+/// refinement used, so a base-fed monopole over a ground is not caveated.
+pub fn free_end_feed_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+    let at_end = crate::geometry::at_free_end(segs, crate::geometry::ground_joins_wire_ends(deck));
+    crate::excitation::feedpoints(deck)
+        .filter(|(ex, _)| {
+            crate::find_deck_segment(segs, ex.tag, ex.segment).is_some_and(|i| at_end[i])
+        })
+        .map(|(ex, _)| {
+            format!(
+                "feedpoint tag {} segment {} is on a segment at a free wire end; a feed there \
+                 is singular in the thin-wire model, so the impedance keeps changing as the \
+                 mesh is refined (nec2c's does too) and is not a property of the antenna \
+                 (FND-294) — feed a segment in from the end, or model the feed's real geometry",
+                ex.tag, ex.segment
+            )
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Post-solve result check
 // ---------------------------------------------------------------------------
@@ -1008,9 +1048,14 @@ pub fn low_finite_ground_warning(
 /// Caller-gated on the solver, not gated here: the MPIE models junctions, loops
 /// and the surface wave correctly, so none of these apply to it. Passing that in
 /// would mean this crate knowing about a CLI-private `SolverMode`.
+///
+/// `laplace` is the run's `--loads-config` loads (`&[]` for a frontend that has
+/// none): a caveat about loads is about the loads the run solves with, not the
+/// deck's cards alone (FND-288).
 pub fn hallen_geometry_caveats(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     ground: &GroundModel,
     freq_hz: f64,
     surface_wave_modelled: bool,
@@ -1020,6 +1065,7 @@ pub fn hallen_geometry_caveats(
     out.extend(joined_gaps_at_a_bend_warning(
         deck,
         segs,
+        laplace,
         freq_hz,
         remedies.mpie,
     ));
@@ -1527,13 +1573,14 @@ pub fn unpriceable_feedpoint_error(deck: &NecDeck, remedy: &str) -> String {
 pub fn hallen_geometry_caveats_swept(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     ground: &GroundModel,
     freqs_hz: &[f64],
     surface_wave_modelled: bool,
     remedies: Remedies<'_>,
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
-    // The gaps are the deck's loads at a frequency; a load's step is the same at
+    // The gaps are the run's loads at a frequency; a load's step is the same at
     // every swept point short of a load that vanishes at one, so the lowest
     // usable point stands for the sweep, as it does for the ground caveat.
     if let Some(f) = freqs_hz
@@ -1542,7 +1589,13 @@ pub fn hallen_geometry_caveats_swept(
         .filter(|f| *f > 0.0)
         .fold(None, |m: Option<f64>, f| Some(m.map_or(f, |m| m.min(f))))
     {
-        out.extend(joined_gaps_at_a_bend_warning(deck, segs, f, remedies.mpie));
+        out.extend(joined_gaps_at_a_bend_warning(
+            deck,
+            segs,
+            laplace,
+            f,
+            remedies.mpie,
+        ));
     }
     if let Some(w) = low_ground_caveat_swept(
         deck,
@@ -1577,6 +1630,7 @@ fn frequency_independent_caveats(
         out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
+    out.extend(free_end_feed_warnings(deck, segs));
     out
 }
 
@@ -1749,13 +1803,19 @@ pub fn bent_conductor_warning(
 /// ([`crate::hallen_session::JOINED_GAPS_CAVEAT_RAD`]). The MPIE models the
 /// corner and its bend ratio agrees with nec2c's (0.804 against 0.795–0.808 in R
 /// at 1 rad).
+///
+/// `laplace` is the run's `--loads-config` loads: the gaps are the run's loads,
+/// [`crate::loads::run_load_diagonal`], exactly the diagonal the solve is handed
+/// (FND-288).
 pub fn joined_gaps_at_a_bend_warning(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     freq_hz: f64,
     mpie_remedy: Option<&str>,
 ) -> Option<String> {
-    let bend = crate::hallen_session::joined_gaps_at_a_bend_deg(deck, segs, freq_hz)?;
+    let loads = crate::loads::run_load_diagonal(deck, segs, freq_hz, laplace).0;
+    let bend = crate::hallen_session::joined_gaps_at_a_bend_deg(deck, segs, freq_hz, &loads)?;
     let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(" — {mpie_remedy}, which models the corner")
     } else {
@@ -2119,8 +2179,11 @@ pub fn diagnose(
             // Through the producer the CLI calls, not a list of its own: this arm
             // named the topology and junction caveats itself, so the bent-
             // conductor caveat added to the producer (FND-162) reached the CLI and
-            // not the GUI or the bindings.
-            for w in hallen_geometry_caveats(deck, segs, ground, freq_hz, false, ctx.remedies()) {
+            // not the GUI or the bindings. No Laplace loads: no frontend that
+            // diagnoses through here takes `--loads-config` (FND-288).
+            for w in
+                hallen_geometry_caveats(deck, segs, &[], ground, freq_hz, false, ctx.remedies())
+            {
                 out.push(ValidationDiagnostic::warning(w));
             }
         }
@@ -3448,6 +3511,7 @@ mod tests {
         let swept = hallen_geometry_caveats_swept(
             &deck,
             &segs,
+            &[],
             &GroundModel::FreeSpace,
             &[30e6, 28.4e6, 29e6],
             false,
@@ -3578,5 +3642,22 @@ mod run_loads_tests {
                 "{cause}"
             );
         }
+    }
+
+    /// FND-288: `of_run` sees the run's Laplace loads, as `of` does on the CLI's
+    /// diagonal — a negative-resistance `--loads-config` load on a deck with no
+    /// `LD` card is negative. The control: without it, nothing is.
+    #[test]
+    fn of_run_sees_a_negative_laplace_load() {
+        let (deck, segs) = dipole();
+        let laplace = [crate::loads::LaplaceLoad {
+            tag: 1,
+            seg_first: 5,
+            seg_last: 5,
+            numerator: vec![-200.0],
+            denominator: vec![1.0],
+        }];
+        assert!(RunLoads::of_run(&deck, &segs, &laplace, &[14.2e6]).negative);
+        assert!(!RunLoads::of_run(&deck, &segs, &[], &[14.2e6]).negative);
     }
 }

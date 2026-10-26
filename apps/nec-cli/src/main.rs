@@ -948,6 +948,8 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(
         deck,
         segs,
+        // The controller refuses `--loads-config`, so the run's loads are the deck's.
+        &[],
         ground,
         freqs_hz,
         false,
@@ -1121,7 +1123,7 @@ fn distributed_negative_resistance_warnings(
         deck,
         segs,
         nec_solver::validate::SolverContext::cli_hallen().with_loads(
-            nec_solver::validate::RunLoads::of_deck(deck, segs, freqs_hz),
+            nec_solver::validate::RunLoads::of_run(deck, segs, &[], freqs_hz),
         ),
     )
     .into_iter()
@@ -1320,9 +1322,10 @@ fn run_distributed_solve(
                     surface_wave_applied: false,
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
-                    run_loads: nec_solver::validate::RunLoads::of_deck(
+                    run_loads: nec_solver::validate::RunLoads::of_run(
                         deck,
                         segs,
+                        &[],
                         &[freq_mhz * 1e6],
                     ),
                 })
@@ -1872,6 +1875,7 @@ mod tests {
         let offered = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -1922,6 +1926,7 @@ mod tests {
         let produced = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -1958,6 +1963,32 @@ mod tests {
             distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Mpie)
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
+        );
+    }
+
+    /// FND-294: `--hosts` carries the free-end feed caveat, which the controller
+    /// computes from the deck before any worker is asked; an interior feed does
+    /// not earn it.
+    #[test]
+    fn the_distributed_caveats_name_a_feed_at_a_free_wire_end() {
+        let deck = |seg: u32| {
+            format!("GW 1 11 0 0 0 0 0 5 0.001\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n")
+        };
+        let caveats = |seg: u32| {
+            let (deck, segs) = deck_and_segs(&deck(seg));
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[29.9e6], SolverMode::Hallen)
+        };
+        let end = caveats(1);
+        assert!(
+            end.iter()
+                .any(|w| w.contains("tag 1 segment 1 is on a segment at a free wire end")),
+            "{end:?}"
+        );
+        let interior = caveats(2);
+        assert!(
+            !interior.iter().any(|w| w.contains("free wire end")),
+            "{interior:?}"
         );
     }
 

@@ -376,6 +376,17 @@ every answer moves toward nec2c — the 51-segment dipole above reads
 79.33 + j45.04 Ω. A deck solves two segments more per free end. The MPIE solves the
 deck's own segments.
 
+A **feed on a free-end segment** (`EX 0/4/5` on a wire's first or last segment, the
+end not joined to another wire or the ground) solves, with a warning (FND-294): a
+gap there is singular in the thin-wire model, so its impedance keeps changing as the
+mesh is refined — in nec2c too — and is not a property of the antenna. A 5 m wire
+fed on segment 1 at 29.9 MHz reads 1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at
+11 / 33 / 99 segments (nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519). Feed a
+segment in from the end, or model the feed's real geometry. A base-fed monopole on
+`GN 1` is not at a free end and gets no warning (on `GN 0`/`2` the contact is
+refused, FND-240); a `TL` or `NT`
+port at a free end is not judged.
+
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
 accepted for backward compatibility and silently ignored.

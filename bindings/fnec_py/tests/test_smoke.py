@@ -148,6 +148,15 @@ EN
 """
 
 
+# A wire fed on its end segment (FND-294).
+END_FED = """\
+GW 1 11 0 0 0 0 0 5 0.001
+GE 0
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 29.9 0.0
+EN
+"""
+
 # A U whose middle run is one segment: it solves, with no bend modelled, and the
 # bent-conductor caveat names the MPIE (FND-251).
 U_ONE_SEGMENT_MIDDLE = """\
@@ -229,6 +238,8 @@ def test_a_clean_deck_solves_with_no_warnings():
         # `fnec_py` gained `solver="mpie"` in FND-055, so pointing a Python caller
         # at a different program stopped being the right advice.
         (U_ONE_SEGMENT_MIDDLE, 'pass solver="mpie"'),
+        # FND-294: a feed on a free-end segment.
+        (END_FED, "at a free wire end"),
     ],
 )
 def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):
