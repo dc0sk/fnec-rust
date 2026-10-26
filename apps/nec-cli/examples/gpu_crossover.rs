@@ -37,7 +37,7 @@ use num_complex::Complex64;
 use std::time::Instant;
 
 const FREQ_HZ: f64 = 14.2e6;
-const C0: f64 = 299_792_458.0;
+use nec_solver::constants::C0;
 
 fn segments(n: usize) -> Vec<nec_solver::Segment> {
     let deck_str = format!("GW 1 {n} 0 0 -5.0 0 0 5.0 0.001\nGE 0\nEN\n");

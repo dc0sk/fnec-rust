@@ -32,6 +32,8 @@ Notes:
     - Rows with status != ok are ignored.
     - Ratio columns are candidate/base (two-file) or gpu/cpu (single-file).
     - If a base value is zero, percentage/ratio fields are reported as n/a.
+    - A residual field the route did not compute is "n/a" (FND-306); only numeric
+      samples are averaged, and a key with none reports n/a, never 0.
 
 Options:
   --max-delta-pct <number>      Fail if candidate timing regression exceeds this percentage.
@@ -186,9 +188,16 @@ else
         return sprintf("%+.2f%%", (delta / base) * 100.0)
     }
     function ratio(cand, base) {
-        if (base == 0) return "n/a"
+        if (cand == "n/a" || base == "n/a" || base == 0) return "n/a"
         return sprintf("%.6g", cand / base)
     }
+    # A residual field is a number or "n/a" (not computed, FND-306). awk reads
+    # "n/a" as 0, which would average a route that computes nothing into a
+    # perfect residual, so only numeric samples count; none at all is "n/a".
+    function isnum(v) { return v ~ /^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/ }
+    function acc(arr, cnt, k, v) { if (isnum(v)) { arr[k] += v; cnt[k] += 1 } }
+    function mean(arr, cnt, k) { return (cnt[k] > 0) ? arr[k] / cnt[k] : "n/a" }
+    function fmt(v) { return (v == "n/a") ? "n/a" : sprintf("%.6e", v) }
     function m_merge(curr, nxt) {
         if (curr == "") return nxt
         if (curr == nxt) return curr
@@ -204,10 +213,10 @@ else
         all[k] = 1
         b_c[k] += 1
         b_t[k] += $7
-        b_a[k] += $11
-        b_r[k] += $12
-        b_d[k] += ds
-        b_s[k] += sr
+        acc(b_a, b_an, k, $11)
+        acc(b_r, b_rn, k, $12)
+        acc(b_d, b_dn, k, ds)
+        acc(b_s, b_sn, k, sr)
         b_m[k] = m_merge(b_m[k], $8)
         next
     }
@@ -220,10 +229,10 @@ else
         all[k] = 1
         c_c[k] += 1
         c_t[k] += $7
-        c_a[k] += $11
-        c_r[k] += $12
-        c_d[k] += ds
-        c_s[k] += sr
+        acc(c_a, c_an, k, $11)
+        acc(c_r, c_rn, k, $12)
+        acc(c_d, c_dn, k, ds)
+        acc(c_s, c_sn, k, sr)
         c_m[k] = m_merge(c_m[k], $8)
     }
     END {
@@ -232,10 +241,10 @@ else
             split(k, p, "|")
             br = b_c[k]+0; cr = c_c[k]+0
             ba = (br>0)?b_t[k]/br:0; ca = (cr>0)?c_t[k]/cr:0
-            babs = (br>0)?b_a[k]/br:0; cabs = (cr>0)?c_a[k]/cr:0
-            brel = (br>0)?b_r[k]/br:0; crel = (cr>0)?c_r[k]/cr:0
-            bdiag = (br>0)?b_d[k]/br:0; cdiag = (cr>0)?c_d[k]/cr:0
-            bsin = (br>0)?b_s[k]/br:0; csin = (cr>0)?c_s[k]/cr:0
+            babs = mean(b_a, b_an, k); cabs = mean(c_a, c_an, k)
+            brel = mean(b_r, b_rn, k); crel = mean(c_r, c_rn, k)
+            bdiag = mean(b_d, b_dn, k); cdiag = mean(c_d, c_dn, k)
+            bsin = mean(b_s, b_sn, k); csin = mean(c_s, c_sn, k)
             bm = (br>0)?b_m[k]:"missing"; cm = (cr>0)?c_m[k]:"missing"
 
             if (br > 0 && cr > 0 && ba > 0) {
@@ -250,8 +259,8 @@ else
                 fail = 1
             }
 
-            printf "%s,%s,%s,%d,%d,%.3f,%.3f,%+.3f,%s,%s,%s,%.6e,%.6e,%s,%.6e,%.6e,%s,%.6e,%.6e,%s,%.6e,%.6e,%s\n",
-                p[1],p[2],p[3],br,cr,ba,ca,ca-ba,pct(ca-ba,ba),bm,cm,babs,cabs,ratio(cabs,babs),brel,crel,ratio(crel,brel),bdiag,cdiag,ratio(cdiag,bdiag),bsin,csin,ratio(csin,bsin)
+            printf "%s,%s,%s,%d,%d,%.3f,%.3f,%+.3f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+                p[1],p[2],p[3],br,cr,ba,ca,ca-ba,pct(ca-ba,ba),bm,cm,fmt(babs),fmt(cabs),ratio(cabs,babs),fmt(brel),fmt(crel),ratio(crel,brel),fmt(bdiag),fmt(cdiag),ratio(cdiag,bdiag),fmt(bsin),fmt(csin),ratio(csin,bsin)
         }
         if (fail) {
             exit 2

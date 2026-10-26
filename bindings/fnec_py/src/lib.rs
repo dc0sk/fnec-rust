@@ -150,6 +150,14 @@ fn solve_structure(
         let loads = nec_solver::build_deck_stamps(deck, &segs, freq_hz).diagonal;
         let routed = nec_solver::solve_hallen_routed(deck, &segs, &mut z_mat, freq_hz, &loads)
             .map_err(|e| e.to_string())?;
+        // The one residual predicate the CLI and the worker render (FND-302).
+        let threshold = nec_solver::validate::residual_caveat_threshold()?;
+        if let Some(w) = routed
+            .residual
+            .and_then(|(_, rel)| nec_solver::validate::residual_caveat_at(rel, threshold))
+        {
+            warnings.push(w);
+        }
         // The source currents: a feed that is also a TL/NT port delivers the
         // network branch too, and the impedance is priced from that (FND-123).
         let source = routed.source_currents();
@@ -251,9 +259,10 @@ fn solve_at_freq(
         ..
     } = solve_structure(deck, freq_hz, solver)?;
     let loads = || {
-        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             deck,
             &segs,
+            &[],
             &[freq_hz],
         ))
     };
@@ -274,12 +283,15 @@ fn solve_at_freq(
         // A current source is priced from its solved port voltage and its own
         // current, `Z = V_port / i0` (FND-045); a delta gap from the applied field
         // over the source current (FND-123).
-        let (v, current) = match role {
-            nec_model::card::FeedpointRole::CurrentSource => (
-                port_voltage.ok_or("a current source without a solved port voltage")?,
-                Complex64::new(ex.voltage_real, ex.voltage_imag),
-            ),
-            _ => (v_vec[idx] * seg.length, currents[idx]),
+        // The drive through the shared seam the CLI and the worker price through
+        // (FND-297 d).
+        let v = nec_solver::feedpoint_drive_voltage(role, seg.length, v_vec[idx], port_voltage)
+            .ok_or("a current source without a solved port voltage")?;
+        let current = match role {
+            nec_model::card::FeedpointRole::CurrentSource => {
+                Complex64::new(ex.voltage_real, ex.voltage_imag)
+            }
+            _ => currents[idx],
         };
         // The resolved segment's own `(tag, index)`: a tag-0 card names an absolute
         // segment number, which is not where the row says it is (FND-282).
@@ -457,9 +469,10 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
         &z_res,
         &result.deck,
         &segs,
-        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             &result.deck,
             &segs,
+            &[],
             &nec_solver::frequencies_hz(&result.deck),
         )),
     ) {

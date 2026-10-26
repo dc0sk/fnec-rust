@@ -206,7 +206,7 @@ mod wgpu_tests {
         ];
 
         let freq_hz = 14.2e6_f64;
-        let wavenumber = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+        let wavenumber = 2.0 * std::f64::consts::PI * freq_hz / nec_model::constants::C0;
 
         // Build CPU kernel (total_radiated = 1.0 — we only compare u_theta/u_phi).
         let cpu_kernel = HallenFrReferenceKernel {

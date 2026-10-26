@@ -109,3 +109,33 @@ fn an_off_apex_inverted_v_converges_to_nec2c() {
         e63 * 100.0
     );
 }
+
+/// FND-302: the residual describes the system the bent-path solve solved — the
+/// corner term included. The same solve, with the corner dropped from the
+/// residual's inputs, must read large, so this fixture's corner is not
+/// negligible and the first bound cannot pass by the term being ~0.
+#[test]
+fn the_residual_includes_the_corner_term_the_solve_adds() {
+    let text = "CE\nGW 1 21 0 0 0 0 0 5 .001\nGW 2 21 0 0 5 5 0 5 .001\nGE 0\n\
+                EX 0 1 11 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let deck = nec_parser::parse(text).expect("parses").deck;
+    let segs = build_geometry(&deck).expect("geometry");
+    let mut z = assemble_z_matrix_with_ground(&segs, 14.2e6, &ground_model_from_deck(&deck));
+    let routed = solve_hallen_routed(&deck, &segs, &mut z, 14.2e6, &[]).expect("solves");
+    assert!(routed.route.paths, "a bent conductor takes the path basis");
+    let ri = routed
+        .residual_inputs
+        .clone()
+        .expect("a delta-gap solve has residual inputs");
+    assert!(!ri.corner.is_empty(), "a bend carries corner entries");
+    let (_, rel) = routed.residual.expect("the session computes the residual");
+    assert!(rel < 1e-9, "residual of the solved system: {rel:e}");
+    assert_eq!(routed.residual, Some(ri.residual(&z, &routed.currents)));
+    let mut no_corner = ri;
+    no_corner.corner.clear();
+    let (_, without) = no_corner.residual(&z, &routed.currents);
+    assert!(
+        without > 1e-2,
+        "without the corner the residual must be large: {without:e}"
+    );
+}

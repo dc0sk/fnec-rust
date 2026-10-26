@@ -83,7 +83,8 @@ fi
 echo
 echo "--- 4. For solver=sinusoidal, summarize sin_rel_res min/max by deck and exec_mode ---"
 awk -F, '
-NR > 1 && $6 == "ok" && $4 == "sinusoidal" {
+# "n/a" (not computed, FND-306) is skipped: awk would read it as a perfect 0.
+NR > 1 && $6 == "ok" && $4 == "sinusoidal" && $15 != "n/a" {
   key = $3 "\t" $13
   val = $15 + 0.0
   if (!(key in min) || val < min[key]) min[key] = val

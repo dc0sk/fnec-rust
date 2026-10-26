@@ -24,7 +24,7 @@ use std::f64::consts::PI;
 use crate::geometry::GroundModel;
 use crate::geometry::Segment;
 
-pub(crate) const SPEED_OF_LIGHT: f64 = 299_792_458.0; // m/s
+use crate::constants::{C0, ETA0};
 /// 4.34294481903... = 10 / ln(10)
 const DB_FACTOR: f64 = 10.0_f64;
 /// Minimum normalised pattern value before clamping to -999.99 dB.
@@ -199,7 +199,7 @@ pub fn near_e_field(
 ) -> Vec<NearFieldE> {
     let (segs, i_vec) = with_pec_images(segs, i_vec, ground);
     let (segs, i_vec) = (segs.as_ref(), i_vec.as_ref());
-    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let k = 2.0 * PI * freq_hz / C0;
     let coeff = ETA0 / (4.0 * PI);
     points
         .iter()
@@ -267,7 +267,7 @@ pub fn near_h_field(
 ) -> Vec<NearFieldH> {
     let (segs, i_vec) = with_pec_images(segs, i_vec, ground);
     let (segs, i_vec) = (segs.as_ref(), i_vec.as_ref());
-    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let k = 2.0 * PI * freq_hz / C0;
     let coeff = 1.0 / (4.0 * PI);
     points
         .iter()
@@ -368,9 +368,6 @@ fn far_field_components(
 
     (f_theta, f_phi)
 }
-
-const MU0: f64 = 4.0 * PI * 1e-7; // H/m
-const ETA0: f64 = MU0 * SPEED_OF_LIGHT; // free-space wave impedance ≈ 376.73 Ω
 
 /// NEC-2's STRUCTURE LOSS: the power the series loads dissipate,
 /// `½·Σ |Iₙ|²·Re Zₙ` over the per-segment load impedances (peak amplitudes, as
@@ -486,7 +483,7 @@ pub fn radiation_efficiency(
     if input_power <= 0.0 {
         return 1.0;
     }
-    let k = 2.0 * PI * freq_hz / SPEED_OF_LIGHT;
+    let k = 2.0 * PI * freq_hz / C0;
     let integral = integrate_power_for_ground(segs, i_vec, k, ground);
     let p_rad = k * k * ETA0 / (32.0 * PI * PI) * integral;
     (p_rad / input_power).clamp(0.0, 1.0)
@@ -502,7 +499,7 @@ pub fn radiation_efficiency(
 /// (`eps_r → ∞`) these tend to `(+1, −1)`; at grazing (`theta → 90°`) both tend
 /// to `−1`, giving the horizon null.
 fn fresnel_coeffs(theta_deg: f64, eps_r: f64, sigma: f64, k: f64) -> (Complex64, Complex64) {
-    let freq_hz = k * SPEED_OF_LIGHT / (2.0 * PI);
+    let freq_hz = k * C0 / (2.0 * PI);
     let eps_c = crate::sommerfeld::complex_permittivity(freq_hz, eps_r, sigma);
     let th = theta_deg.to_radians();
     let cos_i = Complex64::new(th.cos(), 0.0);
@@ -582,7 +579,7 @@ pub fn integrate_radiated_power(
     freq_hz: f64,
     pec_ground: bool,
 ) -> f64 {
-    let k = 2.0 * PI / (SPEED_OF_LIGHT / freq_hz);
+    let k = 2.0 * PI / (C0 / freq_hz);
     integrate_radiated_power_inner(segs, i_vec, k, pec_ground)
 }
 
@@ -734,7 +731,7 @@ pub fn compute_radiation_pattern(
     points: &[FarFieldPoint],
     ground: &GroundModel,
 ) -> Vec<FarFieldResult> {
-    let lambda = SPEED_OF_LIGHT / freq_hz;
+    let lambda = C0 / freq_hz;
     let k = 2.0 * PI / lambda;
 
     let pec = matches!(ground, GroundModel::PerfectConductor);

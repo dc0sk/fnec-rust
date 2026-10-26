@@ -8,6 +8,11 @@ use std::process::Command;
 
 use serde_json::{Map, Value};
 
+/// Warning substrings no corpus case may emit, whatever its own
+/// `forbidden_warning_substrings` say. `FND-302` is the Hallén residual caveat
+/// (`validate::residual_caveat`): every corpus deck solves its own equations.
+const FORBIDDEN_IN_EVERY_CASE: &[&str] = &["FND-302"];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PatternSample {
     theta_deg: f64,
@@ -230,7 +235,13 @@ fn corpus_validation_cases_with_references() {
                 stderr
             );
         }
-        for forbidden_warning in &forbidden_warning_substrings {
+        // Forbidden in every case, not per case: no corpus deck may print the
+        // FND-302 residual caveat. The "warnings are not acceptable" at the top of
+        // this file is a comment; this is the assertion for that one warning.
+        for forbidden_warning in FORBIDDEN_IN_EVERY_CASE
+            .iter()
+            .chain(&forbidden_warning_substrings)
+        {
             assert!(
                 !stderr.contains(forbidden_warning),
                 "Case '{}' should not emit warning containing '{}', got stderr:\n{}",

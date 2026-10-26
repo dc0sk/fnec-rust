@@ -301,6 +301,30 @@ fn a_loaded_deck_stays_on_the_cpu() {
     assert!(err.contains("stamps loads or networks"), "{err}");
 }
 
+/// A load card that stamps nothing does not keep a deck off the GPU (FND-297 a):
+/// the pick asks the solve's own predicate, by value, at every run frequency. It
+/// asked which card types were present, so `LD 4 1 301 301 0 0` stayed on the CPU
+/// while `--exec gpu` solved the same deck on the device. Its LD-free twin gets
+/// the same pick; without a GPU both stay on the CPU for the host's reason, never
+/// the deck's.
+#[test]
+fn a_load_that_stamps_zero_does_not_keep_a_deck_on_the_cpu() {
+    let key = host_key();
+    let cal = calibration("zero-ld", key.as_deref());
+    let zero = "CE\nGW 1 601 0 0 -5.282 0 0 5.282 .001\nGE 0\nLD 4 1 301 301 0 0\nEX 0 1 301 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
+    let (_, zero_err) = run_with("zero-ld", zero, &[], &cal);
+    let (_, twin_err) = run_with("zero-ld-twin", &dipole(601, 1), &[], &cal);
+    let _ = std::fs::remove_file(&cal);
+    for err in [&zero_err, &twin_err] {
+        assert!(
+            !err.contains("not a deck the GPU solves") && !err.contains("stamps loads"),
+            "{err}"
+        );
+        let expected = if key.is_some() { "gpu" } else { "cpu" };
+        assert_eq!(selected(err), expected, "{err}");
+    }
+}
+
 /// `fnec calibrate --print-key` names this host's device, or says there is none.
 #[test]
 fn calibrate_prints_this_hosts_key_or_says_there_is_no_device() {

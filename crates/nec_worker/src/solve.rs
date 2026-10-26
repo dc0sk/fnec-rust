@@ -540,14 +540,12 @@ fn solve_inner(
     let gpu_eligible = exec == "gpu"
         && segs.len() >= MIN_GPU_RESIDENT_SEGS
         // The device solves the plain delta-gap route on the merged-straight
-        // basis, in free space — the one class shared with the CLI's solve and
-        // its automatic pick.
-        && nec_solver::gpu_resident_class(&deck, &segs, &ground).is_ok()
-        // The device re-solves from raw segment inputs, discarding host-side
-        // stamps. This gate was already value-based rather than a card-type list,
-        // which is why it never had the CLI's NT hole (FND-023) — it now asks the
-        // same question through the shared seam.
-        && stamps.is_identity();
+        // basis, in free space, and re-solves from raw segment inputs, discarding
+        // host-side stamps — the one predicate shared with the CLI's solve, its
+        // fill and its automatic pick (FND-297 a). This gate was already
+        // value-based rather than a card-type list, which is why it never had the
+        // CLI's NT hole (FND-023). A worker has no Laplace loads.
+        && nec_solver::gpu_resident_decline(&deck, &segs, &ground, &[freq_hz], &[]).is_none();
 
     // The device solves the merged-conductor basis the CLI's GPU-resident path
     // uses: collinear `GW` runs as one conductor, a junction row only where
@@ -603,6 +601,12 @@ fn solve_inner(
     };
 
     let (currents, exec_used) = if let Some(x) = device_currents {
+        // No FND-302 caveat on the device's answer, by the shared predicate and
+        // not by omission: an f32 solve is judged by the device itself (1e-4,
+        // declining to the CPU arm below, which is judged). Checked at compile
+        // time, so a change to the predicate breaks this arm's build.
+        const _: () =
+            assert!(!nec_solver::validate::ResidualKind::DeviceF32.judged_by_hallen_caveat());
         (x, "gpu")
     } else {
         // One call for every Hallén route: plane-wave, current-source, and
@@ -615,6 +619,18 @@ fn solve_inner(
             nec_solver::solve_hallen_routed(&deck, &segs, &mut z_mat, freq_hz, &stamps.diagonal)
                 .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         current_source_port = routed.port_voltage;
+        // The one residual predicate, so a worker's answer carries the caveat
+        // the local CLI prints for the same solve (FND-302).
+        // `FNEC_HALLEN_REL_RESIDUAL_CAVEAT` reaches the worker too, so the
+        // caveat's wiring can be shown to fire across the wire.
+        let threshold = nec_solver::validate::residual_caveat_threshold()
+            .map_err(SolveError::UnsupportedConfig)?;
+        if let Some(w) = routed
+            .residual
+            .and_then(|(_, rel)| nec_solver::validate::residual_caveat_at(rel, threshold))
+        {
+            warnings.push(w);
+        }
         // Only the feedpoint is read from these, so they are the SOURCE currents:
         // a feed that is also a TL/NT port includes the network branch (FND-123).
         (routed.source_currents(), "cpu")
@@ -665,7 +681,22 @@ fn solve_inner(
             )));
         };
         let current = currents[idx];
-        let v_source = Complex64::new(ex.voltage_real, ex.voltage_imag);
+        // The drive the solve applied at this segment, through the shared seam the
+        // CLI, GUI and bindings price through (FND-297 d). This read the card's own
+        // voltage, so with two EX cards on one segment — which the solve sums — it
+        // priced the summed drive's current with one card's voltage: 52.57 + j25.89
+        // where the CLI says 78.86 + j38.83.
+        let v_vec = nec_solver::build_excitation(&deck, &segs)
+            .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
+        let v_source = nec_solver::feedpoint_drive_voltage(
+            nec_model::card::FeedpointRole::DeltaGap,
+            segs[idx].length,
+            v_vec[idx],
+            None,
+        )
+        .ok_or_else(|| {
+            SolveError::UnsupportedConfig("internal: a delta gap without a drive".to_string())
+        })?;
         let z_in = nec_solver::feedpoint_impedance(
             v_source,
             current,

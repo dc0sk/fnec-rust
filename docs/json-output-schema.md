@@ -63,7 +63,7 @@ resolved list, not over the deck.
 | `freq_mhz` | `number` | MHz | Solved frequency. |
 | `tag` | `integer` | — | Wire tag of the segment the `EX` card resolves to. With tag 0 on the card NEC-2 reads its segment as an absolute segment number (FND-282), so `EX 0 0 32` on two 21-segment wires reports `tag` 2. |
 | `seg` | `integer` | — | Segment number of the feedpoint within that tag (`EX 0 0 32` above reports 11). |
-| `z_re` | `number` | Ω | Real part of feedpoint impedance (resistance). |
+| `z_re` | `number` | Ω | Real part of feedpoint impedance (resistance). Under `--ground-solver sommerfeld`, when the correction applies (`gsolver=sommerfeld-applied` on the `diag:` line), `z_re` and `z_im` include the surface-wave correction. The solve's V and I do not, so `z` is not V/I (FND-286). |
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |

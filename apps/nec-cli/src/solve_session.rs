@@ -1,7 +1,7 @@
 use super::exec_profile::ExecutionMode;
 use nec_model::card::Card;
 
-pub(super) const C0: f64 = 299_792_458.0;
+use nec_solver::constants::C0;
 pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT: f64 = 1e-2;
 
@@ -108,10 +108,27 @@ pub(super) struct BenchRecord {
     pub(super) pulse_rhs: String,
     pub(super) exec: String,
     pub(super) freq_mhz: f64,
-    pub(super) abs_res: f64,
-    pub(super) rel_res: f64,
-    pub(super) diag_spread: f64,
-    pub(super) sin_rel_res: f64,
+    /// `None` where the route computes no residual: printed `n/a` on the diag
+    /// line and the bench CSV, `null` in bench JSON — never a perfect-looking 0
+    /// (FND-306, D8).
+    pub(super) abs_res: Option<f64>,
+    pub(super) rel_res: Option<f64>,
+    /// `None` only for a `--hosts` record: the worker does not send it.
+    pub(super) diag_spread: Option<f64>,
+    /// The sinusoidal basis's own (pre-fallback) residual; `None` when that basis
+    /// did not run (D8: the old 0 read as a perfect sinusoidal solve).
+    pub(super) sin_rel_res: Option<f64>,
+}
+
+/// A residual for the diag line and the bench CSV: `{:.6e}`, or `n/a` when the
+/// route computed none (FND-306).
+pub(super) fn residual_field(v: Option<f64>) -> String {
+    v.map_or_else(|| "n/a".to_string(), |x| format!("{x:.6e}"))
+}
+
+/// The same for bench JSON: a number, or `null`.
+pub(super) fn residual_json(v: Option<f64>) -> String {
+    v.map_or_else(|| "null".to_string(), |x| format!("{x:.6e}"))
 }
 use nec_report::{
     render_text_report, CurrentRow, FeedpointRow, LoadRow, PatternRow, PointReport, SourceRow,
@@ -231,9 +248,19 @@ pub(super) struct FrequencySolveResult {
     pub(super) min_feed_re: Option<f64>,
     /// Whether the device solved this point (a GPU sweep reports the count).
     pub(super) ran_on_gpu: bool,
+    /// Whether the surface-wave correction reached this point's impedance, so the
+    /// run can say once that V and I are not the corrected solve's (FND-286).
+    pub(super) surface_wave_applied: bool,
     /// What this point's resolved loads were, for the sweep's aggregate caveat
     /// (FND-209): the deck alone cannot say.
     pub(super) run_loads: nec_solver::validate::RunLoads,
+    /// The relative residual of this point's f64 Hallén solve, for
+    /// `validate::residual_caveat_at` (FND-302); `None` for routes that compute
+    /// none and for every residual whose `ResidualKind` is not judged: a device
+    /// (f32) solve (judged by the device at 1e-4), the sinusoidal projection
+    /// (judged by `--sin-fallback-rel-max`) and the pulse and continuity bases
+    /// (printed, not judged).
+    pub(super) hallen_rel_res: Option<f64>,
 }
 
 /// The `exec` a point actually ran: `gpu` only when the device solved it.
@@ -319,31 +346,6 @@ pub(super) fn residual_zi_minus_v(
 
     let res = l2_norm(&r);
     let denom = l2_norm(v_vec);
-    let rel = if denom > 0.0 { res / denom } else { res };
-    (res, rel)
-}
-
-pub(super) fn residual_hallen(
-    z: &ZMatrix,
-    i_vec: &[Complex64],
-    homogeneous: &[Complex64],
-    rhs: &[Complex64],
-) -> (f64, f64) {
-    // `homogeneous` is the solved `cos·C + sin·D` per row, from
-    // `nec_solver::hallen_homogeneous(_paths)` — the evaluator that shares the
-    // solvers' column map, so this cannot drift from them (FND-158). It replaced
-    // a per-route pair of functions that each re-derived the cos term alone.
-    let n = z.n;
-    let mut r = vec![Complex64::new(0.0, 0.0); n];
-    for row in 0..n {
-        let mut zi = Complex64::new(0.0, 0.0);
-        for (col, i_col) in i_vec.iter().enumerate().take(n) {
-            zi += z.get(row, col) * *i_col;
-        }
-        r[row] = zi - homogeneous[row] - rhs[row];
-    }
-    let res = l2_norm(&r);
-    let denom = l2_norm(rhs);
     let rel = if denom > 0.0 { res / denom } else { res };
     (res, rel)
 }
@@ -874,6 +876,26 @@ fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
     }
 }
 
+/// Whether this run asks for the surface-wave correction (PH9-CHK-006), and over
+/// which ground: `--ground-solver sommerfeld`, a finite ground, and not the MPIE —
+/// which assembles the reflected kernels into its own Z-matrix, so the delta would
+/// count the surface wave twice. The one copy: the feedpoint rows apply the
+/// correction on it and the NEC-2D report refuses on it (FND-286), so the two
+/// cannot disagree about what was requested.
+pub(super) fn sommerfeld_requested(
+    solver_mode: SolverMode,
+    ground_solver: GroundSolver,
+    ground: &GroundModel,
+) -> Option<(f64, f64)> {
+    match (solver_mode, ground_solver, ground) {
+        (SolverMode::Mpie, _, _) => None,
+        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
+            Some((*eps_r, *sigma))
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
@@ -895,13 +917,7 @@ pub(super) fn build_feedpoint_rows(
     // to the Sommerfeld impedance; the MPIE path already assembles the exact
     // reflected (Sommerfeld) kernels into its Z-matrix, so applying the delta there
     // would double-count the surface wave — skip it for `--solver mpie`.
-    let sommerfeld_ground = match (solver_mode, ground_solver, ground) {
-        (SolverMode::Mpie, _, _) => None,
-        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
-            Some((*eps_r, *sigma))
-        }
-        _ => None,
-    };
+    let sommerfeld_ground = sommerfeld_requested(solver_mode, ground_solver, ground);
     // The correction is a one-port quantity: ⟨J, ΔG J⟩ / I_feed² over the whole
     // structure's currents. With several feeds that charges every port with the
     // whole structure's reaction — a symmetric pair got 2(ΔZ11 ± ΔZ12), 76.29 −
@@ -1145,9 +1161,11 @@ pub(crate) fn probe_feedpoints(
     // warn of, as `solve_frequency_point` itself skips them there.
     if print_caveats && !matches!(cfg.solver_mode, SolverMode::Mpie) {
         let shown = match which {
+            // A probe solves without Laplace loads (below), so its caveats see none.
             ProbeFrequencies::First => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 freqs[0],
                 false,
@@ -1156,6 +1174,7 @@ pub(crate) fn probe_feedpoints(
             ProbeFrequencies::All => nec_solver::validate::hallen_geometry_caveats_swept(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 &freqs,
                 false,
@@ -1170,6 +1189,10 @@ pub(crate) fn probe_feedpoints(
         }
     }
 
+    // `FNEC_HALLEN_REL_RESIDUAL_CAVEAT` or the default; refused here, before any
+    // solve, as the main command refuses it.
+    let threshold = nec_solver::validate::residual_caveat_threshold()?;
+    let mut worst_rel: Option<f64> = None;
     let mut points = Vec::with_capacity(freqs.len());
     for freq_hz in freqs {
         let solved = solve_frequency_point(
@@ -1194,6 +1217,7 @@ pub(crate) fn probe_feedpoints(
         for w in &solved.negative_r {
             eprintln!("{}warning: {w}", cfg.stderr_prefix);
         }
+        worst_rel = nec_solver::validate::worst_residual(worst_rel, solved.hallen_rel_res);
         let feedpoints = match solved.report {
             PointOutput::Tables(point) => point.rows.clone(),
             PointOutput::Text(_) => {
@@ -1206,52 +1230,79 @@ pub(crate) fn probe_feedpoints(
             diag_line: solved.diag_line,
         });
     }
+    // FND-302 once per probe, at its worst point, as the main command does per run.
+    if let Some(w) =
+        worst_rel.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("{}warning: {w}", cfg.stderr_prefix);
+    }
     Ok(points)
 }
 
-/// Attempt the GPU-resident Hallén fill+solve (PH7-CHK-003) for the supported
-/// deck class. Returns `None` (caller uses the CPU `solve_hallen`) unless:
-/// `--exec gpu`, free-space/deferred ground, no LD/TL host matrix stamps, and at
-/// least `nec_accel::MIN_GPU_RESIDENT_SEGS` segments. Also returns `None` when no wgpu
-/// adapter is available.
-#[allow(clippy::too_many_arguments)]
-fn maybe_gpu_resident_hallen(
+/// What the GPU-resident solve needs at one frequency point, built once the
+/// point is known to be one the device takes.
+struct GpuResidentPlan {
+    hallen_rhs: nec_solver::HallenRhs,
+    merged_endpoints: Vec<(usize, usize)>,
+    junctions: Vec<(usize, usize, f64)>,
+}
+
+/// Whether the GPU-resident Hallén fill+solve (PH7-CHK-003) takes this point,
+/// decided once and before the matrix is filled, so the fill and the solve
+/// cannot disagree about it (FND-293): `--exec gpu`, the Hallén basis,
+/// [`nec_solver::gpu_resident_decline`] (class, stamps, Laplace loads), at least
+/// `nec_accel::MIN_GPU_RESIDENT_SEGS` segments, and an excitation outside the
+/// homogeneous span (FND-227). Every condition but the adapter: a device that is
+/// missing or fails declines at run time, and says so on stderr.
+fn gpu_resident_plan(
     deck: &nec_model::deck::NecDeck,
     segs: &[Segment],
-    hallen_rhs: &nec_solver::HallenRhs,
-    wire_endpoints: &[(usize, usize)],
-    junctions: &[(usize, usize, f64)],
+    ground: &GroundModel,
+    laplace_loads: &[nec_solver::LaplaceLoad],
+    solver_mode: SolverMode,
     execution_mode: ExecutionMode,
     freq_hz: f64,
-) -> Option<nec_solver::HallenSolution> {
-    // The deck class (route and ground) is the caller's, through
-    // `nec_solver::gpu_resident_class`.
-    if execution_mode != ExecutionMode::Gpu || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS {
-        return None;
+) -> Result<Option<GpuResidentPlan>, String> {
+    if execution_mode != ExecutionMode::Gpu
+        || !matches!(solver_mode, SolverMode::Hallen)
+        || segs.len() < nec_accel::MIN_GPU_RESIDENT_SEGS
+        || nec_solver::gpu_resident_decline(deck, segs, ground, &[freq_hz], laplace_loads).is_some()
+    {
+        return Ok(None);
     }
-    // The device re-fills and solves from raw segment inputs, so anything stamped
-    // into the host matrix is discarded. Decline any deck that stamps something.
-    //
-    // Asked of the values, not of which card types are present. The type-list this
-    // replaces omitted `Card::Nt`, so an NT deck took this path and came back with
-    // the un-stamped answer (FND-023: 74.234 + j13.898 where the CPU gives
-    // 70.633 + j14.009). Laplace loads were not covered at all — this function has
-    // no access to them, so the caller must decline separately.
-    if !nec_solver::build_deck_stamps(deck, segs, freq_hz).is_identity() {
-        return None;
-    }
+    let hallen_rhs = build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
+    let (merged_endpoints, junctions) = nec_solver::merged_grouping(segs);
     // An excitation the homogeneous constants absorb whole (FND-227): the CPU
     // solve refuses it and says why.
     if nec_solver::merged_excitation_in_homogeneous_span(
         &hallen_rhs.rhs,
         &hallen_rhs.cos_vec,
         &hallen_rhs.sin_vec,
-        wire_endpoints,
-        junctions,
+        &merged_endpoints,
+        &junctions,
     ) {
-        return None;
+        return Ok(None);
     }
+    Ok(Some(GpuResidentPlan {
+        hallen_rhs,
+        merged_endpoints,
+        junctions,
+    }))
+}
 
+/// Run the GPU-resident Hallén fill+solve on a point [`gpu_resident_plan`]
+/// accepted. Returns `None` (the caller uses the routed CPU solve) when no wgpu
+/// adapter is available or the device declines; each decline has said why.
+fn maybe_gpu_resident_hallen(
+    segs: &[Segment],
+    plan: &GpuResidentPlan,
+    freq_hz: f64,
+) -> Option<nec_solver::HallenSolution> {
+    let GpuResidentPlan {
+        hallen_rhs,
+        merged_endpoints: wire_endpoints,
+        junctions,
+    } = plan;
     let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
         .iter()
         .map(|s| nec_accel::ZSegmentInput {
@@ -1349,16 +1400,38 @@ pub(super) fn solve_frequency_point(
     };
     let sin_segs = sin_order.segments(segs);
 
+    // Whether the device solves this point, decided before the fill: the device
+    // fills the matrix (in f32) only for a point it then solves itself (FND-293).
+    let resident_plan = gpu_resident_plan(
+        deck,
+        segs,
+        ground,
+        laplace_loads,
+        solver_mode,
+        execution_mode,
+        freq_hz,
+    )?;
+    // Whether the matrix the solve used was filled on the device, for the record.
+    let mut filled_on_device = false;
     let mut z_mat = match solver_mode {
         SolverMode::Hallen => {
-            // For free-space (or deferred) ground with --exec gpu, attempt GPU Z-matrix fill.
-            // Ground-image-augmented models fall back to CPU; GPU fills free-space part only.
-            // A minimum segment count guards against wgpu device-init overhead dominating for
-            // small problems where CPU assembly is < 1 ms.
+            // The device fills the Z-matrix in f32 only for a point the resident
+            // solve takes (free space, nothing stamped). It used to fill every
+            // `--exec gpu` free-space deck of 128 segments or more, and when the
+            // resident solve then declined — a load, a bend — the CPU solved the
+            // f32 matrix: 106.383566 + j36.388674 against the f64 106.383595 +
+            // j36.388745 on a 201-segment deck with `LD 4`, recorded as
+            // `solve_exec=cpu`, and different from the worker, which always fills
+            // in f64 (FND-293). A declined point is now filled on the CPU in f64.
+            //
+            // A minimum segment count guards against wgpu device-init overhead
+            // dominating for small problems where CPU assembly is < 1 ms. It is
+            // above `nec_accel::MIN_GPU_RESIDENT_SEGS`, so a resident solve of
+            // fewer segments reads `fill_exec=cpu solve_exec=gpu`: the device
+            // re-fills from raw segment inputs for its own solve, and this host
+            // matrix serves the residual check only.
             const MIN_GPU_ZMATRIX_SEGS: usize = 128;
-            let try_gpu = execution_mode == ExecutionMode::Gpu
-                && segs.len() >= MIN_GPU_ZMATRIX_SEGS
-                && matches!(ground, GroundModel::FreeSpace);
+            let try_gpu = resident_plan.is_some() && segs.len() >= MIN_GPU_ZMATRIX_SEGS;
             if try_gpu {
                 let z_inputs: Vec<nec_accel::ZSegmentInput> = segs
                     .iter()
@@ -1378,6 +1451,7 @@ pub(super) fn solve_frequency_point(
                             .collect();
                         let mut z = ZMatrix::from_flat(n, flat);
                         z.set_segments(segs);
+                        filled_on_device = true;
                         z
                     }
                     Err(why) => {
@@ -1411,8 +1485,11 @@ pub(super) fn solve_frequency_point(
     // For the decision record: whether the DECK's own cards load the structure,
     // read from the stamps before any Laplace load is composed in.
     let deck_loaded = stamps.diagonal.iter().any(|z| z.norm() > 0.0);
-    let laplace_warnings =
-        nec_solver::add_laplace_loads(&mut stamps.diagonal, laplace_loads, segs, freq_hz);
+    // The run's diagonal through the one function that answers "which loads"
+    // (FND-288), so the caveats and the MPIE see what this solve stamps.
+    let (diagonal, laplace_warnings) =
+        nec_solver::run_load_diagonal(deck, segs, freq_hz, laplace_loads);
+    stamps.diagonal = diagonal;
     for warning in &stamps.warnings {
         eprintln!("warning: {warning}");
     }
@@ -1503,7 +1580,10 @@ pub(super) fn solve_frequency_point(
         );
     }
     let diag_spread = matrix_diagonal_spread(&z_mat);
-    let mut sin_rel_res: f64 = 0.0;
+    // `None` unless the sinusoidal basis ran: its pre-fallback residual. A 0 for
+    // every other route read as a perfect sinusoidal solve that never happened, the
+    // FND-306 class, so it prints `n/a` too (D8).
+    let mut sin_rel_res: Option<f64> = None;
     // Set by the current-source path: the solved port voltage V (feedpoint Z=V/i0).
     let mut current_source_port: Option<Complex64> = None;
 
@@ -1514,7 +1594,7 @@ pub(super) fn solve_frequency_point(
     // not say: the label read `gpu(cpu-fallback)` on every point, including the
     // ones the device solved.
     let mut ran_on_gpu = false;
-    let (i_vec, diag_abs, diag_rel, diag_label) = match solver_mode {
+    let (i_vec, diag_res, diag_label) = match solver_mode {
         SolverMode::Hallen => {
             // One decision, shared with the GUI, the bindings and the worker
             // (FND-121). It used to be four arms here and nowhere else, so those
@@ -1524,28 +1604,18 @@ pub(super) fn solve_frequency_point(
             //
             // The GPU-resident fill+solve implements exactly one class — the
             // plain delta-gap route in free space — so it asks the shared
-            // predicate rather than assuming, and declines anything else.
-            let gpu_sol = if nec_solver::gpu_resident_class(deck, segs, ground).is_ok()
-                && laplace_loads.is_empty()
-            {
-                let hallen_rhs =
-                    build_hallen_rhs(deck, segs, freq_hz).map_err(|e| e.to_string())?;
-                let (merged_endpoints, junction_tuples) = nec_solver::merged_grouping(segs);
-                maybe_gpu_resident_hallen(
-                    deck,
-                    segs,
-                    &hallen_rhs,
-                    &merged_endpoints,
-                    &junction_tuples,
-                    execution_mode,
-                    freq_hz,
-                )
-                .map(|sol| (sol, hallen_rhs, merged_endpoints, junction_tuples))
-            } else {
-                None
-            };
+            // predicate rather than assuming, and declines anything else —
+            // decided once, in `resident_plan`, before the fill.
+            let gpu_sol = resident_plan
+                .as_ref()
+                .and_then(|plan| Some((maybe_gpu_resident_hallen(segs, plan, freq_hz)?, plan)));
 
-            if let Some((sol, hallen_rhs, merged_endpoints, junction_tuples)) = gpu_sol {
+            if let Some((sol, plan)) = gpu_sol {
+                let GpuResidentPlan {
+                    hallen_rhs,
+                    merged_endpoints,
+                    junctions: junction_tuples,
+                } = plan;
                 ran_on_gpu = true;
                 // This arm exists because it bypasses `solve_hallen_routed`, so
                 // the guard there does not reach it (FND-126).
@@ -1554,11 +1624,23 @@ pub(super) fn solve_frequency_point(
                     &hallen_rhs.cos_vec,
                     &hallen_rhs.sin_vec,
                     &sol.c_hom_per_wire,
-                    &merged_endpoints,
-                    &junction_tuples,
+                    merged_endpoints,
+                    junction_tuples,
                 );
-                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
-                (sol.currents, a, r, "hallen")
+                // Against `z_mat`, which at 128 segments or more is the device's
+                // own f32 fill: the check confirms the solve of that system, not
+                // of the f64 problem (FND-307, open).
+                let res = nec_solver::ResidualInputs::plain(
+                    h,
+                    hallen_rhs.rhs.clone(),
+                    merged_endpoints.clone(),
+                )
+                .residual(&z_mat, &sol.currents);
+                (
+                    sol.currents,
+                    Some((res, nec_solver::validate::ResidualKind::DeviceF32)),
+                    "hallen",
+                )
             } else {
                 let routed = nec_solver::solve_hallen_routed(
                     deck,
@@ -1570,17 +1652,26 @@ pub(super) fn solve_frequency_point(
                 .map_err(|e| e.to_string())?;
                 current_source_port = routed.port_voltage;
                 network_branch.clone_from(&routed.network_branch);
-                let (a, r) = match &routed.residual_inputs {
-                    Some(ri) => residual_hallen(&z_mat, &routed.currents, &ri.homogeneous, &ri.rhs),
-                    None => (0.0, 0.0),
-                };
-                (routed.currents, a, r, routed.route.mode_label())
+                // Computed by the session against the system it solved, corner term
+                // included (FND-302); `None` where the route computes none, which
+                // the diag line prints as `n/a`, not as a perfect 0 (FND-306).
+                (
+                    routed.currents,
+                    routed
+                        .residual
+                        .map(|r| (r, nec_solver::validate::ResidualKind::HallenF64)),
+                    routed.route.mode_label(),
+                )
             }
         }
         SolverMode::Pulse => {
             let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-            let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-            (i, a, r, "pulse")
+            let res = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+            (
+                i,
+                Some((res, nec_solver::validate::ResidualKind::Pulse)),
+                "pulse",
+            )
         }
         SolverMode::Continuity => {
             if !per_wire_basis_feasible {
@@ -1588,27 +1679,39 @@ pub(super) fn solve_frequency_point(
                     "warning: continuity solver requires >=2 segments per wire; falling back to pulse"
                 );
                 let i = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
-                (i, a, r, "continuity->pulse")
+                let res = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
+                (
+                    i,
+                    Some((res, nec_solver::validate::ResidualKind::Pulse)),
+                    "continuity->pulse",
+                )
             } else {
                 let i = solve_with_continuity_basis_per_wire(&z_mat, &v_vec_pulse, wire_endpoints)
                     .map_err(|e| e.to_string())?;
                 let (a, r) = residual_zi_minus_v(&z_mat, &i, &v_vec_pulse);
                 if r <= CONTINUITY_REL_RESIDUAL_MAX {
-                    (i, a, r, "continuity")
+                    (
+                        i,
+                        Some(((a, r), nec_solver::validate::ResidualKind::Pulse)),
+                        "continuity",
+                    )
                 } else {
                     eprintln!(
                         "warning: continuity residual {:.3e} > {:.3e}; falling back to pulse",
                         r, CONTINUITY_REL_RESIDUAL_MAX
                     );
                     let i2 = solve(&z_mat, &v_vec_pulse).map_err(|e| e.to_string())?;
-                    let (a2, r2) = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
-                    (i2, a2, r2, "continuity->pulse(residual)")
+                    let res2 = residual_zi_minus_v(&z_mat, &i2, &v_vec_pulse);
+                    (
+                        i2,
+                        Some((res2, nec_solver::validate::ResidualKind::Pulse)),
+                        "continuity->pulse(residual)",
+                    )
                 }
             }
         }
         SolverMode::Sinusoidal => {
-            let (i, a, r, label) = {
+            let (i, res, label) = {
                 // NEC2-style sinusoidal Galerkin basis on the Hallén integral equation.
                 // Uses the Hallén thin-wire Z-matrix (assembled above) with piecewise-
                 // sinusoidal expansion functions and pulse testing (projection).
@@ -1657,10 +1760,22 @@ pub(super) fn solve_frequency_point(
                     wire_endpoints,
                     &junction_tuples,
                 );
-                let (a, r) = residual_hallen(&z_mat, &sol.currents, &h, &hallen_rhs.rhs);
-                sin_rel_res = r;
+                let (a, r) = nec_solver::ResidualInputs::plain(
+                    h,
+                    hallen_rhs.rhs.clone(),
+                    sin_endpoints.clone(),
+                )
+                .residual(&z_mat, &sol.currents);
+                sin_rel_res = Some(r);
                 if r <= sin_fallback_rel_max {
-                    (sol.currents, a, r, "sinusoidal")
+                    (
+                        sol.currents,
+                        Some((
+                            (a, r),
+                            nec_solver::validate::ResidualKind::SinusoidalProjection,
+                        )),
+                        "sinusoidal",
+                    )
                 } else {
                     eprintln!(
                         "warning: sinusoidal residual {:.3e} > {:.3e}; falling back to hallen",
@@ -1682,12 +1797,20 @@ pub(super) fn solve_frequency_point(
                         wire_endpoints,
                         &junction_tuples,
                     );
-                    let (a2, r2) =
-                        residual_hallen(&z_mat, &hallen_sol.currents, &h2, &hallen_rhs.rhs);
-                    (hallen_sol.currents, a2, r2, "sinusoidal->hallen(residual)")
+                    let res2 = nec_solver::ResidualInputs::plain(
+                        h2,
+                        hallen_rhs.rhs.clone(),
+                        sin_endpoints.clone(),
+                    )
+                    .residual(&z_mat, &hallen_sol.currents);
+                    (
+                        hallen_sol.currents,
+                        Some((res2, nec_solver::validate::ResidualKind::HallenF64)),
+                        "sinusoidal->hallen(residual)",
+                    )
                 }
             };
-            (sin_order.restore_currents(&i), a, r, label)
+            (sin_order.restore_currents(&i), res, label)
         }
         SolverMode::Mpie => {
             // One mapping for every variant: the special-cased `NoVoltageSource`
@@ -1696,7 +1819,8 @@ pub(super) fn solve_frequency_point(
             let currents =
                 nec_solver::solve_mpie_session(deck, segs, ground, freq_hz, laplace_loads)
                     .map_err(|e| format!("--solver mpie: {e}"))?;
-            (currents, 0.0, 0.0, "mpie")
+            // The MPIE computes no residual: "n/a", not a perfect 0 (FND-306).
+            (currents, None, "mpie")
         }
     };
 
@@ -1732,9 +1856,12 @@ pub(super) fn solve_frequency_point(
         // actually applied DID model the surface wave, which changes what the
         // low-ground caveat may claim.
         let shown = match geometry_caveats {
+            // The run's loads, `--loads-config` included: the caveat about a load
+            // beside a bend must see the load the solve stamps (FND-288).
             GeometryCaveats::PerPoint => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 segs,
+                laplace_loads,
                 ground,
                 freq_hz,
                 matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
@@ -1807,7 +1934,7 @@ pub(super) fn solve_frequency_point(
         // computes radiation intensity components, not normalised gain. Free
         // space only (above), so the power integral is the full sphere.
         let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, false);
-        let k = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
 
         let gpu_segments: Vec<_> = segs
             .iter()
@@ -2001,14 +2128,14 @@ pub(super) fn solve_frequency_point(
         power_budget,
     }));
     let diag_line = format!(
-        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={:.6e} rel_res={:.6e} diag_spread={:.6e} sin_rel_res={:.6e} sin_fallback_rel_max={:.6e} {}",
+        "diag: mode={diag_label} pulse_rhs={:?} exec={} freq_mhz={:.6} abs_res={} rel_res={} diag_spread={:.6e} sin_rel_res={} sin_fallback_rel_max={:.6e} {}",
         pulse_rhs_mode,
         exec_label(execution_mode, ran_on_gpu),
         freq_hz / 1e6,
-        diag_abs,
-        diag_rel,
+        residual_field(diag_res.map(|((a, _), _)| a)),
+        residual_field(diag_res.map(|((_, r), _)| r)),
         diag_spread,
-        sin_rel_res,
+        residual_field(sin_rel_res),
         sin_fallback_rel_max,
         decision_record(&DecisionInputs {
             deck,
@@ -2019,6 +2146,7 @@ pub(super) fn solve_frequency_point(
             sommerfeld_outcome,
             deck_loaded,
             config_loaded: !laplace_loads.is_empty(),
+            filled_on_device,
             solved_on_device: ran_on_gpu,
             pattern_rows,
             pattern_on_device: rp_on_device,
@@ -2031,13 +2159,20 @@ pub(super) fn solve_frequency_point(
         pulse_rhs: pulse_rhs_mode.as_contract_str().to_string(),
         exec: exec_label(execution_mode, ran_on_gpu).to_string(),
         freq_mhz: freq_hz / 1e6,
-        abs_res: diag_abs,
-        rel_res: diag_rel,
-        diag_spread,
+        abs_res: diag_res.map(|((a, _), _)| a),
+        rel_res: diag_res.map(|((_, r), _)| r),
+        diag_spread: Some(diag_spread),
         sin_rel_res,
     };
 
+    // Judged or not is the residual's kind, set where it was computed: a device
+    // (f32) solve, the sinusoidal projection and the pulse bases are not judged
+    // by the FND-302 caveat (`ResidualKind::judged_by_hallen_caveat`).
+    let hallen_rel_res = diag_res
+        .filter(|(_, kind)| kind.judged_by_hallen_caveat())
+        .map(|((_, r), _)| r);
     Ok(FrequencySolveResult {
+        hallen_rel_res,
         report,
         diag_line,
         bench,
@@ -2046,6 +2181,7 @@ pub(super) fn solve_frequency_point(
         run_loads,
         min_feed_re,
         ran_on_gpu,
+        surface_wave_applied: sommerfeld_outcome == SommerfeldOutcome::Applied,
     })
 }
 
@@ -2065,6 +2201,8 @@ pub(super) struct DecisionInputs<'a> {
     pub(super) sommerfeld_outcome: SommerfeldOutcome,
     pub(super) deck_loaded: bool,
     pub(super) config_loaded: bool,
+    /// Whether the device filled the Z-matrix the solve used (in f32).
+    pub(super) filled_on_device: bool,
     pub(super) solved_on_device: bool,
     pub(super) pattern_rows: usize,
     pub(super) pattern_on_device: bool,
@@ -2127,6 +2265,7 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         (false, true) => "config",
         (true, true) => "deck+config",
     };
+    let fill = if d.filled_on_device { "gpu" } else { "cpu" };
     let solve = if d.solved_on_device { "gpu" } else { "cpu" };
     let rp = match (d.pattern_rows, d.pattern_on_device) {
         (0, _) => "none",
@@ -2144,7 +2283,7 @@ pub(super) fn decision_record(d: &DecisionInputs<'_>) -> String {
         && nec_solver::ground_contact::touches_ground(d.segs);
     format!(
         "route={route} contact={} drive={drive} ground={ground} gsolver={gsolver} \
-         loads={loads} solve_exec={solve} rp_exec={rp} nf_exec={nf}",
+         loads={loads} fill_exec={fill} solve_exec={solve} rp_exec={rp} nf_exec={nf}",
         if contact { "yes" } else { "no" }
     )
 }
