@@ -71,17 +71,6 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   its note now counts the record's feedpoints instead of re-parsing the deck for
   `EX` cards, and reads "the deck has N feedpoints".
 
-### Fixed
-
-- **`--hosts` refuses a deck with more than one feedpoint, and its records name
-  the feedpoint** (FND-304). The distributed worker returns one feedpoint
-  impedance per frequency, so a two-source deck was answered for the first and
-  the second dropped with no word, in text and JSON; it is now refused before
-  any host is contacted (`nec_solver::more_than_one_feedpoint`). Its JSON records
-  said `tag 0 seg 0` for every point; they name the feedpoint's own segment now,
-  resolved as the local report's rows are (a tag-0 `EX` reports its wire), and
-  so does its negative-resistance caveat.
-
 - **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
   set the FND-302 caveat's threshold (default 1e-5), on the pattern of
   `--sin-fallback-rel-max`: the flag over the variable, an invalid value
@@ -103,6 +92,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   samples, so `n/a` no longer averages in as a 0.
 
 ### Fixed
+
+- **`--hosts` refuses a deck with more than one feedpoint, and its records name
+  the feedpoint** (FND-304). The distributed worker returns one feedpoint
+  impedance per frequency, so a two-source deck was answered for the first and
+  the second dropped with no word, in text and JSON; it is now refused before
+  any host is contacted (`nec_solver::more_than_one_feedpoint`). Its JSON records
+  said `tag 0 seg 0` for every point; they name the feedpoint's own segment now,
+  resolved as the local report's rows are (a tag-0 `EX` reports its wire), and
+  so does its negative-resistance caveat.
 
 - **The Hallén `rel_res` describes the system the route solved** (FND-302). On
   a bent conductor path the solve adds a corner term to its tangential rows; the
