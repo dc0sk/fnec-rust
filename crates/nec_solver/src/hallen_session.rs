@@ -316,27 +316,26 @@ pub(crate) fn takes_graph(deck: &NecDeck, segs: &[Segment]) -> bool {
     }
 }
 
-/// The voltage feeds of a deck as global segment indices.
+/// The voltage feeds of a deck as global segment indices: one per driven
+/// segment, with the drive [`crate::excitation::driven_segments`] gives it
+/// (FND-305). Empty for a deck whose cards do not resolve, which the solve's
+/// other routes refuse by name.
 fn graph_feeds(deck: &NecDeck, segs: &[Segment]) -> Vec<crate::section_graph::GraphFeed> {
-    deck.cards
-        .iter()
-        .filter_map(|c| match c {
-            Card::Ex(ex)
-                if matches!(
-                    ex.kind(),
-                    ExcitationKind::VoltageSource | ExcitationKind::VoltageSourceCurrentSlope
-                ) =>
-            {
-                crate::find_deck_segment(segs, ex.tag, ex.segment).map(|seg| {
-                    crate::section_graph::GraphFeed {
-                        seg,
-                        volts: Complex64::new(ex.voltage_real, ex.voltage_imag),
-                    }
-                })
-            }
-            _ => None,
-        })
+    crate::excitation::driven_segments(deck, segs)
+        .map(|d| d.sources())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(seg, volts)| crate::section_graph::GraphFeed { seg, volts })
         .collect()
+}
+
+/// Every driven segment of `deck` — delta gap or current source, one per segment
+/// (FND-305) — as global indices, for the gaps a node row must not extrapolate
+/// across. Empty for a deck whose cards do not resolve.
+fn feed_segments(deck: &NecDeck, segs: &[Segment]) -> Vec<usize> {
+    crate::excitation::driven_segments(deck, segs)
+        .map(|d| d.iter().map(|s| s.idx).collect())
+        .unwrap_or_default()
 }
 
 /// Decide which Hallén solve this deck needs. The one copy of that decision.
@@ -645,10 +644,7 @@ pub fn joined_gaps_at_a_bend_deg(
     let ports = crate::network::build_networks(deck, segs, freq_hz)
         .map(|(nets, _)| nets.ports())
         .unwrap_or_default();
-    let feeds: Vec<usize> = crate::excitation::feedpoints(deck)
-        .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
-        .chain(ports)
-        .collect();
+    let feeds: Vec<usize> = feed_segments(deck, segs).into_iter().chain(ports).collect();
     let gaps = NodeGaps::new(segs, feeds, loads);
     let angle = |ta: [f64; 3], tb: [f64; 3]| {
         (ta[0] * tb[0] + ta[1] * tb[1] + ta[2] * tb[2])
@@ -1899,8 +1895,8 @@ fn solve_hallen_routed_inner(
     // Path grouping, built once and shared by every arm below, the networks'
     // unit-gap port solves included: so every feed, port and load step is a gap
     // its node rows must not extrapolate across (FND-270).
-    let feeds: Vec<usize> = crate::excitation::feedpoints(deck)
-        .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
+    let feeds: Vec<usize> = feed_segments(deck, segs)
+        .into_iter()
         .chain(networks.ports())
         .collect();
     let gaps = NodeGaps::new(segs, feeds, loads);
@@ -2035,12 +2031,13 @@ fn solve_delta_gap(
     // Networks (FND-123): the structure's response to a unit gap at each
     // undriven port, from a deck identical but for its sources, so the gap is
     // built by the same code (and the same path signs) as a real feed.
-    let driven: Vec<(usize, Complex64)> = crate::excitation::feedpoints(deck)
-        .filter_map(|(ex, _)| {
-            crate::find_deck_segment(segs, ex.tag, ex.segment)
-                .map(|i| (i, Complex64::new(ex.voltage_real, ex.voltage_imag)))
-        })
-        .collect();
+    // One entry per driven segment, from the owner (FND-305), so the network's
+    // first-match lookup of a port's drive (`network::solve_with_networks`) sees
+    // the drive the structure was solved with. A port on a segment more than one
+    // card drives is refused before a solve (`validate::network_on_multiply_fed_segment_error`).
+    let driven: Vec<(usize, Complex64)> = crate::excitation::driven_segments(deck, segs)
+        .map_err(|e| HallenSessionError::Excitation(e.to_string()))?
+        .sources();
     let mut unit_rhs: Vec<(Vec<Complex64>, Vec<Complex64>)> = Vec::new();
     let net = crate::network::solve_with_networks(networks, &driven, &sol.currents, |q| {
         let unit = unit_gap_deck(deck, &segs[q]);

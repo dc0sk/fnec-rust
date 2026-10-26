@@ -188,6 +188,7 @@ fn emit_sweep_points(
 /// routes share, with the warnings it raises sent to stderr.
 fn print_sweep_sections(
     deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
     sweep_rows: &[SweepPointSummary],
     failed: &[usize],
     freqs_hz: &[f64],
@@ -213,8 +214,11 @@ fn print_sweep_sections(
         .filter_map(|&i| freqs_hz.get(i))
         .map(|f| f / 1e6)
         .collect();
-    let sections =
-        nec_report::render_sweep_sections(&points, input_impedance_request(deck), &failed_mhz);
+    let sections = nec_report::render_sweep_sections(
+        &points,
+        input_impedance_request(deck, segs),
+        &failed_mhz,
+    );
     for w in &sections.warnings {
         eprintln!("warning: {w}");
     }
@@ -222,13 +226,15 @@ fn print_sweep_sections(
 }
 
 /// The deck's input-impedance print (`nec_solver::input_impedance_print`) in the
-/// renderer's terms.
+/// renderer's terms: the source keyed by the absolute segment it resolves to, the
+/// key of its FEEDPOINTS row (FND-305).
 fn input_impedance_request(
     deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
 ) -> Option<nec_report::InputImpedanceRequest> {
     let p = nec_solver::input_impedance_print(deck)?;
     Some(nec_report::InputImpedanceRequest {
-        feed_index: p.feed_index,
+        abs_seg: p.source_abs_seg(segs)?,
         norm: match p.norm {
             nec_solver::ImpedanceNorm::Fixed(f) => nec_report::InputImpedanceNorm::Fixed(f),
             nec_solver::ImpedanceNorm::Max => nec_report::InputImpedanceNorm::Max,
@@ -650,7 +656,7 @@ fn main() -> ExitCode {
     warn_near_field_over_finite_ground(deck, &ground);
     // Above the `--hosts` branch, so a distributed run carries them too; the GUI
     // and the bindings get the same list through `validate::diagnose`.
-    for w in nec_solver::validate::solver_neutral_geometry_warnings(&segs) {
+    for w in nec_solver::validate::solver_neutral_warnings(deck, &segs) {
         eprintln!("warning: {w}");
     }
 
@@ -718,8 +724,9 @@ fn main() -> ExitCode {
         // protocol has room for no more — so a deck with several was answered for
         // the first and the rest dropped with no word, in text and in JSON, while
         // the local run prints every row (FND-304). Refused until the protocol
-        // carries the others; the count is the local report's (`feedpoints`).
-        if let Some(n) = nec_solver::more_than_one_feedpoint(deck) {
+        // carries the others; the count is the local report's: one per driven
+        // segment (`driven_segments`), so two cards on one segment are one (FND-305).
+        if let Some(n) = nec_solver::more_than_one_feedpoint(deck, &segs) {
             eprintln!(
                 "error: this deck has {n} feedpoints, and --hosts reports one: the \
                  distributed worker returns a single feedpoint impedance per frequency, \
@@ -982,7 +989,7 @@ fn main() -> ExitCode {
     let any_failed = !failed.is_empty();
 
     if output_format == OutputFormat::Text {
-        print_sweep_sections(deck, &sweep_rows, &failed, &freqs_hz);
+        print_sweep_sections(deck, &segs, &sweep_rows, &failed, &freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -1590,7 +1597,7 @@ fn run_distributed_solve(
     let any_failed = !failed.is_empty();
 
     if output_format == OutputFormat::Text {
-        print_sweep_sections(deck, &sweep_rows, &failed, freqs_hz);
+        print_sweep_sections(deck, segs, &sweep_rows, &failed, freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -2184,6 +2191,36 @@ mod tests {
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
         );
+    }
+
+    /// FND-305 under `--hosts`: two `EX` cards on one segment are one feedpoint,
+    /// so the multi-feed refusal (FND-304) does not fire. The override warning is
+    /// solver-neutral, printed once above the `--hosts` branch, so the controller's
+    /// Hallén caveats must not repeat it.
+    #[test]
+    fn a_doubly_fed_single_feed_is_one_distributed_feedpoint_with_its_warning() {
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n\
+             FR 0 1 0 0 14.2 0\nEN\n",
+        );
+        let ground = nec_solver::ground_model_from_deck(&deck);
+        assert_eq!(nec_solver::more_than_one_feedpoint(&deck, &segs), None);
+        let caveats =
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Hallen);
+        let count = |ws: &[String]| {
+            ws.iter()
+                .filter(|w| w.contains("NEC-2 applies only the last"))
+                .count()
+        };
+        assert_eq!(count(&caveats), 0, "{caveats:?}");
+        let neutral = nec_solver::validate::solver_neutral_warnings(&deck, &segs);
+        assert_eq!(count(&neutral), 1, "{neutral:?}");
+        // Control: two segments are two feedpoints and refused.
+        let (deck, segs) = deck_and_segs(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1 0\nEX 0 1 5 0 0.5 0\n\
+             FR 0 1 0 0 14.2 0\nEN\n",
+        );
+        assert_eq!(nec_solver::more_than_one_feedpoint(&deck, &segs), Some(2));
     }
 
     /// FND-294: `--hosts` carries the free-end feed caveat, which the controller

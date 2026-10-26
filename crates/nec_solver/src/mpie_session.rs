@@ -274,16 +274,22 @@ pub(crate) fn mpie_plan(
     // wire graph, and a wire touching it was refused just above.
     let at_end = crate::geometry::at_free_end(segs, false);
     let mut feeds: Vec<(usize, Complex64)> = Vec::new();
-    for (ex, role) in crate::excitation::feedpoints(deck) {
-        if role != nec_model::card::FeedpointRole::DeltaGap {
-            continue;
+    // One feed per driven segment, with the drive NEC-2 gives it (FND-305): two
+    // type-0 cards on one segment are the last card, not their sum.
+    let driven = crate::excitation::driven_segments(deck, segs).map_err(|e| match e {
+        crate::excitation::ExcitationError::SegmentNotFound { tag, segment } => {
+            MpieSessionError::DrivenSegmentNotFound { tag, segment }
         }
-        let driven_idx = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
-            MpieSessionError::DrivenSegmentNotFound {
-                tag: ex.tag,
-                segment: ex.segment,
-            },
-        )?;
+        // An unrecognised `EX` type drives nothing the MPIE could; every frontend
+        // refuses it before a solve.
+        crate::excitation::ExcitationError::UnsupportedType { .. } => {
+            MpieSessionError::NoVoltageSource
+        }
+    })?;
+    for (driven_idx, volts) in driven.sources() {
+        // Named as the segment it resolved to: a tag-0 card names an absolute
+        // segment (FND-282), and several cards may name this one.
+        let (seg_tag, seg_index) = (segs[driven_idx].tag, segs[driven_idx].tag_index);
         // NEC's `EX 0` is a uniform field V/Δ over the driven segment. Projected on
         // the two triangle bases touching it, that is V·f(½) = V/2 at each end node,
         // with each basis's own reference sign — the transpose of the midpoint
@@ -298,11 +304,10 @@ pub(crate) fn mpie_plan(
         // the answer stays 20–37 % from nec2c however fine the mesh (FND-228).
         if at_end[driven_idx] {
             return Err(MpieSessionError::EndSegmentFeed {
-                tag: ex.tag,
-                segment: ex.segment,
+                tag: seg_tag,
+                segment: seg_index,
             });
         }
-        let volts = Complex64::new(ex.voltage_real, ex.voltage_imag);
         if let (Some(sa), Some(sb)) = (
             feed_reference_sign(&geom, a, driven_idx),
             feed_reference_sign(&geom, b, driven_idx),
@@ -325,10 +330,7 @@ pub(crate) fn mpie_plan(
         // the feedpoint `V/I` — comes out negated (an unphysical negative
         // resistance for a deck that is only written differently).
         let feed_sign = feed_reference_sign(&geom, feed_node, driven_idx).unwrap_or(1.0);
-        feeds.push((
-            feed_node,
-            Complex64::new(ex.voltage_real, ex.voltage_imag) * feed_sign,
-        ));
+        feeds.push((feed_node, volts * feed_sign));
     }
     if feeds.is_empty() {
         return Err(MpieSessionError::NoVoltageSource);

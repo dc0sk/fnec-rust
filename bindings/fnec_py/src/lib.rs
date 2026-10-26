@@ -267,18 +267,14 @@ fn solve_at_freq(
         ))
     };
 
-    // Through the shared seam (FND-031): plane waves are not feedpoints.
+    // One row per driven segment, as the CLI's FEEDPOINTS (FND-305): two `EX`
+    // cards on one segment are one feed, driven as NEC-2 drives it. Plane waves
+    // are not feedpoints (FND-031). A card naming an absent segment is refused
+    // here by name; unreachable today, as the solve above refuses it first.
+    let driven = nec_solver::driven_segments(deck, &segs).map_err(|e| e.to_string())?;
     let mut feeds = Vec::new();
-    for (ex, role) in nec_solver::feedpoints(deck) {
-        let Some(idx) = nec_solver::find_deck_segment(&segs, ex.tag, ex.segment) else {
-            // Unreachable today: `build_hallen_rhs` rejects an EX naming an absent
-            // segment before this runs. Kept defensive, but saying what would
-            // actually be true — the deck HAS an EX; its segment is missing.
-            return Err(format!(
-                "EX on tag {} segment {} names a segment the geometry does not contain",
-                ex.tag, ex.segment
-            ));
-        };
+    for d in driven.iter() {
+        let (idx, role, ex) = (d.idx, d.role, d.cards[0]);
         let seg = &segs[idx];
         // A current source is priced from its solved port voltage and its own
         // current, `Z = V_port / i0` (FND-045); a delta gap from the applied field
@@ -592,6 +588,44 @@ mod tests {
         .expect_err("two current sources must be refused");
         assert!(err.contains("2 current sources"), "{err}");
         assert!(err.contains("tag 2 segment 11"), "{err}");
+    }
+
+    /// FND-305 (U3), at the bindings' own entry point: a TL port on a segment two
+    /// `EX` cards drive is refused through `validate::diagnose`.
+    #[test]
+    fn a_network_port_on_a_doubly_fed_segment_is_refused() {
+        let deck_src = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\nEX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\nTL 1 11 2 11 50 0 0 0 0 0\nFR 0 1 0 0 29.9 0\nEN\n";
+        let parsed = parse(deck_src).expect("deck parses");
+        let kind = nec_solver::validate::SolverKind::Hallen;
+        let err = solve_at_freq(&parsed.deck, 29.9e6, kind).expect_err("must be refused");
+        assert!(err.contains("TL/NT: a port on tag 1 segment 11"), "{err}");
+        let one = parse(&deck_src.replace("EX 0 1 11 0 1 0\n", "")).expect("parses");
+        solve_at_freq(&one.deck, 29.9e6, kind).expect("one card solves");
+    }
+
+    /// FND-305 on the bindings: two `EX 0` cards on one segment are one feed
+    /// row, driven by the last card, and the record carries the override warning.
+    #[test]
+    fn two_ex_cards_on_one_segment_are_one_row_with_a_warning() {
+        let deck = |cards: &str| {
+            format!("CE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n{cards}FR 0 1 0 0 14.2 0\nEN\n")
+        };
+        let kind = nec_solver::validate::SolverKind::Hallen;
+        let two = parse(&deck("EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n")).expect("parses");
+        let half = parse(&deck("EX 0 1 11 0 0.5 0\n")).expect("parses");
+        let (r_two, w_two) = solve_at_freq(&two.deck, 14.2e6, kind).expect("solves");
+        let (r_half, w_half) = solve_at_freq(&half.deck, 14.2e6, kind).expect("solves");
+        assert_eq!(r_two.feeds.len(), 1, "one row per driven segment");
+        assert!((r_two.feeds[0].z - r_half.feeds[0].z).norm() < 1e-9);
+        assert!(
+            w_two
+                .iter()
+                .any(|w| w.contains("NEC-2 applies only the last")),
+            "{w_two:?}"
+        );
+        assert!(!w_half
+            .iter()
+            .any(|w| w.contains("NEC-2 applies only the last")));
     }
 
     /// FND-108: a plane-wave receive deck solves for currents through the shared

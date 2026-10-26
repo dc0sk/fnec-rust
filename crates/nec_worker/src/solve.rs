@@ -686,9 +686,10 @@ fn solve_inner(
         let current = currents[idx];
         // The drive the solve applied at this segment, through the shared seam the
         // CLI, GUI and bindings price through (FND-297 d). This read the card's own
-        // voltage, so with two EX cards on one segment — which the solve sums — it
-        // priced the summed drive's current with one card's voltage: 52.57 + j25.89
-        // where the CLI says 78.86 + j38.83.
+        // voltage, so with two EX cards on one segment — which the solve then
+        // summed — it priced the summed drive's current with one card's voltage:
+        // 52.57 + j25.89 where the CLI said 78.86 + j38.83. The solve now applies
+        // the last type-0 card, as NEC-2 does (FND-305), and `v_vec` carries that.
         let v_vec = nec_solver::build_excitation(&deck, &segs)
             .map_err(|e| SolveError::UnsupportedConfig(e.to_string()))?;
         let v_source = nec_solver::feedpoint_drive_voltage(

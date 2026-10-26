@@ -61,11 +61,203 @@ pub fn first_delta_gap_feedpoint(deck: &NecDeck) -> Option<&ExCard> {
 /// per frequency — today the distributed worker, whose wire protocol carries one
 /// (FND-304). Such a route given a two-source deck used to price the first and
 /// say nothing, in text and in JSON, while the local run printed both rows. The
-/// count is [`feedpoints`]'s — the rows the local report and its JSON
-/// `feedpoints` array carry — so "how many" has one answer. `None` for zero or one.
-pub fn more_than_one_feedpoint(deck: &NecDeck) -> Option<usize> {
-    let n = feedpoints(deck).count();
+/// count is [`driven_segments`]'s — one per driven segment, the rows the local
+/// report and its JSON `feedpoints` array carry — so "how many" has one answer:
+/// two `EX` cards on one segment are one feedpoint (FND-305), and counting cards
+/// here refused a deck the JSON reports with one row. `None` for zero or one, and
+/// for a deck whose cards do not resolve, which the solve refuses by name.
+pub fn more_than_one_feedpoint(deck: &NecDeck, segs: &[Segment]) -> Option<usize> {
+    let n = driven_segments(deck, segs).map_or(0, |d| d.len());
     (n > 1).then_some(n)
+}
+
+/// What drives one segment, by NEC-2's rule (FND-305): the last type-0 card on it,
+/// plus every type-5 card on it; an earlier type-0 card on the segment is
+/// *overridden* and drives nothing.
+///
+/// That is nec2c 1.3.1's `etmns` (`matrix.c:743-759`): every `EX 0` card
+/// **assigns** `e[is] = −V/(Δl·λ)`, so only the last naming a segment survives,
+/// and then every `EX 5` card **adds** into `e[]` through `qdsrc`. Measured: two
+/// type-0 cards (1 V, then 0.5 V) give a CURRENTS block identical to the 0.5 V
+/// card's alone, while `EX 0` + `EX 5` and `EX 5` + `EX 5` superpose. fnec summed
+/// every card, so that deck was solved at 1.5 V — three times nec2c's current and
+/// power, with the same impedance, which is why Z alone never showed it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrivenSegment<'a> {
+    /// The global segment index the cards resolve to.
+    pub idx: usize,
+    /// [`FeedpointRole::DeltaGap`] or [`FeedpointRole::CurrentSource`].
+    pub role: FeedpointRole,
+    /// The effective drive: the applied voltage for a delta gap (the last type-0
+    /// card's plus every type-5 card's), the impressed current for a current source.
+    pub volts: Complex64,
+    /// The cards that drive the segment, in deck order. Never empty.
+    pub cards: Vec<&'a ExCard>,
+    /// Every type-0 card that drives nothing, each with the last type-0 card on the
+    /// segment — the one NEC-2 applies instead. Deck order.
+    pub overridden: Vec<(&'a ExCard, &'a ExCard)>,
+}
+
+/// Every driven segment of a deck, in the deck order of each segment's first card
+/// — [`driven_segments`]'s answer, with the views the solvers and reports read.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DrivenSegments<'a> {
+    pub segments: Vec<DrivenSegment<'a>>,
+}
+
+impl<'a> DrivenSegments<'a> {
+    pub fn iter(&self) -> std::slice::Iter<'_, DrivenSegment<'a>> {
+        self.segments.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    /// The EFIE voltage vector: `V/Δl` at every delta-gap segment, zero elsewhere —
+    /// what [`build_excitation`] returns. A series voltage source of `V` over a
+    /// segment of length `Δl` impresses a tangential field `E = V/Δl` at its
+    /// midpoint.
+    pub fn voltage_vector(&self, segs: &[Segment]) -> Vec<Complex64> {
+        let mut v = vec![Complex64::new(0.0, 0.0); segs.len()];
+        for d in self.delta_gaps() {
+            v[d.idx] = d.volts / segs[d.idx].length;
+        }
+        v
+    }
+
+    /// The delta-gap sources as `(index into segs, volts)`, one per segment, in
+    /// deck order — what every Hallén right-hand side superposes.
+    pub fn sources(&self) -> Vec<(usize, Complex64)> {
+        self.delta_gaps().map(|d| (d.idx, d.volts)).collect()
+    }
+
+    /// Every overridden card, with its segment and the card applied instead.
+    pub fn overridden(
+        &self,
+    ) -> impl Iterator<Item = (&DrivenSegment<'a>, &'a ExCard, &'a ExCard)> + '_ {
+        self.segments
+            .iter()
+            .flat_map(|d| d.overridden.iter().map(move |&(lost, won)| (d, lost, won)))
+    }
+
+    fn delta_gaps(&self) -> impl Iterator<Item = &DrivenSegment<'a>> + '_ {
+        self.segments
+            .iter()
+            .filter(|d| d.role == FeedpointRole::DeltaGap)
+    }
+}
+
+/// What drives each segment of `deck`, by NEC-2's rule — the single owner of that
+/// answer (FND-305). The voltage vector, every Hallén right-hand side, the MPIE's
+/// feeds, the network solve, the feedpoint rows and the input power all read it,
+/// so the drive the solve applies and the drive a row is priced from cannot differ.
+///
+/// The cards are resolved to segments first (a tag-0 card names an absolute
+/// segment, FND-282), so two spellings of one segment are one segment. Plane waves
+/// drive no segment and are skipped; an unrecognised type is an error, as is a
+/// driven card naming a segment the geometry lacks — for every card, not just the
+/// first (FND-120). A current source is its own entry: FND-036 and FND-129 refuse
+/// it beside any other driven card before a solve.
+pub fn driven_segments<'a>(
+    deck: &'a NecDeck,
+    segs: &[Segment],
+) -> Result<DrivenSegments<'a>, ExcitationError> {
+    use nec_model::card::ExcitationKind;
+    let resolve = |ex: &ExCard| {
+        crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(ExcitationError::SegmentNotFound {
+            tag: ex.tag,
+            segment: ex.segment,
+        })
+    };
+    let mut out: Vec<DrivenSegment<'a>> = Vec::new();
+    for card in &deck.cards {
+        let Card::Ex(ex) = card else { continue };
+        // No wildcard arm: a new `ExcitationKind` must be decided here.
+        let adds = match ex.kind() {
+            ExcitationKind::PlaneWaveLinear
+            | ExcitationKind::PlaneWaveRightElliptic
+            | ExcitationKind::PlaneWaveLeftElliptic => continue,
+            ExcitationKind::Unknown(_) => {
+                return Err(ExcitationError::UnsupportedType {
+                    ex_type: ex.excitation_type,
+                    tag: ex.tag,
+                    segment: ex.segment,
+                    i4: ex.i4,
+                })
+            }
+            ExcitationKind::CurrentSource => {
+                let idx = resolve(ex)?;
+                out.push(DrivenSegment {
+                    idx,
+                    role: FeedpointRole::CurrentSource,
+                    volts: Complex64::new(ex.voltage_real, ex.voltage_imag),
+                    cards: vec![ex],
+                    overridden: Vec::new(),
+                });
+                continue;
+            }
+            // `EX 5` adds into the segment's drive (nec2c's `qdsrc`).
+            ExcitationKind::VoltageSourceCurrentSlope => true,
+            // `EX 0` replaces the segment's type-0 drive (an assignment).
+            ExcitationKind::VoltageSource => false,
+        };
+        let idx = resolve(ex)?;
+        let at = match out
+            .iter()
+            .position(|d| d.idx == idx && d.role == FeedpointRole::DeltaGap)
+        {
+            Some(i) => i,
+            None => {
+                out.push(DrivenSegment {
+                    idx,
+                    role: FeedpointRole::DeltaGap,
+                    volts: Complex64::new(0.0, 0.0),
+                    cards: Vec::new(),
+                    overridden: Vec::new(),
+                });
+                out.len() - 1
+            }
+        };
+        let entry = &mut out[at];
+        if !adds {
+            if let Some(pos) = entry
+                .cards
+                .iter()
+                .position(|c| c.kind() == ExcitationKind::VoltageSource)
+            {
+                let lost = entry.cards.remove(pos);
+                // The winner is the segment's LAST type-0 card, set below.
+                entry.overridden.push((lost, ex));
+            }
+        }
+        entry.cards.push(ex);
+    }
+    for d in &mut out {
+        if d.role != FeedpointRole::DeltaGap {
+            continue;
+        }
+        d.volts = d
+            .cards
+            .iter()
+            .map(|c| Complex64::new(c.voltage_real, c.voltage_imag))
+            .sum();
+        if let Some(winner) = d
+            .cards
+            .iter()
+            .copied()
+            .find(|c| c.kind() == ExcitationKind::VoltageSource)
+        {
+            for pair in &mut d.overridden {
+                pair.1 = winner;
+            }
+        }
+    }
+    Ok(DrivenSegments { segments: out })
 }
 
 /// What NEC-2 divides the input impedance by in its INPUT IMPEDANCE DATA table.
@@ -81,15 +273,26 @@ pub enum ImpedanceNorm {
 /// which feedpoint the table follows and what it is normalized to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ImpedancePrint<'a> {
-    /// The source's index among [`feedpoints`] — the index of its row in the
-    /// report's FEEDPOINTS, which are built one per card in that order. A row is
-    /// chosen by this, never by `(tag, segment)`: a tag-0 card's row carries its
-    /// wire's tag (FND-282), and two cards on one segment share a pair (FND-305).
-    pub feed_index: usize,
-    /// The card the table follows.
+    /// The card the table follows. Its row is found by the segment it resolves to
+    /// ([`Self::source_abs_seg`]), never by `(tag, segment)` as written — a tag-0
+    /// card's row carries its wire's tag (FND-282) — nor by its index among the
+    /// cards: FEEDPOINTS has one row per driven segment, so an overridden card
+    /// earlier in the deck shifts every later card's index off its row (FND-305).
     pub source: &'a ExCard,
     /// What every impedance is divided by.
     pub norm: ImpedanceNorm,
+}
+
+impl ImpedancePrint<'_> {
+    /// The source's absolute segment number, from 1 — nec2c's SOURCE SEGMENT No,
+    /// and the key of its FEEDPOINTS row. The source is the last type-5 card or
+    /// else the last type-0 card, which no later type-0 card overrides and a
+    /// type-5 card never is, so the row always exists. `None` when the card names
+    /// no segment of `segs`, which the solve refuses first.
+    pub fn source_abs_seg(&self, segs: &[Segment]) -> Option<usize> {
+        crate::find_deck_segment(segs, self.source.tag, self.source.segment)
+            .map(|i| segs[i].abs_index as usize)
+    }
 }
 
 /// The input-impedance print a deck asks for, as nec2c 1.3.1 reads it, or `None`.
@@ -110,16 +313,16 @@ pub struct ImpedancePrint<'a> {
 pub fn input_impedance_print(deck: &NecDeck) -> Option<ImpedancePrint<'_>> {
     use nec_model::card::ExcitationKind;
     let mut request: Option<&ExCard> = None;
-    let mut last_type0: Option<(usize, &ExCard)> = None;
-    let mut last_type5: Option<(usize, &ExCard)> = None;
-    for (i, (ex, _)) in feedpoints(deck).enumerate() {
+    let mut last_type0: Option<&ExCard> = None;
+    let mut last_type5: Option<&ExCard> = None;
+    for (ex, _) in feedpoints(deck) {
         match ex.kind() {
             ExcitationKind::VoltageSource => {
-                last_type0 = Some((i, ex));
+                last_type0 = Some(ex);
                 request = Some(ex);
             }
             ExcitationKind::VoltageSourceCurrentSlope => {
-                last_type5 = Some((i, ex));
+                last_type5 = Some(ex);
                 request = Some(ex);
             }
             _ => {}
@@ -129,18 +332,14 @@ pub fn input_impedance_print(deck: &NecDeck) -> Option<ImpedancePrint<'_>> {
     if request.i4 % 10 != 1 {
         return None;
     }
-    let (feed_index, source) = last_type5.or(last_type0)?;
+    let source = last_type5.or(last_type0)?;
     let f3 = request.polarization_deg;
     let norm = if f3 > 0.0 {
         ImpedanceNorm::Fixed(f3)
     } else {
         ImpedanceNorm::Max
     };
-    Some(ImpedancePrint {
-        feed_index,
-        source,
-        norm,
-    })
+    Some(ImpedancePrint { source, norm })
 }
 
 /// A current source's Hallén shape: `(source_shape, cos_vec, sin_vec,
@@ -205,19 +404,14 @@ impl std::error::Error for ExcitationError {}
 /// Build the complex excitation (RHS) vector V from `EX` cards in `deck`.
 ///
 /// `segs` is the flat segment list produced by [`crate::geometry::build_geometry`].
-/// The returned vector has length `segs.len()`.
+/// The returned vector has length `segs.len()`. Each segment carries the drive
+/// [`driven_segments`] gives it: two `EX 0` cards on one segment drive it with the
+/// last card's voltage, not their sum (FND-305).
 pub fn build_excitation(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Result<Vec<Complex64>, ExcitationError> {
-    let mut v = vec![Complex64::new(0.0, 0.0); segs.len()];
-
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        apply_ex(ex, segs, &mut v)?;
-    }
-
-    Ok(v)
+    Ok(driven_segments(deck, segs)?.voltage_vector(segs))
 }
 
 /// Scale a wire-voltage excitation vector for NEC-2 style pulse EFIE solves.
@@ -265,75 +459,12 @@ pub fn delta_gap_sources(
     deck: &NecDeck,
     segs: &[Segment],
 ) -> Result<Vec<(usize, Complex64)>, ExcitationError> {
-    let mut first_ex: Option<&ExCard> = None;
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        // One classification, expressed once (FND-031). Plane waves and current
-        // sources are not delta-gap sources — they have dedicated paths
-        // (`crate::planewave`, `solve_hallen_current_source`) and contribute
-        // nothing here — while an unrecognised type is a hard error, which is why
-        // this loop cannot use the reporting seam: building an RHS needs an error
-        // channel that naming a feedpoint does not.
-        //
-        // No wildcard arm: a new `ExcitationKind` must be decided here rather than
-        // falling into whichever branch happened to be last.
-        match ex.kind().feedpoint_role() {
-            FeedpointRole::DeltaGap => {}
-            FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => continue,
-            FeedpointRole::Unknown => {
-                return Err(ExcitationError::UnsupportedType {
-                    ex_type: ex.excitation_type,
-                    tag: ex.tag,
-                    segment: ex.segment,
-                    i4: ex.i4,
-                })
-            }
-        }
-        if first_ex.is_none() {
-            first_ex = Some(ex);
-        }
-    }
-
-    // Only decides whether the deck has any delta gap at all; the sources
-    // themselves are collected below.
-    if first_ex.is_none() {
-        return Ok(Vec::new());
-    }
-
-    // Every delta-gap card is a source, in deck order.
-    //
-    // This was a `BTreeMap` keyed by wire tag, which can hold only ONE source per
-    // wire — so a second gap on the same tag was dropped in silence, and the
-    // `ex2.tag == driven_tag` guard dropped it before the map could even try. The
-    // superposition below was already written for several sources; it was the
-    // COLLECTION that deduplicated (FND-120).
-    //
-    // The conductor-path sibling, `build_hallen_rhs_paths`, iterates the cards
-    // directly and has always superposed correctly. Measured on a start-to-start
-    // split, which routes there: adding a second same-tag source changes the
-    // CURRENTS block. On a straight wire, which routes here, it did not — the two
-    // blocks were byte-identical, so the card contributed exactly nothing while
-    // the report still printed a feedpoint row for it.
-    //
-    // A missing segment is now an error for EVERY card, not just the first. The
-    // first card's was already a hard error and every card's is one in the path
-    // sibling, so silently skipping later ones was the odd case out — and a
-    // silently skipped card is the shape of FND-026.
-    let mut sources: Vec<(usize, Complex64)> = Vec::new();
-    for card in &deck.cards {
-        let Card::Ex(ex2) = card else { continue };
-        if ex2.kind().feedpoint_role() != FeedpointRole::DeltaGap {
-            continue;
-        }
-        let idx = crate::find_deck_segment(segs, ex2.tag, ex2.segment).ok_or(
-            ExcitationError::SegmentNotFound {
-                tag: ex2.tag,
-                segment: ex2.segment,
-            },
-        )?;
-        sources.push((idx, Complex64::new(ex2.voltage_real, ex2.voltage_imag)));
-    }
-    Ok(sources)
+    // One source per driven segment, from the owner (FND-305). Every delta-gap
+    // card used to be a source of its own, so two cards on one segment were summed
+    // where NEC-2 applies the last. Before that, a `BTreeMap` keyed by wire tag
+    // held one source per WIRE and dropped a second gap on the same tag in silence
+    // (FND-120); the collection, not the superposition, is what decides.
+    Ok(driven_segments(deck, segs)?.sources())
 }
 
 /// [`build_hallen_rhs`] from sources already collected and signed: an empty list
@@ -463,33 +594,11 @@ pub fn build_hallen_rhs_paths(
         sin_vec[m] = sign_of[m] * (k * s_of[m]).sin();
     }
 
-    // Collect voltage-source segments (type 0/5), superposing across the deck.
+    // One source per driven segment (FND-305), superposing across segments.
+    let sources = driven_segments(deck, segs)?.sources();
+    let any_source = !sources.is_empty();
     let mut rhs = vec![Complex64::new(0.0, 0.0); n];
-    let mut any_source = false;
-    for card in &deck.cards {
-        let Card::Ex(ex) = card else { continue };
-        // Same classification as above; see the comment there for why this loop
-        // keeps its own error channel rather than adopting the reporting seam.
-        match ex.kind().feedpoint_role() {
-            FeedpointRole::DeltaGap => {}
-            FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => continue,
-            FeedpointRole::Unknown => {
-                return Err(ExcitationError::UnsupportedType {
-                    ex_type: ex.excitation_type,
-                    tag: ex.tag,
-                    segment: ex.segment,
-                    i4: ex.i4,
-                })
-            }
-        }
-        let fi = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
-            ExcitationError::SegmentNotFound {
-                tag: ex.tag,
-                segment: ex.segment,
-            },
-        )?;
-        any_source = true;
-        let vsrc = Complex64::new(ex.voltage_real, ex.voltage_imag);
+    for (fi, vsrc) in sources {
         let src_path = path_of[fi];
         let s_src = s_of[fi];
         // The EX voltage is applied in the feed segment's own NEC direction, which
@@ -627,39 +736,6 @@ pub fn build_current_source_shape_paths(
     Ok((h.rhs, h.cos_vec, h.sin_vec, src_seg))
 }
 
-fn apply_ex(ex: &ExCard, segs: &[Segment], v: &mut [Complex64]) -> Result<(), ExcitationError> {
-    // Same classification as `build_hallen_rhs` (FND-031): only a delta-gap
-    // source impresses V/Δl on the EFIE voltage vector; plane waves and current
-    // sources have dedicated paths; an unrecognised type is an error.
-    match ex.kind().feedpoint_role() {
-        FeedpointRole::DeltaGap => {}
-        FeedpointRole::PlaneWave | FeedpointRole::CurrentSource => return Ok(()),
-        FeedpointRole::Unknown => {
-            return Err(ExcitationError::UnsupportedType {
-                ex_type: ex.excitation_type,
-                tag: ex.tag,
-                segment: ex.segment,
-                i4: ex.i4,
-            })
-        }
-    }
-
-    // Find the segment by tag + tag_index.
-    let idx = crate::find_deck_segment(segs, ex.tag, ex.segment).ok_or(
-        ExcitationError::SegmentNotFound {
-            tag: ex.tag,
-            segment: ex.segment,
-        },
-    )?;
-
-    // The EFIE RHS has units of V/m (electric field).  A series voltage
-    // source of voltage V over a segment of length Δl impresses a tangential
-    // field E = V / Δl at the midpoint of that segment.
-    let delta_l = segs[idx].length;
-    v[idx] += Complex64::new(ex.voltage_real, ex.voltage_imag) / delta_l;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -783,40 +859,35 @@ mod tests {
         nec_parser::parse(src).expect("parse").deck
     }
 
-    /// FND-304's refusal predicate counts what [`feedpoints`] yields: two delta
-    /// gaps are two, one is none of its business, and a plane wave beside one
-    /// delta gap is not a second feedpoint (it has no impedance to drop).
+    /// FND-304's refusal predicate counts the FEEDPOINTS rows — one per driven
+    /// segment ([`driven_segments`]): two delta gaps are two, one is none of its
+    /// business, a plane wave beside one delta gap is not a second feedpoint (it
+    /// has no impedance to drop), and two cards on one segment are one (FND-305).
     #[test]
     fn more_than_one_feedpoint_counts_the_feedpoint_rows() {
-        let two_wires = |cards: &str| {
-            deck_of(&format!(
+        let count = |cards: &str| {
+            let deck = deck_of(&format!(
                 "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
-            ))
+            ));
+            let segs = crate::build_geometry(&deck).expect("geometry");
+            super::more_than_one_feedpoint(&deck, &segs)
         };
+        assert_eq!(count("EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\n"), Some(2));
         assert_eq!(
-            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\n")),
-            Some(2)
-        );
-        assert_eq!(
-            super::more_than_one_feedpoint(&two_wires(
-                "EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nEX 0 2 5 0 1 0\n"
-            )),
+            count("EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nEX 0 2 5 0 1 0\n"),
             Some(3)
         );
-        assert_eq!(
-            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\n")),
-            None
-        );
-        assert_eq!(
-            super::more_than_one_feedpoint(&two_wires("EX 0 1 11 0 1 0\nEX 1 1 1 0 0 0 0\n")),
-            None
-        );
+        assert_eq!(count("EX 0 1 11 0 1 0\n"), None);
+        assert_eq!(count("EX 0 1 11 0 1 0\nEX 1 1 1 0 0 0 0\n"), None);
+        // Two cards on one segment, one of them spelt by its absolute number.
+        assert_eq!(count("EX 0 1 11 0 1 0\nEX 0 0 11 0 0.5 0\n"), None);
+        assert_eq!(count("EX 0 1 11 0 1 0\nEX 5 1 11 0 0.5 0\n"), None);
     }
 
     /// FND-309's chooser, as nec2c 1.3.1 reads EX I4's units digit: the last
     /// voltage-source card decides whether and what to normalize to; the source
-    /// is the last type-5 card, else the last type-0 card, named by its index
-    /// among [`feedpoints`].
+    /// is the last type-5 card, else the last type-0 card, named by the absolute
+    /// segment it resolves to (nec2c's SOURCE SEGMENT No, FND-305).
     #[test]
     fn input_impedance_print_follows_nec2c_s_last_card_and_last_source() {
         use super::{input_impedance_print, ImpedanceNorm};
@@ -825,10 +896,12 @@ mod tests {
                 "GW 1 11 0 0 -2.5 0 0 2.5 0.001\nGW 2 11 1 0 -2 1 0 2 0.001\nGE 0\n{cards}FR 0 2 0 0 29.9 1\nEN\n"
             ))
         };
+        let segs = crate::build_geometry(&two_wires("")).expect("geometry");
+        let abs = |p: &super::ImpedancePrint<'_>| p.source_abs_seg(&segs).expect("resolves");
         // Fixed when F3 > 0, the sweep's max when F3 = 0 (deck `fixed`, `max`).
         let d = two_wires("EX 0 1 6 11 1 0 50\n");
         let p = input_impedance_print(&d).expect("units 1 asks for the table");
-        assert_eq!((p.feed_index, p.norm), (0, ImpedanceNorm::Fixed(50.0)));
+        assert_eq!((abs(&p), p.norm), (6, ImpedanceNorm::Fixed(50.0)));
         let d = two_wires("EX 0 1 6 1 1 0 0\n");
         assert_eq!(input_impedance_print(&d).unwrap().norm, ImpedanceNorm::Max);
         // Units 0 and no voltage source: no table.
@@ -846,26 +919,30 @@ mod tests {
         // ... and its F3, even when the earlier card's was fixed.
         let d = two_wires("EX 0 1 6 1 1 0 50\nEX 0 2 6 1 1 0 0\n");
         let p = input_impedance_print(&d).unwrap();
-        assert_eq!((p.feed_index, p.norm), (1, ImpedanceNorm::Max));
+        assert_eq!((abs(&p), p.norm), (17, ImpedanceNorm::Max));
         // The last EX 0 is the source (deck `two2`).
         let d = two_wires("EX 0 1 6 0 1 0 0\nEX 0 2 6 1 1 0 50\n");
         let p = input_impedance_print(&d).unwrap();
-        assert_eq!((p.feed_index, p.source.tag), (1, 2));
+        assert_eq!((abs(&p), p.source.tag), (17, 2));
         // An EX 5 is preferred to a later EX 0, which still carries the digit
         // (deck `ex5`).
         let d = two_wires("EX 5 1 6 0 1 0 0\nEX 0 2 6 1 1 0 50\n");
         let p = input_impedance_print(&d).unwrap();
-        assert_eq!((p.feed_index, p.source.excitation_type), (0, 5));
+        assert_eq!((abs(&p), p.source.excitation_type), (6, 5));
         assert_eq!(p.norm, ImpedanceNorm::Fixed(50.0));
-        // A current source is a feedpoint row but never the table's source: the
-        // index counts it, the choice skips it.
+        // A current source is a feedpoint row but never the table's source.
         let d = two_wires("EX 4 1 6 0 1 0 0\nEX 0 2 6 1 1 0 0\n");
         let p = input_impedance_print(&d).unwrap();
-        assert_eq!((p.feed_index, p.source.excitation_type), (1, 0));
-        // A tag-0 card is chosen by its index, whatever its (tag, segment) say.
+        assert_eq!((abs(&p), p.source.excitation_type), (17, 0));
+        // A tag-0 card is keyed by the segment it resolves to.
         let d = two_wires("EX 0 1 6 0 1 0 0\nEX 0 0 17 1 1 0 0\n");
         let p = input_impedance_print(&d).unwrap();
-        assert_eq!((p.feed_index, p.source.tag, p.source.segment), (1, 0, 17));
+        assert_eq!((abs(&p), p.source.tag, p.source.segment), (17, 0, 17));
+        // An overridden card before the source does not move its key (FND-305):
+        // FEEDPOINTS has one row for segment 6, then segment 17's.
+        let d = two_wires("EX 0 1 6 0 1 0 0\nEX 0 1 6 0 0.5 0 0\nEX 0 2 6 1 1 0 0\n");
+        let p = input_impedance_print(&d).unwrap();
+        assert_eq!(abs(&p), 17);
     }
 
     // -----------------------------------------------------------------------
@@ -1503,6 +1580,160 @@ mod tests {
             let scaled2 = scale_excitation_for_pulse_rhs(&v2, freq);
             prop_assert!((scaled2[0] - 2.0 * scaled[0]).norm() < 1e-9,
                 "scaling not linear: 2*scaled={}, scaled2={}", 2.0 * scaled[0], scaled2[0]);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // FND-305 — what drives a segment two cards name, by NEC-2's rule
+    // -----------------------------------------------------------------------
+
+    /// A 21-segment dipole driven by `cards`, and its per-segment deck layout (no
+    /// free-end refinement, so deck segment `n` is index `n − 1`).
+    fn dipole_with(cards: &str) -> (NecDeck, Vec<Segment>) {
+        let deck = deck_of(&format!(
+            "GW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\n{cards}FR 0 1 0 0 14.2 0\nEN\n"
+        ));
+        let segs = build_deck_geometry(&deck).expect("geometry");
+        (deck, segs)
+    }
+
+    fn c(re: f64, im: f64) -> Complex64 {
+        Complex64::new(re, im)
+    }
+
+    /// The rule as a table over (type, order, spelling): each deck's driven
+    /// segments as `(segment index, volts, cards that apply, cards overridden)`.
+    /// nec2c 1.3.1's behaviour on every row was measured (`etmns` assigns a
+    /// type-0 card's field, `qdsrc` adds a type-5 card's).
+    #[test]
+    fn the_last_type0_card_drives_a_segment_and_type5_cards_add() {
+        type Row = (usize, Complex64, usize, usize);
+        let table: [(&str, Vec<Row>); 9] = [
+            (
+                "EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n",
+                vec![(10, c(0.5, 0.0), 1, 1)],
+            ),
+            (
+                "EX 0 1 11 0 0.5 0\nEX 0 1 11 0 1 0\n",
+                vec![(10, c(1.0, 0.0), 1, 1)],
+            ),
+            (
+                "EX 0 1 11 0 1 0\nEX 0 1 11 0 1 0\n",
+                vec![(10, c(1.0, 0.0), 1, 1)],
+            ),
+            // A tag-0 card names the same segment by its absolute number.
+            (
+                "EX 0 1 11 0 1 0\nEX 0 0 11 0 0.5 0\n",
+                vec![(10, c(0.5, 0.0), 1, 1)],
+            ),
+            (
+                "EX 0 1 11 0 1 0\nEX 5 1 11 0 0.5 0\n",
+                vec![(10, c(1.5, 0.0), 2, 0)],
+            ),
+            (
+                "EX 5 1 11 0 0.5 0\nEX 0 1 11 0 1 0\n",
+                vec![(10, c(1.5, 0.0), 2, 0)],
+            ),
+            (
+                "EX 5 1 11 0 1 0\nEX 5 1 11 0 0.5 0\n",
+                vec![(10, c(1.5, 0.0), 2, 0)],
+            ),
+            // Three type-0 cards and a type-5 one: the last type-0 plus the type-5.
+            (
+                "EX 0 1 11 0 1 0\nEX 5 1 11 0 0 1\nEX 0 1 11 0 2 0\nEX 0 1 11 0 0.25 0\n",
+                vec![(10, c(0.25, 1.0), 2, 2)],
+            ),
+            // Different segments superpose, in the order of their first card.
+            (
+                "EX 0 1 5 0 1 0\nEX 0 1 11 0 2 0\nEX 0 1 5 0 3 0\n",
+                vec![(4, c(3.0, 0.0), 1, 1), (10, c(2.0, 0.0), 1, 0)],
+            ),
+        ];
+        for (cards, want) in table {
+            let (deck, segs) = dipole_with(cards);
+            let got: Vec<Row> = driven_segments(&deck, &segs)
+                .expect("resolves")
+                .iter()
+                .map(|d| (d.idx, d.volts, d.cards.len(), d.overridden.len()))
+                .collect();
+            assert_eq!(got, want, "{cards}");
+        }
+        // Every overridden card names the LAST type-0 card as the one applied.
+        let (deck, segs) = dipole_with("EX 0 1 11 0 1 0\nEX 0 1 11 0 2 0\nEX 0 1 11 0 0.25 0\n");
+        let driven = driven_segments(&deck, &segs).unwrap();
+        let pairs: Vec<(f64, f64)> = driven
+            .overridden()
+            .map(|(_, lost, won)| (lost.voltage_real, won.voltage_real))
+            .collect();
+        assert_eq!(pairs, vec![(1.0, 0.25), (2.0, 0.25)]);
+        // A current source is its own entry, and a plane wave none.
+        let (deck, segs) = dipole_with("EX 4 1 11 0 1 0\nEX 1 1 1 0 0 0 0\n");
+        let driven = driven_segments(&deck, &segs).unwrap();
+        assert_eq!(driven.len(), 1);
+        assert_eq!(driven.segments[0].role, FeedpointRole::CurrentSource);
+        assert!(driven.sources().is_empty());
+        // Every card is resolved, an overridden one included.
+        let (deck, segs) = dipole_with("EX 0 1 99 0 1 0\nEX 0 1 11 0 0.5 0\n");
+        assert_eq!(
+            driven_segments(&deck, &segs),
+            Err(ExcitationError::SegmentNotFound {
+                tag: 1,
+                segment: 99
+            })
+        );
+    }
+
+    /// The builders read the owner: two type-0 cards build the same EFIE vector,
+    /// Hallén sources and right-hand side as the last card alone.
+    #[test]
+    fn every_builder_drives_the_segment_with_the_last_type0_card() {
+        let (two, segs) = dipole_with("EX 0 1 11 0 1 0\nEX 0 1 11 0 0.5 0\n");
+        let (half, _) = dipole_with("EX 0 1 11 0 0.5 0\n");
+        assert_eq!(
+            build_excitation(&two, &segs).unwrap(),
+            build_excitation(&half, &segs).unwrap()
+        );
+        assert_eq!(
+            delta_gap_sources(&two, &segs).unwrap(),
+            vec![(10, c(0.5, 0.0))]
+        );
+        assert_eq!(
+            build_hallen_rhs(&two, &segs, TEST_FREQ_HZ).unwrap().rhs,
+            build_hallen_rhs(&half, &segs, TEST_FREQ_HZ).unwrap().rhs
+        );
+        let paths = crate::geometry::build_conductor_paths(&segs).expect("one path");
+        assert_eq!(
+            build_hallen_rhs_paths(&two, &segs, TEST_FREQ_HZ, &paths)
+                .unwrap()
+                .rhs,
+            build_hallen_rhs_paths(&half, &segs, TEST_FREQ_HZ, &paths)
+                .unwrap()
+                .rhs
+        );
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(256))]
+
+        /// For any two voltages: two type-0 cards on one segment build the voltage
+        /// vector of the last alone; two type-5 cards that of one card at V1 + V2.
+        #[test]
+        fn proptest_two_cards_on_one_segment_follow_nec2s_rule(
+            v1 in -1e3_f64..=1e3_f64,
+            v2 in -1e3_f64..=1e3_f64,
+            w2 in -1e3_f64..=1e3_f64,
+        ) {
+            let (two0, segs) = dipole_with(&format!("EX 0 1 11 0 {v1} 0\nEX 0 1 11 0 {v2} {w2}\n"));
+            let (last, _) = dipole_with(&format!("EX 0 1 11 0 {v2} {w2}\n"));
+            prop_assert_eq!(
+                build_excitation(&two0, &segs).unwrap(),
+                build_excitation(&last, &segs).unwrap()
+            );
+            let (two5, _) = dipole_with(&format!("EX 5 1 11 0 {v1} 0\nEX 5 1 11 0 {v2} {w2}\n"));
+            let v = build_excitation(&two5, &segs).unwrap();
+            let want = (c(v1, 0.0) + c(v2, w2)) / segs[10].length;
+            prop_assert!((v[10] - want).norm() <= 1e-12 * want.norm().max(1.0), "{} vs {}", v[10], want);
+            prop_assert_eq!(v.iter().filter(|x| x.norm() != 0.0).count(), usize::from(want.norm() != 0.0));
         }
     }
 }
