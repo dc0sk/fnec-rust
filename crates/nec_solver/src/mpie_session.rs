@@ -250,10 +250,8 @@ pub(crate) fn mpie_plan(
     if let Some(problem) = crate::loads::laplace_load_error(laplace, segs) {
         return Err(MpieSessionError::Load(problem));
     }
-    let (mut loads, _) = crate::loads::build_loads(deck, segs, freq_hz);
-    if let Some(problem) =
-        crate::loads::add_laplace_loads(&mut loads, laplace, segs, freq_hz).first()
-    {
+    let (loads, laplace_warnings) = crate::loads::run_load_diagonal(deck, segs, freq_hz, laplace);
+    if let Some(problem) = laplace_warnings.first() {
         return Err(MpieSessionError::Load(format!("--loads-config: {problem}")));
     }
     // Delta gaps only (`EX` types 0 and 5). The older `!is_plane_wave()` test
