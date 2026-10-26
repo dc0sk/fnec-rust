@@ -108,56 +108,36 @@ impl SweepConfig {
             SweepConfigError("frequency.step_mhz is required when points_mhz is absent".to_string())
         })?;
 
-        if !nec_solver::is_usable_frequency_mhz(start) {
-            return Err(SweepConfigError(format!(
-                "frequency.start_mhz ({start}) is not a usable frequency; \
-                 frequencies must be finite and > 0"
-            )));
-        }
-        if !step.is_finite() || step <= 0.0 {
-            return Err(SweepConfigError(format!(
-                "frequency.step_mhz ({step}) must be finite and > 0"
-            )));
-        }
-        if !end.is_finite() {
-            return Err(SweepConfigError(format!(
-                "frequency.end_mhz ({end}) must be finite"
-            )));
-        }
-        if end < start {
-            return Err(SweepConfigError(format!(
-                "frequency.end_mhz ({end}) must be >= start_mhz ({start})"
-            )));
-        }
-
-        // Bound the count BEFORE expanding. The FR seam has carried this cap
-        // since #417 and the GUI has its own; this third entry point had
-        // neither, so `start=1, end=30000, step=1e-7` aborted the process on a
-        // 2 GB allocation before any solve ran (FND-109). Computed rather than
-        // discovered by pushing: `f += step` is a no-op for a large start and a
-        // tiny step, so a loop that counts as it goes may never terminate.
-        let span = (end - start) / step;
-        if !span.is_finite() || span + 1.0 > nec_solver::MAX_FR_POINTS as f64 {
-            return Err(SweepConfigError(format!(
-                "frequency range {start}..{end} MHz in steps of {step} asks for \
-                 {:.0} points; the limit is {}. Widen the step or narrow the range",
-                span + 1.0,
-                nec_solver::MAX_FR_POINTS
-            )));
-        }
-
-        let mut points = Vec::new();
-        let mut f = start;
-        while f <= end + step * 1e-9 {
-            points.push(f * 1e6);
-            f += step;
-        }
-
-        if points.is_empty() {
-            return Err(SweepConfigError(
-                "frequency range produces no points".to_string(),
-            ));
-        }
+        // The one linear expander (FND-297 c): the GUI's sweep tab and an `FR`
+        // card expand through the same rule, so the same range gives the same
+        // points everywhere. The wording is this file's, the rule is not.
+        use nec_solver::RangeError;
+        let points = nec_solver::linear_range_mhz(start, end, step).map_err(|e| {
+            SweepConfigError(match e {
+                RangeError::StartNotUsable(_) => format!(
+                    "frequency.start_mhz ({start}) is not a usable frequency; \
+                     frequencies must be finite and > 0"
+                ),
+                RangeError::StepNotPositive(_) => {
+                    format!("frequency.step_mhz ({step}) must be finite and > 0")
+                }
+                RangeError::EndNotFinite(_) => {
+                    format!("frequency.end_mhz ({end}) must be finite")
+                }
+                RangeError::EndBeforeStart { .. } => {
+                    format!("frequency.end_mhz ({end}) must be >= start_mhz ({start})")
+                }
+                // Bounded BEFORE expanding: `start=1, end=30000, step=1e-7` used to
+                // abort the process on a 2 GB allocation (FND-109).
+                RangeError::TooManyPoints { requested } => format!(
+                    "frequency range {start}..{end} MHz in steps of {step} asks for \
+                     {requested:.0} points; the limit is {}. Widen the step or narrow \
+                     the range",
+                    nec_solver::MAX_FR_POINTS
+                ),
+            })
+        })?;
+        let points: Vec<f64> = points.into_iter().map(|mhz| mhz * 1e6).collect();
 
         Ok(SweepConfig {
             frequencies_hz: points,

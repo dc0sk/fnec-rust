@@ -630,10 +630,15 @@ fn main() -> ExitCode {
     let ground = ground_model_from_deck(deck);
     // The frequencies that will run: a --sweep-config list replaces the deck's FR
     // cards, so the deck's FR must not refuse the run (FND-210).
-    let resolved_freqs = sweep_config_path.is_some().then_some(freqs_hz.as_slice());
-    if let Some(err) =
-        nec_solver::validate::pre_solve_error_at(deck, &segs, &ground, resolved_freqs)
-    {
+    let run_freqs = if sweep_config_path.is_some() {
+        nec_solver::validate::RunFrequencies::Given {
+            hz: &freqs_hz,
+            source: "--sweep-config",
+        }
+    } else {
+        nec_solver::validate::RunFrequencies::Deck
+    };
+    if let Some(err) = nec_solver::validate::pre_solve_error_at(deck, &segs, &ground, run_freqs) {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;
     }

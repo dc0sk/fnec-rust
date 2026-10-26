@@ -2160,32 +2160,58 @@ pub fn no_frequency_error(freqs_hz: &[f64], remedy: &str) -> Option<String> {
 /// which reason it reports is deliberate — geometry before excitation, because a
 /// deck whose wires cross has a problem no excitation change will fix.
 pub fn pre_solve_error(deck: &NecDeck, segs: &[Segment], ground: &GroundModel) -> Option<String> {
-    pre_solve_error_at(deck, segs, ground, None)
+    pre_solve_error_at(deck, segs, ground, RunFrequencies::Deck)
 }
 
-/// [`pre_solve_error`] for a run whose frequencies do not come from the deck's
-/// `FR` cards — the CLI's `--sweep-config`, which replaces them. The frequency
-/// and network checks then read the list that will be solved: checking the
-/// deck's `FR` refused a deck for a negative frequency the sweep never runs, and
-/// priced its networks at frequencies it never solves (FND-210).
+/// Where a run's frequencies come from, for [`pre_solve_error_at`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RunFrequencies<'a> {
+    /// The deck's `FR` cards: the frequency and network checks read the deck.
+    Deck,
+    /// A list that replaces the deck's `FR` cards for this run — the CLI's
+    /// `--sweep-config`, the GUI's sweep range, the worker's wire
+    /// `frequency_hz`. `source` names it in the messages ("--sweep-config",
+    /// "the sweep", "frequency_hz"), because each frontend's user typed the
+    /// value somewhere different.
+    Given { hz: &'a [f64], source: &'a str },
+}
+
+/// [`pre_solve_error`] for a run whose frequencies may not come from the deck's
+/// `FR` cards. With [`RunFrequencies::Given`] the frequency and network checks
+/// read the list that will be solved: checking the deck's `FR` refused a deck
+/// for a negative frequency the run never solves, and priced its networks at
+/// frequencies it never solves while missing the one it does (FND-210 for the
+/// CLI; FND-290 for the GUI sweep and the worker, which called
+/// [`pre_solve_error`] and so asked the deck).
 pub fn pre_solve_error_at(
     deck: &NecDeck,
     segs: &[Segment],
     ground: &GroundModel,
-    frequencies_hz: Option<&[f64]>,
+    frequencies: RunFrequencies<'_>,
 ) -> Option<String> {
-    let frequency_check = || match frequencies_hz {
-        None => frequency_error(deck),
-        Some(list) => list
+    let frequency_check = || match frequencies {
+        RunFrequencies::Deck => frequency_error(deck),
+        RunFrequencies::Given { hz, source } => hz
             .iter()
             .find(|f| !crate::frequency::is_usable_frequency_mhz(**f / 1e6))
-            .map(|f| format!("--sweep-config: {} MHz is not a usable frequency", f / 1e6)),
+            .map(|f| {
+                format!(
+                    "{source}: {} MHz is not a usable frequency; frequencies must be \
+                     finite and > 0",
+                    f / 1e6
+                )
+            }),
     };
-    let network_check = || match frequencies_hz {
-        None => network_card_error(deck, segs),
-        Some(list) => list
-            .iter()
-            .find_map(|&f| crate::network::build_networks(deck, segs, f).err()),
+    // A network error names the frequency it failed at and where that came
+    // from: a line λ/2 long is unbuildable at one frequency only, and the
+    // user's deck does not contain it.
+    let network_check = || match frequencies {
+        RunFrequencies::Deck => network_card_error(deck, segs),
+        RunFrequencies::Given { hz, source } => hz.iter().find_map(|&f| {
+            crate::network::build_networks(deck, segs, f)
+                .err()
+                .map(|e| format!("{e} (at {} MHz, from {source})", f / 1e6))
+        }),
     };
     geometry_error(deck, segs, ground)
         .or_else(|| undriven_deck_error(deck))

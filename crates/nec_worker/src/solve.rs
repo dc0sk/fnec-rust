@@ -420,21 +420,6 @@ fn solve_inner(
         )));
     }
 
-    // The frequency arrives on the wire, not in the deck, so `pre_solve_error`
-    // below cannot see it — its `frequency_error` reads the deck's FR card and
-    // takes no frequency argument at all. That left the one input the deck does
-    // not carry as the one input never validated: a negative `frequency_hz`
-    // returned the exact complex conjugate with `status: ok` and no warning,
-    // on the very class the FR seam refuses for every deck-borne path
-    // (FND-098). This end is authoritative because `run_worker_stdio` is public
-    // API fed by arbitrary stdin and the controller may be a different version.
-    if !nec_solver::is_usable_frequency_mhz(freq_hz / 1e6) {
-        return Err(SolveError::UnsupportedConfig(format!(
-            "frequency_hz {freq_hz} is not a usable frequency; \
-             frequencies must be finite and > 0"
-        )));
-    }
-
     // 1. Parse
     let parse_result =
         nec_parser::parse(deck_str).map_err(|e| SolveError::ParseError(e.to_string()))?;
@@ -471,7 +456,25 @@ fn solve_inner(
     // `parse_error`, which is simply untrue and would send a user looking at their
     // deck's syntax. Adding a new `ErrorCode` variant instead would break older
     // controllers, which fail the whole result line on an unknown variant.
-    if let Some(err) = nec_solver::validate::pre_solve_error(&deck, &segs, &ground) {
+    //
+    // At the wire's frequency, which is the one this task solves: the deck's `FR`
+    // never runs here. Asking the deck refused a task for a negative `FR` it
+    // replaces, and priced the deck's networks at the deck's frequency instead of
+    // this one (FND-290). This is also the worker's only usability check of
+    // `frequency_hz` — a negative one returned the exact complex conjugate with
+    // `status: ok` before FND-098 — and it stays on this end because
+    // `run_worker_stdio` is public API fed by arbitrary stdin and the controller
+    // may be a different version. It runs after parse and geometry, so a task
+    // whose deck and frequency are both bad reports the deck.
+    if let Some(err) = nec_solver::validate::pre_solve_error_at(
+        &deck,
+        &segs,
+        &ground,
+        nec_solver::validate::RunFrequencies::Given {
+            hz: &[freq_hz],
+            source: "frequency_hz",
+        },
+    ) {
         return Err(SolveError::UnsupportedConfig(err));
     }
 
@@ -784,18 +787,19 @@ mod wire_frequency_gate_tests {
     const DIPOLE: &str =
         "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
 
-    /// The frequency arrives on the wire, so `pre_solve_error` cannot see it —
-    /// `frequency_error` reads the deck's FR card and takes no frequency
-    /// argument. A negative `frequency_hz` therefore returned the exact complex
-    /// conjugate with `status: ok` and no warning, on the very class the FR seam
-    /// refuses for every deck-borne path (FND-098).
+    /// The frequency arrives on the wire, not in the deck: `pre_solve_error`
+    /// reads the deck's FR card, so a negative `frequency_hz` returned the exact
+    /// complex conjugate with `status: ok` and no warning, on the very class the
+    /// FR seam refuses for every deck-borne path (FND-098). The check is now the
+    /// shared gate's, given the wire frequency (FND-290), and names the field.
     #[test]
     fn a_negative_wire_frequency_is_refused_not_conjugated() {
         let ok = solve_deck_at_frequency(DIPOLE, 14.2e6, "hallen").expect("control must solve");
         let err = solve_deck_at_frequency(DIPOLE, -14.2e6, "hallen")
             .expect_err("a negative wire frequency must be refused");
         assert!(
-            matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("not a usable frequency")),
+            matches!(err, SolveError::UnsupportedConfig(ref m)
+                if m.contains("not a usable frequency") && m.starts_with("frequency_hz: ")),
             "{err:?}"
         );
         // Pin what the bug actually produced, so a regression cannot pass by
@@ -816,6 +820,27 @@ mod wire_frequency_gate_tests {
                 "{f}: {err:?}"
             );
         }
+    }
+
+    /// FND-290 moved the wire-frequency check from before the parse into the
+    /// shared gate, which runs after geometry: a task whose deck and frequency
+    /// are both bad now reports the deck. Pinned so the order is a decision,
+    /// not an accident.
+    #[test]
+    fn a_task_with_a_broken_deck_and_a_bad_frequency_reports_the_deck() {
+        let err = solve_deck_at_frequency(
+            "GW 1 0 0 0 0 0 0 1 0.001
+GE
+EN
+",
+            -1e6,
+            "hallen",
+        )
+        .expect_err("must be refused");
+        assert!(
+            !matches!(err, SolveError::UnsupportedConfig(ref m) if m.contains("usable frequency")),
+            "the deck's fault must be reported first: {err:?}"
+        );
     }
 }
 

@@ -688,7 +688,53 @@ pub fn sweep_deck_str(
 /// Upper bound on the number of frequency points a single sweep may request,
 /// so a mistyped step (e.g. `0.0001` over a 1000 MHz span) can't queue millions
 /// of matrix solves and freeze the GUI.
-pub const MAX_SWEEP_POINTS: usize = 100_000;
+///
+/// The `FR` card's cap, which [`nec_solver::linear_range_mhz`] enforces: this
+/// was a second constant with the same value (FND-297 c).
+pub const MAX_SWEEP_POINTS: usize = nec_solver::MAX_FR_POINTS;
+
+/// The GUI's sentence for a sweep range [`nec_solver::linear_range_mhz`] refused,
+/// naming the fields as the caller's user knows them (`start_mhz` for the job's
+/// API, `start` for the sweep tab's text boxes).
+pub(crate) fn range_error_text(
+    e: nec_solver::RangeError,
+    start_name: &str,
+    end_name: &str,
+    step_name: &str,
+) -> String {
+    use nec_solver::RangeError;
+    match e {
+        // Finiteness is named first: every comparison against `NaN` is false, so
+        // an ordering test alone once let one through (FND-056).
+        RangeError::StartNotUsable(v) if !v.is_finite() => {
+            format!("{start_name} must be a finite number, got {v}")
+        }
+        // The range never reaches the deck's `FR` card, so `frequency_error`
+        // cannot say this for it (FND-056).
+        RangeError::StartNotUsable(v) if v <= 0.0 => format!(
+            "{start_name} must be a positive frequency, got {v} MHz: at or below \
+             zero the current is driven to zero and the reported impedance \
+             becomes the source voltage"
+        ),
+        RangeError::StartNotUsable(v) => {
+            format!("{start_name} ({v} MHz) is too large to convert to hertz")
+        }
+        RangeError::StepNotPositive(v) if !v.is_finite() => {
+            format!("{step_name} must be a finite number, got {v}")
+        }
+        RangeError::StepNotPositive(v) => format!("{step_name} must be > 0, got {v}"),
+        RangeError::EndNotFinite(v) => format!("{end_name} must be a finite number, got {v}"),
+        RangeError::EndBeforeStart { start, end } => {
+            format!("{start_name} ({start}) must not be above {end_name} ({end})")
+        }
+        // Guards a runaway sweep (a slipped decimal in the step) that would queue
+        // millions of full matrix solves and freeze or OOM the GUI.
+        RangeError::TooManyPoints { requested } => format!(
+            "sweep would compute {requested:.0} points (max {MAX_SWEEP_POINTS}); \
+             widen the step or narrow the range"
+        ),
+    }
+}
 
 /// A prepared frequency sweep: geometry, excitation, ground and junctions built
 /// once, so each frequency can be solved independently via [`SweepJob::solve_at`].
@@ -715,42 +761,14 @@ impl SweepJob {
         step_mhz: f64,
         solver: SolverKind,
     ) -> Result<Self, String> {
-        // Finiteness first: every comparison against `NaN` is false, so an
-        // ordering test alone lets one through (FND-056).
-        for (name, v) in [
-            ("start_mhz", start_mhz),
-            ("end_mhz", end_mhz),
-            ("step_mhz", step_mhz),
-        ] {
-            if !v.is_finite() {
-                return Err(format!("{name} must be a finite number, got {v}"));
-            }
-        }
-        if step_mhz <= 0.0 {
-            return Err(format!("step_mhz must be > 0, got {step_mhz}"));
-        }
-        // This range comes from the UI, never from the deck's `FR` card, so the
-        // shared `frequency_error` never sees it.
-        if start_mhz <= 0.0 {
-            return Err(format!(
-                "start_mhz must be a positive frequency, got {start_mhz}"
-            ));
-        }
-        if start_mhz >= end_mhz {
-            return Err(format!(
-                "start_mhz ({start_mhz}) must be less than end_mhz ({end_mhz})"
-            ));
-        }
-        // Guard against a runaway sweep (e.g. a slipped decimal in the step) that
-        // would queue millions of full matrix solves and freeze/OOM the GUI.
-        let point_count = ((end_mhz - start_mhz) / step_mhz).floor() + 1.0;
-        if point_count > MAX_SWEEP_POINTS as f64 {
-            return Err(format!(
-                "sweep would compute {point_count:.0} points (max {MAX_SWEEP_POINTS}); \
-                 widen the step or narrow the range"
-            ));
-        }
-
+        // The range first, through the one linear expander every frontend uses
+        // (FND-297 c), so the GUI, `--sweep-config` and an `FR` card expand one
+        // range to the same points — and so the validation below can check the
+        // frequencies this sweep will run, not the deck's `FR` (FND-290). The
+        // refusals keep their field names; the rule is the expander's. A range
+        // with `start == end` is one point, as the CLI allows (D5).
+        let freqs_mhz = nec_solver::linear_range_mhz(start_mhz, end_mhz, step_mhz)
+            .map_err(|e| range_error_text(e, "start_mhz", "end_mhz", "step_mhz"))?;
         let parsed = parse(deck_text).map_err(|e| e.to_string())?;
         let deck = parsed.deck;
         let segs = nec_solver::geometry_for(&deck, solver)
@@ -758,7 +776,21 @@ impl SweepJob {
         let ground = ground_model_from_deck(&deck);
         // Reject geometry the solver cannot honestly take, before queueing a whole
         // sweep of solves on it — and before the excitation, in the CLI's order.
-        if let Some(e) = validate::pre_solve_error(&deck, &segs, &ground) {
+        //
+        // At the sweep's frequencies: the deck's `FR` never runs here, so asking
+        // it refused a deck for a negative `FR` the sweep replaces, and passed a
+        // line that is λ/2 long at a swept frequency, which then failed mid-sweep
+        // (FND-290).
+        let hz: Vec<f64> = freqs_mhz.iter().map(|f| f * 1e6).collect();
+        if let Some(e) = validate::pre_solve_error_at(
+            &deck,
+            &segs,
+            &ground,
+            validate::RunFrequencies::Given {
+                hz: &hz,
+                source: "the sweep",
+            },
+        ) {
             return Err(e);
         }
         let v_vec = build_excitation(&deck, &segs).map_err(|e| e.to_string())?;
@@ -771,13 +803,6 @@ impl SweepJob {
                 return Err(e.to_string());
             }
         }
-        let mut freqs_mhz = Vec::new();
-        let mut f = start_mhz;
-        while f <= end_mhz + step_mhz * 1e-9 {
-            freqs_mhz.push(f);
-            f += step_mhz;
-        }
-
         Ok(Self {
             deck,
             segs,
@@ -922,11 +947,17 @@ impl SweepJob {
             &z_res,
             &self.deck,
             &self.segs,
+            // The loads at the frequencies this sweep solved, not at the deck's
+            // `FR` — which a sweep replaces and may not even have (FND-290).
             gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 &self.deck,
                 &self.segs,
                 &[],
-                &nec_solver::frequencies_hz(&self.deck),
+                &self
+                    .freqs_mhz
+                    .iter()
+                    .map(|f| f * 1_000_000.0)
+                    .collect::<Vec<_>>(),
             )),
         )
     }

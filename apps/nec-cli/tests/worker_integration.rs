@@ -665,3 +665,118 @@ fn batch_dispatch_uses_more_than_one_worker_at_a_time() {
         "batch dispatch shows no overlap: {batch_elapsed:?} vs sequential {seq_elapsed:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FND-290 — the worker validates the frequency it is asked to solve, not the
+// deck's `FR`
+// ---------------------------------------------------------------------------
+
+fn task_at(task_id: &str, deck: &str, frequency_hz: f64) -> nec_worker::TaskMessage {
+    nec_worker::TaskMessage {
+        task_id: task_id.to_string(),
+        deck_hash: "ignored".to_string(),
+        deck_b64: b64(deck),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
+        },
+        frequency_hz,
+    }
+}
+
+/// The worker asked `pre_solve_error`, which reads the deck's `FR`: a deck whose
+/// `FR` is −5 MHz was refused (`unsupported_config: FR: -5 MHz is not a usable
+/// frequency`) at a wire frequency of 14.2 MHz, so under `--hosts --sweep-config`
+/// — which the controller passes — every point failed on the worker.
+///
+/// Gated against nec2c 1.3.1 absolutely (the same dipole with `FR 14.2` and `XQ`:
+/// 79.348 + j46.223, within the corpus's stated nec2c tolerance for this deck,
+/// 2 Ω / 8 Ω), and equal to `fnec --sweep-config` on the same deck to 1e-9 — a
+/// route-consistency check that the worker and the local run solve one thing.
+#[test]
+fn a_worker_task_is_not_refused_for_the_fr_its_frequency_replaces() {
+    const NEG_FR: &str =
+        "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\nFR 0 1 0 0 -5 0\nEN\n";
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker --stdio");
+    let result = worker
+        .dispatch(&task_at("negfr", NEG_FR, 14.2e6))
+        .expect("dispatch should succeed");
+    worker.shutdown().ok();
+    let nec_worker::TaskResult::Ok { impedance, .. } = &result else {
+        panic!("the wire's 14.2 MHz is usable; the deck's FR never runs: {result:?}")
+    };
+    let (r, x) = (impedance.re_ohm, impedance.im_ohm);
+    assert!(
+        (r - 79.348).abs() < 2.0 && (x - 46.223).abs() < 8.0,
+        "{r} + j{x} vs nec2c 79.348 + j46.223"
+    );
+
+    // The local run with the same frequency list.
+    let dir = std::env::temp_dir().join(format!("fnec-fnd290-worker-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let deck_path = dir.join("negfr.nec");
+    let sweep_path = dir.join("sw.toml");
+    std::fs::write(&deck_path, NEG_FR).expect("write deck");
+    std::fs::write(&sweep_path, "[frequency]\npoints_mhz = [14.2]\n").expect("write sweep");
+    let out = std::process::Command::new(fnec)
+        .args(["--solver", "hallen", "--exec", "cpu", "--sweep-config"])
+        .arg(&sweep_path)
+        .arg(&deck_path)
+        .output()
+        .expect("run fnec");
+    std::fs::remove_dir_all(&dir).ok();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let row = stdout
+        .lines()
+        .find(|l| l.starts_with("1 26 ") && l.split_whitespace().count() == 8)
+        .unwrap_or_else(|| panic!("no feedpoint row in:\n{stdout}"));
+    let f: Vec<f64> = row
+        .split_whitespace()
+        .map(|t| t.parse().expect("number"))
+        .collect();
+    let (cr, cx) = (f[6], f[7]);
+    // The report prints six decimals, so the comparison is to its resolution.
+    assert!(
+        (r - cr).abs() <= 1e-6 + 1e-9 * cr.abs() && (x - cx).abs() <= 1e-6 + 1e-9 * cx.abs(),
+        "worker {r} + j{x} vs local --sweep-config {cr} + j{cx}"
+    );
+}
+
+/// The worker's network check priced the deck's `TL` at the deck's `FR`. A line
+/// λ/2 long at 30 MHz on a deck whose `FR` is 29.9 passed the gate at 30 MHz and
+/// failed later in the solve; it is now refused by the gate, at the wire's
+/// frequency, naming it. Negative control: the same deck at 29.9 MHz solves.
+#[test]
+fn a_worker_task_prices_the_deck_networks_at_its_own_frequency() {
+    const TL_HALF_WAVE_AT_30: &str = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\n\
+        GW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\n\
+        TL 1 11 2 11 50 4.996540966666667 0 0 0 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker --stdio");
+    let refused = worker
+        .dispatch(&task_at("tl30", TL_HALF_WAVE_AT_30, 30.0e6))
+        .expect("dispatch should succeed");
+    let solved = worker
+        .dispatch(&task_at("tl299", TL_HALF_WAVE_AT_30, 29.9e6))
+        .expect("dispatch should succeed");
+    worker.shutdown().ok();
+    let nec_worker::TaskResult::Error {
+        error_message: message,
+        ..
+    } = &refused
+    else {
+        panic!("a line with no admittance matrix at 30 MHz must be refused: {refused:?}")
+    };
+    assert!(
+        message.contains("TL 1 11 2 11") && message.contains("at 30 MHz, from frequency_hz"),
+        "{message}"
+    );
+    assert!(solved.is_ok(), "29.9 MHz must solve: {solved:?}");
+}

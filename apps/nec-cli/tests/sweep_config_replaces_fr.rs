@@ -73,3 +73,37 @@ fn replaced_fr_cards_are_not_described_as_the_run() {
     let alone = run(&deck, None);
     assert!(String::from_utf8_lossy(&alone.stderr).contains("superseded"));
 }
+
+/// FND-290 gave the GUI and the worker this route's frequency-list check, and
+/// with it a network refusal that says which listed frequency failed and where
+/// the list came from: a line λ/2 long at 30 MHz is unbuildable there only, and
+/// the deck (whose `FR` is 29.9) does not contain 30 MHz. Negative control: the
+/// list that stops at 29.9 solves.
+#[test]
+fn a_network_refused_at_a_listed_frequency_names_it_and_the_list() {
+    let deck = tmp(
+        "tl.nec",
+        "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n\
+         EX 0 1 11 0 1.0 0.0\nTL 1 11 2 11 50 4.996540966666667 0 0 0 0\n\
+         FR 0 1 0 0 29.9 0\nEN\n",
+    );
+    let both = tmp(
+        "both.toml",
+        "[frequency]\nstart_mhz = 29.9\nend_mhz = 30.0\nstep_mhz = 0.1\n",
+    );
+    let out = run(&deck, Some(&both));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("error: TL 1 11 2 11: its electrical length")
+            && stderr.contains("(at 30 MHz, from --sweep-config)"),
+        "{stderr}"
+    );
+    let short = tmp("short.toml", "[frequency]\npoints_mhz = [29.9]\n");
+    let ok = run(&deck, Some(&short));
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+}

@@ -3579,3 +3579,190 @@ fn solve_deck_str_reads_tag_zero_as_an_absolute_segment() {
         );
     }
 }
+
+// ── FND-290 / FND-297 c: the sweep validates the frequencies it runs ─────────
+
+/// The corpus reference dipole (`corpus/dipole-freesp-51seg.nec`) with the `FR`
+/// card given by the caller.
+fn reference_dipole(fr: &str) -> String {
+    format!("CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\n{fr}EN\n")
+}
+
+/// FND-290: `SweepJob::prepare` asked `pre_solve_error`, which reads the deck's
+/// `FR` — a card the sweep replaces. A deck whose `FR` is −5 MHz was refused
+/// ("FR: -5 MHz is not a usable frequency") although the sweep never runs it;
+/// `fnec --sweep-config` solves the same deck (FND-210).
+///
+/// Gated against nec2c 1.3.1 absolutely, on the same dipole with
+/// `FR 0 2 0 0 14.2 0.1` and `XQ`: 79.348 + j46.223 at 14.2 MHz and
+/// 81.150 + j57.026 at 14.3 MHz, within the tolerance the corpus states for this
+/// deck against nec2c (`ExternalR_absolute_ohm` 2.0, `ExternalX_absolute_ohm`
+/// 8.0 in `corpus/reference-results.json`). And the swept points equal those of
+/// the same deck whose own `FR` is usable — a route-consistency check, not a
+/// second oracle: the replaced card must not change what is solved.
+#[test]
+fn a_gui_sweep_does_not_refuse_a_deck_for_the_fr_it_replaces() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let job = SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 -5 0\n"),
+        14.2,
+        14.3,
+        0.1,
+        SolverKind::Hallen,
+    )
+    .unwrap_or_else(|e| panic!("the deck's FR is replaced by the sweep, yet: {e}"));
+    assert_eq!(job.freqs_mhz().len(), 2, "{:?}", job.freqs_mhz());
+    let control = SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 14.2 0\n"),
+        14.2,
+        14.3,
+        0.1,
+        SolverKind::Hallen,
+    )
+    .expect("control deck prepares");
+    let nec2c = [(79.348, 46.223), (81.150, 57.026)];
+    for (i, &f) in job.freqs_mhz().iter().enumerate() {
+        let p = job.solve_at(f).expect("the swept point solves");
+        let c = control.solve_at(f).expect("the control point solves");
+        assert!(
+            (p.z_re - c.z_re).abs() <= 1e-9 * c.z_re.abs()
+                && (p.z_im - c.z_im).abs() <= 1e-9 * c.z_im.abs(),
+            "{f} MHz: {} + j{} vs the usable-FR deck's {} + j{}",
+            p.z_re,
+            p.z_im,
+            c.z_re,
+            c.z_im
+        );
+        let (r, x) = nec2c[i];
+        assert!(
+            (p.z_re - r).abs() < 2.0 && (p.z_im - x).abs() < 8.0,
+            "{f} MHz: {} + j{} vs nec2c {r} + j{x}",
+            p.z_re,
+            p.z_im
+        );
+    }
+}
+
+/// FND-290's other half: a line exactly λ/2 long at 30 MHz has no admittance
+/// matrix there. With the deck's `FR` at 29.9 MHz, `prepare` asked only 29.9,
+/// accepted the sweep 29.9 … 30.0, solved 29.9 and failed mid-sweep at 30.0.
+/// The CLI refuses the same list up front, and now the GUI does too — naming the
+/// frequency and that it came from the sweep, not the deck.
+#[test]
+fn a_gui_sweep_refuses_up_front_a_line_unbuildable_at_a_swept_frequency() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    const TL_HALF_WAVE_AT_30: &str = "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\n\
+        GW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\n\
+        TL 1 11 2 11 50 4.996540966666667 0 0 0 0\nFR 0 1 0 0 29.9 0\nEN\n";
+    let err = match SweepJob::prepare(TL_HALF_WAVE_AT_30, 29.9, 30.0, 0.1, SolverKind::Hallen) {
+        Err(e) => e,
+        Ok(job) => panic!(
+            "a sweep reaching 30 MHz must be refused before it starts; prepared {:?}",
+            job.freqs_mhz()
+        ),
+    };
+    assert!(
+        err.contains("TL 1 11 2 11") && err.contains("half a wavelength"),
+        "{err}"
+    );
+    assert!(
+        err.contains("at 30 MHz, from the sweep"),
+        "the refusal must say which frequency and where it came from: {err}"
+    );
+    // Negative control: the sweep that stops short of 30 MHz is fine — the
+    // refusal is about the swept frequency, not the deck. One point (D5).
+    let ok = SweepJob::prepare(TL_HALF_WAVE_AT_30, 29.9, 29.9, 0.1, SolverKind::Hallen)
+        .unwrap_or_else(|e| panic!("29.9 MHz alone must prepare: {e}"));
+    assert_eq!(ok.freqs_mhz(), &[29.9]);
+    ok.solve_at(29.9).expect("29.9 MHz solves");
+}
+
+/// D5: a sweep whose start equals its end is one point, as `--sweep-config`
+/// always allowed; the GUI refused it ("must be less than end") in both the tab
+/// and the job. A start above the end is still refused in both.
+#[test]
+fn a_one_point_gui_sweep_is_allowed_in_the_tab_and_the_job() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let mut st = AppState::default();
+    st.sweep_start = "14.2".into();
+    st.sweep_end = "14.2".into();
+    st.sweep_step = "0.1".into();
+    assert_eq!(st.sweep_params(), Ok((14.2, 14.2, 0.1)));
+    let job = SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 14.2 0\n"),
+        14.2,
+        14.2,
+        0.1,
+        SolverKind::Hallen,
+    )
+    .expect("a one-point sweep prepares");
+    assert_eq!(job.freqs_mhz(), &[14.2]);
+    // Negative controls: start above end, in both.
+    st.sweep_start = "14.3".into();
+    let err = st.sweep_params().expect_err("start above end is refused");
+    assert!(
+        err.contains("start (14.3)") && err.contains("end (14.2)"),
+        "{err}"
+    );
+    assert!(SweepJob::prepare(
+        &reference_dipole("FR 0 1 0 0 14.2 0\n"),
+        14.3,
+        14.2,
+        0.1,
+        SolverKind::Hallen
+    )
+    .is_err());
+}
+
+/// FND-297 c: the sweep expands its range through the shared expander, so the
+/// GUI and `--sweep-config` give one range the same points — `start + i·step`,
+/// the `FR` card's derivation — including where floating point is hostile:
+/// `1000 … 1000.001 by 1e-7` is 10 001 points (the old accumulating loop's
+/// endpoint depended on rounding drift), and `29.9 … 30.0 by 0.1` is two.
+#[test]
+fn the_gui_sweep_expands_a_range_as_the_shared_expander_does() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let deck = reference_dipole("FR 0 1 0 0 14.2 0\n");
+    for (start, end, step, n) in [
+        (29.9, 30.0, 0.1, 2),
+        (0.1, 0.3, 0.1, 3),
+        (1000.0, 1000.001, 1e-7, 10_001),
+    ] {
+        let job = SweepJob::prepare(&deck, start, end, step, SolverKind::Hallen)
+            .unwrap_or_else(|e| panic!("{start} … {end} by {step}: {e}"));
+        let want: Vec<f64> = (0..n).map(|i| start + step * i as f64).collect();
+        assert_eq!(
+            job.freqs_mhz(),
+            want.as_slice(),
+            "{start} … {end} by {step}"
+        );
+        assert_eq!(
+            job.freqs_mhz(),
+            nec_solver::linear_range_mhz(start, end, step)
+                .expect("expands")
+                .as_slice()
+        );
+    }
+}
+
+/// FND-290's sibling in the same job: the negative-resistance caveat priced the
+/// deck's loads at the deck's `FR` frequencies. A deck with no `FR` — which a
+/// sweep supplies frequencies for — therefore had no loads at all, and a
+/// feedpoint made negative by its own −200 Ω load was not attributed to it.
+#[test]
+fn a_swept_negative_load_is_named_even_when_the_deck_has_no_fr() {
+    use nec_gui::solve::{SolverKind, SweepJob};
+    let deck = "CE\nGW 1 51 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 26 0 1.0 0.0\n\
+                LD 4 1 26 26 -200 0\nEN\n";
+    let job = SweepJob::prepare(deck, 14.2, 14.2, 0.1, SolverKind::Hallen)
+        .unwrap_or_else(|e| panic!("an FR-less deck sweeps: {e}"));
+    let p = job.solve_at(14.2).expect("solves");
+    assert!(p.z_re < 0.0, "the load must make R negative: {}", p.z_re);
+    let caveat = job
+        .negative_resistance_caveat(&[p])
+        .expect("a negative swept R is caveated");
+    assert!(
+        caveat.contains("a load in this run has negative resistance"),
+        "{caveat}"
+    );
+}

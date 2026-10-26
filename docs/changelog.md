@@ -116,6 +116,32 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
 
 ### Fixed
 
+- **The GUI's sweep and the distributed worker check the frequencies they run,
+  not the deck's `FR`** (FND-290, FND-210's class). Both asked the deck, whose
+  `FR` the sweep range and the wire's `frequency_hz` replace: a deck with
+  `FR 0 1 0 0 -5 0` was refused at a usable 14.2 MHz ("FR: -5 MHz is not a usable
+  frequency"), so under `--hosts --sweep-config` every point failed on the worker;
+  and a `TL` exactly λ/2 long at a swept 30 MHz, on a deck whose `FR` is 29.9,
+  was accepted, solved 29.9 and failed mid-sweep. One gate, `pre_solve_error_at`
+  with `RunFrequencies::Given`, now serves the CLI, the GUI and the worker; it
+  names where the list came from (`--sweep-config`, `the sweep`, `frequency_hz`)
+  and a network refusal ends `(at 30 MHz, from …)`. The negative-FR dipole sweeps
+  at 79.33 + j45.04 Ω (nec2c 79.348 + j46.223). **The worker's error order
+  changes:** its own check of `frequency_hz` ran before the parse and is gone —
+  the shared gate is now its only one, after parse and geometry — so a task whose
+  deck and frequency are both bad reports the deck. The message is now
+  `frequency_hz: <f> MHz is not a usable frequency; …`, still `unsupported_config`.
+  The GUI's negative-resistance caveat prices the deck's loads at the swept
+  frequencies too: on a deck with no `FR` it saw no loads at all, and blamed a
+  feedpoint its own −200 Ω load made negative on the geometry.
+- **One linear range expander** (FND-297 c): `--sweep-config`'s range mode and the
+  GUI's sweep tab each accumulated `f += step`, with their own count formula and
+  cap, so whether the end was included depended on rounding drift (the CLI gave
+  `0.1 … 0.101 by 1e-7` 10 000 points, dropping the 10 001st). Both now call
+  `nec_solver::linear_range_mhz`: `start + i·step`, the `FR` card's derivation,
+  for `count = floor((end − start)/step + 4ε·max(|start|, |end|)/step) + 1`,
+  capped at 100 000. **The GUI allows a one-point sweep** (Start = End), as the CLI
+  always did (D5); its tab and its job now refuse exactly what the CLI refuses.
 - **`--hosts` refuses a deck with more than one feedpoint, and its records name
   the feedpoint** (FND-304). The distributed worker returns one feedpoint
   impedance per frequency, so a two-source deck was answered for the first and
