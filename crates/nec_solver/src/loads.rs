@@ -22,10 +22,10 @@ use num_complex::Complex64;
 use nec_model::card::{Card, LdCard};
 use nec_model::deck::NecDeck;
 
+use crate::constants::MU0;
 use crate::geometry::{deck_segment_in_range, Segment};
 
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
 
 /// Ratio `I0(z)/I1(z)` of modified Bessel functions for complex `z`, used by the
 /// round-wire internal-impedance formula. Power series for `|z| ≤ 15`, and the
@@ -420,6 +420,30 @@ pub fn add_laplace_loads(
     warnings
 }
 
+/// The per-segment series-load diagonal a run solves with at `freq_hz`: the
+/// deck's `LD` cards ([`build_loads`]) plus the run's `--loads-config` Laplace
+/// loads ([`add_laplace_loads`]), on `segs`.
+///
+/// The one answer to "which loads does this run have". The solve, the MPIE plan,
+/// the FND-278 joined-gaps caveat and the FND-209 negative-load fact each composed
+/// it for themselves, and the caveat's copy read the deck's cards alone, so a
+/// `--loads-config` load beside a bend solved with the joined row and carried no
+/// caveat, where the same load as `LD` did (FND-288).
+///
+/// The warnings are the Laplace loads' (a degenerate or non-finite one, skipped);
+/// a solve refuses on them. The `LD` cards' notes are [`crate::DeckStamps`]'s,
+/// and a card that cannot be applied is refused by [`ld_card_problem`] first.
+pub fn run_load_diagonal(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    laplace: &[LaplaceLoad],
+) -> (Vec<Complex64>, Vec<LoadWarning>) {
+    let (mut diagonal, _) = build_loads(deck, segs, freq_hz);
+    let warnings = add_laplace_loads(&mut diagonal, laplace, segs, freq_hz);
+    (diagonal, warnings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +506,45 @@ mod tests {
         let w = add_laplace_loads(&mut lv, std::slice::from_ref(&ll), &segs, 14.2e6);
         assert_eq!(w.len(), 1);
         assert_eq!(lv[0], Complex64::new(0.0, 0.0));
+    }
+
+    /// FND-288: the run's diagonal is the deck's `LD` loads and the Laplace loads
+    /// together — one on a segment the `LD` card also loads, one on a segment it
+    /// does not — and its warnings are the Laplace loads' (a vanishing denominator).
+    #[test]
+    fn run_load_diagonal_is_the_deck_loads_plus_the_laplace_loads() {
+        let segs = vec![seg(1, 1, 0.1, 0.001), seg(1, 2, 0.1, 0.001)];
+        let deck = deck_with_ld(LdCard {
+            load_type: 4,
+            tag: 1,
+            seg_first: 2,
+            seg_last: 2,
+            f1: 100.0,
+            f2: 50.0,
+            f3: 0.0,
+        });
+        let ll = |seg: u32, numerator: Vec<f64>, denominator: Vec<f64>| LaplaceLoad {
+            tag: 1,
+            seg_first: seg,
+            seg_last: seg,
+            numerator,
+            denominator,
+        };
+        let laplace = [
+            ll(1, vec![7.0], vec![1.0]),
+            ll(2, vec![20.0], vec![1.0]),
+            ll(1, vec![1.0], vec![0.0]),
+        ];
+        let (diagonal, warnings) = run_load_diagonal(&deck, &segs, 14.2e6, &laplace);
+        assert_eq!(
+            diagonal,
+            vec![Complex64::new(7.0, 0.0), Complex64::new(120.0, 50.0)]
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        // And with no Laplace loads it is the deck's own.
+        let (alone, warnings) = run_load_diagonal(&deck, &segs, 14.2e6, &[]);
+        assert_eq!(alone, build_loads(&deck, &segs, 14.2e6).0);
+        assert!(warnings.is_empty());
     }
 
     fn seg(tag: u32, tag_index: u32, length: f64, radius: f64) -> Segment {

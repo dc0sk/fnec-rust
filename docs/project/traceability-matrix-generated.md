@@ -2,7 +2,7 @@
 project: fnec-rust
 doc: docs/project/traceability-matrix-generated.md
 status: living
-last_updated: 2026-10-23
+last_updated: 2026-10-25
 ---
 
 # Traceability matrix (generated — do not hand-edit)
@@ -17,7 +17,7 @@ the citations, then regenerate — never edit this file by hand.
 |:---|:------|:-------|:------------|:-------------|:------------|
 | FR-001 | Core solver implemented in Rust as reusable crates | implemented | high | review | review — Architectural fact — the crates/nec_* workspace layout; not a runtime behaviour. |
 | FR-002 | Provide CLI and GUI frontends (TUI optional) | implemented | high | review | review — Architectural — apps/nec-cli and apps/nec-gui both ship; GUI is display-dependent. |
-| FR-003 | Parse and execute real-world NEC deck files | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:30` |
+| FR-003 | Parse and execute real-world NEC deck files | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:35` |
 | FR-004 | Markdown-based project import/export in addition to NEC decks | implemented | medium | review | review — nec_project crate provides the round-trip; broader workflow is partial (see roadmap). |
 | FR-005 | 4nec2-like text reports for core analysis results | implemented | high | test | `apps/nec-cli/tests/report_contract.rs:122` |
 | FR-006 | Plugin/scripting extension mechanism, designed in phases | implemented | low | review | review — Phased extension points EP-1..4 ship in nec_model/nec_report (exercised by doctests); mechanism-level, verified by inspection. |
@@ -30,10 +30,10 @@ the citations, then regenerate — never edit this file by hand.
 Origin: fnec's GM card used to carry a tag-RANGE filter (a first tag and a last tag) in the standard I2 and F7 fields, where NEC-2 defines NRPT (number of new structures) and ITS (the structure suffix to move). That made fnec misread every standard GM deck and made fnec-authored decks unreadable everywhere else, so FND-119 replaced those fields with the NEC-2 meanings.
 
 The CAPABILITY that occupied them may still be wanted: selecting an arbitrary tag range to transform is expressive, and NEC's ITS can only name a suffix in definition order. This requirement records the decision that if it comes back it gets its OWN syntax -- a distinct card, or a documented extension marker -- and never a standard field. Occupying a standard field is what caused FND-119, and the failure is silent in both directions. |
-| FR-012 | Matching-network helper: the lossless L-network component values that present a target impedance at a feedpoint, typed or solved from a deck (fnec match) | implemented | medium | test | `apps/nec-cli/tests/match_contract.rs:255`<br>`apps/nec-cli/tests/match_contract.rs:589` |
+| FR-012 | Matching-network helper: the lossless L-network component values that present a target impedance at a feedpoint, typed or solved from a deck (fnec match) | implemented | medium | test | `apps/nec-cli/tests/match_contract.rs:255`<br>`apps/nec-cli/tests/match_contract.rs:642` |
 | NFR-001 | Primary runtime target Linux (Wayland), then macOS, then Windows | implemented | medium | review | review — Platform/deployment target — verified by build targets and CI runner, not a unit test. |
 | NFR-002 | CPU execution multithreaded and deterministic by default | implemented | high | review | review — Determinism is asserted across many solver tests; parallelism is a rayon config fact. |
 | NFR-003 | GPU acceleration optional at runtime with reliable CPU fallback | implemented | high | test | `apps/nec-cli/tests/exec_modes.rs:183` |
-| NFR-004 | Numerical compatibility measured against a reference with explicit per-metric tolerances | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:31`<br>`apps/nec-cli/tests/mpie_solver_cli.rs:326` |
+| NFR-004 | Numerical compatibility measured against a reference with explicit per-metric tolerances | implemented | high | test | `apps/nec-cli/tests/corpus_validation.rs:36`<br>`apps/nec-cli/tests/mpie_solver_cli.rs:326` |
 | NFR-005 | CLI execution stable and script-friendly (predictable stdin/stdout/stderr) | implemented | high | test | `apps/nec-cli/tests/scriptability_contract.rs:135` |
 | NFR-006 | Usability competitive with incumbent tools for supported workflows | implemented | medium | review | review — Tracked via usability-benchmark docs; not reducible to a single automated assertion. |

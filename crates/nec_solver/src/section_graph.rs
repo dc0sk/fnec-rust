@@ -33,8 +33,7 @@ use crate::hallen_session::{
 use crate::linear::SolveError;
 use crate::matrix::ZMatrix;
 
-/// Free-space wave impedance, as the other Hallén builders define it.
-const ETA0: f64 = 4.0e-7 * std::f64::consts::PI * 299_792_458.0;
+use crate::constants::ETA0;
 
 /// A maximal straight run of segments.
 #[derive(Debug, Clone)]

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Simon Keimer (DC0SK)
 
 pub mod basis;
+pub mod constants;
 pub mod convergence;
 mod corner;
 pub mod current_source;
@@ -33,8 +34,9 @@ pub use current_source::{solve_current_source_hallen, CurrentSourceError, Curren
 pub use excitation::{
     build_current_source_shape, build_current_source_shape_paths, build_excitation,
     build_hallen_rhs, build_hallen_rhs_from_sources, build_hallen_rhs_paths, delta_gap_sources,
-    feedpoints, first_delta_gap_feedpoint, scale_excitation_for_pulse_rhs, CurrentSourceShape,
-    ExcitationError, HallenRhs,
+    feedpoints, first_delta_gap_feedpoint, input_impedance_print, more_than_one_feedpoint,
+    scale_excitation_for_pulse_rhs, CurrentSourceShape, ExcitationError, HallenRhs, ImpedanceNorm,
+    ImpedancePrint,
 };
 pub use farfield::{
     average_power_gain, bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power,
@@ -62,7 +64,7 @@ pub use geometry::{
 // they are `pub(crate)`, because nothing outside this crate consumes them and a
 // public API with no caller is surface that no test constrains.
 pub use hallen_session::{
-    deck_has_current_source, deck_has_plane_wave, gpu_resident_class,
+    deck_has_current_source, deck_has_plane_wave, gpu_resident_class, gpu_resident_decline,
     hallen_leaves_a_bend_unmodelled, hallen_route, merged_grouping, path_end_rows,
     plan_hallen_planewave, solve_hallen_planewave_planned, solve_hallen_planewave_routed,
     solve_hallen_routed, HallenDrive, HallenRoute, HallenRouted, HallenSessionError, PlaneWavePlan,
@@ -78,7 +80,7 @@ pub use linear::{
 };
 pub use loads::{
     add_laplace_loads, build_loads, laplace_impedance, laplace_load_error, ld_card_problem,
-    LaplaceLoad, LoadWarning,
+    run_load_diagonal, LaplaceLoad, LoadWarning,
 };
 pub use matrix::{
     assemble_pocklington_matrix, assemble_z_matrix, assemble_z_matrix_with_ground, ZMatrix,

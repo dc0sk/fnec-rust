@@ -34,7 +34,7 @@ use nec_worker::{
 };
 use solve_session::{
     execute_frequency_sweep, frequencies_from_fr, solve_frequency_point, BenchRecord,
-    FrequencySolveResult, GroundSolver, PointOutput, SolverMode, SweepPointSummary,
+    FrequencySolveResult, GroundSolver, PointOutput, SolverMode, SweepFeedpoint, SweepPointSummary,
     SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT,
 };
 use std::process::ExitCode;
@@ -51,10 +51,20 @@ pub(crate) const VERSION: &str = concat!(
     ")"
 );
 
+/// One feedpoint's JSON fields — `tag` through `z_arg_deg`, no braces — the one
+/// writer for both a record's top level and each element of its `feedpoints`.
+fn feedpoint_json_fields(tag: usize, seg: usize, z_re: f64, z_im: f64) -> String {
+    let z_abs = (z_re * z_re + z_im * z_im).sqrt();
+    let z_arg_deg = z_im.atan2(z_re).to_degrees();
+    format!(
+        "\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}"
+    )
+}
+
 /// Print every point a sweep computed, and report the ones that failed.
 ///
-/// Returns `true` if any point failed, so the caller can exit non-zero after the
-/// output rather than instead of it.
+/// Returns the indices of the points that failed, so the caller can exit non-zero
+/// after the output rather than instead of it, and name them.
 ///
 /// **The policy changed here (FND-101/FND-102 follow-up).** This loop used to
 /// `return ExitCode::FAILURE` on the first `Err`, so a sweep that lost one point
@@ -79,8 +89,8 @@ fn emit_sweep_points(
     bench_target: &str,
     bench_deck: &str,
     bench_solver: &str,
-) -> bool {
-    let mut any_failed = false;
+) -> Vec<usize> {
+    let mut failed = Vec::new();
     for (fidx, result, elapsed_ms) in solved {
         let solved_point = match result {
             Ok(v) => v,
@@ -88,7 +98,7 @@ fn emit_sweep_points(
                 // Report and carry on. Returning here is what discarded the rest
                 // of the sweep.
                 eprintln!("error: {e}");
-                any_failed = true;
+                failed.push(fidx);
                 continue;
             }
         };
@@ -106,14 +116,12 @@ fn emit_sweep_points(
                 }
                 PointOutput::Text(_) => {
                     eprintln!("error: --output-format nec2d: a remote point carries no tables");
-                    any_failed = true;
+                    failed.push(fidx);
                 }
             }
         }
         if let Some(summary) = solved_point.sweep_summary {
             if output_format == OutputFormat::Json {
-                let z_abs = (summary.z_re * summary.z_re + summary.z_im * summary.z_im).sqrt();
-                let z_arg_deg = summary.z_im.atan2(summary.z_re).to_degrees();
                 // The unvalidated-solver caveat travels in the record itself, so a
                 // consumer that never reads stderr still sees it (FND-080). Absent
                 // for every validated solver: their records are unchanged.
@@ -121,15 +129,28 @@ fn emit_sweep_points(
                     .caveat
                     .map(|c| format!(",\"caveat\":\"{c}\""))
                     .unwrap_or_default();
+                // Every feedpoint, always present, in the text report's order
+                // (FND-291). The top-level fields stay the first feedpoint's, so a
+                // consumer that reads `records[i]["z_re"]` is unchanged, and the
+                // array keeps one record per frequency. Both are written by
+                // `feedpoint_json_fields`, so the first element and the top level
+                // cannot disagree on a digit.
+                let feedpoints = summary
+                    .feedpoints
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{{{}}}",
+                            feedpoint_json_fields(f.tag, f.seg, f.z_re, f.z_im)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
                 json_records.push(format!(
-                    "{{\"freq_mhz\":{freq_mhz},\"tag\":{tag},\"seg\":{seg},\"z_re\":{z_re},\"z_im\":{z_im},\"z_abs\":{z_abs},\"z_arg_deg\":{z_arg_deg}{caveat}}}",
+                    "{{\"freq_mhz\":{freq_mhz},{fields}{caveat},\"feedpoints\":[{feedpoints}]}}",
                     freq_mhz = summary.freq_mhz,
-                    tag = summary.tag,
-                    seg = summary.seg,
-                    z_re = summary.z_re,
-                    z_im = summary.z_im,
-                    z_abs = z_abs,
-                    z_arg_deg = z_arg_deg,
+                    fields =
+                        feedpoint_json_fields(summary.tag, summary.seg, summary.z_re, summary.z_im),
                 ));
             }
             sweep_rows.push(summary);
@@ -159,7 +180,74 @@ fn emit_sweep_points(
             }
         }
     }
-    any_failed
+    failed
+}
+
+/// The sweep's closing text sections — `SWEEP_POINTS` and, when the deck's EX
+/// I4 asks for it, `INPUT_IMPEDANCE` (FND-309) — through the one renderer both
+/// routes share, with the warnings it raises sent to stderr.
+fn print_sweep_sections(
+    deck: &nec_model::deck::NecDeck,
+    sweep_rows: &[SweepPointSummary],
+    failed: &[usize],
+    freqs_hz: &[f64],
+) {
+    let points: Vec<nec_report::SweepPoint> = sweep_rows
+        .iter()
+        .map(|r| nec_report::SweepPoint {
+            freq_mhz: r.freq_mhz,
+            feeds: r
+                .feedpoints
+                .iter()
+                .map(|f| nec_report::SweepFeed {
+                    tag: f.tag,
+                    seg: f.seg,
+                    abs_seg: f.abs_seg,
+                    z: num_complex::Complex64::new(f.z_re, f.z_im),
+                })
+                .collect(),
+        })
+        .collect();
+    let failed_mhz: Vec<f64> = failed
+        .iter()
+        .filter_map(|&i| freqs_hz.get(i))
+        .map(|f| f / 1e6)
+        .collect();
+    let sections =
+        nec_report::render_sweep_sections(&points, input_impedance_request(deck), &failed_mhz);
+    for w in &sections.warnings {
+        eprintln!("warning: {w}");
+    }
+    print!("{}", sections.text);
+}
+
+/// The deck's input-impedance print (`nec_solver::input_impedance_print`) in the
+/// renderer's terms.
+fn input_impedance_request(
+    deck: &nec_model::deck::NecDeck,
+) -> Option<nec_report::InputImpedanceRequest> {
+    let p = nec_solver::input_impedance_print(deck)?;
+    Some(nec_report::InputImpedanceRequest {
+        feed_index: p.feed_index,
+        norm: match p.norm {
+            nec_solver::ImpedanceNorm::Fixed(f) => nec_report::InputImpedanceNorm::Fixed(f),
+            nec_solver::ImpedanceNorm::Max => nec_report::InputImpedanceNorm::Max,
+        },
+    })
+}
+
+/// The `--output-format json` warning for a deck whose EX I4 asks for the
+/// input-impedance table over a sweep, which JSON has no form for yet.
+fn input_impedance_json_warning(
+    deck: &nec_model::deck::NecDeck,
+    n_points: usize,
+) -> Option<String> {
+    (n_points > 1 && nec_solver::input_impedance_print(deck).is_some()).then(|| {
+        "EX I4's input-impedance print (the text report's INPUT_IMPEDANCE section) has no \
+         JSON form yet and is not written; every point's feedpoint impedance is in the \
+         records. Use --output-format text for the normalized table."
+            .to_string()
+    })
 }
 
 fn main() -> ExitCode {
@@ -255,6 +343,7 @@ fn main() -> ExitCode {
         vars_path,
         loads_config_path,
         sin_fallback_rel_max_cli,
+        hallen_residual_caveat_cli,
         hosts_path,
         path,
     } = match parse_args(&args) {
@@ -301,6 +390,19 @@ fn main() -> ExitCode {
     } else {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
     };
+    // The FND-302 caveat's threshold: the flag, else the environment, else 1e-5,
+    // with the same precedence and refusal as `--sin-fallback-rel-max`.
+    let hallen_residual_caveat = match hallen_residual_caveat_cli
+        .map_or_else(nec_solver::validate::residual_caveat_threshold, Ok)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", VERSION);
+            eprintln!("{USAGE}");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -346,29 +448,18 @@ fn main() -> ExitCode {
     let run_start = std::time::Instant::now();
     // PAR-011: the NEC-2D layout prints only what fnec computes, and one solve per
     // deck; what it cannot print is refused here, before anything is solved, so no
-    // partial block is ever written. The inputs the layout cannot echo are refused
-    // with it: frequencies or loads from outside the deck, a remote solve, and the
-    // device pattern path, which keeps gains only.
+    // partial block is ever written — the deck's cards and the run's options alike,
+    // in one place (`nec2d_out::check_admissible`).
     if output_format == OutputFormat::Nec2d {
-        let outside = if sweep_config_path.is_some() {
-            Some("--sweep-config")
-        } else if loads_config_path.is_some() {
-            Some("--loads-config")
-        } else if hosts_path.is_some() {
-            Some("--hosts")
-        } else if execution_mode == ExecutionMode::Gpu {
-            Some("--exec gpu")
-        } else {
-            None
+        let options = nec2d_out::RunOptions {
+            sweep_config: sweep_config_path.is_some(),
+            loads_config: loads_config_path.is_some(),
+            hosts: hosts_path.is_some(),
+            execution_mode,
+            solver_mode,
+            ground_solver,
         };
-        if let Some(flag) = outside {
-            eprintln!(
-                "error: --output-format nec2d cannot be combined with {flag}: the NEC-2D output \
-                 echoes the deck's own cards and needs the CPU pattern (PAR-011)"
-            );
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = nec2d_out::check_admissible(deck) {
+        if let Err(e) = nec2d_out::check_admissible(deck, &options) {
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
@@ -450,6 +541,13 @@ fn main() -> ExitCode {
     } else {
         frequencies_from_fr(deck)
     };
+    // FND-309: the input-impedance table is a text section; JSON has no form for
+    // it yet. Both routes, before anything is solved.
+    if output_format == OutputFormat::Json {
+        if let Some(w) = input_impedance_json_warning(deck, freqs_hz.len()) {
+            eprintln!("warning: {w}");
+        }
+    }
     // After every configuration file is read (FND-150): a bad `--hosts` or
     // `--sweep-config` path is reported even on an undriven deck, as the comment
     // at the `--hosts` read promises (FND-181). Still ahead of the first deck
@@ -616,6 +714,21 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
+        // The worker returns ONE feedpoint impedance per frequency — its wire
+        // protocol has room for no more — so a deck with several was answered for
+        // the first and the rest dropped with no word, in text and in JSON, while
+        // the local run prints every row (FND-304). Refused until the protocol
+        // carries the others; the count is the local report's (`feedpoints`).
+        if let Some(n) = nec_solver::more_than_one_feedpoint(deck) {
+            eprintln!(
+                "error: this deck has {n} feedpoints, and --hosts reports one: the \
+                 distributed worker returns a single feedpoint impedance per frequency, \
+                 so the other {} would be dropped. Run without --hosts to get every \
+                 feedpoint.",
+                n - 1
+            );
+            return ExitCode::FAILURE;
+        }
         // Every pre-solve caveat the local run emits. This used to be the topology
         // one alone, so a distributed run of a low-over-ground or junction-fed deck
         // returned numbers with none of the qualifications the same deck earns
@@ -645,20 +758,16 @@ fn main() -> ExitCode {
     // disagree. Local runs only, so it sits below the `--hosts` branch: a worker
     // is told `gpu` only when the user said so (FND-040), never by a pick made
     // from the controller's hardware.
-    let stamped = deck.cards.iter().any(|c| {
-        matches!(
-            c,
-            nec_model::card::Card::Ld(_)
-                | nec_model::card::Card::Tl(_)
-                | nec_model::card::Card::Nt(_)
-        )
-    });
+    //
+    // The solve's own predicate, asked at every run frequency: the device takes a
+    // point only when nothing is stamped at that point, so a pick made on which
+    // card types are present kept a deck whose `LD` stamps zero on the CPU while
+    // `--exec gpu` solved it on the device (FND-297 a).
     let gpu_deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
         Err("the device solves the Hallén basis only")
-    } else if stamped || !laplace_loads.is_empty() {
-        Err("the deck stamps loads or networks into the matrix, which the device does not see")
     } else {
-        nec_solver::gpu_resident_class(deck, &segs, &ground)
+        nec_solver::gpu_resident_decline(deck, &segs, &ground, &freqs_hz, &laplace_loads)
+            .map_or(Ok(()), Err)
     };
     // Two homogeneous unknowns per straight wire with two free ends: the system
     // the device holds is S = N + 2W.
@@ -828,6 +937,16 @@ fn main() -> ExitCode {
         );
     }
 
+    // D1 of FND-286: the corrected impedance is a one-port ΔZ on the solve's V/I,
+    // so the row's I is not V/Z and the currents and pattern are the rcm solve's.
+    // Said once per run, not per point.
+    if solved
+        .iter()
+        .any(|(_, r, _)| r.as_ref().is_ok_and(|p| p.surface_wave_applied))
+    {
+        eprintln!("{SURFACE_WAVE_APPLIED_INFO}");
+    }
+
     if enable_benchmarking && bench_format == BenchFormat::Csv {
         emit_bench_csv_header();
     }
@@ -845,8 +964,9 @@ fn main() -> ExitCode {
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_residual_for_run(&solved, hallen_residual_caveat);
     warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
-    let any_failed = emit_sweep_points(
+    let failed = emit_sweep_points(
         solved,
         output_format,
         &mut sweep_rows,
@@ -859,17 +979,10 @@ fn main() -> ExitCode {
         &bench_solver,
     );
 
-    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
-        println!();
-        println!("SWEEP_POINTS");
-        println!("N_POINTS {}", sweep_rows.len());
-        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
-        for row in sweep_rows {
-            println!(
-                "{:.6} {} {} {:.6} {:.6}",
-                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
-            );
-        }
+    let any_failed = !failed.is_empty();
+
+    if output_format == OutputFormat::Text {
+        print_sweep_sections(deck, &sweep_rows, &failed, &freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -904,6 +1017,12 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     }
 }
+
+/// What a run whose impedance carries the surface-wave correction is told about
+/// the rest of its report (FND-286, decision D1).
+const SURFACE_WAVE_APPLIED_INFO: &str =
+    "info: --ground-solver sommerfeld: Z includes the surface-wave correction; V, I, the \
+     currents and the pattern are the reflection-coefficient solve's (PH9-CHK-006, FND-286)";
 
 /// How a `--hosts` user reaches the MPIE: not by adding `--solver mpie`, which
 /// `--hosts` refuses, but by running without it (FND-221).
@@ -948,6 +1067,8 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(
         deck,
         segs,
+        // The controller refuses `--loads-config`, so the run's loads are the deck's.
+        &[],
         ground,
         freqs_hz,
         false,
@@ -1043,6 +1164,26 @@ fn worker_warning_lines(
         .collect()
 }
 
+/// Print the run's FND-302 caveat once, at its worst judged residual: the
+/// residual is a property of the solve, and a sweep should not repeat it per
+/// point. Local runs only — a `--hosts` point carries no residual, and the
+/// worker sends its own caveat among its warnings.
+fn warn_residual_for_run<T>(
+    solved: &[(usize, Result<FrequencySolveResult, String>, T)],
+    threshold: f64,
+) {
+    let worst = solved
+        .iter()
+        .filter_map(|(_, r, _)| r.as_ref().ok())
+        .fold(None, |acc, r| {
+            nec_solver::validate::worst_residual(acc, r.hallen_rel_res)
+        });
+    if let Some(w) = worst.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("warning: {w}");
+    }
+}
+
 /// Print the run's negative-resistance caveat once — per point for a single
 /// frequency, one aggregate line for a sweep (FND-069). One function for the
 /// local and the distributed sweep, called just before their shared
@@ -1111,9 +1252,7 @@ fn distributed_negative_resistance_warnings(
     // The same call the worker makes to decide which segment it reported, so the
     // caveat cannot name a different one. This was a hand-maintained mirror of the
     // worker's filter until the FND-031 seam landed; now it is the same function.
-    let (tag, seg) = nec_solver::first_delta_gap_feedpoint(deck)
-        .map(|ex| (ex.tag as usize, ex.segment as usize))
-        .unwrap_or((0, 0));
+    let (tag, seg) = distributed_feedpoint(deck, segs).unwrap_or((0, 0));
     nec_solver::validate::negative_resistance_warning(
         z_re,
         tag,
@@ -1121,11 +1260,66 @@ fn distributed_negative_resistance_warnings(
         deck,
         segs,
         nec_solver::validate::SolverContext::cli_hallen().with_loads(
-            nec_solver::validate::RunLoads::of_deck(deck, segs, freqs_hz),
+            nec_solver::validate::RunLoads::of_run(deck, segs, &[], freqs_hz),
         ),
     )
     .into_iter()
     .collect()
+}
+
+/// The feedpoint the distributed worker's one impedance belongs to, as the local
+/// report names it: the resolved segment's own `(tag, segment)`.
+///
+/// The controller's records said `tag 0 seg 0` for every distributed point
+/// (FND-304), which names no segment at all. A deck reaching the worker has one
+/// feedpoint — `--hosts` refuses more (`more_than_one_feedpoint`), and a mixed or
+/// plane-wave deck earlier — so it is [`nec_solver::feedpoints`]'s first, the
+/// one the worker prices. Resolved through `find_deck_segment` as the local rows
+/// are, so a tag-0 card's absolute segment number reports its wire (FND-282).
+/// `None` for a deck with no feedpoint, which the worker refuses.
+fn distributed_feedpoint(
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> Option<(usize, usize)> {
+    let (ex, _) = nec_solver::feedpoints(deck).next()?;
+    let i = nec_solver::find_deck_segment(segs, ex.tag, ex.segment)?;
+    Some((segs[i].tag as usize, segs[i].tag_index as usize))
+}
+
+/// A distributed point's summary — the record `--output-format json` writes:
+/// the worker's one impedance at [`distributed_feedpoint`]'s segment, top level
+/// and the one-element `feedpoints` alike (FND-291, FND-304).
+fn distributed_sweep_summary(
+    freq_mhz: f64,
+    z_re: f64,
+    z_im: f64,
+    deck: &nec_model::deck::NecDeck,
+    segs: &[nec_solver::Segment],
+) -> SweepPointSummary {
+    let (tag, seg) = distributed_feedpoint(deck, segs).unwrap_or((0, 0));
+    let abs_seg = solve_session::feedpoint_abs_segments(deck, segs)
+        .first()
+        .copied()
+        .unwrap_or(0);
+    SweepPointSummary {
+        freq_mhz,
+        tag,
+        seg,
+        z_re,
+        z_im,
+        // The worker refuses the pulse bases, so its points never carry the
+        // unvalidated-solver caveat.
+        caveat: None,
+        // The one feedpoint the worker priced; a deck with more is refused
+        // before any host is dialled (FND-304).
+        feedpoints: vec![SweepFeedpoint {
+            tag,
+            seg,
+            abs_seg,
+            z_re,
+            z_im,
+        }],
+    }
 }
 
 /// Distributed solve via `--hosts`.
@@ -1279,10 +1473,12 @@ fn run_distributed_solve(
                     // the same whether the work ran on a GPU or a CPU.
                     exec: format!("ssh-{exec_used}"),
                     freq_mhz,
-                    abs_res: 0.0,
-                    rel_res: 0.0,
-                    diag_spread: 0.0,
-                    sin_rel_res: 0.0,
+                    // The worker sends no residual and no diagonal spread:
+                    // `null`, not a perfect 0 (FND-306, D8).
+                    abs_res: None,
+                    rel_res: None,
+                    diag_spread: None,
+                    sin_rel_res: None,
                 };
                 // FND-014, controller-side on purpose. Putting this in the worker
                 // would reproduce the gap under version skew: a worker is a
@@ -1298,17 +1494,17 @@ fn run_distributed_solve(
                     solver_mode,
                     &[freq_mhz * 1e6],
                 );
-                let sweep_summary = Some(SweepPointSummary {
+                let sweep_summary = Some(distributed_sweep_summary(
                     freq_mhz,
-                    tag: 0,
-                    seg: 0,
-                    z_re: impedance.re_ohm,
-                    z_im: impedance.im_ohm,
-                    // The worker refuses the pulse bases, so its points never
-                    // carry the unvalidated-solver caveat.
-                    caveat: None,
-                });
+                    impedance.re_ohm,
+                    impedance.im_ohm,
+                    deck,
+                    segs,
+                ));
                 Ok(FrequencySolveResult {
+                    // The worker judges its own residual and sends the caveat
+                    // among its warnings, which the controller prints.
+                    hallen_rel_res: None,
                     report: PointOutput::Text(report),
                     diag_line,
                     bench,
@@ -1316,11 +1512,14 @@ fn run_distributed_solve(
                     negative_r,
                     min_feed_re: Some(impedance.re_ohm),
                     ran_on_gpu: exec_used == "gpu",
+                    // The controller refuses --ground-solver sommerfeld.
+                    surface_wave_applied: false,
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
-                    run_loads: nec_solver::validate::RunLoads::of_deck(
+                    run_loads: nec_solver::validate::RunLoads::of_run(
                         deck,
                         segs,
+                        &[],
                         &[freq_mhz * 1e6],
                     ),
                 })
@@ -1375,7 +1574,7 @@ fn run_distributed_solve(
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
     warn_negative_resistance_for_run(&solved, deck, segs, solver_mode);
-    let any_failed = emit_sweep_points(
+    let failed = emit_sweep_points(
         solved,
         output_format,
         &mut sweep_rows,
@@ -1388,17 +1587,10 @@ fn run_distributed_solve(
         &bench_solver,
     );
 
-    if sweep_rows.len() > 1 && output_format == OutputFormat::Text {
-        println!();
-        println!("SWEEP_POINTS");
-        println!("N_POINTS {}", sweep_rows.len());
-        println!("FREQ_MHZ TAG SEG Z_RE Z_IM");
-        for row in sweep_rows {
-            println!(
-                "{:.6} {} {} {:.6} {:.6}",
-                row.freq_mhz, row.tag, row.seg, row.z_re, row.z_im
-            );
-        }
+    let any_failed = !failed.is_empty();
+
+    if output_format == OutputFormat::Text {
+        print_sweep_sections(deck, &sweep_rows, &failed, freqs_hz);
     }
 
     if output_format == OutputFormat::Json {
@@ -1653,10 +1845,10 @@ mod tests {
         negative_resistance_warnings, run_negative_resistance_warnings, SolverMode,
     };
     use super::{
-        auto_select_execution_mode, detect_compatibility_profile,
+        auto_select_execution_mode, detect_compatibility_profile, distributed_feedpoint,
         distributed_negative_resistance_warnings, distributed_pre_solve_caveats,
-        exec_fallback_warning, worker_exec_preference, worker_warning_lines, CompatibilityProfile,
-        ExecutionMode,
+        distributed_sweep_summary, exec_fallback_warning, worker_exec_preference,
+        worker_warning_lines, CompatibilityProfile, ExecutionMode,
     };
     use nec_report::FeedpointRow;
     use nec_solver::validate::RunLoads;
@@ -1672,6 +1864,39 @@ mod tests {
     }
 
     const BENT: &str = "GW 1 21 -5.0 0 0.0 0.0 0 3.0 0.001\nGW 2 21 0.0 0 3.0 5.0 0 0.0 0.001\nGE 0\nEX 0 1 5 0 1.0 0.0\nFR 0 1 0 0 14.2 0.0\nEN\n";
+
+    /// FND-304: the distributed record names the segment its one impedance is at,
+    /// as the local report's row does — it said tag 0 seg 0 for every point. A
+    /// tag-0 card names an absolute segment number (FND-282), so `EX 0 0 32` on
+    /// two 21-segment wires is wire 2's 11th; a current source is a feedpoint
+    /// too; a plane wave has none.
+    #[test]
+    fn the_distributed_record_names_the_feedpoint_segment() {
+        let two = |cards: &str| {
+            deck_and_segs(&format!(
+                "GW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 1 0 -2.5 1 0 2.5 0.001\nGE 0\n{cards}FR 0 1 0 0 29.9 0\nEN\n"
+            ))
+        };
+        let (deck, segs) = two("EX 0 0 32 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((2, 11)));
+        let (deck, segs) = two("EX 0 1 7 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((1, 7)));
+        let (deck, segs) = two("EX 4 2 5 0 1 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), Some((2, 5)));
+        let (deck, segs) = two("EX 1 1 1 0 0 0 0\n");
+        assert_eq!(distributed_feedpoint(&deck, &segs), None);
+
+        // The record the JSON writer gets: that segment, at the top level and in
+        // the one-element `feedpoints`, with the worker's impedance.
+        let (deck, segs) = two("EX 0 0 32 0 1 0\n");
+        let s = distributed_sweep_summary(29.9, 70.5, -3.25, &deck, &segs);
+        assert_eq!((s.tag, s.seg, s.z_re, s.z_im), (2, 11, 70.5, -3.25));
+        assert_eq!(s.feedpoints.len(), 1);
+        let f = &s.feedpoints[0];
+        assert_eq!((f.tag, f.seg, f.z_re, f.z_im), (2, 11, 70.5, -3.25));
+        // And its absolute number, which INPUT_IMPEDANCE prints (FND-309).
+        assert_eq!(f.abs_seg, 32);
+    }
 
     fn row(z_re: f64) -> FeedpointRow {
         FeedpointRow {
@@ -1870,6 +2095,7 @@ mod tests {
         let offered = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -1920,6 +2146,7 @@ mod tests {
         let produced = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -1956,6 +2183,32 @@ mod tests {
             distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Mpie)
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
+        );
+    }
+
+    /// FND-294: `--hosts` carries the free-end feed caveat, which the controller
+    /// computes from the deck before any worker is asked; an interior feed does
+    /// not earn it.
+    #[test]
+    fn the_distributed_caveats_name_a_feed_at_a_free_wire_end() {
+        let deck = |seg: u32| {
+            format!("GW 1 11 0 0 0 0 0 5 0.001\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n")
+        };
+        let caveats = |seg: u32| {
+            let (deck, segs) = deck_and_segs(&deck(seg));
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[29.9e6], SolverMode::Hallen)
+        };
+        let end = caveats(1);
+        assert!(
+            end.iter()
+                .any(|w| w.contains("tag 1 segment 1 is on a segment at a free wire end")),
+            "{end:?}"
+        );
+        let interior = caveats(2);
+        assert!(
+            !interior.iter().any(|w| w.contains("free wire end")),
+            "{interior:?}"
         );
     }
 

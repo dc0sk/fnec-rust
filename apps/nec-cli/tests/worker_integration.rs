@@ -7,6 +7,8 @@
 //! Tests 3-4: local subprocess worker round-trip.
 //! Tests 5-7: SSH worker handle (graceful error handling, localhost round-trip).
 
+mod common;
+
 use base64::Engine;
 
 use nec_worker::WorkerPool;
@@ -239,6 +241,113 @@ fn test_worker_two_node_solve_matches_local() {
 
     w0.shutdown().ok();
     w1.shutdown().ok();
+}
+
+// ---------------------------------------------------------------------------
+// FND-297 d — the worker prices its feed row as the CLI does
+// ---------------------------------------------------------------------------
+
+/// Two `EX` cards on segment 11 of one 21-segment dipole.
+const TWO_EX_ON_ONE_SEGMENT: &str = "\
+CM two EX on one segment
+CE
+GW 1 21 0 0 -5.282 0 0 5.282 0.001
+GE 0
+EX 0 1 11 0 1 0
+EX 0 1 11 0 0.5 0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+/// The same dipole with one card: the negative control.
+const ONE_EX: &str = "\
+CM one EX
+CE
+GW 1 21 0 0 -5.282 0 0 5.282 0.001
+GE 0
+EX 0 1 11 0 1 0
+FR 0 1 0 0 14.2 0
+EN
+";
+
+/// fnec's row on the two-card deck (the summed drive), Ω.
+const TWO_EX_R: f64 = 78.955035;
+const TWO_EX_X: f64 = 43.483530;
+
+fn worker_z(deck: &str, task_id: &str) -> (f64, f64) {
+    let fnec = env!("CARGO_BIN_EXE_fnec");
+    let mut worker = nec_worker::LocalWorkerHandle::spawn(fnec).expect("spawn fnec worker");
+    let task = nec_worker::TaskMessage {
+        task_id: task_id.to_string(),
+        deck_hash: "ignored".to_string(),
+        deck_b64: b64(deck),
+        solver_config: nec_worker::WorkerSolverConfig {
+            basis: "hallen".to_string(),
+            ground_model: "none".to_string(),
+            exec: "cpu".to_string(),
+        },
+        frequency_hz: 14.2e6,
+    };
+    let result = worker.dispatch(&task).expect("dispatch should succeed");
+    worker.shutdown().ok();
+    let nec_worker::TaskResult::Ok { impedance, .. } = result else {
+        panic!("{task_id}: the worker did not solve: {result:?}")
+    };
+    (impedance.re_ohm, impedance.im_ohm)
+}
+
+/// The main command's first feedpoint row, from its JSON record.
+fn cli_z(deck: &str, file_name: &str) -> (f64, f64) {
+    let path = common::TempDeck::new(file_name, deck);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .args(["--output-format", "json"])
+        .arg(&path)
+        .output()
+        .expect("run fnec");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let records: Vec<serde_json::Value> =
+        serde_json::from_slice(&out.stdout).expect("fnec JSON output");
+    let z = |k: &str| records[0][k].as_f64().expect("a number");
+    (z("z_re"), z("z_im"))
+}
+
+fn assert_same_z(what: &str, worker: (f64, f64), cli: (f64, f64)) {
+    let scale = cli.0.hypot(cli.1);
+    assert!(
+        (worker.0 - cli.0).abs() <= 1e-9 * scale && (worker.1 - cli.1).abs() <= 1e-9 * scale,
+        "{what}: worker {worker:?} vs CLI {cli:?}"
+    );
+}
+
+/// FND-297 d: the worker's feed row is priced from the drive the solve applied,
+/// through `nec_solver::feedpoint_drive_voltage` — the seam the CLI, the GUI and
+/// the bindings use. The worker read V from the EX card instead, which differs only
+/// when two cards share a segment: the solve sums them (1.5 V), and the worker
+/// divided one card's 1 V by the summed drive's current, 52.64 + j28.99 Ω where
+/// the CLI says 78.96 + j43.48 Ω.
+///
+/// This pins fnec's **summing** semantics, not nec2c's: nec2c applies the last card
+/// (0.5 V) and prices each row V_card/I — 158.07 + j91.71 and 79.03 + j45.86 Ω on
+/// this deck (nec2c 1.3.1; fnec's one-card row is 78.96 + j43.48). That is FND-305; its fix re-points this test.
+#[test]
+fn a_worker_feed_row_is_priced_from_the_drive_the_solve_applied() {
+    let worker = worker_z(TWO_EX_ON_ONE_SEGMENT, "two-ex");
+    let cli = cli_z(TWO_EX_ON_ONE_SEGMENT, "fnd297d-two-ex.nec");
+    assert_same_z("two EX on one segment", worker, cli);
+    // Absolute, so a seam that moved both frontends at once still fails here.
+    assert!(
+        (worker.0 - TWO_EX_R).abs() < 0.01 && (worker.1 - TWO_EX_X).abs() < 0.01,
+        "two EX on one segment: {worker:?}"
+    );
+
+    // Negative control: one card, where the card's V and the applied drive agree.
+    let worker = worker_z(ONE_EX, "one-ex");
+    let cli = cli_z(ONE_EX, "fnd297d-one-ex.nec");
+    assert_same_z("one EX", worker, cli);
 }
 
 // ---------------------------------------------------------------------------

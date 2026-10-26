@@ -130,6 +130,47 @@ pub fn gpu_resident_class(
     Ok(())
 }
 
+/// Why the GPU-resident solve does not take this deck at every one of
+/// `freqs_hz`, or `None` when it does: [`gpu_resident_class`], plus nothing
+/// stamped into the matrix at any of them — the deck's own `LD`/`TL`/`NT` asked
+/// by value through [`crate::build_deck_stamps`]`(…).is_identity()` (FND-023),
+/// and no Laplace load. The class is asked once; the stamps at each frequency.
+/// The device re-fills and solves from raw segment inputs, so a stamp would be
+/// lost there.
+///
+/// The one copy of "does the device solve this deck" for the CLI's automatic
+/// pick (at every run frequency), the CLI's matrix fill and resident attempt,
+/// and the worker. The pick used to ask which card types were present, so an
+/// `LD` that stamps zero kept a deck on the CPU that the solve would have taken
+/// on the device (FND-297 a).
+///
+/// What it does not ask, because only the solve holds the facts: the device's
+/// segment floor and adapter, and whether the excitation lies in the homogeneous
+/// span (FND-227), which needs the frequency's right-hand side.
+pub fn gpu_resident_decline(
+    deck: &NecDeck,
+    segs: &[Segment],
+    ground: &crate::geometry::GroundModel,
+    freqs_hz: &[f64],
+    laplace: &[crate::loads::LaplaceLoad],
+) -> Option<&'static str> {
+    if let Err(why) = gpu_resident_class(deck, segs, ground) {
+        return Some(why);
+    }
+    if freqs_hz
+        .iter()
+        .any(|&f| !crate::stamps::build_deck_stamps(deck, segs, f).is_identity())
+    {
+        return Some(
+            "the deck stamps loads or networks into the matrix, which the device does not see",
+        );
+    }
+    if !laplace.is_empty() {
+        return Some("the run's Laplace loads stamp the matrix, which the device does not see");
+    }
+    None
+}
+
 /// True if the deck carries an incident-plane-wave `EX` card (NEC-2 types 1/2/3).
 pub fn deck_has_plane_wave(deck: &NecDeck) -> bool {
     deck.cards
@@ -225,7 +266,7 @@ pub(crate) fn solve_graph_unit_gap(
     loads: &[Complex64],
 ) -> Result<Vec<Complex64>, crate::linear::SolveError> {
     let ground = crate::ground_model_from_deck(deck);
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, &ground, freq_hz);
     // `z_mat` must be UNSTAMPED: the loads enter here, as columns of the graph
     // system, and nowhere else (FND-198).
@@ -580,16 +621,27 @@ pub const JOINED_GAPS_CAVEAT_RAD: f64 = 0.1;
 /// `None` when no node takes that row or every such node is straight to the
 /// radian tolerance of [`JOINED_GAPS_CAVEAT_RAD`]. The one predicate the FND-278
 /// caveat keys on, built from the same gap list the solve builds (feeds, the
-/// current source, network ports, the deck's lumped loads at `freq_hz`) and the
-/// same nodes (the section graph's degree-2 nodes where the graph solves the
-/// deck, the conductor paths' bends otherwise). A deck on PEC ground is judged on
-/// its image problem, as the solve is (FND-082).
-pub fn joined_gaps_at_a_bend_deg(deck: &NecDeck, segs: &[Segment], freq_hz: f64) -> Option<f64> {
+/// current source, network ports, and `loads`) and the same nodes (the section
+/// graph's degree-2 nodes where the graph solves the deck, the conductor paths'
+/// bends otherwise). A deck on PEC ground is judged on its image problem, as the
+/// solve is (FND-082), with the image's loads as the solve doubles them
+/// ([`image_loads`]).
+///
+/// `loads` is the per-segment series-load diagonal on `segs` that the solve is
+/// handed — [`crate::loads::run_load_diagonal`], `--loads-config` loads included.
+/// Rebuilt here from the deck's `LD` cards it missed those, and a Laplace load
+/// beside a bend solved with the joined row and no caveat (FND-288).
+pub fn joined_gaps_at_a_bend_deg(
+    deck: &NecDeck,
+    segs: &[Segment],
+    freq_hz: f64,
+    loads: &[Complex64],
+) -> Option<f64> {
+    debug_assert_eq!(loads.len(), segs.len(), "one load per segment");
     let ground = crate::ground_model_from_deck(deck);
     if let Ok(Some(img)) = crate::ground_contact::pec_ground_contact(deck, segs, &ground) {
-        return joined_gaps_at_a_bend_deg(&img.deck, &img.segs, freq_hz);
+        return joined_gaps_at_a_bend_deg(&img.deck, &img.segs, freq_hz, &image_loads(loads));
     }
-    let loads = crate::loads::build_loads(deck, segs, freq_hz).0;
     let ports = crate::network::build_networks(deck, segs, freq_hz)
         .map(|(nets, _)| nets.ports())
         .unwrap_or_default();
@@ -597,7 +649,7 @@ pub fn joined_gaps_at_a_bend_deg(deck: &NecDeck, segs: &[Segment], freq_hz: f64)
         .filter_map(|(ex, _)| crate::find_deck_segment(segs, ex.tag, ex.segment))
         .chain(ports)
         .collect();
-    let gaps = NodeGaps::new(segs, feeds, &loads);
+    let gaps = NodeGaps::new(segs, feeds, loads);
     let angle = |ta: [f64; 3], tb: [f64; 3]| {
         (ta[0] * tb[0] + ta[1] * tb[1] + ta[2] * tb[2])
             .clamp(-1.0, 1.0)
@@ -676,7 +728,7 @@ pub(crate) fn group_sections(
     ground: &crate::GroundModel,
     gaps: &NodeGaps,
 ) -> PathGrouping {
-    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+    let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
     let sources = corner_sources(segs, ground, freq_hz);
     match section_layout(segs, paths, k, &sources, gaps) {
         Some((group_of, bends)) => (group_of, path_end_rows(segs, paths), bends),
@@ -1350,7 +1402,7 @@ fn solve_planewave_on_plan(
         // stamps, and a system built from it applied them in the wrong form,
         // silently — 25 % off nec2c on a loaded T (FND-197).
         let built = system.get_or_init(|| {
-            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+            let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
             let z = crate::assemble_z_matrix_with_ground(segs, freq_hz, matrix_ground);
             let mut system = crate::section_graph::GraphSystem::build(
                 &z,
@@ -1428,6 +1480,60 @@ pub struct ResidualInputs {
     pub rhs: Vec<Complex64>,
     /// `Ok` groups rows by contiguous wire range, `Err` by conductor path.
     pub grouping: Result<Vec<(usize, usize)>, Vec<usize>>,
+    /// The corner term the conductor-path solve adds to the tangential rows, as
+    /// additive matrix entries `(row, col, value)` ([`crate::linear::BendLayout`]).
+    /// Empty on every route without bends.
+    ///
+    /// Without it the residual described a system the route does not solve: on a
+    /// bent path `Z·I − h − rhs` is the corner correction itself, so the 3× U read
+    /// `rel_res = 0.68` and the corpus split-V 0.96 (FND-302).
+    pub corner: Vec<(usize, usize, Complex64)>,
+}
+
+impl ResidualInputs {
+    /// Inputs for a route with no corner term: the merged-conductor grouping (the
+    /// GPU-resident solve and the sinusoidal basis use this).
+    pub fn plain(
+        homogeneous: Vec<Complex64>,
+        rhs: Vec<Complex64>,
+        endpoints: Vec<(usize, usize)>,
+    ) -> Self {
+        Self {
+            homogeneous,
+            rhs,
+            grouping: Ok(endpoints),
+            corner: Vec::new(),
+        }
+    }
+
+    /// `(‖r‖, ‖r‖ / ‖rhs‖)` for `r = (Z + corner)·I − h − rhs` over the N Hallén
+    /// rows: the residual of the system the route actually solved. `z` must be the
+    /// matrix that was solved (loads stamped). One function for every caller, so the
+    /// residual and the solve cannot describe different systems again (FND-302).
+    pub fn residual(&self, z: &ZMatrix, currents: &[Complex64]) -> (f64, f64) {
+        let n = z.n;
+        let mut r = vec![Complex64::new(0.0, 0.0); n];
+        for (row, r_row) in r.iter_mut().enumerate() {
+            let mut zi = Complex64::new(0.0, 0.0);
+            for (col, i_col) in currents.iter().enumerate().take(n) {
+                zi += z.get(row, col) * *i_col;
+            }
+            *r_row = zi - self.homogeneous[row] - self.rhs[row];
+        }
+        for &(row, col, v) in &self.corner {
+            r[row] += v * currents[col];
+        }
+        let norm = |v: &[Complex64]| {
+            v.iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f64>()
+                .sqrt()
+        };
+        let res = norm(&r);
+        let denom = norm(&self.rhs);
+        let rel = if denom > 0.0 { res / denom } else { res };
+        (res, rel)
+    }
 }
 
 /// The result of a routed Hallén solve.
@@ -1439,6 +1545,12 @@ pub struct HallenRouted {
     pub port_voltage: Option<Complex64>,
     pub route: HallenRoute,
     pub residual_inputs: Option<ResidualInputs>,
+    /// `(abs, rel)` residual of the solved system ([`ResidualInputs::residual`]),
+    /// computed once at [`solve_hallen_routed`]'s exit so every frontend can render
+    /// [`crate::validate::residual_caveat`]. `None` where the route computes no
+    /// residual (section graph, PEC-contact image, plane wave, current source) —
+    /// "not computed", never 0 (FND-306). Costs one O(N²) product per solve.
+    pub residual: Option<(f64, f64)>,
     /// `(segment, current)` into a `TL`/`NT` network at each driven segment that
     /// is also a network port. Empty without networks.
     ///
@@ -1515,7 +1627,7 @@ pub fn solve_hallen_routed(
     freq_hz: f64,
     loads: &[Complex64],
 ) -> Result<HallenRouted, HallenSessionError> {
-    let routed = match image_problem(deck, segs)? {
+    let mut routed = match image_problem(deck, segs)? {
         Some(img) => solve_ground_contact(deck, segs, &img, z_mat, freq_hz, loads)?,
         None => solve_hallen_routed_inner(deck, segs, z_mat, freq_hz, loads)?,
     };
@@ -1523,6 +1635,14 @@ pub fn solve_hallen_routed(
     // check per arm is three chances to add a fourth arm without one (FND-126).
     crate::check_currents_finite(&routed.currents)
         .map_err(HallenSessionError::NonFiniteCurrents)?;
+    // The residual at the same single exit, against `z_mat` as solved (the paths
+    // basis stamps its load columns into it in place), so the CLI, GUI, worker
+    // and bindings all see the one figure `validate::residual_caveat` judges
+    // (FND-302).
+    routed.residual = routed
+        .residual_inputs
+        .as_ref()
+        .map(|ri| ri.residual(z_mat, &routed.currents));
     Ok(routed)
 }
 
@@ -1533,6 +1653,17 @@ fn image_problem(
 ) -> Result<Option<crate::ground_contact::ImageProblem>, HallenSessionError> {
     crate::ground_contact::pec_ground_contact(deck, segs, &crate::ground_model_from_deck(deck))
         .map_err(HallenSessionError::Excitation)
+}
+
+/// The image problem's load diagonal from the deck's: the image of a series load
+/// is the same load, and the images follow the originals (`pec_ground_contact`).
+/// One function for the solve and the FND-278 caveat, so the caveat judges the
+/// image with the loads the solve stamps — `--loads-config` loads included, which
+/// the image deck's cards cannot carry (FND-288).
+pub(crate) fn image_loads(loads: &[Complex64]) -> Vec<Complex64> {
+    let mut image = loads.to_vec();
+    image.extend_from_slice(loads);
+    image
 }
 
 /// A PEC-ground deck with ground contact, solved as its doubled free-space image
@@ -1560,6 +1691,7 @@ fn solve_ground_contact(
             port_voltage: None,
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1584,9 +1716,7 @@ fn solve_ground_contact(
         // Returned through the receive seam above.
         HallenDrive::PlaneWave => {}
     }
-    // The image of a series load is the same load.
-    let mut image_loads = loads.to_vec();
-    image_loads.extend_from_slice(loads);
+    let image_loads = image_loads(loads);
     let mut z = crate::assemble_z_matrix_with_ground(
         &img.segs,
         freq_hz,
@@ -1647,7 +1777,7 @@ fn solve_hallen_routed_inner(
     // them into `z_mat` (FND-162 stage 5). `loads` is the per-segment diagonal:
     // all zeros, not empty, on an unloaded deck.
     if let Some(graph) = graph_route(deck, segs) {
-        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::farfield::SPEED_OF_LIGHT;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / crate::constants::C0;
         let sources = corner_sources(segs, &ground, freq_hz);
         // TL/NT networks by superposition (FND-123): the response to a unit gap
         // at each undriven port, from the same system — exact, because the
@@ -1680,6 +1810,7 @@ fn solve_hallen_routed_inner(
                 port_voltage: None,
                 route,
                 residual_inputs: None,
+                residual: None,
                 network_branch: Vec::new(),
             });
         }
@@ -1707,6 +1838,7 @@ fn solve_hallen_routed_inner(
             port_voltage: None,
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: net.driven_branch,
         });
     }
@@ -1756,6 +1888,7 @@ fn solve_hallen_routed_inner(
             port_voltage: Some(port_voltage),
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1800,6 +1933,7 @@ fn solve_hallen_routed_inner(
                 port_voltage: None,
                 route,
                 residual_inputs: None,
+                residual: None,
                 network_branch: Vec::new(),
             })
         }
@@ -1880,6 +2014,12 @@ fn solve_delta_gap(
         homogeneous: homogeneous_of(&rhs, &sol.c_hom_per_wire),
         rhs: rhs.rhs.clone(),
         grouping,
+        // The solve added these to its matrix (`solve_hallen_paths`); the residual
+        // must too, or it measures the corner term instead of the solve (FND-302).
+        corner: grouped
+            .as_ref()
+            .map(|(_, _, bends)| bends.corner.clone())
+            .unwrap_or_default(),
     };
     if networks.is_empty() {
         return Ok(HallenRouted {
@@ -1887,6 +2027,7 @@ fn solve_delta_gap(
             port_voltage: None,
             route,
             residual_inputs: Some(residual),
+            residual: None,
             network_branch: Vec::new(),
         });
     }
@@ -1931,6 +2072,7 @@ fn solve_delta_gap(
         port_voltage: None,
         route,
         residual_inputs: Some(residual),
+        residual: None,
         network_branch: net.driven_branch,
     })
 }
@@ -2001,6 +2143,7 @@ fn solve_current_source(
             port_voltage: Some(fp.port_voltage),
             route,
             residual_inputs: None,
+            residual: None,
             network_branch: Vec::new(),
         });
     };
@@ -2031,6 +2174,7 @@ fn solve_current_source(
         port_voltage: Some(port_voltage),
         route,
         residual_inputs: None,
+        residual: None,
         network_branch: Vec::new(),
     })
 }

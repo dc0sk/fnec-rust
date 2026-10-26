@@ -30,9 +30,7 @@ use nec_model::deck::NecDeck;
 
 use crate::geometry::{ConductorPath, GroundModel, Segment};
 
-const C0: f64 = 299_792_458.0; // m/s
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
-const ETA0: f64 = MU0 * C0; // free-space wave impedance
+use crate::constants::{C0, ETA0};
 
 /// An incident plane wave parsed from an EX type 1/2/3 card.
 #[derive(Debug, Clone, Copy, PartialEq)]

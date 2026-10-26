@@ -148,6 +148,15 @@ EN
 """
 
 
+# A wire fed on its end segment (FND-294).
+END_FED = """\
+GW 1 11 0 0 0 0 0 5 0.001
+GE 0
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 29.9 0.0
+EN
+"""
+
 # A U whose middle run is one segment: it solves, with no bend modelled, and the
 # bent-conductor caveat names the MPIE (FND-251).
 U_ONE_SEGMENT_MIDDLE = """\
@@ -229,6 +238,8 @@ def test_a_clean_deck_solves_with_no_warnings():
         # `fnec_py` gained `solver="mpie"` in FND-055, so pointing a Python caller
         # at a different program stopped being the right advice.
         (U_ONE_SEGMENT_MIDDLE, 'pass solver="mpie"'),
+        # FND-294: a feed on a free-end segment.
+        (END_FED, "at a free wire end"),
     ],
 )
 def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):
@@ -634,3 +645,61 @@ def test_a_driven_deck_gives_the_same_currents_both_ways():
     zi = 1.0 / complex(feed["re"], feed["im"])
     assert zi.real == pytest.approx(z["z_re"], rel=1e-9)
     assert zi.imag == pytest.approx(z["z_im"], rel=1e-9)
+
+
+TWO_SOURCES = """\
+CE
+GW 1 21 0 0 -2.5 0 0 2.5 0.001
+GW 2 21 2.5 0 -2.5 2.5 0 2.5 0.001
+GE 0
+EX 0 1 11 0 1 0
+EX 0 2 11 0 0 1
+FR 0 1 0 0 29.9 0
+EN
+"""
+
+
+def test_every_feedpoint_of_a_two_source_deck_is_returned():
+    """FND-308: the dict carried the first feedpoint alone, with no marker.
+
+    Two dipoles driven 1 V and j1 V, so the rows differ. nec2c 1.3.1 gives
+    81.320 + j210.13 and 61.129 + j37.061; this 21-segment mesh puts fnec 2.6 %
+    and 2.7 % from them (both codes converge on the pair as the mesh refines).
+    """
+    for rec in (fnec_py.solve_deck_str(TWO_SOURCES), fnec_py.sweep_deck_str(TWO_SOURCES)[0]):
+        feeds = rec["feedpoints"]
+        assert len(feeds) == 2, rec
+        # The top level is the first element, key for key.
+        for key in ("tag", "seg", "z_re", "z_im", "z_abs", "z_arg_deg"):
+            assert feeds[0][key] == rec[key], (key, rec)
+        for fp, (tag, want) in zip(feeds, [(1, complex(81.320, 210.13)), (2, complex(61.129, 37.061))]):
+            assert (fp["tag"], fp["seg"]) == (tag, 11), fp
+            got = complex(fp["z_re"], fp["z_im"])
+            assert abs(got - want) / abs(want) < 0.035, (tag, got, want)
+
+
+def test_a_one_source_deck_has_a_one_element_feedpoints_list():
+    """The control: one source, one element, equal to the top level."""
+    rec = fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    assert len(rec["feedpoints"]) == 1, rec
+    assert rec["feedpoints"][0]["z_re"] == rec["z_re"], rec
+
+
+def test_the_residual_caveat_fires_when_the_threshold_is_crossed(monkeypatch):
+    """FND-302 positive control through the bindings' real solve.
+
+    No corpus deck reaches the 1e-5 default, so the threshold comes from
+    FNEC_HALLEN_REL_RESIDUAL_CAVEAT, which every frontend reads. At 1e-30 the
+    dipole's residual is above it and the caveat is raised once; unset, it is not.
+    """
+    monkeypatch.setenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT", "1e-30")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    fired = [str(w.message) for w in caught if "FND-302" in str(w.message)]
+    assert len(fired) == 1, [str(w.message) for w in caught]
+    monkeypatch.delenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    assert not [w for w in caught if "FND-302" in str(w.message)]

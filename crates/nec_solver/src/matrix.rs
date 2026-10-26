@@ -28,8 +28,7 @@ use crate::geometry::{GroundModel, Segment};
 // Physical constants (SI)
 // ---------------------------------------------------------------------------
 
-const C0: f64 = 299_792_458.0; // m/s
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
+use crate::constants::{C0, MU0};
 
 // ---------------------------------------------------------------------------
 // 4-point Gauss-Legendre quadrature nodes and weights on [-1, 1]

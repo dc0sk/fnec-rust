@@ -308,7 +308,7 @@ one.
 | `EX 4` current source | ✓ Supported — priced from the solved port voltage |
 | `EX 1` / `2` / `3` plane wave | ✗ Solves, then returns `unsupported_config`: a receive deck has no driven port, and this API reports only a feedpoint impedance |
 | No `EX` card at all | ✗ Refused before solving, `unsupported_config` naming the missing card (FND-145) |
-| Several delta gaps | Superposed; the **first** one's impedance is reported |
+| Several delta gaps | Superposed; the **first** one's impedance is reported. `fnec --hosts` therefore refuses such a deck before contacting any host (FND-304); a task sent to the worker directly still gets the first |
 | A plane wave beside a driven source, or two `EX 4` | ✗ Refused before solving |
 | Ground | Taken from the deck's `GN` card. A task whose `solver_config.ground_model` is anything but `"none"` is **refused** with `unsupported_config`, rather than having the field silently ignored |
 

@@ -352,6 +352,15 @@ pub fn refine_deck(deck: &NecDeck, factor: u32, ends: EndRule) -> Result<Refined
             &mut notes,
         );
     }
+    // FND-309: a print request carried on an EX card, which the study keeps.
+    if crate::excitation::input_impedance_print(deck).is_some() {
+        note(
+            "EX I4's input-impedance print dropped: the study reports every mesh's \
+             impedance itself"
+                .to_string(),
+            &mut notes,
+        );
+    }
     for r in &refs {
         if r.touches_end {
             let text = match ends {
@@ -459,6 +468,31 @@ mod tests {
         assert_eq!(refine_deck(&d, 1, EndRule::Keep).unwrap().deck, d);
         let err = refine_deck(&d, 2, EndRule::Keep).unwrap_err();
         assert!(err.contains("odd"), "{err}");
+    }
+
+    /// FND-309: EX I4's input-impedance print is noted as dropped, once, in its
+    /// own sentence; the same deck without the digit has no such note.
+    #[test]
+    fn an_ex_i4_print_request_is_noted_as_dropped() {
+        let with = deck(&DIPOLE.replace("EX 0 1 26 0 1.0 0.0", "EX 0 1 26 1 1.0 0.0 50"));
+        let r = refine_deck(&with, 3, EndRule::Keep).unwrap();
+        assert_eq!(
+            r.notes,
+            [
+                "EX I4's input-impedance print dropped: the study reports every mesh's \
+              impedance itself"
+            ],
+        );
+        // The refined deck keeps the card's I4 as written.
+        assert!(r
+            .deck
+            .cards
+            .iter()
+            .any(|c| matches!(c, Card::Ex(ex) if ex.i4 == 1)));
+        assert!(refine_deck(&deck(DIPOLE), 3, EndRule::Keep)
+            .unwrap()
+            .notes
+            .is_empty());
     }
 
     /// A base-fed monopole keeps its feed on the base sub-segment under `keep`
