@@ -75,6 +75,19 @@ records = json.loads(result.stdout)
 z_re, z_im = records[0]["z_re"], records[0]["z_im"]
 ```
 
+**Several feedpoints** — the top-level fields are the first feedpoint; every
+feedpoint, the first included, is in each record's `feedpoints` array, in the
+text report's `FEEDPOINTS` order (FND-291):
+
+```python
+for rec in records:
+    for fp in rec["feedpoints"]:
+        print(rec["freq_mhz"], fp["tag"], fp["seg"], complex(fp["z_re"], fp["z_im"]))
+```
+
+`--hosts` refuses a deck with more than one feedpoint: the distributed worker
+returns one impedance per frequency (FND-304).
+
 ---
 
 ## 2. Batch frequency sweeps
@@ -322,6 +335,9 @@ for block in doc["blocks"]:
     best = min(block["solutions"], key=lambda s: s["q"])
     print(block["freq_mhz"], best["topology"], best["shunt"], best["series"])
 ```
+
+A deck with several feedpoints is matched at the first — the JSON record's
+top-level impedance — and the block's `notes` says how many the solve reported.
 
 Exit code **0** with solutions or an already-matched load (`SOLUTIONS 0`,
 `NOTE already matched`); **1** when the feedpoint resistance is not positive

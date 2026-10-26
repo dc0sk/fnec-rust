@@ -48,7 +48,10 @@ resolved list, not over the deck.
     "z_re":       73.1,
     "z_im":       0.47,
     "z_abs":      73.1015,
-    "z_arg_deg":  0.368
+    "z_arg_deg":  0.368,
+    "feedpoints": [
+      {"tag": 1, "seg": 26, "z_re": 73.1, "z_im": 0.47, "z_abs": 73.1015, "z_arg_deg": 0.368}
+    ]
   }
 ]
 ```
@@ -64,17 +67,34 @@ resolved list, not over the deck.
 | `z_im` | `number` | Ω | Imaginary part of feedpoint impedance (reactance). |
 | `z_abs` | `number` | Ω | Magnitude of feedpoint impedance: `sqrt(z_re² + z_im²)`. |
 | `z_arg_deg` | `number` | ° | Phase angle of feedpoint impedance: `atan2(z_im, z_re)` in degrees. |
+| `feedpoints` | `object[]` | — | **Every** feedpoint of the point, in the text report's `FEEDPOINTS` order, each with `tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg` as above. Always present — one element for a one-source deck — so a consumer never branches on its presence. The top-level fields are its first element, digit for digit (FND-291). |
 | `caveat` | `string` | — | **Present only** when the point came from an unvalidated solver (`--solver pulse`/`continuity`, which need `--experimental-solver`; FND-080). Says why the numbers are not a result. Absent for every validated solver, so their records are unchanged. |
 
 All numeric fields are IEEE 754 double-precision floating-point values.
 
 ### Multi-source decks
 
-For decks with more than one EX card, only the first excitation source is
-represented per frequency-point record.  This is the same source that
-appears first in the `FEEDPOINTS` section of the text report.  Full
-multi-source support (one record element per feedpoint per frequency) is
-tracked under EP-4/EP-5.
+A deck with several feedpoints still gives **one record per frequency**: the
+top-level `tag` … `z_arg_deg` are the first feedpoint (the first row of the
+text report's `FEEDPOINTS`), and `feedpoints` lists every one, the first
+included. Two dipoles driven 1 V and j1 V at 29.9 MHz:
+
+```json
+[{"freq_mhz":29.9,"tag":1,"seg":11,"z_re":76.4797991460122,"z_im":206.9848725359967,"z_abs":220.6624053529671,"z_arg_deg":69.72099929499495,
+  "feedpoints":[{"tag":1,"seg":11,"z_re":76.4797991460122,"z_im":206.9848725359967,"z_abs":220.6624053529671,"z_arg_deg":69.72099929499495},
+                {"tag":2,"seg":11,"z_re":60.67713692939464,"z_im":35.149776543101815,"z_abs":70.12290451042725,"z_arg_deg":30.083367131360614}]}]
+```
+
+Until FND-291 the record carried the first feedpoint alone, with no marker that
+there were others. One record *per feedpoint* was rejected: it would change the
+array's length, and every consumer that indexes it by frequency would break.
+`caveat` stays on the record — it describes the solve, not one feedpoint.
+
+`--hosts` refuses a deck with more than one feedpoint before it contacts any
+host: the distributed worker returns one feedpoint impedance per frequency, and
+the others used to be dropped with no word (FND-304). Its records name the
+feedpoint's own `tag` and `seg` (they said `0` and `0` until then) and carry a
+one-element `feedpoints`.
 
 ### Absence of feedpoint data
 

@@ -34,8 +34,8 @@ pub use current_source::{solve_current_source_hallen, CurrentSourceError, Curren
 pub use excitation::{
     build_current_source_shape, build_current_source_shape_paths, build_excitation,
     build_hallen_rhs, build_hallen_rhs_from_sources, build_hallen_rhs_paths, delta_gap_sources,
-    feedpoints, first_delta_gap_feedpoint, scale_excitation_for_pulse_rhs, CurrentSourceShape,
-    ExcitationError, HallenRhs,
+    feedpoints, first_delta_gap_feedpoint, more_than_one_feedpoint, scale_excitation_for_pulse_rhs,
+    CurrentSourceShape, ExcitationError, HallenRhs,
 };
 pub use farfield::{
     average_power_gain, bilinear_interp_gain, compute_radiation_pattern, feedpoint_input_power,

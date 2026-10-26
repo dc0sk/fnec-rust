@@ -63,7 +63,9 @@ result = fnec_py.solve_deck_str(deck)
 # result = fnec_py.solve_deck_str(deck, solver="mpie")
 print(result)
 # {'freq_mhz': 14.0, 'tag': 1.0, 'seg': 26.0, 'z_re': 73.1, 'z_im': 42.5,
-#  'z_abs': 84.5, 'z_arg_deg': 30.2}
+#  'z_abs': 84.5, 'z_arg_deg': 30.2,
+#  'feedpoints': [{'tag': 1.0, 'seg': 26.0, 'z_re': 73.1, 'z_im': 42.5,
+#                  'z_abs': 84.5, 'z_arg_deg': 30.2}]}
 ```
 
 **Return dict fields**:
@@ -77,6 +79,7 @@ print(result)
 | `z_im` | float | Ω | Reactance (imaginary part of Z). |
 | `z_abs` | float | Ω | Impedance magnitude. |
 | `z_arg_deg` | float | ° | Impedance phase angle. |
+| `feedpoints` | list[dict] | — | Every feedpoint, in deck order, each a dict of `tag` … `z_arg_deg` as above (no `freq_mhz`). The keys above are its first element (FND-308). |
 
 `solver` selects the integral-equation formulation: `"hallen"` (default) or
 `"mpie"`. Any other value raises `ValueError`. The MPIE solver is the one to
@@ -162,12 +165,12 @@ Adjust the `PYTHONPATH` Python version component to match your environment.
 
 - Defaults to the **Hallen integral-equation solver** (same default as `fnec --solver hallen`), and accepts `solver="mpie"` for the MPIE formulation.
 - Ground model, loads (`LD`), and transmission lines (`TL`) are applied.
-- Only the first EX card feedpoint is returned. Multi-source support is
-  tracked in the Phase 4 backlog.
+- Every feedpoint is returned: the top-level `tag` … `z_arg_deg` keys are the
+  first, and `feedpoints` is a list with one dict of those keys per feedpoint,
+  in deck order — the CLI's `FEEDPOINTS` rows (FND-308).
 
 ## Limitations (scaffolding phase)
 
-- Single feedpoint per record (first EX card).
 - No radiation-pattern output, so a receive deck returns its currents but not
   its receive pattern (the CLI computes that).
 - Hallen and MPIE only: the pulse, continuity and sinusoidal *bases* that

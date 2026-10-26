@@ -277,9 +277,10 @@ The deck route **is** the main command: the deck is solved by `fnec` itself with
 the forwarded options and `--output-format json`, so every refusal, caveat and
 warning of a plain `fnec <deck.nec>` run appears on stderr unchanged, and a deck
 the main command refuses (an unsupported `LD` type, a missing `FR`) is refused
-here with the same sentence and exit code. A deck with several `EX` cards is
-matched at the first feedpoint the solve reports, as the JSON output does, and a
-`NOTE` line says so.
+here with the same sentence and exit code. A deck with several feedpoints is
+matched at the first one the solve reports — the JSON record's top-level
+impedance; every feedpoint is in its `feedpoints` array — and a `NOTE` line says
+how many there are.
 
 **Output** (stdout, structured text; `--output-format json` for the
 [`fnec-match/1` document](json-output-schema.md#fnec-match-output-fnec-match1)):
@@ -756,8 +757,10 @@ fnec --hosts hosts.toml frequency-sweep.nec
 Spreads the sweep's frequency points across the `[[worker]]` nodes in
 `hosts.toml`, gathering the results in frequency order. Distributed execution is
 all-or-nothing — a missing file, an empty worker list, or no reachable worker
-exits **1** rather than quietly solving locally. Field reference and deployment
-steps: `docs/worker-deployment.md`.
+exits **1** rather than quietly solving locally. A deck with more than one
+feedpoint is refused before any host is contacted: the worker returns one
+feedpoint impedance per frequency, and the others used to be dropped with no
+word (FND-304). Field reference and deployment steps: `docs/worker-deployment.md`.
 
 ### Frequency sweep via external config file
 

@@ -56,6 +56,21 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   the automation guide shows the `LD 0` + `NT` recipe, which the contract
   test round-trips on the corpus monopole (50.000000 − j0.000016 Ω).
 
+- **Every feedpoint in the JSON report and in `fnec_py`** (FND-291, FND-308).
+  Each `--output-format json` record gains `feedpoints`: one object per
+  feedpoint (`tag`, `seg`, `z_re`, `z_im`, `z_abs`, `z_arg_deg`), in the text
+  report's `FEEDPOINTS` order, always present. The record carried the first
+  feedpoint alone with no marker, so a two-source deck (1 V and j1 V on two
+  dipoles: 76.48 + j206.98 and 60.68 + j35.15 Ω) lost its second row. The array
+  still has one record per frequency and the top-level fields are still the
+  first feedpoint, so existing consumers are unchanged; a receive deck still
+  prints `[]`. `fnec_py`'s `solve_deck_str` / `sweep_deck_str` dicts gain the
+  same `feedpoints` list (its sweep negative-resistance caveat now reads the
+  lowest feedpoint resistance, as the CLI's does, and each feedpoint gets its own
+  negative-resistance warning). `fnec match` still matches the first feedpoint;
+  its note now counts the record's feedpoints instead of re-parsing the deck for
+  `EX` cards, and reads "the deck has N feedpoints".
+
 - **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
   set the FND-302 caveat's threshold (default 1e-5), on the pattern of
   `--sin-fallback-rel-max`: the flag over the variable, an invalid value
@@ -77,6 +92,15 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   samples, so `n/a` no longer averages in as a 0.
 
 ### Fixed
+
+- **`--hosts` refuses a deck with more than one feedpoint, and its records name
+  the feedpoint** (FND-304). The distributed worker returns one feedpoint
+  impedance per frequency, so a two-source deck was answered for the first and
+  the second dropped with no word, in text and JSON; it is now refused before
+  any host is contacted (`nec_solver::more_than_one_feedpoint`). Its JSON records
+  said `tag 0 seg 0` for every point; they name the feedpoint's own segment now,
+  resolved as the local report's rows are (a tag-0 `EX` reports its wire), and
+  so does its negative-resistance caveat.
 
 - **The Hallén `rel_res` describes the system the route solved** (FND-302). On
   a bent conductor path the solve adds a corner term to its tangential rows; the

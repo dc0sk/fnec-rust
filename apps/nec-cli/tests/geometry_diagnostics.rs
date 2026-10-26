@@ -445,6 +445,68 @@ fn distributed_run_refuses_a_receive_deck_before_contacting_any_host() {
     assert_eq!(out.status.code(), Some(1), "must exit 1");
 }
 
+/// FND-304: the worker returns one feedpoint impedance per frequency, so a deck
+/// with two was answered for the first and the second dropped with no word —
+/// in text and in JSON. Refused before the pool dials any host, like the checks
+/// above.
+#[test]
+fn distributed_run_refuses_a_multi_feed_deck_before_contacting_any_host() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-multi-feed-hosts.toml",
+        &format!("[[worker]]\nhostname = \"{UNREACHABLE_HOST}\"\n"),
+    );
+    let deck = common::TempDeck::new(
+        "fnec-dist-multi-feed.nec",
+        "CE\nGW 1 21 0 0 -2.5 0 0 2.5 0.001\nGW 2 21 2.5 0 -2.5 2.5 0 2.5 0.001\nGE 0\n\
+         EX 0 1 11 0 1 0\nEX 0 2 11 0 0 1\nFR 0 1 0 0 29.9 0\nEN\n",
+    );
+    for format in ["text", "json"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+            .arg("--hosts")
+            .arg(&hosts)
+            .arg("--output-format")
+            .arg(format)
+            .arg(&deck)
+            .output()
+            .expect("run fnec");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("this deck has 2 feedpoints, and --hosts reports one"),
+            "{format}: must say why:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains(UNREACHABLE_HOST),
+            "{format}: must fail BEFORE contacting any host:\n{stderr}"
+        );
+        assert_eq!(out.status.code(), Some(1), "{format}: must exit 1");
+        assert!(out.stdout.is_empty(), "{format}: nothing on stdout");
+    }
+}
+
+/// The control: a one-feed deck is not refused by it, and goes on to the pool.
+/// `.invalid` never resolves (RFC 2606), so the run then fails fast dialling it
+/// — and the host's name on stderr is how the test knows it got past the refusal.
+#[test]
+fn distributed_run_takes_a_one_feed_deck_to_the_pool() {
+    let hosts = common::TempDeck::new(
+        "fnec-dist-one-feed-hosts.toml",
+        "[[worker]]\nhostname = \"one-feed.invalid\"\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
+        .arg("--hosts")
+        .arg(&hosts)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/dipole-freesp-51seg.nec"
+        ))
+        .output()
+        .expect("run fnec");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("feedpoints, and --hosts"), "{stderr}");
+    assert!(stderr.contains("one-feed.invalid"), "{stderr}");
+    assert_eq!(out.status.code(), Some(1), "no worker answered");
+}
+
 /// FND-176: a host `ssh` cannot reach is unreachable, not a worker that died
 /// holding the task. It used to spend one of the task's two strikes, so three
 /// unresolvable hosts failed a healthy task after the second, the third never
