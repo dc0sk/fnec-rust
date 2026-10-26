@@ -409,6 +409,20 @@ pub fn deck_warnings(deck_text: &str, solver: SolverKind) -> Vec<String> {
 }
 
 pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult, String> {
+    solve_deck_str_at(
+        deck_text,
+        solver,
+        nec_solver::validate::residual_caveat_threshold()?,
+    )
+}
+
+/// [`solve_deck_str`] with the FND-302 caveat's threshold given — the seam its
+/// tests use to make the caveat fire through the real solve.
+pub(crate) fn solve_deck_str_at(
+    deck_text: &str,
+    solver: SolverKind,
+    caveat_threshold: f64,
+) -> Result<SolveResult, String> {
     let parsed = parse(deck_text).map_err(|e| e.to_string())?;
     let deck = &parsed.deck;
 
@@ -448,6 +462,7 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
     let SolvedCurrents {
         source_currents,
         port_voltage,
+        residual_rel,
         ..
     } = solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
@@ -465,12 +480,19 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
         seg,
         deck,
         &segs,
-        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             deck,
             &segs,
+            &[],
             &[freq_hz],
         )),
     ) {
+        warnings.push(w);
+    }
+    // The one residual predicate every frontend renders (FND-302).
+    if let Some(w) =
+        residual_rel.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, caveat_threshold))
+    {
         warnings.push(w);
     }
 
@@ -539,6 +561,7 @@ fn solve_currents(
             source_currents: currents.clone(),
             currents,
             port_voltage: None,
+            residual_rel: None,
         });
     }
 
@@ -558,6 +581,7 @@ fn solve_currents(
         source_currents: routed.source_currents(),
         currents: routed.currents,
         port_voltage: routed.port_voltage,
+        residual_rel: routed.residual.map(|(_, rel)| rel),
     })
 }
 
@@ -570,6 +594,9 @@ struct SolvedCurrents {
     /// power come from these, never from `currents`.
     source_currents: Vec<Complex64>,
     port_voltage: Option<Complex64>,
+    /// The relative residual of the Hallén solve, `None` where the route computes
+    /// none (FND-302/306).
+    residual_rel: Option<f64>,
 }
 
 /// Compute feedpoint impedance Z = V/I for the first EX card, with the tag and
@@ -619,7 +646,14 @@ fn feedpoint_impedance(
             ));
         };
         let current = i_vec[idx];
-        let v_source = v_vec[idx] * seg.length;
+        // Through the shared seam the CLI and the worker price through (FND-297 d).
+        let v_source = nec_solver::feedpoint_drive_voltage(
+            nec_model::card::FeedpointRole::DeltaGap,
+            seg.length,
+            v_vec[idx],
+            None,
+        )
+        .ok_or("internal: a delta gap without a drive")?;
         let z_in = nec_solver::feedpoint_impedance(
             v_source,
             current,
@@ -668,6 +702,8 @@ pub struct SweepJob {
     ground: GroundModel,
     freqs_mhz: Vec<f64>,
     solver: SolverKind,
+    /// The FND-302 caveat's threshold for [`SweepJob::run_caveats`].
+    caveat_threshold: f64,
 }
 
 impl SweepJob {
@@ -749,7 +785,17 @@ impl SweepJob {
             ground,
             freqs_mhz,
             solver,
+            caveat_threshold: nec_solver::validate::residual_caveat_threshold()?,
         })
+    }
+
+    /// This job with the FND-302 caveat judged at `threshold` instead of the
+    /// environment's or the default — the seam the sweep tests use to make the
+    /// caveat fire through the real stream.
+    #[cfg(test)]
+    pub(crate) fn with_caveat_threshold(mut self, threshold: f64) -> Self {
+        self.caveat_threshold = threshold;
+        self
     }
 
     /// The frequencies (MHz) this job will solve, in ascending order.
@@ -759,6 +805,26 @@ impl SweepJob {
 
     /// Solve the feedpoint impedance at one frequency (MHz).
     pub fn solve_at(&self, freq_mhz: f64) -> Result<SweepPoint, String> {
+        self.solve_at_with_residual(freq_mhz).map(|(p, _)| p)
+    }
+
+    /// The run's caveats once its points are in: the negative-resistance
+    /// aggregate and, at the run's worst residual, the FND-302 line.
+    pub fn run_caveats(&self, points: &[SweepPoint], worst_rel: Option<f64>) -> Vec<String> {
+        self.negative_resistance_caveat(points)
+            .into_iter()
+            .chain(worst_rel.and_then(|rel| {
+                nec_solver::validate::residual_caveat_at(rel, self.caveat_threshold)
+            }))
+            .collect()
+    }
+
+    /// [`Self::solve_at`] with the point's Hallén relative residual, `None` where
+    /// the route computes none.
+    pub fn solve_at_with_residual(
+        &self,
+        freq_mhz: f64,
+    ) -> Result<(SweepPoint, Option<f64>), String> {
         let freq_hz = freq_mhz * 1_000_000.0;
 
         // Per point, so the discarded fill cost the whole sweep, not one solve.
@@ -767,6 +833,7 @@ impl SweepJob {
         let SolvedCurrents {
             source_currents,
             port_voltage,
+            residual_rel,
             ..
         } = solve_currents(
             &self.deck,
@@ -785,11 +852,14 @@ impl SweepJob {
             freq_hz,
             port_voltage,
         )?;
-        Ok(SweepPoint {
-            freq_mhz,
-            z_re: z.re,
-            z_im: z.im,
-        })
+        Ok((
+            SweepPoint {
+                freq_mhz,
+                z_re: z.re,
+                z_im: z.im,
+            },
+            residual_rel,
+        ))
     }
 
     /// The deck's geometry and ground caveats, evaluated for the frequency range
@@ -852,9 +922,10 @@ impl SweepJob {
             &z_res,
             &self.deck,
             &self.segs,
-            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 &self.deck,
                 &self.segs,
+                &[],
                 &nec_solver::frequencies_hz(&self.deck),
             )),
         )
@@ -1087,6 +1158,7 @@ fn solve_for_currents(deck_text: &str, solver: SolverKind) -> Result<SolvedDeck,
         currents,
         source_currents,
         port_voltage,
+        ..
     } = solve_currents(deck, &segs, &mut z_mat, freq_hz, &ground, solver)?;
 
     Ok(SolvedDeck {
@@ -1112,6 +1184,31 @@ mod tests {
     // until FND-251 refused that; it is `corpus/u-one-segment-negative-r-freesp.nec`.
     const BENT_NEGATIVE_R: &str = "CM U whose middle run is one segment: Hallén leaves its bends unmodelled (FND-162)\nCE\nGW 1 10 0 0 3.52 0 0 0 .00704\nGW 2 1 0 0 0 0.704 0 0 .00704\nGW 3 10 0.704 0 0 0.704 0 3.52 .00704\nGE 0\nEX 0 1 5 0 1 0\nFR 0 1 0 0 14.2 0\nEN\n";
     const CLEAN_DIPOLE: &str = "CM plain dipole\nCE\nGW 1 21 0 0 -5.282 0 0 5.282 0.001\nGE 0\nEX 0 1 11 0 1.0 0.0\nFR 0 1 0 0 14.2 0\nEN\n";
+
+    /// FND-302 positive control through the GUI's single solve: the caveat is
+    /// pushed into the result's warnings when the residual crosses the
+    /// threshold, and absent at the default. Deleting the `warnings.push` turns
+    /// this red.
+    #[test]
+    fn the_single_solve_carries_the_residual_caveat_when_the_threshold_is_crossed() {
+        let fired = solve_deck_str_at(CLEAN_DIPOLE, SolverKind::Hallen, 1e-30).expect("solves");
+        assert_eq!(
+            fired
+                .warnings
+                .iter()
+                .filter(|w| w.contains("FND-302"))
+                .count(),
+            1,
+            "{:?}",
+            fired.warnings
+        );
+        let quiet = solve_deck_str(CLEAN_DIPOLE, SolverKind::Hallen).expect("solves");
+        assert!(
+            quiet.warnings.iter().all(|w| !w.contains("FND-302")),
+            "{:?}",
+            quiet.warnings
+        );
+    }
 
     /// FND-271: a Hallén-only refusal tells the GUI user the GUI's way to the
     /// MPIE, once, and not the CLI's flag.

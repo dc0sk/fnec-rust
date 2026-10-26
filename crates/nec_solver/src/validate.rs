@@ -33,8 +33,7 @@ use crate::geometry::{
 use crate::{GroundModel, Segment};
 use num_complex::Complex64;
 
-/// Speed of light in vacuum (m/s), for the wavelength-relative height check.
-const C0: f64 = 299_792_458.0;
+use crate::constants::C0;
 
 pub fn points_close(a: [f64; 3], b: [f64; 3], eps: f64) -> bool {
     let dx = a[0] - b[0];
@@ -404,15 +403,22 @@ impl RunLoads {
         }
     }
 
-    /// For a frontend whose loads are the deck's own (the GUI, the bindings):
-    /// the deck's load diagonal at each of `freqs_hz`.
-    pub fn of_deck(deck: &NecDeck, segs: &[Segment], freqs_hz: &[f64]) -> Self {
+    /// For a frontend that has not built the diagonal itself (the GUI, the
+    /// bindings, the CLI probes, `--hosts`): the run's load diagonal — the deck's
+    /// `LD` cards and `laplace` together, [`crate::loads::run_load_diagonal`] — at
+    /// each of `freqs_hz`. It read the deck's cards alone, a fourth copy of "which
+    /// loads this run has" beside the solve's, the MPIE's and the FND-278
+    /// caveat's (FND-288); every such caller passes `&[]` today, as none of them
+    /// takes `--loads-config`.
+    pub fn of_run(
+        deck: &NecDeck,
+        segs: &[Segment],
+        laplace: &[crate::loads::LaplaceLoad],
+        freqs_hz: &[f64],
+    ) -> Self {
         Self {
             negative: freqs_hz.iter().any(|&f| {
-                crate::build_deck_stamps(deck, segs, f)
-                    .diagonal
-                    .iter()
-                    .any(|z| z.re < 0.0)
+                Self::of(&crate::loads::run_load_diagonal(deck, segs, f, laplace).0).negative
             }),
         }
     }
@@ -749,6 +755,39 @@ pub fn feedpoint_at_junction_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<S
     out
 }
 
+/// FND-294: one warning per feedpoint on a segment at a free wire end.
+///
+/// A gap at a free end is singular in the thin-wire model: fed on segment 1 of a
+/// 5 m, 1 mm wire at 29.9 MHz, the impedance moves with the mesh in fnec and in
+/// nec2c alike — Hallén 1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at 11 / 33 /
+/// 99 segments, nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519 — while a feed
+/// 0.68 m from the end converges in both (fnec 490.9 + j66.8 → 507.0 + j79.6,
+/// nec2c 494.0 + j107.5 → 508.1 + j87.8). A caveat, not a refusal: nec2c answers
+/// these decks and end-fed antennas are common (decision D10).
+///
+/// Feeds only — a delta gap or a current source, through
+/// [`crate::excitation::feedpoints`]; a `TL`/`NT` port at a free end is not
+/// measured. Judged by [`crate::geometry::at_free_end`], the predicate the MPIE's
+/// refusal uses, on whichever geometry `segs` is, and with the ground the Hallén
+/// refinement used, so a base-fed monopole over a ground is not caveated.
+pub fn free_end_feed_warnings(deck: &NecDeck, segs: &[Segment]) -> Vec<String> {
+    let at_end = crate::geometry::at_free_end(segs, crate::geometry::ground_joins_wire_ends(deck));
+    crate::excitation::feedpoints(deck)
+        .filter(|(ex, _)| {
+            crate::find_deck_segment(segs, ex.tag, ex.segment).is_some_and(|i| at_end[i])
+        })
+        .map(|(ex, _)| {
+            format!(
+                "feedpoint tag {} segment {} is on a segment at a free wire end; a feed there \
+                 is singular in the thin-wire model, so the impedance keeps changing as the \
+                 mesh is refined (nec2c's does too) and is not a property of the antenna \
+                 (FND-294) — feed a segment in from the end, or model the feed's real geometry",
+                ex.tag, ex.segment
+            )
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Post-solve result check
 // ---------------------------------------------------------------------------
@@ -843,6 +882,123 @@ pub fn is_negative_resistance(z_re: f64) -> bool {
 /// produces it rather than in each frontend's filter.
 pub fn is_negative_resistance_message(message: &str) -> bool {
     message.contains(NEGATIVE_RESISTANCE_PHRASE)
+}
+
+/// The relative Hallén residual above which a solve is caveated (FND-302).
+///
+/// A tuned constant from a sampled sweep, so its provenance is here. Measured
+/// 2026-10-25 with the corner term in the residual, `--exec cpu`, on every
+/// `corpus/*.nec` deck as written and, where `scripts/nec2c-fine-mesh.py` maps
+/// it, meshed 3×, plus 9× of `yagi-5elm-51seg`, `tl-two-dipoles-linked`,
+/// `tl-two-dipoles-linked-seg0-even52`, `split-v-conductor-path-freesp`,
+/// `dipole-freesp-51seg` and `u-one-segment-negative-r-freesp` (with `EK`): 72
+/// solves with a residual, max 3.55e-8 up to 3× (`tl-two-dipoles-linked-seg0-even52`
+/// 3×), max 6.82e-8 at 9× (the same deck; the yagi 6.38e-8). 1e-5 is ~150× above
+/// that. Before the corner term the bent decks read 0.68 (the U, 3× and 9×) and
+/// 0.96 (the split-V), so no threshold could have told a valid bent deck from a
+/// failed solve.
+///
+/// Measured too, and not judged by it for that reason ([`ResidualKind`]): a
+/// GPU-resident f32 solve reads 1.43e-5 on the yagi at 3× (the device gates its
+/// own at 1e-4), and the sinusoidal basis 6.6e-4 on the corpus dipole (a
+/// projection residual, gated by `--sin-fallback-rel-max`).
+///
+/// Overridden by `--hallen-residual-caveat` (CLI) and
+/// [`HALLEN_REL_RESIDUAL_CAVEAT_ENV`] (every frontend), so the caveat's wiring
+/// can be shown to fire; see [`residual_caveat_threshold`].
+///
+/// A caveat, not a refusal: no deck is known whose residual (of the system the
+/// route solves) is large, so a refusal would be untested in the positive
+/// direction and its first firing a surprise.
+pub const HALLEN_REL_RESIDUAL_CAVEAT: f64 = 1e-5;
+
+/// What a printed residual is the residual of, and so whether the FND-302 caveat
+/// judges it. One predicate, so no frontend decides the exclusion by a label
+/// compare or by omission (the worker's device arm names it at compile time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResidualKind {
+    /// An f64 Hallén solve of the system the route solved (corner term
+    /// included): plain, conductor paths, networks, and the sinusoidal basis's
+    /// fallback to Hallén. Judged at [`HALLEN_REL_RESIDUAL_CAVEAT`].
+    HallenF64,
+    /// The GPU-resident f32 solve of the device's own matrix (FND-307). The
+    /// device judges it at its own bound (1e-4, `GPU_SOLVE_MAX_REL_RESIDUAL`) and
+    /// declines to the f64 CPU solve above it, which is then judged. Correct f32
+    /// solves sit between 1e-5 and 1e-4 (the corpus yagi at 3×: 1.43e-5).
+    DeviceF32,
+    /// The sinusoidal basis: a Galerkin projection tested at collocation rows it
+    /// does not satisfy (~6.6e-4 on the corpus dipole), judged by
+    /// `--sin-fallback-rel-max`.
+    SinusoidalProjection,
+    /// The pulse and continuity bases' `‖Z·I − V‖ / ‖V‖`: printed, not judged.
+    Pulse,
+}
+
+impl ResidualKind {
+    /// Whether [`residual_caveat_at`] judges a residual of this kind.
+    pub const fn judged_by_hallen_caveat(self) -> bool {
+        matches!(self, Self::HallenF64)
+    }
+}
+
+/// The environment override of [`HALLEN_REL_RESIDUAL_CAVEAT`], on the pattern of
+/// `FNEC_SIN_FALLBACK_REL_MAX`.
+pub const HALLEN_REL_RESIDUAL_CAVEAT_ENV: &str = "FNEC_HALLEN_REL_RESIDUAL_CAVEAT";
+
+/// The caveat threshold every frontend uses: [`HALLEN_REL_RESIDUAL_CAVEAT_ENV`]
+/// when set (a positive number, else `Err`), else [`HALLEN_REL_RESIDUAL_CAVEAT`].
+/// The CLI's `--hallen-residual-caveat` takes precedence over both. The override
+/// exists so the caveat's wiring can be shown to fire through every production
+/// entry point; no corpus deck reaches the default.
+pub fn residual_caveat_threshold() -> Result<f64, String> {
+    match std::env::var(HALLEN_REL_RESIDUAL_CAVEAT_ENV) {
+        Ok(raw) => parse_residual_caveat_threshold(&raw).ok_or_else(|| {
+            format!("invalid {HALLEN_REL_RESIDUAL_CAVEAT_ENV}='{raw}' (expected: positive number)")
+        }),
+        Err(_) => Ok(HALLEN_REL_RESIDUAL_CAVEAT),
+    }
+}
+
+/// A caveat threshold from text: a finite positive number, else `None`.
+pub fn parse_residual_caveat_threshold(raw: &str) -> Option<f64> {
+    raw.parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// The caveat for an f64 Hallén solve ([`ResidualKind::HallenF64`]) whose
+/// relative residual `rel` is above `threshold`, or `None`.
+///
+/// One predicate for every frontend: the CLI prints it, the worker appends it to
+/// the warnings that cross the wire, the GUI and `fnec_py` add it to theirs. Fed
+/// from [`crate::HallenRouted::residual`] and, in the CLI, from every residual
+/// whose [`ResidualKind::judged_by_hallen_caveat`] holds. `NaN` is caveated too:
+/// a residual that is not a number does not show the equations are satisfied.
+pub fn residual_caveat_at(rel: f64, threshold: f64) -> Option<String> {
+    if rel <= threshold {
+        return None;
+    }
+    Some(format!(
+        "the Hallén solve does not satisfy its own equations (relative residual {rel:.1e}, \
+         above {threshold:.0e}): the matrix is near-singular or the constraints conflict, \
+         so the feedpoint impedance and currents are not a solution of this deck (FND-302)"
+    ))
+}
+
+/// [`residual_caveat_at`] at the default [`HALLEN_REL_RESIDUAL_CAVEAT`].
+pub fn residual_caveat(rel: f64) -> Option<String> {
+    residual_caveat_at(rel, HALLEN_REL_RESIDUAL_CAVEAT)
+}
+
+/// The worse of a run's residual so far and the next point's, for a run's one
+/// FND-302 line. `NaN` is the worst there is: it is kept once seen, and taken
+/// when it arrives. `None` (a point with no judged residual) changes nothing.
+pub fn worst_residual(acc: Option<f64>, next: Option<f64>) -> Option<f64> {
+    match (acc, next) {
+        (Some(a), Some(r)) if a.is_nan() || (!r.is_nan() && r <= a) => Some(a),
+        (_, Some(r)) => Some(r),
+        (a, None) => a,
+    }
 }
 
 /// One line for a whole sweep's negative-resistance points, or `None`.
@@ -1008,9 +1164,14 @@ pub fn low_finite_ground_warning(
 /// Caller-gated on the solver, not gated here: the MPIE models junctions, loops
 /// and the surface wave correctly, so none of these apply to it. Passing that in
 /// would mean this crate knowing about a CLI-private `SolverMode`.
+///
+/// `laplace` is the run's `--loads-config` loads (`&[]` for a frontend that has
+/// none): a caveat about loads is about the loads the run solves with, not the
+/// deck's cards alone (FND-288).
 pub fn hallen_geometry_caveats(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     ground: &GroundModel,
     freq_hz: f64,
     surface_wave_modelled: bool,
@@ -1020,6 +1181,7 @@ pub fn hallen_geometry_caveats(
     out.extend(joined_gaps_at_a_bend_warning(
         deck,
         segs,
+        laplace,
         freq_hz,
         remedies.mpie,
     ));
@@ -1527,13 +1689,14 @@ pub fn unpriceable_feedpoint_error(deck: &NecDeck, remedy: &str) -> String {
 pub fn hallen_geometry_caveats_swept(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     ground: &GroundModel,
     freqs_hz: &[f64],
     surface_wave_modelled: bool,
     remedies: Remedies<'_>,
 ) -> Vec<String> {
     let mut out = frequency_independent_caveats(deck, segs, ground, remedies.mpie);
-    // The gaps are the deck's loads at a frequency; a load's step is the same at
+    // The gaps are the run's loads at a frequency; a load's step is the same at
     // every swept point short of a load that vanishes at one, so the lowest
     // usable point stands for the sweep, as it does for the ground caveat.
     if let Some(f) = freqs_hz
@@ -1542,7 +1705,13 @@ pub fn hallen_geometry_caveats_swept(
         .filter(|f| *f > 0.0)
         .fold(None, |m: Option<f64>, f| Some(m.map_or(f, |m| m.min(f))))
     {
-        out.extend(joined_gaps_at_a_bend_warning(deck, segs, f, remedies.mpie));
+        out.extend(joined_gaps_at_a_bend_warning(
+            deck,
+            segs,
+            laplace,
+            f,
+            remedies.mpie,
+        ));
     }
     if let Some(w) = low_ground_caveat_swept(
         deck,
@@ -1577,6 +1746,7 @@ fn frequency_independent_caveats(
         out.push(w);
     }
     out.extend(feedpoint_at_junction_warnings(deck, segs));
+    out.extend(free_end_feed_warnings(deck, segs));
     out
 }
 
@@ -1749,13 +1919,19 @@ pub fn bent_conductor_warning(
 /// ([`crate::hallen_session::JOINED_GAPS_CAVEAT_RAD`]). The MPIE models the
 /// corner and its bend ratio agrees with nec2c's (0.804 against 0.795–0.808 in R
 /// at 1 rad).
+///
+/// `laplace` is the run's `--loads-config` loads: the gaps are the run's loads,
+/// [`crate::loads::run_load_diagonal`], exactly the diagonal the solve is handed
+/// (FND-288).
 pub fn joined_gaps_at_a_bend_warning(
     deck: &NecDeck,
     segs: &[Segment],
+    laplace: &[crate::loads::LaplaceLoad],
     freq_hz: f64,
     mpie_remedy: Option<&str>,
 ) -> Option<String> {
-    let bend = crate::hallen_session::joined_gaps_at_a_bend_deg(deck, segs, freq_hz)?;
+    let loads = crate::loads::run_load_diagonal(deck, segs, freq_hz, laplace).0;
+    let bend = crate::hallen_session::joined_gaps_at_a_bend_deg(deck, segs, freq_hz, &loads)?;
     let remedy = if let Some(mpie_remedy) = mpie_remedy.filter(|_| mpie_compatible_deck(deck)) {
         format!(" — {mpie_remedy}, which models the corner")
     } else {
@@ -2119,8 +2295,11 @@ pub fn diagnose(
             // Through the producer the CLI calls, not a list of its own: this arm
             // named the topology and junction caveats itself, so the bent-
             // conductor caveat added to the producer (FND-162) reached the CLI and
-            // not the GUI or the bindings.
-            for w in hallen_geometry_caveats(deck, segs, ground, freq_hz, false, ctx.remedies()) {
+            // not the GUI or the bindings. No Laplace loads: no frontend that
+            // diagnoses through here takes `--loads-config` (FND-288).
+            for w in
+                hallen_geometry_caveats(deck, segs, &[], ground, freq_hz, false, ctx.remedies())
+            {
                 out.push(ValidationDiagnostic::warning(w));
             }
         }
@@ -3448,6 +3627,7 @@ mod tests {
         let swept = hallen_geometry_caveats_swept(
             &deck,
             &segs,
+            &[],
             &GroundModel::FreeSpace,
             &[30e6, 28.4e6, 29e6],
             false,
@@ -3578,5 +3758,77 @@ mod run_loads_tests {
                 "{cause}"
             );
         }
+    }
+
+    /// FND-288: `of_run` sees the run's Laplace loads, as `of` does on the CLI's
+    /// diagonal — a negative-resistance `--loads-config` load on a deck with no
+    /// `LD` card is negative. The control: without it, nothing is.
+    #[test]
+    fn of_run_sees_a_negative_laplace_load() {
+        let (deck, segs) = dipole();
+        let laplace = [crate::loads::LaplaceLoad {
+            tag: 1,
+            seg_first: 5,
+            seg_last: 5,
+            numerator: vec![-200.0],
+            denominator: vec![1.0],
+        }];
+        assert!(RunLoads::of_run(&deck, &segs, &laplace, &[14.2e6]).negative);
+        assert!(!RunLoads::of_run(&deck, &segs, &[], &[14.2e6]).negative);
+    }
+}
+
+#[cfg(test)]
+mod residual_caveat_tests {
+    use super::*;
+
+    /// The boundary pair from the D9 review, and NaN: a residual that is not a
+    /// number does not show the equations hold.
+    #[test]
+    fn the_caveat_fires_above_the_threshold_and_not_below() {
+        let above = residual_caveat(1.1e-5).expect("1.1e-5 is above 1e-5");
+        assert!(
+            above.contains("FND-302") && above.contains("1.1e-5"),
+            "{above}"
+        );
+        assert_eq!(residual_caveat(9e-6), None);
+        assert_eq!(residual_caveat(HALLEN_REL_RESIDUAL_CAVEAT), None);
+        assert_eq!(residual_caveat(0.0), None);
+        assert!(residual_caveat(f64::NAN).is_some());
+    }
+
+    /// C1: every arm of the one exclusion. `|_| false` and `|_| true` both fail.
+    #[test]
+    fn only_an_f64_hallen_residual_is_judged() {
+        assert!(ResidualKind::HallenF64.judged_by_hallen_caveat());
+        assert!(!ResidualKind::DeviceF32.judged_by_hallen_caveat());
+        assert!(!ResidualKind::SinusoidalProjection.judged_by_hallen_caveat());
+        assert!(!ResidualKind::Pulse.judged_by_hallen_caveat());
+    }
+
+    #[test]
+    fn the_threshold_is_what_the_caveat_compares_against() {
+        assert!(residual_caveat_at(2e-30, 1e-30).is_some());
+        assert_eq!(residual_caveat_at(1e-4, 1.0), None);
+        let w = residual_caveat_at(3e-3, 1e-3).expect("fires");
+        assert!(w.contains("3.0e-3") && w.contains("1e-3"), "{w}");
+        assert_eq!(parse_residual_caveat_threshold("1e-30"), Some(1e-30));
+        for bad in ["0", "-1", "nan", "inf", "x", ""] {
+            assert_eq!(parse_residual_caveat_threshold(bad), None, "{bad}");
+        }
+    }
+
+    /// C4: the one NaN-is-worst reduction the CLI and the GUI share.
+    #[test]
+    fn the_worst_residual_keeps_the_largest_and_any_nan() {
+        assert_eq!(worst_residual(None, None), None);
+        assert_eq!(worst_residual(None, Some(1e-9)), Some(1e-9));
+        assert_eq!(worst_residual(Some(1e-9), None), Some(1e-9));
+        assert_eq!(worst_residual(Some(1e-9), Some(1e-6)), Some(1e-6));
+        assert_eq!(worst_residual(Some(1e-6), Some(1e-9)), Some(1e-6));
+        assert!(worst_residual(Some(1e-6), Some(f64::NAN)).unwrap().is_nan());
+        assert!(worst_residual(Some(f64::NAN), Some(1.0)).unwrap().is_nan());
+        assert!(worst_residual(Some(f64::NAN), None).unwrap().is_nan());
+        assert!(worst_residual(None, Some(f64::NAN)).unwrap().is_nan());
     }
 }

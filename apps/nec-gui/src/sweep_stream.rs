@@ -48,7 +48,16 @@ pub async fn run_sweep_stream(
             return;
         }
     };
+    run_prepared_sweep_stream(run, &job, output).await;
+}
 
+/// [`run_sweep_stream`] on a job already prepared — the half its tests can hand
+/// a job with its own caveat threshold ([`SweepJob::with_caveat_threshold`]).
+pub(crate) async fn run_prepared_sweep_stream(
+    run: crate::app_state::RunId,
+    job: &SweepJob,
+    output: &mut (impl Sink<Message> + Unpin),
+) {
     let _ = output
         .send(Message::SweepCaveats(run, job.geometry_caveats()))
         .await;
@@ -56,9 +65,12 @@ pub async fn run_sweep_stream(
     // Accumulated here because the job holds the geometry and the UI thread does
     // not, so the aggregate has to be computed on this side.
     let mut seen = Vec::new();
+    // The worst Hallén residual of the run, for the one FND-302 line.
+    let mut worst_rel: Option<f64> = None;
     for &f in job.freqs_mhz() {
-        match job.solve_at(f) {
-            Ok(pt) => {
+        match job.solve_at_with_residual(f) {
+            Ok((pt, rel)) => {
+                worst_rel = nec_solver::validate::worst_residual(worst_rel, rel);
                 seen.push(pt.clone());
                 let _ = output.send(Message::SweepPointComputed(run, pt)).await;
             }
@@ -73,7 +85,7 @@ pub async fn run_sweep_stream(
                 let _ = output
                     .send(Message::SweepCaveats(
                         run,
-                        job.negative_resistance_caveat(&seen).into_iter().collect(),
+                        job.run_caveats(&seen, worst_rel),
                     ))
                     .await;
                 let _ = output.send(Message::SweepComplete(run, Err(e))).await;
@@ -85,7 +97,7 @@ pub async fn run_sweep_stream(
     let _ = output
         .send(Message::SweepCaveats(
             run,
-            job.negative_resistance_caveat(&seen).into_iter().collect(),
+            job.run_caveats(&seen, worst_rel),
         ))
         .await;
     let _ = output.send(Message::SweepStreamDone(run)).await;
@@ -302,5 +314,34 @@ mod tests {
                 .any(|m| matches!(m, Message::SweepStreamDone(_))),
             "a failed sweep must not report completion: {msgs:?}"
         );
+    }
+
+    /// FND-302 positive control through the real stream: at a threshold of
+    /// 1e-30 every judged point is above it, and the run sends the caveat exactly
+    /// once, in the final aggregate. Deleting the `worst_rel` fold or the
+    /// `run_caveats` chain turns this red.
+    #[test]
+    fn the_residual_caveat_fires_once_per_sweep_when_the_threshold_is_crossed() {
+        let mut state = crate::app_state::AppState::default();
+        state.apply(&Message::RunSweep);
+        let id = state.current_sweep_run().expect("run id");
+        let job = SweepJob::prepare(CLEAN, 14.0, 14.4, 0.1, crate::solve::SolverKind::Hallen)
+            .expect("prepares")
+            .with_caveat_threshold(1e-30);
+        let (mut tx, rx) = mpsc::channel::<Message>(256);
+        let msgs = iced::futures::executor::block_on(async move {
+            run_prepared_sweep_stream(id, &job, &mut tx).await;
+            drop(tx);
+            rx.collect::<Vec<_>>().await
+        });
+        let fired: usize = caveats(&msgs)
+            .iter()
+            .map(|c| c.iter().filter(|w| w.contains("FND-302")).count())
+            .sum();
+        assert_eq!(fired, 1, "{msgs:?}");
+        // The default threshold on the same deck: silent.
+        assert!(caveats(&run(CLEAN, 14.0, 14.4, 0.1))
+            .iter()
+            .all(|c| c.iter().all(|w| !w.contains("FND-302"))));
     }
 }

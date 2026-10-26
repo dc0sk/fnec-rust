@@ -205,6 +205,13 @@ jobs:
       # the pre-commit hook did not (FND-261).
       - name: Repo hooks take the host build lock before cargo
         run: python3 scripts/check-hooks-take-lock.py
+      # One owner for c0, mu0, eps0 and eta0 (FND-297 b): fourteen modules had
+      # their own and two EPS0 values had drifted apart. The self-test plants each
+      # spelling a copy was written in, so a pattern that matches nothing fails.
+      - name: Physical constants have one owner
+        run: |
+          python3 scripts/test-check-physical-constants.py
+          python3 scripts/check-physical-constants.py
       # One toolchain pin: every `dtolnay/rust-toolchain@<version>` above names
       # rust-toolchain.toml's channel (FND-149).
       - name: Toolchain pin matches rust-toolchain.toml

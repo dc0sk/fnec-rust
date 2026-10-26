@@ -36,10 +36,7 @@
 
 use num_complex::Complex64;
 
-const C0: f64 = 299_792_458.0; // m/s
-const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7; // H/m
-const EPS0: f64 = 8.854_187_817e-12; // F/m
-const ETA0: f64 = MU0 * C0; // free-space wave impedance
+use crate::constants::{C0, EPS0, ETA0};
 
 /// Complex relative permittivity of the ground: `εc = εr − j σ/(ω ε0)`.
 ///
@@ -60,6 +57,20 @@ pub fn complex_permittivity(freq_hz: f64, eps_r: f64, sigma: f64) -> Complex64 {
         sigma / (omega * EPS0)
     };
     Complex64::new(eps_r.max(1.0e-6), -loss)
+}
+
+/// The ground's conductivity in S/m, as NEC-2 prints it: `sigma` itself, or, for
+/// the negative form of the card (see [`complex_permittivity`]), the conductivity
+/// `|SIG|` stands for at this frequency, `|SIG|·ω·ε0` — nec2c prints 3.950E-03 for
+/// `GN 0 0 0 0 13 -5` at 14.2 MHz. Beside `complex_permittivity`, so the negative-σ
+/// rule lives in one module: the NEC-2D report's ground echo kept its own copy and
+/// printed −5 S/m and 13 + j6329 for that card (FND-303).
+pub fn conductivity_s_per_m(freq_hz: f64, sigma: f64) -> f64 {
+    if sigma < 0.0 {
+        -sigma * 2.0 * std::f64::consts::PI * freq_hz * EPS0
+    } else {
+        sigma
+    }
 }
 
 /// Normal-incidence scalar Fresnel coefficient `Γ = (√εc − 1)/(√εc + 1)` — the
@@ -1118,6 +1129,7 @@ pub fn bessel_j2(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::MU0;
 
     /// Where the correction applies, one deck per condition (FND-217): the solve
     /// gates on this and the low-ground caveat names the remedy on it.
@@ -1448,7 +1460,7 @@ mod tests {
 
 #[cfg(test)]
 mod permittivity_tests {
-    use super::complex_permittivity;
+    use super::{complex_permittivity, conductivity_s_per_m};
 
     /// FND-194: a negative σ is NEC's ε'' form — `|SIG|` is the imaginary part of
     /// the relative permittivity, at every frequency — not a lossless ground.
@@ -1461,6 +1473,18 @@ mod permittivity_tests {
         // The positive form at 14.2 MHz: 0.005 S/m is ε'' = σ/(ωε₀) ≈ 6.33.
         let e = complex_permittivity(14.2e6, 13.0, 0.005);
         assert!((e.im + 6.329).abs() < 1e-3, "{e}");
+    }
+
+    /// FND-303: the conductivity a negative σ stands for, as nec2c prints it
+    /// (3.950E-03 S/m for `GN 0 0 0 0 13 -5` at 14.2 MHz), and the positive form
+    /// unchanged. Round-trips with `complex_permittivity`'s ε''.
+    #[test]
+    fn a_negative_sigma_prints_as_the_conductivity_it_stands_for() {
+        let s = conductivity_s_per_m(14.2e6, -5.0);
+        assert!((s - 3.950e-3).abs() < 5e-7, "{s}");
+        assert_eq!(conductivity_s_per_m(14.2e6, 0.005), 0.005);
+        let back = complex_permittivity(14.2e6, 13.0, s);
+        assert!((back.im + 5.0).abs() < 1e-12, "{back}");
     }
 }
 

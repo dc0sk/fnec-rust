@@ -201,7 +201,7 @@ pub(crate) fn source_breaks(
 mod tests {
     use super::*;
 
-    const K: f64 = 2.0 * std::f64::consts::PI * 28.4e6 / 299_792_458.0;
+    const K: f64 = 2.0 * std::f64::consts::PI * 28.4e6 / crate::constants::C0;
     const A: f64 = 0.001;
     const H: f64 = 0.264;
 

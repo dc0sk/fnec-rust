@@ -1,4 +1,4 @@
-use super::solve_session::BenchRecord;
+use super::solve_session::{residual_field, residual_json, BenchRecord};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub(super) fn emit_bench_record_csv(
     bench: &BenchRecord,
 ) {
     eprintln!(
-        "bench_csv:{},{},{},{},{},ok,{},{},{},{},{:.6},{:.6e},{:.6e},{:.6e},{:.6e}",
+        "bench_csv:{},{},{},{},{},ok,{},{},{},{},{:.6},{},{},{},{}",
         epoch_millis_now(),
         target,
         deck,
@@ -45,10 +45,10 @@ pub(super) fn emit_bench_record_csv(
         bench.pulse_rhs,
         bench.exec,
         bench.freq_mhz,
-        bench.abs_res,
-        bench.rel_res,
-        bench.diag_spread,
-        bench.sin_rel_res
+        residual_field(bench.abs_res),
+        residual_field(bench.rel_res),
+        residual_field(bench.diag_spread),
+        residual_field(bench.sin_rel_res)
     );
 }
 
@@ -61,7 +61,7 @@ pub(super) fn emit_bench_record_json(
     bench: &BenchRecord,
 ) {
     eprintln!(
-        "bench_json:{{\"timestamp_unix_ms\":{},\"target\":\"{}\",\"deck\":\"{}\",\"solver\":\"{}\",\"run\":{},\"status\":\"ok\",\"elapsed_ms\":{},\"diag_mode\":\"{}\",\"pulse_rhs\":\"{}\",\"exec\":\"{}\",\"freq_mhz\":{:.6},\"abs_res\":{:.6e},\"rel_res\":{:.6e},\"diag_spread\":{:.6e},\"sin_rel_res\":{:.6e}}}",
+        "bench_json:{{\"timestamp_unix_ms\":{},\"target\":\"{}\",\"deck\":\"{}\",\"solver\":\"{}\",\"run\":{},\"status\":\"ok\",\"elapsed_ms\":{},\"diag_mode\":\"{}\",\"pulse_rhs\":\"{}\",\"exec\":\"{}\",\"freq_mhz\":{:.6},\"abs_res\":{},\"rel_res\":{},\"diag_spread\":{},\"sin_rel_res\":{}}}",
         epoch_millis_now(),
         json_escape(target),
         json_escape(deck),
@@ -72,9 +72,9 @@ pub(super) fn emit_bench_record_json(
         json_escape(&bench.pulse_rhs),
         json_escape(&bench.exec),
         bench.freq_mhz,
-        bench.abs_res,
-        bench.rel_res,
-        bench.diag_spread,
-        bench.sin_rel_res
+        residual_json(bench.abs_res),
+        residual_json(bench.rel_res),
+        residual_json(bench.diag_spread),
+        residual_json(bench.sin_rel_res)
     );
 }

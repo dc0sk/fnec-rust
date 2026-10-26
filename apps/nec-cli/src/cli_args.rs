@@ -4,7 +4,7 @@ use super::bench::BenchFormat;
 use super::exec_profile::ExecutionMode;
 use super::solve_session::{GroundSolver, PulseRhsMode, SolverMode};
 
-pub const USAGE: &str = "Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec converge [--factors 1,3,9] [--ends keep|centre] [--tol-pct 1] [--tol-ohm 0.5] [--solver <hallen|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--exec <cpu|hybrid|gpu>] [--vars <vars.toml|vars.json>] [--output-format <text|json>] <deck.nec>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec match (--z <R>[+-]j<X> --freq <MHz> | <deck.nec> [solve options]) [--target <R>[+-]j<X>] [--output-format <text|json>]\n       fnec worker --stdio\n       fnec calibrate [--print-key]\n       fnec nec2d-kernel < files.tmp  (4nec2's kernel: two paths on stdin)";
+pub const USAGE: &str = "Usage: fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--hallen-residual-caveat <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>\n       fnec sweep --resonance <file.nec.toml>\n       fnec converge [--factors 1,3,9] [--ends keep|centre] [--tol-pct 1] [--tol-ohm 0.5] [--solver <hallen|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--exec <cpu|hybrid|gpu>] [--vars <vars.toml|vars.json>] [--output-format <text|json>] <deck.nec>\n       fnec project convert <in.toml|in.md> [out.md|out.toml]\n       fnec taper --sections \"<dia1>,<len1> <dia2>,<len2> ...\"\n       fnec match (--z <R>[+-]j<X> --freq <MHz> | <deck.nec> [solve options]) [--target <R>[+-]j<X>] [--output-format <text|json>]\n       fnec worker --stdio\n       fnec calibrate [--print-key]\n       fnec nec2d-kernel < files.tmp  (4nec2's kernel: two paths on stdin)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -27,6 +27,9 @@ pub struct ParsedArgs {
     pub vars_path: Option<PathBuf>,
     pub loads_config_path: Option<PathBuf>,
     pub sin_fallback_rel_max_cli: Option<f64>,
+    /// `--hallen-residual-caveat`: the FND-302 caveat's threshold, over
+    /// `FNEC_HALLEN_REL_RESIDUAL_CAVEAT` and the 1e-5 default.
+    pub hallen_residual_caveat_cli: Option<f64>,
     pub hosts_path: Option<PathBuf>,
     pub path: PathBuf,
 }
@@ -46,6 +49,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut vars_path: Option<PathBuf> = None;
     let mut loads_config_path: Option<PathBuf> = None;
     let mut sin_fallback_rel_max_cli: Option<f64> = None;
+    let mut hallen_residual_caveat_cli: Option<f64> = None;
     let mut hosts_path: Option<PathBuf> = None;
     let mut deck_path: Option<PathBuf> = None;
     let mut experimental_solver = false;
@@ -232,6 +236,26 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 }
                 sin_fallback_rel_max_cli = Some(parsed);
             }
+            "--hallen-residual-caveat" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(
+                        "missing value after --hallen-residual-caveat (expected: positive number)"
+                            .to_string(),
+                    );
+                }
+                let raw = &args[i];
+                hallen_residual_caveat_cli = Some(
+                    nec_solver::validate::parse_residual_caveat_threshold(raw).ok_or_else(
+                        || {
+                            format!(
+                            "invalid --hallen-residual-caveat value '{raw}' (expected: positive \
+                             number)"
+                        )
+                        },
+                    )?,
+                );
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option: {flag}"));
             }
@@ -271,6 +295,7 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         vars_path,
         loads_config_path,
         sin_fallback_rel_max_cli,
+        hallen_residual_caveat_cli,
         hosts_path,
         path,
     })

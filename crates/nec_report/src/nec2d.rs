@@ -13,6 +13,7 @@
 //! (`docs/par011-dropin-evidence-memo.md`); the fixtures in
 //! `apps/nec-cli/tests/fixtures/par011/` gate the layout.
 
+use nec_model::constants::C0;
 use num_complex::Complex64;
 
 use crate::fortran::{write, Val};
@@ -416,15 +417,13 @@ fn echo_block(out: &mut String, first: usize, cards: &[EchoCard]) {
     }
 }
 
-/// fnec's speed of light: the wavelength printed is the one fnec solved with.
-const C_MPS: f64 = 299_792_458.0;
-
 fn frequency(out: &mut String, p: &Point) {
     let freq_mhz = p.report.frequency_hz / 1e6;
+    // The solver's own C0, so the wavelength printed is the one fnec solved with.
     out.push_str(&write(
         "(////,33X,'- - - - - - FREQUENCY - - - - - -',//,36X,\
          'FREQUENCY=',1P,E11.4,' MHZ',/,36X,'WAVELENGTH=',E11.4,' METERS')",
-        &[f(freq_mhz), f(C_MPS / p.report.frequency_hz)],
+        &[f(freq_mhz), f(C0 / p.report.frequency_hz)],
     ));
     // FORMAT 196: NEC-2's interaction approximation (the KH card's range), which
     // fnec never uses; printed with NEC-2's default, as every kernel run prints it.

@@ -276,6 +276,7 @@ fn main() -> ExitCode {
         vars_path,
         loads_config_path,
         sin_fallback_rel_max_cli,
+        hallen_residual_caveat_cli,
         hosts_path,
         path,
     } = match parse_args(&args) {
@@ -322,6 +323,19 @@ fn main() -> ExitCode {
     } else {
         SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT
     };
+    // The FND-302 caveat's threshold: the flag, else the environment, else 1e-5,
+    // with the same precedence and refusal as `--sin-fallback-rel-max`.
+    let hallen_residual_caveat = match hallen_residual_caveat_cli
+        .map_or_else(nec_solver::validate::residual_caveat_threshold, Ok)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fnec {}", VERSION);
+            eprintln!("{USAGE}");
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
 
     let input = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -367,29 +381,18 @@ fn main() -> ExitCode {
     let run_start = std::time::Instant::now();
     // PAR-011: the NEC-2D layout prints only what fnec computes, and one solve per
     // deck; what it cannot print is refused here, before anything is solved, so no
-    // partial block is ever written. The inputs the layout cannot echo are refused
-    // with it: frequencies or loads from outside the deck, a remote solve, and the
-    // device pattern path, which keeps gains only.
+    // partial block is ever written — the deck's cards and the run's options alike,
+    // in one place (`nec2d_out::check_admissible`).
     if output_format == OutputFormat::Nec2d {
-        let outside = if sweep_config_path.is_some() {
-            Some("--sweep-config")
-        } else if loads_config_path.is_some() {
-            Some("--loads-config")
-        } else if hosts_path.is_some() {
-            Some("--hosts")
-        } else if execution_mode == ExecutionMode::Gpu {
-            Some("--exec gpu")
-        } else {
-            None
+        let options = nec2d_out::RunOptions {
+            sweep_config: sweep_config_path.is_some(),
+            loads_config: loads_config_path.is_some(),
+            hosts: hosts_path.is_some(),
+            execution_mode,
+            solver_mode,
+            ground_solver,
         };
-        if let Some(flag) = outside {
-            eprintln!(
-                "error: --output-format nec2d cannot be combined with {flag}: the NEC-2D output \
-                 echoes the deck's own cards and needs the CPU pattern (PAR-011)"
-            );
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = nec2d_out::check_admissible(deck) {
+        if let Err(e) = nec2d_out::check_admissible(deck, &options) {
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
@@ -676,20 +679,16 @@ fn main() -> ExitCode {
     // disagree. Local runs only, so it sits below the `--hosts` branch: a worker
     // is told `gpu` only when the user said so (FND-040), never by a pick made
     // from the controller's hardware.
-    let stamped = deck.cards.iter().any(|c| {
-        matches!(
-            c,
-            nec_model::card::Card::Ld(_)
-                | nec_model::card::Card::Tl(_)
-                | nec_model::card::Card::Nt(_)
-        )
-    });
+    //
+    // The solve's own predicate, asked at every run frequency: the device takes a
+    // point only when nothing is stamped at that point, so a pick made on which
+    // card types are present kept a deck whose `LD` stamps zero on the CPU while
+    // `--exec gpu` solved it on the device (FND-297 a).
     let gpu_deck_class = if !matches!(solver_mode, SolverMode::Hallen) {
         Err("the device solves the Hallén basis only")
-    } else if stamped || !laplace_loads.is_empty() {
-        Err("the deck stamps loads or networks into the matrix, which the device does not see")
     } else {
-        nec_solver::gpu_resident_class(deck, &segs, &ground)
+        nec_solver::gpu_resident_decline(deck, &segs, &ground, &freqs_hz, &laplace_loads)
+            .map_or(Ok(()), Err)
     };
     // Two homogeneous unknowns per straight wire with two free ends: the system
     // the device holds is S = N + 2W.
@@ -859,6 +858,16 @@ fn main() -> ExitCode {
         );
     }
 
+    // D1 of FND-286: the corrected impedance is a one-port ΔZ on the solve's V/I,
+    // so the row's I is not V/Z and the currents and pattern are the rcm solve's.
+    // Said once per run, not per point.
+    if solved
+        .iter()
+        .any(|(_, r, _)| r.as_ref().is_ok_and(|p| p.surface_wave_applied))
+    {
+        eprintln!("{SURFACE_WAVE_APPLIED_INFO}");
+    }
+
     if enable_benchmarking && bench_format == BenchFormat::Csv {
         emit_bench_csv_header();
     }
@@ -876,6 +885,7 @@ fn main() -> ExitCode {
     // between the local and distributed sweep paths (verified: identical md5),
     // which is how a policy decision comes to be made twice and, eventually,
     // differently.
+    warn_residual_for_run(&solved, hallen_residual_caveat);
     warn_negative_resistance_for_run(&solved, deck, &segs, solver_mode);
     let any_failed = emit_sweep_points(
         solved,
@@ -936,6 +946,12 @@ fn main() -> ExitCode {
     }
 }
 
+/// What a run whose impedance carries the surface-wave correction is told about
+/// the rest of its report (FND-286, decision D1).
+const SURFACE_WAVE_APPLIED_INFO: &str =
+    "info: --ground-solver sommerfeld: Z includes the surface-wave correction; V, I, the \
+     currents and the pattern are the reflection-coefficient solve's (PH9-CHK-006, FND-286)";
+
 /// How a `--hosts` user reaches the MPIE: not by adding `--solver mpie`, which
 /// `--hosts` refuses, but by running without it (FND-221).
 const HOSTS_MPIE_REMEDY: &str = "run it without `--hosts`, as `fnec --solver mpie`";
@@ -979,6 +995,8 @@ fn distributed_pre_solve_caveats(
     nec_solver::validate::hallen_geometry_caveats_swept(
         deck,
         segs,
+        // The controller refuses `--loads-config`, so the run's loads are the deck's.
+        &[],
         ground,
         freqs_hz,
         false,
@@ -1074,6 +1092,26 @@ fn worker_warning_lines(
         .collect()
 }
 
+/// Print the run's FND-302 caveat once, at its worst judged residual: the
+/// residual is a property of the solve, and a sweep should not repeat it per
+/// point. Local runs only — a `--hosts` point carries no residual, and the
+/// worker sends its own caveat among its warnings.
+fn warn_residual_for_run<T>(
+    solved: &[(usize, Result<FrequencySolveResult, String>, T)],
+    threshold: f64,
+) {
+    let worst = solved
+        .iter()
+        .filter_map(|(_, r, _)| r.as_ref().ok())
+        .fold(None, |acc, r| {
+            nec_solver::validate::worst_residual(acc, r.hallen_rel_res)
+        });
+    if let Some(w) = worst.and_then(|rel| nec_solver::validate::residual_caveat_at(rel, threshold))
+    {
+        eprintln!("warning: {w}");
+    }
+}
+
 /// Print the run's negative-resistance caveat once — per point for a single
 /// frequency, one aggregate line for a sweep (FND-069). One function for the
 /// local and the distributed sweep, called just before their shared
@@ -1150,7 +1188,7 @@ fn distributed_negative_resistance_warnings(
         deck,
         segs,
         nec_solver::validate::SolverContext::cli_hallen().with_loads(
-            nec_solver::validate::RunLoads::of_deck(deck, segs, freqs_hz),
+            nec_solver::validate::RunLoads::of_run(deck, segs, &[], freqs_hz),
         ),
     )
     .into_iter()
@@ -1358,10 +1396,12 @@ fn run_distributed_solve(
                     // the same whether the work ran on a GPU or a CPU.
                     exec: format!("ssh-{exec_used}"),
                     freq_mhz,
-                    abs_res: 0.0,
-                    rel_res: 0.0,
-                    diag_spread: 0.0,
-                    sin_rel_res: 0.0,
+                    // The worker sends no residual and no diagonal spread:
+                    // `null`, not a perfect 0 (FND-306, D8).
+                    abs_res: None,
+                    rel_res: None,
+                    diag_spread: None,
+                    sin_rel_res: None,
                 };
                 // FND-014, controller-side on purpose. Putting this in the worker
                 // would reproduce the gap under version skew: a worker is a
@@ -1385,6 +1425,9 @@ fn run_distributed_solve(
                     segs,
                 ));
                 Ok(FrequencySolveResult {
+                    // The worker judges its own residual and sends the caveat
+                    // among its warnings, which the controller prints.
+                    hallen_rel_res: None,
                     report: PointOutput::Text(report),
                     diag_line,
                     bench,
@@ -1392,11 +1435,14 @@ fn run_distributed_solve(
                     negative_r,
                     min_feed_re: Some(impedance.re_ohm),
                     ran_on_gpu: exec_used == "gpu",
+                    // The controller refuses --ground-solver sommerfeld.
+                    surface_wave_applied: false,
                     // The controller refuses --loads-config, so the worker's
                     // loads are the deck's own.
-                    run_loads: nec_solver::validate::RunLoads::of_deck(
+                    run_loads: nec_solver::validate::RunLoads::of_run(
                         deck,
                         segs,
+                        &[],
                         &[freq_mhz * 1e6],
                     ),
                 })
@@ -1977,6 +2023,7 @@ mod tests {
         let offered = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -2027,6 +2074,7 @@ mod tests {
         let produced = nec_solver::validate::hallen_geometry_caveats(
             &deck,
             &segs,
+            &[],
             &ground,
             14.2e6,
             false,
@@ -2063,6 +2111,32 @@ mod tests {
             distributed_pre_solve_caveats(&deck, &segs, &ground, &[14.2e6], SolverMode::Mpie)
                 .is_empty(),
             "the MPIE solves all three correctly; the caveats do not apply"
+        );
+    }
+
+    /// FND-294: `--hosts` carries the free-end feed caveat, which the controller
+    /// computes from the deck before any worker is asked; an interior feed does
+    /// not earn it.
+    #[test]
+    fn the_distributed_caveats_name_a_feed_at_a_free_wire_end() {
+        let deck = |seg: u32| {
+            format!("GW 1 11 0 0 0 0 0 5 0.001\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n")
+        };
+        let caveats = |seg: u32| {
+            let (deck, segs) = deck_and_segs(&deck(seg));
+            let ground = nec_solver::ground_model_from_deck(&deck);
+            distributed_pre_solve_caveats(&deck, &segs, &ground, &[29.9e6], SolverMode::Hallen)
+        };
+        let end = caveats(1);
+        assert!(
+            end.iter()
+                .any(|w| w.contains("tag 1 segment 1 is on a segment at a free wire end")),
+            "{end:?}"
+        );
+        let interior = caveats(2);
+        assert!(
+            !interior.iter().any(|w| w.contains("free wire end")),
+            "{interior:?}"
         );
     }
 

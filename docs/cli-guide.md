@@ -15,7 +15,7 @@ Diagnostics are written to stderr.
 ## Synopsis
 
 ```
-fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
+fnec [--solver <hallen|pulse|continuity|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--pulse-rhs <raw|nec2>] [--exec <cpu|hybrid|gpu>] [--sin-fallback-rel-max <value>] [--hallen-residual-caveat <value>] [--experimental-solver] [--bench] [--bench-format <human|csv|json>] [--output-format <text|json|nec2d>] [--sweep-config <file.toml>] [--vars <vars.toml|vars.json>] [--loads-config <file.toml>] [--hosts <hosts.toml>] <deck.nec>
 fnec sweep --resonance <file.nec.toml>
 fnec converge [--factors 1,3,9] [--ends keep|centre] [--tol-pct 1] [--tol-ohm 0.5] [--solver <hallen|sinusoidal|mpie>] [--ground-solver <rcm|sommerfeld>] [--exec <cpu|hybrid|gpu>] [--vars <file>] [--output-format <text|json>] <deck.nec>
 fnec taper --sections "<dia>,<len> ..."
@@ -39,11 +39,12 @@ Exit codes: **0** success, **1** I/O or solver error, **2** usage error.
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--solver` | `hallen` \| `pulse` \| `continuity` \| `sinusoidal` \| `mpie` | `hallen` | MoM solver to use (see below) |
-| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie` |
+| `--ground-solver` | `rcm` \| `sommerfeld` | `rcm` | Near-ground model for a `GN` finite ground. `rcm` uses the normal-incidence scalar reflection coefficient; `sommerfeld` uses the exact Sommerfeld–Norton surface wave (PH9-CHK-006), which is what matters below ~0.1 λ. Corrects the feedpoint impedance of a single **straight** wire — one line of collinear segments, horizontal, vertical or tilted — with **one feed and no TL/NT network**; bent, mixed or side-by-side parallel wires, several feeds, or a network are declined with a warning and keep the `rcm` result (FND-206, FND-208). Currents and patterns are unaffected either way — for those, use `--solver mpie`. A run where the correction applies says so on an `info:` line, and `--output-format nec2d` refuses the flag over a finite ground (FND-286) |
 | `--pulse-rhs` | `raw` \| `nec2` | `nec2` | RHS scaling for pulse/continuity modes |
 | `--experimental-solver` | flag | off | Required to run `--solver pulse` or `continuity`, which are unvalidated (FND-080). Without it those modes are refused; with it every result carries a `CAVEAT` line (text) or `caveat` field (JSON) |
-| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (`cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and, on free-space Hallén decks of ≥ 128 segments, the Z-matrix fill. It additionally takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments — a lower threshold than the fill's, and one this table previously did not distinguish — which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
+| `--exec` | `cpu` \| `hybrid` \| `gpu` | `auto` (`cpu`, or `gpu` for a supported deck past this host's calibrated crossover — `fnec calibrate`; see the Execution modes notes) | Execution backend preference. `cpu` solves the FR points of a sweep in parallel (rayon; `RAYON_NUM_THREADS` bounds it) with deterministic ordered output. `hybrid` does that and runs a GPU lane beside the CPU pool, both taking points from one counter, for a deck the GPU solves when a hardware GPU is present (otherwise it says why and runs on the CPU only). `gpu` runs real wgpu kernels for the RP far-field and takes the **GPU-resident dense solve** on a free-space deck with no `LD`/`TL`/`NT` stamps and ≥ **16** segments; for such a point of ≥ 128 segments the host's Z-matrix is filled on the device too (a point the resident solve declines is filled in f64 on the CPU, FND-293; `fill_exec` in the `diag:` line says which), which warns, once, when the deck is below this host's calibrated crossover, where the device loses to the CPU (FND-185; nothing is said on an uncalibrated host). |
 | `--sin-fallback-rel-max` | positive float | `1e-2` | Sinusoidal-only relative residual threshold for guarded fallback to Hallen. CLI flag takes precedence over `FNEC_SIN_FALLBACK_REL_MAX` env var |
+| `--hallen-residual-caveat` | positive float | `1e-5` | The relative residual above which an f64 Hallén solve prints the FND-302 caveat (see `rel_res` under Diagnostics). CLI flag takes precedence over the `FNEC_HALLEN_REL_RESIDUAL_CAVEAT` env var, which `fnec converge`, `sweep --resonance`, `fnec worker` (so a `--hosts` run's workers), the GUI and `fnec_py` read too; an invalid value is refused (exit 2). No corpus deck reaches the default — the override exists to show the caveat firing, and to tighten it |
 | `--allow-noncollinear-hallen` | flag | off | Compatibility placeholder; accepted but silently ignored. Has no effect on solver behaviour (Phase 1). |
 | `--ex3-i4-mode` | `legacy` \| `divide-by-i4` | — | **Obsolete no-op.** Accepted for backward compatibility and silently ignored; `EX` type 3 now solves as a left-hand elliptic incident plane wave regardless (PH8-CHK-002). Neither value changes any result |
 | `--bench` | flag | off | Enable benchmark instrumentation plumbing (also used by the GPU benchmark timing gates) |
@@ -377,6 +378,17 @@ every answer moves toward nec2c — the 51-segment dipole above reads
 79.33 + j45.04 Ω. A deck solves two segments more per free end. The MPIE solves the
 deck's own segments.
 
+A **feed on a free-end segment** (`EX 0/4/5` on a wire's first or last segment, the
+end not joined to another wire or the ground) solves, with a warning (FND-294): a
+gap there is singular in the thin-wire model, so its impedance keeps changing as the
+mesh is refined — in nec2c too — and is not a property of the antenna. A 5 m wire
+fed on segment 1 at 29.9 MHz reads 1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at
+11 / 33 / 99 segments (nec2c 3078 − j1554 / 2793 − j8345 / 1701 − j17519). Feed a
+segment in from the end, or model the feed's real geometry. A base-fed monopole on
+`GN 1` is not at a free end and gets no warning (on `GN 0`/`2` the contact is
+refused, FND-240); a `TL` or `NT`
+port at a free end is not judged.
+
 The `--allow-noncollinear-hallen` flag is a no-op: it was the opt-in for the
 experimental non-collinear path before that path became the default, and is now
 accepted for backward compatibility and silently ignored.
@@ -570,7 +582,7 @@ Formatting and ordering rules:
 A diagnostic line is always printed after the solve:
 
 ```
-diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=0.000000e0 sin_fallback_rel_max=1.000000e-02 route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none solve_exec=cpu rp_exec=none nf_exec=none
+diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-10 rel_res=2.345678e-08 diag_spread=1.000000e0 sin_rel_res=n/a sin_fallback_rel_max=1.000000e-02 route=plain contact=no drive=voltage ground=free gsolver=n/a loads=none fill_exec=cpu solve_exec=cpu rp_exec=none nf_exec=none
 ```
 
 | Field | Description |
@@ -579,17 +591,18 @@ diag: mode=hallen pulse_rhs=Nec2 exec=cpu freq_mhz=14.200000 abs_res=3.456789e-1
 | `pulse_rhs` | Active `--pulse-rhs` setting |
 | `exec` | Effective execution mode (`cpu`, `hybrid`, `gpu(cpu-fallback)`) |
 | `freq_mhz` | Frequency point solved for this report block |
-| `abs_res` | Absolute L2 residual ‖Ax − b‖ |
-| `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖ |
+| `abs_res` | Absolute L2 residual ‖Ax − b‖ of the system the route solved; `n/a` when the route computes none (FND-306) |
+| `rel_res` | Relative L2 residual ‖Ax − b‖ / ‖b‖. What it is the residual of, and what judges it, depends on the route: **(1) an f64 Hallén solve** (`mode=hallen` with `solve_exec=cpu`, and `mode=sinusoidal->hallen(residual)`): ‖(Z + corner)·I − h − rhs‖ / ‖rhs‖ of the system the route solved — on a bent conductor path the corner term the solve adds is included (before FND-302 it was not, and a valid bent deck read up to 0.96). Above 1e-5 (`--hallen-residual-caveat`) it prints a `warning:` naming FND-302 — a caveat, not a refusal; a run or a probe prints it once, at its worst point. **(2) `solve_exec=gpu`**: the device's f32 solve of its own matrix — with `fill_exec=gpu` its f32 fill, so a wrong fill is not seen (FND-307). Judged by the device at 1e-4, which declines above it to the f64 CPU solve (then judged as (1)); never by the FND-302 caveat: correct f32 solves sit between 1e-5 and 1e-4 (the corpus yagi at 3×: 1.43e-5). **(3) `mode=sinusoidal`**: the projection residual of a Galerkin solve tested at collocation rows it does not satisfy (~1e-3; 6.6e-4 on the corpus dipole), judged by `sin_fallback_rel_max`, never by FND-302. **(4) `mode=pulse` / `continuity`**: ‖Z·I − V‖ / ‖V‖, printed, not judged. `n/a` — never `0` — for the routes that compute no residual: the section graph, a PEC-contact image problem, a plane wave, a current source (`EX 4`) and `--solver mpie` |
 | `diag_spread` | Conditioning proxy: max/min diagonal magnitude ratio of solved matrix |
-| `sin_rel_res` | Sinusoidal pre-fallback relative residual (0 for non-sinusoidal paths) |
+| `sin_rel_res` | Sinusoidal pre-fallback relative residual; `n/a` when the sinusoidal basis did not run. It was `0` there, which read as a perfect sinusoidal solve that never happened — the FND-306 class, so it follows the same rule (D8) |
 | `sin_fallback_rel_max` | Active sinusoidal residual fallback threshold after CLI/env/default precedence |
 | `route` | The solve route the run took: `plain`, `paths` (conductor paths or the section graph), `unsupported` (a topology the graph declines), `mpie`, `pulse` |
 | `contact` | `yes` when the deck touches PEC and solved as its image problem |
 | `drive` | `voltage`, `current` (an `EX 4` source) or `planewave` |
 | `ground` | `free`, `pec`, `finite` |
-| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise |
+| `gsolver` | Over a finite ground: `rcm`, or `sommerfeld-applied` / `-declined` / `-declined-receive`; `mpie-exact` under `--solver mpie`, which fills the exact Sommerfeld kernels itself; `n/a` otherwise. With `sommerfeld-applied` only the feedpoint impedance carries the surface-wave correction. The row's V and I, the current table and the pattern come from the reflection-coefficient solve, so I ≠ V/Z, and an `info:` line says so once per run (FND-286) |
 | `loads` | Where the run's loads came from: `none`, `deck` (`LD` cards), `config` (`--loads-config`), `deck+config` |
+| `fill_exec` | Where the Z-matrix the solve used was filled: `gpu` when the device filled it (in f32), `cpu` otherwise (in f64). Under `--exec gpu` the device fills only a point the GPU-resident solve takes, so a declined point (a load, a bend, a ground) is filled and solved in f64, as `--exec cpu` and a `--hosts` worker do (FND-293). Two pairs besides the matching ones are legitimate: `fill_exec=cpu solve_exec=gpu` for a resident solve of 16–127 segments, below the fill's 128-segment floor (the device re-fills from raw segment inputs for its own solve; the host matrix serves the residual check), and `fill_exec=gpu solve_exec=cpu` when the device fails at run time after the fill (no adapter, a lost device, a rejected f32 answer — each says why on stderr). On a resident solve the `rel_res` is computed against this matrix, so with `fill_exec=gpu` it checks the device's solve of the f32 system, not of the f64 problem (FND-307) |
 | `solve_exec`, `rp_exec`, `nf_exec` | The executor that produced the solve, the radiation pattern and the near field (`cpu`, `gpu`, or `none` when the stage did not run) |
 
 The decision fields (`route` onward) are what the parity sweep (`apps/nec-cli/tests/parity_sweep.rs`) classifies runs by: they record what the run did, read from the values it used.
@@ -598,10 +611,10 @@ When `--bench-format csv` is enabled, one header plus one machine-readable line 
 
 ```
 bench_csv:timestamp_unix_ms,target,deck,solver,run,status,elapsed_ms,diag_mode,pulse_rhs,exec,freq_mhz,abs_res,rel_res,diag_spread,sin_rel_res
-bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,hallen,Nec2,cpu,14.200000,2.931358e-8,3.479257e-7,1.000000e0,0.000000e0
+bench_csv:1714212345678,host,corpus/dipole-freesp-51seg.nec,hallen,1,ok,19,hallen,Nec2,cpu,14.200000,2.931358e-8,3.479257e-7,1.000000e0,n/a
 ```
 
-When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix.
+When `--bench-format json` is enabled, one JSON object per solved frequency point is emitted to stderr with the same fields under a `bench_json:` prefix. A residual field the route did not compute (`abs_res`, `rel_res`, `sin_rel_res`; and `diag_spread` on a `--hosts` record, which the worker does not send) is `n/a` in the CSV and `null` in the JSON — never `0`, which read as a perfect solve (FND-306).
 
 ### GPU diagnostics (environment)
 
@@ -837,6 +850,10 @@ This writes fnec's answer in the report layout NEC-2's Fortran kernel prints, wi
 
 It is also refused with `--sweep-config`, `--loads-config`, `--hosts` and `--exec gpu`. The device pattern keeps no field components.
 
+It is refused with `--ground-solver sommerfeld` over a finite ground (FND-286). That correction adds the surface wave to the feedpoint impedance only. NEC-2 derives the feed row's impedance from V and I, and the report's currents, power and pattern come from the uncorrected solve, so no block printed from that run would be consistent. For the corrected impedance use `--output-format text` or `json`. For a NEC-2D report that includes the surface wave use `--solver mpie`, which models it in the whole solve. Over free space or a perfect ground the flag requests nothing, and the report prints.
+
+The `ENVIRONMENT` block prints the ground the solve uses. For a negative `GN` conductivity, which NEC-2 reads as the imaginary part of the permittivity, it prints the conductivity that value stands for and εr − j·|σ|, as nec2c does: 3.950E-03 and 13 − j5 for `GN 0 0 0 0 13 -5` at 14.2 MHz (FND-303).
+
 ### Benchmark instrumentation
 
 ```bash
@@ -855,10 +872,12 @@ fnec --exec gpu dipole.nec
 
 `--exec gpu` dispatches the radiation-pattern far-field and Z-matrix-fill
 kernels through real wgpu compute shaders when a wgpu adapter is available,
-falling back to CPU otherwise. The far-field kernel is free-space only, so over
+falling back to CPU otherwise. The Z-matrix fill runs on the device only for a
+point the GPU-resident solve below takes; any other point is filled in f64 on the
+CPU, so its answer is `--exec cpu`'s to the byte (FND-293). The far-field kernel is free-space only, so over
 a ground (`GN 1`, `GN 0/2`) the pattern runs on the CPU, which includes the
 image or the reflected field, and an `info:` line says so (FND-205). For Hallén decks in the supported class
-(free-space ground, no LD/TL/NT cards, and one straight wire or an end-to-start
+(free-space ground, nothing stamped by LD/TL/NT, and one straight wire or an end-to-start
 collinear chain written in card order — a start-to-start split such as the `GX`
 dipole, or a chain written out of order, takes the path basis on the CPU, FND-249)
 it also runs the **GPU-resident dense solve** (PH7-CHK-003): the impedance matrix is filled and the system solved
@@ -1111,6 +1130,6 @@ Validated against nec2c: `TL 1 26 2 26 50.0 0.1` across two λ/2 dipoles 1 m apa
 - The Hallén solver handles collinear, bent, and degree-2 junctioned geometry, and degree-3+ (T/Y) junctions and closed loops on its section graph when the deck is in scope (voltage or current sources, lumped loads and `TL`/`NT` networks allowed, perfect-ground contact through the image problem, sections ≥ 2 segments — see `hallen` above). A junction or loop with a straight run one segment long is *refused* (FND-251): the section graph cannot take the run, and the per-wire fallback it used to solve on was 2 to 18 times off nec2c, or found no current at all. The refusal names the run, the fix (two segments) and `--solver mpie` where the MPIE takes the deck. A bent conductor with a one-segment run still solves, with a caveat: the fallback then models none of its bends (up to 48 % off on a half circle of 9° bends). `--allow-noncollinear-hallen` and `--ex3-i4-mode` are obsolete no-ops kept for backward compatibility.
 - `EX` type 0 is implemented on every solver path. Types 1–5 solve on `--solver hallen`; the plane-wave types (1, 2, 3) produce induced currents for a receiving antenna rather than a feedpoint impedance. See the card table above for the per-type geometry limits.
 - `--exec cpu` and `--exec hybrid` solve FR points in parallel and keep the report in frequency order. Per-point warnings on stderr are whole lines but arrive in completion order; each `diag:` line names its `freq_mhz`. `RAYON_NUM_THREADS=1` restores a sequential sweep. Each point in flight holds its own matrices — up to about 7 × 16·N² bytes for N segments (measured per solver; the sinusoidal solver is the heaviest) — so the points in flight are also bounded by memory (FND-187): half of what the host and the process's cgroup leave available (Linux), which can cap `RAYON_NUM_THREADS` too. When it does, an `info:` line says how many points run at a time and why. `FNEC_SWEEP_MEMORY_BUDGET_MB` sets the budget explicitly (a large value lifts it); a single-point run and `--exec gpu` are not budgeted.
-- **Without `--exec`, the deck picks the CPU or the GPU.** A free-space, voltage-driven Hallén deck with no `LD`/`TL`/`NT` cards or Laplace loads, on the plain basis (no bend, junction or loop), goes to the GPU at or above **this host's crossover**, measured by `fnec calibrate` (below), when the calibration was measured on this host's GPU, driver and CPU. **Without a calibration the pick is the CPU**, and the `info:` line says to run `fnec calibrate`: the crossover is the device's start-up and per-point cost against the CPU's N³ solve, so it belongs to the card, its driver and the CPU beside it — on the project's RTX 2080 Ti beside a Ryzen 9 3900X it is about 600 segments, on a GTX 1080 Ti it was about 500, and on an integrated GPU the device may never win. A wrong threshold only costs time; an unmeasured one would be a guess. Everything else stays on the CPU, as do distributed (`--hosts`) runs: a worker is told `gpu` only when you pass it. One `info: exec auto: selected_exec=… (reason)` line says what was picked and why. The device solve is f32, residual-checked and within 2 Ω of the CPU (measured ≤ 0.002 Ω on dipoles up to 3001 segments), so its trailing digits differ from a CPU run; `--exec cpu` gives the CPU's.
+- **Without `--exec`, the deck picks the CPU or the GPU.** A free-space, voltage-driven Hallén deck that stamps nothing into the matrix at any run frequency — no `TL`/`NT` network, no Laplace load, no `LD` with a non-zero value (an `LD` that stamps zero is no load, FND-297 a) — on the plain basis (no bend, junction or loop), goes to the GPU at or above **this host's crossover**, measured by `fnec calibrate` (below), when the calibration was measured on this host's GPU, driver and CPU. **Without a calibration the pick is the CPU**, and the `info:` line says to run `fnec calibrate`: the crossover is the device's start-up and per-point cost against the CPU's N³ solve, so it belongs to the card, its driver and the CPU beside it — on the project's RTX 2080 Ti beside a Ryzen 9 3900X it is about 600 segments, on a GTX 1080 Ti it was about 500, and on an integrated GPU the device may never win. A wrong threshold only costs time; an unmeasured one would be a guess. Everything else stays on the CPU, as do distributed (`--hosts`) runs: a worker is told `gpu` only when you pass it. One `info: exec auto: selected_exec=… (reason)` line says what was picked and why. The device solve is f32, residual-checked and within 2 Ω of the CPU (measured ≤ 0.002 Ω on dipoles up to 3001 segments), so its trailing digits differ from a CPU run; `--exec cpu` gives the CPU's.
 - The `exec=` field of each `diag:` line says what solved that point: `gpu` when the device did, `gpu(cpu-fallback)` when an `--exec gpu` point fell back (each fallback prints its reason). A GPU sweep ends with `info: k of M sweep points solved on the GPU`.
 - **`--exec hybrid` runs a GPU lane beside the CPU pool.** One thread solves points on the GPU while every CPU worker solves points on the CPU, all taking the next point from one counter; each point's `exec=` says which (`gpu` or `cpu`), and the run ends with `k of M sweep points solved on the GPU`. The lane opens for a deck the GPU solves when a hardware GPU is present and the system fits; otherwise one `info:` line says why and the run is CPU-only. If a GPU point comes back from the CPU (a lost device, FND-190), the lane stops and the rest runs on the CPU. **When it pays, measured** (GTX 1080 Ti, 24 threads): on long sweeps, points ≫ threads, by 9–13 % over the better of `cpu` and `gpu` (200 points: 401 segments 2.66 s against `cpu` 2.92 s; 601 segments 14.9 s against `gpu` 17.2 s). On a sweep with no more points than CPU threads it does **not**: every CPU worker takes a point at once and the GPU lane is starved — 24 points of 801 segments took 10.3 s against `gpu` 3.8 s. So the automatic pick never chooses it; it is for long sweeps near the CPU/GPU crossover. A scheduler that predicts each lane's per-point time would fix the short-sweep case and is not built.

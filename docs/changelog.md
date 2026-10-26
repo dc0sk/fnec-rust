@@ -82,6 +82,148 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   resolved as the local report's rows are (a tag-0 `EX` reports its wire), and
   so does its negative-resistance caveat.
 
+- **`--hallen-residual-caveat <value>` and `FNEC_HALLEN_REL_RESIDUAL_CAVEAT`**
+  set the FND-302 caveat's threshold (default 1e-5), on the pattern of
+  `--sin-fallback-rel-max`: the flag over the variable, an invalid value
+  refused with exit 2. The variable reaches every frontend — `fnec converge`,
+  `sweep --resonance`, `fnec worker`, the GUI and `fnec_py` — so the caveat can
+  be shown to fire through each of them; no corpus deck reaches the default.
+
+### Changed
+
+- **A residual the route did not compute reads `n/a`, not `0`** (FND-306, D8).
+  The section graph, a PEC-contact image, a plane wave, a current source and
+  `--solver mpie` compute no residual and printed `abs_res=0.000000e0
+  rel_res=0.000000e0`, which reads as a perfect solve. The `diag:` line and
+  `--bench-format csv` now print `n/a` there and `--bench-format json` `null`;
+  the same for `sin_rel_res` when the sinusoidal basis did not run (it was
+  documented as "0 for non-sinusoidal paths") and for every residual field and
+  `diag_spread` of a `--hosts` bench record, which the worker does not send.
+  `scripts/pi-benchmark-compare.sh` and `-summary.sh` average only numeric
+  samples, so `n/a` no longer averages in as a 0.
+
+### Fixed
+
+- **The Hallén `rel_res` describes the system the route solved** (FND-302). On
+  a bent conductor path the solve adds a corner term to its tangential rows; the
+  residual left it out, so it measured the corner correction instead of the
+  solve. The corpus U refined 3× read `rel_res = 0.678` and the corpus split-V
+  0.96 — valid decks whose solves are exact: with the corner in the residual
+  they read 4.7e-11 and 1.1e-10, and the 3× U's impedance is 1.3 % (R) / 0.65 %
+  (X) from nec2c's at the same mesh. The residual is now one method,
+  `ResidualInputs::residual`, computed at `solve_hallen_routed`'s exit
+  (`HallenRouted::residual`), and above 1e-5 an f64 Hallén solve earns a
+  warning naming FND-302 on the CLI, the worker, the GUI (single solve and
+  sweep, once per run) and `fnec_py` — a caveat, not a refusal: no corpus deck
+  reaches it (72 f64 solves of the corpus at 1×, 3× and six decks at 9×: at most
+  3.55e-8 up to 3×, 6.82e-8 at 9×). Not judged by it: a GPU-resident f32 solve
+  (the device gates its own at 1e-4; the corpus yagi at 3× reads 1.4e-5 there
+  and 3.2e-8 on the CPU) and the sinusoidal basis, whose projection residual
+  (~6.6e-4) `--sin-fallback-rel-max` judges. Which residual is judged is one typed
+  predicate, `validate::ResidualKind::judged_by_hallen_caveat` (`HallenF64` only),
+  set where each residual is computed; the worker's device arm asserts it at
+  compile time.
+- **`--exec gpu` fills the matrix in f32 only for a point the device solves, and
+  the `diag:` record says where the fill ran** (FND-293). The device filled the
+  Z-matrix of every free-space `--exec gpu` deck of 128 segments or more; when the
+  GPU-resident solve then declined the point — a load, a bend — the CPU solved
+  that f32 matrix: 106.383566 + j36.388674 Ω against `--exec cpu`'s
+  106.383595 + j36.388745 Ω on a 201-segment dipole with `LD 4 1 50 50 50 0`,
+  recorded `solve_exec=cpu` with nothing about the fill, and different from a
+  `--hosts` worker, which fills in f64. Whether the resident solve takes a point is
+  now decided once, before the fill (class, stamps, Laplace loads, size and the
+  homogeneous-span test); a declined point is filled in f64 and answers as
+  `--exec cpu` to the byte. The new `fill_exec=cpu|gpu` field, before
+  `solve_exec`, names the fill's executor; `fill_exec=cpu solve_exec=gpu` is a
+  resident solve of 16–127 segments, below the fill's floor
+  (`docs/cli-guide.md`).
+- **The automatic `--exec` pick asks the solve's own predicate** (FND-297 a). It
+  kept any deck with an `LD`, `TL` or `NT` card on the CPU, so an 801-segment
+  dipole with `LD 4 1 200 200 0 0` — a load that stamps nothing — was picked
+  `cpu` where `--exec gpu` solved it on the device (both 79.784 + j42.218 Ω).
+  `nec_solver::gpu_resident_decline` asks the stamps by value at every run
+  frequency, and is the one copy for the pick, the CLI's fill and resident solve,
+  and the worker.
+
+- **`--output-format nec2d` refuses `--ground-solver sommerfeld` over a finite
+  ground** (FND-286). The correction adds the surface wave to the feedpoint
+  impedance only, and the NEC-2D feed row takes Z from V and I. On a dipole
+  0.528 m over `GN 0 … 13 0.005` the report printed the uncorrected 30.70 + j34.15 Ω,
+  where the text report prints the corrected 86.90 + j67.68 Ω (nec2c GN 2:
+  87.80 + j68.63). The currents, power and pattern were also uncorrected, so
+  carrying the corrected Z would not make the block consistent. The run is now
+  refused before it solves, and the message names `--output-format text`/`json`
+  and `--solver mpie` as remedies. `--solver mpie` with nec2d prints 87.41 +
+  j68.00 Ω, and that block is consistent (Z = V/I). The 4nec2 kernel route never
+  passes the flag. The test for "the correction is requested" is now one function
+  (`sommerfeld_requested`), used by both the feedpoint rows and the refusal. Every
+  NEC-2D refusal, of options and of cards, is in `nec2d_out::check_admissible`.
+  A text or JSON run whose impedance carries the correction now prints one `info:`
+  line per run: V, I, the currents and the pattern are the reflection-coefficient
+  solve's, so I ≠ V/Z.
+- **A worker prices its feedpoint from the drive the solve applied, as the CLI
+  does** (FND-297 d). `fnec worker` took a feed row's voltage from the `EX` card,
+  where the CLI, the GUI and the Python bindings take the drive at the segment.
+  The two differ only when two `EX` cards share a segment: the solve sums them, and
+  the worker divided one card's voltage by the summed drive's current. On a
+  21-segment dipole with `EX 0 1 11 0 1 0` and `EX 0 1 11 0 0.5 0` it returned
+  52.64 + j28.99 Ω where the CLI says 78.96 + j43.48 Ω. The worker, the GUI and the
+  bindings now all price the row through `nec_solver::feedpoint_drive_voltage`.
+  How two cards on one segment should combine is a separate finding: nec2c applies
+  the last card (FND-305).
+- **One definition of the speed of light, μ0, ε0 and η0** (FND-297 b). Fourteen
+  modules in four crates defined their own, and eight more sites wrote the value
+  inline. They now read `nec_model::constants` (re-exported as
+  `nec_solver::constants`). The `C0`, `MU0` and `ETA0` copies were bit-identical,
+  so nothing that uses them moves. The two `EPS0` values were not: the Sommerfeld
+  ground used 8.854 187 817e-12 and the MPIE 8.854 187 812 8e-12, which does not
+  match its own μ0 = 4π·10⁻⁷. Both now use 1/(μ0 c²) = 8.854 187 817 62e-12. One
+  value cannot keep both, so this moves ε0 by 7·10⁻¹¹ (Sommerfeld) and 5·10⁻¹⁰
+  (MPIE) relative. Measured: the Sommerfeld-corrected impedance of
+  `corpus/dipole-gn2-near-ground-51seg.nec` does not change at printed precision;
+  MPIE reactances move by 1 in the sixth decimal (43.924969 → 43.924970 Ω over that
+  ground, 45.954885 → 45.954886 Ω on `dipole-freesp-51seg`). A new gate,
+  `scripts/check-physical-constants.py`, run by `scripts/check-all.sh` and CI with a
+  self-test, refuses these literals anywhere else in the Rust sources.
+- **The NEC-2D report prints a negative-σ ground as the ground the solve uses**
+  (FND-303). `nec2d_out::environment` had its own copy of the permittivity rule
+  and missed NEC-2's negative-σ form. For `GN 0 0 0 0 13 -5` at 14.2 MHz it printed
+  CONDUCTIVITY −5.000E+00 and 13 + j6329, where nec2c prints 3.950E-03 and 13 − j5.
+  This reached 4nec2 through the kernel route. The line now takes its values from
+  `nec_solver::sommerfeld::complex_permittivity` and a new sibling,
+  `conductivity_s_per_m`, so the negative-σ rule lives in one module.
+- **A feed on a segment at a free wire end is caveated** (FND-294). Such a gap is
+  singular in the thin-wire model: a 5 m wire fed on segment 1 at 29.9 MHz reads
+  1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at 11 / 33 / 99 segments (nec2c
+  3078 − j1554 / 2793 − j8345 / 1701 − j17519), where a feed 0.68 m in converges in
+  both codes, yet it came back with exit 0 and nothing said. Every Hallén route now
+  warns `feedpoint tag T segment S is on a segment at a free wire end; …` — the CLI
+  per point and per sweep, `fnec converge` per mesh, `--hosts`, the GUI and fnec_py,
+  through the one producer they share (`frequency_independent_caveats`). A caveat,
+  not a refusal: nec2c answers these decks and end-fed antennas are common. Feeds
+  only (`EX` 0, 4, 5); a `TL`/`NT` port there is not judged. A base-fed monopole
+  over `GN 1` is not caveated — its end joins the ground (as it would over `GN 0`
+  or `2`, where the contact is refused, FND-240). "At a free
+  end" is one predicate, `nec_solver::geometry::at_free_end`, on the refined Hallén
+  geometry and the deck geometry alike; the MPIE's end-feed refusal (FND-228) uses
+  it too, with unchanged answers. No number changes.
+- **The joined-gaps caveat sees `--loads-config` loads** (FND-288). FND-278's
+  caveat — a source, port or lumped load on each of the two segments either side
+  of a real bend — built its gap list from the deck's `LD` cards, while the solve
+  took the run's diagonal with the Laplace loads composed in. A feed beside a bend
+  with a j1000 Ω load as `LD 4` warned; the same load as a `[[laplace_load]]`
+  solved with the same joined row (172.98 + j2026.80 Ω against 172.99 + j2026.95)
+  and said nothing. "Which loads does this run have" is now one function,
+  `nec_solver::run_load_diagonal` (the deck's `LD` loads plus the Laplace loads),
+  and the CLI solve, the MPIE plan, the caveat and the negative-load fact behind
+  FND-209's caveat (`RunLoads::of_run`, formerly `of_deck`, which read the deck's
+  cards alone for the GUI, the bindings, the probes and `--hosts`) all go through
+  it; over PEC ground the caveat judges the image problem with the loads the solve
+  stamps there (`image_loads`), which a Laplace load cannot reach through the image
+  deck's cards. `hallen_geometry_caveats`, `hallen_geometry_caveats_swept` and
+  `joined_gaps_at_a_bend_warning` take the run's Laplace loads (`&[]` for a
+  frontend with none). No number changes: only the CLI's main command takes
+  `--loads-config`.
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
   NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point
   reference and as "every tag" for a range, so on two 21-segment dipoles

@@ -148,6 +148,15 @@ EN
 """
 
 
+# A wire fed on its end segment (FND-294).
+END_FED = """\
+GW 1 11 0 0 0 0 0 5 0.001
+GE 0
+EX 0 1 1 0 1.0 0.0
+FR 0 1 0 0 29.9 0.0
+EN
+"""
+
 # A U whose middle run is one segment: it solves, with no bend modelled, and the
 # bent-conductor caveat names the MPIE (FND-251).
 U_ONE_SEGMENT_MIDDLE = """\
@@ -229,6 +238,8 @@ def test_a_clean_deck_solves_with_no_warnings():
         # `fnec_py` gained `solver="mpie"` in FND-055, so pointing a Python caller
         # at a different program stopped being the right advice.
         (U_ONE_SEGMENT_MIDDLE, 'pass solver="mpie"'),
+        # FND-294: a feed on a free-end segment.
+        (END_FED, "at a free wire end"),
     ],
 )
 def test_solvable_but_caveated_decks_emit_a_user_warning(deck, fragment):
@@ -672,3 +683,23 @@ def test_a_one_source_deck_has_a_one_element_feedpoints_list():
     rec = fnec_py.solve_deck_str(DIPOLE_14MHZ)
     assert len(rec["feedpoints"]) == 1, rec
     assert rec["feedpoints"][0]["z_re"] == rec["z_re"], rec
+
+
+def test_the_residual_caveat_fires_when_the_threshold_is_crossed(monkeypatch):
+    """FND-302 positive control through the bindings' real solve.
+
+    No corpus deck reaches the 1e-5 default, so the threshold comes from
+    FNEC_HALLEN_REL_RESIDUAL_CAVEAT, which every frontend reads. At 1e-30 the
+    dipole's residual is above it and the caveat is raised once; unset, it is not.
+    """
+    monkeypatch.setenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT", "1e-30")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    fired = [str(w.message) for w in caught if "FND-302" in str(w.message)]
+    assert len(fired) == 1, [str(w.message) for w in caught]
+    monkeypatch.delenv("FNEC_HALLEN_REL_RESIDUAL_CAVEAT")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fnec_py.solve_deck_str(DIPOLE_14MHZ)
+    assert not [w for w in caught if "FND-302" in str(w.message)]
