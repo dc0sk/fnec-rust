@@ -465,9 +465,10 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
         seg,
         deck,
         &segs,
-        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             deck,
             &segs,
+            &[],
             &[freq_hz],
         )),
     ) {
@@ -859,9 +860,10 @@ impl SweepJob {
             &z_res,
             &self.deck,
             &self.segs,
-            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 &self.deck,
                 &self.segs,
+                &[],
                 &nec_solver::frequencies_hz(&self.deck),
             )),
         )

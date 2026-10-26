@@ -209,9 +209,10 @@ fn solve_at_freq(
             seg as usize,
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 deck,
                 &segs,
+                &[],
                 &[freq_hz],
             )),
         ) {
@@ -262,9 +263,10 @@ fn solve_at_freq(
             seg.tag_index as usize,
             deck,
             &segs,
-            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 deck,
                 &segs,
+                &[],
                 &[freq_hz],
             )),
         ) {
@@ -431,9 +433,10 @@ fn sweep_deck_str(py: Python<'_>, deck: &str, solver: &str) -> PyResult<PyObject
         &z_res,
         &result.deck,
         &segs,
-        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        py_solver_context(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             &result.deck,
             &segs,
+            &[],
             &nec_solver::frequencies_hz(&result.deck),
         )),
     ) {

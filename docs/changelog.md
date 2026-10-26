@@ -105,6 +105,38 @@ from 0.13.0 and earlier predate the Keep a Changelog headings and are left as wr
   This reached 4nec2 through the kernel route. The line now takes its values from
   `nec_solver::sommerfeld::complex_permittivity` and a new sibling,
   `conductivity_s_per_m`, so the negative-σ rule lives in one module.
+- **A feed on a segment at a free wire end is caveated** (FND-294). Such a gap is
+  singular in the thin-wire model: a 5 m wire fed on segment 1 at 29.9 MHz reads
+  1839 − j1839 / 1244 − j5690 / 746 − j11638 Ω at 11 / 33 / 99 segments (nec2c
+  3078 − j1554 / 2793 − j8345 / 1701 − j17519), where a feed 0.68 m in converges in
+  both codes, yet it came back with exit 0 and nothing said. Every Hallén route now
+  warns `feedpoint tag T segment S is on a segment at a free wire end; …` — the CLI
+  per point and per sweep, `fnec converge` per mesh, `--hosts`, the GUI and fnec_py,
+  through the one producer they share (`frequency_independent_caveats`). A caveat,
+  not a refusal: nec2c answers these decks and end-fed antennas are common. Feeds
+  only (`EX` 0, 4, 5); a `TL`/`NT` port there is not judged. A base-fed monopole
+  over `GN 1` is not caveated — its end joins the ground (as it would over `GN 0`
+  or `2`, where the contact is refused, FND-240). "At a free
+  end" is one predicate, `nec_solver::geometry::at_free_end`, on the refined Hallén
+  geometry and the deck geometry alike; the MPIE's end-feed refusal (FND-228) uses
+  it too, with unchanged answers. No number changes.
+- **The joined-gaps caveat sees `--loads-config` loads** (FND-288). FND-278's
+  caveat — a source, port or lumped load on each of the two segments either side
+  of a real bend — built its gap list from the deck's `LD` cards, while the solve
+  took the run's diagonal with the Laplace loads composed in. A feed beside a bend
+  with a j1000 Ω load as `LD 4` warned; the same load as a `[[laplace_load]]`
+  solved with the same joined row (172.98 + j2026.80 Ω against 172.99 + j2026.95)
+  and said nothing. "Which loads does this run have" is now one function,
+  `nec_solver::run_load_diagonal` (the deck's `LD` loads plus the Laplace loads),
+  and the CLI solve, the MPIE plan, the caveat and the negative-load fact behind
+  FND-209's caveat (`RunLoads::of_run`, formerly `of_deck`, which read the deck's
+  cards alone for the GUI, the bindings, the probes and `--hosts`) all go through
+  it; over PEC ground the caveat judges the image problem with the loads the solve
+  stamps there (`image_loads`), which a Laplace load cannot reach through the image
+  deck's cards. `hallen_geometry_caveats`, `hallen_geometry_caveats_swept` and
+  `joined_gaps_at_a_bend_warning` take the run's Laplace loads (`&[]` for a
+  frontend with none). No number changes: only the CLI's main command takes
+  `--loads-config`.
 - **Tag 0 on `EX`, `LD`, `TL`, `NT` and `PT` names an absolute segment number, as
   NEC-2 defines it** (FND-282). fnec read tag 0 as "the wire tagged 0" for a point
   reference and as "every tag" for a range, so on two 21-segment dipoles
