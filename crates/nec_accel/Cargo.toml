@@ -15,6 +15,7 @@ default = []
 wgpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster", "dep:log"]
 
 [dependencies]
+nec_model = { workspace = true }
 num-complex = { workspace = true }
 bytemuck = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
@@ -34,7 +35,6 @@ pollster = { workspace = true }
 nec_accel = { path = ".", features = ["wgpu"] }
 nec_solver = { workspace = true }
 nec_parser = { workspace = true }
-nec_model  = { workspace = true }
 
 [lints]
 workspace = true

@@ -1810,6 +1810,36 @@ fn solve_clean_dipole_has_no_warnings() {
     );
 }
 
+/// FND-294: the GUI's solve carries the free-end feed caveat the CLI prints — it
+/// comes from the shared producer `diagnose` reaches. The interior feed beside it
+/// solves without it.
+#[test]
+fn solve_a_free_end_feed_carries_its_caveat() {
+    let deck = |seg: u32| {
+        format!("GW 1 11 0 0 0 0 0 5 0.001\nGE 0\nEX 0 1 {seg} 0 1 0\nFR 0 1 0 0 29.9 0\nEN\n")
+    };
+    let end =
+        solve_deck_str(&deck(1), nec_gui::solve::SolverKind::Hallen).expect("end feed solves");
+    assert!(
+        end.warnings
+            .iter()
+            .any(|w| w.contains("at a free wire end")),
+        "{:?}",
+        end.warnings
+    );
+    let interior =
+        solve_deck_str(&deck(2), nec_gui::solve::SolverKind::Hallen).expect("interior feed solves");
+    assert!(interior.z_re > 0.0, "{:?}", interior.z_re);
+    assert!(
+        !interior
+            .warnings
+            .iter()
+            .any(|w| w.contains("free wire end")),
+        "{:?}",
+        interior.warnings
+    );
+}
+
 /// A runaway sweep (mistyped tiny step over a wide range) is rejected before it
 /// can queue millions of solves and freeze the GUI.
 #[test]

@@ -465,9 +465,10 @@ pub fn solve_deck_str(deck_text: &str, solver: SolverKind) -> Result<SolveResult
         seg,
         deck,
         &segs,
-        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+        gui_ctx(solver).with_loads(nec_solver::validate::RunLoads::of_run(
             deck,
             &segs,
+            &[],
             &[freq_hz],
         )),
     ) {
@@ -619,7 +620,14 @@ fn feedpoint_impedance(
             ));
         };
         let current = i_vec[idx];
-        let v_source = v_vec[idx] * seg.length;
+        // Through the shared seam the CLI and the worker price through (FND-297 d).
+        let v_source = nec_solver::feedpoint_drive_voltage(
+            nec_model::card::FeedpointRole::DeltaGap,
+            seg.length,
+            v_vec[idx],
+            None,
+        )
+        .ok_or("internal: a delta gap without a drive")?;
         let z_in = nec_solver::feedpoint_impedance(
             v_source,
             current,
@@ -852,9 +860,10 @@ impl SweepJob {
             &z_res,
             &self.deck,
             &self.segs,
-            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_deck(
+            gui_ctx(self.solver).with_loads(nec_solver::validate::RunLoads::of_run(
                 &self.deck,
                 &self.segs,
+                &[],
                 &nec_solver::frequencies_hz(&self.deck),
             )),
         )

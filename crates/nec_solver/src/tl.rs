@@ -31,7 +31,7 @@ use nec_model::card::TlCard;
 use crate::geometry::Segment;
 use crate::network::TwoPort;
 
-const C0: f64 = 299_792_458.0; // m/s
+use crate::constants::C0;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 
 /// The admittance parameters `(Y11, Y12)` of a uniform line, `Y22 = Y11`.

@@ -1,7 +1,7 @@
 use super::exec_profile::ExecutionMode;
 use nec_model::card::Card;
 
-pub(super) const C0: f64 = 299_792_458.0;
+use nec_solver::constants::C0;
 pub(super) const CONTINUITY_REL_RESIDUAL_MAX: f64 = 1e-3;
 pub(super) const SINUSOIDAL_REL_RESIDUAL_MAX_DEFAULT: f64 = 1e-2;
 
@@ -231,6 +231,9 @@ pub(super) struct FrequencySolveResult {
     pub(super) min_feed_re: Option<f64>,
     /// Whether the device solved this point (a GPU sweep reports the count).
     pub(super) ran_on_gpu: bool,
+    /// Whether the surface-wave correction reached this point's impedance, so the
+    /// run can say once that V and I are not the corrected solve's (FND-286).
+    pub(super) surface_wave_applied: bool,
     /// What this point's resolved loads were, for the sweep's aggregate caveat
     /// (FND-209): the deck alone cannot say.
     pub(super) run_loads: nec_solver::validate::RunLoads,
@@ -858,6 +861,26 @@ fn warn_if_sommerfeld_declined(outcome: SommerfeldOutcome) {
     }
 }
 
+/// Whether this run asks for the surface-wave correction (PH9-CHK-006), and over
+/// which ground: `--ground-solver sommerfeld`, a finite ground, and not the MPIE —
+/// which assembles the reflected kernels into its own Z-matrix, so the delta would
+/// count the surface wave twice. The one copy: the feedpoint rows apply the
+/// correction on it and the NEC-2D report refuses on it (FND-286), so the two
+/// cannot disagree about what was requested.
+pub(super) fn sommerfeld_requested(
+    solver_mode: SolverMode,
+    ground_solver: GroundSolver,
+    ground: &GroundModel,
+) -> Option<(f64, f64)> {
+    match (solver_mode, ground_solver, ground) {
+        (SolverMode::Mpie, _, _) => None,
+        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
+            Some((*eps_r, *sigma))
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // cohesive feedpoint inputs; splitting would obscure
 pub(super) fn build_feedpoint_rows(
     deck: &nec_model::deck::NecDeck,
@@ -879,13 +902,7 @@ pub(super) fn build_feedpoint_rows(
     // to the Sommerfeld impedance; the MPIE path already assembles the exact
     // reflected (Sommerfeld) kernels into its Z-matrix, so applying the delta there
     // would double-count the surface wave — skip it for `--solver mpie`.
-    let sommerfeld_ground = match (solver_mode, ground_solver, ground) {
-        (SolverMode::Mpie, _, _) => None,
-        (_, GroundSolver::Sommerfeld, GroundModel::SimpleFiniteGround { eps_r, sigma }) => {
-            Some((*eps_r, *sigma))
-        }
-        _ => None,
-    };
+    let sommerfeld_ground = sommerfeld_requested(solver_mode, ground_solver, ground);
     // The correction is a one-port quantity: ⟨J, ΔG J⟩ / I_feed² over the whole
     // structure's currents. With several feeds that charges every port with the
     // whole structure's reaction — a symmetric pair got 2(ΔZ11 ± ΔZ12), 76.29 −
@@ -1116,9 +1133,11 @@ pub(crate) fn probe_feedpoints(
     // warn of, as `solve_frequency_point` itself skips them there.
     if print_caveats && !matches!(cfg.solver_mode, SolverMode::Mpie) {
         let shown = match which {
+            // A probe solves without Laplace loads (below), so its caveats see none.
             ProbeFrequencies::First => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 freqs[0],
                 false,
@@ -1127,6 +1146,7 @@ pub(crate) fn probe_feedpoints(
             ProbeFrequencies::All => nec_solver::validate::hallen_geometry_caveats_swept(
                 deck,
                 &segs,
+                &[],
                 &ground,
                 &freqs,
                 false,
@@ -1426,8 +1446,11 @@ pub(super) fn solve_frequency_point(
     // For the decision record: whether the DECK's own cards load the structure,
     // read from the stamps before any Laplace load is composed in.
     let deck_loaded = stamps.diagonal.iter().any(|z| z.norm() > 0.0);
-    let laplace_warnings =
-        nec_solver::add_laplace_loads(&mut stamps.diagonal, laplace_loads, segs, freq_hz);
+    // The run's diagonal through the one function that answers "which loads"
+    // (FND-288), so the caveats and the MPIE see what this solve stamps.
+    let (diagonal, laplace_warnings) =
+        nec_solver::run_load_diagonal(deck, segs, freq_hz, laplace_loads);
+    stamps.diagonal = diagonal;
     for warning in &stamps.warnings {
         eprintln!("warning: {warning}");
     }
@@ -1740,9 +1763,12 @@ pub(super) fn solve_frequency_point(
         // actually applied DID model the surface wave, which changes what the
         // low-ground caveat may claim.
         let shown = match geometry_caveats {
+            // The run's loads, `--loads-config` included: the caveat about a load
+            // beside a bend must see the load the solve stamps (FND-288).
             GeometryCaveats::PerPoint => nec_solver::validate::hallen_geometry_caveats(
                 deck,
                 segs,
+                laplace_loads,
                 ground,
                 freq_hz,
                 matches!(sommerfeld_outcome, SommerfeldOutcome::Applied),
@@ -1815,7 +1841,7 @@ pub(super) fn solve_frequency_point(
         // computes radiation intensity components, not normalised gain. Free
         // space only (above), so the power integral is the full sphere.
         let total_radiated = integrate_radiated_power(segs, &i_vec, freq_hz, false);
-        let k = 2.0 * std::f64::consts::PI * freq_hz / 299_792_458.0;
+        let k = 2.0 * std::f64::consts::PI * freq_hz / C0;
 
         let gpu_segments: Vec<_> = segs
             .iter()
@@ -2044,6 +2070,7 @@ pub(super) fn solve_frequency_point(
         run_loads,
         min_feed_re,
         ran_on_gpu,
+        surface_wave_applied: sommerfeld_outcome == SommerfeldOutcome::Applied,
     })
 }
 

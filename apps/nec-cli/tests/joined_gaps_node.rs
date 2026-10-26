@@ -35,20 +35,22 @@ fn deck(t: f64, n: u32, cards: &str, r2: &str) -> String {
 const L1: &str = "LD 4 2 1 1 0 1000\nEX 0 1 10 0 1 0\n";
 const R50: &str = "LD 4 2 1 1 50 0\nEX 0 1 10 0 1 0\n";
 
-/// `(stdout lines, stderr)` of a Hallén run.
-fn run(text: &str) -> (Vec<String>, String) {
+/// `(stdout lines, stderr)` of a Hallén run, with `toml` as its `--loads-config`.
+fn run_with(text: &str, toml: Option<&str>) -> (Vec<String>, String) {
     static RUN: AtomicUsize = AtomicUsize::new(0);
-    let name = format!(
-        "fnec-278-{}-{}.nec",
+    let stem = format!(
+        "fnec-278-{}-{}",
         std::process::id(),
         RUN.fetch_add(1, Ordering::Relaxed)
     );
-    let deck = common::TempDeck::new(&name, text);
-    let out = Command::new(env!("CARGO_BIN_EXE_fnec"))
-        .args(["--solver", "hallen"])
-        .arg(&deck)
-        .output()
-        .expect("run fnec");
+    let deck = common::TempDeck::new(&format!("{stem}.nec"), text);
+    let config = toml.map(|t| common::TempDeck::new(&format!("{stem}.toml"), t));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_fnec"));
+    cmd.args(["--solver", "hallen"]);
+    if let Some(config) = &config {
+        cmd.arg("--loads-config").arg(config);
+    }
+    let out = cmd.arg(&deck).output().expect("run fnec");
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(out.status.success(), "{stderr}");
     (
@@ -61,7 +63,11 @@ fn run(text: &str) -> (Vec<String>, String) {
 }
 
 fn z_in(text: &str) -> (f64, f64) {
-    let (lines, _) = run(text);
+    z_in_with(text, None)
+}
+
+fn z_in_with(text: &str, toml: Option<&str>) -> (f64, f64) {
+    let (lines, _) = run_with(text, toml);
     let at = lines
         .iter()
         .position(|l| l == "FEEDPOINTS")
@@ -79,7 +85,12 @@ fn rel((a, b): (f64, f64), (c, d): (f64, f64)) -> f64 {
 
 /// The caveat lines of a run.
 fn caveats(text: &str) -> Vec<String> {
-    run(text)
+    caveats_with(text, None)
+}
+
+/// The caveat lines of a run with `toml` as its `--loads-config`.
+fn caveats_with(text: &str, toml: Option<&str>) -> Vec<String> {
+    run_with(text, toml)
         .1
         .lines()
         .filter(|l| l.contains("FND-278"))
@@ -229,4 +240,92 @@ fn gaps_either_side_of_a_real_bend_carry_the_caveat_naming_the_mpie() {
         let none = caveats(&text);
         assert!(none.is_empty(), "{why}: {none:?}");
     }
+}
+
+/// A `--loads-config` series inductor on tag `tag` segment `seg` whose reactance
+/// at 28.4 MHz is `x` Ω exactly: `Z(s) = L·s` with `L = x/ω`.
+fn laplace_l(tag: u32, seg: u32, x: f64) -> String {
+    let l = x / (2.0 * std::f64::consts::PI * 28.4e6);
+    format!(
+        "[[laplace_load]]\ntag = {tag}\nseg_first = {seg}\nnumerator = [0.0, {l:e}]\n\
+         denominator = [1.0]\n"
+    )
+}
+
+/// FND-288: the j1000 Ω load beside the bend given as a `--loads-config` Laplace
+/// load instead of `LD 4` carries the caveat, as the `LD` card does: the caveat
+/// reads the loads the run solves with, not the deck's cards. The oracle that the
+/// two runs ARE the same problem is the identity of their solves — the Laplace L
+/// is 1000/ω exactly, so the two decks stamp the same diagonal and Z agrees to
+/// rounding. Negative controls: the same load moved to tag 2 seg 5, away from the
+/// node (one gap); a zero-valued Laplace load beside the node (the gap rule is by
+/// value, `NodeGaps::load_step`); and the deck with no `--loads-config` at all.
+#[test]
+fn a_loads_config_load_beside_a_bend_carries_the_caveat() {
+    let feed = "EX 0 1 10 0 1 0\n";
+    let bent = deck(1.0, 10, feed, ".001");
+    let config = laplace_l(2, 1, 1000.0);
+
+    let shown = caveats_with(&bent, Some(&config));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert!(shown[0].contains("57.3° bend"), "{}", shown[0]);
+    let by_card = caveats(&deck(1.0, 10, L1, ".001"));
+    assert_eq!(shown, by_card, "the same caveat as the LD card's");
+
+    let (laplace, card) = (
+        z_in_with(&bent, Some(&config)),
+        z_in(&deck(1.0, 10, L1, ".001")),
+    );
+    assert!(
+        rel(laplace, card) < 1e-4,
+        "Laplace {laplace:?} vs LD {card:?}: not the same problem"
+    );
+
+    for (why, toml) in [
+        ("moved away from the node", Some(laplace_l(2, 5, 1000.0))),
+        ("zero-valued beside the node", Some(laplace_l(2, 1, 0.0))),
+        ("no --loads-config", None),
+    ] {
+        let none = caveats_with(&bent, toml.as_deref());
+        assert!(none.is_empty(), "{why}: {none:?}");
+    }
+}
+
+/// FND-288 on the image route: a wire rising from PEC ground (`GN 1`), bent by
+/// 1 rad at the top, fed below the bend with a `--loads-config` j1000 Ω load above
+/// it. The solve and the caveat judge the image problem, whose loads are the
+/// deck's doubled (`image_loads`); the image deck's cards cannot carry a Laplace
+/// load, so a caveat that read them would see one gap. The `LD 4` deck is the
+/// identity oracle for the solve, as above; the unloaded deck is the control.
+#[test]
+fn a_loads_config_load_beside_a_bend_over_pec_ground_carries_the_caveat() {
+    let (x, z) = (2.64 * 1.0_f64.sin(), 2.64 + 2.64 * 1.0_f64.cos());
+    let grounded = |cards: &str| {
+        format!(
+            "CE\nGW 1 10 0 0 0 0 0 2.64 .001\nGW 2 10 0 0 2.64 {x:.12} 0 {z:.12} .001\nGE 1\n\
+             GN 1\n{cards}FR 0 1 0 0 28.4 0\nEN\n"
+        )
+    };
+    let feed = "EX 0 1 10 0 1 0\n";
+    let config = laplace_l(2, 1, 1000.0);
+
+    let shown = caveats_with(&grounded(feed), Some(&config));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert!(shown[0].contains("57.3° bend"), "{}", shown[0]);
+    assert_eq!(
+        shown,
+        caveats(&grounded(L1)),
+        "the same caveat as the LD card's"
+    );
+
+    let (laplace, card) = (
+        z_in_with(&grounded(feed), Some(&config)),
+        z_in(&grounded(L1)),
+    );
+    assert!(
+        rel(laplace, card) < 1e-4,
+        "Laplace {laplace:?} vs LD {card:?}: not the same problem"
+    );
+    let none = caveats(&grounded(feed));
+    assert!(none.is_empty(), "unloaded: {none:?}");
 }
